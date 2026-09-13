@@ -1,0 +1,127 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Sdk</AssemblyName>
+    <RootNamespace>NetWasm.Sdk</RootNamespace>
+    <PackageId>NetWasm.Sdk</PackageId>
+    <Version>0.1.0-preview.95</Version>
+    <Description>NetWasm project SDK for the netwasm0.1 profile.</Description>
+    <PackageTags>netwasm;msbuild;sdk;nuget;wasm</PackageTags>
+    <PackageType>MSBuildSdk</PackageType>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NetWasmSdkPackTaskProject>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmSdkPackTaskProject>
+    <!-- An explicit external build root is available during evaluation.  The
+         default root is resolved from the project reference immediately
+         before packing, after SDK output defaults have been applied. -->
+    <NetWasmSdkPackTaskOutput Condition="'$(NetWasmSdkPackTaskOutput)' == '' AND '$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmSdkPackTaskOutput>
+    <NetWasmSdkPackTaskOutput Condition="'$(NetWasmSdkPackTaskOutput)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '..', 'NetWasm.Sdk.Pack', 'bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmSdkPackTaskOutput>
+    <NetWasmSdkProvenanceManifestPackagePath>provenance/NetWasm.Sdk.provenance.json</NetWasmSdkProvenanceManifestPackagePath>
+    <!-- The maintainer/acceptance caller supplies the immutable checkout
+         revision; pack actors never discover it through ambient VCS state. -->
+    <NetWasmSdkProvenanceSourceRevision Condition="'$(NetWasmSdkProvenanceSourceRevision)' == ''"></NetWasmSdkProvenanceSourceRevision>
+    <NetWasmSdkProvenanceManifestOutputPath Condition="'$(NetWasmSdkProvenanceManifestOutputPath)' == ''">$([System.IO.Path]::Combine('$(BaseIntermediateOutputPath)', '$(Configuration)', '$(TargetFramework)', 'NetWasm.Sdk.provenance.json'))</NetWasmSdkProvenanceManifestOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The task project is a build dependency only.  The SDK package carries
+      the resulting task assembly under tools; it must never become a compile
+      or public NuGet dependency of the SDK package.
+    -->
+    <ProjectReference Include="$(NetWasmSdkPackTaskProject)"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all"
+                      BuildReference="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
+          Pack="true"
+          PackagePath="LICENSE.txt"
+          Visible="false" />
+    <None Include="Sdk/Sdk.props" Pack="true" PackagePath="Sdk/Sdk.props" LogicalSourcePath="src/NetWasm.Sdk/Sdk/Sdk.props" />
+    <None Include="Sdk/Sdk.targets" Pack="true" PackagePath="Sdk/Sdk.targets" LogicalSourcePath="src/NetWasm.Sdk/Sdk/Sdk.targets" />
+    <None Include="Sdk/NetWasm.Sdk.Tfm.props" Pack="true" PackagePath="Sdk/NetWasm.Sdk.Tfm.props" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NetWasm.Sdk.Tfm.props" />
+    <None Include="../../eng/NetWasm.PackageVersions.props" Pack="true" PackagePath="Sdk/NetWasm.PackageVersions.props" LogicalSourcePath="eng/NetWasm.PackageVersions.props" />
+    <None Include="Sdk/NetWasm.Sdk.Analyzers.globalconfig" Pack="true" PackagePath="Sdk/NetWasm.Sdk.Analyzers.globalconfig" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NetWasm.Sdk.Analyzers.globalconfig" />
+    <None Include="Sdk/NetWasm.Toolchain.targets" Pack="true" PackagePath="Sdk/NetWasm.Toolchain.targets" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NetWasm.Toolchain.targets" />
+    <None Include="Sdk/NuGetBuildTasksPackTargets.targets" Pack="true" PackagePath="Sdk/NuGetBuildTasksPackTargets.targets" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NuGetBuildTasksPackTargets.targets" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" LogicalSourcePath="src/NetWasm.Sdk/README.md" Condition="Exists('README.md')" />
+  </ItemGroup>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.Provenance.SdkProvenanceManifestMsBuildTask"
+             AssemblyFile="$(NetWasmSdkPackTaskOutput)"
+             Condition="'$(NetWasmSdkPackTaskOutput)' != ''" />
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmSdkPackTaskOutput)"
+             Condition="'$(NetWasmSdkPackTaskOutput)' != ''" />
+
+  <Target Name="NetWasmSdkCreateProvenanceManifest"
+          BeforeTargets="_LoadPackInputItems;Pack"
+          DependsOnTargets="NetWasmSdkResolvePackTaskOutput">
+    <ItemGroup>
+      <_NetWasmSdkProvenancePackageFile Include="@(None)"
+                                        Condition="'%(None.Pack)' == 'true' AND '%(None.PackagePath)' != ''">
+        <SourcePath>%(None.FullPath)</SourcePath>
+        <PackagePath>%(None.PackagePath)</PackagePath>
+      </_NetWasmSdkProvenancePackageFile>
+      <_NetWasmSdkProvenanceSourceFile Include="@(_NetWasmSdkProvenancePackageFile)"
+                                       Condition="'%(_NetWasmSdkProvenancePackageFile.LogicalSourcePath)' != ''">
+        <SourcePath>%(_NetWasmSdkProvenancePackageFile.SourcePath)</SourcePath>
+        <PackagePath>%(_NetWasmSdkProvenancePackageFile.PackagePath)</PackagePath>
+        <LogicalSourcePath>%(_NetWasmSdkProvenancePackageFile.LogicalSourcePath)</LogicalSourcePath>
+      </_NetWasmSdkProvenanceSourceFile>
+    </ItemGroup>
+    <SdkProvenanceManifestMsBuildTask
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      SourceRevision="$(NetWasmSdkProvenanceSourceRevision)"
+      ManifestPackagePath="$(NetWasmSdkProvenanceManifestPackagePath)"
+      ManifestOutputPath="$(NetWasmSdkProvenanceManifestOutputPath)"
+      PackageFiles="@(_NetWasmSdkProvenancePackageFile)"
+      SourceFiles="@(_NetWasmSdkProvenanceSourceFile)" />
+    <ItemGroup>
+      <None Include="$(NetWasmSdkProvenanceManifestOutputPath)"
+            Pack="true"
+            PackagePath="$(NetWasmSdkProvenanceManifestPackagePath)"
+            Visible="false" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="NetWasmSdkResolvePackTaskOutput"
+          BeforeTargets="_LoadPackInputItems;Pack">
+    <MSBuild Projects="$(NetWasmSdkPackTaskProject)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmSdkPackTaskTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <NetWasmSdkPackTaskOutput Condition="'$(NetWasmSdkPackTaskOutput)' == ''">@(_NetWasmSdkPackTaskTargetPath)</NetWasmSdkPackTaskOutput>
+    </PropertyGroup>
+    <ItemGroup>
+      <None Include="$(NetWasmSdkPackTaskOutput)"
+            Pack="true"
+            PackagePath="tools/net10.0/any/NetWasm.Sdk.Pack.dll"
+            Visible="false" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmSdkPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmSdkPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmSdkPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask PackagePath="$(NetWasmSdkPackagePath)"
+                                     PackageId="$(PackageId)"
+                                     PackageVersion="$(PackageVersion)"
+                                     SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

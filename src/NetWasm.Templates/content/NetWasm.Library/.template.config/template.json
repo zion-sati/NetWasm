@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "NetWasm",
+  "classifications": [ "NetWasm", "Wasm", "Library" ],
+  "identity": "NetWasm.Templates.Library",
+  "name": "NetWasm Dual-Target Library",
+  "shortName": "netwasm-lib",
+  "sourceName": "NetWasmLibrary",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  }
+}

@@ -1,0 +1,12 @@
+package netwasm:runtime@1.0.0;
+
+interface reactor-host {
+    use wasi:io/poll@0.2.11.{pollable};
+
+    watch: func(ready: own<pollable>, token: u32);
+    cancel: func(token: u32);
+}
+
+interface reactor-guest {
+    wake: func(token: u32);
+}

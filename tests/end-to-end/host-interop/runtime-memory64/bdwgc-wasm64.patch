@@ -1,0 +1,21 @@
+diff --git a/include/private/gcconfig.h b/include/private/gcconfig.h
+index 590858f..c2be118 100644
+--- a/include/private/gcconfig.h
++++ b/include/private/gcconfig.h
+@@ -1416,10 +1416,14 @@
+ # endif
+ 
+ # ifdef I386
+-#   define MACH_TYPE "I386"
+-#   if (defined(__LP64__) || defined(_WIN64)) && !defined(CPPCHECK)
++#   if defined(EMSCRIPTEN) && defined(__wasm64__)
++#     define MACH_TYPE "WASM64"
++#     define CPP_WORDSZ 64
++#     define ALIGNMENT 8
++#   elif (defined(__LP64__) || defined(_WIN64)) && !defined(CPPCHECK)
+ #     error This should be handled as X86_64
+ #   else
++#     define MACH_TYPE "I386"
+ #     define CPP_WORDSZ 32
+ #     define ALIGNMENT 4
+                         /* Appears to hold for all "32 bit" compilers   */

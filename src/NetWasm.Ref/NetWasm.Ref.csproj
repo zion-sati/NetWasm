@@ -1,0 +1,139 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Ref</AssemblyName>
+    <RootNamespace>NetWasm.Ref</RootNamespace>
+    <PackageId>NetWasm.Ref</PackageId>
+    <Version>0.1.0-preview.14</Version>
+    <Description>Metadata-only reference contract for the NetWasm netwasm0.1 profile.</Description>
+    <PackageTags>netwasm;reference;tfm;metadata</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CoreLibProjectPath>$(MSBuildProjectDirectory)/../NetWasm.CoreLib/NetWasm.CoreLib.csproj</CoreLibProjectPath>
+    <CoreLibReferenceAssemblyPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../NetWasm.CoreLib/bin/$(Configuration)/net10.0/ref/NetWasm.CoreLib.dll'))</CoreLibReferenceAssemblyPath>
+    <CoreLibReferenceAssemblyPath Condition="$([System.IO.Path]::IsPathRooted('$(BaseOutputPath)'))">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'ref', 'NetWasm.CoreLib.dll'))</CoreLibReferenceAssemblyPath>
+    <!-- NetWasm.Ref is built on net10.0 so that the metadata contract can be
+         produced by the ordinary compiler, but its package construction is
+         owned by the NetWasm SDK for the custom profile.  The SDK target
+         replaces Pack before any stock PackTask can run. -->
+    <NetWasmSdkRefPackEnabled>true</NetWasmSdkRefPackEnabled>
+    <NuGetBuildTasksPackTargets>$(MSBuildProjectDirectory)/../NetWasm.Sdk/Sdk/NuGetBuildTasksPackTargets.targets</NuGetBuildTasksPackTargets>
+    <ImportNuGetBuildTasksPackTargetsFromSdk>true</ImportNuGetBuildTasksPackTargetsFromSdk>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmSdkPackTaskAssemblyFile>$(NetWasmPackTaskOutput)</NetWasmSdkPackTaskAssemblyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(CoreLibProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="$(CoreLibReferenceAssemblyPath)"
+          Pack="true"
+          PackagePath="ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll"
+          Visible="false" />
+  </ItemGroup>
+
+  <Target Name="NetWasmRefBuildContract"
+          BeforeTargets="PrepareForPack;Pack">
+    <MSBuild Projects="$(CoreLibProjectPath)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration);ProduceReferenceAssembly=true;ProduceReferenceAssemblyInOutDir=true" />
+    <Error Condition="!Exists('$(CoreLibReferenceAssemblyPath)')"
+           Code="NWRF001"
+           Text="The NetWasm.CoreLib metadata-only reference assembly was not produced." />
+  </Target>
+
+  <Target Name="NetWasmRefResolvePackTaskOutput"
+          BeforeTargets="Pack">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmPackTaskTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <NetWasmPackTaskOutput Condition="'$(NetWasmPackTaskOutput)' == ''">@(_NetWasmPackTaskTargetPath)</NetWasmPackTaskOutput>
+    </PropertyGroup>
+  </Target>
+
+  <!-- This is the request-construction side of the SDK-owned Pack boundary.
+       It runs before the wrapper's Pack target and feeds the one-action
+       CanonicalPackMsBuildTask directly; no stock package is produced first. -->
+  <Target Name="NetWasmRefPack"
+          DependsOnTargets="NetWasmRefBuildContract;NetWasmRefResolvePackTaskOutput;_InitializeNuspecRepositoryInformationProperties"
+          Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
+    <PropertyGroup>
+      <NetWasmRefPackageFilePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmRefPackageFilePath>
+      <NetWasmRefNuspecFilePath>$([System.IO.Path]::Combine('$(NuspecOutputPath)', '$(PackageId).nuspec'))</NetWasmRefNuspecFilePath>
+      <NetWasmRefManifestFilePath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.manifest.json'))</NetWasmRefManifestFilePath>
+      <NetWasmRefDiagnosticFilePath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.diagnostic.json'))</NetWasmRefDiagnosticFilePath>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NetWasmRefTargetProfile Include="netwasm0.1">
+        <Alias>netwasm0.1</Alias>
+        <Identifier>NetWasm</Identifier>
+        <Version>v0.1</Version>
+        <AssetFolder>NetWasm,Version=v0.1</AssetFolder>
+        <DependencyGroup>NetWasm,Version=v0.1</DependencyGroup>
+      </_NetWasmRefTargetProfile>
+      <_NetWasmRefPackageFile Include="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))">
+        <SourcePath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/README.md'))</SourcePath>
+        <PackagePath>README.md</PackagePath>
+        <PackKind>Content</PackKind>
+      </_NetWasmRefPackageFile>
+      <_NetWasmRefPackageFile Include="$(CoreLibReferenceAssemblyPath)">
+        <SourcePath>$(CoreLibReferenceAssemblyPath)</SourcePath>
+        <PackagePath>ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll</PackagePath>
+        <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmRefPackageFile>
+    </ItemGroup>
+    <CanonicalPackMsBuildTask
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      Authors="$(Authors)"
+      Description="$(Description)"
+      PackageOutputPath="$(NetWasmRefPackageFilePath)"
+      CanonicalTargetFramework="NetWasm,Version=v0.1"
+      TargetProfiles="@(_NetWasmRefTargetProfile)"
+      PackageFiles="@(_NetWasmRefPackageFile)"
+      IncludeBuildOutput="true"
+      IncludeContentInPack="true"
+      SuppressDependenciesWhenPacking="true"
+      PackageOwners="$(PackageOwners)"
+      PackageProjectUrl="$(PackageProjectUrl)"
+      PackageLicenseExpression="$(PackageLicenseExpression)"
+      PackageLicenseFile="$(PackageLicenseFile)"
+      PackageReadmeFile="$(PackageReadmeFile)"
+      PackageCopyright="$(Copyright)"
+      PackageTags="$(PackageTags)"
+      RepositoryUrl="$(RepositoryUrl)"
+      RepositoryType="$(RepositoryType)"
+      RepositoryBranch="$(RepositoryBranch)"
+      RepositoryCommit="$(RepositoryCommit)"
+      PublishRepositoryUrl="$(PublishRepositoryUrl)"
+      NuspecOutputPath="$(NetWasmRefNuspecFilePath)"
+      ManifestOutputPath="$(NetWasmRefManifestFilePath)"
+      DiagnosticOutputPath="$(NetWasmRefDiagnosticFilePath)"
+      NoBuild="$(NoBuild)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

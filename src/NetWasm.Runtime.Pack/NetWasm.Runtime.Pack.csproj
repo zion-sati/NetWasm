@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Runtime.Pack</AssemblyName>
+    <RootNamespace>NetWasm.Runtime.Pack</RootNamespace>
+    <Version>0.1.0-preview.11</Version>
+    <PackageId>NetWasm.Runtime.Pack</PackageId>
+    <Description>Relocatable NetWasm runtime archives materialized for each application.</Description>
+    <PackageTags>netwasm;runtime;wasi;wasm</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Utilities.Core"
+                      Version="18.0.2"
+                      PrivateAssets="all"
+                      ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md"
+          Pack="true"
+          PackagePath="README.md" />
+    <None Include="runtime/**/*.a"
+          Pack="true"
+          PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="runtime/runtime-pack.json"
+          Pack="true"
+          PackagePath="runtime/runtime-pack.json" />
+    <None Include="runtime/runtime-policy.json"
+          Pack="true"
+          PackagePath="runtime/runtime-policy.json" />
+    <None Include="runtime/runtime-exports.txt"
+          Pack="true"
+          PackagePath="runtime/runtime-exports.txt" />
+    <None Include="runtime/*/layout.json"
+          Pack="true"
+          PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="buildTransitive/NetWasm.Runtime.Pack.props"
+          Pack="true"
+          PackagePath="buildTransitive/" />
+    <None Include="buildTransitive/NetWasm.Runtime.Pack.targets"
+          Pack="true"
+          PackagePath="buildTransitive/" />
+  </ItemGroup>
+
+  <Import Project="../../eng/NetWasm.DeterministicPackageArchive.targets" />
+</Project>

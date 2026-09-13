@@ -1,0 +1,10 @@
+{
+  "source": "https://github.com/WebAssembly/wasi-random",
+  "release": "v0.2.11",
+  "package": "wasi:random@0.2.11",
+  "scope": [
+    "random.wit"
+  ],
+  "licensePath": "../../../wasi-0.2.11/LICENSE.md",
+  "note": "Declarations and version annotations match WASI v0.2.11."
+}

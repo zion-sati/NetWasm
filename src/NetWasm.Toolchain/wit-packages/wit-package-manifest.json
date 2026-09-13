@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1",
+  "generator": {
+    "assetId": "wasm-tools.module",
+    "version": "1.256.0",
+    "sha256": "1141fd48fcf58c9704fb24ef1bd9b5d9aaf584b688eb8dce8e226c0488056beb"
+  },
+  "products": [
+    {
+      "name": "command",
+      "package": "wasi:cli@0.2.11",
+      "world": "command",
+      "sourceManifest": "../wit/wit-manifest.json",
+      "sourceManifestSha256": "64a662667f1c6613b7f5cff0a030df674dec626932877b29f454b16edc08cf4b",
+      "file": "command.wit.wasm",
+      "sha256": "624c67b287c812050a207dfd28a401f798838adbff330d702df0ccc711743293"
+    },
+    {
+      "name": "async-command",
+      "package": "netwasm:component@1.0.0",
+      "world": "async-command",
+      "sourceManifest": "../async-wit/wit-manifest.json",
+      "sourceManifestSha256": "4e833f9b72a72a5b3037367d9064134efeac48ff9b1ba1291d121011928bed75",
+      "file": "async-command.wit.wasm",
+      "sha256": "c299d92ee7136b7c1efda87c97d69b312e532285482a80c8d73e0fcd03154fe7"
+    },
+    {
+      "name": "compiler",
+      "package": "netwasm:platform@1.0.0",
+      "world": "platform",
+      "sourceManifest": "../compiler-wit/wit-manifest.json",
+      "sourceManifestSha256": "6c5fd321dc7a70848e9342f3eeaeab234da8722bb58574e1b0b9fe51e9d67b6a",
+      "file": "compiler.wit.wasm",
+      "sha256": "bba25c9206f2b7e3882ec6b44e81d60b33eb18a57c36b85870929435001e002e"
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Compiler.Tasks</AssemblyName>
+    <RootNamespace>NetWasm.Compiler.Tasks</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>NetWasm.Compiler.Tasks</PackageId>
+    <Version>$(NetWasmCompilerTasksPackageVersion)</Version>
+    <Description>Structured MSBuild compiler tasks for NetWasm projects.</Description>
+    <PackageTags>netwasm;msbuild;compiler;wasm</PackageTags>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5100</NoWarn>
+    <BuildOutputTargetFolder>tasks</BuildOutputTargetFolder>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);NetWasmCompilerTasksCollectDependencies</TargetsForTfmSpecificBuildOutput>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <ProjectReference Include="../NetWasm.Compiler/NetWasm.Compiler.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Utilities.Core"
+                      Version="18.0.2"
+                      PrivateAssets="all"
+                      ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
+          Pack="true"
+          PackagePath="LICENSE.txt"
+          Visible="false" />
+    <None Include="README.md"
+          Pack="true"
+          PackagePath="README.md" />
+    <None Include="buildTransitive/NetWasm.Compiler.Tasks.targets"
+          Pack="true"
+          PackagePath="buildTransitive/NetWasm.Compiler.Tasks.targets" />
+  </ItemGroup>
+
+  <Target Name="NetWasmCompilerTasksCollectDependencies"
+          DependsOnTargets="ResolveReferences"
+          Returns="@(BuildOutputInPackage)">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths)"
+                            TargetPath="%(Filename)%(Extension)"
+                            Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll'" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <None Include="$(TargetDir)$(AssemblyName).deps.json" Pack="true" PackagePath="$(BuildOutputTargetFolder)/$(TargetFramework)/" />
+  </ItemGroup>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmCompilerTasksPackTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmCompilerTasksPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmCompilerTasksPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmCompilerTasksPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask PackagePath="$(NetWasmCompilerTasksPackagePath)"
+                                     PackageId="$(PackageId)"
+                                     PackageVersion="$(PackageVersion)"
+                                     SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

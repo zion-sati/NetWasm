@@ -1,0 +1,10 @@
+{
+  "sdk": {
+    "version": "10.0.302",
+    "rollForward": "disable",
+    "allowPrerelease": false
+  },
+  "msbuild-sdks": {
+    "NetWasm.Sdk": "0.1.0-preview.95"
+  }
+}

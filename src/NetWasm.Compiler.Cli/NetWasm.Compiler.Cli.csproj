@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NetWasm.Compiler/NetWasm.Compiler.csproj" />
+    <ProjectReference Include="../NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
+  </ItemGroup>
+</Project>

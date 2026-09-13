@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "1",
+  "package": "netwasm:component@1.0.0",
+  "world": "async-command",
+  "worlds": [
+    "async-command",
+    "async-http-command"
+  ],
+  "main": "world.wit",
+  "provenance": {
+    "sourceKind": "netwasm-composed-world",
+    "closurePolicy": "official-wasi-cli-imports-with-optional-wasi-http-plus-versioned-netwasm-reactor-and-process-interfaces"
+  },
+  "files": [
+    {
+      "path": "world.wit",
+      "sha256": "97fe6dd8bc27f70bc76f4c10a12e46818464fd7c25c12932c23b876ff576e6d3"
+    }
+  ],
+  "dependencies": [
+    {
+      "package": "wasi:cli@0.2.11",
+      "sourceManifest": "../wit/wit-manifest.json",
+      "sourceManifestSha256": "64a662667f1c6613b7f5cff0a030df674dec626932877b29f454b16edc08cf4b"
+    },
+    {
+      "package": "wasi:http@0.2.11",
+      "source": "../../../wit/wasi-0.2.11/http/handler.wit",
+      "sha256": "1f66174b4058b102367e69ce8aa657b3e9dbc767f6ade960108faaa1731f0945"
+    },
+    {
+      "package": "wasi:http@0.2.11",
+      "source": "../../../wit/wasi-0.2.11/http/proxy.wit",
+      "sha256": "e84f7b0e9d5c89a2bf57c2a770e5bd9537ff0a95fc31b48b5c0c044fa0c02564"
+    },
+    {
+      "package": "wasi:http@0.2.11",
+      "source": "../../../wit/wasi-0.2.11/http/types.wit",
+      "sha256": "b985cbc5d74c4d79268c59daaf997ecc7aca0f6872af34a7363c0351e786077e"
+    },
+    {
+      "package": "netwasm:runtime@1.0.0",
+      "source": "../../../wit/netwasm-runtime-1.0.0/reactor.wit",
+      "sha256": "fb1f67e0f850e14f3ab1cc0afd457ccc26015fc52f83710fe0fe5f11cff7eb8a"
+    },
+    {
+      "package": "netwasm:runtime@1.0.0",
+      "source": "../../../wit/netwasm-runtime-1.0.0/process.wit",
+      "sha256": "14177f069b85d3f99e031985f33b565e7a3cc8d420599efe2190116d1bdce189"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NetWasmRuntimePackRoot Condition="'$(NetWasmRuntimePackRoot)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime'))</NetWasmRuntimePackRoot>
+    <NetWasmRuntimePackManifestPath Condition="'$(NetWasmRuntimePackManifestPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmRuntimePackRoot)', 'runtime-pack.json'))</NetWasmRuntimePackManifestPath>
+    <NetWasmRuntimePackSelectorAssemblyPath Condition="'$(NetWasmRuntimePackSelectorAssemblyPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'lib', 'net10.0', 'NetWasm.Runtime.Pack.dll'))</NetWasmRuntimePackSelectorAssemblyPath>
+    <NetWasmRuntimePackMaterializedPath Condition="'$(NetWasmRuntimePackMaterializedPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime.$(NetWasmTarget).wasm'))</NetWasmRuntimePackMaterializedPath>
+    <NetWasmRuntimePackLogDirectory Condition="'$(NetWasmRuntimePackLogDirectory)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime-logs'))</NetWasmRuntimePackLogDirectory>
+    <NetWasmRuntimePackProvided>true</NetWasmRuntimePackProvided>
+  </PropertyGroup>
+
+  <UsingTask TaskName="NetWasm.Runtime.Pack.MsBuild.RuntimeMaterializationTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(NetWasmRuntimePackSelectorAssemblyPath)"
+             Condition="'$(TargetFramework)' == 'netwasm0.1'" />
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NetWasmRuntimePackAsset Include="$(NetWasmRuntimePackManifestPath)"
+                             Condition="Exists('$(NetWasmRuntimePackManifestPath)')">
+      <Kind>RuntimePackManifest</Kind>
+      <MediaType>application/json</MediaType>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </NetWasmRuntimePackAsset>
+  </ItemGroup>
+
+  <Target Name="NetWasmRuntimePackMaterialize"
+          AfterTargets="NetWasmCompileCoreModule"
+          BeforeTargets="NetWasmSdkComponentize;NetWasmSdkValidateFinalArtifactForNoBuild"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmRuntimeModulePath)' == '' AND '@(NetWasmComponentRuntime)' == ''">
+    <Error Code="NWPACK002"
+           Condition="'$(NetWasmWasmLdPath)' == '' OR !Exists('$(NetWasmWasmLdPath)')"
+           Text="The pinned NetWasm wasm-ld executable is unavailable." />
+    <Error Code="NWPACK003"
+           Condition="'$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
+           Text="The pinned platform-neutral NetWasm wasm-tools command is unavailable." />
+    <RuntimeMaterializationTask ManifestPath="$(NetWasmRuntimePackManifestPath)"
+                                RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
+                                AssetRoot="$(NetWasmRuntimePackRoot)"
+                                WasmLdPath="$(NetWasmWasmLdPath)"
+                                WasmToolsNodePath="$(NetWasmNodePath)"
+                                WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
+                                WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                OutputPath="$(NetWasmRuntimePackMaterializedPath)"
+                                LogDirectory="$(NetWasmRuntimePackLogDirectory)"
+                                Target="$(NetWasmTarget)"
+                                InitialHeapSizeBytes="$(NetWasmInitialHeapSizeBytes)"
+                                MaximumMemorySizeBytes="$(NetWasmMaximumMemorySizeBytes)">
+      <Output TaskParameter="RuntimeModules" ItemName="_NetWasmRuntimePackMaterialization" />
+    </RuntimeMaterializationTask>
+    <Error Code="NWPACK004"
+           Condition="'@(_NetWasmRuntimePackMaterialization)' == ''"
+           Text="The NetWasm runtime pack did not materialize a runtime module." />
+    <ItemGroup>
+      <NetWasmComponentRuntime Include="@(_NetWasmRuntimePackMaterialization)" />
+      <NetWasmComponentInput Include="@(_NetWasmRuntimePackMaterialization)">
+        <Kind>%(_NetWasmRuntimePackMaterialization.Kind)</Kind>
+        <WasmTarget>%(_NetWasmRuntimePackMaterialization.WasmTarget)</WasmTarget>
+      </NetWasmComponentInput>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="NetWasmRuntimePackCleanMaterializedRuntime"
+          BeforeTargets="CoreClean"
+          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <Delete Files="$(NetWasmRuntimePackMaterializedPath)" />
+    <RemoveDir Directories="$(NetWasmRuntimePackLogDirectory)"
+               Condition="'$(NetWasmRuntimePackLogDirectory)' != '' AND Exists('$(NetWasmRuntimePackLogDirectory)')" />
+  </Target>
+</Project>

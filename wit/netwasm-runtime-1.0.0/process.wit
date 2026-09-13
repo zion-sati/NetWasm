@@ -1,0 +1,15 @@
+package netwasm:runtime@1.0.0;
+
+/// Host observation of an asynchronous managed executable.
+/// The caller owns each nonzero handle returned by start and must call complete
+/// exactly once after it stops observing that operation. Reactor wakeups may
+/// advance an operation between observations; no function suspends a Wasm stack.
+interface process {
+    start: func() -> u32;
+    status: func(operation: u32) -> u32;
+    /// Read only after status reports successful completion. A Task-returning
+    /// executable has exit code zero; Task<s32> preserves the managed exit code.
+    exit-code: func(operation: u32) -> s32;
+    /// Release observation ownership, not cancellation of managed execution.
+    complete: func(operation: u32);
+}

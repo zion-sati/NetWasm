@@ -1,0 +1,16 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmResolveBuildEnvironmentTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmBundleJavaScriptTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteBrowserBootstrapEntryTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteDeploymentTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteExecutionDescriptorTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmTranspileComponentTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteExecutionRequestTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+</Project>

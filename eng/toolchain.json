@@ -1,0 +1,24 @@
+{
+  "dotnetSdk": "10.0.302",
+  "roslynCompiler": "5.6.0-2.26329.109",
+  "binaryen": "132",
+  "wabt": "1.0.41",
+  "node": "26.7.0",
+  "playwright": "1.62.1",
+  "emscripten": "6.0.7",
+  "llvmLld": {
+    "version": "24.0.0",
+    "commit": "4cc02503f584aad493a1d0d35bb5afb710a5510b"
+  },
+  "wasmTools": "1.256.0",
+  "wasmtime": "47.0.3",
+  "wasiHttpWit": "0.2.11",
+  "jco": "1.28.1",
+  "preview2Shim": "0.24.1",
+  "runtimeAbi": "netwasm.runtime.v1",
+  "hostAbi": "netwasm.host.v1",
+  "bdwgc": {
+    "version": "8.2.8",
+    "commit": "ee59af3722e56de8404de6cd0c21c2493cc4d855"
+  }
+}

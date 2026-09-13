@@ -1,0 +1,61 @@
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+namespace System.Numerics
+{
+    /// <summary>Defines support for exponential functions.</summary>
+    /// <typeparam name="TSelf">The type that implements this interface.</typeparam>
+    public interface IExponentialFunctions<TSelf>
+        : IEquatable<TSelf>,
+          IFormattable,
+          IParsable<TSelf>,
+          ISpanFormattable,
+          ISpanParsable<TSelf>,
+          IUtf8SpanFormattable,
+          IUtf8SpanParsable<TSelf>,
+          IAdditionOperators<TSelf, TSelf, TSelf>,
+          IAdditiveIdentity<TSelf, TSelf>,
+          IDecrementOperators<TSelf>,
+          IDivisionOperators<TSelf, TSelf, TSelf>,
+          IEqualityOperators<TSelf, TSelf, bool>,
+          IFloatingPointConstants<TSelf>,
+          IIncrementOperators<TSelf>,
+          IMultiplicativeIdentity<TSelf, TSelf>,
+          IMultiplyOperators<TSelf, TSelf, TSelf>,
+          INumberBase<TSelf>,
+          ISubtractionOperators<TSelf, TSelf, TSelf>,
+          IUnaryNegationOperators<TSelf, TSelf>,
+          IUnaryPlusOperators<TSelf, TSelf>
+        where TSelf : IExponentialFunctions<TSelf>?
+    {
+        /// <summary>Computes <c>E</c> raised to a given power.</summary>
+        /// <param name="x">The power to which <c>E</c> is raised.</param>
+        /// <returns><c>E<sup><paramref name="x" /></sup></c></returns>
+        static abstract TSelf Exp(TSelf x);
+
+        /// <summary>Computes <c>E</c> raised to a given power and subtracts one.</summary>
+        /// <param name="x">The power to which <c>E</c> is raised.</param>
+        /// <returns><c>E<sup><paramref name="x" /></sup> - 1</c></returns>
+        static virtual TSelf ExpM1(TSelf x) => TSelf.Exp(x) - TSelf.One;
+
+        /// <summary>Computes <c>2</c> raised to a given power.</summary>
+        /// <param name="x">The power to which <c>2</c> is raised.</param>
+        /// <returns><c>2<sup><paramref name="x" /></sup></c></returns>
+        static abstract TSelf Exp2(TSelf x);
+
+        /// <summary>Computes <c>2</c> raised to a given power and subtracts one.</summary>
+        /// <param name="x">The power to which <c>2</c> is raised.</param>
+        /// <returns><c>2<sup><paramref name="x" /></sup> - 1</c></returns>
+        static virtual TSelf Exp2M1(TSelf x) => TSelf.Exp2(x) - TSelf.One;
+
+        /// <summary>Computes <c>10</c> raised to a given power.</summary>
+        /// <param name="x">The power to which <c>10</c> is raised.</param>
+        /// <returns><c>10<sup><paramref name="x" /></sup></c></returns>
+        static abstract TSelf Exp10(TSelf x);
+
+        /// <summary>Computes <c>10</c> raised to a given power and subtracts one.</summary>
+        /// <param name="x">The power to which <c>10</c> is raised.</param>
+        /// <returns><c>10<sup><paramref name="x" /></sup> - 1</c></returns>
+        static virtual TSelf Exp10M1(TSelf x) => TSelf.Exp10(x) - TSelf.One;
+    }
+}

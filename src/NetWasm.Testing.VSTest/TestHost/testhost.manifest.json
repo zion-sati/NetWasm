@@ -1,0 +1,50 @@
+{
+  "SchemaVersion": 1,
+  "TestPlatformVersion": "18.0.1",
+  "Files": [
+    {
+      "RelativePath": "Microsoft.TestPlatform.CommunicationUtilities.dll",
+      "Sha256": "2eba928c1770209f1fd9f515603a0b4ffbfcadf816681ab36d02b9b36417ab33"
+    },
+    {
+      "RelativePath": "Microsoft.TestPlatform.CoreUtilities.dll",
+      "Sha256": "7837f9df4b11a9844143fc9419e5752bdd50305436adcbf84f82b8a52d5909d7"
+    },
+    {
+      "RelativePath": "Microsoft.TestPlatform.CrossPlatEngine.dll",
+      "Sha256": "2f3b463a227b8f30171f8720164b3c0b90451248e0b2f3e8c3da82c23a3fdfcd"
+    },
+    {
+      "RelativePath": "Microsoft.TestPlatform.PlatformAbstractions.dll",
+      "Sha256": "668c7f0df2c30feac9cea9dce808ccabb72ff575c1e820404124212b4eae1773"
+    },
+    {
+      "RelativePath": "Microsoft.TestPlatform.Utilities.dll",
+      "Sha256": "886ef3ab15251e57ca9c124e41de3c43ba0520a036b876bb709ed325438501fe"
+    },
+    {
+      "RelativePath": "Microsoft.VisualStudio.TestPlatform.Common.dll",
+      "Sha256": "96d7b2a7e3f79133e17196fdad189486b59852379385198b5cd857e9947164fb"
+    },
+    {
+      "RelativePath": "Microsoft.VisualStudio.TestPlatform.ObjectModel.dll",
+      "Sha256": "f6d6bc01a85fd68a0599533fcc0de7357922051bad90012b8ad15de31a4ef5e9"
+    },
+    {
+      "RelativePath": "packages/newtonsoft.json/13.0.3/lib/net6.0/Newtonsoft.Json.dll",
+      "Sha256": "22c649f75fce5be7c7ccda8880473b634ef69ecf33f5d1ab8ad892caf47d5a07"
+    },
+    {
+      "RelativePath": "testhost.deps.json",
+      "Sha256": "4fe34abb92ea15a2d15b1a915bf32948d7898ffc60e9c55988549a2b052f6024"
+    },
+    {
+      "RelativePath": "testhost.dll",
+      "Sha256": "f9f95f20f7a99215b50cfd511085b31549b26f87afaeb02c0a3c21f6875817e8"
+    },
+    {
+      "RelativePath": "testhost.runtimeconfig.json",
+      "Sha256": "ab20c6e50056e26fa0a23247870ac66dc23688ff3e4187399a8dfe436657fe0a"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildSDKsPath)/Microsoft.NET.Sdk/Sdk/Sdk.props" />
+  <PropertyGroup>
+    <!-- This immutable identity belongs to the resolved SDK package itself.
+         Dependency versions remain independently selectable below the SDK. -->
+    <NetWasmSdkPackageVersion>0.1.0-preview.95</NetWasmSdkPackageVersion>
+  </PropertyGroup>
+</Project>

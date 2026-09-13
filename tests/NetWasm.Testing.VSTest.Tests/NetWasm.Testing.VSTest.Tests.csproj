@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="18.0.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <ProjectReference Include="../../src/NetWasm.Testing.VSTest/NetWasm.Testing.VSTest.csproj" />
+    <ProjectReference Include="../NetWasm.Testing.VSTest.Tests.Adapter/NetWasm.Testing.VSTest.Tests.Adapter.csproj" />
+    <ProjectReference Include="../NetWasm.Testing.VSTest.Tests.ProcessProbe/NetWasm.Testing.VSTest.Tests.ProcessProbe.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../global.json"
+          Link="global.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

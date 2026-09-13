@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Runtime.Wasm32.Package</AssemblyName>
+    <PackageId>NetWasm.Runtime.Wasm32</PackageId>
+    <Version>0.1.0-preview.23</Version>
+    <Description>NetWasm wasm32 managed runtime implementation assets.</Description>
+    <PackageTags>netwasm;runtime;wasm32;wasm</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <NetWasmCoreLibOutput>$(MSBuildProjectDirectory)/../NetWasm.CoreLib/bin/$(Configuration)/net10.0/NetWasm.CoreLib.dll</NetWasmCoreLibOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md"
+          Pack="true"
+          PackagePath="README.md" />
+    <ProjectReference Include="../NetWasm.CoreLib/NetWasm.CoreLib.csproj"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+    <None Include="$(NetWasmCoreLibOutput)"
+          Pack="true"
+          PackagePath="runtime/NetWasm.CoreLib.dll" />
+    <None Include="buildTransitive/NetWasm.Runtime.Wasm32.props"
+          Pack="true"
+          PackagePath="buildTransitive/" />
+    <None Include="buildTransitive/NetWasm.Runtime.Wasm32.targets"
+          Pack="true"
+          PackagePath="buildTransitive/" />
+    <None Include="runtime-abi.json"
+          Pack="true"
+          PackagePath="runtime/runtime-abi.json" />
+  </ItemGroup>
+
+  <Import Project="../../eng/NetWasm.DeterministicPackageArchive.targets" />
+</Project>

@@ -1,0 +1,8 @@
+package netwasm:http-client@1.0.0;
+
+/// Private generated binding world used by NetWasm.System.Net.Http's default
+/// WASI HTTP Preview 2 transport. This is not an application world.
+world outgoing-http-client {
+    import wasi:http/types@0.2.11;
+    import wasi:http/outgoing-handler@0.2.11;
+}

@@ -1,0 +1,11 @@
+package netwasm:runtime-platform@1.0.0;
+
+// Native runtime dependencies, independent of the application's WIT world.
+world runtime-platform {
+  import wasi:cli/environment@0.2.11;
+  import wasi:cli/stdout@0.2.11;
+  import wasi:cli/stderr@0.2.11;
+  import wasi:cli/exit@0.2.11;
+  import wasi:io/streams@0.2.11;
+  import wasi:io/error@0.2.11;
+}

@@ -1,0 +1,20 @@
+// WASI 0.2 interface declarations used by the native runtime.
+package wasi:cli@0.2.11;
+
+interface environment {
+  get-environment: func() -> list<tuple<string, string>>;
+}
+
+interface stdout {
+  use wasi:io/streams@0.2.11.{output-stream};
+  get-stdout: func() -> output-stream;
+}
+
+interface stderr {
+  use wasi:io/streams@0.2.11.{output-stream};
+  get-stderr: func() -> output-stream;
+}
+
+interface exit {
+  exit: func(status: result);
+}

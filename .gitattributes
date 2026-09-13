@@ -1,0 +1,19 @@
+# Keep source text stable across Windows, Linux and macOS checkouts. Git's
+# automatic text detection leaves binary fixtures and package bytes untouched.
+* text=auto eol=lf
+
+# Byte contracts must never undergo checkout/newline conversion.
+*.wasm -text
+*.dll -text
+*.pdb -text
+*.nupkg -text
+*.snupkg -text
+*.zip -text
+*.gz -text
+*.br -text
+*.bin -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.woff -text
+*.woff2 -text

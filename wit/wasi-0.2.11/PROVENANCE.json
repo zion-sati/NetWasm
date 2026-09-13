@@ -1,0 +1,15 @@
+{
+  "source": "https://github.com/WebAssembly/WASI",
+  "release": "v0.2.11",
+  "package": "wasi:clocks@0.2.11",
+  "dependency": "wasi:io@0.2.11",
+  "scope": [
+    "clocks/monotonic-clock.wit",
+    "clocks/wall-clock.wit",
+    "clocks/timezone.wit",
+    "clocks/world.wit",
+    "clocks/deps/wasi-io/poll.wit"
+  ],
+  "note": "Comments are condensed; declarations and version annotations match WASI v0.2.11."
+}
+

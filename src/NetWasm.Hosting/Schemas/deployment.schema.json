@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://netwasm.dev/schemas/netwasm.deployment-1.json",
+  "title": "NetWasm deployment manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "semanticBuildId",
+    "deploymentKind",
+    "profile",
+    "target",
+    "featureSet",
+    "executionContract",
+    "versions",
+    "buildFingerprint",
+    "runtimeFeatures",
+    "artifacts",
+    "requiredImportModules",
+    "requiredImports",
+    "exports"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "semanticBuildId": { "$ref": "#/$defs/sha256" },
+    "deploymentKind": { "enum": ["component", "raw", "browser"] },
+    "profile": { "const": "netwasm0.1" },
+    "target": { "enum": ["wasm32", "wasm64"] },
+    "featureSet": { "type": "string", "minLength": 1 },
+    "executionContract": { "$ref": "#/$defs/versionedIdentifier" },
+    "versions": { "$ref": "#/$defs/versions" },
+    "buildFingerprint": { "$ref": "#/$defs/sha256" },
+    "runtimeFeatures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["local-time"] }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "requiredImportModules": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/versionedIdentifier" }
+    },
+    "requiredImports": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/function" }
+    },
+    "exports": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/function" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "versionedIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.\\-:/]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk", "compiler", "runtime", "runtimeAbi", "hosting", "toolchain"],
+      "properties": {
+        "sdk": { "type": "string", "minLength": 1 },
+        "compiler": { "type": "string", "minLength": 1 },
+        "runtime": { "type": "string", "minLength": 1 },
+        "runtimeAbi": { "type": "string", "minLength": 1 },
+        "hosting": { "type": "string", "minLength": 1 },
+        "toolchain": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "role", "mediaType", "sha256", "schemaVersion"],
+      "properties": {
+        "relativePath": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.\\-]*$" },
+        "mediaType": { "type": "string", "minLength": 3 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "schemaVersion": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interface", "name", "parameters", "results"],
+      "properties": {
+        "interface": { "$ref": "#/$defs/versionedIdentifier" },
+        "name": {
+          "type": "string",
+          "pattern": "^(?:[a-z0-9][a-z0-9.\\-]*|\\[(?:method|static)\\][a-z0-9][a-z0-9\\-]*\\.[a-z0-9][a-z0-9\\-]*|\\[constructor\\][a-z0-9][a-z0-9\\-]*)$"
+        },
+        "parameters": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "results": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

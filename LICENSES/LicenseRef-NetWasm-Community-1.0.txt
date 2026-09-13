@@ -1,0 +1,502 @@
+# NetWasm Community License 1.0
+
+Version 1.0 — 2 September 2026
+Licensor: Zion Sati
+Commercial licensing: zionsatidev@gmail.com
+Project repository: https://github.com/zion-sati/netwasm
+
+> This is a source-available license, not an Open Source Initiative approved
+> open-source license.
+
+## 1. Acceptance and scope
+
+This license (the **License**) governs each version of the NetWasm compiler,
+linker, optimizer, build tools, debugger, IDE integration, and related
+developer tooling that identifies this License as applying to it (collectively,
+the **Software**).
+
+By downloading, installing, executing, copying, modifying, distributing, or
+otherwise exercising rights in the Software, you accept this License. If you
+act for an organization, you represent that you have authority to accept this
+License for that organization. If you do not accept this License, you receive
+no rights under it.
+
+This License does not govern:
+
+1. third-party material included with the Software under another license;
+2. NetWasm CoreLib, target runtime libraries, WASI or WIT libraries, generated
+   support libraries, templates, or other files that expressly carry the MIT
+   License or another separate license; or
+3. Generated Output, except as stated in Section 8.
+
+A separate written commercial agreement with the Licensor may grant rights
+beyond this License.
+
+## 2. Definitions
+
+**Affiliate** means an entity that directly or indirectly controls, is
+controlled by, or is under common control with another entity. **Control**
+means ownership of more than fifty percent of voting interests or the legal
+power to direct an entity’s management.
+
+**Annual Revenue** means an Organization’s consolidated gross revenue,
+together with its Affiliates, for its most recently completed fiscal year,
+determined under accounting principles consistently applied by that
+Organization. Taxes collected for a government and capital contributions or
+investment proceeds are not Annual Revenue. Revenue in a currency other than
+United States dollars must be converted using a generally recognized exchange
+rate for the last day of that fiscal year. An Organization without a completed
+fiscal year must use a reasonable, good-faith annualized estimate.
+
+**Commercial License** means a separate written agreement issued by the
+Licensor that authorizes use of the Software outside the rights granted by
+this License. A Sponsors Commercial Grant under Section 5.1 is a limited
+Commercial License for only the internal-use rights expressly stated in that
+section.
+
+**Commercial Offering** means any activity in which a person or Organization,
+for direct or indirect commercial advantage:
+
+1. distributes, bundles, installs, or makes the Software available as part of,
+   or for use with, a product, SDK, IDE, compiler toolchain, appliance, device,
+   platform, or paid service supplied to a third party;
+2. permits a third party to invoke or access the Software’s compilation,
+   linking, optimization, debugging, or related developer-tool functionality
+   through a hosted, managed, cloud, API, or build service; or
+3. sells, rents, leases, sublicenses, or charges for access to the Software
+   itself.
+
+Commercial Offering does **not** include:
+
+1. using the Software internally to create, compile, test, or maintain your
+   own applications or other Generated Output;
+2. selling, licensing, hosting, or distributing Generated Output; or
+3. Neutral Distribution permitted by Section 7.5.
+
+**Complete Source** means the preferred form for modifying a distributed
+version of the Software, including all source files, build scripts, interface
+definitions, and modifications needed to build that version, but excluding
+general-purpose tools that are normally available independently of the
+Software.
+
+**Developer** means an individual authorized by an Organization or its
+Affiliates to use the Software for internal development, build, test, or
+maintenance. Each individual counts once, and employees and contractors of all
+Affiliates are counted together.
+
+**Employee** means a full-time, part-time, or temporary employee. Employees of
+all Affiliates are counted together.
+
+**Generated Output** means source code, object code, WebAssembly modules,
+packages, metadata, bindings, build artifacts, or other output produced by
+normal operation of the Software from user-supplied inputs. Generated Output
+does not include the Software itself, a modified version of the Software, or a
+substantial portion of the Software that was not intentionally designed by the
+Licensor to be included in compiler output.
+
+**Government Entity** means a national, federal, state, provincial,
+territorial, municipal, local, or other governmental body, department, agency,
+authority, public corporation, or entity exercising governmental functions. A
+public educational institution may rely on Section 4.2 for qualifying
+educational use.
+
+**Licensor** means Zion Sati, the published pseudonymous licensor and owner of
+the Software, or a successor owner identified in an accompanying copyright
+notice.
+
+**Organization** means any legal entity, business, sole trader, partnership,
+nonprofit body, association, institution, or Government Entity, together with
+its Affiliates. Use by an employee, officer, representative, or contractor on an
+Organization’s behalf is use by that Organization.
+
+**Qualifying Open-Source Work** means work performed solely to develop, test,
+document, maintain, or distribute a software project for which:
+
+1. the complete source code is publicly available under a license approved by
+   the Open Source Initiative;
+2. the Software is not used to produce a proprietary deliverable for a
+   customer or employer; and
+3. neither you nor an Organization on whose behalf you act receives payment
+   specifically for that work or uses that work primarily to obtain a direct
+   commercial advantage.
+
+**Qualifying Small Organization** means an Organization that:
+
+1. is not a Government Entity;
+2. has fewer than 250 Employees at the time of use; **and**
+3. has Annual Revenue of less than USD 10,000,000.
+
+**Sponsors Commercial Grant** means the limited internal commercial-use right
+described in Section 5.1, available while an Organization maintains an active
+GitHub Sponsors tier designated for its Developer count at
+<https://github.com/sponsors/zion-sati>. A current matching tier or sponsorship
+receipt is sufficient proof. This License requires no sign-in, activation
+code, telemetry, or technical enforcement.
+
+**You** means the individual or Organization exercising rights under this
+License.
+
+## 3. Copyright and patent grants
+
+Subject to your continued compliance with this License, the Licensor grants
+you a non-exclusive, worldwide, royalty-free, non-transferable, and
+non-sublicensable license under the Licensor’s copyright in the Software to:
+
+1. install, execute, reproduce, and modify the Software for a Permitted Free
+   Use described in Section 4;
+2. make internal copies for employees and contractors carrying out that
+   Permitted Free Use on your behalf; and
+3. distribute the Software only as permitted by Section 7.
+
+Recipients of a permitted distribution receive their rights directly from the
+Licensor under this License, not by sublicense from you.
+
+The Licensor also grants you, solely for the rights permitted by this License,
+a non-exclusive, worldwide, royalty-free patent license under patent claims
+that the Licensor owns or controls and that are necessarily infringed by
+exercising those rights in the Software as provided by the Licensor. This
+patent grant does not cover claims infringed only because of your
+modifications, combinations, or additions.
+
+Regardless of whether another Permitted Free Use applies, any person may view
+source code that the Licensor has intentionally made public and may make a
+reasonable number of internal copies solely for inspection, security review,
+interoperability analysis, or deciding whether to evaluate or license the
+Software. This inspection right does not authorize execution, modification,
+production use, distribution, or use of the Software to develop or deliver a
+product or service.
+
+## 4. Permitted Free Uses
+
+You may use the Software without paying a license fee only for one or more of
+the following purposes (each a **Permitted Free Use**):
+
+### 4.1 Personal, non-commercial use
+
+Use by an individual on their own behalf for learning, experimentation,
+hobbies, or other purposes that are not undertaken in the course of paid work
+and are not intended primarily to obtain a commercial advantage.
+
+### 4.2 Education and academic research
+
+Use by students, teachers, lecturers, and educational institutions for
+teaching, learning, coursework, or academic research, provided the use is not
+performed under a commercial services contract and does not produce a
+proprietary deliverable for a third party.
+
+### 4.3 Qualifying Open-Source Work
+
+Use solely for Qualifying Open-Source Work.
+
+### 4.4 Contributions to official NetWasm projects
+
+Use solely to prepare, test, document, or submit a contribution to an
+official NetWasm repository designated by the Licensor, provided that you
+comply with the repository’s published contributor terms and do not
+simultaneously use the Software for a proprietary deliverable or other
+commercial project.
+
+### 4.5 Evaluation
+
+Internal evaluation and testing for up to 30 consecutive days beginning with
+the first evaluation use by you or your Organization. Evaluation may not be
+used for production workloads, customer deliverables, or a Commercial
+Offering.
+
+### 4.6 Use by a Qualifying Small Organization
+
+Internal use by a Qualifying Small Organization for any purpose, including
+commercial software development, production builds, and creation of products
+or services.
+
+A Qualifying Small Organization may sell, license, host, deploy, or distribute
+unlimited Generated Output without royalties or additional fees under this
+License. This Section does not authorize a Commercial Offering of the Software
+itself.
+
+### 4.7 Written community grant
+
+Any additional use expressly approved in writing by the Licensor as a
+community, research, nonprofit, accessibility, or public-interest grant.
+
+### 4.8 Contractors and service providers
+
+A contractor or service provider may use the Software directly for a client
+only when both the service provider and that direct client are each either:
+
+1. a Qualifying Small Organization;
+2. independently entitled to another Permitted Free Use for that work; or
+3. covered by a Commercial License.
+
+A customer does not become a user of the Software merely by receiving
+Generated Output or by using an application, device, or service created with
+NetWasm.
+
+## 5. Uses requiring a Commercial License or Sponsors Commercial Grant
+
+A Commercial License or Sponsors Commercial Grant is required for:
+
+1. any use by or for an Organization that is not a Qualifying Small
+   Organization, unless the particular use independently qualifies under
+   Sections 4.2, 4.3, 4.4, 4.5, or 4.7;
+2. any Commercial Offering, regardless of the user’s size, revenue, or
+   nonprofit status;
+3. any use by a Government Entity that does not independently qualify under
+   Sections 4.2, 4.3, 4.4, 4.5, or 4.7; and
+4. any other use not expressly permitted by Section 4.
+
+The Licensor is not obligated to offer a Commercial License or to offer one on
+any particular terms.
+
+### 5.1 Sponsors Commercial Grant for internal use
+
+While an Organization maintains an active GitHub Sponsors tier designated for
+its Developer count at <https://github.com/sponsors/zion-sati>, the Licensor
+grants that Organization a non-exclusive, worldwide, royalty-free,
+non-transferable, and non-sublicensable right to use the Software internally
+for commercial development, testing, production builds, and maintenance, up to
+the Developer cap of that tier. This is a limited Commercial License under
+this License and applies only during the active sponsorship period.
+
+The Organization must use a tier whose Developer cap covers all Developers
+using the Software for the Organization and its Affiliates. The available
+Developer caps and their USD monthly prices are stated in the published
+Licensing Guide; an active matching tier or current sponsorship receipt is the
+operative proof. Compliance is honor-system and does not require sign-in,
+activation, telemetry, or another technical control.
+
+This grant is strictly internal. It does not authorize a Commercial Offering,
+OEM arrangement, bundling, installation for third parties, redistribution,
+resale, sublicensing, hosted or API access, or allowing a customer or other
+third party to invoke the Software. Those activities require a separate
+written commercial or OEM agreement with the Licensor, regardless of the
+Organization’s size, Developer count, or active Sponsors tier.
+
+If the sponsorship ends or the Organization exceeds its Developer cap, it must
+stop the newly unlicensed use or obtain a separate Commercial License. Rights
+in Generated Output remain governed by Section 8.
+
+## 6. Change in qualification
+
+If an Organization ceases to be a Qualifying Small Organization, its rights
+under Section 4.6 continue for 60 days solely to allow it to obtain a
+Commercial License or stop using the Software. Generated Output created before
+or during that period remains governed by Section 8.
+
+A merger, acquisition, reorganization, or change of control must be assessed
+using the combined Employees and Annual Revenue of the resulting Organization
+and all of its Affiliates.
+
+## 7. Modification and redistribution
+
+### 7.1 Private modifications
+
+You are not required to publish modifications that you use only for a Permitted
+Free Use and do not distribute or make available as a Commercial Offering.
+
+### 7.2 Community redistribution
+
+You may distribute unmodified or modified copies of the Software for
+non-commercial community purposes only if all of the following conditions are
+met:
+
+1. you provide a complete copy of this License with the Software;
+2. you preserve all copyright, patent, attribution, and licensing notices;
+3. you clearly identify files you materially modified and the date of each
+   material modification;
+4. you do not impose additional terms that restrict a recipient’s exercise of
+   rights granted by this License;
+5. the distribution is not a Commercial Offering; and
+6. you comply with Section 7.3 when distributing executable or object-code
+   forms.
+
+### 7.3 Source availability for redistributed versions
+
+If you distribute a modified executable or object-code version, you must make
+its Complete Source available at the same time, under this License, without
+charge other than reasonable copying or network-transfer costs.
+
+If you distribute an unmodified executable or object-code version, you may
+satisfy this Section by giving recipients a durable link to the matching
+official source release.
+
+### 7.4 License for distributed modifications
+
+If you distribute a modification, you license your copyright in that
+modification to every recipient under this License. Solely for your original
+contribution to that modification, you are treated as a Licensor under
+Sections 3, 7, 8, 9, 11, 12, 13, 14, and 15 to the extent you own or control
+the relevant rights. You also grant a patent license for claims you own or
+control that are necessarily infringed by your modification as distributed,
+excluding claims infringed only by later modifications or combinations. You
+represent that you have the rights needed to grant those licenses.
+
+You may not relicense the Software or a derivative modification under another
+license. You may separately license original code that you wrote and that
+does not contain or derive from the Software, but recipients must still
+receive all portions of the Software and derivative modifications under this
+License. Nothing in this Section gives you authority to grant a Commercial
+License for code owned by the original Licensor or another contributor.
+
+### 7.5 Neutral Distribution
+
+A general-purpose public package repository, application marketplace,
+source-code host, mirror, or general-purpose CI or compute provider may
+distribute an unmodified copy of the Software without obtaining a Commercial
+License solely for that distribution, even if the operator is commercial,
+provided that it:
+
+1. does not charge a fee specifically attributable to the Software;
+2. does not market the Software as an included or integrated feature of a paid
+   product or service;
+3. preserves this License and all notices; and
+4. does not modify the Software other than non-substantive packaging or
+   signing changes needed for the distribution channel.
+
+Neutral Distribution does not authorize the operator or its customers to use
+the Software outside Section 4.
+
+## 8. Generated Output and separately licensed runtime components
+
+### 8.1 No license inheritance from compiler use
+
+This License does not claim ownership of your inputs or Generated Output and
+does not require Generated Output to be licensed under this License. You may
+use, copy, modify, sell, license, host, and distribute Generated Output under
+terms of your choice.
+
+### 8.2 Output-material grant
+
+To the extent normal operation of the Software intentionally places
+copyrightable material owned by the Licensor into Generated Output and no
+separate license notice applies to that material, the Licensor grants every
+recipient of that Generated Output a perpetual, irrevocable, worldwide,
+royalty-free, transferable, and sublicensable license to use, reproduce,
+modify, distribute, publicly perform, publicly display, sell, offer for sale,
+import, and otherwise exploit that material as part of or in connection with
+Generated Output.
+
+This grant does not permit anyone to characterize the Software itself, a
+modified compiler, or substantial portions of the Software not intended for
+output as Generated Output.
+
+### 8.3 CoreLib, runtime, WASI, WIT, templates, and injected code
+
+A component that expressly carries the MIT License or another separate license
+remains governed only by that separate license, including when linked, copied,
+or incorporated into Generated Output. Runtime code, templates, startup code,
+generated glue, and other material designated by the Licensor for inclusion in
+user applications are outside this License to the extent that they carry such
+a separate notice.
+
+### 8.4 Survival
+
+Rights granted by this Section survive expiration or termination of your rights
+to use the Software. Termination may create liability for unlicensed use of
+the Software, but it does not retroactively change the license of Generated
+Output or revoke rights already granted to recipients of Generated Output.
+
+## 9. Notices and trademarks
+
+You may not remove or obscure licensing, copyright, patent, or attribution
+notices in the Software.
+
+This License does not grant rights to the names, logos, or trademarks of
+NetWasm or the Licensor, except for truthful, nominative references describing
+compatibility or origin. A modified version must not imply that it is an
+official NetWasm release or endorsed by the Licensor.
+
+## 10. Qualification certification
+
+If the Licensor has a reasonable, good-faith basis to question whether an
+Organization qualifies under Section 4.6 or whether its Sponsors Commercial
+Grant covers its Developer count, the Licensor may request a written
+certification of that Organization’s Employee count, Annual Revenue band, and
+Developer count or sponsorship tier. The Organization must respond within 30
+days. This Section does not grant a general audit right or require disclosure
+of detailed financial statements absent a separate agreement or legal process.
+
+## 11. Patent claims
+
+If you or an Affiliate bring a patent claim alleging that the Software, as
+provided by the Licensor, infringes a patent, the patent license granted to
+you under Section 3 terminates when the claim is filed. This does not affect
+any rights that applicable law does not permit the Licensor to terminate.
+
+## 12. Termination and reinstatement
+
+Your rights under this License terminate automatically if you materially breach
+it.
+
+For a first non-willful breach, your rights are reinstated prospectively if you
+fully cure the breach within 30 days after you first become aware of it or
+receive written notice of it, whichever occurs first. Reinstatement does not
+waive claims arising from past unlicensed use. A deliberate breach continued
+after written notice is not automatically reinstated.
+
+Sections 8, 9, 11, 12, 13, 14, and 15 survive termination to the extent their
+nature requires. Rights of recipients who received the Software through a
+compliant distribution are not terminated solely because of your breach.
+
+## 13. No support and disclaimer of warranties
+
+The Software is provided **“as is”** and **“as available.”** The Licensor has
+no obligation to provide maintenance, updates, support, security fixes,
+service levels, or error correction under this License.
+
+To the maximum extent permitted by law, the Licensor disclaims all express,
+implied, and statutory warranties, including warranties of title,
+non-infringement, merchantability, satisfactory quality, fitness for a
+particular purpose, accuracy, availability, and freedom from defects.
+
+Nothing in this License excludes, restricts, or modifies a guarantee, warranty,
+condition, right, or remedy that applicable law does not permit to be
+excluded, restricted, or modified.
+
+## 14. Limitation of liability
+
+To the maximum extent permitted by law, the Licensor will not be liable for
+indirect, incidental, special, exemplary, punitive, or consequential loss;
+loss of profits, revenue, data, goodwill, opportunity, or business; business
+interruption; or the cost of substitute goods or services arising from or
+related to the Software or this License, under any theory of liability, even
+if advised that such loss was possible.
+
+To the maximum extent permitted by law, the Licensor’s aggregate liability
+arising from or related to the Software or this License will not exceed USD
+100.
+
+These limitations do not apply to liability that applicable law does not
+permit to be limited.
+
+## 15. General terms
+
+1. **Applicable law.** You must comply with applicable laws when using or
+   distributing the Software.
+2. **Severability.** If a provision is held unenforceable, it will be enforced
+   to the maximum extent permitted and the remaining provisions will remain
+   effective.
+3. **No waiver.** A failure to enforce a provision is not a waiver.
+4. **No assignment.** You may not assign this License without the Licensor’s
+   written consent. The Licensor may assign it with ownership of the Software
+   or substantially all relevant assets.
+5. **Entire agreement.** This License and any notices expressly incorporated
+   into it form the entire agreement for the community rights granted here. A
+   Commercial License governs to the extent it expressly conflicts with this
+   License.
+6. **No automatic future versions.** A copy of the Software remains governed
+   by the version of this License distributed with that copy. The Licensor may
+   publish new license versions for later Software releases, but a new version
+   does not retroactively alter rights already granted for an earlier release.
+7. **License name.** You may not publish a modified license using the name
+   “NetWasm Community License” or a confusingly similar name.
+8. **Governing law and venue.** This License is governed by the laws in force
+   in Victoria, Australia, without regard to conflict-of-laws rules. The courts
+   of Victoria, Australia have non-exclusive jurisdiction and venue, and each
+   party submits to that jurisdiction, without limiting a party’s right to
+   bring proceedings in any other court of competent jurisdiction.
+
+---
+
+Copyright © 2026 Zion Sati. All rights reserved except as expressly granted
+above.

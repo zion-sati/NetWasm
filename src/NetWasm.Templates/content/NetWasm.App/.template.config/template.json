@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "NetWasm",
+  "classifications": [ "NetWasm", "Wasm", "Console" ],
+  "identity": "NetWasm.Templates.App",
+  "name": "NetWasm Application",
+  "shortName": "netwasm-app",
+  "sourceName": "NetWasmApp",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  }
+}

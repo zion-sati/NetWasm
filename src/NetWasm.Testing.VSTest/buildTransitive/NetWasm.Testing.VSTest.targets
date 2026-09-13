@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == 'NetWasm' AND '$(TargetFrameworkVersion)' == 'v0.1'">
+    <_NetWasmVSTestExtensionPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any'))</_NetWasmVSTestExtensionPath>
+    <_NetWasmVSTestLoadingStrategy>RunConfiguration.TestAdapterLoadingStrategy=Explicit,DefaultRuntimeProviders,ExtensionsDirectory</_NetWasmVSTestLoadingStrategy>
+    <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' != ''">$(VSTestTestAdapterPath);$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
+    <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' == ''">$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
+    <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' != ''">$(VSTestCLIRunSettings);$(_NetWasmVSTestLoadingStrategy)</VSTestCLIRunSettings>
+    <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' == ''">$(_NetWasmVSTestLoadingStrategy)</VSTestCLIRunSettings>
+  </PropertyGroup>
+</Project>

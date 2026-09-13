@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="18.0.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
+    <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
+    <ProjectReference Include="../../src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj" />
+    <ProjectReference Include="../../src/NetWasm.CoreLib/NetWasm.CoreLib.csproj"
+                      ReferenceOutputAssembly="false"
+                      AdditionalProperties="Configuration=Release" />
+    <ProjectReference Include="Fixtures/ManagedExecutable/ManagedExecutable.csproj" />
+    <ProjectReference Include="Fixtures/AsyncManagedExecutable/AsyncManagedExecutable.csproj" />
+    <ProjectReference Include="Fixtures/AsyncVoidManagedExecutable/AsyncVoidManagedExecutable.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestSupport/TestAssets.cs" />
+    <Compile Remove="Fixtures/**/*.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Templates</AssemblyName>
+    <RootNamespace>NetWasm.Templates</RootNamespace>
+    <PackageId>NetWasm.Templates</PackageId>
+    <Version>0.1.0-preview.64</Version>
+    <Description>Project templates for the experimental NetWasm profile.</Description>
+    <PackageTags>netwasm;templates;wasm;dotnet-new</PackageTags>
+    <PackageType>Template</PackageType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="content/**/*" Pack="true" PackagePath="content/" />
+  </ItemGroup>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmTemplatesPackTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmTemplatesPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmTemplatesPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmTemplatesPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask PackagePath="$(NetWasmTemplatesPackagePath)"
+                                     PackageId="$(PackageId)"
+                                     PackageVersion="$(PackageVersion)"
+                                     SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

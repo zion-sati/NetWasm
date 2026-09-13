@@ -1,0 +1,348 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Import the pinned stock target graph first.  Restore, target walks, output
+    collection, and project-reference selection remain stock; only the final
+    package-construction call is replaced for a registered custom profile.
+  -->
+  <Import Project="$(MSBuildToolsPath)/NuGet.Build.Tasks.Pack.targets" />
+
+  <PropertyGroup Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true'">
+    <NetWasmSdkPackTaskAssemblyFile Condition="'$(NetWasmSdkPackTaskAssemblyFile)' == ''">$(MSBuildThisFileDirectory)..\tools\net10.0\any\NetWasm.Sdk.Pack.dll</NetWasmSdkPackTaskAssemblyFile>
+    <NetWasmSdkCanonicalProfile Condition="'$(NetWasmSdkCanonicalProfile)' == ''">NetWasm,Version=v0.1</NetWasmSdkCanonicalProfile>
+    <NetWasmSdkCustomGenerateNuspecOverride>true</NetWasmSdkCustomGenerateNuspecOverride>
+    <NetWasmSdkPackRouteProbeDependsOn>NetWasmSdkPackRouteProbe</NetWasmSdkPackRouteProbeDependsOn>
+
+    <!-- These are files owned by the SDK pack boundary.  They are explicit
+         outputs so clean and incremental builds do not rely on timestamps or
+         on the stock PackTask's private output list. -->
+    <NetWasmSdkNuspecOutputPath Condition="'$(NetWasmSdkNuspecOutputPath)' == ''">$([System.IO.Path]::Combine('$(NuspecOutputPath)', '$(PackageId).nuspec'))</NetWasmSdkNuspecOutputPath>
+    <NetWasmSdkManifestOutputPath Condition="'$(NetWasmSdkManifestOutputPath)' == ''">$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.manifest.json'))</NetWasmSdkManifestOutputPath>
+    <NetWasmSdkDiagnosticOutputPath Condition="'$(NetWasmSdkDiagnosticOutputPath)' == ''">$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'NetWasm.Sdk.Pack.diagnostic.json'))</NetWasmSdkDiagnosticOutputPath>
+    <NetWasmSdkOwnedPackDependsOn>$(BeforePack);_GetRestoreProjectStyle;_IntermediatePack;GenerateNuspec</NetWasmSdkOwnedPackDependsOn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
+    <NetWasmSdkOwnedPackDependsOn>$(BeforePack);NetWasmRefPack</NetWasmSdkOwnedPackDependsOn>
+  </PropertyGroup>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.CanonicalPackMsBuildTask"
+             AssemblyFile="$(NetWasmSdkPackTaskAssemblyFile)"
+             Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' AND Exists('$(NetWasmSdkPackTaskAssemblyFile)')" />
+  <!-- Ref builds this project-reference task assembly as part of Pack, so its
+       file does not exist during evaluation.  Register the known path up
+       front; MSBuild loads it only when the task executes. -->
+  <UsingTask TaskName="NetWasm.Sdk.Pack.CanonicalPackMsBuildTask"
+             AssemblyFile="$(NetWasmSdkPackTaskAssemblyFile)"
+             Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'" />
+
+  <!-- The task assembly is intentionally loaded only for the custom route. -->
+  <Target Name="NetWasmValidatePackTask"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true'">
+    <Error Code="NWPK015"
+           Condition="!Exists('$(NetWasmSdkPackTaskAssemblyFile)')"
+           Text="NetWasm.Sdk.Pack task assembly is unavailable for the registered custom profile." />
+    <Error Code="NWPK012"
+           Condition="'$(IncludeSymbols)' == 'true' AND '$(SymbolPackageFormat)' != '' AND '$(SymbolPackageFormat)' != 'snupkg'"
+           Text="The SDK-owned pack path supports SymbolPackageFormat=snupkg only." />
+    <Error Code="NWPK012"
+           Condition="'$(NuspecFile)' != ''"
+           Text="NuspecFile is not supported by canonical NetWasm packing; package metadata must come from the evaluated project." />
+  </Target>
+
+  <!-- The custom writer's manifest, nuspec, and diagnostic sidecars are not
+       part of stock CoreCompile output lists. Remove them through the normal
+       Clean target so a subsequent pack is required to publish fresh pack
+       evidence. Desktop projects never enter this target. -->
+  <Target Name="NetWasmSdkCleanPackOutputs"
+          BeforeTargets="Clean;CoreClean"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true'">
+    <Delete Files="$(NetWasmSdkManifestOutputPath);$(NetWasmSdkDiagnosticOutputPath);$(NetWasmSdkNuspecOutputPath)" />
+  </Target>
+
+  <!--
+    Hash restore evidence while packing.  The task receives the path and the
+    hash as separate fields and must reject a graph that changes after
+    restore.  No restore or compatibility resolution occurs here.
+  -->
+  <Target Name="NetWasmCollectPackEvidence"
+          DependsOnTargets="_GetTargetFrameworksOutput"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true'">
+    <PropertyGroup>
+      <!-- The outer project-reference build can evaluate before NuGet's
+           ProjectAssetsFile property is materialized. The conventional
+           project extensions path is still the authoritative restore output
+           and keeps the SDK-owned request tied to the actual graph. -->
+      <NetWasmSdkEffectiveProjectAssetsFile Condition="'$(ProjectAssetsFile)' != ''">$(ProjectAssetsFile)</NetWasmSdkEffectiveProjectAssetsFile>
+      <NetWasmSdkEffectiveProjectAssetsFile Condition="'$(NetWasmSdkEffectiveProjectAssetsFile)' == '' AND '$(MSBuildProjectExtensionsPath)' != ''">$([System.IO.Path]::Combine('$(MSBuildProjectExtensionsPath)', 'project.assets.json'))</NetWasmSdkEffectiveProjectAssetsFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NetWasmSdkRestoreTargetKey Include="@(_TargetFrameworks)" />
+      <!-- PackageReference metadata is evaluated in each inner build.  The
+           outer item is not authoritative: NuGet can omit PrivateAssets,
+           IncludeAssets, and ExcludeAssets while writing project.assets.json. -->
+      <_NetWasmSdkInnerPackProject Include="$(MSBuildProjectFullPath)"
+                                   AdditionalProperties="TargetFramework=%(_TargetFrameworks.Identity);BuildProjectReferences=false" />
+    </ItemGroup>
+
+    <MSBuild Projects="@(_NetWasmSdkInnerPackProject)"
+             Targets="NetWasmSdkCollectInnerPackageReferences"
+             BuildInParallel="$(BuildInParallel)">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmSdkInnerPackageDependency" />
+    </MSBuild>
+    <MSBuild Projects="@(_NetWasmSdkInnerPackProject)"
+             Targets="NetWasmSdkCollectInnerProjectReferences"
+             BuildInParallel="$(BuildInParallel)"
+             SkipNonexistentTargets="true">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmSdkInnerProjectDependency" />
+    </MSBuild>
+
+    <GetFileHash Files="$(NetWasmSdkEffectiveProjectAssetsFile)"
+                 Algorithm="SHA256"
+                 HashEncoding="hex"
+                 Condition="'$(NetWasmSdkEffectiveProjectAssetsFile)' != '' AND Exists('$(NetWasmSdkEffectiveProjectAssetsFile)')">
+      <Output TaskParameter="Items" ItemName="_NetWasmSdkAssetsHash" />
+    </GetFileHash>
+    <GetFileHash Files="$(NuGetLockFilePath)"
+                 Algorithm="SHA256"
+                 HashEncoding="hex"
+                 Condition="'$(NuGetLockFilePath)' != '' AND Exists('$(NuGetLockFilePath)')">
+      <Output TaskParameter="Items" ItemName="_NetWasmSdkLockHash" />
+    </GetFileHash>
+
+    <PropertyGroup>
+      <NetWasmSdkRestoreAssetsFileHash>@(_NetWasmSdkAssetsHash->'%(FileHash)')</NetWasmSdkRestoreAssetsFileHash>
+      <NetWasmSdkRestoreLockFileHash>@(_NetWasmSdkLockHash->'%(FileHash)')</NetWasmSdkRestoreLockFileHash>
+    </PropertyGroup>
+
+    <!-- Add restore evidence to the stock incremental input set.  A changed
+         assets/lock file must rerun the custom writer even when output paths
+         and project source files are unchanged. -->
+    <ItemGroup>
+      <NuGetPackInput Include="$(NetWasmSdkEffectiveProjectAssetsFile)" Condition="'$(NetWasmSdkEffectiveProjectAssetsFile)' != ''" />
+      <NuGetPackInput Include="$(NuGetLockFilePath)" Condition="'$(NuGetLockFilePath)' != ''" />
+      <NuGetPackInput Include="$(NetWasmSdkManifestOutputPath)" />
+      <NuGetPackOutput Include="$(NetWasmSdkManifestOutputPath)" />
+      <FileWrites Include="$(NetWasmSdkManifestOutputPath)" />
+      <FileWrites Include="$(NetWasmSdkDiagnosticOutputPath)" />
+      <FileWrites Include="$(NetWasmSdkNuspecOutputPath)" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    A no-task route probe is useful to qualification and IDE evaluation.  It
+    reports the selected route without constructing an archive, so it does
+    not need the separately packaged task assembly.
+  -->
+  <Target Name="NetWasmSdkPackRouteProbe"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true'"
+          Returns="@(NetWasmSdkPackRoute)">
+    <ItemGroup>
+      <NetWasmSdkPackRoute Include="custom" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Preserve the stock outer/inner collection contract.  This later target
+    declaration wins over the imported stock GenerateNuspec target, so the
+    stock PackTask is not called for a custom project and cannot emit a second
+    normalized archive.
+  -->
+  <Target Name="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true' AND '$(PackageReferenceCompatibleProjectStyle)' == 'true'"
+          Inputs="@(NuGetPackInput)"
+          Outputs="@(NuGetPackOutput);$(NetWasmSdkNuspecOutputPath);$(NetWasmSdkManifestOutputPath)"
+          DependsOnTargets="NetWasmValidatePackTask;$(GenerateNuspecDependsOn);_CalculateInputsOutputsForPack;_GetProjectReferenceVersions;_InitializeNuspecRepositoryInformationProperties;NetWasmCollectPackEvidence">
+
+    <ConvertToAbsolutePath Paths="$(PackageOutputPath)">
+      <Output TaskParameter="AbsolutePaths" PropertyName="NetWasmSdkPackageOutputAbsolutePath" />
+    </ConvertToAbsolutePath>
+
+    <ItemGroup>
+      <!-- One immutable target identity per declared target.  The custom
+           profile carries its canonical folder/group verbatim; desktop
+           targets retain their ordinary folder and exact alias group. -->
+      <_NetWasmSdkTargetProfile Include="@(_TargetFrameworks)">
+        <Alias>%(Identity)</Alias>
+        <Identifier Condition="'%(Identity)' == 'netwasm0.1'">NetWasm</Identifier>
+        <Identifier Condition="'%(Identity)' != 'netwasm0.1'">$([MSBuild]::GetTargetFrameworkIdentifier('%(Identity)'))</Identifier>
+        <Version Condition="'%(Identity)' == 'netwasm0.1'">v0.1</Version>
+        <Version Condition="'%(Identity)' != 'netwasm0.1'">v$([MSBuild]::GetTargetFrameworkVersion('%(Identity)', 2))</Version>
+        <AssetFolder Condition="'%(Identity)' == 'netwasm0.1'">NetWasm,Version=v0.1</AssetFolder>
+        <AssetFolder Condition="'%(Identity)' != 'netwasm0.1'">%(Identity)</AssetFolder>
+        <DependencyGroup Condition="'%(Identity)' == 'netwasm0.1'">NetWasm,Version=v0.1</DependencyGroup>
+      </_NetWasmSdkTargetProfile>
+
+      <!-- Only the evaluated inner-build records feed the writer.  Private
+           and development references retain stock pack's public-graph
+           behavior; the immutable metadata remains available for the task's
+           restore/lock reconciliation on every public edge. -->
+      <_NetWasmSdkPackageDependency Include="@(_NetWasmSdkInnerPackageDependency)"
+                                    Condition="$([System.String]::Copy('%(PrivateAssets)').ToLowerInvariant()) != 'all' AND $([System.String]::Copy('%(IncludeAssets)').ToLowerInvariant()) != 'none' AND $([System.String]::Copy('%(DevelopmentDependency)').ToLowerInvariant()) != 'true'">
+        <Version Condition="'%(Version)' != ''">%(Version)</Version>
+        <VersionRange Condition="'%(Version)' == ''">%(VersionRange)</VersionRange>
+      </_NetWasmSdkPackageDependency>
+
+      <!-- Inner project collection supplies package ID/version plus the
+           originating project path and exact target-group metadata. Preserve
+           that provenance in the SDK-owned contract; the pack task reconciles
+           each edge against the restored full graph. -->
+      <_NetWasmSdkProjectReferenceWithVersion Include="@(_NetWasmSdkInnerProjectDependency)"
+                                              Condition="$([System.String]::Copy('%(PrivateAssets)').ToLowerInvariant()) != 'all' AND $([System.String]::Copy('%(IncludeAssets)').ToLowerInvariant()) != 'none' AND $([System.String]::Copy('%(DevelopmentDependency)').ToLowerInvariant()) != 'true'">
+      </_NetWasmSdkProjectReferenceWithVersion>
+
+      <!-- Build outputs are collected by stock per-TFM targets. -->
+      <_NetWasmSdkPackageFile Include="@(_BuildOutputInPackage)">
+        <SourcePath>%(_BuildOutputInPackage.FinalOutputPath)</SourcePath>
+        <PackagePath Condition="'%(_BuildOutputInPackage.TargetFramework)' == 'netwasm0.1'">lib/NetWasm,Version=v0.1/%(_BuildOutputInPackage.TargetPath)</PackagePath>
+        <PackagePath Condition="'%(_BuildOutputInPackage.TargetFramework)' != 'netwasm0.1'">$(BuildOutputTargetFolder)/%(_BuildOutputInPackage.TargetFramework)/%(_BuildOutputInPackage.TargetPath)</PackagePath>
+        <TargetFramework>%(_BuildOutputInPackage.TargetFramework)</TargetFramework>
+        <TargetFrameworkAlias Condition="'%(TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
+        <BuildAction>BuildOutput</BuildAction>
+        <NuGetRecursiveDir></NuGetRecursiveDir>
+        <PackKind>BuildOutput</PackKind>
+      </_NetWasmSdkPackageFile>
+
+      <!-- Explicit package paths remain authoritative.  Content without an
+           explicit path follows stock ContentTargetFolders semantics. -->
+      <_NetWasmSdkPackageFile Include="@(_PackageFiles)"
+                               Condition="'%(_PackageFiles.PackagePath)' != '' OR '%(_PackageFiles.BuildAction)' != 'Content'">
+        <SourcePath Condition="'%(_PackageFiles.FullPath)' != ''">%(_PackageFiles.FullPath)</SourcePath>
+        <SourcePath Condition="'%(_PackageFiles.FullPath)' == ''">%(_PackageFiles.Identity)</SourcePath>
+        <PackagePath Condition="'%(_PackageFiles.PackagePath)' != ''">%(_PackageFiles.PackagePath)</PackagePath>
+        <PackagePath Condition="'%(_PackageFiles.PackagePath)' == ''">%(_PackageFiles.NuGetRecursiveDir)%(_PackageFiles.Filename)%(_PackageFiles.Extension)</PackagePath>
+        <TargetFramework>%(_PackageFiles.TargetFramework)</TargetFramework>
+        <BuildAction>%(_PackageFiles.BuildAction)</BuildAction>
+        <TargetFrameworkAlias Condition="'%(_PackageFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
+        <PackKind>Content</PackKind>
+      </_NetWasmSdkPackageFile>
+      <_NetWasmSdkPackageFile Include="@(_PackageFiles)"
+                               Condition="'%(_PackageFiles.PackagePath)' == '' AND '%(_PackageFiles.BuildAction)' == 'Content' AND $([System.String]::Copy(';$(ContentTargetFolders);').Contains(';content;'))">
+        <SourcePath Condition="'%(_PackageFiles.FullPath)' != ''">%(_PackageFiles.FullPath)</SourcePath>
+        <SourcePath Condition="'%(_PackageFiles.FullPath)' == ''">%(_PackageFiles.Identity)</SourcePath>
+        <PackagePath>content/%(_PackageFiles.NuGetRecursiveDir)%(_PackageFiles.Filename)%(_PackageFiles.Extension)</PackagePath>
+        <TargetFramework>%(_PackageFiles.TargetFramework)</TargetFramework>
+        <BuildAction>%(_PackageFiles.BuildAction)</BuildAction>
+        <TargetFrameworkAlias Condition="'%(_PackageFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
+        <PackKind>Content</PackKind>
+      </_NetWasmSdkPackageFile>
+      <_NetWasmSdkPackageFile Include="@(_PackageFiles)"
+                               Condition="'%(_PackageFiles.PackagePath)' == '' AND '%(_PackageFiles.BuildAction)' == 'Content' AND $([System.String]::Copy(';$(ContentTargetFolders);').Contains(';contentFiles;'))">
+        <SourcePath Condition="'%(_PackageFiles.FullPath)' != ''">%(_PackageFiles.FullPath)</SourcePath>
+        <SourcePath Condition="'%(_PackageFiles.FullPath)' == ''">%(_PackageFiles.Identity)</SourcePath>
+        <PackagePath>contentFiles/any/any/%(_PackageFiles.NuGetRecursiveDir)%(_PackageFiles.Filename)%(_PackageFiles.Extension)</PackagePath>
+        <TargetFramework>%(_PackageFiles.TargetFramework)</TargetFramework>
+        <BuildAction>%(_PackageFiles.BuildAction)</BuildAction>
+        <TargetFrameworkAlias Condition="'%(_PackageFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
+        <PackKind>Content</PackKind>
+      </_NetWasmSdkPackageFile>
+
+      <_NetWasmSdkSymbolFile Include="@(_TargetPathsToSymbols)">
+        <SourcePath>%(_TargetPathsToSymbols.FinalOutputPath)</SourcePath>
+        <PackagePath Condition="'%(_TargetPathsToSymbols.TargetFramework)' == 'netwasm0.1'">lib/NetWasm,Version=v0.1/%(_TargetPathsToSymbols.TargetPath)</PackagePath>
+        <PackagePath Condition="'%(_TargetPathsToSymbols.TargetFramework)' != 'netwasm0.1'">$(BuildOutputTargetFolder)/%(_TargetPathsToSymbols.TargetFramework)/%(_TargetPathsToSymbols.TargetPath)</PackagePath>
+        <TargetFrameworkAlias Condition="'%(_TargetPathsToSymbols.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
+      </_NetWasmSdkSymbolFile>
+
+      <_NetWasmSdkSourceFile Include="@(_SourceFiles->Distinct())">
+        <SourcePath Condition="'%(_SourceFiles.FullPath)' != ''">%(_SourceFiles.FullPath)</SourcePath>
+        <SourcePath Condition="'%(_SourceFiles.FullPath)' == ''">%(_SourceFiles.Identity)</SourcePath>
+        <PackagePath Condition="'%(_SourceFiles.TargetPath)' != ''">src/%(_SourceFiles.TargetPath)</PackagePath>
+        <PackagePath Condition="'%(_SourceFiles.TargetPath)' == ''">src/%(_SourceFiles.Filename)%(_SourceFiles.Extension)</PackagePath>
+        <SourceRoot Condition="'%(_SourceFiles.SourceRoot)' != ''">%(_SourceFiles.SourceRoot)</SourceRoot>
+        <TargetFrameworkAlias Condition="'%(_SourceFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
+      </_NetWasmSdkSourceFile>
+
+      <_NetWasmSdkMainPackageOutput Include="@(_OutputPackItems)"
+                                    Condition="'%(_OutputPackItems.Extension)' == '.nupkg' AND !$([System.String]::Copy('%(_OutputPackItems.Filename)').Contains('.symbols'))" />
+      <_NetWasmSdkSymbolPackageOutput Include="@(_OutputPackItems)"
+                                      Condition="'%(_OutputPackItems.Extension)' == '.snupkg'" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <NetWasmSdkPackageOutputPath>@(_NetWasmSdkMainPackageOutput)</NetWasmSdkPackageOutputPath>
+      <NetWasmSdkSymbolPackageOutputPath>@(_NetWasmSdkSymbolPackageOutput)</NetWasmSdkSymbolPackageOutputPath>
+    </PropertyGroup>
+
+    <CanonicalPackMsBuildTask
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      Authors="$(Authors)"
+      Description="$(PackageDescription)"
+      PackageOutputPath="$(NetWasmSdkPackageOutputPath)"
+      CanonicalTargetFramework="$(NetWasmSdkCanonicalProfile)"
+      TargetProfiles="@(_NetWasmSdkTargetProfile)"
+      PackageFiles="@(_NetWasmSdkPackageFile)"
+      PackageDependencies="@(_NetWasmSdkPackageDependency)"
+      ProjectReferencesWithVersions="@(_NetWasmSdkProjectReferenceWithVersion)"
+      FrameworksWithSuppressedDependencies="@(_FrameworksWithSuppressedDependencies)"
+      IncludeBuildOutput="$(IncludeBuildOutput)"
+      IncludeContentInPack="$(IncludeContentInPack)"
+      SymbolFiles="@(_NetWasmSdkSymbolFile)"
+      SourceFiles="@(_NetWasmSdkSourceFile)"
+      IncludeSymbols="$(IncludeSymbols)"
+      IncludeSource="$(IncludeSource)"
+      SymbolPackageFormat="$(SymbolPackageFormat)"
+      SymbolPackageOutputPath="$(NetWasmSdkSymbolPackageOutputPath)"
+      DiagnosticOutputPath="$(NetWasmSdkDiagnosticOutputPath)"
+      NuspecOutputDirectory="$(NuspecOutputPath)"
+      NuspecOutputPath="$(NetWasmSdkNuspecOutputPath)"
+      ManifestOutputPath="$(NetWasmSdkManifestOutputPath)"
+      ProjectAssetsFile="$(NetWasmSdkEffectiveProjectAssetsFile)"
+      RestoreAssetsFilePath="$(NetWasmSdkEffectiveProjectAssetsFile)"
+      RestoreAssetsFileHash="$(NetWasmSdkRestoreAssetsFileHash)"
+      RestoreLockFilePath="$(NuGetLockFilePath)"
+      RestoreLockFileHash="$(NetWasmSdkRestoreLockFileHash)"
+      RestoreTargetKeys="@(_NetWasmSdkRestoreTargetKey)"
+      RestoreNuGetVersion="$(NuGetVersion)"
+      RestoreSdkVersion="$(NETCoreSdkVersion)"
+      RestoreEvidenceRequired="true"
+      SuppressDependenciesWhenPacking="$(SuppressDependenciesWhenPacking)"
+      NoBuild="$(NoBuild)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)"
+      ExpectedRequestHash="$(NetWasmSdkExpectedRequestHash)"
+      PackageTitle="$(Title)"
+      PackageOwners="$(PackageOwners)"
+      PackageSummary="$(PackageSummary)"
+      PackageProjectUrl="$(PackageProjectUrl)"
+      PackageLicenseExpression="$(PackageLicenseExpression)"
+      PackageLicenseFile="$(PackageLicenseFile)"
+      PackageIcon="$(PackageIcon)"
+      PackageReadmeFile="$(PackageReadmeFile)"
+      PackageCopyright="$(Copyright)"
+      PackageTags="$(PackageTags)"
+      PackageReleaseNotes="$(PackageReleaseNotes)"
+      PackageType="$(PackageType)"
+      RepositoryUrl="$(RepositoryUrl)"
+      RepositoryType="$(RepositoryType)"
+      RepositoryBranch="$(RepositoryBranch)"
+      RepositoryCommit="$(RepositoryCommit)"
+      PublishRepositoryUrl="$(PublishRepositoryUrl)"
+      SourceLinkJson="$(SourceLinkJson)" />
+
+    <ItemGroup>
+      <NetWasmPackOutput Include="$(NetWasmSdkPackageOutputPath)">
+        <Kind>Package</Kind>
+        <TargetFramework>$(NetWasmSdkCanonicalProfile)</TargetFramework>
+      </NetWasmPackOutput>
+      <NetWasmPackOutput Include="$(NetWasmSdkSymbolPackageOutputPath)" Condition="'$(NetWasmSdkSymbolPackageOutputPath)' != ''">
+        <Kind>SymbolPackage</Kind>
+      </NetWasmPackOutput>
+      <NetWasmPackOutput Include="$(NetWasmSdkManifestOutputPath)">
+        <Kind>PackManifest</Kind>
+      </NetWasmPackOutput>
+    </ItemGroup>
+  </Target>
+
+  <!--
+    NetWasm.Ref is a framework-contract package whose project itself targets
+    the host TFM used to build the metadata assembly.  It opts into this
+    dedicated SDK-owned boundary and supplies the immutable request through
+    NetWasmRefPack.  Declaring Pack here (after the stock target import) means
+    the stock PackTask is never reached for that package; the condition is
+    evaluated at project load so every other project retains the stock Pack
+    target or the custom-profile GenerateNuspec route above.
+  -->
+  <Target Name="Pack"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' OR '$(NetWasmSdkRefPackEnabled)' == 'true'"
+          DependsOnTargets="$(NetWasmSdkOwnedPackDependsOn)" />
+</Project>

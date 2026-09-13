@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "netwasm.execution/1",
+  "description": "Local execution descriptor. Never publish with an application. Local paths and package identities require semantic validation before use.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "buildFingerprint", "deploymentManifestPath",
+    "deploymentManifestSha256", "hostingVersion", "hostExecutablePath",
+    "launcherPath", "toolPackages"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "buildFingerprint": { "$ref": "#/$defs/sha256" },
+    "deploymentManifestPath": { "$ref": "#/$defs/localPath" },
+    "deploymentManifestSha256": { "$ref": "#/$defs/sha256" },
+    "hostingVersion": { "type": "string", "pattern": "\\S" },
+    "hostExecutablePath": { "$ref": "#/$defs/localPath" },
+    "launcherPath": { "$ref": "#/$defs/localPath" },
+    "toolPackages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "rootPath", "sha256"],
+        "properties": {
+          "id": { "type": "string", "pattern": "\\S" },
+          "version": { "type": "string", "pattern": "\\S" },
+          "rootPath": { "$ref": "#/$defs/localPath" },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
+    "localPath": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Fully qualified path on the development host, without NUL. Checked by the native path validator."
+    }
+  }
+}

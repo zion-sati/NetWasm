@@ -1,0 +1,154 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Testing.VSTest.RuntimeProvider</AssemblyName>
+    <RootNamespace>NetWasm.Testing.VSTest</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>NetWasm.Testing.VSTest</PackageId>
+    <Version>0.1.0-preview.5</Version>
+    <Description>Framework-neutral VSTest runtime-provider bridge for NetWasm test artifacts.</Description>
+    <PackageTags>netwasm;vstest;testing;wasm</PackageTags>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);NetWasmVSTestCollectToolAssemblies</TargetsForTfmSpecificContentInPackage>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <ProjectReference Include="../NetWasm.Hosting/NetWasm.Hosting.csproj"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel"
+                      Version="18.0.1"
+                      PrivateAssets="all"
+                      ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.TestPlatform.TestHost"
+                      Version="18.0.1"
+                      PrivateAssets="all"
+                      ExcludeAssets="all"
+                      GeneratePathProperty="true" />
+    <PackageReference Include="Newtonsoft.Json"
+                      Version="13.0.3"
+                      PrivateAssets="all"
+                      ExcludeAssets="all"
+                      GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
+          Pack="true"
+          PackagePath="LICENSE.txt"
+          Visible="false" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="THIRD-PARTY-NOTICES.txt"
+          Pack="true"
+          PackagePath="THIRD-PARTY-NOTICES.txt" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/ThirdPartyNotices.txt"
+          Pack="true"
+          PackagePath="TestHost-THIRD-PARTY-NOTICES.txt"
+          Visible="false" />
+    <None Include="buildTransitive/NetWasm.Testing.VSTest.targets"
+          Pack="true"
+          PackagePath="buildTransitive/NetWasm.Testing.VSTest.targets" />
+    <None Include="TestHost/testhost.runtimeconfig.json"
+          Pack="true"
+          PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/testhost.runtimeconfig.json" />
+    <None Include="TestHost/testhost.manifest.json"
+          Pack="true"
+          PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/testhost.manifest.json" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.TestPlatform.CommunicationUtilities.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.TestPlatform.CommunicationUtilities.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.TestPlatform.CoreUtilities.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.TestPlatform.CoreUtilities.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.TestPlatform.CrossPlatEngine.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.TestPlatform.CrossPlatEngine.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.TestPlatform.PlatformAbstractions.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.TestPlatform.PlatformAbstractions.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.TestPlatform.Utilities.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.TestPlatform.Utilities.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.VisualStudio.TestPlatform.Common.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.VisualStudio.TestPlatform.Common.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/Microsoft.VisualStudio.TestPlatform.ObjectModel.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/Microsoft.VisualStudio.TestPlatform.ObjectModel.dll" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/testhost.deps.json"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/testhost.deps.json" />
+    <None Include="$(PkgMicrosoft_TestPlatform_TestHost)/lib/net8.0/testhost.dll"
+          Pack="true" PackagePath="tools/net10.0/any/testhost/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/testhost.dll" />
+    <None Include="$(PkgNewtonsoft_Json)/lib/net6.0/Newtonsoft.Json.dll"
+          Pack="true"
+          PackagePath="tools/net10.0/any/testhost/packages/newtonsoft.json/13.0.3/lib/net6.0/"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="testhost/packages/newtonsoft.json/13.0.3/lib/net6.0/Newtonsoft.Json.dll" />
+  </ItemGroup>
+
+  <Target Name="NetWasmVSTestCollectToolAssemblies"
+          Returns="@(TfmSpecificPackageFile)"
+          Condition="'$(TargetFramework)' == 'net10.0'">
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(TargetPath)"
+                              PackagePath="tools/net10.0/any/" />
+      <TfmSpecificPackageFile Include="$(TargetDir)NetWasm.Hosting.dll"
+                              PackagePath="tools/net10.0/any/" />
+    </ItemGroup>
+  </Target>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmVSTestPackTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmVSTestPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmVSTestPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmVSTestPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask
+      PackagePath="$(NetWasmVSTestPackagePath)"
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

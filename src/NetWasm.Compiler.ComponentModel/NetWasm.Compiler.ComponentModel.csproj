@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
+  </ItemGroup>
+</Project>

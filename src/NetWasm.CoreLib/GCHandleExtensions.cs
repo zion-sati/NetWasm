@@ -1,0 +1,74 @@
+// Portions derived from dotnet/runtime System.Private.CoreLib GCHandleExtensions.cs at commit
+// 811225a482702af7ecc35d817966bc70b88a3a23.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+
+#pragma warning disable CS8500 // Upstream API intentionally permits a pointer to any pinned array element type.
+
+namespace System.Runtime.InteropServices
+{
+    /// <summary>
+    /// Provides extension methods to operate with GC handles.
+    /// </summary>
+    public static class GCHandleExtensions
+    {
+        // The following methods are strongly typed generic specifications only on
+        // PinnedGCHandles with correct type.
+
+        /// <summary>
+        /// Retrieves the address of array data in <paramref name="handle"/>.
+        /// </summary>
+        /// <param name="handle">The handle to retrieve pointer from.</param>
+        /// <returns>
+        /// The address of 0th array element the pinned array,
+        /// or <see langword="null"/> if the handle doesn't point to any object.
+        /// </returns>
+        /// <exception cref="NullReferenceException">If the handle is not initialized or already disposed.</exception>
+        /// <typeparam name="T">The element type of the pinned array.</typeparam>
+        public static unsafe T* GetAddressOfArrayData<T>(
+#nullable disable // Nullable oblivious because no covariance between PinnedGCHandle<T> and PinnedGCHandle<T?>
+            this PinnedGCHandle<T[]> handle)
+#nullable restore
+        {
+            T[]? array = handle.Target;
+            if (array is null)
+            {
+                return null;
+            }
+
+            // The runtime resolves the array-data address while the array is pinned.
+            IntPtr pointer = PinnedGCHandle<T[]>.ToIntPtr(handle);
+            return (T*)System.GCHandleRuntime.Address(pointer.ToInt32());
+        }
+
+        /// <summary>
+        /// Retrieves the address string data in <paramref name="handle"/>.
+        /// </summary>
+        /// <param name="handle">The handle to retrieve pointer from.</param>
+        /// <returns>
+        /// The address of 0th character of the pinned <see cref="string"/>,
+        /// or <see langword="null"/> if the handle doesn't point to any object.
+        /// </returns>
+        /// <exception cref="NullReferenceException">If the handle is not initialized or already disposed.</exception>
+        public static unsafe char* GetAddressOfStringData(
+#nullable disable // Nullable oblivious because no covariance between PinnedGCHandle<T> and PinnedGCHandle<T?>
+            this PinnedGCHandle<string> handle)
+#nullable restore
+        {
+            string? str = handle.Target;
+            if (str is null)
+            {
+                return null;
+            }
+
+            // The runtime resolves the string-data address while the string is pinned.
+            IntPtr pointer = PinnedGCHandle<string>.ToIntPtr(handle);
+            return (char*)System.GCHandleRuntime.Address(pointer.ToInt32());
+        }
+    }
+}
+
+#pragma warning restore CS8500

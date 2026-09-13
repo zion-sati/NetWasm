@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1",
+  "package": "netwasm:hosting-platform@1.0.0",
+  "world": "preview2",
+  "main": "world.wit",
+  "provenance": {
+    "sourceKind": "netwasm-catalog-world",
+    "closurePolicy": "exact callable interface surface exposed by the pinned Preview 2 shim; never an application world"
+  },
+  "files": [
+    {
+      "path": "world.wit",
+      "sha256": "dd5286ea37f3676d952e62ec01c87285d29474058a93715f6660b32e6ee89a0e"
+    }
+  ],
+  "dependencies": [
+    {
+      "packages": [
+        "wasi:cli@0.2.11",
+        "wasi:clocks@0.2.11",
+        "wasi:filesystem@0.2.11",
+        "wasi:http@0.2.11",
+        "wasi:io@0.2.11",
+        "wasi:random@0.2.11",
+        "wasi:sockets@0.2.11"
+      ],
+      "sourceProvenance": "../wasi-0.2.11/HTTP_IO_PROVENANCE.md",
+      "sourceProvenanceSha256": "56999594d2be7cef4ca34cb39b7c9782d0e8879c1c8cd537767022d2f1f79311"
+    },
+    {
+      "package": "@bytecodealliance/preview2-shim",
+      "version": "0.24.1",
+      "assetManifest": "../../src/NetWasm.Toolchain/toolchain-manifest.json",
+      "assetId": "preview2-shim.package",
+      "packageJsonSha256": "19b2990da50d68b47fc9d3431c217de1016eaea6fa0ff25f294d113acfa993d9"
+    }
+  ]
+}

@@ -1,0 +1,277 @@
+{
+  "schemaVersion": "1",
+  "packageId": "NetWasm.Toolchain",
+  "packageVersion": "0.1.0-preview.32",
+  "assets": [
+    {
+      "id": "netwasm.raw-inspection.command",
+      "version": "1",
+      "relativePath": "tools/netwasm/raw/run-raw-module-inspection.mjs",
+      "sha256": "32fb558bea736e92688084e65687b59068da779d6c3e28b1a77d1c52c10610eb"
+    },
+    {
+      "id": "netwasm.raw-inspection.command-core",
+      "version": "1",
+      "relativePath": "tools/netwasm/raw/raw-module-inspection-command.mjs",
+      "sha256": "989ec9ad763d04a1badc9d4f3959793b89ce158f136c0644232111f9d9c4068d"
+    },
+    {
+      "id": "netwasm.raw-inspection.error",
+      "version": "1",
+      "relativePath": "tools/netwasm/raw/raw-module-inspection-error.mjs",
+      "sha256": "a049e5f907e2bcb1b227f7013bcc17df08477859a82c8bf17021f069e74842a5"
+    },
+    {
+      "id": "netwasm.raw-inspection.inspector",
+      "version": "1",
+      "relativePath": "tools/netwasm/raw/raw-module-import-inspector.mjs",
+      "sha256": "cdc8bf9c616551e3a8e47cf2a89a82801cc0171ac3c302ec5aa07e71a7bcb6b7"
+    },
+    {
+      "id": "netwasm.raw-inspection.core-reader",
+      "version": "1",
+      "relativePath": "tools/netwasm/raw/core-module-import-reader.mjs",
+      "sha256": "9aca02982d588135a7a3bc19ce1d1f8409b62928694722828cb140d9353fc9dc"
+    },
+    {
+      "id": "netwasm.raw-inspection.binaryen-reader",
+      "version": "1",
+      "relativePath": "tools/netwasm/raw/binaryen-function-import-reader.mjs",
+      "sha256": "6322dd97e46c0fb4660fdc5a920a562af8bcf94d222b527defe8fdff13db3f57"
+    },
+    {
+      "id": "binaryen.license",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/LICENSE",
+      "sha256": "c5accbbd8546e94c34aed24afe689a617627d18eed5a6c48277e48db57c23851"
+    },
+    {
+      "id": "binaryen.readme",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/README.md",
+      "sha256": "4f2ca9a3174cdab525baccad3b8ee0541fd6061eb46d030334d60f2b18fed3f5"
+    },
+    {
+      "id": "binaryen.package",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/package.json",
+      "sha256": "3c101537ea4dc095e5c2d23e540e91c04cfe0b877e8af5e854a8a1369c4ddf81"
+    },
+    {
+      "id": "binaryen.module",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/index.js",
+      "sha256": "5f0579abe5dddb48daa46a63933974eea085e0e1752b238d227315cf39d5fb06"
+    },
+    {
+      "id": "binaryen.types",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/index.d.ts",
+      "sha256": "4070415465f0d5b83fbca3609a9b99b110f34d1daabd1b9eedd6411130490422"
+    },
+    {
+      "id": "binaryen.bin-package",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/package.json",
+      "sha256": "58b55392b5778941e1e96892a70edc12e2d7bb8541289b237fbddc9926ed51bd"
+    },
+    {
+      "id": "binaryen.wasm-as",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-as",
+      "sha256": "e36b27ea9384a4385cdbcb0dbe6f3579c4b61e2e76ee19f340207ec4810d37f7"
+    },
+    {
+      "id": "binaryen.wasm-ctor-eval",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-ctor-eval",
+      "sha256": "f709025c0ada33a4e3f45c08e83f255c488b80db9ef186dee3feb77f5147e401"
+    },
+    {
+      "id": "binaryen.wasm-dis",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-dis",
+      "sha256": "98201a639713272269fd0883fd8b07a4029f7a80e59b6540495e992e1472d99d"
+    },
+    {
+      "id": "binaryen.wasm-merge",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-merge",
+      "sha256": "8b2c6a3c27a6c7a7cd8be9d02b587b1626781377c14d5f4cafd9f9ee2e9eb405"
+    },
+    {
+      "id": "binaryen.wasm-metadce",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-metadce",
+      "sha256": "69e3d8af452a10eca9416c1795e0659fc2d2a1e0ca17d10f63700caf116e306e"
+    },
+    {
+      "id": "binaryen.wasm-opt",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-opt",
+      "sha256": "608c021fa3f2c68cdc26f06a1454341089a0e689abb71cbe5a23ef7300e7f3e3"
+    },
+    {
+      "id": "binaryen.wasm-reduce",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-reduce",
+      "sha256": "b59b769c25423f2b695eb2c33516122d55253d75d95930efbbdf95f41616b413"
+    },
+    {
+      "id": "binaryen.wasm-shell",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm-shell",
+      "sha256": "779f76c5525ee317649c0675c2fc69a41bee42349107aae1096e941273932cf6"
+    },
+    {
+      "id": "binaryen.wasm2js",
+      "version": "132.0.0",
+      "relativePath": "tools/binaryen/bin/wasm2js",
+      "sha256": "9961490d6c2835c70417dcb74c4578fe3760a00529b3ec6c862a086979304e69"
+    },
+    {
+      "id": "wasm-tools.command",
+      "version": "1",
+      "relativePath": "tools/wasm-tools/run-wasm-tools.mjs",
+      "sha256": "74e9bebe318528973147a3dea342ce7aac29f6c28c041a09d3de421c0cf4c1ec"
+    },
+    {
+      "id": "wasm-tools.module",
+      "version": "1.256.0",
+      "relativePath": "tools/wasm-tools/wasm-tools.wasm",
+      "sha256": "1141fd48fcf58c9704fb24ef1bd9b5d9aaf584b688eb8dce8e226c0488056beb"
+    },
+    {
+      "id": "wasm-tools.license-apache",
+      "version": "1.256.0",
+      "relativePath": "tools/wasm-tools/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "id": "wasm-tools.license-apache-llvm",
+      "version": "1.256.0",
+      "relativePath": "tools/wasm-tools/LICENSE-Apache-2.0_WITH_LLVM-exception",
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    },
+    {
+      "id": "wasm-tools.license-mit",
+      "version": "1.256.0",
+      "relativePath": "tools/wasm-tools/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "id": "wasm-tools.readme",
+      "version": "1.256.0",
+      "relativePath": "tools/wasm-tools/README.md",
+      "sha256": "2034723ff7a0741cab9faa03edd52dfb4cd0c70bc5c5c4fbf643a47a30931070"
+    },
+    {
+      "id": "wit.package-manifest",
+      "version": "1",
+      "relativePath": "tools/wit-packages/wit-package-manifest.json",
+      "sha256": "c92ed596e4a57fb8fefe78ffe922091ff5e4a7a5d82f1b56e465ead2504c20e0"
+    },
+    {
+      "id": "wit.command-package",
+      "version": "0.2.11",
+      "relativePath": "tools/wit-packages/command.wit.wasm",
+      "sha256": "624c67b287c812050a207dfd28a401f798838adbff330d702df0ccc711743293"
+    },
+    {
+      "id": "wit.async-command-package",
+      "version": "1.0.0",
+      "relativePath": "tools/wit-packages/async-command.wit.wasm",
+      "sha256": "c299d92ee7136b7c1efda87c97d69b312e532285482a80c8d73e0fcd03154fe7"
+    },
+    {
+      "id": "wit.compiler-package",
+      "version": "1.0.0",
+      "relativePath": "tools/wit-packages/compiler.wit.wasm",
+      "sha256": "bba25c9206f2b7e3882ec6b44e81d60b33eb18a57c36b85870929435001e002e"
+    },
+    {
+      "id": "jco.package",
+      "version": "1.28.1",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/jco/package.json",
+      "sha256": "7268276d9a951dfefbc9820b57d68f6bbd705ecff660083a6972ead670e35c60"
+    },
+    {
+      "id": "preview2-shim.package",
+      "version": "0.24.1",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/preview2-shim/package.json",
+      "sha256": "19b2990da50d68b47fc9d3431c217de1016eaea6fa0ff25f294d113acfa993d9"
+    },
+    {
+      "id": "jco.entrypoint",
+      "version": "1.28.1",
+      "relativePath": "tools/jco/node_modules/@bytecodealliance/jco/dist/jco.js",
+      "sha256": "298a6b8cb36bcbeb792ad952e84806f33bb57cda17da91c28385156cdbad0679"
+    },
+    {
+      "id": "jco.package-lock",
+      "version": "1",
+      "relativePath": "tools/jco/package-lock.json",
+      "sha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7"
+    },
+    {
+      "id": "jco.closure-integrity",
+      "version": "1",
+      "relativePath": "tools/jco/closure-integrity.json",
+      "sha256": "756300ad2a4a92508cc7c149bac9eebc6b2ebe2921c068837fba80af94ed4251"
+    },
+    {
+      "id": "jco.notices",
+      "version": "1",
+      "relativePath": "tools/jco/notices.json",
+      "sha256": "b4f5739409454b2dc09293c1647dea901ec30f8876c40aecbcb3f070200224c4"
+    },
+    {
+      "id": "jco.closure-policy",
+      "version": "1",
+      "relativePath": "tools/jco/closure-policy.json",
+      "sha256": "bc65a6b87be119c87c1c51f155681b045382b3d29e467cc6b7765cf9006d8a70"
+    },
+    {
+      "id": "hosting-bundle.command",
+      "version": "1",
+      "relativePath": "tools/bundler/netwasm-bundle.mjs",
+      "sha256": "2671fa73574a46d931c4c192db85187f46c873eb79c19e6b734a615ca75399fc"
+    },
+    {
+      "id": "rolldown.package",
+      "version": "1.2.4",
+      "relativePath": "tools/bundler/node_modules/rolldown/package.json",
+      "sha256": "cea38cd16412ee2464164a9d70550fdf07c9039bc563aa6bde7f9566e6fc7baf"
+    },
+    {
+      "id": "rolldown.entrypoint",
+      "version": "1.2.4",
+      "relativePath": "tools/bundler/node_modules/rolldown/dist/index.mjs",
+      "sha256": "402d9095a966408d8e28856afe0b2c7681c99ae7cd76489ba948e4baf82c5043"
+    },
+    {
+      "id": "hosting-bundle.package-lock",
+      "version": "1",
+      "relativePath": "tools/bundler/package-lock.json",
+      "sha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7"
+    },
+    {
+      "id": "hosting-bundle.closure-integrity",
+      "version": "1",
+      "relativePath": "tools/bundler/closure-integrity.json",
+      "sha256": "c2d581fa252ed608822584a28bbc757b89efca79a12ea7153d539fcb2dacdee6"
+    },
+    {
+      "id": "hosting-bundle.notices",
+      "version": "1",
+      "relativePath": "tools/bundler/notices.json",
+      "sha256": "6563f82622da48ae6a6c79d11dd7086804191a9e888854594e1795a0f39205a3"
+    },
+    {
+      "id": "hosting-bundle.closure-policy",
+      "version": "1",
+      "relativePath": "tools/bundler/closure-policy.json",
+      "sha256": "8e9e089f1d500eadf41353ca86b20005d52d253f3702d92a42e440823ab87383"
+    }
+  ]
+}

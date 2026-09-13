@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == 'NetWasm' AND '$(TargetFrameworkVersion)' == 'v0.1'">
+    <_SyntheticNetWasmVSTestAdapterPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any/NetWasm.Testing.VSTest.Tests.Adapter.dll'))</_SyntheticNetWasmVSTestAdapterPath>
+    <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' != ''">$(VSTestTestAdapterPath);$(_SyntheticNetWasmVSTestAdapterPath)</VSTestTestAdapterPath>
+    <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' == ''">$(_SyntheticNetWasmVSTestAdapterPath)</VSTestTestAdapterPath>
+  </PropertyGroup>
+</Project>

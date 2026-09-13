@@ -1,0 +1,9 @@
+global using NetWasm.Sdk.Pack.Archives;
+global using NetWasm.Sdk.Pack.Diagnostics;
+global using NetWasm.Sdk.Pack.MsBuild;
+global using NetWasm.Sdk.Pack.Packages;
+global using NetWasm.Sdk.Pack.Packing;
+global using NetWasm.Sdk.Pack.Policies;
+global using NetWasm.Sdk.Pack.Nuspec;
+global using NetWasm.Sdk.Pack.Profiles;
+global using NetWasm.Sdk.Pack.Restore;

@@ -1,0 +1,124 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Keep the declared alias as an opaque project value.  The canonical values
+    below are the values consumed by NuGet/MSBuild after inference; no
+    NuGetFramework formatter is used to recreate package identity.
+  -->
+  <PropertyGroup>
+    <!--
+      An inner build inherits TargetFrameworks from the outer build.  Use the
+      current TargetFramework whenever it is present; otherwise the outer
+      evaluation owns the full declared list.  This keeps desktop inner
+      builds on stock pack targets in a dual-target project.
+    -->
+    <NetWasmSdkDeclaredTargetFrameworks Condition="'$(TargetFramework)' == ''">$(TargetFrameworks)</NetWasmSdkDeclaredTargetFrameworks>
+    <NetWasmSdkDeclaredTargetFrameworks Condition="'$(TargetFramework)' != ''">$(TargetFramework)</NetWasmSdkDeclaredTargetFrameworks>
+    <NetWasmSdkContainsCustomProfile Condition="'$(NetWasmSdkDeclaredTargetFrameworks)' != ''">$([System.String]::Copy(';$(NetWasmSdkDeclaredTargetFrameworks);').Contains(';netwasm0.1;'))</NetWasmSdkContainsCustomProfile>
+    <NetWasmRefPackageId Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageId)' == ''">NetWasm.Ref</NetWasmRefPackageId>
+    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.1.0-preview.14</NetWasmRefPackageVersion>
+    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.1.0-preview.23</NetWasmRuntimePackageVersion>
+    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.1.0-preview.11</NetWasmRuntimePackPackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.1.0-preview.32</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.1.0-preview.12</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0-preview.11</NetWasmHostingBuildPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <NetWasmSdkProfile Include="netwasm0.1"
+                       Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
+      <Alias>netwasm0.1</Alias>
+      <Identifier>NetWasm</Identifier>
+      <Version>v0.1</Version>
+      <CanonicalFolder>NetWasm,Version=v0.1</CanonicalFolder>
+      <CanonicalDependencyGroup>NetWasm,Version=v0.1</CanonicalDependencyGroup>
+    </NetWasmSdkProfile>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <TargetFrameworkIdentifier>NetWasm</TargetFrameworkIdentifier>
+    <TargetExt>.dll</TargetExt>
+    <TargetFrameworkVersion>v0.1</TargetFrameworkVersion>
+    <TargetFrameworkMoniker>NetWasm,Version=v0.1</TargetFrameworkMoniker>
+    <NuGetTargetMoniker>NetWasm,Version=v0.1</NuGetTargetMoniker>
+    <DefineConstants>$(DefineConstants);NETWASM;NETWASM0_1</DefineConstants>
+    <LangVersion Condition="'$(LangVersion)' == ''">latest</LangVersion>
+    <NetWasmSdkTargetFrameworkAlias>netwasm0.1</NetWasmSdkTargetFrameworkAlias>
+    <NetWasmSdkCanonicalTargetFramework>NetWasm,Version=v0.1</NetWasmSdkCanonicalTargetFramework>
+    <!-- There is no installed desktop targeting pack for the custom profile.
+         The stock SDK's standard-framework resolver must be disabled; the
+         ordinary ResolvePackageAssets target supplies every compile reference
+         from the restored NetWasm.Ref contract. -->
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <DisableStandardFrameworkResolution>true</DisableStandardFrameworkResolution>
+    <NoStandardLibraries>true</NoStandardLibraries>
+    <NoStdLib>true</NoStdLib>
+    <!-- The managed assembly and symbols are compiler inputs, not deployable
+         NetWasm executable artifacts. Publish stages only the selected,
+         manifest-bound deployment closure. -->
+    <CopyBuildOutputToPublishDirectory>false</CopyBuildOutputToPublishDirectory>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
+    <NetWasmSdkCustomProfileEnabled>true</NetWasmSdkCustomProfileEnabled>
+    <NetWasmSdkCustomProfileAlias>netwasm0.1</NetWasmSdkCustomProfileAlias>
+    <NetWasmSdkCustomProfileCanonicalTargetFramework>NetWasm,Version=v0.1</NetWasmSdkCustomProfileCanonicalTargetFramework>
+    <!--
+      The reference contract is a private, target-specific build edge.  It is
+      deliberately injected through ordinary PackageReference evaluation so
+      stock restore remains the source of truth; desktop inner builds never
+      see this item.
+    -->
+    <NetWasmRefPackageVersion Condition="'$(NetWasmRefPackageVersion)' == ''">0.1.0-preview.14</NetWasmRefPackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmToolchainPackageVersion)' == ''">0.1.0-preview.32</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmHostingPackageVersion)' == ''">0.1.0-preview.12</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0-preview.11</NetWasmHostingBuildPackageVersion>
+    <BuildProjectReferences Condition="'$(NoBuild)' == 'true'">false</BuildProjectReferences>
+    <NuGetBuildTasksPackTargets>$(MSBuildThisFileDirectory)NuGetBuildTasksPackTargets.targets</NuGetBuildTasksPackTargets>
+    <ImportNuGetBuildTasksPackTargetsFromSdk>true</ImportNuGetBuildTasksPackTargetsFromSdk>
+  </PropertyGroup>
+
+  <Import Project="$(MSBuildThisFileDirectory)NetWasm.PackageVersions.props"
+          Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmCompilerTasksPackageVersion)' == ''" />
+
+  <ItemGroup Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
+    <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)NetWasm.Sdk.Analyzers.globalconfig" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRefPackageId)' != ''">
+    <PackageReference Include="$(NetWasmRefPackageId)"
+                      Version="$(NetWasmRefPackageVersion)"
+                      PrivateAssets="all"
+                      IncludeAssets="compile" />
+    <PackageReference Include="NetWasm.Compiler.Tasks"
+                      Version="$(NetWasmCompilerTasksPackageVersion)"
+                      PrivateAssets="all" />
+    <PackageReference Include="NetWasm.Runtime.Wasm32"
+                      Version="$(NetWasmRuntimePackageVersion)"
+                      PrivateAssets="all"
+                      Condition="'$(NetWasmTarget)' == 'wasm32'" />
+    <PackageReference Include="NetWasm.Runtime.Wasm64"
+                      Version="$(NetWasmRuntimePackageVersion)"
+                      PrivateAssets="all"
+                      Condition="'$(NetWasmTarget)' == 'wasm64'" />
+    <PackageReference Include="NetWasm.Runtime.Pack"
+                      Version="$(NetWasmRuntimePackPackageVersion)"
+                      PrivateAssets="all" />
+    <PackageReference Include="NetWasm.Toolchain"
+                      Version="$(NetWasmToolchainPackageVersion)"
+                      PrivateAssets="all"
+                      GeneratePathProperty="true"
+                      ExcludeAssets="compile;runtime;analyzers" />
+    <PackageReference Include="NetWasm.Hosting"
+                      Version="$(NetWasmHostingPackageVersion)"
+                      PrivateAssets="all"
+                      GeneratePathProperty="true"
+                      ExcludeAssets="compile;runtime;analyzers" />
+    <PackageReference Include="NetWasm.Hosting.Build"
+                      Version="$(NetWasmHostingBuildPackageVersion)"
+                      PrivateAssets="all"
+                      GeneratePathProperty="true"
+                      ExcludeAssets="compile;runtime;analyzers" />
+  </ItemGroup>
+</Project>

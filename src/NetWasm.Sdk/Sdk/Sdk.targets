@@ -1,0 +1,193 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    The mapping file is imported by Microsoft.NET.Sdk immediately before its
+    normal TFM inference.  This is the evaluation seam used by restore,
+    project-reference selection, and the inner build; it is not a restore
+    replacement or a compatibility fallback.
+  -->
+  <PropertyGroup>
+    <BeforeTargetFrameworkInferenceTargets>$(MSBuildThisFileDirectory)NetWasm.Sdk.Tfm.props;$(BeforeTargetFrameworkInferenceTargets)</BeforeTargetFrameworkInferenceTargets>
+
+    <!--
+      Microsoft.NET.Sdk imports the value of NuGetBuildTasksPackTargets from
+      its own Sdk.targets. Point that value at our thin wrapper so the wrapper
+      can import the stock collection targets and replace only package
+      construction for a registered custom profile.
+    -->
+    <!--
+      The custom TFM props set these two values before this SDK target file is
+      reached.  They are deliberately not set here: a desktop-only project
+      must let Microsoft.NET.Sdk select the installed stock pack targets.
+    -->
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
+    <!-- Raw mode emits core and materialized runtime modules while leaving
+         componentization to an external linker or qualification harness. -->
+    <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == ''">false</NetWasmRawWasm>
+  </PropertyGroup>
+
+  <!-- Cross-targeting builds intentionally skip the inner TFM inference
+       targets, so their outer Pack target would otherwise never see the
+       declared custom profile. Evaluate the same immutable profile record
+       directly for that outer build before Microsoft.NET.Sdk chooses its pack
+       targets. -->
+  <Import Project="$(MSBuildThisFileDirectory)NetWasm.Sdk.Tfm.props"
+          Condition="'$(TargetFramework)' == '' AND '$(TargetFrameworks)' != ''" />
+
+  <Import Project="$(MSBuildSDKsPath)/Microsoft.NET.Sdk/Sdk/Sdk.targets" />
+
+  <!-- Resolve only restored, pinned toolchain assets and expose the
+       component/runtime input contract after stock target evaluation. -->
+  <Import Project="$(MSBuildThisFileDirectory)NetWasm.Toolchain.targets"
+          Condition="Exists('$(MSBuildThisFileDirectory)NetWasm.Toolchain.targets')" />
+
+  <Target Name="NetWasmSdkRejectFallbackInputs"
+          BeforeTargets="Restore;Pack"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' AND ('$(AssetTargetFallback)' != '' OR '$(PackageTargetFallback)' != '')">
+    <Error Code="NWPK002"
+           Text="The NetWasm custom target cannot use AssetTargetFallback or PackageTargetFallback; restore must resolve the exact registered profile." />
+  </Target>
+
+  <Target Name="NetWasmSdkValidateTarget"
+          BeforeTargets="Restore;CoreCompile"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmTarget)' != 'wasm32' AND '$(NetWasmTarget)' != 'wasm64'">
+    <Error Code="NWSDK003"
+           Text="NetWasmTarget must be 'wasm32' or 'wasm64'." />
+  </Target>
+
+  <Target Name="NetWasmSdkRequireReferenceContract"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="ResolvePackageAssets"
+          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <ItemGroup>
+      <_NetWasmSdkResolvedReferenceContract Include="@(ResolvedCompileFileDefinitions)"
+        Condition="'%(ResolvedCompileFileDefinitions.NuGetPackageId)' == '$(NetWasmRefPackageId)' AND '%(ResolvedCompileFileDefinitions.Identity)' != '' AND $([System.String]::Copy('%(ResolvedCompileFileDefinitions.Identity)').Replace('\', '/').EndsWith('/ref/NetWasm,Version=v0.1/NetWasm.CoreLib.dll'))" />
+    </ItemGroup>
+    <Error Code="NWSDK001"
+           Condition="'@(_NetWasmSdkResolvedReferenceContract)' == ''"
+           Text="The NetWasm.Ref metadata-only reference contract was not selected as the NetWasm compile asset." />
+  </Target>
+
+  <!--
+    Stock PackageReference metadata is target-specific.  The outer pack
+    target must not read the outer item's already-filtered view because that
+    loses PrivateAssets/IncludeAssets/ExcludeAssets values.  This small
+    collection target is available in every inner build (including desktop
+    inner builds, which deliberately do not import the custom pack wrapper),
+    and returns the evaluated direct edges to the outer SDK-owned task.
+  -->
+  <Target Name="NetWasmSdkCollectInnerPackageReferences"
+          Condition="'$(TargetFramework)' != ''"
+          Returns="@(_NetWasmSdkInnerPackageDependency)">
+    <ItemGroup>
+      <_NetWasmSdkInnerPackageDependency Include="@(PackageReference)">
+        <TargetFrameworkAlias Condition="'$(NetWasmSdkTargetFrameworkAlias)' != ''">$(NetWasmSdkTargetFrameworkAlias)</TargetFrameworkAlias>
+        <TargetFrameworkAlias Condition="'$(NetWasmSdkTargetFrameworkAlias)' == ''">$(TargetFramework)</TargetFrameworkAlias>
+        <TargetFramework Condition="'$(NetWasmSdkCanonicalTargetFramework)' != ''">$(NetWasmSdkCanonicalTargetFramework)</TargetFramework>
+        <TargetFramework Condition="'$(NetWasmSdkCanonicalTargetFramework)' == ''">$(TargetFramework)</TargetFramework>
+        <TargetFrameworkIdentifier>$(TargetFrameworkIdentifier)</TargetFrameworkIdentifier>
+        <TargetFrameworkVersion>$(TargetFrameworkVersion)</TargetFrameworkVersion>
+        <Version>%(PackageReference.Version)</Version>
+        <VersionRange>%(PackageReference.VersionRange)</VersionRange>
+        <IncludeAssets Condition="'%(PackageReference.IncludeAssets)' != ''">%(PackageReference.IncludeAssets)</IncludeAssets>
+        <IncludeAssets Condition="'%(PackageReference.IncludeAssets)' == ''">all</IncludeAssets>
+        <ExcludeAssets Condition="'%(PackageReference.ExcludeAssets)' != ''">%(PackageReference.ExcludeAssets)</ExcludeAssets>
+        <ExcludeAssets Condition="'%(PackageReference.ExcludeAssets)' == ''">none</ExcludeAssets>
+        <PrivateAssets Condition="'%(PackageReference.PrivateAssets)' != ''">%(PackageReference.PrivateAssets)</PrivateAssets>
+        <PrivateAssets Condition="'%(PackageReference.PrivateAssets)' == ''">none</PrivateAssets>
+        <DevelopmentDependency>%(PackageReference.DevelopmentDependency)</DevelopmentDependency>
+      </_NetWasmSdkInnerPackageDependency>
+    </ItemGroup>
+  </Target>
+
+  <!--
+    ProjectReference is a pack dependency too, but stock
+    _ProjectReferencesWithVersions carries only the project path and version.
+    Resolve the referenced project's evaluated PackageId/PackageVersion in the
+    selected inner target and return a package-shaped edge.  The caller's
+    pack/private metadata is passed as immutable properties so the outer build
+    never has to infer a package ID from a path.
+  -->
+  <Target Name="NetWasmSdkCollectInnerProjectReferences"
+          Condition="'$(TargetFramework)' != ''"
+          Returns="@(_NetWasmSdkInnerProjectDependency)">
+    <ItemGroup>
+      <_NetWasmSdkInnerProjectReference Include="@(ProjectReference)"
+                                         Condition="'%(ProjectReference.Pack)' != 'false' AND '%(ProjectReference.TreatAsPackageReference)' != 'false'">
+        <NetWasmSdkPackProjectPath>%(Identity)</NetWasmSdkPackProjectPath>
+        <NetWasmSdkPackTargetFrameworkAlias Condition="'$(NetWasmSdkTargetFrameworkAlias)' != ''">$(NetWasmSdkTargetFrameworkAlias)</NetWasmSdkPackTargetFrameworkAlias>
+        <NetWasmSdkPackTargetFrameworkAlias Condition="'$(NetWasmSdkTargetFrameworkAlias)' == ''">$(TargetFramework)</NetWasmSdkPackTargetFrameworkAlias>
+        <NetWasmSdkPackTargetFramework Condition="'$(NetWasmSdkCanonicalTargetFramework)' != ''">$(NetWasmSdkCanonicalTargetFramework)</NetWasmSdkPackTargetFramework>
+        <NetWasmSdkPackTargetFramework Condition="'$(NetWasmSdkCanonicalTargetFramework)' == ''">$(TargetFramework)</NetWasmSdkPackTargetFramework>
+        <NetWasmSdkPackPrivateAssets Condition="'%(ProjectReference.PrivateAssets)' != ''">%(ProjectReference.PrivateAssets)</NetWasmSdkPackPrivateAssets>
+        <NetWasmSdkPackPrivateAssets Condition="'%(ProjectReference.PrivateAssets)' == ''">none</NetWasmSdkPackPrivateAssets>
+        <NetWasmSdkPackIncludeAssets Condition="'%(ProjectReference.IncludeAssets)' != ''">%(ProjectReference.IncludeAssets)</NetWasmSdkPackIncludeAssets>
+        <NetWasmSdkPackIncludeAssets Condition="'%(ProjectReference.IncludeAssets)' == ''">all</NetWasmSdkPackIncludeAssets>
+        <NetWasmSdkPackExcludeAssets Condition="'%(ProjectReference.ExcludeAssets)' != ''">%(ProjectReference.ExcludeAssets)</NetWasmSdkPackExcludeAssets>
+        <NetWasmSdkPackExcludeAssets Condition="'%(ProjectReference.ExcludeAssets)' == ''">none</NetWasmSdkPackExcludeAssets>
+        <NetWasmSdkPackDevelopmentDependency>%(ProjectReference.DevelopmentDependency)</NetWasmSdkPackDevelopmentDependency>
+        <AdditionalProperties Condition="'%(ProjectReference.SetTargetFramework)' != ''">TargetFramework=%(ProjectReference.SetTargetFramework);Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier);BuildProjectReferences=false;NetWasmSdkPackProjectPath=%(Identity);NetWasmSdkPackTargetFrameworkAlias=$([MSBuild]::ValueOrDefault('$(NetWasmSdkTargetFrameworkAlias)', '$(TargetFramework)'));NetWasmSdkPackTargetFramework=$([MSBuild]::ValueOrDefault('$(NetWasmSdkCanonicalTargetFramework)', '$(TargetFramework)'));NetWasmSdkPackPrivateAssets=$([MSBuild]::Escape($([MSBuild]::ValueOrDefault('%(ProjectReference.PrivateAssets)', 'none'))));NetWasmSdkPackIncludeAssets=$([MSBuild]::Escape($([MSBuild]::ValueOrDefault('%(ProjectReference.IncludeAssets)', 'all'))));NetWasmSdkPackExcludeAssets=$([MSBuild]::Escape($([MSBuild]::ValueOrDefault('%(ProjectReference.ExcludeAssets)', 'none'))));NetWasmSdkPackDevelopmentDependency=%(ProjectReference.DevelopmentDependency)</AdditionalProperties>
+        <AdditionalProperties Condition="'%(ProjectReference.SetTargetFramework)' == ''">TargetFramework=$(TargetFramework);Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier);BuildProjectReferences=false;NetWasmSdkPackProjectPath=%(Identity);NetWasmSdkPackTargetFrameworkAlias=$([MSBuild]::ValueOrDefault('$(NetWasmSdkTargetFrameworkAlias)', '$(TargetFramework)'));NetWasmSdkPackTargetFramework=$([MSBuild]::ValueOrDefault('$(NetWasmSdkCanonicalTargetFramework)', '$(TargetFramework)'));NetWasmSdkPackPrivateAssets=$([MSBuild]::Escape($([MSBuild]::ValueOrDefault('%(ProjectReference.PrivateAssets)', 'none'))));NetWasmSdkPackIncludeAssets=$([MSBuild]::Escape($([MSBuild]::ValueOrDefault('%(ProjectReference.IncludeAssets)', 'all'))));NetWasmSdkPackExcludeAssets=$([MSBuild]::Escape($([MSBuild]::ValueOrDefault('%(ProjectReference.ExcludeAssets)', 'none'))));NetWasmSdkPackDevelopmentDependency=%(ProjectReference.DevelopmentDependency)</AdditionalProperties>
+      </_NetWasmSdkInnerProjectReference>
+    </ItemGroup>
+
+    <MSBuild Projects="@(_NetWasmSdkInnerProjectReference)"
+             Targets="NetWasmSdkGetPackageIdentity"
+             BuildInParallel="$(BuildInParallel)"
+             SkipNonexistentTargets="true">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmSdkInnerProjectDependency" />
+    </MSBuild>
+
+    <!-- Keep stock-SDK references in the immutable request as unresolved
+         evidence.  The pack task's injected MSBuild adapter resolves their
+         PackageId/PackageVersion at this selected TFM; the SDK never guesses
+         from a filename and never drops the edge. -->
+    <ItemGroup>
+      <_NetWasmSdkResolvedProjectPath Include="@(_NetWasmSdkInnerProjectDependency->'%(ProjectPath)')" />
+      <_NetWasmSdkInnerProjectReference Remove="@(_NetWasmSdkResolvedProjectPath)" />
+      <_NetWasmSdkInnerProjectDependency Include="@(_NetWasmSdkInnerProjectReference)">
+        <ProjectPath>%(Identity)</ProjectPath>
+        <ProjectReferencePath>%(Identity)</ProjectReferencePath>
+        <ProjectReferenceResolution>unresolved</ProjectReferenceResolution>
+        <ProjectReferenceTargetFramework>%(NetWasmSdkPackTargetFrameworkAlias)</ProjectReferenceTargetFramework>
+        <ProjectReferenceTargetFrameworkAlias>%(NetWasmSdkPackTargetFrameworkAlias)</ProjectReferenceTargetFrameworkAlias>
+        <Configuration>$(Configuration)</Configuration>
+        <Platform>$(Platform)</Platform>
+        <RuntimeIdentifier>$(RuntimeIdentifier)</RuntimeIdentifier>
+        <TargetFrameworkAlias>%(NetWasmSdkPackTargetFrameworkAlias)</TargetFrameworkAlias>
+        <TargetFramework>%(NetWasmSdkPackTargetFramework)</TargetFramework>
+        <PrivateAssets>%(NetWasmSdkPackPrivateAssets)</PrivateAssets>
+        <IncludeAssets>%(NetWasmSdkPackIncludeAssets)</IncludeAssets>
+        <ExcludeAssets>%(NetWasmSdkPackExcludeAssets)</ExcludeAssets>
+        <DevelopmentDependency>%(NetWasmSdkPackDevelopmentDependency)</DevelopmentDependency>
+      </_NetWasmSdkInnerProjectDependency>
+    </ItemGroup>
+  </Target>
+
+  <!-- This target is intentionally tiny and side-effect free.  It is called
+       only by the inner project-reference collector above. -->
+  <Target Name="NetWasmSdkGetPackageIdentity"
+          Returns="@(_NetWasmSdkPackageIdentity)">
+    <ItemGroup>
+      <_NetWasmSdkPackageIdentity Include="$(PackageId)">
+        <ProjectPath>$(NetWasmSdkPackProjectPath)</ProjectPath>
+        <ProjectReferencePath>$(NetWasmSdkPackProjectPath)</ProjectReferencePath>
+        <ProjectReferenceResolution>resolved</ProjectReferenceResolution>
+        <ProjectReferenceTargetFramework>$(NetWasmSdkPackTargetFrameworkAlias)</ProjectReferenceTargetFramework>
+        <ProjectReferenceTargetFrameworkAlias>$(NetWasmSdkPackTargetFrameworkAlias)</ProjectReferenceTargetFrameworkAlias>
+        <Configuration>$(Configuration)</Configuration>
+        <Platform>$(Platform)</Platform>
+        <RuntimeIdentifier>$(RuntimeIdentifier)</RuntimeIdentifier>
+        <Version Condition="'$(PackageVersion)' != ''">$(PackageVersion)</Version>
+        <TargetFrameworkAlias>$(NetWasmSdkPackTargetFrameworkAlias)</TargetFrameworkAlias>
+        <TargetFramework>$(NetWasmSdkPackTargetFramework)</TargetFramework>
+        <PrivateAssets>$(NetWasmSdkPackPrivateAssets)</PrivateAssets>
+        <IncludeAssets>$(NetWasmSdkPackIncludeAssets)</IncludeAssets>
+        <ExcludeAssets>$(NetWasmSdkPackExcludeAssets)</ExcludeAssets>
+        <DevelopmentDependency>$(NetWasmSdkPackDevelopmentDependency)</DevelopmentDependency>
+      </_NetWasmSdkPackageIdentity>
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,0 +1,11 @@
+root = true
+
+[*.{cs,fs,vb,csproj,fsproj,vbproj,props,targets,slnx,mjs,js,ts,json,sh,ps1,wit,wat,md,yml,yaml,html,css,xml}]
+end_of_line = lf
+
+[*.cs]
+# Keep implementation code concise. Use explicit types only where inference is
+# unavailable or the declaration is part of an API contract.
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion

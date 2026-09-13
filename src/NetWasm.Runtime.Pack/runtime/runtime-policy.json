@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "alignment": 16,
+  "wasmPageSize": 65536,
+  "nativeStackSizeBytes": 65536,
+  "defaultInitialHeapSizeBytes": 65536,
+  "targets": {
+    "wasm32": {
+      "pointerSizeBytes": 4,
+      "defaultMaximumMemorySizeBytes": 2147483648,
+      "maximumMemorySizeBytes": 2147483648,
+      "systemLibraries": [
+        "libemmalloc.a",
+        "libc.a",
+        "libstandalonewasm-nocatch-memgrow.a",
+        "libnoexit.a",
+        "libclang_rt.builtins.a"
+      ]
+    },
+    "wasm64": {
+      "pointerSizeBytes": 8,
+      "defaultMaximumMemorySizeBytes": 8589934592,
+      "maximumMemorySizeBytes": 8589934592,
+      "systemLibraries": [
+        "libemmalloc.a",
+        "libc.a",
+        "libstandalonewasm-nocatch-memgrow.a",
+        "libnoexit.a",
+        "libclang_rt.builtins.a"
+      ]
+    }
+  }
+}

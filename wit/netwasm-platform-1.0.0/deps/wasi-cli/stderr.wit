@@ -1,0 +1,7 @@
+package wasi:cli@0.2.11;
+
+interface stderr {
+    use wasi:io/streams@0.2.11.{output-stream};
+
+    get-stderr: func() -> output-stream;
+}

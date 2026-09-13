@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "target": "wasm64",
+  "managedProfile": "NetWasm,Version=v0.1",
+  "runtimeAbi": "netwasm.runtime.v1"
+}

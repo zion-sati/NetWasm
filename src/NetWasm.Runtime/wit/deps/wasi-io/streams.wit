@@ -1,0 +1,19 @@
+// WASI 0.2 interface declarations used by the native runtime.
+package wasi:io@0.2.11;
+
+interface error {
+  resource error;
+}
+
+interface streams {
+  use error.{error};
+
+  variant stream-error {
+    last-operation-failed(error),
+    closed,
+  }
+
+  resource output-stream {
+    blocking-write-and-flush: func(contents: list<u8>) -> result<_, stream-error>;
+  }
+}

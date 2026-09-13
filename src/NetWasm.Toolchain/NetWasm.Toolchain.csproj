@@ -1,0 +1,201 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Toolchain</AssemblyName>
+    <RootNamespace>NetWasm.Toolchain</RootNamespace>
+    <PackageId>NetWasm.Toolchain</PackageId>
+    <Version>0.1.0-preview.32</Version>
+    <Description>Platform-neutral, integrity-verified NetWasm toolchain assets.</Description>
+    <PackageTags>netwasm;toolchain;wasm;binaryen;wasi;wit</PackageTags>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <NetWasmToolchainBinaryenRoot Condition="'$(NetWasmToolchainBinaryenRoot)' == ''">$(MSBuildProjectDirectory)/platform-assets/binaryen</NetWasmToolchainBinaryenRoot>
+    <NetWasmToolchainJcoAssetRoot Condition="'$(NetWasmToolchainJcoAssetRoot)' == ''">$(MSBuildProjectDirectory)/platform-assets/jco</NetWasmToolchainJcoAssetRoot>
+    <NetWasmToolchainJcoPackageLockPath Condition="'$(NetWasmToolchainJcoPackageLockPath)' == ''">$(NetWasmToolchainJcoAssetRoot)/package-lock.json</NetWasmToolchainJcoPackageLockPath>
+    <NetWasmToolchainJcoPackItemsPath Condition="'$(NetWasmToolchainJcoPackItemsPath)' == ''">$(NetWasmToolchainJcoAssetRoot)/closure-pack-items.props</NetWasmToolchainJcoPackItemsPath>
+    <NetWasmToolchainJcoClosurePolicyPath Condition="'$(NetWasmToolchainJcoClosurePolicyPath)' == ''">$(NetWasmToolchainJcoAssetRoot)/closure-policy.json</NetWasmToolchainJcoClosurePolicyPath>
+    <NetWasmToolchainBundlerAssetRoot Condition="'$(NetWasmToolchainBundlerAssetRoot)' == ''">$(MSBuildProjectDirectory)/platform-assets/bundler</NetWasmToolchainBundlerAssetRoot>
+    <NetWasmToolchainBundlerPackageLockPath Condition="'$(NetWasmToolchainBundlerPackageLockPath)' == ''">$(NetWasmToolchainBundlerAssetRoot)/package-lock.json</NetWasmToolchainBundlerPackageLockPath>
+    <NetWasmToolchainBundlerPackItemsPath Condition="'$(NetWasmToolchainBundlerPackItemsPath)' == ''">$(NetWasmToolchainBundlerAssetRoot)/closure-pack-items.props</NetWasmToolchainBundlerPackItemsPath>
+    <NetWasmToolchainBundlerClosurePolicyPath Condition="'$(NetWasmToolchainBundlerClosurePolicyPath)' == ''">$(NetWasmToolchainBundlerAssetRoot)/closure-policy.json</NetWasmToolchainBundlerClosurePolicyPath>
+    <NetWasmToolchainWasmToolsAssetRoot Condition="'$(NetWasmToolchainWasmToolsAssetRoot)' == ''">$(MSBuildProjectDirectory)/platform-assets/wasm-tools</NetWasmToolchainWasmToolsAssetRoot>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+  </PropertyGroup>
+
+  <Import Project="$(NetWasmToolchainJcoPackItemsPath)"
+          Condition="Exists('$(NetWasmToolchainJcoPackItemsPath)')" />
+  <Import Project="$(NetWasmToolchainBundlerPackItemsPath)"
+          Condition="Exists('$(NetWasmToolchainBundlerPackItemsPath)')" />
+
+  <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <Compile Include="**/*.cs" Exclude="bin/**;obj/**" />
+    <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
+          Pack="true"
+          PackagePath="LICENSE.txt"
+          Visible="false" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="toolchain-manifest.json" Pack="true" PackagePath="tools/toolchain-manifest.json" />
+    <None Include="$(NetWasmToolchainJcoPackageLockPath)"
+          Pack="true"
+          PackagePath="tools/jco/package-lock.json" />
+    <None Include="$(NetWasmToolchainJcoAssetRoot)/closure-integrity.json"
+          Pack="true"
+          PackagePath="tools/jco/closure-integrity.json" />
+    <None Include="$(NetWasmToolchainJcoAssetRoot)/notices.json"
+          Pack="true"
+          PackagePath="tools/jco/notices.json" />
+    <None Include="$(NetWasmToolchainJcoClosurePolicyPath)"
+          Pack="true"
+          PackagePath="tools/jco/closure-policy.json" />
+    <None Include="JavaScript/netwasm-bundle.mjs"
+          Pack="true"
+          PackagePath="tools/bundler/netwasm-bundle.mjs" />
+    <None Include="JavaScript/run-wasm-tools.mjs"
+          Pack="true"
+          PackagePath="tools/wasm-tools/run-wasm-tools.mjs" />
+    <None Include="$(NetWasmToolchainBundlerPackageLockPath)"
+          Pack="true"
+          PackagePath="tools/bundler/package-lock.json" />
+    <None Include="$(NetWasmToolchainBundlerAssetRoot)/closure-integrity.json"
+          Pack="true"
+          PackagePath="tools/bundler/closure-integrity.json" />
+    <None Include="$(NetWasmToolchainBundlerAssetRoot)/notices.json"
+          Pack="true"
+          PackagePath="tools/bundler/notices.json" />
+    <None Include="$(NetWasmToolchainBundlerClosurePolicyPath)"
+          Pack="true"
+          PackagePath="tools/bundler/closure-policy.json" />
+    <None Include="../NetWasm.Compiler.ComponentModel/Raw/JavaScript/binaryen-function-import-reader.mjs"
+          Pack="true" PackagePath="tools/netwasm/raw/binaryen-function-import-reader.mjs" />
+    <None Include="../NetWasm.Compiler.ComponentModel/Raw/JavaScript/core-module-import-reader.mjs"
+          Pack="true" PackagePath="tools/netwasm/raw/core-module-import-reader.mjs" />
+    <None Include="../NetWasm.Compiler.ComponentModel/Raw/JavaScript/raw-module-import-inspector.mjs"
+          Pack="true" PackagePath="tools/netwasm/raw/raw-module-import-inspector.mjs" />
+    <None Include="../NetWasm.Compiler.ComponentModel/Raw/JavaScript/raw-module-inspection-command.mjs"
+          Pack="true" PackagePath="tools/netwasm/raw/raw-module-inspection-command.mjs" />
+    <None Include="../NetWasm.Compiler.ComponentModel/Raw/JavaScript/raw-module-inspection-error.mjs"
+          Pack="true" PackagePath="tools/netwasm/raw/raw-module-inspection-error.mjs" />
+    <None Include="../NetWasm.Compiler.ComponentModel/Raw/JavaScript/run-raw-module-inspection.mjs"
+          Pack="true" PackagePath="tools/netwasm/raw/run-raw-module-inspection.mjs" />
+    <None Include="$(NetWasmToolchainBinaryenRoot)/**/*"
+          Exclude="$(NetWasmToolchainBinaryenRoot)/.DS_Store;$(NetWasmToolchainBinaryenRoot)/bin/.DS_Store"
+          Pack="true" PackagePath="tools/binaryen" />
+    <None Include="$(NetWasmToolchainWasmToolsAssetRoot)/**/*"
+          Exclude="$(NetWasmToolchainWasmToolsAssetRoot)/.DS_Store"
+          Pack="true" PackagePath="tools/wasm-tools" />
+    <None Include="wit-packages/**/*"
+          Pack="true"
+          PackagePath="tools/wit-packages/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="wit/**/*" Pack="true" PackagePath="tools/wit/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="async-wit/**/*" Pack="true" PackagePath="tools/async-wit/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="wit/*.wit"
+          Pack="true"
+          PackagePath="tools/async-wit/deps/wasi-cli/%(Filename)%(Extension)" />
+    <None Include="wit/deps/**/*"
+          Pack="true"
+          PackagePath="tools/async-wit/deps/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="../../wit/netwasm-runtime-1.0.0/reactor.wit"
+          Pack="true"
+          PackagePath="tools/async-wit/deps/netwasm-runtime/%(Filename)%(Extension)" />
+    <None Include="../../wit/netwasm-runtime-1.0.0/process.wit"
+          Pack="true"
+          PackagePath="tools/async-wit/deps/netwasm-runtime/%(Filename)%(Extension)" />
+    <None Include="../../wit/wasi-0.2.11/http/*.wit"
+          Pack="true"
+          PackagePath="tools/async-wit/deps/wasi-http/%(Filename)%(Extension)" />
+    <None Include="../../wit/netwasm-platform-1.0.0/**/*"
+          Exclude="../../wit/netwasm-platform-1.0.0/.DS_Store;../../wit/netwasm-platform-1.0.0/deps/.DS_Store"
+          Pack="true"
+          PackagePath="tools/compiler-wit/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="ValidateNetWasmToolchainPackInputs" BeforeTargets="Pack">
+    <Error Condition="!Exists('$(NetWasmToolchainBinaryenRoot)')"
+           Text="NetWasm.Toolchain requires an explicit staged Binaryen package root." />
+    <Error Condition="Exists('$(NetWasmToolchainBinaryenRoot)') AND !Exists('$(NetWasmToolchainBinaryenRoot)/package.json')"
+           Text="NetWasm.Toolchain is missing the pinned Binaryen package metadata." />
+    <Error Condition="Exists('$(NetWasmToolchainBinaryenRoot)') AND !Exists('$(NetWasmToolchainBinaryenRoot)/index.js')"
+           Text="NetWasm.Toolchain is missing the pinned Binaryen module." />
+    <Error Condition="Exists('$(NetWasmToolchainBinaryenRoot)') AND !Exists('$(NetWasmToolchainBinaryenRoot)/bin/wasm-opt')"
+           Text="NetWasm.Toolchain is missing the pinned Binaryen wasm-opt program." />
+    <Error Condition="Exists('$(NetWasmToolchainBinaryenRoot)') AND !Exists('$(NetWasmToolchainBinaryenRoot)/bin/wasm-merge')"
+           Text="NetWasm.Toolchain is missing the pinned Binaryen wasm-merge program." />
+    <Error Condition="!Exists('$(NetWasmToolchainJcoAssetRoot)')"
+           Text="NetWasm.Toolchain requires an explicit staged jco closure root." />
+    <Error Condition="Exists('$(NetWasmToolchainJcoAssetRoot)') AND !Exists('$(NetWasmToolchainJcoAssetRoot)/node_modules/@bytecodealliance/jco/dist/jco.js')"
+           Text="NetWasm.Toolchain is missing the pinned jco transpile entry point." />
+    <Error Condition="Exists('$(NetWasmToolchainJcoAssetRoot)') AND !Exists('$(NetWasmToolchainJcoAssetRoot)/node_modules/@bytecodealliance/preview2-shim/package.json')"
+           Text="NetWasm.Toolchain is missing the pinned Preview 2 shim package." />
+    <Error Condition="!Exists('$(NetWasmToolchainJcoPackageLockPath)')"
+           Text="NetWasm.Toolchain requires the pinned jco package-lock.json." />
+    <Error Condition="!Exists('$(NetWasmToolchainJcoAssetRoot)/closure-integrity.json')"
+           Text="NetWasm.Toolchain is missing the generated jco closure integrity manifest." />
+    <Error Condition="!Exists('$(NetWasmToolchainJcoAssetRoot)/notices.json')"
+           Text="NetWasm.Toolchain is missing the generated jco third-party notices." />
+    <Error Condition="!Exists('$(NetWasmToolchainJcoPackItemsPath)')"
+           Text="NetWasm.Toolchain is missing the generated jco closure package item manifest." />
+    <Error Condition="!Exists('$(NetWasmToolchainJcoClosurePolicyPath)')"
+           Text="NetWasm.Toolchain is missing the audited jco closure policy." />
+    <Error Condition="!Exists('$(NetWasmToolchainBundlerAssetRoot)')"
+           Text="NetWasm.Toolchain requires an explicit staged Hosting bundler closure root." />
+    <Error Condition="Exists('$(NetWasmToolchainBundlerAssetRoot)') AND !Exists('$(NetWasmToolchainBundlerAssetRoot)/node_modules/rolldown/dist/index.mjs')"
+           Text="NetWasm.Toolchain is missing the pinned Rolldown entry point." />
+    <Error Condition="!Exists('$(NetWasmToolchainBundlerPackageLockPath)')"
+           Text="NetWasm.Toolchain requires the pinned bundler package-lock.json." />
+    <Error Condition="!Exists('$(NetWasmToolchainBundlerAssetRoot)/closure-integrity.json')"
+           Text="NetWasm.Toolchain is missing the generated bundler closure integrity manifest." />
+    <Error Condition="!Exists('$(NetWasmToolchainBundlerAssetRoot)/notices.json')"
+           Text="NetWasm.Toolchain is missing the generated bundler third-party notices." />
+    <Error Condition="!Exists('$(NetWasmToolchainBundlerPackItemsPath)')"
+           Text="NetWasm.Toolchain is missing the generated bundler closure package item manifest." />
+    <Error Condition="!Exists('$(NetWasmToolchainBundlerClosurePolicyPath)')"
+           Text="NetWasm.Toolchain is missing the audited bundler closure policy." />
+    <Error Condition="!Exists('JavaScript/run-wasm-tools.mjs')"
+           Text="NetWasm.Toolchain is missing its wasm-tools Node runner." />
+    <Error Condition="!Exists('$(NetWasmToolchainWasmToolsAssetRoot)/wasm-tools.wasm')"
+           Text="NetWasm.Toolchain requires the pinned platform-neutral wasm-tools module." />
+    <Error Condition="!Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-APACHE') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-Apache-2.0_WITH_LLVM-exception') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-MIT') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/README.md')"
+           Text="NetWasm.Toolchain is missing wasm-tools distribution notices." />
+    <Error Condition="!Exists('wit/command.wit') OR !Exists('wit/wit-manifest.json')"
+           Text="NetWasm.Toolchain is missing the pinned WASI 0.2.11 command WIT closure." />
+    <Error Condition="!Exists('async-wit/world.wit') OR !Exists('async-wit/wit-manifest.json')"
+           Text="NetWasm.Toolchain is missing the async command WIT closure." />
+    <Error Condition="!Exists('../../wit/netwasm-platform-1.0.0/world.wit') OR !Exists('../../wit/netwasm-platform-1.0.0/wit-manifest.json')"
+           Text="NetWasm.Toolchain is missing the closed-world compiler WIT closure." />
+    <Error Condition="!Exists('wit-packages/wit-package-manifest.json') OR !Exists('wit-packages/command.wit.wasm') OR !Exists('wit-packages/async-command.wit.wasm') OR !Exists('wit-packages/compiler.wit.wasm')"
+           Text="NetWasm.Toolchain is missing its compiled WIT package products." />
+  </Target>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmToolchainPackTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmToolchainPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmToolchainPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmToolchainPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask
+      PackagePath="$(NetWasmToolchainPackagePath)"
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

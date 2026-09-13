@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1",
+  "wasiVersion": "0.2.11",
+  "package": "netwasm:platform@1.0.0",
+  "world": "platform",
+  "main": "world.wit",
+  "provenance": {
+    "sourceRepository": "https://github.com/WebAssembly/WASI",
+    "sourceRevision": "ed73919426173babd88ae145e31deca3d484bbd0",
+    "sourcePackage": "wasi:cli@0.2.11",
+    "closurePolicy": "closed-world NetWasm runtime imports with canonical WASI 0.2.11 identities"
+  },
+  "aggregateSha256": "c5cb04db69621dfda7ee8a461ee9d2b3e11c4843dac161778fd69ccd72029336",
+  "files": [
+    {
+      "path": "deps/netwasm-runtime/reactor.wit",
+      "sha256": "fb1f67e0f850e14f3ab1cc0afd457ccc26015fc52f83710fe0fe5f11cff7eb8a"
+    },
+    {
+      "path": "deps/wasi-cli/environment.wit",
+      "sha256": "5e58cd47b162e9f004bc9224a29c2ec3cf9e1a3d4c910154ce53742f828af91f"
+    },
+    {
+      "path": "deps/wasi-cli/stderr.wit",
+      "sha256": "b4eddd32877fd30cc1741bc27c1d7dc25a7b3f975a8ed1d65e8524ea7ab0db9c"
+    },
+    {
+      "path": "deps/wasi-cli/stdout.wit",
+      "sha256": "9ff4c3d6d3cbc26cd8c68579f18befc80e7acc92ee3b4a568e6c97df6783c2d8"
+    },
+    {
+      "path": "deps/wasi-clocks/monotonic-clock.wit",
+      "sha256": "ea5a38524b4bf1012f6075c9215c7e553524e387f8c0bacee77162925c6b9e7c"
+    },
+    {
+      "path": "deps/wasi-clocks/wall-clock.wit",
+      "sha256": "f7837b00d88559b784c1cbbb14b20356e5bf72500da61fb8f4535d58b72e8940"
+    },
+    {
+      "path": "deps/wasi-filesystem/filesystem.wit",
+      "sha256": "d9703b4c8612182ddc873e683adf336ce9ce783cb6f77d069c8d699c17ea9eae"
+    },
+    {
+      "path": "deps/wasi-http/handler.wit",
+      "sha256": "1f66174b4058b102367e69ce8aa657b3e9dbc767f6ade960108faaa1731f0945"
+    },
+    {
+      "path": "deps/wasi-http/package.wit",
+      "sha256": "6d881c9a04a85c6ec014fa51eed515a0d3936bcefcafdbb20bf50b9bbe81d9cc"
+    },
+    {
+      "path": "deps/wasi-http/types.wit",
+      "sha256": "b985cbc5d74c4d79268c59daaf997ecc7aca0f6872af34a7363c0351e786077e"
+    },
+    {
+      "path": "deps/wasi-io/error.wit",
+      "sha256": "56375be07db1c68addffbea19e28fb47c969e14612cbcbb42c38dddde4acaf99"
+    },
+    {
+      "path": "deps/wasi-io/poll.wit",
+      "sha256": "f15c9baf8fd51308d1ab2862c52117fdb05d856183460dc4e0bfda11219b566a"
+    },
+    {
+      "path": "deps/wasi-io/streams.wit",
+      "sha256": "e80b150ba7a1631745ed17cc5a12b71532beaf14a8c010101884ec809d471ae0"
+    },
+    {
+      "path": "deps/wasi-random/PROVENANCE.json",
+      "sha256": "3d94e265c324a79f2095cb2f3ee70226d58a41f923f6212da249e569d7575a24"
+    },
+    {
+      "path": "deps/wasi-random/random.wit",
+      "sha256": "2acf17a5d61e1e77a42dcc8b3e7897376bf958ba0690463729bcfd60b15ca0c0"
+    },
+    {
+      "path": "world.wit",
+      "sha256": "20ec78140d9123c4bb3f061e38685401c04ddb69a1003161b6d8acc9448d32d9"
+    }
+  ]
+}

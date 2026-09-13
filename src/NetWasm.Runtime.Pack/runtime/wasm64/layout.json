@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "target": "wasm64",
+  "runtimeFootprintBytes": 117488
+}

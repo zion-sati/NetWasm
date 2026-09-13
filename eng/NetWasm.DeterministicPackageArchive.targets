@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <NetWasmPackTaskProjectPath Condition="'$(NetWasmPackTaskProjectPath)' == ''">$(MSBuildThisFileDirectory)../src/NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(NetWasmPackTaskOutput)' == '' AND '$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(NetWasmPackTaskOutput)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '../src/NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmDeterministicPackageArchiveTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmPackageArchive"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmDeterministicPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmDeterministicPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask PackagePath="$(NetWasmDeterministicPackagePath)"
+                                     PackageId="$(PackageId)"
+                                     PackageVersion="$(PackageVersion)"
+                                     SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>

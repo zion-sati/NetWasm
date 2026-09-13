@@ -1,0 +1,56 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
+    <Project Path="src/NetWasm.Compiler.Metadata/NetWasm.Compiler.Metadata.csproj" />
+    <Project Path="src/NetWasm.Compiler.ControlFlow/NetWasm.Compiler.ControlFlow.csproj" />
+    <Project Path="src/NetWasm.Compiler.GarbageCollection/NetWasm.Compiler.GarbageCollection.csproj" />
+    <Project Path="src/NetWasm.Compiler.Wasm/NetWasm.Compiler.Wasm.csproj" />
+    <Project Path="src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
+    <Project Path="src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
+    <Project Path="src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj" />
+    <Project Path="src/NetWasm.Compiler.Cli/NetWasm.Compiler.Cli.csproj" />
+    <Project Path="src/NetWasm.CoreLib/NetWasm.CoreLib.csproj" />
+    <Project Path="src/NetWasm.Runtime/NetWasm.Runtime.csproj" />
+    <Project Path="src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj" />
+    <Project Path="src/NetWasm.Hosting/NetWasm.Hosting.csproj" />
+    <Project Path="src/NetWasm.Hosting.Build/NetWasm.Hosting.Build.csproj" />
+    <Project Path="src/NetWasm.Runtime.Wasm32/NetWasm.Runtime.Wasm32.csproj" />
+    <Project Path="src/NetWasm.Runtime.Wasm64/NetWasm.Runtime.Wasm64.csproj" />
+    <Project Path="src/NetWasm.Toolchain/NetWasm.Toolchain.csproj" />
+    <Project Path="src/NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj" />
+    <Project Path="src/NetWasm.Sdk/NetWasm.Sdk.csproj" />
+    <Project Path="src/NetWasm.Ref/NetWasm.Ref.csproj" />
+    <Project Path="src/NetWasm.Templates/NetWasm.Templates.csproj" />
+    <Project Path="src/NetWasm.Testing.VSTest/NetWasm.Testing.VSTest.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/NetWasm.Hosting.Generator/NetWasm.Hosting.Generator.csproj" />
+    <Project Path="tools/NetWasm.TimeZones/NetWasm.TimeZones.csproj" />
+    <Project Path="tools/NetWasm.Wit.Bindings/NetWasm.Wit.Bindings.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NetWasm.Compiler.Core.Tests/NetWasm.Compiler.Core.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.ControlFlow.Tests/NetWasm.Compiler.ControlFlow.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.GarbageCollection.Tests/NetWasm.Compiler.GarbageCollection.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.Wasm.Tests/NetWasm.Compiler.Wasm.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.ComponentModel.Tests/NetWasm.Compiler.ComponentModel.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.Cli.Tests/NetWasm.Compiler.Cli.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.Tasks.Tests/NetWasm.Compiler.Tasks.Tests.csproj" />
+    <Project Path="tests/NetWasm.Hosting.Tests/NetWasm.Hosting.Tests.csproj" />
+    <Project Path="tests/NetWasm.Hosting.Build.Tests/NetWasm.Hosting.Build.Tests.csproj" />
+    <Project Path="tests/NetWasm.Hosting.Generator.Tests/NetWasm.Hosting.Generator.Tests.csproj" />
+    <Project Path="tests/NetWasm.Runtime.Pack.Tests/NetWasm.Runtime.Pack.Tests.csproj" />
+    <Project Path="tests/NetWasm.Sdk.Tests/NetWasm.Sdk.Tests.csproj" />
+    <Project Path="tests/NetWasm.Sdk.Pack.Tests/NetWasm.Sdk.Pack.Tests.csproj" />
+    <Project Path="tests/NetWasm.Ref.Tests/NetWasm.Ref.Tests.csproj" />
+    <Project Path="tests/NetWasm.TimeZones.Tests/NetWasm.TimeZones.Tests.csproj" />
+    <Project Path="tests/NetWasm.Wit.Bindings.Tests/NetWasm.Wit.Bindings.Tests.csproj" />
+    <Project Path="tests/NetWasm.Testing.CompilerHost/NetWasm.Testing.CompilerHost.csproj" />
+    <Project Path="tests/NetWasm.Testing.CompilerHost.Tests/NetWasm.Testing.CompilerHost.Tests.csproj" />
+    <Project Path="tests/NetWasm.Testing.OracleHost/NetWasm.Testing.OracleHost.csproj" />
+    <Project Path="tests/NetWasm.Testing.OracleHost.Tests/NetWasm.Testing.OracleHost.Tests.csproj" />
+    <Project Path="tests/NetWasm.Testing.VSTest.Tests.Adapter/NetWasm.Testing.VSTest.Tests.Adapter.csproj" />
+    <Project Path="tests/NetWasm.Testing.VSTest.Tests.ProcessProbe/NetWasm.Testing.VSTest.Tests.ProcessProbe.csproj" />
+    <Project Path="tests/NetWasm.Testing.VSTest.Tests/NetWasm.Testing.VSTest.Tests.csproj" />
+  </Folder>
+</Solution>

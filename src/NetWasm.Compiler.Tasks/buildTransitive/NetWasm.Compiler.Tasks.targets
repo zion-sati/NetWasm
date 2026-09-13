@@ -1,0 +1,303 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmCompileTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmValidateArtifactTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmComponentizeTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmLinkRawModuleTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmBuildRawBindingsTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmProjectWitFunctionsTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmReadCompilerBuildMetadataTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
+    <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
+    <NetWasmCoreModuleOutputPath Condition="'$(NetWasmCoreModuleOutputPath)' == ''">$(OutputPath)$(AssemblyName).core.wasm</NetWasmCoreModuleOutputPath>
+    <NetWasmRuntimeLayoutPath Condition="'$(NetWasmRuntimeLayoutPath)' == ''">$(OutputPath)runtime-layout.json</NetWasmRuntimeLayoutPath>
+    <NetWasmInteropManifestPath Condition="'$(NetWasmInteropManifestPath)' == ''">$(OutputPath)interop.json</NetWasmInteropManifestPath>
+    <NetWasmCompilerMetadataPath Condition="'$(NetWasmCompilerMetadataPath)' == ''">$(NetWasmIntermediateOutputPath)$(AssemblyName).netwasm.compiler-metadata.json</NetWasmCompilerMetadataPath>
+    <NetWasmStackTraceSymbolsPath Condition="'$(NetWasmStackTraceSymbolsPath)' == '' AND '$(NetWasmManagedStackTrace)' == 'true'">$(OutputPath)$(AssemblyName).netwasm.stacktrace.json</NetWasmStackTraceSymbolsPath>
+    <NetWasmArtifactManifestPath Condition="'$(NetWasmArtifactManifestPath)' == ''">$(NetWasmIntermediateOutputPath)$(AssemblyName).netwasm.artifact-manifest.json</NetWasmArtifactManifestPath>
+    <NetWasmOutputPath Condition="'$(NetWasmOutputPath)' == ''">$(TargetDir)$(AssemblyName).wasm</NetWasmOutputPath>
+    <NetWasmRawAdapterPath Condition="'$(NetWasmRawAdapterPath)' == ''">$(TargetDir)$(AssemblyName).netwasm.raw-adapter.mjs</NetWasmRawAdapterPath>
+    <NetWasmProfile Condition="'$(NetWasmProfile)' == '' AND '$(NetWasmSdkTargetFrameworkAlias)' != ''">$(NetWasmSdkTargetFrameworkAlias)</NetWasmProfile>
+    <NetWasmProfile Condition="'$(NetWasmProfile)' == ''">netwasm0.1</NetWasmProfile>
+    <NetWasmFeatureSet Condition="'$(NetWasmFeatureSet)' == ''">none</NetWasmFeatureSet>
+    <NetWasmSdkVersion Condition="'$(NetWasmSdkVersion)' == '' AND '$(NetWasmSdkPackageVersion)' != ''">$(NetWasmSdkPackageVersion)</NetWasmSdkVersion>
+    <NetWasmSdkVersion Condition="'$(NetWasmSdkVersion)' == ''">unknown</NetWasmSdkVersion>
+    <NetWasmCompilerVersion Condition="'$(NetWasmCompilerVersion)' == '' AND '$(NetWasmCompilerTasksPackageVersion)' != ''">$(NetWasmCompilerTasksPackageVersion)</NetWasmCompilerVersion>
+    <NetWasmCompilerVersion Condition="'$(NetWasmCompilerVersion)' == ''">unknown</NetWasmCompilerVersion>
+    <NetWasmRuntimeVersion Condition="'$(NetWasmRuntimeVersion)' == '' AND '$(NetWasmRuntimePackageVersion)' != ''">$(NetWasmRuntimePackageVersion)</NetWasmRuntimeVersion>
+    <NetWasmRuntimeVersion Condition="'$(NetWasmRuntimeVersion)' == ''">unknown</NetWasmRuntimeVersion>
+    <NetWasmRuntimeAbiVersion Condition="'$(NetWasmRuntimeAbiVersion)' == ''">netwasm.runtime.v1</NetWasmRuntimeAbiVersion>
+    <NetWasmComponentizeDependsOn Condition="'$(NetWasmComponentizeDependsOn)' == ''">NetWasmCompilerTasksComponentize</NetWasmComponentizeDependsOn>
+    <NetWasmRawBuildDependsOn Condition="'$(NetWasmRawBuildDependsOn)' == ''">NetWasmCompilerTasksBuildRawBindings</NetWasmRawBuildDependsOn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'">
+    <NetWasmArtifact Include="$(NetWasmCoreModuleOutputPath)">
+      <Kind>CoreModule</Kind>
+      <MediaType>application/wasm</MediaType>
+      <WasmTarget>$(NetWasmTarget)</WasmTarget>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </NetWasmArtifact>
+    <NetWasmArtifact Include="$(NetWasmRuntimeLayoutPath)">
+      <Kind>RuntimeLayout</Kind>
+      <MediaType>application/json</MediaType>
+      <WasmTarget>$(NetWasmTarget)</WasmTarget>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </NetWasmArtifact>
+    <NetWasmArtifact Include="$(NetWasmInteropManifestPath)">
+      <Kind>InteropManifest</Kind>
+      <MediaType>application/json</MediaType>
+      <WasmTarget>$(NetWasmTarget)</WasmTarget>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </NetWasmArtifact>
+    <NetWasmArtifact Include="$(NetWasmStackTraceSymbolsPath)" Condition="'$(NetWasmStackTraceSymbolsPath)' != ''">
+      <Kind>ManagedStackTraceSymbols</Kind>
+      <MediaType>application/json</MediaType>
+      <WasmTarget>$(NetWasmTarget)</WasmTarget>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </NetWasmArtifact>
+    <NetWasmArtifactManifest Include="$(NetWasmArtifactManifestPath)">
+      <Kind>ArtifactManifest</Kind>
+      <MediaType>application/json</MediaType>
+      <WasmTarget>$(NetWasmTarget)</WasmTarget>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </NetWasmArtifactManifest>
+  </ItemGroup>
+
+  <Target Name="NetWasmCompileCoreModule"
+          AfterTargets="CoreCompile"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'"
+          Inputs="@(IntermediateAssembly);@(ReferenceCopyLocalPaths);$(NetWasmRuntimeCoreLibPath);@(Compile);$(NetWasmCompilerWitPath)"
+          Outputs="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmArtifactManifestPath)">
+    <ItemGroup>
+      <_NetWasmManagedLinkReference Include="@(ReferenceCopyLocalPaths)"
+                                    Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib'" />
+      <_NetWasmManagedLinkReference Include="$(NetWasmRuntimeCoreLibPath)" />
+    </ItemGroup>
+    <Error Code="NWSDK002"
+           Condition="'$(NetWasmRuntimeCoreLibPath)' == '' OR !Exists('$(NetWasmRuntimeCoreLibPath)')"
+           Text="The selected NetWasm runtime package did not provide its CoreLib implementation asset." />
+    <Error Code="NWSDK037"
+           Condition="'$(NetWasmNodePath)' == '' OR !Exists('$(NetWasmNodePath)') OR '$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
+           Text="Compilation requires the validated Node executable and pinned platform-neutral NetWasm wasm-tools command." />
+    <NetWasmCompileTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
+                        References="@(_NetWasmManagedLinkReference)"
+                        Sources="@(Compile)"
+                        GeneratedSourceRoot="$(BaseIntermediateOutputPath)"
+                        Target="$(NetWasmTarget)"
+                        CoreModulePath="$(NetWasmCoreModuleOutputPath)"
+                        RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
+                        InteropManifestPath="$(NetWasmInteropManifestPath)"
+                        CompilerMetadataPath="$(NetWasmCompilerMetadataPath)"
+                        ArtifactManifestPath="$(NetWasmArtifactManifestPath)"
+                        ProjectDirectory="$(MSBuildProjectDirectory)"
+                        Profile="$(NetWasmProfile)"
+                        FeatureSet="$(NetWasmFeatureSet)"
+                        SdkVersion="$(NetWasmSdkVersion)"
+                        CompilerVersion="$(NetWasmCompilerVersion)"
+                        RuntimeAbiVersion="$(NetWasmRuntimeAbiVersion)"
+                        RuntimeVersion="$(NetWasmRuntimeVersion)"
+                        RuntimeAbiManifestPath="$(NetWasmRuntimeAbiManifestPath)"
+                        Artifacts="@(NetWasmArtifact)"
+                        DiagnosticTracePath="$(NetWasmDiagnosticTracePath)"
+                        DiagnosticLogPath="$(NetWasmDiagnosticLogPath)"
+                        WitPath="$(NetWasmCompilerWitPath)"
+                        WitWorld="$(NetWasmCompilerWitWorld)"
+                        WasmToolsNodePath="$(NetWasmNodePath)"
+                        WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
+                        WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                        EmitStackTrace="$(NetWasmManagedStackTrace)"
+                        StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)">
+      <Output TaskParameter="ResolvedArtifacts" ItemName="_NetWasmResolvedArtifact" />
+      <Output TaskParameter="SemanticBuildId" PropertyName="NetWasmSemanticBuildId" />
+    </NetWasmCompileTask>
+    <ItemGroup Condition="'@(_NetWasmResolvedArtifact)' != ''">
+      <NetWasmArtifact Remove="@(NetWasmArtifact)" />
+      <NetWasmArtifact Include="@(_NetWasmResolvedArtifact)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="NetWasmCompilerTasksComponentize"
+          DependsOnTargets="NetWasmRuntimePackMaterialize"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'"
+          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmWitPath);$(NetWasmInteropManifestPath)"
+          Outputs="$(NetWasmOutputPath);$(NetWasmComponentManifestPath)">
+    <Error Code="NWSDK022"
+           Condition="'@(NetWasmComponentRuntime)' == ''"
+           Text="The NetWasm runtime module is unavailable for componentization." />
+    <Error Code="NWSDK023"
+           Condition="'$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
+           Text="The pinned platform-neutral NetWasm wasm-tools command is unavailable." />
+    <Error Code="NWSDK038"
+           Condition="'$(NetWasmBinaryenWasmOptPath)' == '' OR !Exists('$(NetWasmBinaryenWasmOptPath)') OR '$(NetWasmBinaryenWasmMergePath)' == '' OR !Exists('$(NetWasmBinaryenWasmMergePath)')"
+           Text="Component packaging requires the pinned platform-neutral NetWasm Binaryen commands." />
+    <NetWasmComponentizeTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
+                             CoreModulePath="$(NetWasmCoreModuleOutputPath)"
+                             RuntimeModulePath="@(NetWasmComponentRuntime->'%(FullPath)')"
+                             WitPath="$(NetWasmWitPath)"
+                             World="$(NetWasmWorld)"
+                             WitWorldVariants="@(NetWasmComponentWitVariant)"
+                             OutputPath="$(NetWasmOutputPath)"
+                             ComponentManifestPath="$(NetWasmComponentManifestPath)"
+                             InteropManifestPath="$(NetWasmInteropManifestPath)"
+                             WasmToolsNodePath="$(NetWasmNodePath)"
+                             WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
+                             WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                             BinaryenWasmOptPath="$(NetWasmBinaryenWasmOptPath)"
+                             BinaryenWasmMergePath="$(NetWasmBinaryenWasmMergePath)"
+                             Target="$(NetWasmTarget)"
+                             JcoVersion="$(NetWasmJcoVersion)"
+                             Preview2ShimVersion="$(NetWasmPreview2ShimVersion)">
+      <Output TaskParameter="Components" ItemName="_NetWasmBuiltComponent" />
+      <Output TaskParameter="SelectedWitPath" PropertyName="NetWasmSelectedWitPath" />
+      <Output TaskParameter="SelectedWorld" PropertyName="NetWasmSelectedWorld" />
+    </NetWasmComponentizeTask>
+  </Target>
+
+  <Target Name="NetWasmCompilerTasksLinkRawModule"
+          DependsOnTargets="NetWasmRuntimePackMaterialize"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmRawWasm)' == 'true'"
+          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime)"
+          Outputs="$(NetWasmOutputPath)">
+    <Error Code="NWSDK028"
+           Condition="'@(NetWasmComponentRuntime)' == ''"
+           Text="The NetWasm runtime module is unavailable for raw linking." />
+    <Error Code="NWSDK029"
+           Condition="'$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
+           Text="Raw linking requires the pinned platform-neutral wasm-tools command." />
+    <Error Code="NWSDK039"
+           Condition="'$(NetWasmBinaryenWasmOptPath)' == '' OR !Exists('$(NetWasmBinaryenWasmOptPath)') OR '$(NetWasmBinaryenWasmMergePath)' == '' OR !Exists('$(NetWasmBinaryenWasmMergePath)')"
+           Text="Raw linking requires the pinned platform-neutral NetWasm Binaryen commands." />
+    <NetWasmLinkRawModuleTask CoreModulePath="$(NetWasmCoreModuleOutputPath)"
+                              RuntimeModulePath="@(NetWasmComponentRuntime->'%(FullPath)')"
+                              OutputPath="$(NetWasmOutputPath)"
+                              WasmToolsNodePath="$(NetWasmNodePath)"
+                              WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
+                              WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                              BinaryenWasmOptPath="$(NetWasmBinaryenWasmOptPath)"
+                              BinaryenWasmMergePath="$(NetWasmBinaryenWasmMergePath)"
+                              Target="$(NetWasmTarget)">
+      <Output TaskParameter="Modules" ItemName="_NetWasmBuiltRawModule" />
+    </NetWasmLinkRawModuleTask>
+  </Target>
+
+  <Target Name="NetWasmCompilerTasksBuildRawBindings"
+          DependsOnTargets="NetWasmCompilerTasksLinkRawModule"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmRawWasm)' == 'true'"
+          Inputs="$(NetWasmCompilerMetadataPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerWitPath);$(NetWasmWitPath);@(NetWasmComponentRuntime);$(NetWasmOutputPath);$(NetWasmRawInspectionScriptPath);$(NetWasmBinaryenModulePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath)"
+          Outputs="$(NetWasmRawAdapterPath)">
+    <Error Code="NWSDK030"
+           Condition="'$(NetWasmNodePath)' == '' OR !Exists('$(NetWasmNodePath)')"
+           Text="Raw binding generation requires a validated Node executable." />
+    <Error Code="NWSDK031"
+           Condition="'$(NetWasmRawInspectionScriptPath)' == '' OR !Exists('$(NetWasmRawInspectionScriptPath)')"
+           Text="The NetWasm Toolchain raw inspection command is unavailable." />
+    <Error Code="NWSDK032"
+           Condition="'$(NetWasmBinaryenModulePath)' == '' OR !Exists('$(NetWasmBinaryenModulePath)')"
+           Text="The NetWasm Toolchain Binaryen module is unavailable." />
+    <Error Code="NWSDK040"
+           Condition="'$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
+           Text="Raw binding generation requires the pinned platform-neutral wasm-tools command." />
+    <NetWasmBuildRawBindingsTask CompilerMetadataPath="$(NetWasmCompilerMetadataPath)"
+                                 InteropManifestPath="$(NetWasmInteropManifestPath)"
+                                 WitPath="$(NetWasmCompilerWitPath)"
+                                 World="$(NetWasmCompilerWitWorld)"
+                                 RuntimeWitPath="$(NetWasmWitPath)"
+                                 RuntimeWorld="$(NetWasmWorld)"
+                                 Target="$(NetWasmTarget)"
+                                 RuntimeModulePath="@(NetWasmComponentRuntime->'%(FullPath)')"
+                                 FinalModulePath="$(NetWasmOutputPath)"
+                                 NodePath="$(NetWasmNodePath)"
+                                 WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
+                                 WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                 InspectionScriptPath="$(NetWasmRawInspectionScriptPath)"
+                                 BinaryenPath="$(NetWasmBinaryenModulePath)"
+                                 AdapterPath="$(NetWasmRawAdapterPath)">
+      <Output TaskParameter="Adapters" ItemName="_NetWasmBuiltRawAdapter" />
+      <Output TaskParameter="RequiredImports" ItemName="_NetWasmRequiredImport" />
+      <Output TaskParameter="RequiredImportModules" ItemName="_NetWasmRequiredImportModule" />
+    </NetWasmBuildRawBindingsTask>
+  </Target>
+
+  <Target Name="NetWasmValidateCompilerArtifacts"
+          BeforeTargets="Publish"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmSemanticBuildId)' == ''">
+    <ItemGroup>
+      <_NetWasmValidationManagedLinkReference Include="@(ReferenceCopyLocalPaths)"
+                                              Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll' and '%(ReferenceCopyLocalPaths.Filename)' != 'NetWasm.CoreLib'" />
+      <_NetWasmValidationManagedLinkReference Include="$(NetWasmRuntimeCoreLibPath)" />
+    </ItemGroup>
+    <NetWasmValidateArtifactTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
+                                 References="@(_NetWasmValidationManagedLinkReference)"
+                                 Sources="@(Compile)"
+                                 GeneratedSourceRoot="$(BaseIntermediateOutputPath)"
+                                 Target="$(NetWasmTarget)"
+                                 ArtifactManifestPath="$(NetWasmArtifactManifestPath)"
+                                 ProjectDirectory="$(MSBuildProjectDirectory)"
+                                 Profile="$(NetWasmProfile)"
+                                 FeatureSet="$(NetWasmFeatureSet)"
+                                 SdkVersion="$(NetWasmSdkVersion)"
+                                 CompilerVersion="$(NetWasmCompilerVersion)"
+                                 RuntimeAbiVersion="$(NetWasmRuntimeAbiVersion)"
+                                 RuntimeVersion="$(NetWasmRuntimeVersion)"
+                                 RuntimeAbiManifestPath="$(NetWasmRuntimeAbiManifestPath)"
+                                 Artifacts="@(NetWasmArtifact)">
+      <Output TaskParameter="ResolvedArtifacts" ItemName="_NetWasmValidatedArtifact" />
+      <Output TaskParameter="SemanticBuildId" PropertyName="NetWasmSemanticBuildId" />
+    </NetWasmValidateArtifactTask>
+    <ItemGroup Condition="'@(_NetWasmValidatedArtifact)' != ''">
+      <NetWasmArtifact Remove="@(NetWasmArtifact)" />
+      <NetWasmArtifact Include="@(_NetWasmValidatedArtifact)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="NetWasmCopyArtifactsToPublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmValidateCompilerArtifacts"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishCompilerArtifacts)' == 'true'">
+    <Copy SourceFiles="@(NetWasmArtifact)"
+          DestinationFiles="@(NetWasmArtifact->'$(PublishDir)%(RelativePath)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NetWasmArtifactManifest)"
+          DestinationFiles="@(NetWasmArtifactManifest->'$(PublishDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(NetWasmArtifactManifestPath)')" />
+  </Target>
+
+  <Target Name="NetWasmCleanCompilerArtifacts"
+          BeforeTargets="CoreClean"
+          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <Delete Files="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmStackTraceSymbolsPath);$(NetWasmArtifactManifestPath);$(NetWasmOutputPath);$(NetWasmComponentManifestPath);$(NetWasmRawAdapterPath)" />
+    <RemoveDir Directories="$(NetWasmIntermediateOutputPath)"
+               Condition="'$(NetWasmIntermediateOutputPath)' != '' AND Exists('$(NetWasmIntermediateOutputPath)')" />
+  </Target>
+</Project>

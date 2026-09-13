@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://netwasm.dev/schemas/netwasm.execution-result-1.json",
+  "title": "NetWasm execution result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "completionKind", "exitCode", "primaryFailure", "cleanupFailures"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "completionKind": {
+      "enum": [
+        "normal",
+        "managedFailure",
+        "managedCancellation",
+        "callerCancellation",
+        "contractFailure",
+        "hostFailure"
+      ]
+    },
+    "exitCode": {
+      "type": ["integer", "null"],
+      "minimum": -2147483648,
+      "maximum": 2147483647
+    },
+    "primaryFailure": {
+      "oneOf": [
+        { "$ref": "#/$defs/failure" },
+        { "type": "null" }
+      ]
+    },
+    "cleanupFailures": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/failure" }
+    }
+  },
+  "$defs": {
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "code", "message"],
+      "properties": {
+        "phase": {
+          "enum": ["validation", "instantiation", "execution", "observation", "cleanup", "output"]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.\\-]*$"
+        },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Sdk.Pack</AssemblyName>
+    <RootNamespace>NetWasm.Sdk.Pack</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Release task payloads are embedded in the SDK package.  Omitting
+         portable PDBs keeps that payload independent of build-root paths;
+         Debug remains symbol-rich for focused test and coverage builds. -->
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+    <!-- Keep repository-local generated files out of default globs when the
+         SDK pack invokes this internal task project with an external
+         BaseIntermediateOutputPath/BaseOutputPath. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildProjectDirectory)/obj/**;$(MSBuildProjectDirectory)/bin/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.Build.Framework">
+      <HintPath>$(MSBuildToolsPath)/Microsoft.Build.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Build">
+      <HintPath>$(MSBuildToolsPath)/Microsoft.Build.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Build.Utilities.Core">
+      <HintPath>$(MSBuildToolsPath)/Microsoft.Build.Utilities.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="NuGet.Packaging">
+      <HintPath>$(MSBuildToolsPath)/NuGet.Packaging.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="NuGet.Versioning">
+      <HintPath>$(MSBuildToolsPath)/NuGet.Versioning.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

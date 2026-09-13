@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://netwasm.dev/schemas/netwasm.execution-request-1.json",
+  "title": "NetWasm execution request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "buildFingerprint",
+    "deploymentManifestSha256",
+    "arguments",
+    "environment",
+    "grants",
+    "applicationImports"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "buildFingerprint": { "$ref": "#/$defs/sha256" },
+    "deploymentManifestSha256": { "$ref": "#/$defs/sha256" },
+    "arguments": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "environment": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/environmentVariable" }
+    },
+    "grants": { "$ref": "#/$defs/grants" },
+    "applicationImports": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/applicationImport" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "environmentName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^=\\u0000]+$"
+    },
+    "environmentVariable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "$ref": "#/$defs/environmentName" },
+        "value": { "type": "string", "pattern": "^[^\\u0000]*$" }
+      }
+    },
+    "preopen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostPath", "guestPath", "access"],
+      "properties": {
+        "hostPath": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$" },
+        "guestPath": { "type": "string", "pattern": "^/(?:[^/\\\\\\u0000.][^/\\\\\\u0000]*|\\.[^./\\\\\\u0000][^/\\\\\\u0000]*|\\.\\.[^/\\\\\\u0000][^/\\\\\\u0000]*)(?:/(?:[^/\\\\\\u0000.][^/\\\\\\u0000]*|\\.[^./\\\\\\u0000][^/\\\\\\u0000]*|\\.\\.[^/\\\\\\u0000][^/\\\\\\u0000]*))*$|^/$" },
+        "access": { "enum": ["readOnly", "readWrite"] }
+      }
+    },
+    "grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "preopens", "network", "clocks", "randomness"],
+      "properties": {
+        "environment": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/environmentName" }
+        },
+        "preopens": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/preopen" }
+        },
+        "network": { "enum": ["denyAll", "allowAll"] },
+        "clocks": {
+          "type": "array",
+          "items": { "enum": ["wall", "monotonic"] }
+        },
+        "randomness": { "type": "boolean" }
+      }
+    },
+    "applicationImport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "artifactPath", "sha256"],
+      "properties": {
+        "module": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.\\-:/]*@[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "artifactPath": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

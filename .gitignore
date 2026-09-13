@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+/artifacts/
+/build/
+node_modules/
+TestResults/
+.DS_Store

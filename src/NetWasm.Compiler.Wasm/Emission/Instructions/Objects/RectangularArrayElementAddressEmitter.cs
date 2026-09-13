@@ -1,0 +1,149 @@
+using System;
+using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Encoding;
+
+namespace NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
+
+internal sealed class RectangularArrayElementAddressEmitter(
+    ITargetLayout layouts,
+    IRuntimeObjectLayout objects,
+    IRectangularArrayLayoutProvider rectangularLayouts,
+    IAddressInstructionEmitter addresses,
+    IValueLayoutProvider values,
+    IImplicitExceptionEmitter exceptions) : IRectangularArrayElementAddressEmitter
+{
+    public void Emit(
+        RectangularArrayElementAddressRequest request,
+        IWasmInstructionWriter code)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        var instruction = request.Instruction;
+        var arrayType = GetArrayType(instruction);
+        var elementType = arrayType.ElementType!;
+        var arrayLocal = GetStackLocal(
+            instruction.Context,
+            request.ArraySlot,
+            CliValueKind.ManagedReference);
+        EmitNullCheck(code, arrayLocal);
+
+        var shape = rectangularLayouts.Provide();
+        var accumulator = instruction.Context.NumericTemporaryI4;
+        WriteI32(code, 0);
+        Set(code, accumulator);
+        for (var dimension = 0; dimension < arrayType.ArrayRank; dimension++)
+        {
+            var indexLocal = GetStackLocal(
+                instruction.Context,
+                request.ArraySlot + dimension + 1,
+                CliValueKind.I4);
+            Get(code, indexLocal);
+            WriteI32(code, 0);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanSigned));
+            ThrowIf(code, ManagedExceptionKind.IndexOutOfRange);
+
+            Get(code, indexLocal);
+            EmitShapeFieldAddress(code, arrayLocal, shape, dimension);
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Load,
+                WasmInstructionOperand.Memory(
+                    2,
+                    (uint)shape.DimensionLengthOffset)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
+            ThrowIf(code, ManagedExceptionKind.IndexOutOfRange);
+
+            Get(code, accumulator);
+            Get(code, indexLocal);
+            EmitShapeFieldAddress(code, arrayLocal, shape, dimension);
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Load,
+                WasmInstructionOperand.Memory(
+                    2,
+                    (uint)shape.DimensionStrideOffset)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Add));
+            Set(code, accumulator);
+        }
+
+        Get(code, arrayLocal);
+        ManagedMemoryEmitter.EmitReferenceLoad(
+            code,
+            layouts.Target,
+            objects.ArrayDataPointerOffset);
+        Get(code, accumulator);
+        WriteI32(code, GetElementSize(elementType));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
+        if (layouts.Target.UsesMemory64)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+        }
+        addresses.Emit(code, AddressOperation.Add);
+    }
+
+    private void EmitShapeFieldAddress(
+        IWasmInstructionWriter code,
+        int arrayLocal,
+        RectangularArrayLayout shape,
+        int dimension)
+    {
+        Get(code, arrayLocal);
+        ManagedMemoryEmitter.EmitReferenceLoad(
+            code,
+            layouts.Target,
+            shape.ShapePointerOffset);
+        addresses.Emit(code, checked(dimension * shape.DimensionSize));
+        addresses.Emit(code, AddressOperation.Add);
+    }
+
+    private void EmitNullCheck(IWasmInstructionWriter code, int arrayLocal)
+    {
+        Get(code, arrayLocal);
+        addresses.Emit(code, AddressOperation.EqualZero);
+        ThrowIf(code, ManagedExceptionKind.NullReference);
+    }
+
+    private void ThrowIf(IWasmInstructionWriter code, ManagedExceptionKind kind)
+    {
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.If,
+            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        exceptions.Emit(code, kind);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    private int GetElementSize(CliTypeIdentity elementType) =>
+        elementType.StackKind == CliValueKind.ManagedReference
+            ? layouts.Target.ObjectReferenceSize
+            : values.GetValueLayout(elementType).Size;
+
+    private static CliTypeIdentity GetArrayType(InstructionEmissionRequest request) =>
+        request.Instruction.Operand is CilOperand.TypeIdentity { Value.Shape: CliTypeShape.Array } type
+            ? type.Value
+            : throw new InvalidOperationException(
+                "rectangular-array instruction has no array type operand");
+
+    private int GetStackLocal(
+        MethodEmissionContext context,
+        int slot,
+        CliValueKind type) => WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+        context.StackLocals,
+        slot,
+        type,
+        layouts.Target);
+
+    private static void Get(IWasmInstructionWriter code, int local) => code.Write(
+        WasmInstruction.WithOperand(
+            WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)local)));
+
+    private static void Set(IWasmInstructionWriter code, int local) => code.Write(
+        WasmInstruction.WithOperand(
+            WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)local)));
+
+    private static void WriteI32(IWasmInstructionWriter code, int value) => code.Write(
+        WasmInstruction.WithOperand(
+            WasmOpcodes.I32Constant,
+            WasmInstructionOperand.Signed(value)));
+}

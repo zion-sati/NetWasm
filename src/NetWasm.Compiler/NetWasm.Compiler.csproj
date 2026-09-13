@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <ProjectReference Include="../NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
+    <ProjectReference Include="../NetWasm.Compiler.Metadata/NetWasm.Compiler.Metadata.csproj" />
+    <ProjectReference Include="../NetWasm.Compiler.ControlFlow/NetWasm.Compiler.ControlFlow.csproj" />
+    <ProjectReference Include="../NetWasm.Compiler.GarbageCollection/NetWasm.Compiler.GarbageCollection.csproj" />
+    <ProjectReference Include="../NetWasm.Compiler.Wasm/NetWasm.Compiler.Wasm.csproj" />
+    <ProjectReference Include="../NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+</Project>

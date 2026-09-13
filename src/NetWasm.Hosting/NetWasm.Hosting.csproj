@@ -1,0 +1,82 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>NetWasm.Hosting</AssemblyName>
+    <RootNamespace>NetWasm.Hosting</RootNamespace>
+    <PackageId>NetWasm.Hosting</PackageId>
+    <Version>0.1.0-preview.12</Version>
+    <Description>Public local and browser execution contracts for NetWasm artifacts.</Description>
+    <PackageTags>netwasm;hosting;wasm;wasi;preview2</PackageTags>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
+          Pack="true"
+          PackagePath="LICENSE.txt"
+          Visible="false" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="Schemas/*.schema.json"
+          Pack="true"
+          PackagePath="tools/netwasm/hosting/schemas/%(Filename)%(Extension)" />
+    <None Include="JavaScript/**/*.mjs"
+          Exclude="JavaScript/**/*.test.mjs"
+          Pack="true"
+          PackagePath="tools/netwasm/hosting/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="ValidateNetWasmHostingPackInputs" BeforeTargets="Pack">
+    <Error Condition="!Exists('README.md')"
+           Text="NetWasm.Hosting is missing its package README." />
+    <Error Condition="!Exists('JavaScript/index.mjs')"
+           Text="NetWasm.Hosting is missing its stable ESM entry point." />
+    <Error Condition="!Exists('JavaScript/browser.mjs')"
+           Text="NetWasm.Hosting is missing its browser ESM entry point." />
+    <Error Condition="!Exists('JavaScript/local.mjs')"
+           Text="NetWasm.Hosting is missing its local ESM entry point." />
+    <Error Condition="!Exists('JavaScript/launcher.mjs')"
+           Text="NetWasm.Hosting is missing its package-owned local launcher." />
+    <Error Condition="!Exists('JavaScript/launcher-component.mjs') OR !Exists('JavaScript/launcher-raw.mjs')"
+           Text="NetWasm.Hosting is missing a selected package-owned local launcher." />
+    <Error Condition="!Exists('JavaScript/browser-component-bootstrap.mjs') OR !Exists('JavaScript/browser-raw-bootstrap.mjs')"
+           Text="NetWasm.Hosting is missing a selected browser bootstrap." />
+  </Target>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmHostingPackTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <!-- Hosting is an ordinary library package. Stock NuGet owns its package
+       model; the shared pack actor only canonicalizes the completed archive. -->
+  <Target Name="CanonicalizeNetWasmHostingPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmHostingPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmHostingPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask
+      PackagePath="$(NetWasmHostingPackagePath)"
+      PackageId="$(PackageId)"
+      PackageVersion="$(PackageVersion)"
+      SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
+</Project>
