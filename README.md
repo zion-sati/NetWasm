@@ -33,6 +33,11 @@ eng/verify-toolchain.sh
 dotnet build NetWasm.slnx -c Release --no-restore
 ```
 
+To build the complete 11-package core distribution from that clean checkout,
+run `eng/build-packages.sh`. It materializes the audited platform-neutral
+Toolchain assets from the checked-in locks and pinned upstream archive, then
+writes packages under `artifacts/packages`. It does not publish them.
+
 The package-consumer flow is documented in [QUICKSTART.md](QUICKSTART.md).
 The [support status and roadmap](docs/support-status.md) separates the current
 supported profile from external blockers, deferred work, and intentional

@@ -46,7 +46,7 @@ sharing these artifacts.
 
 `--stack-trace-symbols <path>` enables opt-in managed stack-trace
 instrumentation and writes its symbol sidecar. It is not DWARF/source-level
-debug information; see the [support status and roadmap](support-status.md#opt-in-managed-stack-traces).
+debug information; see the [support status and roadmap](support-status.md#managed-stack-traces).
 
 The separate `NetWasm.Wit.Bindings` tool accepts `--wit`, optional `--world`,
 and `--output`. It writes reflection-free C# bindings; the compiler CLI does not

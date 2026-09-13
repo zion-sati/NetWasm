@@ -12,6 +12,7 @@ const factoryKeys = [
 ];
 const invocationKeys = [
   "arguments",
+  "environment",
   "hostExecutablePath",
   "launcherPath",
   "signal",
@@ -33,6 +34,9 @@ export function createLocalLauncherCommand(options) {
     assertExactDataObject(invocation, invocationKeys, "local launcher command invocation");
     if (!Array.isArray(invocation.arguments)) {
       throw new TypeError("local launcher command arguments must be an array");
+    }
+    if (!Array.isArray(invocation.environment)) {
+      throw new TypeError("local launcher command environment must be an array");
     }
     validatePath(invocation.hostExecutablePath, "local launcher command host executable path");
     validatePath(invocation.launcherPath, "local launcher command module path");
@@ -57,6 +61,7 @@ export function createLocalLauncherCommand(options) {
       result = await options.launch(Object.freeze({
         arguments: paths.arguments,
         descriptorText,
+        environment: invocation.environment,
         hostExecutablePath: invocation.hostExecutablePath,
         launcherPath: invocation.launcherPath,
         requestText,

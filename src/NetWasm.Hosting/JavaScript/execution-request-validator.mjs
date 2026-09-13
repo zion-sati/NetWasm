@@ -50,20 +50,6 @@ export function createExecutionRequestValidator(options) {
   });
 }
 
-export function appendExecutionArguments(request, additionalArguments) {
-  assertExactDataObject(request, requestKeys, "validated execution request");
-  if (!Object.isFrozen(request)
-      || !Array.isArray(request.arguments)
-      || !Object.isFrozen(request.arguments)) {
-    throw new TypeError("validated execution request arguments are not immutable");
-  }
-  const additional = validateArguments(additionalArguments);
-  return Object.freeze({
-    ...request,
-    arguments: Object.freeze([...request.arguments, ...additional]),
-  });
-}
-
 function validateArguments(value) {
   if (!Array.isArray(value)) {
     throw new TypeError("execution arguments must be explicit");

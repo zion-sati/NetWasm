@@ -51,8 +51,8 @@
     <NetWasmComponentAdapterPath Condition="'$(NetWasmComponentAdapterPath)' == '' AND '$(NetWasmComponentJavaScriptDirectory)' != ''">$([System.IO.Path]::Combine('$(NetWasmComponentJavaScriptDirectory)', '$(AssemblyName).wasm.adapter.mjs'))</NetWasmComponentAdapterPath>
     <NetWasmMinifyJavaScript Condition="'$(NetWasmMinifyJavaScript)' == '' AND '$(Configuration)' == 'Release'">true</NetWasmMinifyJavaScript>
     <NetWasmMinifyJavaScript Condition="'$(NetWasmMinifyJavaScript)' == ''">false</NetWasmMinifyJavaScript>
-    <NetWasmNetworkPolicy Condition="'$(NetWasmNetworkPolicy)' == ''">denyAll</NetWasmNetworkPolicy>
-    <NetWasmRandomness Condition="'$(NetWasmRandomness)' == ''">false</NetWasmRandomness>
+    <NetWasmNetworkPolicy Condition="'$(NetWasmNetworkPolicy)' == ''">allowAll</NetWasmNetworkPolicy>
+    <NetWasmRandomness Condition="'$(NetWasmRandomness)' == ''">true</NetWasmRandomness>
     <NetWasmPublishCompilerArtifacts>false</NetWasmPublishCompilerArtifacts>
 
     <!-- The ordinary Run target consumes these standard .NET properties. -->
@@ -62,7 +62,7 @@
     <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == ''">node</NetWasmRunNodeCommand>
     <RunCommand Condition="'$(OutputType)' == 'Exe' AND '$(RunCommand)' == ''">$(NetWasmRunNodeCommand)</RunCommand>
     <RunArguments Condition="'$(OutputType)' == 'Exe' AND '$(RunArguments)' == ''">&quot;$(NetWasmLocalLauncherPath)&quot; --descriptor &quot;$(NetWasmExecutionDescriptorPath)&quot; --request &quot;$(NetWasmExecutionRequestPath)&quot; --result &quot;$(NetWasmExecutionResultPath)&quot; --replace-result --</RunArguments>
-    <RunWorkingDirectory Condition="'$(OutputType)' == 'Exe' AND '$(RunWorkingDirectory)' == ''">$(TargetDir)</RunWorkingDirectory>
+    <RunWorkingDirectory Condition="'$(OutputType)' == 'Exe' AND '$(RunWorkingDirectory)' == ''">$(MSBuildProjectDirectory)</RunWorkingDirectory>
   </PropertyGroup>
 
   <Target Name="NetWasmSdkResolveBuildEnvironment"
@@ -322,6 +322,8 @@
     </NetWasmWriteDeploymentTask>
 
     <ItemGroup>
+      <NetWasmClockGrant Include="wall;monotonic"
+                         Condition="'@(NetWasmClockGrant)' == ''" />
       <_NetWasmExecutionToolPackage Include="$(NetWasmToolchainPackageRoot)">
         <Id>$(NetWasmResolvedToolchainPackageId)</Id>
         <Version>$(NetWasmResolvedToolchainPackageVersion)</Version>

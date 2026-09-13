@@ -8,10 +8,9 @@ import {
 } from "./execution-descriptor-validator.mjs";
 import { createExecutionPackageVerifier } from "./execution-package-verifier.mjs";
 import { createExecutionRequestReader } from "./execution-request-reader.mjs";
-import {
-  appendExecutionArguments,
-  createExecutionRequestValidator,
-} from "./execution-request-validator.mjs";
+import { appendExecutionArguments } from "./execution-request-arguments.mjs";
+import { overlayExecutionEnvironment } from "./execution-request-environment.mjs";
+import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { createLocalLauncher } from "./local-launcher.mjs";
 import { createLocalLauncherCommand } from "./local-launcher-command.mjs";
 import { createPreview2PlatformLoader } from "./preview2-platform-loader.mjs";
@@ -50,6 +49,7 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
     appendArguments: appendExecutionArguments,
     createExecution,
     loadPlatform,
+    overlayEnvironment: overlayExecutionEnvironment,
     readDescriptor,
     readRequest,
     realPath: realpath,
@@ -75,6 +75,7 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
   try {
     await run(Object.freeze({
       arguments: process.argv.slice(2),
+      environment: snapshotProcessEnvironment(process.env),
       hostExecutablePath: process.execPath,
       launcherPath,
       signal: controller.signal,
@@ -88,6 +89,12 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
     process.off("SIGINT", cancel);
     process.off("SIGTERM", cancel);
   }
+}
+
+function snapshotProcessEnvironment(environment) {
+  return Object.freeze(Object.entries(environment)
+    .filter(([, value]) => typeof value === "string")
+    .map(([name, value]) => Object.freeze({ name, value })));
 }
 
 async function readStdinText() {

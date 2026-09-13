@@ -92,7 +92,7 @@ needed for the standard SDK build, run or publish journey.
 Install the templates directly from NuGet.org:
 
 ```bash
-dotnet new install NetWasm.Templates@0.1.0-preview.64
+dotnet new install NetWasm.Templates@0.1.0-rc.1
 ```
 
 The normal NuGet configuration and credentials on the machine continue to
@@ -112,36 +112,40 @@ dotnet run
 The template prints `42`. Its managed entry point is ordinary C# `Main`; the
 JavaScript host's `executeNetWasm(...)` function is the reusable execution
 facade used by the generated launcher, not a replacement managed entry point.
+Debug builds include managed stack traces by default. Release omits their
+instrumentation and symbol sidecar unless `NetWasmManagedStackTrace=true`.
 
-### Grant optional host capabilities
+### Environment and host capabilities
 
-Applications are deny-by-default. Grant only capabilities required by reachable
-code using ordinary MSBuild properties and items:
+The local launcher follows ordinary command-line application behavior. It
+inherits the environment that launches `dotnet run`, starts in the project
+directory, and automatically supplies wall/monotonic clocks, randomness and
+HTTP network support when reachable code needs them. Use the shell or standard
+.NET launch configuration for development values; do not commit environment
+values to the project file:
+
+```bash
+APP_MODE=preview dotnet run
+```
+
+Whole-program reachability still controls the final guest and host closure. An
+unused clock, randomness or HTTP API retains no corresponding managed code,
+Wasm import or JavaScript provider. A custom host or deployer can apply a more
+restrictive policy.
+
+Filesystem access is different: host and guest paths are deployment mappings,
+so preopens remain explicit:
 
 ```xml
-<PropertyGroup>
-  <NetWasmNetworkPolicy>allowAll</NetWasmNetworkPolicy>
-  <NetWasmRandomness>true</NetWasmRandomness>
-</PropertyGroup>
-
 <ItemGroup>
-  <NetWasmClockGrant Include="monotonic" />
-  <NetWasmEnvironmentVariable Include="APP_MODE" Value="preview" />
   <NetWasmPreopen Include="$(MSBuildProjectDirectory)/data"
                   GuestPath="/data"
                   Access="readOnly" />
 </ItemGroup>
 ```
 
-The defaults are `denyAll`, `false`, and empty item collections. Use `wall` or
-`monotonic` for `NetWasmClockGrant`; use `readOnly` or `readWrite` for preopen
-access. Supplying an environment item also grants that exact name. A retained
-capability without its grant is rejected before `Main`, while a grant for an
-unreachable capability does not retain the corresponding managed code or Wasm
-import. `DateTime.UtcNow` needs `wall`; delay/readiness and generated-regex
-timeout checks need `monotonic`; WASI HTTP needs both `allowAll` and `monotonic`; and
-`Guid.NewGuid()` needs randomness. A preopen does not create the currently
-missing general `File`/`Directory` API surface.
+Use `readOnly` or `readWrite` for preopen access. A preopen does not create the
+currently missing general `File`/`Directory` API surface.
 
 ## 4. Publish
 

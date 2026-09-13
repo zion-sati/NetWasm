@@ -18,6 +18,17 @@ eng/verify-toolchain.sh
 dotnet build NetWasm.slnx -c Release --no-restore
 ```
 
+Run `eng/build-packages.sh` from a clean checkout to reproduce the complete
+core package set. The command stages only the checked-in locked Toolchain
+closures and the checksum-pinned official wasm-tools WASI archive; it never
+publishes packages.
+
+The default verifier checks only that source-build contract. Contributors who
+run the complete cross-host qualification matrix can install the additional
+exact WABT, wasm-tools and Wasmtime versions from `eng/toolchain.json`, select
+the repository's exact Node version, and run
+`eng/verify-toolchain.sh --qualification`.
+
 Run the smallest relevant test project or end-to-end fixture before proposing a
 change. Compiler changes should include a focused regression that demonstrates
 the input and expected behaviour. CoreLib ports must retain upstream headers

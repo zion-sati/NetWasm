@@ -36,6 +36,8 @@
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmManagedStackTrace>
+    <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == ''">false</NetWasmManagedStackTrace>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
     <NetWasmCoreModuleOutputPath Condition="'$(NetWasmCoreModuleOutputPath)' == ''">$(OutputPath)$(AssemblyName).core.wasm</NetWasmCoreModuleOutputPath>

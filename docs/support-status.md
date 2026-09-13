@@ -101,14 +101,16 @@ This table describes the public managed compatibility boundary. It does not
 forbid Hosting from using a capability internally, nor does it turn every
 interface in a selected WIT world into a .NET API.
 
-### Opt-in managed stack traces
+### Managed stack traces
 
-`--stack-trace-symbols <path>` enables opt-in managed stack instrumentation and
-writes a deterministic symbol sidecar. `Exception.StackTrace` then reports the
+SDK Debug builds enable managed stack instrumentation and its deterministic
+symbol sidecar by default; Release builds leave it out unless
+`NetWasmManagedStackTrace=true`. The compiler CLI enables the same behavior
+with `--stack-trace-symbols <path>`. `Exception.StackTrace` then reports the
 captured managed frames without adding general reflection or type-name metadata
-to the Wasm image. Without that option, no instrumentation or sidecar is
-emitted. This is diagnostic stack-trace support, not source-level debugging or
-DWARF; see [deferred debug information](#deferred-debug-information-dwarf).
+to the Wasm image. This is diagnostic stack-trace support, not source-level
+debugging or DWARF; see
+[deferred debug information](#deferred-debug-information-dwarf).
 
 ## Partially qualified
 

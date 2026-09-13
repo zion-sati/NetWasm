@@ -4,6 +4,7 @@
   "binaryen": "132",
   "wabt": "1.0.41",
   "node": "26.7.0",
+  "nodeMinimumMajor": 24,
   "playwright": "1.62.1",
   "emscripten": "6.0.7",
   "llvmLld": {

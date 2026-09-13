@@ -1,0 +1,1313 @@
+{
+  "schemaVersion": "1",
+  "contract": "jco-transpile-only",
+  "roots": [
+    "node_modules/@bytecodealliance/jco",
+    "node_modules/@bytecodealliance/preview2-shim"
+  ],
+  "entryPoint": "node_modules/@bytecodealliance/jco/dist/jco.js",
+  "requiredCommands": [
+    "transpile"
+  ],
+  "acceptedInvocation": [
+    "transpile",
+    "<component>",
+    "--out-dir",
+    "<output>",
+    "--name",
+    "program-component",
+    "--instantiation",
+    "async",
+    "--strict",
+    "--bindgen-enable-wasm-exnref",
+    "--no-wasi-shim",
+    "--quiet"
+  ],
+  "evidence": {
+    "summary": "jco-transpile-closure-audit/audit-summary.json",
+    "static": "jco-transpile-closure-audit/source-evidence.json",
+    "runtime": "jco-transpile-closure-audit/trace-comparison.json",
+    "outputs": "jco-transpile-closure-audit/output-comparison-direct.json",
+    "compilerClosure": "jco-transpile-closure-audit/audit-summary.json",
+    "runtimeShimClosure": "preview2-shim-closure-audit/audit.json"
+  },
+  "compilerClosure": [
+    "node_modules/@bytecodealliance/jco",
+    "node_modules/@bytecodealliance/jco-transpile",
+    "node_modules/@bytecodealliance/jco-transpile/node_modules/@bytecodealliance/preview2-shim",
+    "node_modules/@oxc-minify/binding-android-arm-eabi",
+    "node_modules/@oxc-minify/binding-android-arm64",
+    "node_modules/@oxc-minify/binding-darwin-arm64",
+    "node_modules/@oxc-minify/binding-darwin-x64",
+    "node_modules/@oxc-minify/binding-freebsd-x64",
+    "node_modules/@oxc-minify/binding-linux-arm-gnueabihf",
+    "node_modules/@oxc-minify/binding-linux-arm-musleabihf",
+    "node_modules/@oxc-minify/binding-linux-arm64-gnu",
+    "node_modules/@oxc-minify/binding-linux-arm64-musl",
+    "node_modules/@oxc-minify/binding-linux-ppc64-gnu",
+    "node_modules/@oxc-minify/binding-linux-riscv64-gnu",
+    "node_modules/@oxc-minify/binding-linux-riscv64-musl",
+    "node_modules/@oxc-minify/binding-linux-s390x-gnu",
+    "node_modules/@oxc-minify/binding-linux-x64-gnu",
+    "node_modules/@oxc-minify/binding-linux-x64-musl",
+    "node_modules/@oxc-minify/binding-openharmony-arm64",
+    "node_modules/@oxc-minify/binding-wasm32-wasi",
+    "node_modules/@oxc-minify/binding-wasm32-wasi/node_modules/@emnapi/core",
+    "node_modules/@oxc-minify/binding-wasm32-wasi/node_modules/@emnapi/runtime",
+    "node_modules/@oxc-minify/binding-win32-arm64-msvc",
+    "node_modules/@oxc-minify/binding-win32-ia32-msvc",
+    "node_modules/@oxc-minify/binding-win32-x64-msvc",
+    "node_modules/ansi-regex",
+    "node_modules/chalk",
+    "node_modules/cli-cursor",
+    "node_modules/cli-spinners",
+    "node_modules/commander",
+    "node_modules/emoji-regex",
+    "node_modules/get-east-asian-width",
+    "node_modules/is-interactive",
+    "node_modules/is-unicode-supported",
+    "node_modules/log-symbols",
+    "node_modules/log-symbols/node_modules/is-unicode-supported",
+    "node_modules/mimic-function",
+    "node_modules/onetime",
+    "node_modules/ora",
+    "node_modules/oxc-minify",
+    "node_modules/restore-cursor",
+    "node_modules/signal-exit",
+    "node_modules/stdin-discarder",
+    "node_modules/string-width",
+    "node_modules/strip-ansi"
+  ],
+  "runtimeShimClosure": [
+    "node_modules/@bytecodealliance/jco-node-fs",
+    "node_modules/@bytecodealliance/jco-node-fs-darwin-arm64",
+    "node_modules/@bytecodealliance/jco-node-fs-darwin-x64",
+    "node_modules/@bytecodealliance/jco-node-fs-linux-arm64-gnu",
+    "node_modules/@bytecodealliance/jco-node-fs-linux-arm64-musl",
+    "node_modules/@bytecodealliance/jco-node-fs-linux-x64-gnu",
+    "node_modules/@bytecodealliance/jco-node-fs-linux-x64-musl",
+    "node_modules/@bytecodealliance/jco-node-fs-win32-arm64-msvc",
+    "node_modules/@bytecodealliance/jco-node-fs-win32-x64-msvc",
+    "node_modules/@bytecodealliance/preview2-shim"
+  ],
+  "selectedPackagePaths": [
+    {
+      "path": "node_modules/@bytecodealliance/jco",
+      "name": "@bytecodealliance/jco",
+      "version": "1.28.1",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco/-/jco-1.28.1.tgz",
+      "integrity": "sha512-K6STS3cFzfDup+OKYgbRrHdd2BfavUaxu36xK2IL91s3oPBV9mf6ZFVHvAJp8qpj5PkF62DfY3O+ydIduQWj7w=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs",
+      "name": "@bytecodealliance/jco-node-fs",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs/-/jco-node-fs-0.3.2.tgz",
+      "integrity": "sha512-yxvqQreNcOQdMsEKZomkSqThtkxrAz3f1Cmy8BsV0UHi9saa2/D1KDB14IAXPYwDq/maS6lCzS+MuMQx6QkUgA=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-darwin-arm64",
+      "name": "@bytecodealliance/jco-node-fs-darwin-arm64",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-darwin-arm64/-/jco-node-fs-darwin-arm64-0.3.2.tgz",
+      "integrity": "sha512-WXQq1tRVUWhbK+ImH0G8Kni2AR0sdokLf/KyXRw5P6n4A9ZbgMHOuPfN/PEsYgw4eosuTAonutK0xILk/hA81A=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-darwin-x64",
+      "name": "@bytecodealliance/jco-node-fs-darwin-x64",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-darwin-x64/-/jco-node-fs-darwin-x64-0.3.2.tgz",
+      "integrity": "sha512-Fy/OjHnto7hNE5ksewVkmAMXG/uXyj+RAKFZWQFTzFkp73UyT5vuPjKq3nvx9KolUGWBG37BudEMb4ZAoD9TbQ=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-linux-arm64-gnu",
+      "name": "@bytecodealliance/jco-node-fs-linux-arm64-gnu",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-linux-arm64-gnu/-/jco-node-fs-linux-arm64-gnu-0.3.2.tgz",
+      "integrity": "sha512-OafRtRu3tfOFQARfkia/LDEqSo2R3yAL1xPwzf4RcRW6JqkOY7qKWsUS5+LPVo/aFaSkMX7F7bdFGpFPmcoZJg=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-linux-arm64-musl",
+      "name": "@bytecodealliance/jco-node-fs-linux-arm64-musl",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-linux-arm64-musl/-/jco-node-fs-linux-arm64-musl-0.3.2.tgz",
+      "integrity": "sha512-JblDiwD7+Y+w0d/tjaNDX4QdGvh5lyuDc+S/jDeT7sYA1caA9yiwIjLa8PC/lm2xudqSxD+Cuy4AosXvl+qI0g=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-linux-x64-gnu",
+      "name": "@bytecodealliance/jco-node-fs-linux-x64-gnu",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-linux-x64-gnu/-/jco-node-fs-linux-x64-gnu-0.3.2.tgz",
+      "integrity": "sha512-6FzmHoLOsa6b4X9AuFLsvlpNF66Dt4sRRftZHaT1I1pYzCWrJkkpgNJhRXxf67ZPmOwBZJT4dan/g752Rx4xRw=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-linux-x64-musl",
+      "name": "@bytecodealliance/jco-node-fs-linux-x64-musl",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-linux-x64-musl/-/jco-node-fs-linux-x64-musl-0.3.2.tgz",
+      "integrity": "sha512-SbAJG2PDV8YAHBESHU9sVSckOitJyvlezdF4CGP5/mOp01JnijVkLVXzGK62yVSfa5TpAybbSd1rk+v36NAW/Q=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-win32-arm64-msvc",
+      "name": "@bytecodealliance/jco-node-fs-win32-arm64-msvc",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-win32-arm64-msvc/-/jco-node-fs-win32-arm64-msvc-0.3.2.tgz",
+      "integrity": "sha512-nUWYdFysRQJGsIOCk0KAYN2smkNYiHG7rZ7m+0ZXqP+5wqWxKEjkDsORwXiBjdaWFLVww0anZ3SBxrju6P7hXQ=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-node-fs-win32-x64-msvc",
+      "name": "@bytecodealliance/jco-node-fs-win32-x64-msvc",
+      "version": "0.3.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-node-fs-win32-x64-msvc/-/jco-node-fs-win32-x64-msvc-0.3.2.tgz",
+      "integrity": "sha512-RsPj2t8TvltsMWK7/Z7JcVC/IWPMi07/AJkNLiNTCuGTdT/sseqTThJJwhuz3sjFw7dJdxA+bSGT+23y/KT0fw=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-transpile",
+      "name": "@bytecodealliance/jco-transpile",
+      "version": "0.7.0",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/jco-transpile/-/jco-transpile-0.7.0.tgz",
+      "integrity": "sha512-FCUUB2IgENQGfaSTfKLsx0Q8L95K2MpaJBcF6AGOBtCZndWWUkcvtHW3cu5MTVYOCfd6S5itMADSXaK2RWsJ7A=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-transpile/node_modules/@bytecodealliance/preview2-shim",
+      "name": "@bytecodealliance/preview2-shim",
+      "version": "0.20.2",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/preview2-shim/-/preview2-shim-0.20.2.tgz",
+      "integrity": "sha512-Bp1cer1jztaQamLv1YKdc4MimI9LNAAKM2lNxOtGTLs7/At5KlA0fW1HWTi3ZJ5McaWNwJUDWSe5Lr0EgUpsnA=="
+    },
+    {
+      "path": "node_modules/@bytecodealliance/preview2-shim",
+      "name": "@bytecodealliance/preview2-shim",
+      "version": "0.24.1",
+      "resolved": "https://registry.npmjs.org/@bytecodealliance/preview2-shim/-/preview2-shim-0.24.1.tgz",
+      "integrity": "sha512-QGZsKD5M76xBhwu3BzLWqYDEpaMX90QWrrfhkQPn2pN9t378koumtdAVH4lr25mqGCZt10YNXkWvyWkw/vJbLQ=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-android-arm-eabi",
+      "name": "@oxc-minify/binding-android-arm-eabi",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-android-arm-eabi/-/binding-android-arm-eabi-0.136.0.tgz",
+      "integrity": "sha512-gk1jzky1vLeOcK7w9Ib2RT/UooZ7O21s8YSeXCsy4tzsmguKb3Cbsv/Ra2fKhMp4mKeKCzvC1Xa41OfSBWfWdQ=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-android-arm64",
+      "name": "@oxc-minify/binding-android-arm64",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-android-arm64/-/binding-android-arm64-0.136.0.tgz",
+      "integrity": "sha512-5GIYanqud/ohXEcg2dsdn0+eSKXqclw5qlRUkvSM1sKEa4ZQ7hqOk8XPJBNPh3LXXw+Qw85B6jkmOFLKsCHp5w=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-darwin-arm64",
+      "name": "@oxc-minify/binding-darwin-arm64",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-darwin-arm64/-/binding-darwin-arm64-0.136.0.tgz",
+      "integrity": "sha512-QAMpHKXWOoMCTenSZjQjVT5YmMooujlCKAf1T3PHFl2LuaA6ukQFXba0bgSLgAxRrAeX/itkwi4lzVQXtYmnRg=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-darwin-x64",
+      "name": "@oxc-minify/binding-darwin-x64",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-darwin-x64/-/binding-darwin-x64-0.136.0.tgz",
+      "integrity": "sha512-rDnoPj8hztiU8C1VNKuzujh7SgTJlgiUvUCiWQjTnVSLsABsLW9ZWd1l1Ji0VN3UW39wGpptgvahIWTrHnGH/A=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-freebsd-x64",
+      "name": "@oxc-minify/binding-freebsd-x64",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-freebsd-x64/-/binding-freebsd-x64-0.136.0.tgz",
+      "integrity": "sha512-9fGSgP7uyPLCTjMx9z3AUV4UjnfOVoGTH5JzamLegPwGLJ97Gr1jht1437CRk8ZNabGmxQR6qNn3e+Tox2lswg=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-arm-gnueabihf",
+      "name": "@oxc-minify/binding-linux-arm-gnueabihf",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-0.136.0.tgz",
+      "integrity": "sha512-k0QvZS+x6ROI4O5Ikqn9dDU2dmkEJ46Yh6baZJI/eUk/a1k1GOs9/vyXItLZrKlwYrSgdEx2BFXbKgyd1NyRPw=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-arm-musleabihf",
+      "name": "@oxc-minify/binding-linux-arm-musleabihf",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-0.136.0.tgz",
+      "integrity": "sha512-iRFxUc8ubotVfuyq3e4LPGbHrjvWd1/B3499a55GueMLc1EDJ0fHzNXJiCx2eMQGfzHtHodjmvrJ2BSvSXBNhQ=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-arm64-gnu",
+      "name": "@oxc-minify/binding-linux-arm64-gnu",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-0.136.0.tgz",
+      "integrity": "sha512-hbKxNCXJsULrb6EyG5SumzJKuPfP8Y0UQ/TElRgXVUhyyPf6cBPlF8HMq+MAylF98ACBzV8jBp2Mm62lJyTo+w=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-arm64-musl",
+      "name": "@oxc-minify/binding-linux-arm64-musl",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-arm64-musl/-/binding-linux-arm64-musl-0.136.0.tgz",
+      "integrity": "sha512-T+u/CGKW0UXemJeVux4ix6rK+ug3bQCUEbu5hFlX9K61KQNd44rOcrM15mDK99L7USaXwmiwHeIkEDvmmyDMSA=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-ppc64-gnu",
+      "name": "@oxc-minify/binding-linux-ppc64-gnu",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-0.136.0.tgz",
+      "integrity": "sha512-WNPTN2F448tb49BoqjV9IMRzZWa0WB8GHzrB+bnxKQPOyzz07T6rmDKrr4Hjl81ADGjDYSsr1fgXcjyLQFdMdw=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-riscv64-gnu",
+      "name": "@oxc-minify/binding-linux-riscv64-gnu",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-0.136.0.tgz",
+      "integrity": "sha512-MvcCfu8OeabrmNN9wqhh8Gqizg68RQ3iOvXBJmlLMy5p1PC6az9bAwqOk98lsCmKI4I5LpULekOlfxRYh3o5Kw=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-riscv64-musl",
+      "name": "@oxc-minify/binding-linux-riscv64-musl",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-0.136.0.tgz",
+      "integrity": "sha512-rwJXFUFFA0egAULtOOgfW8YhhLhtWrr2qFxftvZ7/U6Xtxiev8i+eCwSNW1RpHiX74QMsJVpRE3ykoefqb1MtQ=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-s390x-gnu",
+      "name": "@oxc-minify/binding-linux-s390x-gnu",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-0.136.0.tgz",
+      "integrity": "sha512-qizAxHmj7VHm5/D5qiIlvzxAS2tlmadDOJ5XFI7zx/wfnk/+fdk5iVaHOv+C4tDE/4wLQyMoBYVIs6R1LeN91w=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-x64-gnu",
+      "name": "@oxc-minify/binding-linux-x64-gnu",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-x64-gnu/-/binding-linux-x64-gnu-0.136.0.tgz",
+      "integrity": "sha512-gcyLAad0UblkEhGjVfx5Mwq63OSx8r04IbcfwzpZYpHisO/vioMsrs4GkDsQZ2Ejc8cdUk6YMIrf9FwNBzh+Dw=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-linux-x64-musl",
+      "name": "@oxc-minify/binding-linux-x64-musl",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-linux-x64-musl/-/binding-linux-x64-musl-0.136.0.tgz",
+      "integrity": "sha512-QAK6kwBjljX6luYzeppVdRP3gTaFNFfp9iS/V0cCvU43wUZay5xFXBgmzBHYrzZV2MhzURNnXfEZRo9poAxyvA=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-openharmony-arm64",
+      "name": "@oxc-minify/binding-openharmony-arm64",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-openharmony-arm64/-/binding-openharmony-arm64-0.136.0.tgz",
+      "integrity": "sha512-nIGxkTOnN9GwslmooxbZ3Ti2RgbX9QLHy0X9uO0pslOT+4dsNVUawBU/6r4M5cWM+ZdRD2tOF4V+n0l8tS59nQ=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-wasm32-wasi",
+      "name": "@oxc-minify/binding-wasm32-wasi",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-wasm32-wasi/-/binding-wasm32-wasi-0.136.0.tgz",
+      "integrity": "sha512-YB3G8AHT6PpDS8/DfjlJrQjywj+/6gCkNBcAJdYzcYbQRIZE6SaTNowiGuZPR1m1jOl1WjcjefniKSmVxzhvRA=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-wasm32-wasi/node_modules/@emnapi/core",
+      "name": "@emnapi/core",
+      "version": "1.11.1",
+      "resolved": "https://registry.npmjs.org/@emnapi/core/-/core-1.11.1.tgz",
+      "integrity": "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-wasm32-wasi/node_modules/@emnapi/runtime",
+      "name": "@emnapi/runtime",
+      "version": "1.11.1",
+      "resolved": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.11.1.tgz",
+      "integrity": "sha512-vgj7R3y3Wgx24IQaGPA/R6YFXLHVMOZ0uVEyIQPaWs+rd1AzfEMXlAC22FYwO1XkKR6NPsq7mUandH8oIRdZFw=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-win32-arm64-msvc",
+      "name": "@oxc-minify/binding-win32-arm64-msvc",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-0.136.0.tgz",
+      "integrity": "sha512-UVRH3BlNc2rmla+sbSd5xTF/u+esCqZS6VSWPolZybcBh3TlVe1Sf5MOuHQWUaFoyv5uFOvee4hOfS/14nPvZw=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-win32-ia32-msvc",
+      "name": "@oxc-minify/binding-win32-ia32-msvc",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-0.136.0.tgz",
+      "integrity": "sha512-zFGkUd82jci0E+isc2O36lVmmXVUDXyEMN2RYIyez+MBNqhdjPLIGx62FCsrJtLKeuiPf/8XkFv977aUtndUng=="
+    },
+    {
+      "path": "node_modules/@oxc-minify/binding-win32-x64-msvc",
+      "name": "@oxc-minify/binding-win32-x64-msvc",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/@oxc-minify/binding-win32-x64-msvc/-/binding-win32-x64-msvc-0.136.0.tgz",
+      "integrity": "sha512-VHgPwd5xibC9UYxBeq7nURTjY+wxhdumllij6JaCIUVfD9IRcrA66SVlJ5fPNoUXcRp8ZXhJfoIZwVz9wAEGJw=="
+    },
+    {
+      "path": "node_modules/ansi-regex",
+      "name": "ansi-regex",
+      "version": "6.3.0",
+      "resolved": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-6.3.0.tgz",
+      "integrity": "sha512-WpDfL7NO6j7tH88IDBNVdUJxDh9nmCteAVW9dsep846XdwF4naCBK+/tGLX3KJgcpgMRXCFlTM2hKGoK9FsdrQ=="
+    },
+    {
+      "path": "node_modules/chalk",
+      "name": "chalk",
+      "version": "5.6.2",
+      "resolved": "https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz",
+      "integrity": "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="
+    },
+    {
+      "path": "node_modules/cli-cursor",
+      "name": "cli-cursor",
+      "version": "5.0.0",
+      "resolved": "https://registry.npmjs.org/cli-cursor/-/cli-cursor-5.0.0.tgz",
+      "integrity": "sha512-aCj4O5wKyszjMmDT4tZj93kxyydN/K5zPWSCe6/0AV/AA1pqe5ZBIw0a2ZfPQV7lL5/yb5HsUreJ6UFAF1tEQw=="
+    },
+    {
+      "path": "node_modules/cli-spinners",
+      "name": "cli-spinners",
+      "version": "2.9.2",
+      "resolved": "https://registry.npmjs.org/cli-spinners/-/cli-spinners-2.9.2.tgz",
+      "integrity": "sha512-ywqV+5MmyL4E7ybXgKys4DugZbX0FC6LnwrhjuykIjnK9k8OQacQ7axGKnjDXWNhns0xot3bZI5h55H8yo9cJg=="
+    },
+    {
+      "path": "node_modules/commander",
+      "name": "commander",
+      "version": "14.0.3",
+      "resolved": "https://registry.npmjs.org/commander/-/commander-14.0.3.tgz",
+      "integrity": "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="
+    },
+    {
+      "path": "node_modules/emoji-regex",
+      "name": "emoji-regex",
+      "version": "10.6.0",
+      "resolved": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-10.6.0.tgz",
+      "integrity": "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="
+    },
+    {
+      "path": "node_modules/get-east-asian-width",
+      "name": "get-east-asian-width",
+      "version": "1.6.0",
+      "resolved": "https://registry.npmjs.org/get-east-asian-width/-/get-east-asian-width-1.6.0.tgz",
+      "integrity": "sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA=="
+    },
+    {
+      "path": "node_modules/is-interactive",
+      "name": "is-interactive",
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/is-interactive/-/is-interactive-2.0.0.tgz",
+      "integrity": "sha512-qP1vozQRI+BMOPcjFzrjXuQvdak2pHNUMZoeG2eRbiSqyvbEf/wQtEOTOX1guk6E3t36RkaqiSt8A/6YElNxLQ=="
+    },
+    {
+      "path": "node_modules/is-unicode-supported",
+      "name": "is-unicode-supported",
+      "version": "2.1.0",
+      "resolved": "https://registry.npmjs.org/is-unicode-supported/-/is-unicode-supported-2.1.0.tgz",
+      "integrity": "sha512-mE00Gnza5EEB3Ds0HfMyllZzbBrmLOX3vfWoj9A9PEnTfratQ/BcaJOuMhnkhjXvb2+FkY3VuHqtAGpTPmglFQ=="
+    },
+    {
+      "path": "node_modules/log-symbols",
+      "name": "log-symbols",
+      "version": "6.0.0",
+      "resolved": "https://registry.npmjs.org/log-symbols/-/log-symbols-6.0.0.tgz",
+      "integrity": "sha512-i24m8rpwhmPIS4zscNzK6MSEhk0DUWa/8iYQWxhffV8jkI4Phvs3F+quL5xvS0gdQR0FyTCMMH33Y78dDTzzIw=="
+    },
+    {
+      "path": "node_modules/log-symbols/node_modules/is-unicode-supported",
+      "name": "is-unicode-supported",
+      "version": "1.3.0",
+      "resolved": "https://registry.npmjs.org/is-unicode-supported/-/is-unicode-supported-1.3.0.tgz",
+      "integrity": "sha512-43r2mRvz+8JRIKnWJ+3j8JtjRKZ6GmjzfaE/qiBJnikNnYv/6bagRJ1kUhNk8R5EX/GkobD+r+sfxCPJsiKBLQ=="
+    },
+    {
+      "path": "node_modules/mimic-function",
+      "name": "mimic-function",
+      "version": "5.0.1",
+      "resolved": "https://registry.npmjs.org/mimic-function/-/mimic-function-5.0.1.tgz",
+      "integrity": "sha512-VP79XUPxV2CigYP3jWwAUFSku2aKqBH7uTAapFWCBqutsbmDo96KY5o8uh6U+/YSIn5OxJnXp73beVkpqMIGhA=="
+    },
+    {
+      "path": "node_modules/onetime",
+      "name": "onetime",
+      "version": "7.0.0",
+      "resolved": "https://registry.npmjs.org/onetime/-/onetime-7.0.0.tgz",
+      "integrity": "sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ=="
+    },
+    {
+      "path": "node_modules/ora",
+      "name": "ora",
+      "version": "8.2.0",
+      "resolved": "https://registry.npmjs.org/ora/-/ora-8.2.0.tgz",
+      "integrity": "sha512-weP+BZ8MVNnlCm8c0Qdc1WSWq4Qn7I+9CJGm7Qali6g44e/PUzbjNqJX5NJ9ljlNMosfJvg1fKEGILklK9cwnw=="
+    },
+    {
+      "path": "node_modules/oxc-minify",
+      "name": "oxc-minify",
+      "version": "0.136.0",
+      "resolved": "https://registry.npmjs.org/oxc-minify/-/oxc-minify-0.136.0.tgz",
+      "integrity": "sha512-u9UvPFTYVwQ/i1kpp/c20S/SbvLaLV0Ngzyhgi0YV4B1SlxM7RgnnePl4vY9N3Z9sTRcozL1MRStI3PlUN9RFA=="
+    },
+    {
+      "path": "node_modules/restore-cursor",
+      "name": "restore-cursor",
+      "version": "5.1.0",
+      "resolved": "https://registry.npmjs.org/restore-cursor/-/restore-cursor-5.1.0.tgz",
+      "integrity": "sha512-oMA2dcrw6u0YfxJQXm342bFKX/E4sG9rbTzO9ptUcR/e8A33cHuvStiYOwH7fszkZlZ1z/ta9AAoPk2F4qIOHA=="
+    },
+    {
+      "path": "node_modules/signal-exit",
+      "name": "signal-exit",
+      "version": "4.1.0",
+      "resolved": "https://registry.npmjs.org/signal-exit/-/signal-exit-4.1.0.tgz",
+      "integrity": "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="
+    },
+    {
+      "path": "node_modules/stdin-discarder",
+      "name": "stdin-discarder",
+      "version": "0.2.2",
+      "resolved": "https://registry.npmjs.org/stdin-discarder/-/stdin-discarder-0.2.2.tgz",
+      "integrity": "sha512-UhDfHmA92YAlNnCfhmq0VeNL5bDbiZGg7sZ2IvPsXubGkiNa9EC+tUTsjBRsYUAz87btI6/1wf4XoVvQ3uRnmQ=="
+    },
+    {
+      "path": "node_modules/string-width",
+      "name": "string-width",
+      "version": "7.2.0",
+      "resolved": "https://registry.npmjs.org/string-width/-/string-width-7.2.0.tgz",
+      "integrity": "sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ=="
+    },
+    {
+      "path": "node_modules/strip-ansi",
+      "name": "strip-ansi",
+      "version": "7.2.0",
+      "resolved": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-7.2.0.tgz",
+      "integrity": "sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w=="
+    }
+  ],
+  "excludedPackagePaths": [
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-darwin-arm64",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-darwin-x64",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-linux-arm64-gnu",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-linux-arm64-musl",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-linux-x64-gnu",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-linux-x64-musl",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-win32-arm64-msvc",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@andreiltd/componentize-qjs-binding-win32-x64-msvc",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/componentize-js",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/componentize-js-0-19-3",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-transpile/node_modules/@bytecodealliance/preview3-shim",
+      "reason": "Preview 3 families are outside the accepted Preview 2 transpile contract",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#preview3Dependencies"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco-transpile/node_modules/@bytecodealliance/preview3-shim/node_modules/@bytecodealliance/preview2-shim",
+      "reason": "Preview 3 families are outside the accepted Preview 2 transpile contract",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#preview3Dependencies"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/jco/node_modules/@bytecodealliance/preview2-shim",
+      "reason": "nested jco implementation shim is not selected by the accepted runtime path; the canonical root shim is selected separately",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/preview3-shim",
+      "reason": "Preview 3 families are outside the accepted Preview 2 transpile contract",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#preview3Dependencies"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/preview3-shim/node_modules/@bytecodealliance/preview2-shim",
+      "reason": "Preview 3 families are outside the accepted Preview 2 transpile contract",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#preview3Dependencies"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/weval",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer-darwin-arm64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer-darwin-x64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer-linux-arm64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer-linux-s390x",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer-linux-x64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@bytecodealliance/wizer-win32-x64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@emnapi/core",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/@emnapi/runtime",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/@emnapi/wasi-threads",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-android-arm-eabi",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-android-arm64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-darwin-arm64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-darwin-x64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-freebsd-x64",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-arm-gnueabihf",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-arm64-gnu",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-arm64-musl",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-ppc64-gnu",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-riscv64-gnu",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-s390x-gnu",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-x64-gnu",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-linux-x64-musl",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-wasm32-wasi",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-win32-arm64-msvc",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-win32-ia32-msvc",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/lzma-win32-x64-msvc",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/@napi-rs/wasm-runtime",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-android-arm64",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-darwin-arm64",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-darwin-x64",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-freebsd-x64",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-arm-gnueabihf",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-arm-musleabihf",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-arm64-gnu",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-arm64-musl",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-riscv64-gnu",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-s390x-gnu",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-x64-gnu",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-linux-x64-musl",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-wasm32-wasi",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-wasm32-wasi/node_modules/@napi-rs/wasm-runtime",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-win32-arm64-msvc",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-parser/binding-win32-x64-msvc",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@oxc-project/types",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-android-arm64",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-darwin-arm64",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-darwin-x64",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-freebsd-x64",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-arm-gnueabihf",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-arm64-gnu",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-arm64-musl",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-ppc64-gnu",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-s390x-gnu",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-x64-gnu",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-linux-x64-musl",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-openharmony-arm64",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-win32-arm64-msvc",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/binding-win32-x64-msvc",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@rolldown/pluginutils",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/@tybys/wasm-util",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/available-typed-arrays",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/base64-js",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/binaryen",
+      "reason": "optimization is outside the accepted transpile-only command and loads only through its opt path",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#optimization"
+    },
+    {
+      "path": "node_modules/bl",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/buffer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/buffer-alloc",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/buffer-alloc-unsafe",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/buffer-crc32",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/buffer-fill",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/call-bind",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/call-bind-apply-helpers",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/call-bound",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/componentize-qjs",
+      "reason": "componentization is dynamically imported only by non-transpile componentize commands",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#componentize"
+    },
+    {
+      "path": "node_modules/core-util-is",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress-tar",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress-tarbz2",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress-tarbz2/node_modules/file-type",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress-targz",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress-unzip",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/decompress-unzip/node_modules/file-type",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/define-data-property",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/dunder-proto",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/end-of-stream",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/es-define-property",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/es-errors",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/es-module-lexer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/es-object-atoms",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/fd-slicer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/file-type",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/for-each",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/fs-constants",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/fsevents",
+      "reason": "repository test-browser tooling is not part of the shipped jco transpile or Preview 2 shim closure",
+      "evidence": "jco-transpile-closure-audit/audit-summary.json#packageClosure"
+    },
+    {
+      "path": "node_modules/function-bind",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/get-intrinsic",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/get-proto",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/get-stream",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/gopd",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/graceful-fs",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/has-property-descriptors",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/has-symbols",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/has-tostringtag",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/hasown",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/ieee754",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/inherits",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/is-callable",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/is-natural-number",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/is-stream",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/is-typed-array",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/isarray",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/make-dir",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/make-dir/node_modules/pify",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/math-intrinsics",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/mkdirp",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/object-assign",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/once",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/oxc-parser",
+      "reason": "parser family is not loaded by the accepted transpile path",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#oxcParserDependencies"
+    },
+    {
+      "path": "node_modules/pend",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/pify",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/pinkie",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/pinkie-promise",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/playwright",
+      "reason": "repository test-browser tooling is not part of the shipped jco transpile or Preview 2 shim closure",
+      "evidence": "jco-transpile-closure-audit/audit-summary.json#packageClosure"
+    },
+    {
+      "path": "node_modules/playwright-core",
+      "reason": "repository test-browser tooling is not part of the shipped jco transpile or Preview 2 shim closure",
+      "evidence": "jco-transpile-closure-audit/audit-summary.json#packageClosure"
+    },
+    {
+      "path": "node_modules/possible-typed-array-names",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/process-nextick-args",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/readable-stream",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/readable-stream/node_modules/safe-buffer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/rolldown",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/rolldown/node_modules/@oxc-project/types",
+      "reason": "bundling is dynamically imported only by the bundle command",
+      "evidence": "jco-transpile-closure-audit/source-evidence.json#bundle"
+    },
+    {
+      "path": "node_modules/safe-buffer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/seek-bzip",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/seek-bzip/node_modules/commander",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/set-function-length",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/string_decoder",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/string_decoder/node_modules/safe-buffer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/strip-dirs",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/tar-stream",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/through",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/to-buffer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/to-buffer/node_modules/isarray",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/tslib",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/typed-array-buffer",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/unbzip2-stream",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/util-deprecate",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/which-typed-array",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/wrappy",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/xtend",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    },
+    {
+      "path": "node_modules/yauzl",
+      "reason": "not loaded by the accepted transpile runtime path; retained in the lock for future command contracts",
+      "evidence": "jco-transpile-closure-audit/trace-comparison.json#loadedPackagePaths"
+    }
+  ],
+  "lockSha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7"
+}

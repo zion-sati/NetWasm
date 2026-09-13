@@ -100,6 +100,26 @@ def generate_twice(
     second.unlink()
 
 
+def update_asset_hashes(
+    manifest: dict[str, object],
+    artifacts: dict[str, Path],
+) -> None:
+    assets = manifest.get("assets")
+    if not isinstance(assets, list):
+        raise RuntimeError("the Toolchain manifest has no asset inventory")
+    indexed = {
+        asset.get("id"): asset
+        for asset in assets
+        if isinstance(asset, dict)
+    }
+    for asset_id, artifact in artifacts.items():
+        asset = indexed.get(asset_id)
+        if not isinstance(asset, dict):
+            raise RuntimeError(
+                f"the Toolchain manifest has no '{asset_id}' asset")
+        asset["sha256"] = sha256(artifact)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--node")
@@ -187,9 +207,24 @@ def main() -> None:
         manifest_output = temporary / "wit-package-manifest.json"
         manifest_output.write_text(
             json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        update_asset_hashes(
+            manifest,
+            {
+                "wit.package-manifest": manifest_output,
+                **{
+                    f"wit.{descriptor['name']}-package":
+                        temporary / descriptor["file"]
+                    for descriptor in descriptors
+                },
+            },
+        )
+        toolchain_manifest_output = temporary / "toolchain-manifest.json"
+        toolchain_manifest_output.write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         for descriptor in descriptors:
             (temporary / descriptor["file"]).replace(output / descriptor["file"])
         manifest_output.replace(output / manifest_output.name)
+        toolchain_manifest_output.replace(toolchain / "toolchain-manifest.json")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ source ~/emsdk/emsdk_env.sh
 Then create and run an application:
 
 ```sh
-dotnet new install NetWasm.Templates@0.1.0-preview.64
+dotnet new install NetWasm.Templates@0.1.0-rc.1
 mkdir HelloNetWasm
 cd HelloNetWasm
 dotnet new netwasm-app

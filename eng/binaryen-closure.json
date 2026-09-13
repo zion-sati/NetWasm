@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1",
+  "contract": "binaryen-programs",
+  "lockSha256": "31bcac85ebbe21558dc36415d7f20f67ef7f76586ae73725e268eda7c84c9e6c",
+  "package": {
+    "path": "node_modules/binaryen",
+    "name": "binaryen",
+    "version": "132.0.0",
+    "resolved": "https://registry.npmjs.org/binaryen/-/binaryen-132.0.0.tgz",
+    "integrity": "sha512-4Usg7yEvwO3FMso3Oov6qkOOHSod1IEv+boKkh77kTljM+eNBouqCTbqWswGzbG+vDNO/b/v2C4gfEh1WgB9Lg=="
+  }
+}

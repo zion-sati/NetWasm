@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  appendExecutionArguments,
-  createExecutionRequestValidator,
-} from "./execution-request-validator.mjs";
+import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 
 const digest = character => character.repeat(64);
@@ -85,21 +82,6 @@ test("execution request validator snapshots every supported authority value", ()
 
   const nullPrototype = Object.assign(Object.create(null), request());
   assert.equal(createValidator()(nullPrototype).schemaVersion, 1);
-});
-
-test("execution request argument appending preserves validated authority", () => {
-  const validated = createValidator()(request());
-  const appended = appendExecutionArguments(validated, ["third", ""]);
-  assert.deepEqual(appended.arguments, ["first", "", "third", ""]);
-  assert.equal(Object.isFrozen(appended), true);
-  assert.equal(Object.isFrozen(appended.arguments), true);
-  assert.strictEqual(appended.grants, validated.grants);
-  assert.throws(
-    () => appendExecutionArguments(validated, ["bad\0argument"]),
-    /without NUL/i);
-  assert.throws(
-    () => appendExecutionArguments(request(), []),
-    /not immutable/i);
 });
 
 test("createExecutionRequestValidator validates its exact dependencies", () => {

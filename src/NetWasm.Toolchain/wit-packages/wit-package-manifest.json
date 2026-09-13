@@ -11,7 +11,7 @@
       "package": "wasi:cli@0.2.11",
       "world": "command",
       "sourceManifest": "../wit/wit-manifest.json",
-      "sourceManifestSha256": "64a662667f1c6613b7f5cff0a030df674dec626932877b29f454b16edc08cf4b",
+      "sourceManifestSha256": "f10e1568b44ad72b0e21d79ad2526d4722f67bf12e42fee61f36ca9cfb5c611e",
       "file": "command.wit.wasm",
       "sha256": "624c67b287c812050a207dfd28a401f798838adbff330d702df0ccc711743293"
     },
@@ -29,9 +29,9 @@
       "package": "netwasm:platform@1.0.0",
       "world": "platform",
       "sourceManifest": "../compiler-wit/wit-manifest.json",
-      "sourceManifestSha256": "6c5fd321dc7a70848e9342f3eeaeab234da8722bb58574e1b0b9fe51e9d67b6a",
+      "sourceManifestSha256": "e628584a09fa232fc44d7a84f3c605bae0af0676b1eaedc346a4da3e3217eae0",
       "file": "compiler.wit.wasm",
-      "sha256": "bba25c9206f2b7e3882ec6b44e81d60b33eb18a57c36b85870929435001e002e"
+      "sha256": "fc1c2b66aa8e597775fdd0fe7c01eb436337e266d504b435986db823cd26f556"
     }
   ]
 }

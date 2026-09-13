@@ -236,6 +236,21 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
+    public void CompilerPlatformWorldsDescribeRandomnessWithoutASeparateCapabilityMode()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var world = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "wit/netwasm-platform-1.0.0/world.wit"));
+
+        Assert.Equal(2, world.Split(
+            "import wasi:random/random@0.2.11;",
+            StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("cryptographic-platform", world,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TargetFrameworkContractSuppressesOnlyTheIncompatibleCharacterLookupAnalyzer()
     {
         var document = LoadSdkTarget("NetWasm.Sdk.Tfm.props");

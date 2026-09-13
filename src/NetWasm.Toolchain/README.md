@@ -1,7 +1,7 @@
 # NetWasm.Toolchain
 
 `NetWasm.Toolchain` contains platform-neutral upstream assets used by the
-NetWasm build and deployment boundary. Version `0.1.0-preview.32` carries the
+NetWasm build and deployment boundary. Version `0.1.0-rc.1` carries the
 pinned Binaryen JavaScript closure, the audited jco 1.28.1 transpile entry point,
 the Preview 2 shim 0.24.1, the official wasm-tools 1.256.0 WASI module and
 runner, compiler-owned JavaScript commands and WIT contracts. Every entry point

@@ -19,11 +19,16 @@ const request = Object.freeze({
   buildFingerprint: descriptor.buildFingerprint,
   deploymentManifestSha256: descriptor.deploymentManifestSha256,
 });
+const inheritedEnvironment = Object.freeze([
+  Object.freeze({ name: "APP_MODE", value: "local" }),
+]);
+const overlaidRequest = Object.freeze({ ...request, environment: inheritedEnvironment });
 
 function invocation(overrides = {}) {
   return {
     arguments: [],
     descriptorText: "descriptor",
+    environment: inheritedEnvironment,
     hostExecutablePath: descriptor.hostExecutablePath,
     launcherPath: descriptor.launcherPath,
     requestText: "request",
@@ -53,6 +58,12 @@ function createFixture(overrides = {}) {
     async loadPlatform(value) {
       calls.push(["platform", value]);
       return platform;
+    },
+    overlayEnvironment(value, environment) {
+      calls.push(["environment", value, environment]);
+      return value === request
+        ? overlaidRequest
+        : Object.freeze({ ...value, environment });
     },
     readDescriptor(value) {
       calls.push(["descriptor", value]);
@@ -100,9 +111,11 @@ test("local launcher verifies identities and delegates the exact public executio
   const fixture = createFixture();
   assert.equal(Object.isFrozen(fixture.launch), true);
   assert.strictEqual(await fixture.launch(invocation()), fixture.outcome);
-  assert.deepEqual(fixture.calls.slice(0, 2), [
+  assert.deepEqual(fixture.calls.slice(0, 4), [
     ["descriptor", "descriptor"],
     ["request", "request"],
+    ["arguments", request, []],
+    ["environment", request, inheritedEnvironment],
   ]);
   assert.deepEqual(fixture.calls.filter(([kind]) => kind === "real"), [
     ["real", descriptor.hostExecutablePath],
@@ -118,7 +131,7 @@ test("local launcher verifies identities and delegates the exact public executio
   assert.strictEqual(composition.platform, fixture.platform);
   const execution = fixture.calls.find(([kind]) => kind === "execute")[1];
   assert.equal(Object.isFrozen(execution), true);
-  assert.strictEqual(execution.request, request);
+  assert.strictEqual(execution.request, overlaidRequest);
   assert.strictEqual(execution.stdout, sink);
   assert.strictEqual(execution.stderr, sink);
   assert.equal(execution.signal, null);
@@ -129,6 +142,7 @@ test("createLocalLauncher validates its exact dependencies", () => {
     appendArguments() {},
     createExecution() {},
     loadPlatform() {},
+    overlayEnvironment() {},
     readDescriptor() {},
     readRequest() {},
     realPath() {},
@@ -164,6 +178,9 @@ test("local launcher validates the exact invocation boundary", async () => {
         /text is required/i);
     }
   }
+  await assert.rejects(
+    () => createFixture().launch(invocation({ environment: null })),
+    /environment must be an array/i);
   for (const key of ["hostExecutablePath", "launcherPath"]) {
     for (const value of [null, "", "relative", "/bad\0path"]) {
       await assert.rejects(

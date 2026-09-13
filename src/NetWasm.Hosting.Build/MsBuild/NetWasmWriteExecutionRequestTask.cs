@@ -26,10 +26,14 @@ public sealed class NetWasmWriteExecutionRequestTask : Microsoft.Build.Utilities
     public ITaskItem[] Arguments { get; set; } = [];
     public ITaskItem[] EnvironmentVariables { get; set; } = [];
     public ITaskItem[] Preopens { get; set; } = [];
-    public ITaskItem[] Clocks { get; set; } = [];
+    public ITaskItem[] Clocks { get; set; } =
+    [
+        new Microsoft.Build.Utilities.TaskItem("wall"),
+        new Microsoft.Build.Utilities.TaskItem("monotonic")
+    ];
     public ITaskItem[] ApplicationImports { get; set; } = [];
-    public string Network { get; set; } = "denyAll";
-    public bool Randomness { get; set; }
+    public string Network { get; set; } = "allowAll";
+    public bool Randomness { get; set; } = true;
 
     public override bool Execute()
     {

@@ -5,3 +5,5 @@
 node_modules/
 TestResults/
 .DS_Store
+__pycache__/
+*.py[cod]

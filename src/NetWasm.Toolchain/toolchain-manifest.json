@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "packageId": "NetWasm.Toolchain",
-  "packageVersion": "0.1.0-preview.32",
+  "packageVersion": "0.1.0-rc.1",
   "assets": [
     {
       "id": "netwasm.raw-inspection.command",
@@ -169,7 +169,7 @@
       "id": "wit.package-manifest",
       "version": "1",
       "relativePath": "tools/wit-packages/wit-package-manifest.json",
-      "sha256": "c92ed596e4a57fb8fefe78ffe922091ff5e4a7a5d82f1b56e465ead2504c20e0"
+      "sha256": "1bf92396f007e365fe2577e3fe174811ceea8179588c46c6314cc2527baf635b"
     },
     {
       "id": "wit.command-package",
@@ -187,7 +187,7 @@
       "id": "wit.compiler-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/compiler.wit.wasm",
-      "sha256": "bba25c9206f2b7e3882ec6b44e81d60b33eb18a57c36b85870929435001e002e"
+      "sha256": "fc1c2b66aa8e597775fdd0fe7c01eb436337e266d504b435986db823cd26f556"
     },
     {
       "id": "jco.package",

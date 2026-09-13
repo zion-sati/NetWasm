@@ -7,6 +7,7 @@ const factoryKeys = [
   "appendArguments",
   "createExecution",
   "loadPlatform",
+  "overlayEnvironment",
   "readDescriptor",
   "readRequest",
   "realPath",
@@ -15,6 +16,7 @@ const factoryKeys = [
 const invocationKeys = [
   "arguments",
   "descriptorText",
+  "environment",
   "hostExecutablePath",
   "launcherPath",
   "requestText",
@@ -36,6 +38,9 @@ export function createLocalLauncher(options) {
     assertExactDataObject(invocation, invocationKeys, "local launcher invocation");
     validateText(invocation.descriptorText, "local launcher descriptor text");
     validateText(invocation.requestText, "local launcher request text");
+    if (!Array.isArray(invocation.environment)) {
+      throw new TypeError("local launcher environment must be an array");
+    }
     validatePath(invocation.hostExecutablePath, "local launcher host executable path");
     validatePath(invocation.launcherPath, "local launcher module path");
     validateSignal(invocation.signal);
@@ -52,9 +57,11 @@ export function createLocalLauncher(options) {
 
     let request;
     try {
-      request = options.appendArguments(
-        options.readRequest(invocation.requestText),
-        invocation.arguments);
+      request = options.overlayEnvironment(
+        options.appendArguments(
+          options.readRequest(invocation.requestText),
+          invocation.arguments),
+        invocation.environment);
       if (request.buildFingerprint !== descriptor.buildFingerprint
           || request.deploymentManifestSha256 !== descriptor.deploymentManifestSha256) {
         return contractFailure();

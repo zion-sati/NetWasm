@@ -24,3 +24,7 @@ bash docs/verify-docs.sh
 
 It checks diagnostic coverage, documentation navigation, support-status
 categories, and critical target and tooling terminology.
+
+For a package-boundary change, also run `eng/build-packages.sh` from a clean
+checkout and inspect the resulting package graph before publication. The
+command builds the 11 core packages but never pushes or publishes them.

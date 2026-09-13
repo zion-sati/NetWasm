@@ -5,6 +5,9 @@ import { createLocalLauncherCommand } from "./local-launcher-command.mjs";
 import { normalExecutionResult } from "./execution-result.mjs";
 
 const sink = Object.freeze({ write() {} });
+const environment = Object.freeze([
+  Object.freeze({ name: "APP_MODE", value: "local" }),
+]);
 const paths = Object.freeze({
   descriptor: "/output/app.netwasm.execution.json",
   request: "/requests/run.json",
@@ -18,6 +21,7 @@ function invocation(overrides = {}) {
       "--request", paths.request,
       "--result", paths.result,
     ],
+    environment,
     hostExecutablePath: "/tools/node",
     launcherPath: "/packages/hosting/launcher.mjs",
     signal: null,
@@ -80,6 +84,7 @@ test("local launcher command preserves application streams and writes its result
   assert.equal(Object.isFrozen(launch), true);
   assert.equal(launch.descriptorText, "descriptor-text");
   assert.equal(launch.requestText, "request-text");
+  assert.strictEqual(launch.environment, environment);
   assert.equal(launch.hostExecutablePath, "/tools/node");
   assert.equal(launch.launcherPath, "/packages/hosting/launcher.mjs");
   assert.strictEqual(launch.stdout, sink);
@@ -166,6 +171,9 @@ test("local launcher command validates its exact invocation", async () => {
   await assert.rejects(
     () => createFixture().run(invocation({ arguments: null })),
     /arguments must be an array/i);
+  await assert.rejects(
+    () => createFixture().run(invocation({ environment: null })),
+    /environment must be an array/i);
   for (const key of ["hostExecutablePath", "launcherPath"]) {
     for (const value of [null, "", "relative", "/bad\0path"]) {
       await assert.rejects(

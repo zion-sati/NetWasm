@@ -10,7 +10,7 @@
     "sourcePackage": "wasi:cli@0.2.11",
     "closurePolicy": "closed-world NetWasm runtime imports with canonical WASI 0.2.11 identities"
   },
-  "aggregateSha256": "c5cb04db69621dfda7ee8a461ee9d2b3e11c4843dac161778fd69ccd72029336",
+  "aggregateSha256": "41b5894994b7d74eea83cc73857115166861a6d5e8acc8c4ca7d3c326f6b5a55",
   "files": [
     {
       "path": "deps/netwasm-runtime/reactor.wit",
@@ -74,7 +74,7 @@
     },
     {
       "path": "world.wit",
-      "sha256": "20ec78140d9123c4bb3f061e38685401c04ddb69a1003161b6d8acc9448d32d9"
+      "sha256": "b4380f820f3ba3ec5d8d8272dd34dd96d1cdf5e19dc4f4264ec4753988dc7615"
     }
   ]
 }
