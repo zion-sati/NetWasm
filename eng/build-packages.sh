@@ -3,7 +3,41 @@
 set -euo pipefail
 
 REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-OUTPUT_DIR="${1:-${REPOSITORY_ROOT}/artifacts/packages}"
+OUTPUT_DIR="${REPOSITORY_ROOT}/artifacts/packages"
+RELEASE_VERSION="$(tr -d '[:space:]' < "${REPOSITORY_ROOT}/eng/NetWasm.ReleaseVersion.txt")"
+output_was_set=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      [[ $# -ge 2 ]] || { echo "--output requires a directory." >&2; exit 2; }
+      OUTPUT_DIR="$2"
+      output_was_set=true
+      shift 2
+      ;;
+    --version)
+      [[ $# -ge 2 ]] || { echo "--version requires a value." >&2; exit 2; }
+      RELEASE_VERSION="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--version VERSION] [--output DIRECTORY] [DIRECTORY]"
+      exit 0
+      ;;
+    --*)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      if [[ "${output_was_set}" == true ]]; then
+        echo "Package output was specified more than once." >&2
+        exit 2
+      fi
+      OUTPUT_DIR="$1"
+      output_was_set=true
+      shift
+      ;;
+  esac
+done
 mkdir -p "${OUTPUT_DIR}"
 OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd -P)"
 
@@ -49,6 +83,13 @@ trap cleanup EXIT
 asset_root="${build_root}/toolchain-assets"
 repository_commit="$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)"
 git -C "${REPOSITORY_ROOT}" worktree add --quiet --detach "${source_root}" "${repository_commit}"
+python3 "${source_root}/eng/project-release-version.py" \
+  --source-root "${source_root}" \
+  --version "${RELEASE_VERSION}" \
+  --receipt "${OUTPUT_DIR}/NetWasm.release-version-projection.json"
+# global.json discovery follows the process working directory, not an absolute
+# project argument. Anchor every dotnet invocation to the detached source.
+cd "${source_root}"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "${source_root}" show -s --format='%ct' HEAD)}"
 export NUGET_PACKAGES="${NUGET_PACKAGES:-${build_root}/packages}"
 
@@ -125,4 +166,4 @@ if [[ "${package_count}" -ne 12 ]]; then
   exit 1
 fi
 
-printf 'Built 12 NetWasm core packages in %s\n' "${OUTPUT_DIR}"
+printf 'Built 12 NetWasm core packages at %s in %s\n' "${RELEASE_VERSION}" "${OUTPUT_DIR}"
