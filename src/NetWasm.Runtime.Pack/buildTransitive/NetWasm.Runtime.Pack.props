@@ -3,8 +3,6 @@
     <NetWasmRuntimePackRoot Condition="'$(NetWasmRuntimePackRoot)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime'))</NetWasmRuntimePackRoot>
     <NetWasmRuntimePackManifestPath Condition="'$(NetWasmRuntimePackManifestPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmRuntimePackRoot)', 'runtime-pack.json'))</NetWasmRuntimePackManifestPath>
     <NetWasmRuntimePackSelectorAssemblyPath Condition="'$(NetWasmRuntimePackSelectorAssemblyPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'lib', 'net10.0', 'NetWasm.Runtime.Pack.dll'))</NetWasmRuntimePackSelectorAssemblyPath>
-    <NetWasmRuntimePackMaterializedPath Condition="'$(NetWasmRuntimePackMaterializedPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime.$(NetWasmTarget).wasm'))</NetWasmRuntimePackMaterializedPath>
-    <NetWasmRuntimePackLogDirectory Condition="'$(NetWasmRuntimePackLogDirectory)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime-logs'))</NetWasmRuntimePackLogDirectory>
     <NetWasmRuntimePackProvided>true</NetWasmRuntimePackProvided>
   </PropertyGroup>
 </Project>

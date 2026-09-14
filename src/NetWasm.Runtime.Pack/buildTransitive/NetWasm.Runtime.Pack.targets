@@ -3,8 +3,6 @@
     <NetWasmRuntimePackRoot Condition="'$(NetWasmRuntimePackRoot)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime'))</NetWasmRuntimePackRoot>
     <NetWasmRuntimePackManifestPath Condition="'$(NetWasmRuntimePackManifestPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmRuntimePackRoot)', 'runtime-pack.json'))</NetWasmRuntimePackManifestPath>
     <NetWasmRuntimePackSelectorAssemblyPath Condition="'$(NetWasmRuntimePackSelectorAssemblyPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'lib', 'net10.0', 'NetWasm.Runtime.Pack.dll'))</NetWasmRuntimePackSelectorAssemblyPath>
-    <NetWasmRuntimePackMaterializedPath Condition="'$(NetWasmRuntimePackMaterializedPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime.$(NetWasmTarget).wasm'))</NetWasmRuntimePackMaterializedPath>
-    <NetWasmRuntimePackLogDirectory Condition="'$(NetWasmRuntimePackLogDirectory)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime-logs'))</NetWasmRuntimePackLogDirectory>
     <NetWasmRuntimePackProvided>true</NetWasmRuntimePackProvided>
   </PropertyGroup>
 
@@ -24,7 +22,19 @@
     </NetWasmRuntimePackAsset>
   </ItemGroup>
 
+  <Target Name="NetWasmRuntimePackResolveOutputPaths"
+          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <Error Code="NWPACK005"
+           Condition="'$(NetWasmIntermediateOutputPath)' == '' AND ('$(NetWasmRuntimePackMaterializedPath)' == '' OR '$(NetWasmRuntimePackLogDirectory)' == '')"
+           Text="The NetWasm intermediate output directory is unavailable for runtime-pack artifacts." />
+    <PropertyGroup>
+      <NetWasmRuntimePackMaterializedPath Condition="'$(NetWasmRuntimePackMaterializedPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime.$(NetWasmTarget).wasm'))</NetWasmRuntimePackMaterializedPath>
+      <NetWasmRuntimePackLogDirectory Condition="'$(NetWasmRuntimePackLogDirectory)' == ''">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'runtime-logs'))</NetWasmRuntimePackLogDirectory>
+    </PropertyGroup>
+  </Target>
+
   <Target Name="NetWasmRuntimePackMaterialize"
+          DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
           AfterTargets="NetWasmCompileCoreModule"
           BeforeTargets="NetWasmSdkComponentize;NetWasmSdkValidateFinalArtifactForNoBuild"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmRuntimeModulePath)' == '' AND '@(NetWasmComponentRuntime)' == ''">
@@ -61,6 +71,7 @@
   </Target>
 
   <Target Name="NetWasmRuntimePackCleanMaterializedRuntime"
+          DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
           BeforeTargets="CoreClean"
           Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <Delete Files="$(NetWasmRuntimePackMaterializedPath)" />

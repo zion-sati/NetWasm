@@ -122,6 +122,46 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
+    public void RuntimePackDefersDerivedOutputPathsUntilTargetExecution()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var targetNamespace = XNamespace.Get(
+            "http://schemas.microsoft.com/developer/msbuild/2003");
+        var props = XDocument.Load(Path.Combine(
+            repositoryRoot,
+            "src/NetWasm.Runtime.Pack/buildTransitive/NetWasm.Runtime.Pack.props"));
+        var targets = XDocument.Load(Path.Combine(
+            repositoryRoot,
+            "src/NetWasm.Runtime.Pack/buildTransitive/NetWasm.Runtime.Pack.targets"));
+
+        Assert.Empty(props.Descendants(
+            targetNamespace + "NetWasmRuntimePackMaterializedPath"));
+        Assert.Empty(props.Descendants(
+            targetNamespace + "NetWasmRuntimePackLogDirectory"));
+
+        var resolver = Assert.Single(targets.Descendants(
+            targetNamespace + "Target"), target =>
+            (string?)target.Attribute("Name") == "NetWasmRuntimePackResolveOutputPaths");
+        Assert.Contains("$(NetWasmIntermediateOutputPath)",
+            resolver.ToString(SaveOptions.DisableFormatting),
+            StringComparison.Ordinal);
+
+        foreach (var targetName in new[]
+                 {
+                     "NetWasmRuntimePackMaterialize",
+                     "NetWasmRuntimePackCleanMaterializedRuntime",
+                 })
+        {
+            var target = Assert.Single(targets.Descendants(
+                targetNamespace + "Target"), candidate =>
+                (string?)candidate.Attribute("Name") == targetName);
+            Assert.Contains("NetWasmRuntimePackResolveOutputPaths",
+                (string?)target.Attribute("DependsOnTargets"),
+                StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void PublishRehydratesVerifiedCompilerArtifactState()
     {
         var targetNamespace = XNamespace.Get(
