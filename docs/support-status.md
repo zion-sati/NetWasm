@@ -49,6 +49,11 @@ The target width and host contract are separate choices. “Supported” below
 means the named output boundary; it does not give a component capability to a
 raw core module or make browser APIs implicit.
 
+Supported development hosts for the first preview are macOS ARM64, Linux ARM64,
+Linux x64 and Windows x64. Windows ARM64 is unsupported because Emscripten 6.0.7
+does not ship an upstream native Windows ARM64 toolchain; x64 emulation is not a
+supported NetWasm development-host configuration.
+
 | Output boundary | wasm32 | wasm64 / Memory64 |
 | --- | --- | --- |
 | Core module | Supported | Supported |

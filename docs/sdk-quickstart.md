@@ -42,14 +42,14 @@ Run the `source` command in each new shell before using NetWasm. It sets
 requiring the Node directory on `PATH`. NetWasm resolves `wasm-ld` from
 `$EMSDK/upstream/bin`, so no extra `PATH` edit is needed.
 
-### Windows PowerShell
+### Windows x64 PowerShell
 
-On Windows ARM64, Emscripten 6.0.7's release toolchain is x64. Select that
-toolchain explicitly before installation; Windows runs it through its normal
-x64 emulation. Omit the first command on Windows x64.
+The first preview supports Windows x64 development hosts. Windows ARM64 is not
+a supported development host because Emscripten 6.0.7 does not provide an
+upstream native Windows ARM64 toolchain. Running the x64 toolchain through
+emulation is not part of the supported NetWasm setup.
 
 ```powershell
-$env:EMSDK_ARCH = 'x86_64' # Windows ARM64 only
 git clone https://github.com/emscripten-core/emsdk.git "$env:USERPROFILE\emsdk"
 Set-Location "$env:USERPROFILE\emsdk"
 Set-ExecutionPolicy -Scope Process Bypass
