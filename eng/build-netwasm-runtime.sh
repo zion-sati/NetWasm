@@ -248,9 +248,17 @@ if [[ "$output_kind" = relocatable ]]; then
     runtime_objects=("$metadata_object")
     for source in "${runtime_sources[@]}"; do
         object="$archive_work/runtime-$(basename "${source%.c}").o"
-        emcc "$source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" -I"$libc_internal_include" \
-            -I"$libc_arch_include" -I"$libc_source_include" "${defines[@]}" \
-            "${target_args[@]}" "${optimization[@]}" -o "$object"
+        relative_source="${source#"$repo_root"/}"
+        [[ "$relative_source" != "$source" ]] || {
+            echo "relocatable runtime sources must belong to the repository" >&2
+            exit 2
+        }
+        (
+            cd "$repo_root"
+            emcc "$relative_source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" \
+                -I"$libc_internal_include" -I"$libc_arch_include" -I"$libc_source_include" \
+                "${defines[@]}" "${target_args[@]}" "${optimization[@]}" -o "$object"
+        )
         runtime_objects+=("$object")
     done
     mkdir "$archive_work/gc"

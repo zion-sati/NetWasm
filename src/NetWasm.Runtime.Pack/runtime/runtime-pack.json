@@ -107,7 +107,7 @@
       "maximumMemorySizeBytes": 2147483648,
       "runtimeArchive": {
         "path": "wasm32/libnetwasm-runtime.a",
-        "sha256": "5e03d75d6cf15b16f3e2aed4d99f1c97f03e1efc8db88a4cad97254c933a891d"
+        "sha256": "5f10ecdea2f8516703a72c8224aba67e8722c28163b1ab0248ef94c76391c5c2"
       },
       "linkInputs": [
         {
@@ -143,7 +143,7 @@
       "maximumMemorySizeBytes": 8589934592,
       "runtimeArchive": {
         "path": "wasm64/libnetwasm-runtime.a",
-        "sha256": "78e1c9c9af722c453f55ca32ac40db0463eebab612c2acb751322efbd6e2fc1d"
+        "sha256": "289976e423df40a2607d5a7f63a98e0f7943bdc3847d2cf12373799466e5129c"
       },
       "linkInputs": [
         {
