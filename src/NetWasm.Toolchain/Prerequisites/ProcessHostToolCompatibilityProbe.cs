@@ -1,8 +1,11 @@
+using System;
 using System.Diagnostics;
+using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using NetWasm.Toolchain.Prerequisites;
 
-namespace NetWasm.Hosting.Build.Environment;
+namespace NetWasm.Toolchain.Prerequisites;
 
 public sealed partial class ProcessHostToolCompatibilityProbe : IHostToolCompatibilityProbe
 {

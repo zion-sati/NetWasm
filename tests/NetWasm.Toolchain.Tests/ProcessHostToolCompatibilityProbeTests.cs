@@ -1,7 +1,6 @@
-using NetWasm.Hosting.Build.Environment;
 using NetWasm.Toolchain.Prerequisites;
 
-namespace NetWasm.Hosting.Build.Tests;
+namespace NetWasm.Toolchain.Tests;
 
 #pragma warning disable CA1859 // Contract test deliberately dispatches through the public interface.
 

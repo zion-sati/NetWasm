@@ -2,12 +2,7 @@ using System.Diagnostics;
 
 namespace NetWasm.Wit.Bindings;
 
-internal interface IExternalCommandRunner
-{
-    ToolResult Run(string executable, IEnumerable<string> arguments);
-}
-
-internal sealed class SystemExternalCommandRunner : IExternalCommandRunner
+internal sealed class SystemExternalCommandRunner : IExternalToolRunner
 {
     public ToolResult Run(string executable, IEnumerable<string> arguments)
     {
@@ -47,13 +42,4 @@ internal sealed class SystemExternalCommandRunner : IExternalCommandRunner
             standardOutput.Result,
             standardError.Result);
     }
-}
-
-internal sealed class WasmToolsProcess(IExternalCommandRunner commands) : IWasmTools
-{
-    private readonly IExternalCommandRunner _commands = commands ??
-        throw new ArgumentNullException(nameof(commands));
-
-    public ToolResult Run(params IEnumerable<string> arguments) =>
-        _commands.Run("wasm-tools", arguments);
 }

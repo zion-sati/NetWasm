@@ -13,15 +13,24 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>netwasm-wit-bindgen</ToolCommandName>
     <PackageId>NetWasm.Wit.Bindings.Tool</PackageId>
-    <Version>0.1.0-preview.1</Version>
+    <Version>0.1.0-rc.1</Version>
     <Description>Generates reflection-free NetWasm C# bindings from WIT worlds.</Description>
     <PackageTags>netwasm;wasm;wit;component-model;dotnet-tool</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <NetWasmToolchainWasmToolsAssetRoot Condition="'$(NetWasmToolchainWasmToolsAssetRoot)' == ''">$(MSBuildProjectDirectory)/../../src/NetWasm.Toolchain/platform-assets/wasm-tools</NetWasmToolchainWasmToolsAssetRoot>
+    <NetWasmPackTaskProjectPath>$(MSBuildProjectDirectory)/../../src/NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj</NetWasmPackTaskProjectPath>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
+    <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../../src/NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
     <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
+    <ProjectReference Include="../../src/NetWasm.Toolchain/NetWasm.Toolchain.csproj" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"
@@ -29,5 +38,52 @@
           PackagePath="LICENSE.txt"
           Visible="false" />
     <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="../../src/NetWasm.Toolchain/toolchain-manifest.json"
+          Pack="true"
+          PackagePath="tools/$(TargetFramework)/any/toolchain-manifest.json"
+          Visible="false" />
+    <None Include="../../src/NetWasm.Toolchain/JavaScript/run-wasm-tools.mjs"
+          Pack="true"
+          PackagePath="tools/$(TargetFramework)/any/tools/wasm-tools/run-wasm-tools.mjs"
+          Visible="false" />
+    <None Include="$(NetWasmToolchainWasmToolsAssetRoot)/**/*"
+          Exclude="$(NetWasmToolchainWasmToolsAssetRoot)/.DS_Store"
+          Pack="true"
+          PackagePath="tools/$(TargetFramework)/any/tools/wasm-tools"
+          Visible="false" />
   </ItemGroup>
+
+  <Target Name="ValidateNetWasmWitBindingToolPackInputs" BeforeTargets="Pack">
+    <Error Condition="!Exists('../../src/NetWasm.Toolchain/toolchain-manifest.json')"
+           Text="NetWasm.Wit.Bindings.Tool is missing the Toolchain asset manifest." />
+    <Error Condition="!Exists('../../src/NetWasm.Toolchain/JavaScript/run-wasm-tools.mjs')"
+           Text="NetWasm.Wit.Bindings.Tool is missing the wasm-tools Node runner." />
+    <Error Condition="!Exists('$(NetWasmToolchainWasmToolsAssetRoot)/wasm-tools.wasm')"
+           Text="NetWasm.Wit.Bindings.Tool requires the staged platform-neutral wasm-tools module." />
+    <Error Condition="!Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-APACHE') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-Apache-2.0_WITH_LLVM-exception') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/LICENSE-MIT') OR !Exists('$(NetWasmToolchainWasmToolsAssetRoot)/README.md')"
+           Text="NetWasm.Wit.Bindings.Tool is missing wasm-tools distribution notices." />
+  </Target>
+
+  <UsingTask TaskName="NetWasm.Sdk.Pack.DeterministicPackageArchiveTask"
+             AssemblyFile="$(NetWasmPackTaskOutput)" />
+
+  <Target Name="ResolveNetWasmWitBindingToolPackTask"
+          BeforeTargets="Pack"
+          Condition="'$(NoBuild)' != 'true'">
+    <MSBuild Projects="$(NetWasmPackTaskProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="CanonicalizeNetWasmWitBindingToolPackage"
+          AfterTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true'">
+    <PropertyGroup>
+      <NetWasmWitBindingToolPackagePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmWitBindingToolPackagePath>
+    </PropertyGroup>
+    <DeterministicPackageArchiveTask PackagePath="$(NetWasmWitBindingToolPackagePath)"
+                                     PackageId="$(PackageId)"
+                                     PackageVersion="$(PackageVersion)"
+                                     SourceDateEpoch="$(SOURCE_DATE_EPOCH)" />
+  </Target>
 </Project>

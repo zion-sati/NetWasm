@@ -40,6 +40,7 @@
     <Project Path="tests/NetWasm.Hosting.Build.Tests/NetWasm.Hosting.Build.Tests.csproj" />
     <Project Path="tests/NetWasm.Hosting.Generator.Tests/NetWasm.Hosting.Generator.Tests.csproj" />
     <Project Path="tests/NetWasm.Runtime.Pack.Tests/NetWasm.Runtime.Pack.Tests.csproj" />
+    <Project Path="tests/NetWasm.Toolchain.Tests/NetWasm.Toolchain.Tests.csproj" />
     <Project Path="tests/NetWasm.Sdk.Tests/NetWasm.Sdk.Tests.csproj" />
     <Project Path="tests/NetWasm.Sdk.Pack.Tests/NetWasm.Sdk.Pack.Tests.csproj" />
     <Project Path="tests/NetWasm.Ref.Tests/NetWasm.Ref.Tests.csproj" />

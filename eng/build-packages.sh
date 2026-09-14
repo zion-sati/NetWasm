@@ -90,6 +90,7 @@ dotnet build "${source_root}/NetWasm.slnx" \
 
 projects=(
   src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj
+  tools/NetWasm.Wit.Bindings/NetWasm.Wit.Bindings.csproj
   src/NetWasm.Hosting/NetWasm.Hosting.csproj
   src/NetWasm.Hosting.Build/NetWasm.Hosting.Build.csproj
   src/NetWasm.Ref/NetWasm.Ref.csproj
@@ -119,9 +120,9 @@ for project in "${projects[@]}"; do
 done
 
 package_count="$(find "${OUTPUT_DIR}" -maxdepth 1 -type f -name 'NetWasm.*.nupkg' | wc -l | tr -d ' ')"
-if [[ "${package_count}" -ne 11 ]]; then
-  echo "Expected exactly 11 NetWasm core packages, found ${package_count}." >&2
+if [[ "${package_count}" -ne 12 ]]; then
+  echo "Expected exactly 12 NetWasm core packages, found ${package_count}." >&2
   exit 1
 fi
 
-printf 'Built 11 NetWasm core packages in %s\n' "${OUTPUT_DIR}"
+printf 'Built 12 NetWasm core packages in %s\n' "${OUTPUT_DIR}"

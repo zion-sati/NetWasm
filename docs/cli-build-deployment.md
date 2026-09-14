@@ -48,19 +48,25 @@ sharing these artifacts.
 instrumentation and writes its symbol sidecar. It is not DWARF/source-level
 debug information; see the [support status and roadmap](support-status.md#managed-stack-traces).
 
-The separate `NetWasm.Wit.Bindings` tool accepts `--wit`, optional `--world`,
-and `--output`. It writes reflection-free C# bindings; the compiler CLI does not
-generate C# source.
+The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
+bindings; the compiler CLI does not generate C# source. Install and invoke it
+through the ordinary .NET tool workflow:
+
+```sh
+dotnet tool install --global NetWasm.Wit.Bindings.Tool --version 0.1.0-rc.1
+netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
+```
+
+Omit `--world` when the document contains exactly one world. The tool carries
+the pinned platform-neutral wasm-tools module and uses Node.js 24+ from the
+activated Emscripten SDK; no native `wasm-tools` installation is required.
 
 `componentize` accepts required `--core-module`, `--wit`, `--output`, and
 `--manifest`, plus optional `--runtime-module`, `--world`, `--target`,
 `--interop-manifest`, `--jco-version`, and `--preview2-shim-version`. Current
 Component output is wasm32 + WASI 0.2; wasm64 fails with `NW1010` rather than
-downgrading. Validate a result with:
-
-```sh
-wasm-tools validate build/netwasm/app.component.wasm --features all
-```
+downgrading. The SDK validates generated products with its packaged,
+integrity-checked wasm-tools module.
 
 ## Runtime and hosts
 

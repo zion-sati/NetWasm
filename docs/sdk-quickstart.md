@@ -207,3 +207,21 @@ dotnet pack -c Release
 The library is an ordinary NuGet library targeting `netwasm0.1` and `net10.0`.
 It does not select a host or gain capabilities; the consuming application owns
 those deployment choices.
+
+## 6. Generate C# bindings from WIT when needed
+
+WIT binding generation is an optional, separate .NET tool rather than a
+compiler command:
+
+```bash
+dotnet tool install --global NetWasm.Wit.Bindings.Tool --version 0.1.0-rc.1
+netwasm-wit-bindgen \
+  --wit service.wit \
+  --world example:service@1.0.0/service \
+  --output Bindings.g.cs
+```
+
+Omit `--world` when the WIT document contains exactly one world. The tool
+carries the pinned platform-neutral wasm-tools module and uses Node.js 24+
+from the activated Emscripten SDK; it does not require a native `wasm-tools`
+installation.
