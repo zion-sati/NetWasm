@@ -1005,7 +1005,9 @@ netwasm_address_t component_realloc(
     size_t copy_size;
 
     if (new_size == 0) {
-        component_free(old_address);
+        if (old_size != 0) {
+            component_free(old_address);
+        }
         return 0;
     }
     if (!is_power_of_two(alignment)) {
@@ -1041,7 +1043,7 @@ netwasm_address_t component_realloc(
     header->size = new_size;
     header->alignment = alignment;
     component_active_allocation_count++;
-    if (old_address != 0) {
+    if (old_size != 0) {
         copy_size = old_size < new_size ? (size_t)old_size : (size_t)new_size;
         memcpy((void *)(uintptr_t)aligned_address,
                (const void *)(uintptr_t)old_address,

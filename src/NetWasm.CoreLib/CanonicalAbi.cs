@@ -11,7 +11,13 @@ namespace System.Runtime.InteropServices.WebAssembly
         public nuint Address { get; }
         public nuint Length { get; }
 
-        public void Dispose() => CanonicalAbi.Free(Address);
+        public void Dispose()
+        {
+            if (Length != 0)
+            {
+                CanonicalAbi.Free(Address);
+            }
+        }
     }
 
     public static unsafe class CanonicalAbi

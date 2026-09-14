@@ -38,14 +38,20 @@ namespace System.Runtime.InteropServices.CommandLine
                         }
                         finally
                         {
-                            CanonicalAbi.Free(address);
+                            if (itemLength != 0)
+                            {
+                                CanonicalAbi.Free(address);
+                            }
                         }
                     }
                     return arguments;
                 }
                 finally
                 {
-                    CanonicalAbi.Free(elements);
+                    if (length != 0)
+                    {
+                        CanonicalAbi.Free(elements);
+                    }
                 }
             }
             finally

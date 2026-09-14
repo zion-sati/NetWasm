@@ -74,17 +74,16 @@ static void expect_failure(unsigned expected_allocations)
 
 int main(void)
 {
-    reset(NULL, 0);
+    reset((NetWasmWasiEnvironmentEntry *)(uintptr_t)sizeof(void *), 0);
     char **result = runtime_read_environment();
     assert(result == storage);
     assert(result[0] == NULL);
-    assert(reads == 1 && allocations == 1 && releases == 1);
-    assert(released[0] == 0);
+    assert(reads == 1 && allocations == 1 && releases == 0);
 
     char unicode[] = "caf\xc3\xa9=\xe6\xb0\xb4";
     NetWasmWasiEnvironmentEntry entries[] = {
         {"APP_MODE", 8, "test", 4},
-        {"EMPTY", 5, NULL, 0},
+        {"EMPTY", 5, (char *)(uintptr_t)1, 0},
         {"UNICODE", 7, unicode, sizeof(unicode) - 1},
         {"APP_MODE", 8, "second", 6},
     };
@@ -95,12 +94,18 @@ int main(void)
     assert(strcmp(result[2], "UNICODE=caf\xc3\xa9=\xe6\xb0\xb4") == 0);
     assert(strcmp(result[3], "APP_MODE=second") == 0);
     assert(result[4] == NULL);
-    assert(reads == 1 && allocations == 1 && releases == 9);
-    for (size_t index = 0; index < 4; ++index) {
-        assert(released[index * 2] == (uintptr_t)entries[index].name);
-        assert(released[index * 2 + 1] == (uintptr_t)entries[index].value);
-    }
-    assert(released[8] == (uintptr_t)entries);
+    assert(reads == 1 && allocations == 1 && releases == 8);
+    uintptr_t expected_releases[] = {
+        (uintptr_t)entries[0].name,
+        (uintptr_t)entries[0].value,
+        (uintptr_t)entries[1].name,
+        (uintptr_t)entries[2].name,
+        (uintptr_t)entries[2].value,
+        (uintptr_t)entries[3].name,
+        (uintptr_t)entries[3].value,
+        (uintptr_t)entries,
+    };
+    assert(memcmp(released, expected_releases, sizeof(expected_releases)) == 0);
 
     reset(NULL, SIZE_MAX);
     expect_failure(0);

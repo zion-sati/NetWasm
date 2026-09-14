@@ -52,9 +52,13 @@ char **runtime_read_environment(void)
         }
         *cursor++ = '\0';
         component_free((uintptr_t)entry->name);
-        component_free((uintptr_t)entry->value);
+        if (entry->value_length != 0) {
+            component_free((uintptr_t)entry->value);
+        }
     }
     result[environment.length] = NULL;
-    component_free((uintptr_t)environment.entries);
+    if (environment.length != 0) {
+        component_free((uintptr_t)environment.entries);
+    }
     return result;
 }

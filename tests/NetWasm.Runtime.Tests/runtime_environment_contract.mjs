@@ -41,7 +41,7 @@ for (const { environment, disabled, earlyAllocation } of startupCases) {
     assert.fail('Unexpected runtime host call');
   }
   function allocate(size, alignment) {
-    if (size === 0) return 0;
+    if (size === 0) return alignment;
     const pointer = instance.exports.component_realloc(
       address(0), address(0), address(alignment), address(size));
     assert.notEqual(pointer, address(0));
@@ -90,6 +90,9 @@ for (const { environment, disabled, earlyAllocation } of startupCases) {
     [`${prefix}|wasi:io/error@0.2`]: { error_drop: unexpected },
     [`${prefix}|wasi:cli/exit@0.2`]: { exit: unexpected },
   });
+  assert.equal(instance.exports.component_realloc(
+    address(1), address(0), address(1), address(0)), address(0));
+  assert.equal(instance.exports.test_component_active_allocation_count(), 0);
   let early;
   if (earlyAllocation) {
     assert.doesNotThrow(() => { early = allocate(19, 16); },

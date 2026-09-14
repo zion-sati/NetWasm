@@ -45,7 +45,10 @@ namespace System.Runtime.InteropServices.Cryptography
                 }
                 finally
                 {
-                    CanonicalAbi.Free(bytes);
+                    if (byteCount != 0)
+                    {
+                        CanonicalAbi.Free(bytes);
+                    }
                 }
             }
             finally

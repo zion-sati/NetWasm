@@ -36,10 +36,16 @@ namespace System.Runtime.InteropServices.TimeZones
                     }
                     finally
                     {
-                        CanonicalAbi.Free(pathAddress);
+                        if (pathLength != 0)
+                        {
+                            CanonicalAbi.Free(pathAddress);
+                        }
                     }
                 }
-                CanonicalAbi.Free(elements);
+                if (length != 0)
+                {
+                    CanonicalAbi.Free(elements);
+                }
                 return directories;
             }
             finally

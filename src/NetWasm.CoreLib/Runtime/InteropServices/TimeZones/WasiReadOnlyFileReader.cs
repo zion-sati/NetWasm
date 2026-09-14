@@ -69,7 +69,10 @@ namespace System.Runtime.InteropServices.TimeZones
                 }
                 finally
                 {
-                    CanonicalAbi.Free(bytesAddress);
+                    if (bytesLength != 0)
+                    {
+                        CanonicalAbi.Free(bytesAddress);
+                    }
                 }
                 return new ReadChunkResult(
                     bytes,

@@ -39,10 +39,16 @@ namespace System.Runtime.InteropServices.TimeZones
                     finally
                     {
                         CanonicalAbi.Free(nameAddress);
-                        CanonicalAbi.Free(valueAddress);
+                        if (valueLength != 0)
+                        {
+                            CanonicalAbi.Free(valueAddress);
+                        }
                     }
                 }
-                CanonicalAbi.Free(elements);
+                if (length != 0)
+                {
+                    CanonicalAbi.Free(elements);
+                }
                 return variables;
             }
             finally
