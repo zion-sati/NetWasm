@@ -36,6 +36,7 @@ find "${OUTPUT_DIR}" -maxdepth 1 -type f \
   \( -name 'NetWasm.*.nupkg' -o -name 'NetWasm.*.snupkg' \) -delete
 
 build_root="$(mktemp -d "${TMPDIR:-/tmp}/netwasm-core-packages.XXXXXX")"
+build_root="$(cd "${build_root}" && pwd -P)"
 source_root="${build_root}/source"
 cleanup() {
   if [[ -d "${source_root}" ]]; then

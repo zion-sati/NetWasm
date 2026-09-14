@@ -3,9 +3,15 @@ using System;
 
 namespace NetWasm.Compiler.Diagnostics;
 
-internal sealed partial class CompilerDiagnosticProgressReporter(
+internal sealed class CompilerDiagnosticProgressReporter(
     ILogger<CompilerDiagnosticProgressReporter> logger) : ICompilerProgressReporter
 {
+    private static readonly Action<ILogger, CompilerProgressStage, Exception?> LogStageCompleted =
+        LoggerMessage.Define<CompilerProgressStage>(
+            LogLevel.Information,
+            new EventId(4002, nameof(LogStageCompleted)),
+            "Compiler stage completed: {Stage}.");
+
     private readonly ILogger<CompilerDiagnosticProgressReporter> _logger = logger ??
         throw new ArgumentNullException(nameof(logger));
 
@@ -16,14 +22,6 @@ internal sealed partial class CompilerDiagnosticProgressReporter(
             throw new ArgumentOutOfRangeException(nameof(stage));
         }
 
-        LogStageCompleted(_logger, stage);
+        LogStageCompleted(_logger, stage, null);
     }
-
-    [LoggerMessage(
-        EventId = 4002,
-        Level = LogLevel.Information,
-        Message = "Compiler stage completed: {Stage}.")]
-    private static partial void LogStageCompleted(
-        ILogger logger,
-        CompilerProgressStage stage);
 }

@@ -326,13 +326,39 @@ public sealed class SdkToolchainContractTests
         var document = XDocument.Load(Path.Combine(repositoryRoot, "Directory.Build.props"));
         var sourceRoot = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "NetWasmRepositorySourceRoot");
-        var pathMap = Assert.Single(document.Descendants(), element =>
-            element.Name.LocalName == "PathMap");
+        var sourcePathMap = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "PathMap" &&
+            element.Value == "$(NetWasmRepositorySourceRoot)=/_/");
+        var packageCachePathMap = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "PathMap" &&
+            element.Value == "$(PathMap),$(NetWasmPackageCacheRoot)=/_/nuget");
 
         Assert.Contains("NormalizeDirectory", sourceRoot.Value, StringComparison.Ordinal);
         Assert.Contains("$(MSBuildThisFileDirectory)", sourceRoot.Value, StringComparison.Ordinal);
-        Assert.Equal("$(NetWasmRepositorySourceRoot)=/_/", pathMap.Value);
-        Assert.Equal("'$(PathMap)' == ''", (string?)pathMap.Attribute("Condition"));
+        Assert.Equal("'$(PathMap)' == ''", (string?)sourcePathMap.Attribute("Condition"));
+        Assert.Equal(
+            "'$(NetWasmPackageCacheRoot)' != ''",
+            (string?)packageCachePathMap.Attribute("Condition"));
+    }
+
+    [Fact]
+    public void PackageBuildCanonicalizesTemporaryRootBeforeDerivingSourceRoot()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var script = File.ReadAllText(Path.Combine(repositoryRoot, "eng/build-packages.sh"));
+        var temporaryRootIndex = script.IndexOf(
+            "build_root=\"$(mktemp -d ",
+            StringComparison.Ordinal);
+        var canonicalRootIndex = script.IndexOf(
+            "build_root=\"$(cd \"${build_root}\" && pwd -P)\"",
+            StringComparison.Ordinal);
+        var sourceRootIndex = script.IndexOf(
+            "source_root=\"${build_root}/source\"",
+            StringComparison.Ordinal);
+
+        Assert.True(temporaryRootIndex >= 0);
+        Assert.True(canonicalRootIndex > temporaryRootIndex);
+        Assert.True(sourceRootIndex > canonicalRootIndex);
     }
 
     private static XDocument LoadSdkTarget(string fileName)

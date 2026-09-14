@@ -3,7 +3,7 @@ using System;
 
 namespace NetWasm.Compiler.Diagnostics;
 
-internal sealed partial class CompilerDiagnosticCompilationDecorator(
+internal sealed class CompilerDiagnosticCompilationDecorator(
     INetWasmCompiler compiler,
     ILogger<CompilerDiagnosticCompilationDecorator> logger,
     ICompilerDiagnosticLogPathResolver logPaths) : INetWasmCompiler
@@ -13,6 +13,11 @@ internal sealed partial class CompilerDiagnosticCompilationDecorator(
             LogLevel.Information,
             new EventId(4000, nameof(LogStarted)),
             "Compiler invocation started for {Target}.");
+    private static readonly Action<ILogger, Exception?> LogCompilationFailure =
+        LoggerMessage.Define(
+            LogLevel.Critical,
+            new EventId(4001, nameof(LogCompilationFailure)),
+            "Compilation failed.");
 
     private readonly INetWasmCompiler _compiler = compiler ??
         throw new ArgumentNullException(nameof(compiler));
@@ -38,9 +43,4 @@ internal sealed partial class CompilerDiagnosticCompilationDecorator(
             throw;
         }
     }
-
-    [LoggerMessage(EventId = 4001, Level = LogLevel.Critical, Message = "Compilation failed.")]
-    private static partial void LogCompilationFailure(
-        ILogger logger,
-        Exception exception);
 }
