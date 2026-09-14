@@ -361,6 +361,26 @@ public sealed class SdkToolchainContractTests
         Assert.True(sourceRootIndex > canonicalRootIndex);
     }
 
+    [Fact]
+    public void PackageBuildRejectsRuntimePackDriftFromNativeSources()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var script = File.ReadAllText(Path.Combine(repositoryRoot, "eng/build-packages.sh"));
+        var regenerationIndex = script.IndexOf(
+            "tools/regenerate-runtime-pack.sh",
+            StringComparison.Ordinal);
+        var driftCheckIndex = script.IndexOf(
+            "git -C \"${source_root}\" diff --quiet",
+            StringComparison.Ordinal);
+        var buildIndex = script.IndexOf(
+            "dotnet build \"${source_root}/NetWasm.slnx\"",
+            StringComparison.Ordinal);
+
+        Assert.True(regenerationIndex >= 0);
+        Assert.True(driftCheckIndex > regenerationIndex);
+        Assert.True(buildIndex > driftCheckIndex);
+    }
+
     private static XDocument LoadSdkTarget(string fileName)
         => XDocument.Load(FindSdkFile(fileName));
 
