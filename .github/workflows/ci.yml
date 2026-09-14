@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+
+      - name: Install Emscripten 6.0.7
+        shell: bash
+        run: |
+          git clone --depth 1 --branch 6.0.7 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.7
+          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.7
+
+      - name: Build and test
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          npm ci --ignore-scripts --no-audit --no-fund
+          bash eng/verify-toolchain.sh
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s eng/tests -p 'test_*.py'
+          dotnet restore NetWasm.slnx --disable-build-servers --nologo
+          dotnet build NetWasm.slnx -c Release --no-restore --disable-build-servers --nologo
+          dotnet test NetWasm.slnx -c Release --no-build --no-restore --disable-build-servers --nologo

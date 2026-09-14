@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out release infrastructure
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          path: infrastructure
+
+      - name: Read release manifest
+        id: release
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("infrastructure/eng/release-manifest.json").read_text())
+          print(f"tag={manifest['releaseTag']}")
+          print(f"version={manifest['releaseVersion']}")
+          PY
+
+      - name: Check out signed release source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+          path: source
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: source/global.json
+
+      - name: Install Emscripten 6.0.7
+        shell: bash
+        run: |
+          git clone --depth 1 --branch 6.0.7 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.7
+          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.7
+
+      - name: Build release packages
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          bash source/eng/build-packages.sh \
+            --version "${{ steps.release.outputs.version }}" \
+            --output "$GITHUB_WORKSPACE/artifacts/packages"
+
+      - name: Validate release packages
+        shell: bash
+        run: |
+          python3 infrastructure/eng/verify-release-packages.py \
+            --manifest infrastructure/eng/release-manifest.json \
+            --packages artifacts/packages \
+            --source-root source \
+            --allowed-signers infrastructure/eng/release-signers \
+            --receipt artifacts/release-package-receipt.json
+          (cd artifacts && sha256sum packages/*.nupkg > SHA256SUMS)
+
+      - name: Retain release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: netwasm-${{ steps.release.outputs.version }}
+          path: artifacts/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: nuget-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out release infrastructure
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          path: infrastructure
+
+      - name: Read release manifest
+        id: release
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("infrastructure/eng/release-manifest.json").read_text())
+          print(f"version={manifest['releaseVersion']}")
+          PY
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: netwasm-${{ steps.release.outputs.version }}
+          path: artifacts
+
+      - name: Revalidate artifacts and NuGet.org identity availability
+        shell: bash
+        run: |
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          python3 infrastructure/eng/verify-release-packages.py \
+            --manifest infrastructure/eng/release-manifest.json \
+            --packages artifacts/packages \
+            --receipt artifacts/publish-package-receipt.json \
+            --require-absent-on-nuget
+
+      - name: Request temporary NuGet.org credential
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish packages
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          while IFS= read -r package; do
+            dotnet nuget push "$package" \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json
+          done < <(find artifacts/packages -maxdepth 1 -type f -name '*.nupkg' | LC_ALL=C sort)

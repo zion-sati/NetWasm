@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "repository": "zion-sati/NetWasm",
+  "repositoryUrl": "https://github.com/zion-sati/netwasm",
+  "releaseVersion": "0.1.0-rc.1",
+  "releaseTag": "v0.1.0-rc.1",
+  "sourceCommit": "4cbc8a2649a73db092c26623489de75825a4c1ee",
+  "packages": [
+    "NetWasm.Compiler.Tasks",
+    "NetWasm.Hosting",
+    "NetWasm.Hosting.Build",
+    "NetWasm.Ref",
+    "NetWasm.Runtime.Pack",
+    "NetWasm.Runtime.Wasm32",
+    "NetWasm.Runtime.Wasm64",
+    "NetWasm.Sdk",
+    "NetWasm.Templates",
+    "NetWasm.Testing.VSTest",
+    "NetWasm.Toolchain",
+    "NetWasm.Wit.Bindings.Tool"
+  ]
+}
