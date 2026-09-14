@@ -134,7 +134,13 @@ Wasm import or JavaScript provider. A custom host or deployer can apply a more
 restrictive policy.
 
 Filesystem access is different: host and guest paths are deployment mappings,
-so preopens remain explicit:
+so preopens remain explicit. A **preopen** is WASI's equivalent of mounting a
+host directory into the application's filesystem sandbox before the program
+starts. The application receives access to the guest path, not ambient access
+to the original host path or the rest of the host filesystem.
+
+For example, this maps the project's `data` directory to `/data` inside the
+Wasm application:
 
 ```xml
 <ItemGroup>
@@ -144,8 +150,20 @@ so preopens remain explicit:
 </ItemGroup>
 ```
 
-Use `readOnly` or `readWrite` for preopen access. A preopen does not create the
-currently missing general `File`/`Directory` API surface.
+`Include` is the host directory, `GuestPath` is its absolute sandbox path, and
+`Access` is either `readOnly` or `readWrite`. Guest paths must use canonical
+forward-slash syntax and must be unique within the project. `readOnly` blocks
+filesystem mutation through that mount; use `readWrite` only when the
+application genuinely needs to modify the mapped directory.
+
+NetWasm does not infer a preopen from the project directory or current working
+directory. There is no portable, unambiguous host-to-guest path mapping, and an
+implicit mount would expose host files that the application did not request.
+With no `NetWasmPreopen` items, no consumer directory is mounted.
+
+A preopen grants the host-side filesystem capability; it does not create the
+currently missing general `System.IO.File`, `FileStream` or `Directory` API
+surface. Those APIs remain outside the first-preview profile.
 
 ## 4. Publish
 
