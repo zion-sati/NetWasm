@@ -3,6 +3,8 @@
     <Deterministic>true</Deterministic>
     <NetWasmRepositorySourceRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</NetWasmRepositorySourceRoot>
     <PathMap Condition="'$(PathMap)' == ''">$(NetWasmRepositorySourceRoot)=/_/</PathMap>
+    <NetWasmPackageCacheRoot Condition="'$(NUGET_PACKAGES)' != ''">$([System.IO.Path]::GetFullPath('$(NUGET_PACKAGES)'))</NetWasmPackageCacheRoot>
+    <PathMap Condition="'$(NetWasmPackageCacheRoot)' != ''">$(PathMap),$(NetWasmPackageCacheRoot)=/_/nuget</PathMap>
     <Authors>Zion Sati</Authors>
     <PackageOwners>Zion Sati</PackageOwners>
     <Copyright>Copyright © 2026 Zion Sati</Copyright>
