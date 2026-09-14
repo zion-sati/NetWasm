@@ -183,6 +183,8 @@ cmake -S "$gc_work" -B "$build_root" -G Ninja \
     -Denable_munmap=OFF -Ddisable_handle_fork=ON -Ddisable_gc_debug=ON \
     -Denable_gc_assertions=OFF \
     -DCMAKE_C_FLAGS="-Oz -flto${target_cflags:+ $target_cflags} ${defines[*]}" >/dev/null
+node "$repo_root/src/NetWasm.Runtime.Pack/tools/relativize-ninja-source-root.mjs" \
+    "$build_root/build.ninja" "$gc_work" "$build_root"
 cmake --build "$build_root" --target gc -j 8 >/dev/null
 
 optimization=(-Oz -flto)

@@ -65,6 +65,63 @@ public sealed class RuntimeArchivePrivacyTests
     }
 
     [Fact]
+    public void NativeDependencyCompilationRelativizesVariableBuildRoots()
+    {
+        var script = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "eng",
+            "build-netwasm-runtime.sh"));
+
+        Assert.Contains(
+            "relativize-ninja-source-root.mjs",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NinjaRelativizerMakesSourcePathsBuildRelative()
+    {
+        using var directory = new TemporaryDirectory();
+        var sourceRoot = Path.Combine(directory.Path, "a-deliberately-long-source-root");
+        var buildRoot = Path.Combine(directory.Path, "build");
+        Directory.CreateDirectory(sourceRoot);
+        Directory.CreateDirectory(buildRoot);
+        var ninja = directory.Write(
+            "build.ninja",
+            Encoding.UTF8.GetBytes($"build object: cc {sourceRoot}/source.c\n  INCLUDES = -I{sourceRoot}/include\n"));
+        var script = Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "NetWasm.Runtime.Pack",
+            "tools",
+            "relativize-ninja-source-root.mjs");
+
+        using var process = Process.Start(new ProcessStartInfo("node")
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            ArgumentList =
+            {
+                script,
+                ninja,
+                sourceRoot,
+                buildRoot,
+            },
+        }) ?? throw new InvalidOperationException("Node did not start.");
+        process.WaitForExit();
+        var standardError = process.StandardError.ReadToEnd();
+        var rewritten = File.ReadAllText(ninja);
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal(string.Empty, standardError);
+        Assert.DoesNotContain(sourceRoot, rewritten, StringComparison.Ordinal);
+        Assert.Contains(
+            Path.GetRelativePath(buildRoot, sourceRoot).Replace('\\', '/'),
+            rewritten,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PackagedArchivesContainNoMachineLocalBuildRoots()
     {
         var runtimeRoot = Path.Combine(
@@ -77,6 +134,7 @@ public sealed class RuntimeArchivePrivacyTests
             Encoding.UTF8.GetBytes(string.Concat("/", "Users", "/")),
             Encoding.UTF8.GetBytes(string.Concat("/", "home", "/")),
             Encoding.UTF8.GetBytes(string.Concat("/", "tmp", "/")),
+            Encoding.UTF8.GetBytes(string.Concat("/", "var", "/", "folders", "/")),
         };
 
         foreach (var archive in Directory.EnumerateFiles(
