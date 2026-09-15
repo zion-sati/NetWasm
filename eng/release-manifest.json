@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "repository": "zion-sati/NetWasm",
   "repositoryUrl": "https://github.com/zion-sati/netwasm",
-  "releaseVersion": "0.1.0-rc.3",
-  "releaseTag": "v0.1.0-rc.3",
+  "releaseVersion": "0.1.0",
+  "releaseTag": "v0.1.0",
   "sourceCommit": "d98f4315be38eb7437c58a4272146b30d2606ba8",
   "packages": [
     "NetWasm.Compiler.Tasks",

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "packageId": "NetWasm.Toolchain",
-  "packageVersion": "0.1.0-rc.3",
+  "packageVersion": "0.1.0",
   "assets": [
     {
       "id": "netwasm.raw-inspection.command",

@@ -3,6 +3,6 @@
   <PropertyGroup>
     <!-- This immutable identity belongs to the resolved SDK package itself.
          Dependency versions remain independently selectable below the SDK. -->
-    <NetWasmSdkPackageVersion>0.1.0-rc.3</NetWasmSdkPackageVersion>
+    <NetWasmSdkPackageVersion>0.1.0</NetWasmSdkPackageVersion>
   </PropertyGroup>
 </Project>

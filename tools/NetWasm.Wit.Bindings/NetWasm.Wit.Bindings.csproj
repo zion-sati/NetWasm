@@ -13,7 +13,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>netwasm-wit-bindgen</ToolCommandName>
     <PackageId>NetWasm.Wit.Bindings.Tool</PackageId>
-    <Version>0.1.0-rc.3</Version>
+    <Version>0.1.0</Version>
     <Description>Generates reflection-free NetWasm C# bindings from WIT worlds.</Description>
     <PackageTags>netwasm;wasm;wit;component-model;dotnet-tool</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>

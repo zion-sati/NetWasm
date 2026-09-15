@@ -15,12 +15,12 @@
     <NetWasmSdkDeclaredTargetFrameworks Condition="'$(TargetFramework)' != ''">$(TargetFramework)</NetWasmSdkDeclaredTargetFrameworks>
     <NetWasmSdkContainsCustomProfile Condition="'$(NetWasmSdkDeclaredTargetFrameworks)' != ''">$([System.String]::Copy(';$(NetWasmSdkDeclaredTargetFrameworks);').Contains(';netwasm0.1;'))</NetWasmSdkContainsCustomProfile>
     <NetWasmRefPackageId Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageId)' == ''">NetWasm.Ref</NetWasmRefPackageId>
-    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.1.0-rc.3</NetWasmRefPackageVersion>
-    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.1.0-rc.3</NetWasmRuntimePackageVersion>
-    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.1.0-rc.3</NetWasmRuntimePackPackageVersion>
-    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.1.0-rc.3</NetWasmToolchainPackageVersion>
-    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.1.0-rc.3</NetWasmHostingPackageVersion>
-    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0-rc.3</NetWasmHostingBuildPackageVersion>
+    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.1.0</NetWasmRefPackageVersion>
+    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.1.0</NetWasmRuntimePackageVersion>
+    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.1.0</NetWasmRuntimePackPackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.1.0</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.1.0</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0</NetWasmHostingBuildPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -70,10 +70,10 @@
       stock restore remains the source of truth; desktop inner builds never
       see this item.
     -->
-    <NetWasmRefPackageVersion Condition="'$(NetWasmRefPackageVersion)' == ''">0.1.0-rc.3</NetWasmRefPackageVersion>
-    <NetWasmToolchainPackageVersion Condition="'$(NetWasmToolchainPackageVersion)' == ''">0.1.0-rc.3</NetWasmToolchainPackageVersion>
-    <NetWasmHostingPackageVersion Condition="'$(NetWasmHostingPackageVersion)' == ''">0.1.0-rc.3</NetWasmHostingPackageVersion>
-    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0-rc.3</NetWasmHostingBuildPackageVersion>
+    <NetWasmRefPackageVersion Condition="'$(NetWasmRefPackageVersion)' == ''">0.1.0</NetWasmRefPackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmToolchainPackageVersion)' == ''">0.1.0</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmHostingPackageVersion)' == ''">0.1.0</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0</NetWasmHostingBuildPackageVersion>
     <BuildProjectReferences Condition="'$(NoBuild)' == 'true'">false</BuildProjectReferences>
     <NuGetBuildTasksPackTargets>$(MSBuildThisFileDirectory)NuGetBuildTasksPackTargets.targets</NuGetBuildTasksPackTargets>
     <ImportNuGetBuildTasksPackTargetsFromSdk>true</ImportNuGetBuildTasksPackTargetsFromSdk>
