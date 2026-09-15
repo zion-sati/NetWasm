@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.20)
+project(NetWasmBrowserLLD LANGUAGES C CXX)
+if(NOT EMSCRIPTEN)
+  message(FATAL_ERROR "This adapter must be built using the pinned Emscripten SDK")
+endif()
+if(NOT NETWASM_LLVM_SOURCE)
+  message(FATAL_ERROR "NETWASM_LLVM_SOURCE must identify the pinned public LLVM source")
+endif()
+set(LLVM_ENABLE_PROJECTS "lld" CACHE STRING "" FORCE)
+set(LLVM_TARGETS_TO_BUILD "WebAssembly" CACHE STRING "" FORCE)
+set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "" FORCE)
+set(LLVM_INCLUDE_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLVM_INCLUDE_DOCS OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_THREADS OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_ZLIB OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_ZSTD OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_LIBXML2 OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_TERMINFO OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_LIBEDIT OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_BACKTRACES OFF CACHE BOOL "" FORCE)
+set(LLVM_INCLUDE_TOOLS ON CACHE BOOL "" FORCE)
+set(LLVM_TOOL_LTO_BUILD OFF CACHE BOOL "" FORCE)
+set(LLVM_TOOL_LIBCASPLUGINTEST_BUILD OFF CACHE BOOL "" FORCE)
+set(LLVM_TOOL_REMARKS_SHLIB_BUILD OFF CACHE BOOL "" FORCE)
+set(LLVM_TOOL_LLVM_SHLIB_BUILD OFF CACHE BOOL "" FORCE)
+set(LLVM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLVM_BUILD_UTILS OFF CACHE BOOL "" FORCE)
+set(LLVM_ENABLE_LTO OFF CACHE STRING "" FORCE)
+set(LLVM_ENABLE_ASSERTIONS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${NETWASM_LLVM_SOURCE}/llvm" llvm)
+add_executable(netwasm-browser-lld browser-lld.cpp)
+target_include_directories(netwasm-browser-lld PRIVATE
+  "${NETWASM_LLVM_SOURCE}/lld/include" "${NETWASM_LLVM_SOURCE}/llvm/include"
+  "${CMAKE_CURRENT_BINARY_DIR}/llvm/include")
+target_compile_features(netwasm-browser-lld PRIVATE cxx_std_17)
+target_link_libraries(netwasm-browser-lld PRIVATE lldWasm lldCommon)
+set_target_properties(netwasm-browser-lld PROPERTIES SUFFIX ".mjs")
+target_link_options(netwasm-browser-lld PRIVATE
+  "--no-entry" "-sMODULARIZE=1" "-sEXPORT_ES6=1" "-sENVIRONMENT=web,worker"
+  "-sFILESYSTEM=1" "-sFORCE_FILESYSTEM=1" "-sALLOW_MEMORY_GROWTH=1"
+  "-sINITIAL_MEMORY=67108864" "-sMAXIMUM_MEMORY=1073741824" "-sSTACK_SIZE=5242880"
+  "-sEXPORTED_FUNCTIONS=['_netwasm_lld_link','_malloc','_free']"
+  "-sEXPORTED_RUNTIME_METHODS=['FS','HEAPU8','UTF8ToString','stringToUTF8','lengthBytesUTF8']"
+  "-sDISABLE_EXCEPTION_CATCHING=0")
