@@ -4,7 +4,7 @@
   "repositoryUrl": "https://github.com/zion-sati/netwasm",
   "releaseVersion": "0.1.0-rc.1",
   "releaseTag": "v0.1.0-rc.1",
-  "sourceCommit": "de44320010afc62d86d1b53ed49e17ce23b22203",
+  "sourceCommit": "81bbb1de69aeceea8c65012315372cecdc68a21b",
   "packages": [
     "NetWasm.Compiler.Tasks",
     "NetWasm.Hosting",
