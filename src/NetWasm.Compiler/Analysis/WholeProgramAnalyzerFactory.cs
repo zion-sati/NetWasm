@@ -100,7 +100,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             typeFinder,
             calls,
             methodImplementations);
-        var workerCount = Environment.ProcessorCount;
+        var browserHost = OperatingSystem.IsBrowser();
+        var workerCount = browserHost ? 1 : Environment.ProcessorCount;
         var methodAnalyzerWorkers =
             System.Collections.Immutable.ImmutableArray
                 .CreateBuilder<IReachableMethodAnalyzer>(workerCount);
@@ -115,9 +116,13 @@ internal sealed class WholeProgramAnalyzerFactory(
             exceptionDiscoveries.Create(methodRepository, symbols, intrinsics),
             instructionAnalyzer));
         }
-        var methodBatchAnalyzer =
-            new ReachableMethodBatchAnalyzer(
-                methodAnalyzerWorkers.MoveToImmutable(),
+        var methodAnalyzerBatch = methodAnalyzerWorkers.MoveToImmutable();
+        IReachableMethodBatchAnalyzer methodBatchAnalyzer = browserHost
+            ? new SynchronousReachableMethodBatchAnalyzer(
+                methodAnalyzerBatch[0],
+                reachableMethodBatchObserver)
+            : new ReachableMethodBatchAnalyzer(
+                methodAnalyzerBatch,
                 reachableMethodBatchObserver);
         var asyncBindingResolver = new DelegateJavaScriptAsyncBindingResolver(
             javaScriptAsyncBindings);
