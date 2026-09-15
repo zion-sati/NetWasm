@@ -19,14 +19,20 @@ if [[ -n "$emsdk_root" ]]; then
     echo "missing Emscripten SDK environment '$emsdk_root/emsdk_env.sh'" >&2
     exit 1
   }
+  emscripten_cache="${EM_CACHE:-}"
   export EMSDK_QUIET=1
   source "$emsdk_root/emsdk_env.sh"
+  if [[ -n "$emscripten_cache" ]]; then
+    export EM_CACHE="$emscripten_cache"
+  fi
 fi
 for tool in emcc emar node rg wasm-tools; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }
 done
 wasm_ld="$EMSDK/upstream/bin/wasm-ld"
 [[ -x "$wasm_ld" ]] || { echo "missing required Emscripten linker" >&2; exit 1; }
+embuilder="$EMSDK/upstream/emscripten/embuilder"
+[[ -x "$embuilder" ]] || { echo "missing required Emscripten system-library builder" >&2; exit 1; }
 
 alignment="$(node -p 'require(process.argv[1]).alignment' "$policy")"
 wasm_page_size="$(node -p 'require(process.argv[1]).wasmPageSize' "$policy")"
@@ -87,6 +93,20 @@ NODE
   done < <(node -p \
     'require(process.argv[1]).targets[process.argv[2]].systemLibraries.join("\n")' \
     "$policy" "$target")
+  embuilder_targets=()
+  for library in "${system_libraries[@]}"; do
+    [[ "$library" == *.a ]] || {
+      echo "Emscripten system library '$library' must be a static archive" >&2
+      exit 1
+    }
+    embuilder_targets+=("${library%.a}")
+  done
+  embuilder_arguments=()
+  if [[ "$target" = wasm64 ]]; then
+    embuilder_arguments+=(--wasm64 --lto)
+  fi
+  "$embuilder" "${embuilder_arguments[@]}" build "${embuilder_targets[@]}"
+
   system_paths=()
   for library in "${system_libraries[@]}"; do
     [[ -f "$system_source/$library" ]] || {
