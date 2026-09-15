@@ -1,7 +1,8 @@
 name: Release
 
 on:
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -12,25 +13,37 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      infrastructure_commit: ${{ steps.release.outputs.infrastructure_commit }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out release infrastructure
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.repository.default_branch }}
           path: infrastructure
 
       - name: Read release manifest
         id: release
         shell: bash
+        env:
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import os
+          import subprocess
           from pathlib import Path
 
           manifest = json.loads(Path("infrastructure/eng/release-manifest.json").read_text())
+          if manifest["releaseTag"] != os.environ["RELEASE_EVENT_TAG"]:
+              raise SystemExit("Published GitHub Release tag does not match the release manifest.")
+          infrastructure_commit = subprocess.check_output(
+              ["git", "-C", "infrastructure", "rev-parse", "HEAD"], text=True
+          ).strip()
+          print(f"infrastructure_commit={infrastructure_commit}")
           print(f"tag={manifest['releaseTag']}")
           print(f"version={manifest['releaseVersion']}")
           PY
@@ -104,18 +117,26 @@ jobs:
       - name: Check out release infrastructure
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.build.outputs.infrastructure_commit }}
           path: infrastructure
 
       - name: Read release manifest
         id: release
         shell: bash
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_EVENT_TAG: ${{ github.event.release.tag_name }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import os
           from pathlib import Path
 
           manifest = json.loads(Path("infrastructure/eng/release-manifest.json").read_text())
+          if manifest["releaseTag"] != os.environ["RELEASE_EVENT_TAG"]:
+              raise SystemExit("Published GitHub Release tag does not match the release manifest.")
+          if manifest["releaseVersion"] != os.environ["BUILD_VERSION"]:
+              raise SystemExit("Build artifact version does not match the release manifest.")
           print(f"version={manifest['releaseVersion']}")
           PY
 
