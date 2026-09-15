@@ -31,8 +31,7 @@ dotnet run
 dotnet publish -c Release -o publish/local
 ```
 
-The app prints `42`. Packages come from NuGet.org; no source checkout or
-special package feed is required. `@*-*` includes experimental releases; the
+The app prints `42`. `@*-*` includes experimental releases; the
 generated project pins its SDK version. Its entry point is ordinary C# `Main`.
 
 For Windows setup, browser publishing and dual-target libraries, follow the
