@@ -20,10 +20,16 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
             throw new InvalidOperationException("The NetWasm runtime pack manifest is missing.");
         }
 
+        return ReadJson(File.ReadAllText(path));
+    }
+
+    public static RuntimePackManifest ReadJson(string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
         RuntimePackManifest? manifest;
         try
         {
-            manifest = JsonSerializer.Deserialize<RuntimePackManifest>(File.ReadAllText(path), JsonOptions);
+            manifest = JsonSerializer.Deserialize<RuntimePackManifest>(json, JsonOptions);
         }
         catch (JsonException exception)
         {
