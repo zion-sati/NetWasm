@@ -1,4 +1,5 @@
 // Trusted tool-private Preview 1 host, never a user-program WASI implementation.
+import { capDefinedWasm32Memory, validateWasm32MemoryCeiling } from './wasm32-memory-ceiling.mjs';
 import { toolLimits, snapshotRequest, loadToolAsset, diagnostics, copyOutputs } from './tool-inputs.mjs';
 
 /**
@@ -6,7 +7,8 @@ import { toolLimits, snapshotRequest, loadToolAsset, diagnostics, copyOutputs } 
  * wasiShim: object, limits?: object, onEnter?: (tool: string) => void}} options
  */
 export function createWasmToolsHost({ loadAsset, wasiShim: shim, limits: options, onEnter }) {
-  const limits = toolLimits(options);
+  const limits = toolLimits({ maximumMemoryBytes: 536870912, ...options });
+  validateWasm32MemoryCeiling(limits.maximumMemoryBytes);
   for (const name of ['WASI', 'PreopenDirectory', 'File', 'OpenFile', 'ConsoleStdout'])
     if (typeof shim?.[name] !== 'function') throw Error(`Missing trusted WASI shim export: ${name}`);
   let compiled, busy = false;
@@ -20,7 +22,8 @@ export function createWasmToolsHost({ loadAsset, wasiShim: shim, limits: options
       try {
         const { args, files, outputs } = snapshotRequest(request, limits);
         const log = diagnostics(limits);
-        if (!compiled) compiled = WebAssembly.compile(await loadToolAsset(loadAsset, 'wasm-tools.wasm', limits));
+        if (!compiled) compiled = WebAssembly.compile(capDefinedWasm32Memory(
+          await loadToolAsset(loadAsset, 'wasm-tools.wasm', limits), limits.maximumMemoryBytes));
         const module = await compiled;
         root = new shim.PreopenDirectory('.', Object.entries(files).map(([name, bytes]) => [name, new shim.File(bytes)]));
         const argv = ['wasm-tools', ...args];

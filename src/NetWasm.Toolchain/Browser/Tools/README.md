@@ -39,9 +39,21 @@ also reports caught CLI failures as a nonzero result.
 Default bounds are 1 MiB aggregate input/output bytes, 64 KiB diagnostics and
 argument bytes, 32 MiB per tool asset, 128 input/output filenames and 255 bytes per
 name. Pass `limits` to change a bound. These checks bound accepted inputs and
-returned data; they do not establish process peak or change the original trusted
-tool binaries' memory maxima. Run synchronous tools in a dedicated worker. The
-optional `onEnter(tool)` callback fires immediately before tool execution; the UI
+returned data. The wasm-tools host additionally sets an explicit 512 MiB linear-memory
+maximum before compiling the verified binary. Pass `limits.maximumMemoryBytes`
+to select a positive multiple of 64 KiB up to 4 GiB; an existing stricter maximum
+is preserved. An initial memory larger than the requested maximum is rejected.
+The transformation owns its output and changes only the memory section, retaining
+function imports, exports, code and custom sections. It supports one defined,
+unshared wasm32 memory and function imports; other import or memory shapes fail
+closed. Original downloaded bytes still require verification before this policy
+is applied; retain the original hash, policy and transformed hash as provenance.
+
+The original Binaryen binaries retain their memory maxima. Linear memory, accepted
+inputs and returned data have separate bounds; none establishes a browser process
+peak, JavaScript heap quota or combined worker memory quota. Run synchronous tools
+in a dedicated worker. The optional `onEnter(tool)` callback fires immediately
+before tool execution; the UI
 can terminate that worker on timeout and create a fresh worker for recovery.
 
 Each invocation creates a fresh tool instance. The wasm-tools host reuses only
