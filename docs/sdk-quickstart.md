@@ -49,6 +49,34 @@ a supported development host because Emscripten 6.0.7 does not provide an
 upstream native Windows ARM64 toolchain. Running the x64 toolchain through
 emulation is not part of the supported NetWasm setup.
 
+Windows does not include a working Python installation by default. Install the
+.NET SDK, [Git for Windows](https://gitforwindows.org/) and
+[Python 3](https://www.python.org/downloads/windows/) before cloning `emsdk`.
+If you use [WinGet](https://learn.microsoft.com/en-us/windows/package-manager/winget/install),
+for example:
+
+```powershell
+winget install --id Microsoft.DotNet.SDK.10 --exact
+winget install --id Git.Git --exact
+winget install --id Python.Python.3.14 --exact
+```
+
+Python 3.14 is an installation example, not a NetWasm-specific Python version
+requirement. You can use the official installers instead of WinGet. With the
+Python installer, enable its option to add Python to `PATH`.
+
+Open a new PowerShell terminal after installing the prerequisites, then verify:
+
+```powershell
+dotnet --version
+git --version
+python --version
+```
+
+`python --version` must report a Python 3 version. A Windows app-execution alias
+that opens the Microsoft Store or reports "Python was not found" is not an
+installed interpreter; install Python and reopen the terminal before continuing.
+
 ```powershell
 git clone https://github.com/emscripten-core/emsdk.git "$env:USERPROFILE\emsdk"
 Set-Location "$env:USERPROFILE\emsdk"
@@ -189,9 +217,7 @@ the explicit channel contract documented by `NetWasm.Hosting`.
 Publish the browser-selected deployment instead:
 
 ```bash
-dotnet publish -c Release \
-  -p:NetWasmPublishTarget=browser \
-  -o publish
+dotnet publish -c Release -p:NetWasmPublishTarget=browser -o publish
 ```
 
 The SDK writes the selected browser deployment to `publish/browser`, alongside
@@ -227,10 +253,7 @@ compiler command:
 
 ```bash
 dotnet tool install --global NetWasm.Wit.Bindings.Tool --prerelease
-netwasm-wit-bindgen \
-  --wit service.wit \
-  --world example:service@1.0.0/service \
-  --output Bindings.g.cs
+netwasm-wit-bindgen --wit service.wit --world example:service@1.0.0/service --output Bindings.g.cs
 ```
 
 Omit `--world` when the WIT document contains exactly one world. The tool
