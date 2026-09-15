@@ -52,6 +52,22 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid release version"):
             MODULE.project_version(self.root, "not a version", self.root / "receipt.json")
 
+    def test_stable_projection_preserves_pinned_measurement_evidence(self) -> None:
+        measurement = self.root / "docs/size-and-methodology.md"
+        measurement.parent.mkdir()
+        measurement.write_text("Measured with 0.1.0-rc.1; reproduce using 0.1.0-rc.1.\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "docs"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "--quiet", "-m", "measurement"], check=True)
+        original = measurement.read_bytes()
+
+        receipt = MODULE.project_version(self.root, "0.1.0", self.root / "receipt.json")
+
+        self.assertEqual(original, measurement.read_bytes())
+        self.assertEqual("0.1.0\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
+        self.assertEqual("Package=0.1.0\nDependency=0.1.0\n", (self.root / "project.txt").read_text())
+        self.assertEqual(3, receipt["replacementCount"])
+        self.assertNotIn("docs/size-and-methodology.md", [item["path"] for item in receipt["changedFiles"]])
+
     def test_source_version_is_a_no_op(self) -> None:
         receipt_path = self.root.parent / f"{self.root.name}-receipt.json"
         receipt = MODULE.project_version(self.root, "0.1.0-rc.1", receipt_path)

@@ -17,6 +17,8 @@ VERSION_PATTERN = re.compile(
     r"(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
 )
 VERSION_FILE = Path("eng/NetWasm.ReleaseVersion.txt")
+# Measurements bind their original package identity, not the next release.
+HISTORICAL_FILES = {Path("docs/size-and-methodology.md")}
 
 
 def run_git(source_root: Path, *arguments: str) -> bytes:
@@ -47,7 +49,8 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
     target_bytes = target_version.encode("utf-8")
     changed_files: list[dict[str, object]] = []
     remaining_files: list[str] = []
-    files = tracked_files(source_root)
+    files = [path for path in tracked_files(source_root)
+             if path.relative_to(source_root) not in HISTORICAL_FILES]
 
     for path in files:
         if path.is_symlink():
