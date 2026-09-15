@@ -23,6 +23,24 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Read pinned Node.js version
+        id: toolchain
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("eng/toolchain.json").read_text())
+          print(f"node={manifest['node']}")
+          PY
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ steps.toolchain.outputs.node }}
+          package-manager-cache: false
+
       - name: Install Emscripten 6.0.7
         shell: bash
         run: |
