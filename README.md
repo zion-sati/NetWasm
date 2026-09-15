@@ -5,6 +5,10 @@ Write C#. Deploy like C++. Target WASI.
 A clean Release build of `Console.WriteLine(42)` produces an **88,344-byte
 final Wasm artifact—runtime and precise garbage collection included.**
 
+[![Publication](https://img.shields.io/github/actions/workflow/status/zion-sati/NetWasm/release.yml?label=publish&event=release)](https://github.com/zion-sati/NetWasm/actions/workflows/release.yml)
+[![NuGet](https://img.shields.io/badge/NuGet-NetWasm.Sdk-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Sdk)
+[![License: Community + MIT](https://img.shields.io/badge/license-Community%20%2B%20MIT-blue)](docs/licensing.md)
+
 NetWasm compiles C# into a standalone WebAssembly Component, without carrying
 the desktop .NET runtime. Keep the language, generics, exceptions and managed
 memory. Deploy the compiled program to a compatible WASI host.
@@ -61,6 +65,8 @@ The 88 KB program is the baseline, not the boundary. NetWasm already covers a pr
 The supported surface is deliberately smaller than desktop .NET, but it is already broad enough to build, test and package non-trivial programs.
 
 ## .NET designed around Wasm
+
+I started NetWasm with a simple challenge: **“Kotlin has it—why can’t we?!”**
 
 C# does not require the desktop .NET runtime's entire compatibility surface.
 NetWasm starts with a different boundary: a smaller CoreLib, closed-world
