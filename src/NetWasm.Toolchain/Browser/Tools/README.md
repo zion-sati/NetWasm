@@ -68,6 +68,7 @@ and expose its lexical MEMFS/callMain. An exact pinned-shape guard removes only
 the 698-byte NODERAWFS installation block and replaces the `node:path` binding
 with the injected browser path adapter. The embedded Wasm, CLI entry point and
 command implementation remain intact. Requested MEMFS files are unlinked in
-`finally`; the instance is then released. This pinned bootstrap adaptation uses
-a function constructor, so its caller's content security policy must support
-that mechanism or provide a separately maintained upstream build.
+`finally`; the instance is then released. Verified tool and CommonJS path code
+are wrapped as Blob ES module factories and imported, with source URLs revoked
+after evaluation. CSP needs `blob:` modules and Wasm compilation; this adapter
+does not require JavaScript `unsafe-eval`. Failed imports remain retryable.

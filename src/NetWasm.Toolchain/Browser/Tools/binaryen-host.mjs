@@ -4,7 +4,7 @@ const decoder = new TextDecoder();
 
 /** Remove only the pinned CLI's NODERAWFS installation and path binding.
  * The embedded Wasm and command implementation remain byte-for-byte intact. */
-function bootstrap(source) {
+async function bootstrap(source) {
   source = source.replace(/^#![^\n]*\n/, '');
   const pathNeedle = 'var nodePath=require("node:path");';
   const startNeedle = 'if(!ENVIRONMENT_IS_NODE){throw new Error("NODERAWFS is currently only supported on Node.js environment.")}var nodeTTY=require("node:tty");';
@@ -16,7 +16,15 @@ function bootstrap(source) {
     throw Error('Pinned Binaryen bootstrap shape changed');
   source = source.slice(0, start) + source.slice(end);
   source = source.replace(pathNeedle, 'var nodePath=Module.browserPath;');
-  return new Function('Module', `${source}\nreturn { FS, callMain, memory: () => wasmMemory.buffer.byteLength, exit: () => EXITSTATUS };`);
+  return importFactory(`export default function(Module) {\n${source}\nreturn { FS, callMain, memory: () => wasmMemory.buffer.byteLength, exit: () => EXITSTATUS };\n}`);
+}
+
+/** Import only caller-verified trusted code. Revoke the source URL after module
+ * evaluation; the cached factory keeps its compiled module alive. */
+async function importFactory(source) {
+  const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+  try { return (await import(url)).default; }
+  finally { URL.revokeObjectURL(url); }
 }
 
 /** @param {{loadAsset: import('./tool-inputs.mjs').VerifiedAssetLoader,
@@ -36,9 +44,10 @@ export function createBinaryenHost({ loadAsset, limits: options, onEnter }) {
       try {
         ({ args, files, outputs } = snapshotRequest(request, limits));
         const log = diagnostics(limits);
-        if (!factories.has(tool)) factories.set(tool, bootstrap(decoder.decode(await loadToolAsset(loadAsset, `${tool}.js`, limits))));
-        if (!pathFactory) pathFactory = new Function('module', 'exports', 'process',
-          decoder.decode(await loadToolAsset(loadAsset, 'path-browserify.js', limits)));
+        // Cache only successful imports so a rejected loader or module can retry.
+        if (!factories.has(tool)) factories.set(tool, await bootstrap(decoder.decode(await loadToolAsset(loadAsset, `${tool}.js`, limits))));
+        if (!pathFactory) pathFactory = await importFactory(`export default function(module, exports, process) {\n${
+          decoder.decode(await loadToolAsset(loadAsset, 'path-browserify.js', limits))}\n}`);
         const pathModule = { exports: {} };
         pathFactory(pathModule, pathModule.exports, { cwd: () => '/' });
         let resolveReady, rejectReady;
