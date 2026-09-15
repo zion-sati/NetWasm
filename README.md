@@ -1,115 +1,143 @@
-# NetWasm
+# C# at native Wasm size.
 
-NetWasm is an experimental closed-world .NET-to-WebAssembly toolchain. It
-compiles Roslyn-produced CIL directly to WebAssembly, links reachable code with
-the NetWasm runtime, and packages the current public flow as a WebAssembly
-Component using WIT and WASI Preview 2. Raw core WebAssembly with an explicit
-JavaScript host boundary remains an advanced alternative for host-specific
-integration.
+Write C#. Deploy like C++. Target WASI.
 
-It is a smaller .NET platform for AOT-style programs, not a browser packaging
-of the desktop .NET runtime. Applications compile against `NetWasm.CoreLib`.
-A desktop-targeted package is compatible only where its CIL and API use fit the
-current NetWasm profile.
+A clean Release build of `Console.WriteLine(42)` produces an **88,344-byte
+final Wasm artifact—runtime and precise garbage collection included.**
 
-## Status
+NetWasm compiles C# into a standalone WebAssembly Component, without carrying
+the desktop .NET runtime. Keep the language, generics, exceptions and managed
+memory. Deploy the compiled program to a compatible WASI host.
 
-The preview SDK, templates, runtime, hosting, and testing packages use the
-normal NuGet.org workflow. The project remains experimental and has no
-production-support or compatibility commitment; expect source-level and ABI
-changes.
+[Measured size and reproduction steps](docs/size-and-methodology.md) ·
+[Quickstart](docs/sdk-quickstart.md) ·
+[Supported APIs and limitations](docs/support-status.md)
 
-## Build from source
+## Try it
 
-The pinned toolchain versions are in `global.json` and `eng/toolchain.json`.
-From a clone on a supported development machine, install and activate
-Emscripten 6.0.7 as shown in the [quickstart](QUICKSTART.md); it supplies the
-supported Node.js 24+ and LLD 24+ tools. Then run:
+Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
+Git, Python 3 and Emscripten SDK 6.0.7 using the
+[prerequisite instructions](docs/sdk-quickstart.md#1-install-the-prerequisites).
+Activated Emscripten supplies Node.js 24+ and LLD 24+; you do not need separate
+LLVM, Node.js or Wasm-tool installations.
+
+Then install, create, run and publish with ordinary `dotnet` commands:
 
 ```sh
-dotnet restore NetWasm.slnx
-npm ci
-eng/verify-toolchain.sh
-dotnet build NetWasm.slnx -c Release --no-restore
+dotnet new install "NetWasm.Templates@*-*"
+dotnet new netwasm-app -n HelloNetWasm
+cd HelloNetWasm
+dotnet run
+dotnet publish -c Release -o publish/local
 ```
 
-To build the complete 12-package core distribution from that clean checkout,
-run `eng/build-packages.sh`. It materializes the audited platform-neutral
-Toolchain assets from the checked-in locks and pinned upstream archive, then
-writes packages under `artifacts/packages`. It does not publish them.
+The app prints `42`. Packages come from NuGet.org; no source checkout or
+special package feed is required. `@*-*` includes experimental releases; the
+generated project pins its SDK version. Its entry point is ordinary C# `Main`.
 
-The package-consumer flow is documented in [QUICKSTART.md](QUICKSTART.md).
-The [support status and roadmap](docs/support-status.md) separates the current
-supported profile from external blockers, deferred work, and intentional
-boundaries. The [documentation index](docs/index.md) links the diagnostic,
-target/output, CoreLib/runtime, and CLI/build/deployment references.
+For Windows setup, browser publishing and dual-target libraries, follow the
+[complete SDK quickstart](docs/sdk-quickstart.md).
 
-## How it is structured
+## .NET designed around Wasm
 
-```text
-Roslyn-produced CIL
-        |
-        v
-NetWasm compiler and whole-program analysis
-        |
-        +--> core Wasm + generated runtime layout
-        |             |
-        |             v
-        |     Component packaging + WIT/WASI Preview 2
-        |             |
-        |             v
-        |      portable component host boundary
-        |
-        `--> raw core Wasm + interop manifest + JavaScript host adapter
+C# does not require the desktop .NET runtime's entire compatibility surface.
+NetWasm starts with a different boundary: a smaller CoreLib, closed-world
+compilation, precise garbage collection and explicit WASI interfaces.
+
+Roslyn produces CIL. NetWasm compiles the reachable program directly to Wasm,
+specializes its generics, and links only the runtime support it needs. It does
+not ship a CLR, Mono or `dotnet.js` alongside your application assemblies.
+
+This is a new .NET platform, not an attempt to make every desktop assumption
+work inside a Wasm sandbox. That tradeoff is what makes the small artifact
+possible.
+
+## Pay for what you use
+
+- **Reachable code and imports only.** An unused package reference is not a
+  reason to retain its implementation or request its host capabilities.
+- **No reflection type-name catalogue.** Type identity and dispatch do not
+  require a runtime-discoverable collection of type names. Explicit application
+  strings and names required by public interfaces are a separate matter.
+- **JSON has tiers, not one fixed runtime tax.** `JsonDocument` parsing,
+  source-generated serialization and typed deserialization retain different
+  closures. See the [scenario measurements](docs/size-and-methodology.md#json-is-not-one-fixed-cost).
+- **Timezone data stays out of the Wasm.** UTC needs no timezone database;
+  local-time support uses an explicitly selected deployment sidecar.
+- **Debugging is a build choice.** Debug enables managed stack traces;
+  Release omits their instrumentation and symbol sidecar unless requested.
+
+The 88,344-byte figure is the uncompressed final component, not a compressed
+download or the size of a complete JavaScript-host deployment. A WASI host is
+still required. [The measurement notes](docs/size-and-methodology.md) make that
+boundary explicit.
+
+## Libraries should travel upward
+
+A library written for the smaller NetWasm profile should also be useful on
+desktop .NET—not trapped in a Wasm-only ecosystem.
+
+```sh
+dotnet new netwasm-lib -n MyLibrary
 ```
 
-The source layout is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Read [docs/LIMITATIONS.md](docs/LIMITATIONS.md) before porting an application.
-The [CoreLib/runtime reference](docs/corelib-runtime.md) describes the
-compatibility boundary and intentionally unsupported surfaces, including the
-absence of general managed file/directory APIs, raw sockets, subprocesses and
-managed threading in the first preview.
+The template targets both `netwasm0.1` and `net10.0`, producing ordinary NuGet
+library assets for each platform. Portability is explicit multi-targeting,
+not a promise that an arbitrary desktop package will work in reverse.
 
-## Documentation
+The [ported libraries](https://github.com/zion-sati/NetWasm.Libraries) are
+independent packages and ordinary NetWasm consumers, including LINQ, HTTP,
+JSON, XML, Regex, Hashing and reflection-free dependency injection.
+[TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) uses the same public
+SDK and generic VSTest bridge for ordinary `dotnet test` integration.
 
-- [Manual quickstart](QUICKSTART.md)
-- [Documentation index](docs/index.md)
-- [Support status and roadmap](docs/support-status.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Current limitations](docs/LIMITATIONS.md)
-- [Compiler diagnostics](docs/diagnostics.md)
-- [Targets and output formats](docs/targets-and-outputs.md)
-- [CoreLib and runtime compatibility](docs/corelib-runtime.md)
-- [CLI, build, and deployment](docs/cli-build-deployment.md)
-- [Known gaps and boundaries](docs/gaps.md)
-- [Licensing boundary](docs/licensing.md)
-- [Documentation maintenance](docs/maintenance.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-- [Support](SUPPORT.md)
-- [License policy](LICENSE.md)
-- [Third-party notices](THIRD-PARTY-NOTICES.md)
+## The direction
+
+Reflection-free .NET. WASI as the new POSIX.
+
+The aim is a portable C# ecosystem built around ahead-of-time compilation,
+explicit interfaces and source generation rather than runtime discovery.
+WASI supplies a language-neutral platform boundary; C# should participate
+without carrying a desktop runtime everywhere it goes.
+
+That is the direction, not a claim that today's profile implements all of
+.NET or all of WASI.
+
+## Current boundary
+
+NetWasm is experimental and intended for evaluation and early integration.
+Source and ABI compatibility can change; this is not a production-support
+commitment.
+
+Development hosts: macOS ARM64, Linux ARM64/x64 and Windows x64. The normal
+portable output is a wasm32 WASI Preview 2 Component. Raw wasm32/wasm64 and
+JavaScript-host integration are advanced alternatives; wasm64 Components
+remain blocked by upstream tooling. Windows ARM64 is unsupported.
+
+Runtime reflection, `dynamic`, runtime assembly loading and managed threading
+are outside the profile. General `System.IO.File`/`Directory`/`FileStream`,
+raw sockets and subprocess APIs are not implemented. Existing NuGet packages
+work only when their reachable code and API dependencies fit the supported
+profile—not merely because they target .NET.
+
+Read the [support inventory](docs/support-status.md) before porting an app.
+The [documentation index](docs/index.md) covers hosting, diagnostics, runtime
+contracts and deployment.
 
 ## License
 
-The compiler, linker, optimizer, build tools, debugger, IDE/browser tools, and
-other developer tooling are covered by the [NetWasm Community License
-1.0](LICENSES/LicenseRef-NetWasm-Community-1.0.txt). `NetWasm.CoreLib`, runtime
-libraries, templates, and generated support code are
-MIT. Ported framework libraries live in their separate public repository. Some
-vendored inputs retain their own upstream terms. See
-[LICENSE.md](LICENSE.md), [LICENSE-MAP.md](LICENSE-MAP.md), and
-[third-party notices](THIRD-PARTY-NOTICES.md).
+CoreLib, runtime libraries, templates and generated support code are MIT,
+subject to preserved upstream notices. The compiler and developer tooling use
+the [NetWasm Community License 1.0](LICENSES/LicenseRef-NetWasm-Community-1.0.txt),
+not MIT.
 
 The Community License is free for qualifying individuals, education,
-open-source work, contributions, evaluation, and organizations with fewer
-than 250 employees and less than USD 10,000,000 in annual revenue. An active
-matching GitHub Sponsors tier at
-<https://github.com/sponsors/zion-sati> grants limited internal commercial use
-for its Developer cap. No sign-in, activation, telemetry, or technical
-enforcement is required.
+open-source work, evaluation, and organizations with fewer than 250 employees
+and less than USD 10,000,000 in annual revenue. Matching
+[GitHub Sponsors tiers](https://github.com/sponsors/zion-sati) grant limited
+internal commercial use; OEM and Commercial Offering use require a separate
+agreement. Generated applications may use their authors' chosen licenses.
+There is no sign-in, activation, telemetry or technical enforcement.
 
-Bundling, embedding, redistribution, resale, sublicensing, hosted/cloud/API
-access, and other OEM or Commercial Offering use require a separate written
-agreement. Generated applications may be licensed by their authors under
-terms of their choice. Commercial licensing contact: <zionsatidev@gmail.com>.
+See the [licensing guide](docs/licensing.md) for the exact boundaries.
+Commercial licensing: <zionsatidev@gmail.com>.
