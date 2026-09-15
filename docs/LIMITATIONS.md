@@ -62,9 +62,9 @@ current evidence of support.
 
 ## Compatibility and release status
 
-- There is no stable/public SDK release or release compatibility guarantee yet;
-  local SDK/template packages and the experimental application profile remain
-  subject to the qualification boundaries documented here.
+- Released SDK/template packages support the experimental `netwasm0.1`
+  profile. A release version is not a production-support or future-compatibility
+  guarantee.
 - Changes to CIL support, CoreLib APIs, runtime ABI, generated manifests, and
   build output remain possible.
 - The repository is not a production deployment recommendation.

@@ -50,7 +50,7 @@ The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
 bindings; the compiler CLI does not generate C# source. Install and invoke it:
 
 ```sh
-dotnet tool install --global NetWasm.Wit.Bindings.Tool --prerelease
+dotnet tool install --global NetWasm.Wit.Bindings.Tool
 netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
 ```
 

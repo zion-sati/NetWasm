@@ -8,7 +8,7 @@ or identify this generator.
 Install the tool:
 
 ```sh
-dotnet tool install --global NetWasm.Wit.Bindings.Tool --version 0.1.0-rc.1
+dotnet tool install --global NetWasm.Wit.Bindings.Tool
 ```
 
 The package carries NetWasm's pinned platform-neutral `wasm-tools` module. It

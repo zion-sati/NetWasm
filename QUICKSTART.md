@@ -14,7 +14,7 @@ source ~/emsdk/emsdk_env.sh
 Create and run an application:
 
 ```sh
-dotnet new install "NetWasm.Templates@*-*"
+dotnet new install NetWasm.Templates
 mkdir HelloNetWasm
 cd HelloNetWasm
 dotnet new netwasm-app
@@ -22,9 +22,6 @@ dotnet restore
 dotnet run
 dotnet publish -c Release -o publish
 ```
-
-`@*-*` selects the latest templates, including prereleases. Omit it for stable
-releases only. The generated project pins a concrete SDK version.
 
 See the [complete SDK quickstart](docs/sdk-quickstart.md) for Windows setup,
 capability grants, browser publishing, and library templates. Read the

@@ -117,7 +117,7 @@ to the Wasm image. This is diagnostic stack-trace support, not source-level
 debugging or DWARF; see
 [deferred debug information](#deferred-debug-information-dwarf).
 
-## Partially qualified
+## Complete / supported package profiles
 
 ### `System.IO.Hashing` scalar profile
 
@@ -127,10 +127,10 @@ The reflection-free scalar `System.IO.Hashing` profile is implemented for
 It deliberately contains no Wasm SIMD, hardware intrinsic, browser JavaScript,
 or host-hashing fallback.
 
-The profile is partially qualified: the available native and browser wasm32
-Component cells have executed, but the wasm64 Component cells cannot run while
-Memory64 Component packaging is blocked. It is not yet a published framework
-package or `NetWasm.Ref` contract.
+The selected scalar profile is qualified and published as
+`NetWasm.System.IO.Hashing`. wasm64 Component packaging remains an
+[external toolchain blocker](#external-toolchain-blocker), not an unpublished
+library profile.
 
 ### SDK/templates package acceptance
 
@@ -140,6 +140,17 @@ dual-target library builds, `dotnet build`, `dotnet run`, portable publish,
 pinned `jco` browser translation, and clean. The generic VSTest bridge and
 TUnit package also pass `dotnet test -f netwasm0.1` integration.
 
+The SDK, runtime packs and templates are released for the experimental
+`netwasm0.1` profile. The separate library and test packages below are also
+published.
+
+| Package profile | Supported boundary |
+| --- | --- |
+| Reflection-free dependency injection | `NetWasm.Microsoft.Extensions.DependencyInjection` and its Abstractions package provide generated activation, keyed/sequence services, scopes and package-owned open-generic closure. Runtime reflection, dynamic activation and runtime generic construction remain outside the profile. |
+| `System.Xml` | `NetWasm.System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, schemas, interpreted transforms and primitive serialization. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
+| WASI-only HTTP (`System.Net.Http`) | `NetWasm.System.Net.Http` provides the qualified WASI HTTP Preview 2 wasm32 native/browser client profile, with a version-neutral transport seam and no framework `[JSImport]`. wasm64 Component packaging remains externally blocked. |
+| TUnit | The `NetWasm.TUnit.*` packages provide the generated catalog, sequential runner and `dotnet test` integration. A later upstream contribution is a separate decision. |
+
 ## In progress
 
 The entries in this section describe the current direction only. They are not
@@ -147,12 +158,8 @@ available application dependencies or promises of a future API shape.
 
 | Area | Current boundary |
 | --- | --- |
-| Reflection-free dependency injection | DI01A–DI01F implementation and the desktop/raw Debug/Release × wasm32/wasm64 matrix are qualified, including generated activation, keyed/sequence services, scopes and package-owned open-generic closure as ordinary managed CIL. The supported wasm32 native/browser Component-host cells and public package/reference-pack distribution remain incomplete. Runtime reflection, dynamic activation and runtime generic construction remain outside the profile. |
 | Portable diagnostics | DP01–DP06 are implemented and locally qualified for in-process `DiagnosticSource`, `Activity`, propagation and Metrics under the single-reactor contract. Public package/reference-pack distribution remains incomplete. OS tracing, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
-| `System.Xml` | X01–X07 are implemented and locally qualified for the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, schemas, interpreted transforms and primitive serialization. The generated nonprimitive serializer spike remains deliberately fail-closed, while public distribution remains incomplete; ambient network/filesystem resolution and runtime serializer discovery stay excluded. |
-| WASI-only HTTP (`System.Net.Http`) | H0–H5 are implemented and locally qualified for the WASI HTTP Preview 2 wasm32 native/browser profile, with a version-neutral future transport seam and no framework `[JSImport]`. Public distribution remains incomplete; raw wasm64 validates while wasm64 Component packaging remains externally blocked. |
 | `System.Uri` | U01/U02 are implemented and locally qualified for the selected portable parsing, resolution, escaping, builder and IDN/IRI profile. Public reference-pack distribution remains incomplete. |
-| TUnit | The fork-owned `NetWasm.TUnit.*` packages, generated catalog, sequential runner and ordinary `dotnet test` integration are qualified. Public NuGet publication and any later upstream contribution remain separate decisions. |
 
 ## Deferred SIMD and Packed SIMD target-option design
 

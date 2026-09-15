@@ -2,9 +2,9 @@
 
 ## The 88,344-byte C# result
 
-Measured on 2026-09-15, using the published NetWasm `0.1.0-rc.3` SDK and
-templates from NuGet.org, .NET SDK 10.0.302, Emscripten 6.0.7, Node.js 24.19.0
-and LLD 24.0.0 on macOS ARM64.
+Measured on 2026-09-15, using the published NetWasm SDK and templates,
+.NET SDK 10.0.302, Emscripten 6.0.7, Node.js 24.19.0 and LLD 24.0.0 on macOS
+ARM64.
 
 The generated console application's source is:
 
@@ -18,7 +18,7 @@ From a new project directory, with the prerequisites installed and Emscripten
 activated:
 
 ```sh
-dotnet new install "NetWasm.Templates@0.1.0-rc.3"
+dotnet new install NetWasm.Templates
 mkdir Hello42
 cd Hello42
 dotnet new netwasm-app
@@ -47,9 +47,8 @@ deployment manifests and optional sidecars. Those files are part of a
 JavaScript-host deployment, but not part of this component. It is neither the
 whole deployment's byte count nor a startup, memory-use or performance score.
 
-Exact sizes can change with compiler, dependency and toolchain versions. The
-README quickstart intentionally selects the latest available templates;
-the pinned version above reproduces this particular measurement.
+Exact size depends on the workload, compiler and toolchain. The tool settings
+above and the recorded hash identify this measurement.
 
 ## Rust: a footprint reference, not a GC comparison
 
@@ -68,7 +67,7 @@ fn main() {
 
 | Toolchain and build | Final component |
 | --- | ---: |
-| NetWasm 0.1.0-rc.3, ordinary Release | 88,344 bytes |
+| NetWasm, ordinary Release | 88,344 bytes |
 | Rust 1.90.0, ordinary Cargo release | 86,248 bytes |
 | Rust 1.95.0, ordinary Cargo release | 81,997 bytes |
 | Rust 1.95.0, size-oriented profile below | 53,635 bytes |
@@ -95,7 +94,7 @@ Create a Cargo binary project with the source above and this `Cargo.toml`:
 ```toml
 [package]
 name = "console42"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
 
 [profile.small]
@@ -146,7 +145,7 @@ settings**:
 
 | Build | Artifact | Bytes | Collector boundary |
 | --- | --- | ---: | --- |
-| NetWasm 0.1.0-rc.3 Release | WASI Preview 2 Component | 88,344 | Precise BDWGC/BoehmGC included in the artifact |
+| NetWasm Release | WASI Preview 2 Component | 88,344 | Precise BDWGC/BoehmGC included in the artifact |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 Hello World* | WASI Preview 1 core module | 110,084 | Precise GC configured |
 
@@ -205,7 +204,7 @@ System.Text.Json workloads produced:
 | Typed source-generated deserialization only | 2,741,193 bytes |
 | Serialization and typed deserialization | 3,475,533 bytes |
 
-These are historical scenario measurements, not current RC3 component sizes,
+These are historical scenario measurements, not current component sizes,
 not incremental package costs, and not minimum sizes for arbitrary JSON
 programs. Do not compare their 54,230-byte baseline directly with the current
 88,344-byte component. `JsonDocument` is also not the mutable `JsonNode` API.

@@ -108,13 +108,8 @@ needed for the standard SDK build, run or publish journey.
 ## 2. Install the templates
 
 ```bash
-dotnet new install "NetWasm.Templates@*-*"
+dotnet new install NetWasm.Templates
 ```
-
-`@*-*` selects the latest template package, including prereleases. It avoids
-pinning this guide to one experimental release. For stable releases only, omit
-`@*-*`. The installed template pins its generated project to a concrete SDK
-version.
 
 ## 3. Create and run an application
 
@@ -214,7 +209,7 @@ WIT binding generation is an optional, separate .NET tool rather than a
 compiler command:
 
 ```bash
-dotnet tool install --global NetWasm.Wit.Bindings.Tool --prerelease
+dotnet tool install --global NetWasm.Wit.Bindings.Tool
 netwasm-wit-bindgen --wit service.wit --world example:service@1.0.0/service --output Bindings.g.cs
 ```
 

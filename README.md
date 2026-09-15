@@ -24,15 +24,27 @@ LLVM, Node.js or Wasm-tool installations.
 Install, create, run and publish:
 
 ```sh
-dotnet new install "NetWasm.Templates@*-*"
+dotnet new install NetWasm.Templates
 dotnet new netwasm-app -n HelloNetWasm
 cd HelloNetWasm
 dotnet run
 dotnet publish -c Release -o publish/local
 ```
 
-The app prints `42`. `@*-*` includes experimental releases; the
-generated project pins its SDK version.
+Run the published component directly with a compatible WASI Preview 2 host.
+For example, with [Wasmtime](https://wasmtime.dev/):
+
+```sh
+wasmtime run publish/local/HelloNetWasm.wasm
+```
+
+```text
+42
+```
+
+The component is self-contained with respect to .NET: no CLR, Mono,
+`dotnet.js`, application DLLs, or NetWasm installation is required at runtime.
+A WebAssembly host is still required. **Build with .NET; run without .NET.**
 
 For Windows setup, browser publishing and dual-target libraries, follow the
 [complete SDK quickstart](docs/sdk-quickstart.md).
@@ -45,7 +57,8 @@ compilation, precise garbage collection and explicit WASI interfaces.
 
 Roslyn produces CIL. NetWasm compiles the reachable program directly to Wasm,
 specializes its generics, and links only the runtime support it needs. It does
-not ship a CLR, Mono or `dotnet.js` alongside your application assemblies.
+not ship a CLR, Mono, `dotnet.js`, or application assemblies. The linked Wasm
+component is the program.
 
 This is a new .NET platform, not an attempt to make every desktop assumption
 work inside a Wasm sandbox. That tradeoff is what makes the small artifact
@@ -55,11 +68,12 @@ possible.
 
 - **Reachable code and imports only.** An unused package reference is not a
   reason to retain its implementation or request its host capabilities.
-- **No reflection type-name catalogue.** Type identity and dispatch do not
-  require a runtime-discoverable collection of type names. Explicit application
-  strings and names required by public interfaces are a separate matter.
-- **JSON has tiers, not one fixed runtime tax.** `JsonDocument` parsing,
-  source-generated serialization and typed deserialization retain different
+- **No runtime type names.** Runtime type-name lookup and broad reflection are
+  unsupported, so namespace-qualified type-name metadata never enters the Wasm.
+  Application strings, JSON property names, and names required by public
+  interfaces are ordinary reachable data.
+- **JSON has tiers, not one fixed runtime tax.** `JsonDocument` read-only DOM
+  parsing, source-generated serialization and typed deserialization retain different
   closures. See the [scenario measurements](docs/size-and-methodology.md#json-is-not-one-fixed-cost).
 - **Timezone data stays out of the Wasm.** UTC needs no timezone database;
   local-time support uses an explicitly selected deployment sidecar.
@@ -140,3 +154,10 @@ There is no sign-in, activation, telemetry or technical enforcement.
 
 See the [licensing guide](docs/licensing.md) for the exact boundaries.
 Commercial licensing: <zionsatidev@gmail.com>.
+
+## Bring a workload
+
+Start with `Console.WriteLine(42)`, then try the smallest real workload where
+deployment size, sandboxing, or portability matters. If something is missing,
+open an [issue](https://github.com/zion-sati/NetWasm/issues)—the platform is early
+enough to be shaped by concrete use cases.
