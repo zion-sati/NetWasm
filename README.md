@@ -6,7 +6,6 @@ A clean Release build of `Console.WriteLine(42)` produces an **88,344-byte
 final Wasm artifact—runtime and precise garbage collection included.**
 
 [![Publication](https://img.shields.io/github/actions/workflow/status/zion-sati/NetWasm/release.yml?label=publish&event=release)](https://github.com/zion-sati/NetWasm/actions/workflows/release.yml)
-[![NuGet](https://img.shields.io/badge/NuGet-NetWasm.Sdk-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Sdk)
 [![License: Community + MIT](https://img.shields.io/badge/license-Community%20%2B%20MIT-blue)](docs/licensing.md)
 
 NetWasm compiles C# into a standalone WebAssembly Component, without carrying
@@ -68,6 +67,12 @@ The supported surface is deliberately smaller than desktop .NET, but it is alrea
 
 I started NetWasm with a simple challenge: **“Kotlin has it—why can’t we?!”**
 
+“It” is [Kotlin Multiplatform (KMP)'s common API surface](https://kotlinlang.org/docs/multiplatform/multiplatform-discover-project.html):
+shared code uses portable APIs instead of the whole JVM/Java library surface,
+with [Wasm among its targets](https://kotlinlang.org/docs/wasm-overview.html).
+Think of a smaller platform contract, in the spirit of .NET Standard—not a
+desktop runtime squeezed into every deployment.
+
 C# does not require the desktop .NET runtime's entire compatibility surface.
 NetWasm starts with a different boundary: a smaller CoreLib, closed-world
 compilation, precise garbage collection and explicit WASI interfaces.
@@ -120,6 +125,24 @@ independent packages, including LINQ, HTTP,
 JSON, XML, Regex, Hashing and reflection-free dependency injection.
 [TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) uses the same public
 SDK and generic VSTest bridge for `dotnet test` integration.
+
+## Packages
+
+[![NuGet: NetWasm.Compiler.Tasks](https://img.shields.io/badge/NuGet-NetWasm.Compiler.Tasks-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Compiler.Tasks)
+[![NuGet: NetWasm.Hosting](https://img.shields.io/badge/NuGet-NetWasm.Hosting-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Hosting)
+[![NuGet: NetWasm.Hosting.Build](https://img.shields.io/badge/NuGet-NetWasm.Hosting.Build-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Hosting.Build)
+[![NuGet: NetWasm.Ref](https://img.shields.io/badge/NuGet-NetWasm.Ref-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Ref)
+[![NuGet: NetWasm.Runtime.Pack](https://img.shields.io/badge/NuGet-NetWasm.Runtime.Pack-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Runtime.Pack)
+[![NuGet: NetWasm.Runtime.Wasm32](https://img.shields.io/badge/NuGet-NetWasm.Runtime.Wasm32-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Runtime.Wasm32)
+[![NuGet: NetWasm.Runtime.Wasm64](https://img.shields.io/badge/NuGet-NetWasm.Runtime.Wasm64-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Runtime.Wasm64)
+[![NuGet: NetWasm.Sdk](https://img.shields.io/badge/NuGet-NetWasm.Sdk-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Sdk)
+[![NuGet: NetWasm.Templates](https://img.shields.io/badge/NuGet-NetWasm.Templates-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Templates)
+[![NuGet: NetWasm.Testing.VSTest](https://img.shields.io/badge/NuGet-NetWasm.Testing.VSTest-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Testing.VSTest)
+[![NuGet: NetWasm.Toolchain](https://img.shields.io/badge/NuGet-NetWasm.Toolchain-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Toolchain)
+[![NuGet: NetWasm.Wit.Bindings.Tool](https://img.shields.io/badge/NuGet-NetWasm.Wit.Bindings.Tool-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Wit.Bindings.Tool)
+
+[Ported-library packages](https://github.com/zion-sati/NetWasm.Libraries#packages) ·
+[TUnit packages](https://github.com/zion-sati/TUnit-NetWasm#netwasm-packages)
 
 ## The direction
 
