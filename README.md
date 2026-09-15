@@ -49,6 +49,17 @@ A WebAssembly host is still required. **Build with .NET; run without .NET.**
 For Windows setup, browser publishing and dual-target libraries, follow the
 [complete SDK quickstart](docs/sdk-quickstart.md).
 
+## More than Hello World
+
+The 88 KB program is the baseline, not the boundary. NetWasm already covers a practical .NET development loop:
+
+- `dotnet build`, `dotnet run`, `dotnet publish` and `dotnet test`;
+- [TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) tests through the generic VSTest bridge and ordinary `dotnet test`;
+- independently packaged ports for LINQ, HTTP, JSON, XML, Regex, Hashing and reflection-free dependency injection;
+- dual-target library projects for `netwasm0.1` and desktop `net10.0`.
+
+The supported surface is deliberately smaller than desktop .NET, but it is already broad enough to build, test and package non-trivial programs.
+
 ## .NET designed around Wasm
 
 C# does not require the desktop .NET runtime's entire compatibility surface.
