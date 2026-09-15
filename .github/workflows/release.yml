@@ -47,6 +47,25 @@ jobs:
         with:
           global-json-file: source/global.json
 
+      - name: Install release build prerequisites
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
+          archive="$RUNNER_TEMP/wasm-tools-1.256.0-x86_64-linux.tar.gz"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            --output "$archive" \
+            https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-x86_64-linux.tar.gz
+          printf '%s  %s\n' \
+            '0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d' \
+            "$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/wasm-tools"
+          tar --extract --gzip --file "$archive" \
+            --directory "$RUNNER_TEMP/wasm-tools" \
+            --strip-components=1
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
+
       - name: Install Emscripten 6.0.7
         shell: bash
         run: |
