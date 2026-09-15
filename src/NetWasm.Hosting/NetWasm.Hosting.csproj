@@ -4,7 +4,7 @@
     <AssemblyName>NetWasm.Hosting</AssemblyName>
     <RootNamespace>NetWasm.Hosting</RootNamespace>
     <PackageId>NetWasm.Hosting</PackageId>
-    <Version>0.1.0-rc.1</Version>
+    <Version>0.1.0-rc.3</Version>
     <Description>Public local and browser execution contracts for NetWasm artifacts.</Description>
     <PackageTags>netwasm;hosting;wasm;wasi;preview2</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>

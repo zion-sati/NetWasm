@@ -6,6 +6,18 @@ namespace NetWasm.Sdk.Pack.Tests;
 public sealed class TemplateContractTests
 {
     [Theory]
+    [InlineData("NetWasm.App")]
+    [InlineData("NetWasm.Library")]
+    public void NamedProjectsPreferTheirOwnDirectory(string templateName)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "src", "NetWasm.Templates", "content", templateName,
+            ".template.config", "template.json")));
+
+        Assert.True(document.RootElement.GetProperty("preferNameDirectory").GetBoolean());
+    }
+
+    [Theory]
     [InlineData("src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj", "CanonicalizeNetWasmCompilerTasksPackage")]
     [InlineData("src/NetWasm.Sdk/NetWasm.Sdk.csproj", "CanonicalizeNetWasmSdkPackage")]
     [InlineData("src/NetWasm.Templates/NetWasm.Templates.csproj", "CanonicalizeNetWasmTemplatesPackage")]

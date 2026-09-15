@@ -43,6 +43,22 @@
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.Toolchain.targets"
           Condition="Exists('$(MSBuildThisFileDirectory)NetWasm.Toolchain.targets')" />
 
+  <UsingTask TaskName="NetWasm.Sdk.Pack.Restore.CanonicalRestoreGraphMsBuildTask"
+             AssemblyFile="$(NetWasmSdkPackTaskAssemblyFile)"
+             Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true'" />
+
+  <!-- Stock restore remains authoritative. Its serialized CLI graph needs the
+       standard canonical framework field because NuGet cannot parse the custom
+       short name it formats. Preserve aliases and all dependency metadata. -->
+  <Target Name="NetWasmSdkCanonicalizeRestoreGraph"
+          AfterTargets="GenerateRestoreGraphFile"
+          Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' AND '$(RestoreGraphOutputPath)' != ''">
+    <CanonicalRestoreGraphMsBuildTask
+      GraphPath="$(RestoreGraphOutputPath)"
+      TargetFrameworkAlias="$(NetWasmSdkCustomProfileAlias)"
+      CanonicalTargetFramework="$(NetWasmSdkCustomProfileCanonicalTargetFramework)" />
+  </Target>
+
   <Target Name="NetWasmSdkRejectFallbackInputs"
           BeforeTargets="Restore;Pack"
           Condition="'$(NetWasmSdkCustomProfileEnabled)' == 'true' AND ('$(AssetTargetFallback)' != '' OR '$(PackageTargetFallback)' != '')">

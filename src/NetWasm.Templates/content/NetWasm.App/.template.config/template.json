@@ -6,6 +6,7 @@
   "name": "NetWasm Application",
   "shortName": "netwasm-app",
   "sourceName": "NetWasmApp",
+  "preferNameDirectory": true,
   "tags": {
     "language": "C#",
     "type": "project"

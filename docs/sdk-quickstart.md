@@ -92,13 +92,21 @@ needed for the standard SDK build, run or publish journey.
 Install the templates directly from NuGet.org:
 
 ```bash
-dotnet new install NetWasm.Templates@0.1.0-rc.1
+dotnet new install "NetWasm.Templates@*-*"
 ```
 
 The normal NuGet configuration and credentials on the machine continue to
 apply. NetWasm does not require a product-specific package source.
 
+`@*-*` selects the latest template package, including prereleases. It avoids
+pinning this guide to one experimental release. For stable releases only, omit
+`@*-*`. The installed template pins its generated project to a concrete SDK
+version, so ordinary restores do not float.
+
 ## 3. Create and run an application
+
+Start in your usual projects directory. The project names and paths below are
+examples; choose your own.
 
 ```bash
 mkdir HelloNetWasm
@@ -195,7 +203,11 @@ useful for diagnosis.
 
 ## 5. Create a dual-target library
 
+Create this example as a sibling of the application, not inside it. Like other
+.NET projects, an application normally includes C# files beneath its directory.
+
 ```bash
+cd ..
 mkdir HelloNetWasm.Library
 cd HelloNetWasm.Library
 dotnet new netwasm-lib
@@ -214,7 +226,7 @@ WIT binding generation is an optional, separate .NET tool rather than a
 compiler command:
 
 ```bash
-dotnet tool install --global NetWasm.Wit.Bindings.Tool --version 0.1.0-rc.1
+dotnet tool install --global NetWasm.Wit.Bindings.Tool --prerelease
 netwasm-wit-bindgen \
   --wit service.wit \
   --world example:service@1.0.0/service \

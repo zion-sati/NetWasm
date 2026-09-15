@@ -31,6 +31,14 @@
       <HintPath>$(MSBuildToolsPath)/NuGet.Versioning.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="NuGet.ProjectModel">
+      <HintPath>$(MSBuildToolsPath)/NuGet.ProjectModel.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="NuGet.Frameworks">
+      <HintPath>$(MSBuildToolsPath)/NuGet.Frameworks.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="NuGet.Packaging">
       <HintPath>$(MSBuildToolsPath)/NuGet.Packaging.dll</HintPath>
       <Private>true</Private>

@@ -4,7 +4,7 @@
     <AssemblyName>NetWasm.Sdk</AssemblyName>
     <RootNamespace>NetWasm.Sdk</RootNamespace>
     <PackageId>NetWasm.Sdk</PackageId>
-    <Version>0.1.0-rc.1</Version>
+    <Version>0.1.0-rc.3</Version>
     <Description>NetWasm project SDK for the netwasm0.1 profile.</Description>
     <PackageTags>netwasm;msbuild;sdk;nuget;wasm</PackageTags>
     <PackageType>MSBuildSdk</PackageType>

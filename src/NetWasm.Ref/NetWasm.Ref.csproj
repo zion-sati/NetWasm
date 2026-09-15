@@ -4,7 +4,7 @@
     <AssemblyName>NetWasm.Ref</AssemblyName>
     <RootNamespace>NetWasm.Ref</RootNamespace>
     <PackageId>NetWasm.Ref</PackageId>
-    <Version>0.1.0-rc.1</Version>
+    <Version>0.1.0-rc.3</Version>
     <Description>Metadata-only reference contract for the NetWasm netwasm0.1 profile.</Description>
     <PackageTags>netwasm;reference;tfm;metadata</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

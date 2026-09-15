@@ -40,5 +40,9 @@
       <HintPath>$(MSBuildToolsPath)/NuGet.Versioning.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="NuGet.Frameworks">
+      <HintPath>$(MSBuildToolsPath)/NuGet.Frameworks.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>

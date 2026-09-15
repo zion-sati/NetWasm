@@ -14,10 +14,10 @@ cd ~/emsdk
 source ~/emsdk/emsdk_env.sh
 ```
 
-Then create and run an application:
+Then, from your usual projects directory, create and run an application:
 
 ```sh
-dotnet new install NetWasm.Templates@0.1.0-rc.1
+dotnet new install "NetWasm.Templates@*-*"
 mkdir HelloNetWasm
 cd HelloNetWasm
 dotnet new netwasm-app
@@ -25,6 +25,10 @@ dotnet restore
 dotnet run
 dotnet publish -c Release -o publish
 ```
+
+`@*-*` selects the latest templates, including prereleases. Omit it for stable
+releases only. The generated project pins a concrete SDK version. The project
+name and directory are examples, not NetWasm requirements.
 
 The application uses an ordinary C# `Main` entry point. The generated launcher
 and reusable `NetWasm.Hosting` modules own JavaScript execution details.

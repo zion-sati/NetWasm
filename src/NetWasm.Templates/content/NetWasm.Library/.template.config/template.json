@@ -6,6 +6,7 @@
   "name": "NetWasm Dual-Target Library",
   "shortName": "netwasm-lib",
   "sourceName": "NetWasmLibrary",
+  "preferNameDirectory": true,
   "tags": {
     "language": "C#",
     "type": "project"
