@@ -14,7 +14,8 @@ public sealed record BrowserCompilationRequest
     public BrowserCompilationRequest(
         CompilerOptions options,
         IReadOnlyDictionary<string, byte[]> inputs,
-        IReadOnlyDictionary<string, string> normalizedWitDocuments)
+        IReadOnlyDictionary<string, string> normalizedWitDocuments,
+        bool selectManagedExecutableEntryPoint = false)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(inputs);
@@ -26,7 +27,16 @@ public sealed record BrowserCompilationRequest
                 nameof(options));
         }
 
+        if (selectManagedExecutableEntryPoint &&
+            options.EntryPointKind != CompilerEntryPointKind.ManagedExecutable)
+        {
+            throw new ArgumentException(
+                "PE entry-point selection requires a managed executable compilation.",
+                nameof(options));
+        }
+
         Options = options;
+        SelectManagedExecutableEntryPoint = selectManagedExecutableEntryPoint;
         var images = ImmutableDictionary.CreateBuilder<string, ImmutableArray<byte>>(StringComparer.Ordinal);
         foreach (var (path, bytes) in inputs)
         {
@@ -55,6 +65,12 @@ public sealed record BrowserCompilationRequest
     }
 
     public CompilerOptions Options { get; }
+
+    /// <summary>
+    /// Select the executable's original managed Main, including async Main behind
+    /// a synchronous PE wrapper. False preserves the explicit compiler options.
+    /// </summary>
+    public bool SelectManagedExecutableEntryPoint { get; }
 
     public ImmutableDictionary<string, ImmutableArray<byte>> Inputs { get; }
 

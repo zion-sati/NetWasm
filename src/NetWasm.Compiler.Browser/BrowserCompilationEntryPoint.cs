@@ -1,3 +1,5 @@
+using NetWasm.Compiler.Core.ManagedExecutables;
+
 namespace NetWasm.Compiler.Browser;
 
 public sealed record BrowserCompilationEntryPoint(
@@ -5,4 +7,5 @@ public sealed record BrowserCompilationEntryPoint(
     string TypeName,
     string MethodName,
     int? Token,
-    CompilerEntryPointKind Kind);
+    CompilerEntryPointKind Kind,
+    ManagedExecutableEntryPointAbi? Abi = null);

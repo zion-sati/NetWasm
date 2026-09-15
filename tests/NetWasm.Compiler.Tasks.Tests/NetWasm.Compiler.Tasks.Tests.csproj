@@ -26,6 +26,7 @@
     <ProjectReference Include="Fixtures/ManagedExecutable/ManagedExecutable.csproj" />
     <ProjectReference Include="Fixtures/AsyncManagedExecutable/AsyncManagedExecutable.csproj" />
     <ProjectReference Include="Fixtures/AsyncVoidManagedExecutable/AsyncVoidManagedExecutable.csproj" />
+    <ProjectReference Include="Fixtures/AsyncStringArgumentsManagedExecutable/AsyncStringArgumentsManagedExecutable.csproj" />
   </ItemGroup>
 
   <ItemGroup>

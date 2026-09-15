@@ -5,6 +5,7 @@ using System.Reflection.PortableExecutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.Tasks.Compilation;
+using NetWasm.Compiler.Metadata.ManagedExecutables;
 using NetWasm.Compiler.Tasks.Tests.Fixtures.ManagedExecutable;
 using AsyncManagedExecutableMarker =
     NetWasm.Compiler.Tasks.Tests.Fixtures.AsyncManagedExecutable.Marker;
@@ -36,6 +37,22 @@ public sealed class ManagedEntryPointReaderTests
                 ManagedExecutableParameterShape.None,
                 ManagedExecutableReturnShape.ExitCode),
             entryPoint.Abi);
+    }
+
+    [Fact]
+    public void DesktopAdapterUsesSharedBytePolicyForAsyncTaskIntStringMain()
+    {
+        var path = typeof(Fixtures.AsyncStringArgumentsManagedExecutable.Marker).Assembly.Location;
+        var selected = new ManagedExecutableEntryPointSelector().SelectEntryPoint(path, File.ReadAllBytes(path));
+        var desktop = new ManagedEntryPointReader().Read(path);
+
+        Assert.Equal(selected.TypeName, desktop.TypeName);
+        Assert.Equal(selected.MethodName, desktop.MethodName);
+        Assert.Equal(selected.MetadataToken, desktop.MetadataToken);
+        Assert.Equal(selected.Abi, desktop.Abi);
+        Assert.Equal("Main", desktop.MethodName);
+        Assert.Equal(new ManagedExecutableEntryPointAbi(ManagedExecutableParameterShape.StringArray,
+            ManagedExecutableReturnShape.ExitCode, ManagedExecutableCompletionShape.Asynchronous), desktop.Abi);
     }
 
     [Theory]

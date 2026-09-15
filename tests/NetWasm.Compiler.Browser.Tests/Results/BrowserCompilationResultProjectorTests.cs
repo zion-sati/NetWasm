@@ -1,5 +1,6 @@
 using NetWasm.Compiler.Browser.Results;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.Wasm;
 
 namespace NetWasm.Compiler.Browser.Tests.Results;
@@ -26,7 +27,11 @@ public sealed class BrowserCompilationResultProjectorTests
         };
         var projector = CreateProjector();
 
-        var actual = projector.Project(source, options);
+        var abi = kind == CompilerEntryPointKind.ManagedExecutable
+            ? new ManagedExecutableEntryPointAbi(ManagedExecutableParameterShape.StringArray,
+                ManagedExecutableReturnShape.ExitCode, ManagedExecutableCompletionShape.Asynchronous)
+            : null;
+        var actual = projector.Project(source, options, abi);
 
         Assert.Equal(source.ApplicationModule, actual.ApplicationModule);
         Assert.NotSame(source.ApplicationModule, actual.ApplicationModule);
@@ -34,7 +39,7 @@ public sealed class BrowserCompilationResultProjectorTests
         Assert.Equal(source.RuntimeFeatures, actual.RuntimeFeatures);
         Assert.Equal(source.FunctionImports, actual.FunctionImports);
         Assert.Same(manifest, actual.InteropManifest);
-        Assert.Equal(new BrowserCompilationEntryPoint("app.dll", "Program", "Main", token, kind), actual.EntryPoint);
+        Assert.Equal(new BrowserCompilationEntryPoint("app.dll", "Program", "Main", token, kind, abi), actual.EntryPoint);
         source.ApplicationModule[0] = 9;
         Assert.Equal(0, actual.ApplicationModule[0]);
     }
@@ -43,11 +48,24 @@ public sealed class BrowserCompilationResultProjectorTests
     public void RequiresAResultAndOptions()
     {
         var projector = CreateProjector();
-        Assert.Throws<ArgumentNullException>(() => projector.Project(null!, BrowserCompilationRequestTests.CreateOptions()));
+        Assert.Throws<ArgumentNullException>(() => projector.Project(null!, BrowserCompilationRequestTests.CreateOptions(), null));
         Assert.Throws<ArgumentNullException>(() => projector.Project(
-            new CompilationResult([], null!, null!, null!, 0), null!));
+            new CompilationResult([], null!, null!, null!, 0), null!, null));
     }
 
-    private static IBrowserCompilationResultProjector CreateProjector() =>
-        Assert.IsAssignableFrom<IBrowserCompilationResultProjector>(new BrowserCompilationResultProjector());
+    [Theory]
+    [InlineData(CompilerEntryPointKind.ManagedExecutable)]
+    [InlineData(CompilerEntryPointKind.RawFunction)]
+    public void RequiresAnAbiExactlyForManagedExecutables(CompilerEntryPointKind kind)
+    {
+        var options = BrowserCompilationRequestTests.CreateOptions() with { EntryPointKind = kind };
+        var incorrectAbi = kind == CompilerEntryPointKind.RawFunction
+            ? new ManagedExecutableEntryPointAbi(ManagedExecutableParameterShape.None,
+                ManagedExecutableReturnShape.Void)
+            : null;
+        Assert.Throws<ArgumentException>(() => CreateProjector().Project(
+            new CompilationResult([], null!, null!, null!, 0), options, incorrectAbi));
+    }
+
+    private static BrowserCompilationResultProjector CreateProjector() => new();
 }

@@ -16,6 +16,7 @@ public sealed class BrowserCompilationRequestTests
         documents["contracts/compiler.wit.wasm"] = "changed JSON";
 
         Assert.Same(options, request.Options);
+        Assert.False(request.SelectManagedExecutableEntryPoint);
         Assert.Equal(new byte[] { 1, 2, 3 }, request.Inputs["contracts/compiler.wit.wasm"]);
         Assert.Equal("original JSON", request.NormalizedWitDocuments["contracts/compiler.wit.wasm"]);
         Assert.False(request.Inputs.ContainsKey("compiler.wit.wasm"));
@@ -65,6 +66,19 @@ public sealed class BrowserCompilationRequestTests
         Assert.Throws<ArgumentException>(() => new BrowserCompilationRequest(
             CreateOptions(), new Dictionary<string, byte[]> { ["contract.wit"] = [] },
             new Dictionary<string, string> { ["contract.wit"] = " " }));
+    }
+
+    [Fact]
+    public void ExplicitPeSelectionRequiresManagedExecutableOptions()
+    {
+        Assert.Throws<ArgumentException>(() => new BrowserCompilationRequest(CreateOptions(),
+            new Dictionary<string, byte[]>(), new Dictionary<string, string>(),
+            selectManagedExecutableEntryPoint: true));
+        var request = new BrowserCompilationRequest(
+            CreateOptions() with { EntryPointKind = CompilerEntryPointKind.ManagedExecutable },
+            new Dictionary<string, byte[]>(), new Dictionary<string, string>(),
+            selectManagedExecutableEntryPoint: true);
+        Assert.True(request.SelectManagedExecutableEntryPoint);
     }
 
     internal static CompilerOptions CreateOptions() => new("app.dll", [], "Program", "Main", []);

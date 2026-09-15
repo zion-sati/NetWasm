@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <StartupObject>NetWasm.Compiler.Tasks.Tests.Fixtures.AsyncStringArgumentsManagedExecutable.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup><Using Remove="Xunit" /></ItemGroup>
+</Project>
