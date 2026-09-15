@@ -109,15 +109,6 @@ dotnet clean "${source_root}/NetWasm.slnx" \
   --output "${asset_root}" \
   --cache "${NETWASM_TOOLCHAIN_CACHE:-${build_root}/toolchain-cache}"
 
-bash "${source_root}/src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh" \
-  --allow-emscripten
-if ! git -C "${source_root}" diff --quiet -- \
-    src/NetWasm.Runtime.Pack/runtime; then
-  echo "Checked-in runtime pack assets do not match the committed native runtime sources." >&2
-  echo "Regenerate and commit the runtime pack before constructing packages." >&2
-  exit 1
-fi
-
 jco_root="${asset_root}/jco/payload"
 binaryen_root="${asset_root}/binaryen/payload"
 bundler_root="${asset_root}/bundler/payload"

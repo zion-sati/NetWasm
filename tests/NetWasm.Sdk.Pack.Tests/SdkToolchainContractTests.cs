@@ -402,23 +402,42 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
-    public void PackageBuildRejectsRuntimePackDriftFromNativeSources()
+    public void PackageBuildConsumesTheCheckedInRuntimePackWithoutRegeneration()
     {
         var repositoryRoot = FindRepositoryRoot();
         var script = File.ReadAllText(Path.Combine(repositoryRoot, "eng/build-packages.sh"));
-        var regenerationIndex = script.IndexOf(
-            "tools/regenerate-runtime-pack.sh",
-            StringComparison.Ordinal);
-        var driftCheckIndex = script.IndexOf(
-            "git -C \"${source_root}\" diff --quiet",
-            StringComparison.Ordinal);
-        var buildIndex = script.IndexOf(
-            "dotnet build \"${source_root}/NetWasm.slnx\"",
-            StringComparison.Ordinal);
 
-        Assert.True(regenerationIndex >= 0);
-        Assert.True(driftCheckIndex > regenerationIndex);
-        Assert.True(buildIndex > driftCheckIndex);
+        Assert.DoesNotContain("regenerate-runtime-pack.sh", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("--allow-emscripten", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RuntimePackRegenerationUsesTheEffectiveEmscriptenCache()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var script = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh"));
+
+        Assert.Contains("em-config", script, StringComparison.Ordinal);
+        Assert.Contains("emscripten_cache_root=\"$(\"$em_config\" CACHE)\"", script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "system_source=\"$emscripten_cache_root/sysroot/lib/wasm32-emscripten\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "system_source=\"$emscripten_cache_root/sysroot/lib/wasm64-emscripten/lto\"",
+            script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "$EMSDK/upstream/emscripten/cache/sysroot/lib",
+            script,
+            StringComparison.Ordinal);
     }
 
     private static XDocument LoadSdkTarget(string fileName)

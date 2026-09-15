@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
 
       - name: Install .NET SDK
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -58,3 +60,48 @@ jobs:
           dotnet restore NetWasm.slnx --disable-build-servers --nologo
           dotnet build NetWasm.slnx -c Release --no-restore --disable-build-servers --nologo
           dotnet test NetWasm.slnx -c Release --no-build --no-restore --disable-build-servers --nologo
+
+      - name: Detect runtime-pack input changes
+        id: runtime-pack
+        shell: bash
+        run: |
+          if git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+              eng/build-netwasm-runtime.sh \
+              eng/toolchain.json \
+              src/NetWasm.Runtime \
+              src/NetWasm.Runtime.Pack/runtime/runtime-policy.json \
+              src/NetWasm.Runtime.Pack/tools \
+              tests/end-to-end/host-interop/runtime-memory64/bdwgc-wasm64.patch; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install runtime-pack verification tools
+        if: steps.runtime-pack.outputs.changed == 'true'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
+          archive="$RUNNER_TEMP/wasm-tools-1.256.0-x86_64-linux.tar.gz"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            --output "$archive" \
+            https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-x86_64-linux.tar.gz
+          printf '%s  %s\n' \
+            '0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d' \
+            "$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/wasm-tools"
+          tar --extract --gzip --file "$archive" \
+            --directory "$RUNNER_TEMP/wasm-tools" \
+            --strip-components=1
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
+
+      - name: Verify runtime-pack drift
+        if: steps.runtime-pack.outputs.changed == 'true'
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh \
+            --allow-emscripten
+          git diff --exit-code -- src/NetWasm.Runtime.Pack/runtime

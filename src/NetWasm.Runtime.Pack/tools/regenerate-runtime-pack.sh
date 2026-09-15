@@ -33,6 +33,10 @@ wasm_ld="$EMSDK/upstream/bin/wasm-ld"
 [[ -x "$wasm_ld" ]] || { echo "missing required Emscripten linker" >&2; exit 1; }
 embuilder="$EMSDK/upstream/emscripten/embuilder"
 [[ -x "$embuilder" ]] || { echo "missing required Emscripten system-library builder" >&2; exit 1; }
+em_config="$EMSDK/upstream/emscripten/em-config"
+[[ -x "$em_config" ]] || { echo "missing required Emscripten configuration reader" >&2; exit 1; }
+emscripten_cache_root="$("$em_config" CACHE)"
+[[ "$emscripten_cache_root" = /* ]] || { echo "Emscripten cache path must be absolute" >&2; exit 1; }
 
 alignment="$(node -p 'require(process.argv[1]).alignment' "$policy")"
 wasm_page_size="$(node -p 'require(process.argv[1]).wasmPageSize' "$policy")"
@@ -81,10 +85,10 @@ NODE
 
   if [[ "$target" = wasm32 ]]; then
     machine=-mwasm32
-    system_source="$EMSDK/upstream/emscripten/cache/sysroot/lib/wasm32-emscripten"
+    system_source="$emscripten_cache_root/sysroot/lib/wasm32-emscripten"
   else
     machine=-mwasm64
-    system_source="$EMSDK/upstream/emscripten/cache/sysroot/lib/wasm64-emscripten/lto"
+    system_source="$emscripten_cache_root/sysroot/lib/wasm64-emscripten/lto"
   fi
 
   system_libraries=()
