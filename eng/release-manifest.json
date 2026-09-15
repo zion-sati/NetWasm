@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "repository": "zion-sati/NetWasm",
   "repositoryUrl": "https://github.com/zion-sati/netwasm",
-  "releaseVersion": "0.1.0-rc.2",
-  "releaseTag": "v0.1.0-rc.2",
-  "sourceCommit": "f98552c05ccf35ed666eb709ed9cc3967de78697",
+  "releaseVersion": "0.1.0-rc.3",
+  "releaseTag": "v0.1.0-rc.3",
+  "sourceCommit": "d98f4315be38eb7437c58a4272146b30d2606ba8",
   "packages": [
     "NetWasm.Compiler.Tasks",
     "NetWasm.Hosting",
