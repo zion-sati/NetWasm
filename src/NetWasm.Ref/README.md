@@ -6,4 +6,4 @@ experimental `netwasm0.1` profile. It contains the tested
 
 The NetWasm SDK consumes this package privately for a `netwasm0.1` inner build.
 The linker receives implementation assemblies from the selected NetWasm runtime
-pack; a reference assembly is never copied as a runtime dependency.
+pack.

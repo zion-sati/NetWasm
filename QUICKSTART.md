@@ -1,8 +1,5 @@
 # NetWasm quickstart
 
-NetWasm's normal developer experience uses packages from NuGet.org. It does not
-require a NetWasm source checkout or a product-specific package source.
-
 Install .NET SDK 10.0.300 or newer, Git, Python 3, and Emscripten SDK 6.0.7.
 Activating emsdk supplies the supported Node.js 24+ and LLD 24+ toolchain:
 
@@ -14,7 +11,7 @@ cd ~/emsdk
 source ~/emsdk/emsdk_env.sh
 ```
 
-Then, from your usual projects directory, create and run an application:
+Create and run an application:
 
 ```sh
 dotnet new install "NetWasm.Templates@*-*"
@@ -27,11 +24,7 @@ dotnet publish -c Release -o publish
 ```
 
 `@*-*` selects the latest templates, including prereleases. Omit it for stable
-releases only. The generated project pins a concrete SDK version. The project
-name and directory are examples, not NetWasm requirements.
-
-The application uses an ordinary C# `Main` entry point. The generated launcher
-and reusable `NetWasm.Hosting` modules own JavaScript execution details.
+releases only. The generated project pins a concrete SDK version.
 
 See the [complete SDK quickstart](docs/sdk-quickstart.md) for Windows setup,
 capability grants, browser publishing, and library templates. Read the

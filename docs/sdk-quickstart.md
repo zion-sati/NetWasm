@@ -1,13 +1,5 @@
 # NetWasm SDK quickstart
 
-This is the ordinary package-consumer path for creating, building, running and
-publishing a NetWasm application. It does not require a NetWasm checkout or a
-separate LLVM, Node.js, `wasm-tools` or Wasmtime installation.
-
-The commands below describe the production NuGet.org experience. Normal NuGet
-configuration and credentials apply; NetWasm does not define a product-specific
-package source.
-
 Before porting an application, review the
 [first-preview WASI-backed .NET surface](support-status.md#first-preview-wasi-backed-net-surface).
 The first preview has no general managed file/directory API, raw socket API,
@@ -25,9 +17,8 @@ minimums are Node.js 24+ and LLD 24+.
 
 ### macOS and Linux
 
-The `emsdk` downloader uses standard `tar`/xz extraction support. Minimal
-Debian/Ubuntu images may need `apt-get install git python3 xz-utils` first;
-normal developer installations commonly already provide these tools.
+Minimal Debian/Ubuntu images may need
+`apt-get install git python3 xz-utils` before running the `emsdk` installer.
 
 ```bash
 git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
@@ -88,8 +79,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 The execution-policy change applies only to this PowerShell process; it does
 not alter the user or machine policy. Dot-source `emsdk_env.ps1` in each new
-PowerShell session before using NetWasm. It updates that shell's environment
-without defining a permanent NetWasm-specific tool path.
+PowerShell session before using NetWasm.
 
 Verify the active shell:
 
@@ -117,24 +107,16 @@ needed for the standard SDK build, run or publish journey.
 
 ## 2. Install the templates
 
-Install the templates directly from NuGet.org:
-
 ```bash
 dotnet new install "NetWasm.Templates@*-*"
 ```
 
-The normal NuGet configuration and credentials on the machine continue to
-apply. NetWasm does not require a product-specific package source.
-
 `@*-*` selects the latest template package, including prereleases. It avoids
 pinning this guide to one experimental release. For stable releases only, omit
 `@*-*`. The installed template pins its generated project to a concrete SDK
-version, so ordinary restores do not float.
+version.
 
 ## 3. Create and run an application
-
-Start in your usual projects directory. The project names and paths below are
-examples; choose your own.
 
 ```bash
 mkdir HelloNetWasm
@@ -145,34 +127,20 @@ dotnet build
 dotnet run
 ```
 
-The template prints `42`. Its managed entry point is ordinary C# `Main`; the
-JavaScript host's `executeNetWasm(...)` function is the reusable execution
-facade used by the generated launcher, not a replacement managed entry point.
-Debug builds include managed stack traces by default. Release omits their
-instrumentation and symbol sidecar unless `NetWasmManagedStackTrace=true`.
+The template prints `42`. Debug builds include managed stack traces by default.
+Release omits their instrumentation and symbol sidecar unless
+`NetWasmManagedStackTrace=true`.
 
-### Environment and host capabilities
+### Host capabilities
 
-The local launcher follows ordinary command-line application behavior. It
-inherits the environment that launches `dotnet run`, starts in the project
-directory, and automatically supplies wall/monotonic clocks, randomness and
-HTTP network support when reachable code needs them. Use the shell or standard
-.NET launch configuration for development values; do not commit environment
-values to the project file:
+Only reachable APIs retain managed code, Wasm imports and JavaScript providers.
+The local launcher supplies clocks, randomness and HTTP when needed; a custom
+host can restrict those capabilities.
 
-```bash
-APP_MODE=preview dotnet run
-```
-
-Whole-program reachability still controls the final guest and host closure. An
-unused clock, randomness or HTTP API retains no corresponding managed code,
-Wasm import or JavaScript provider. A custom host or deployer can apply a more
-restrictive policy.
-
-Filesystem access is different: host and guest paths are deployment mappings,
-so preopens remain explicit. A **preopen** is WASI's equivalent of mounting a
-host directory into the application's filesystem sandbox before the program
-starts. The application receives access to the guest path, not ambient access
+Filesystem access requires explicit host-to-guest mappings. A **preopen** is
+WASI's equivalent of mounting a host directory into the application's filesystem
+sandbox before the program starts. The application receives access to the guest
+path, not ambient access
 to the original host path or the rest of the host filesystem.
 
 For example, this maps the project's `data` directory to `/data` inside the
@@ -210,9 +178,7 @@ dotnet publish -c Release -o publish/local
 ```
 
 The local publish contains the selected `netwasm.host.mjs` launcher and its
-portable deployment closure. `dotnet run` owns the descriptor/request/result
-channels for normal development execution; direct launcher integrations use
-the explicit channel contract documented by `NetWasm.Hosting`.
+portable deployment closure.
 
 Publish the browser-selected deployment instead:
 
@@ -229,9 +195,6 @@ useful for diagnosis.
 
 ## 5. Create a dual-target library
 
-Create this example as a sibling of the application, not inside it. Like other
-.NET projects, an application normally includes C# files beneath its directory.
-
 ```bash
 cd ..
 mkdir HelloNetWasm.Library
@@ -242,9 +205,8 @@ dotnet build
 dotnet pack -c Release
 ```
 
-The library is an ordinary NuGet library targeting `netwasm0.1` and `net10.0`.
-It does not select a host or gain capabilities; the consuming application owns
-those deployment choices.
+The library targets `netwasm0.1` and `net10.0`. The consuming application
+selects its host and capabilities.
 
 ## 6. Generate C# bindings from WIT when needed
 

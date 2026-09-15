@@ -21,7 +21,7 @@ Git, Python 3 and Emscripten SDK 6.0.7 using the
 Activated Emscripten supplies Node.js 24+ and LLD 24+; you do not need separate
 LLVM, Node.js or Wasm-tool installations.
 
-Then install, create, run and publish with ordinary `dotnet` commands:
+Install, create, run and publish:
 
 ```sh
 dotnet new install "NetWasm.Templates@*-*"
@@ -32,7 +32,7 @@ dotnet publish -c Release -o publish/local
 ```
 
 The app prints `42`. `@*-*` includes experimental releases; the
-generated project pins its SDK version. Its entry point is ordinary C# `Main`.
+generated project pins its SDK version.
 
 For Windows setup, browser publishing and dual-target libraries, follow the
 [complete SDK quickstart](docs/sdk-quickstart.md).
@@ -80,15 +80,15 @@ desktop .NET—not trapped in a Wasm-only ecosystem.
 dotnet new netwasm-lib -n MyLibrary
 ```
 
-The template targets both `netwasm0.1` and `net10.0`, producing ordinary NuGet
+The template targets both `netwasm0.1` and `net10.0`, producing NuGet
 library assets for each platform. Portability is explicit multi-targeting,
 not a promise that an arbitrary desktop package will work in reverse.
 
 The [ported libraries](https://github.com/zion-sati/NetWasm.Libraries) are
-independent packages and ordinary NetWasm consumers, including LINQ, HTTP,
+independent packages, including LINQ, HTTP,
 JSON, XML, Regex, Hashing and reflection-free dependency injection.
 [TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) uses the same public
-SDK and generic VSTest bridge for ordinary `dotnet test` integration.
+SDK and generic VSTest bridge for `dotnet test` integration.
 
 ## The direction
 

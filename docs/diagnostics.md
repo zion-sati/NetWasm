@@ -1,7 +1,6 @@
 # Compiler diagnostics
 
-Compiler failures are written to standard error and return a non-zero exit
-code. The normal format is `NWdddd: [Type::Method IL_000a:] message`; the
+The diagnostic format is `NWdddd: [Type::Method IL_000a:] message`; the
 reserved `GenericExpansion` code is formatted as `NWA2001`. The complete enum
 is defined in `NetWasm.Compiler.Core`.
 

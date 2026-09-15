@@ -1,9 +1,8 @@
 # NetWasm.Sdk
 
 `NetWasm.Sdk` contains the project-SDK implementation for the experimental
-`netwasm0.1` profile. It composes `Microsoft.NET.Sdk`, maps the user-facing
-alias to the tested NetWasm identity, and keeps ordinary source-level
-`dotnet restore`, `dotnet build`, and `dotnet pack` workflows.
+`netwasm0.1` profile. It composes `Microsoft.NET.Sdk` and maps the user-facing
+alias to the tested NetWasm identity.
 
 Executable projects use restored, platform-neutral `NetWasm.Toolchain`,
 `NetWasm.Hosting`, and `NetWasm.Hosting.Build` packages. The SDK validates the
@@ -16,10 +15,7 @@ execution request for `dotnet run`; `dotnet publish` copies that exact portable
 closure or, with `-p:NetWasmPublishTarget=browser`, emits the browser-selected
 closure. Release JavaScript is minified by default.
 
-The SDK never downloads a host tool or introduces a NetWasm RID selector,
-package identity, or `tools/<rid>` layout. Ordinary .NET/MSBuild
-`RuntimeIdentifier` metadata can still flow through standard project evaluation
-and packing contracts; NetWasm does not interpret it as a host-tool location.
+Host tools come from the activated Emscripten SDK.
 
 The compiler/runtime layer supplies componentization through the
 `NetWasmComponentizeDependsOn` target seam. It receives the core module, WIT,
@@ -39,14 +35,9 @@ NetWasm library projects intentionally reject `dotnet run` and
 `dotnet publish` for the `netwasm0.1` inner build. Desktop inner builds of a
 dual-target library continue to use the stock SDK.
 
-Production consumers restore the published package from NuGet.org through
-their machine's normal NuGet configuration. Maintainer-only immutable-candidate
-qualification is test infrastructure, not consumer setup.
-
 The SDK-owned pack boundary is selected only for projects declaring
 `netwasm0.1`. Desktop-only projects continue through the stock NuGet pack
-targets. Restore and compatibility selection remain owned by the installed
-NuGet client.
+targets.
 
 See the repository's [package-consumer quickstart](../../docs/sdk-quickstart.md)
-for the pinned Emscripten activation and ordinary `dotnet new` workflow.
+for the pinned Emscripten activation and application templates.

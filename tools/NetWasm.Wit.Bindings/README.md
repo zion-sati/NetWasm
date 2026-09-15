@@ -5,7 +5,7 @@ reflection-free C# source. It is separate from the NetWasm CIL compiler: the
 compiler consumes the resulting ordinary managed assembly and does not invoke
 or identify this generator.
 
-Install the tool from NuGet.org:
+Install the tool:
 
 ```sh
 dotnet tool install --global NetWasm.Wit.Bindings.Tool --version 0.1.0-rc.1

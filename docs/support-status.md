@@ -138,10 +138,7 @@ The immutable `NetWasm.Ref`, SDK, runtime-pack, and template package graph
 passes the package-only developer-loop gate for `dotnet new`, restore,
 dual-target library builds, `dotnet build`, `dotnet run`, portable publish,
 pinned `jco` browser translation, and clean. The generic VSTest bridge and
-TUnit package also pass ordinary `dotnet test -f netwasm0.1` integration.
-Production consumers restore the published packages from NuGet.org through
-their normal NuGet configuration; NetWasm defines no product-specific package
-source.
+TUnit package also pass `dotnet test -f netwasm0.1` integration.
 
 ## In progress
 

@@ -1,10 +1,8 @@
 # CLI, build, and deployment entry points
 
-The ordinary consumer workflow uses the published `NetWasm.Sdk` and templates
-from NuGet.org with standard `dotnet build`, `dotnet run`, and `dotnet publish`
-commands. The source-built CLI remains the low-level contributor workflow at
-`src/NetWasm.Compiler.Cli/bin/<Configuration>/net10.0/NetWasm.Compiler.Cli.dll`;
-NetWasm does not introduce a parallel `netwasm build/publish` command.
+For application development, see the [SDK quickstart](sdk-quickstart.md).
+This page covers source builds and the low-level compiler CLI at
+`src/NetWasm.Compiler.Cli/bin/<Configuration>/net10.0/NetWasm.Compiler.Cli.dll`.
 
 ## Build
 
@@ -49,8 +47,7 @@ instrumentation and writes its symbol sidecar. It is not DWARF/source-level
 debug information; see the [support status and roadmap](support-status.md#managed-stack-traces).
 
 The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
-bindings; the compiler CLI does not generate C# source. Install and invoke it
-through the ordinary .NET tool workflow:
+bindings; the compiler CLI does not generate C# source. Install and invoke it:
 
 ```sh
 dotnet tool install --global NetWasm.Wit.Bindings.Tool --prerelease

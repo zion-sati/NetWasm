@@ -2,8 +2,7 @@
 
 NetWasm is an experimental closed-world CIL-to-WebAssembly toolchain and a
 smaller .NET platform with an explicit CoreLib, runtime, and host boundary.
-Preview SDK and template packages use NuGet.org. NetWasm remains experimental
-and has no production-support or compatibility commitment.
+There is no production-support or compatibility commitment.
 
 ## Start here
 

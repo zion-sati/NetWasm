@@ -1,5 +1,9 @@
 # Maintaining the documentation
 
+Document NetWasm-specific behavior, prerequisites and limitations. Show runnable
+commands, but do not explain standard .NET behavior when NetWasm does not deviate
+from it.
+
 User-facing behaviour and its documentation should change together. When a
 change affects any of the following, update the corresponding page under
 `docs/` in the same pull request:

@@ -17,12 +17,10 @@ Node executable, native tool, or the JCO/Preview 2 toolchain closure. Build-time
 tool assets belong to `NetWasm.Toolchain`; the SDK supplies validated absolute
 host-tool and package paths through the execution descriptor.
 
-The standard local launcher appends command-line arguments, inherits its process
-environment, and lets explicit request values override inherited values. The
-SDK's normal application request supplies clocks, randomness and HTTP network
-policy; whole-program imports still decide which providers are retained.
-Filesystem preopens and custom-host restrictions remain explicit. Libraries and
-transitive packages do not select a host, environment or capability policy.
+Explicit request environment values override inherited process values. The SDK
+supplies clocks, randomness and HTTP network policy; whole-program imports
+decide which providers are retained. Filesystem preopens and custom-host
+restrictions remain explicit.
 
 Desktop tools construct `NetWasmArtifactClient` and pass the target path that
 MSBuild supplied together with explicit invocation arguments and distinct
@@ -44,10 +42,9 @@ The public execution call is always:
 const result = await executeNetWasm({ request, stdout, stderr, signal });
 ```
 
-This JavaScript facade does not replace the managed entry point: the compiled
-guest still enters through its selected `Main`. The request is the resolved
-invocation and host-policy snapshot; deployment and package identities come
-from the SDK-generated, hash-bound descriptor and manifest.
+The request is the resolved invocation and host-policy snapshot; deployment
+and package identities come from the SDK-generated, hash-bound descriptor and
+manifest.
 
 For a local process, invoke the packaged launcher with three distinct absolute,
 canonical channels:
