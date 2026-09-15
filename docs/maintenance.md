@@ -37,3 +37,22 @@ gate. Regenerate with the pinned Emscripten environment by running
 commit the resulting runtime-pack assets, and let the pull-request CI verify the
 canonical Ubuntu x64 result. Ordinary package metadata changes do not enter this
 gate.
+
+## Prepare a release
+
+From a clean `main` checkout, with the public Git author and an approved signing
+key configured, run:
+
+```sh
+python3 eng/prepare-release.py --version VERSION
+```
+
+Replace `VERSION` with the next semantic version. The command updates coordinated
+package versions, creates a signed source commit and tag, and commits the matching
+release manifest. It preserves the repository's tag prefix and rejects existing
+tags or unapproved author metadata. No manifest editing is needed.
+
+Review its output, push `main` and the printed tag atomically, then publish a GitHub
+Release for that tag. Preparation does not build, test, push, or publish; the
+release workflow builds and validates the exact tagged source before trusted
+NuGet.org publication.
