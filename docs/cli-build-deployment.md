@@ -53,7 +53,7 @@ bindings; the compiler CLI does not generate C# source. Install and invoke it
 through the ordinary .NET tool workflow:
 
 ```sh
-dotnet tool install --global NetWasm.Wit.Bindings.Tool --version 0.1.0-rc.1
+dotnet tool install --global NetWasm.Wit.Bindings.Tool --prerelease
 netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
 ```
 
