@@ -69,9 +69,9 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         self.assertNotIn("docs/size-and-methodology.md", [item["path"] for item in receipt["changedFiles"]])
 
     def test_stable_projection_preserves_larger_numeric_tokens(self) -> None:
-        (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("0.1.0\n")
+        (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("1.2.3\n")
         (self.root / "project.txt").write_text(
-            "Package=0.1.0\nPosixRule=M10.1.0\nAssemblyVersion=0.1.0.0\n"
+            "Package=1.2.3\nPosixRule=M11.2.3\nAssemblyVersion=1.2.3.4\n"
         )
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         subprocess.run(
@@ -79,11 +79,11 @@ class ProjectReleaseVersionTests(unittest.TestCase):
             check=True,
         )
 
-        receipt = MODULE.project_version(self.root, "0.2.0", self.root / "receipt.json")
+        receipt = MODULE.project_version(self.root, "2.3.4", self.root / "receipt.json")
 
-        self.assertEqual("0.2.0\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
+        self.assertEqual("2.3.4\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
         self.assertEqual(
-            "Package=0.2.0\nPosixRule=M10.1.0\nAssemblyVersion=0.1.0.0\n",
+            "Package=2.3.4\nPosixRule=M11.2.3\nAssemblyVersion=1.2.3.4\n",
             (self.root / "project.txt").read_text(),
         )
         self.assertEqual(2, receipt["replacementCount"])
