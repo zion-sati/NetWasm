@@ -51,7 +51,8 @@ Every NetWasm-specific user-visible change must update its owning page under
 Component Model/WASI boundaries, CLI options/artifacts, CoreLib/runtime
 deviations, host/deployment contracts, and intentional limitations. Feature
 documentation lands with the feature; do not document unfinished SDK, package,
-HTTP, DI, or other capabilities as available. Run `bash docs/verify-docs.sh`.
+HTTP, DI, or other capabilities as available. Review the affected pages and
+their links in GitHub's rendered Markdown before submitting the change.
 
 Use the repository's issue tracker for reproducible bugs and narrowly scoped
 proposals after the public host is available. The project currently has no

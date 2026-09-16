@@ -19,15 +19,9 @@ Describe capabilities as available only after their implementation and
 qualification are complete. Keep investigation notes and test evidence out of
 the user-facing contract pages.
 
-Before submitting a documentation change, run the focused verifier from the
-repository root:
-
-```sh
-bash docs/verify-docs.sh
-```
-
-It checks diagnostic coverage, documentation navigation, support-status
-categories, and critical target and tooling terminology.
+Before submitting a documentation change, check the documentation index,
+diagnostic coverage, support-status categories, critical target and tooling
+terminology, and every changed link in GitHub's rendered Markdown.
 
 For a package-boundary change, also run `eng/build-packages.sh` from a clean
 checkout and inspect the resulting package graph before publication. The
