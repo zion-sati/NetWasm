@@ -31,7 +31,7 @@ categories, and critical target and tooling terminology.
 
 For a package-boundary change, also run `eng/build-packages.sh` from a clean
 checkout and inspect the resulting package graph before publication. The
-command builds the 12 core packages from the audited checked-in runtime pack;
+command builds the 13 core packages from the audited checked-in runtime pack;
 it never regenerates native assets, pushes, or publishes them.
 
 Changes to `src/NetWasm.Runtime`, the runtime-pack policy or regeneration tools,

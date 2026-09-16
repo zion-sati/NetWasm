@@ -30,13 +30,13 @@
     <Project Path="tools/NetWasm.Wit.Bindings/NetWasm.Wit.Bindings.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj" />
-    <Project Path="tests/NetWasm.Compiler.Browser.Tests/NetWasm.Compiler.Browser.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.Core.Tests/NetWasm.Compiler.Core.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.ControlFlow.Tests/NetWasm.Compiler.ControlFlow.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.GarbageCollection.Tests/NetWasm.Compiler.GarbageCollection.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.Wasm.Tests/NetWasm.Compiler.Wasm.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.ComponentModel.Tests/NetWasm.Compiler.ComponentModel.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.Browser.Tests/NetWasm.Compiler.Browser.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.Cli.Tests/NetWasm.Compiler.Cli.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.Tasks.Tests/NetWasm.Compiler.Tasks.Tests.csproj" />
     <Project Path="tests/NetWasm.Hosting.Tests/NetWasm.Hosting.Tests.csproj" />

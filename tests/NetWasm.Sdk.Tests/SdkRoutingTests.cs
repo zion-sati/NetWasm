@@ -61,7 +61,7 @@ public sealed class SdkRoutingTests
         Assert.Equal("true", project.Property("NetWasmSdkCustomGenerateNuspecOverride"));
         Assert.Equal("true", project.Property("IsPackable"));
         Assert.Equal("true", project.Property("DisableStandardFrameworkResolution"));
-        Assert.Equal("0.1.0-rc.1", project.Property("NetWasmSdkPackageVersion"));
+        Assert.Equal("0.1.0", project.Property("NetWasmSdkPackageVersion"));
         Assert.Equal("false", project.Property("CopyBuildOutputToPublishDirectory"));
         Assert.Equal("false", project.Property("CopyOutputSymbolsToPublishDirectory"));
         Assert.Equal(["custom"], project.Items("NetWasmSdkPackRoute"));

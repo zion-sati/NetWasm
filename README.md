@@ -128,6 +128,7 @@ SDK and generic VSTest bridge for `dotnet test` integration.
 
 ## Packages
 
+[![NuGet: NetWasm.Compiler.Browser](https://img.shields.io/badge/NuGet-NetWasm.Compiler.Browser-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Compiler.Browser)
 [![NuGet: NetWasm.Compiler.Tasks](https://img.shields.io/badge/NuGet-NetWasm.Compiler.Tasks-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Compiler.Tasks)
 [![NuGet: NetWasm.Hosting](https://img.shields.io/badge/NuGet-NetWasm.Hosting-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Hosting)
 [![NuGet: NetWasm.Hosting.Build](https://img.shields.io/badge/NuGet-NetWasm.Hosting.Build-004880?logo=nuget)](https://www.nuget.org/packages/NetWasm.Hosting.Build)
