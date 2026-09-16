@@ -52,6 +52,23 @@ jobs:
           "$RUNNER_TEMP/emsdk/emsdk" install 6.0.7
           "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.7
 
+      - name: Install pinned wasm-tools
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/wasm-tools-1.256.0-x86_64-linux.tar.gz"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors \
+            --output "$archive" \
+            https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-x86_64-linux.tar.gz
+          printf '%s  %s\n' \
+            '0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d' \
+            "$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/wasm-tools"
+          tar --extract --gzip --file "$archive" \
+            --directory "$RUNNER_TEMP/wasm-tools" \
+            --strip-components=1
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
+
       - name: Build and test
         shell: bash
         run: |
@@ -66,8 +83,12 @@ jobs:
       - name: Detect runtime-pack input changes
         id: runtime-pack
         shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" HEAD -- \
               eng/build-netwasm-runtime.sh \
               eng/toolchain.json \
               src/NetWasm.Runtime \
@@ -85,19 +106,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ripgrep
-          archive="$RUNNER_TEMP/wasm-tools-1.256.0-x86_64-linux.tar.gz"
-          curl --fail --silent --show-error --location \
-            --retry 3 --retry-all-errors \
-            --output "$archive" \
-            https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-x86_64-linux.tar.gz
-          printf '%s  %s\n' \
-            '0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d' \
-            "$archive" | sha256sum --check --strict
-          mkdir "$RUNNER_TEMP/wasm-tools"
-          tar --extract --gzip --file "$archive" \
-            --directory "$RUNNER_TEMP/wasm-tools" \
-            --strip-components=1
-          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
 
       - name: Verify runtime-pack drift
         if: steps.runtime-pack.outputs.changed == 'true'
