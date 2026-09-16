@@ -47,6 +47,9 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
 
     source_bytes = source_version.encode("utf-8")
     target_bytes = target_version.encode("utf-8")
+    version_token = re.compile(
+        rb"(?<![0-9.])" + re.escape(source_bytes) + rb"(?![0-9.])"
+    )
     changed_files: list[dict[str, object]] = []
     remaining_files: list[str] = []
     files = [path for path in tracked_files(source_root)
@@ -59,9 +62,9 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
         if b"\0" in contents:
             continue
 
-        replacement_count = contents.count(source_bytes)
+        replacement_count = len(version_token.findall(contents))
         if replacement_count and source_version != target_version:
-            path.write_bytes(contents.replace(source_bytes, target_bytes))
+            path.write_bytes(version_token.sub(target_bytes, contents))
             changed_files.append(
                 {
                     "path": path.relative_to(source_root).as_posix(),
@@ -76,7 +79,7 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
         if (
             source_version != target_version
             and b"\0" not in contents
-            and source_bytes in contents
+            and version_token.search(contents)
         ):
             remaining_files.append(path.relative_to(source_root).as_posix())
 

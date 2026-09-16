@@ -68,6 +68,26 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         self.assertEqual(3, receipt["replacementCount"])
         self.assertNotIn("docs/size-and-methodology.md", [item["path"] for item in receipt["changedFiles"]])
 
+    def test_stable_projection_preserves_larger_numeric_tokens(self) -> None:
+        (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("0.1.0\n")
+        (self.root / "project.txt").write_text(
+            "Package=0.1.0\nPosixRule=M10.1.0\nAssemblyVersion=0.1.0.0\n"
+        )
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "--quiet", "-m", "stable fixture"],
+            check=True,
+        )
+
+        receipt = MODULE.project_version(self.root, "0.2.0", self.root / "receipt.json")
+
+        self.assertEqual("0.2.0\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
+        self.assertEqual(
+            "Package=0.2.0\nPosixRule=M10.1.0\nAssemblyVersion=0.1.0.0\n",
+            (self.root / "project.txt").read_text(),
+        )
+        self.assertEqual(2, receipt["replacementCount"])
+
     def test_source_version_is_a_no_op(self) -> None:
         receipt_path = self.root.parent / f"{self.root.name}-receipt.json"
         receipt = MODULE.project_version(self.root, "0.1.0-rc.1", receipt_path)
