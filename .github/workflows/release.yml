@@ -111,6 +111,7 @@ jobs:
             --manifest artifacts/release-manifest.json \
             --packages artifacts/packages \
             --source-root source \
+            --allowed-signers infrastructure/eng/release-signers \
             --receipt artifacts/release-package-receipt.json
           (cd artifacts && sha256sum packages/*.nupkg > SHA256SUMS)
 
