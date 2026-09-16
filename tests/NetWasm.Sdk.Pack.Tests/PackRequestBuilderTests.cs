@@ -21,7 +21,7 @@ public sealed class PackRequestBuilderTests
                 new CanonicalPackageDependencyInput("A.Dependency", "[1.0.0]", CanonicalPackPlanBuilder.CanonicalTargetFramework)
             ]));
 
-        Assert.Equal("0.1.0", package.Version);
+        Assert.Equal("0.2.0", package.Version);
         Assert.Equal("lib/NetWasm,Version=v0.1/A.dll", package.Files[0].TargetPath);
         Assert.Equal("A.Dependency", package.DependencyGroups[0].Dependencies[0].Id);
         Assert.Equal(TargetProfile.NetWasmV01, package.Targets[0]);

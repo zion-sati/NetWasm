@@ -1,5 +1,5 @@
 <Project>
   <PropertyGroup>
-    <NetWasmCompilerTasksPackageVersion>0.1.0</NetWasmCompilerTasksPackageVersion>
+    <NetWasmCompilerTasksPackageVersion>0.2.0</NetWasmCompilerTasksPackageVersion>
   </PropertyGroup>
 </Project>

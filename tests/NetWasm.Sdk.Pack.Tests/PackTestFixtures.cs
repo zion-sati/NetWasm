@@ -36,7 +36,7 @@ internal static class PackTestFixtures
         IReadOnlyList<CanonicalPackageDependencyInput>? dependencies = null) =>
         new(
             "NetWasm.Sample",
-            "0.1.0",
+            "0.2.0",
             "NetWasm",
             "sample package",
             outputPath ?? Path.Combine(Path.GetTempPath(), "sample.nupkg"),
@@ -47,7 +47,7 @@ internal static class PackTestFixtures
     public static CanonicalPackage Package(string outputPath, ImmutableArray<CanonicalPackageFile>? files = null) =>
         new(
             "NetWasm.Sample",
-            "0.1.0",
+            "0.2.0",
             "NetWasm",
             "sample package",
             outputPath,

@@ -13,12 +13,12 @@ function descriptor(overrides = {}) {
     buildFingerprint: digest("a"),
     deploymentManifestPath: "/output/app.netwasm.deployment.json",
     deploymentManifestSha256: digest("b"),
-    hostingVersion: "0.1.0-preview.1",
+    hostingVersion: "0.2.0-preview.1",
     hostExecutablePath: "/tools/node",
     launcherPath: "/packages/hosting/tools/netwasm/hosting/launcher.mjs",
     toolPackages: [{
       id: "NetWasm.Toolchain",
-      version: "0.1.0-preview.23",
+      version: "0.2.0-preview.23",
       rootPath: "/packages/toolchain",
       sha256: digest("c"),
     }],
@@ -55,7 +55,7 @@ test("execution descriptor validator snapshots the complete descriptor", () => {
       descriptor().toolPackages[0],
       {
         id: "NetWasm.Hosting",
-        version: "0.1.0-preview.1",
+        version: "0.2.0-preview.1",
         rootPath: "/packages/hosting",
         sha256: digest("d"),
       },

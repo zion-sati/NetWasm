@@ -25,7 +25,7 @@ public sealed class WasmToolsToolchainPathResolverTests
             ToolchainPlatformAssetIds.WasmToolsClosure.ToArray(),
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
-        Assert.Equal("0.1.0-preview.29", result.PackageVersion);
+        Assert.Equal("0.2.0-preview.29", result.PackageVersion);
         Assert.Equal("1.256.0", result.WasmToolsVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(26, 7), result.NodeVersion);
@@ -57,7 +57,7 @@ public sealed class WasmToolsToolchainPathResolverTests
     {
         var splitIdentity = CreateAsset(ToolchainPlatformAssetIds.WasmToolsModule) with
         {
-            PackageVersion = "0.1.0-preview.28",
+            PackageVersion = "0.2.0-preview.28",
         };
         Assert.Throws<InvalidOperationException>(() => new WasmToolsToolchainPathResolver(
             new RecordingAssetResolver(
@@ -91,7 +91,7 @@ public sealed class WasmToolsToolchainPathResolverTests
 
     private static ResolvedPlatformAsset CreateAsset(string id) => new(
         "NetWasm.Toolchain",
-        "0.1.0-preview.29",
+        "0.2.0-preview.29",
         id,
         string.Equals(id, ToolchainPlatformAssetIds.WasmToolsCommand,
             StringComparison.Ordinal) ? "1" : "1.256.0",

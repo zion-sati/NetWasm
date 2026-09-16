@@ -7,7 +7,7 @@ public sealed class ManifestReaderTests
     [Fact]
     public void ReadsPinnedToolManifest()
     {
-        var path = WriteTemporaryFile("{\"schemaVersion\":\"1\",\"packageId\":\"NetWasm.Toolchain\",\"packageVersion\":\"0.1.0-test\",\"assets\":[{\"id\":\"binaryen-module\",\"version\":\"132.0.0\",\"relativePath\":\"tools/binaryen/index.js\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}");
+        var path = WriteTemporaryFile("{\"schemaVersion\":\"1\",\"packageId\":\"NetWasm.Toolchain\",\"packageVersion\":\"0.2.0-test\",\"assets\":[{\"id\":\"binaryen-module\",\"version\":\"132.0.0\",\"relativePath\":\"tools/binaryen/index.js\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}");
         try
         {
             IToolchainManifestReader reader = CreateToolManifestReader();
@@ -15,7 +15,7 @@ public sealed class ManifestReaderTests
 
             Assert.Equal("1", manifest.SchemaVersion);
             Assert.Equal("NetWasm.Toolchain", manifest.PackageId);
-            Assert.Equal("0.1.0-test", manifest.PackageVersion);
+            Assert.Equal("0.2.0-test", manifest.PackageVersion);
             Assert.Single(manifest.Assets);
             Assert.Equal("binaryen-module", manifest.Assets[0].Id);
         }
@@ -42,7 +42,7 @@ public sealed class ManifestReaderTests
     [Fact]
     public void ToolManifestRejectsUnknownProperties()
     {
-        var path = WriteTemporaryFile("{\"schemaVersion\":\"1\",\"packageId\":\"NetWasm.Toolchain\",\"packageVersion\":\"0.1.0-test\",\"assets\":[],\"unexpected\":true}");
+        var path = WriteTemporaryFile("{\"schemaVersion\":\"1\",\"packageId\":\"NetWasm.Toolchain\",\"packageVersion\":\"0.2.0-test\",\"assets\":[],\"unexpected\":true}");
         try
         {
             Assert.Throws<InvalidDataException>(() => new JsonToolchainManifestReader().Read(path));

@@ -6,7 +6,7 @@ import {
   createExecutionPackageVerifier,
 } from "./execution-package-verifier.mjs";
 
-const root = "/packages/netwasm.toolchain/0.1.0-preview.23";
+const root = "/packages/netwasm.toolchain/0.2.0-preview.23";
 const archivePath = `${root}/netwasm.toolchain.0.1.0-preview.23.nupkg`;
 const archive = new TextEncoder().encode("immutable-package");
 const archiveDigest = createHash("sha256").update(archive).digest("hex");
@@ -14,7 +14,7 @@ const archiveDigest = createHash("sha256").update(archive).digest("hex");
 function package_(overrides = {}) {
   return Object.freeze({
     id: "NetWasm.Toolchain",
-    version: "0.1.0-preview.23",
+    version: "0.2.0-preview.23",
     rootPath: root,
     sha256: archiveDigest,
     ...overrides,
@@ -106,7 +106,7 @@ test("execution package verifier rejects malformed descriptors", async () => {
     await assert.rejects(() => createFixture().verify(value), /descriptor is incompatible/i);
   }
   await assert.rejects(
-    () => createFixture().verify(package_({ rootPath: "/packages/other/../netwasm.toolchain/0.1.0-preview.23" })),
+    () => createFixture().verify(package_({ rootPath: "/packages/other/../netwasm.toolchain/0.2.0-preview.23" })),
     /root must be canonical/i);
 });
 

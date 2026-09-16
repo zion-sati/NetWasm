@@ -21,7 +21,7 @@ public sealed class SdkProvenanceManifestTests
         var builder = CreateBuilder<ISdkProvenanceManifestBuilder>(new SdkProvenanceManifestBuilder(reader));
         var input = new SdkProvenanceManifestInput(
             "NetWasm.Sdk",
-            "0.1.0-preview.1",
+            "0.2.0-preview.1",
             Revision,
             "provenance/NetWasm.Sdk.provenance.json",
             [

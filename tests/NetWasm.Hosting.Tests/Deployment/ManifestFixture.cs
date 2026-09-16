@@ -14,7 +14,7 @@ internal static class ManifestFixture
         "wasm32",
         "default",
         "wasi-command@0.2.11",
-        new("0.1.0-preview.1", "0.1.0-preview.1", "0.1.0-preview.1", "1.0.0", "0.1.0-preview.1", "0.1.0-preview.1"),
+        new("0.2.0-preview.1", "0.2.0-preview.1", "0.2.0-preview.1", "1.0.0", "0.2.0-preview.1", "0.2.0-preview.1"),
         new string('b', 64),
         [],
         [
@@ -36,7 +36,7 @@ internal static class ManifestFixture
         manifest.Versions.Hosting,
         Path.GetFullPath("packages/toolchain/node"),
         Path.GetFullPath("packages/hosting/launch.mjs"),
-        [new("NetWasm.Toolchain", "0.1.0-preview.1", Path.GetFullPath("packages/toolchain"), new string('e', 64))]);
+        [new("NetWasm.Toolchain", "0.2.0-preview.1", Path.GetFullPath("packages/toolchain"), new string('e', 64))]);
 
     internal static void AssertFunctionsEqual(
         ImmutableArray<DeploymentFunction> expected,

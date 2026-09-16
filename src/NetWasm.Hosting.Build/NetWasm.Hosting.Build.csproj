@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>NetWasm.Hosting.Build</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Description>Build-time composition for public NetWasm Hosting and Toolchain packages.</Description>
     <PackageTags>netwasm;hosting;msbuild;wasm</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>

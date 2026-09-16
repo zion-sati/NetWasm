@@ -29,7 +29,7 @@ public sealed class JcoToolchainPathResolverTests
             ToolchainPlatformAssetIds.JcoClosure.ToArray(),
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
-        Assert.Equal("0.1.0-preview.23", result.PackageVersion);
+        Assert.Equal("0.2.0-preview.23", result.PackageVersion);
         Assert.Equal("1.28.1", result.JcoVersion);
         Assert.Equal("0.24.1", result.Preview2ShimVersion);
         Assert.Equal(NodePath, result.NodePath);
@@ -175,11 +175,11 @@ public sealed class JcoToolchainPathResolverTests
     }
 
     [Theory]
-    [InlineData("wrong", "NetWasm.Toolchain", "0.1.0-preview.23", "1.28.1", true)]
-    [InlineData("jco.package", "", "0.1.0-preview.23", "1.28.1", true)]
+    [InlineData("wrong", "NetWasm.Toolchain", "0.2.0-preview.23", "1.28.1", true)]
+    [InlineData("jco.package", "", "0.2.0-preview.23", "1.28.1", true)]
     [InlineData("jco.package", "NetWasm.Toolchain", "", "1.28.1", true)]
-    [InlineData("jco.package", "NetWasm.Toolchain", "0.1.0-preview.23", "", true)]
-    [InlineData("jco.package", "NetWasm.Toolchain", "0.1.0-preview.23", "1.28.1", false)]
+    [InlineData("jco.package", "NetWasm.Toolchain", "0.2.0-preview.23", "", true)]
+    [InlineData("jco.package", "NetWasm.Toolchain", "0.2.0-preview.23", "1.28.1", false)]
     public void ResolveRejectsMalformedAssetProducts(
         string returnedId,
         string packageId,
@@ -206,8 +206,8 @@ public sealed class JcoToolchainPathResolverTests
     }
 
     [Theory]
-    [InlineData("Other.Toolchain", "0.1.0-preview.23")]
-    [InlineData("NetWasm.Toolchain", "0.1.0-preview.20")]
+    [InlineData("Other.Toolchain", "0.2.0-preview.23")]
+    [InlineData("NetWasm.Toolchain", "0.2.0-preview.20")]
     public void ResolveRejectsAssetsFromDifferentPackageIdentities(
         string packageId,
         string packageVersion)
@@ -277,7 +277,7 @@ public sealed class JcoToolchainPathResolverTests
         };
         return new(
             "NetWasm.Toolchain",
-            "0.1.0-preview.23",
+            "0.2.0-preview.23",
             id,
             version,
             AssetPath(id));

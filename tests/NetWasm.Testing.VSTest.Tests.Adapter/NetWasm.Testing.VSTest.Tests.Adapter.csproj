@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>NetWasm.Testing.VSTest.Tests.Adapter</PackageId>
-    <Version>0.1.0-preview.2</Version>
+    <Version>0.2.0-preview.2</Version>
     <Description>Package-only qualification adapter for the generic NetWasm VSTest bridge.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>true</IsPackable>

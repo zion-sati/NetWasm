@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "repository": "zion-sati/NetWasm",
   "repositoryUrl": "https://github.com/zion-sati/netwasm",
-  "releaseVersion": "0.1.0",
-  "releaseTag": "v0.1.0",
+  "releaseVersion": "0.2.0",
+  "releaseTag": "v0.2.0",
   "sourceCommit": "5fdc1dd7d9efa06f8e4bfc023a9340feb93a054c",
   "packages": [
     "NetWasm.Compiler.Browser",

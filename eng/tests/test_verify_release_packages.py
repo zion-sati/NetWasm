@@ -23,8 +23,8 @@ class VerifyReleasePackagesTests(unittest.TestCase):
             "schemaVersion": 1,
             "repository": "zion-sati/Example",
             "repositoryUrl": "https://github.com/zion-sati/Example",
-            "releaseVersion": "0.1.0-rc.1",
-            "releaseTag": "v0.1.0-rc.1",
+            "releaseVersion": "0.2.0-rc.1",
+            "releaseTag": "v0.2.0-rc.1",
             "sourceCommit": "a" * 40,
             "packages": ["NetWasm.Example"],
         }
@@ -36,8 +36,8 @@ class VerifyReleasePackagesTests(unittest.TestCase):
         self,
         *,
         package_id: str = "NetWasm.Example",
-        version: str = "0.1.0-rc.1",
-        dependency_version: str = "[0.1.0-rc.1]",
+        version: str = "0.2.0-rc.1",
+        dependency_version: str = "[0.2.0-rc.1]",
         repository_commit: str | None = None,
     ) -> Path:
         repository_commit = repository_commit or "a" * 40
@@ -77,7 +77,7 @@ class VerifyReleasePackagesTests(unittest.TestCase):
             MODULE.validate_packages(self.root, self.manifest)
 
     def test_rejects_unpinned_netwasm_dependency(self) -> None:
-        self.create_package(dependency_version="0.1.0-rc.1")
+        self.create_package(dependency_version="0.2.0-rc.1")
 
         with self.assertRaisesRegex(ValueError, "not pinned"):
             MODULE.validate_packages(self.root, self.manifest)

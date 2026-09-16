@@ -27,7 +27,7 @@ public sealed class HostingBundleToolchainPathResolverTests
             ToolchainPlatformAssetIds.HostingBundleClosure.ToArray(),
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
-        Assert.Equal("0.1.0-preview.24", result.PackageVersion);
+        Assert.Equal("0.2.0-preview.24", result.PackageVersion);
         Assert.Equal("1.2.4", result.RolldownVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(26, 7), result.NodeVersion);
@@ -64,7 +64,7 @@ public sealed class HostingBundleToolchainPathResolverTests
     {
         var splitIdentity = CreateAsset(ToolchainPlatformAssetIds.RolldownEntryPoint) with
         {
-            PackageVersion = "0.1.0-preview.25",
+            PackageVersion = "0.2.0-preview.25",
         };
         Assert.Throws<InvalidOperationException>(() => CreateResolver(
             ToolchainPlatformAssetIds.RolldownEntryPoint,
@@ -133,7 +133,7 @@ public sealed class HostingBundleToolchainPathResolverTests
 
     private static ResolvedPlatformAsset CreateAsset(string id) => new(
         "NetWasm.Toolchain",
-        "0.1.0-preview.24",
+        "0.2.0-preview.24",
         id,
         id is ToolchainPlatformAssetIds.RolldownPackage
             or ToolchainPlatformAssetIds.RolldownEntryPoint ? "1.2.4" : "1",

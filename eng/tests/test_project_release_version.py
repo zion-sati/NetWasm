@@ -28,9 +28,9 @@ class ProjectReleaseVersionTests(unittest.TestCase):
             check=True,
         )
         (self.root / "eng").mkdir()
-        (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("0.1.0-rc.1\n")
-        (self.root / "project.txt").write_text("Package=0.1.0-rc.1\nDependency=0.1.0-rc.1\n")
-        (self.root / "binary.dat").write_bytes(b"\0" + b"0.1.0-rc.1")
+        (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("0.2.0-rc.1\n")
+        (self.root / "project.txt").write_text("Package=0.2.0-rc.1\nDependency=0.2.0-rc.1\n")
+        (self.root / "binary.dat").write_bytes(b"\0" + b"0.2.0-rc.1")
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         subprocess.run(["git", "-C", str(self.root), "commit", "--quiet", "-m", "fixture"], check=True)
 
@@ -39,11 +39,11 @@ class ProjectReleaseVersionTests(unittest.TestCase):
 
     def test_projects_all_tracked_text_and_records_receipt(self) -> None:
         receipt_path = self.root.parent / f"{self.root.name}-receipt.json"
-        receipt = MODULE.project_version(self.root, "0.1.0-alpha.1", receipt_path)
+        receipt = MODULE.project_version(self.root, "0.2.0-alpha.1", receipt_path)
 
-        self.assertEqual("0.1.0-alpha.1\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
-        self.assertNotIn("0.1.0-rc.1", (self.root / "project.txt").read_text())
-        self.assertEqual(b"\0" + b"0.1.0-rc.1", (self.root / "binary.dat").read_bytes())
+        self.assertEqual("0.2.0-alpha.1\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
+        self.assertNotIn("0.2.0-rc.1", (self.root / "project.txt").read_text())
+        self.assertEqual(b"\0" + b"0.2.0-rc.1", (self.root / "binary.dat").read_bytes())
         self.assertEqual(3, receipt["replacementCount"])
         self.assertEqual(receipt, json.loads(receipt_path.read_text()))
         receipt_path.unlink()
@@ -55,16 +55,16 @@ class ProjectReleaseVersionTests(unittest.TestCase):
     def test_stable_projection_preserves_pinned_measurement_evidence(self) -> None:
         measurement = self.root / "docs/size-and-methodology.md"
         measurement.parent.mkdir()
-        measurement.write_text("Measured with 0.1.0-rc.1; reproduce using 0.1.0-rc.1.\n")
+        measurement.write_text("Measured with 0.2.0-rc.1; reproduce using 0.2.0-rc.1.\n")
         subprocess.run(["git", "-C", str(self.root), "add", "docs"], check=True)
         subprocess.run(["git", "-C", str(self.root), "commit", "--quiet", "-m", "measurement"], check=True)
         original = measurement.read_bytes()
 
-        receipt = MODULE.project_version(self.root, "0.1.0", self.root / "receipt.json")
+        receipt = MODULE.project_version(self.root, "0.2.0", self.root / "receipt.json")
 
         self.assertEqual(original, measurement.read_bytes())
-        self.assertEqual("0.1.0\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
-        self.assertEqual("Package=0.1.0\nDependency=0.1.0\n", (self.root / "project.txt").read_text())
+        self.assertEqual("0.2.0\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
+        self.assertEqual("Package=0.2.0\nDependency=0.2.0\n", (self.root / "project.txt").read_text())
         self.assertEqual(3, receipt["replacementCount"])
         self.assertNotIn("docs/size-and-methodology.md", [item["path"] for item in receipt["changedFiles"]])
 
@@ -90,7 +90,7 @@ class ProjectReleaseVersionTests(unittest.TestCase):
 
     def test_source_version_is_a_no_op(self) -> None:
         receipt_path = self.root.parent / f"{self.root.name}-receipt.json"
-        receipt = MODULE.project_version(self.root, "0.1.0-rc.1", receipt_path)
+        receipt = MODULE.project_version(self.root, "0.2.0-rc.1", receipt_path)
 
         self.assertEqual([], receipt["changedFiles"])
         self.assertEqual(0, receipt["replacementCount"])

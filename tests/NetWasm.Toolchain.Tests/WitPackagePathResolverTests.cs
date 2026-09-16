@@ -22,7 +22,7 @@ public sealed class WitPackagePathResolverTests
             ToolchainPlatformAssetIds.WitPackageClosure.ToArray(),
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
-        Assert.Equal("0.1.0-preview.29", result.PackageVersion);
+        Assert.Equal("0.2.0-preview.29", result.PackageVersion);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.WitCommandPackage),
             result.CommandPath);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.WitAsyncCommandPackage),
@@ -47,7 +47,7 @@ public sealed class WitPackagePathResolverTests
                 ToolchainPlatformAssetIds.WitCompilerPackage,
                 CreateAsset(ToolchainPlatformAssetIds.WitCompilerPackage) with
                 {
-                    PackageVersion = "0.1.0-preview.28",
+                    PackageVersion = "0.2.0-preview.28",
                 })).Resolve());
     }
 
@@ -57,7 +57,7 @@ public sealed class WitPackagePathResolverTests
 
     private static ResolvedPlatformAsset CreateAsset(string id) => new(
         "NetWasm.Toolchain",
-        "0.1.0-preview.29",
+        "0.2.0-preview.29",
         id,
         id switch
         {
