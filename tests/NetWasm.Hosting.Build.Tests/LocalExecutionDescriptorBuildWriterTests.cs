@@ -33,10 +33,10 @@ public sealed class LocalExecutionDescriptorBuildWriterTests
             new string('a', 64),
             manifest,
             new string('b', 64),
-            "0.2.0-preview.1",
+            "0.1.0-preview.1",
             node,
             launcher,
-            [new("NetWasm.Toolchain", "0.2.0-preview.24", packageRoot, archive)]));
+            [new("NetWasm.Toolchain", "0.1.0-preview.24", packageRoot, archive)]));
 
         var descriptor = new ExecutionDescriptorReader(new ExecutionDescriptorValidator())
             .Read(File.ReadAllBytes(output));

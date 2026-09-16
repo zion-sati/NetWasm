@@ -19,6 +19,24 @@ VERSION_PATTERN = re.compile(
 VERSION_FILE = Path("eng/NetWasm.ReleaseVersion.txt")
 # Measurements bind their original package identity, not the next release.
 HISTORICAL_FILES = {Path("docs/size-and-methodology.md")}
+RELEASE_VERSION_FILES = {
+    Path("eng/NetWasm.PackageVersions.props"),
+    Path("eng/NetWasm.ReleaseVersion.txt"),
+    Path("global.json"),
+    Path("src/NetWasm.Sdk/Sdk/NetWasm.Sdk.Tfm.props"),
+    Path("src/NetWasm.Sdk/Sdk/Sdk.props"),
+    Path("src/NetWasm.Templates/content/NetWasm.App/global.json"),
+    Path("src/NetWasm.Templates/content/NetWasm.Library/global.json"),
+    Path("src/NetWasm.Toolchain/toolchain-manifest.json"),
+}
+
+
+def projects_release_version(relative_path: Path) -> bool:
+    return relative_path in RELEASE_VERSION_FILES or (
+        relative_path.suffix == ".csproj"
+        and relative_path.parts
+        and relative_path.parts[0] in {"src", "tests", "tools"}
+    )
 
 
 def run_git(source_root: Path, *arguments: str) -> bytes:
@@ -52,8 +70,12 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
     )
     changed_files: list[dict[str, object]] = []
     remaining_files: list[str] = []
-    files = [path for path in tracked_files(source_root)
-             if path.relative_to(source_root) not in HISTORICAL_FILES]
+    files = [
+        path
+        for path in tracked_files(source_root)
+        if path.relative_to(source_root) not in HISTORICAL_FILES
+        and projects_release_version(path.relative_to(source_root))
+    ]
 
     for path in files:
         if path.is_symlink():
@@ -76,10 +98,11 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
         if path.is_symlink():
             continue
         contents = path.read_bytes()
+        remaining_contents = contents.replace(target_bytes, b"")
         if (
             source_version != target_version
             and b"\0" not in contents
-            and version_token.search(contents)
+            and version_token.search(remaining_contents)
         ):
             remaining_files.append(path.relative_to(source_root).as_posix())
 

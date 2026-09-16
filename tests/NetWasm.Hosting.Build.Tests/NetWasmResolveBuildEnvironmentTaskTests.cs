@@ -33,7 +33,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal(PathFor("wasm-ld"), task.WasmLdPath);
         Assert.Equal("24.0.0", task.WasmLdVersion);
         Assert.Equal("NetWasm.Toolchain", task.ToolchainPackageId);
-        Assert.Equal("0.2.0-preview.29", task.ToolchainPackageVersion);
+        Assert.Equal("0.1.0-preview.29", task.ToolchainPackageVersion);
         Assert.Equal(PathFor("command.wit.wasm"), task.CommandWitPackagePath);
         Assert.Equal(PathFor("async-command.wit.wasm"),
             task.AsyncCommandWitPackagePath);
@@ -94,18 +94,18 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
             new(HostToolIds.WasmLd, new Version(24, 0, 0), []),
             new(
                 "NetWasm.Toolchain",
-                "0.2.0-preview.29",
+                "0.1.0-preview.29",
                 PathFor("toolchain-manifest.json"),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.29",
+                    "0.1.0-preview.29",
                     PathFor("command.wit.wasm"),
                     PathFor("async-command.wit.wasm"),
                     PathFor("compiler.wit.wasm")),
                 PathFor("preview2-shim"),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.29",
+                    "0.1.0-preview.29",
                     "1.256.0",
                     node.AbsolutePath,
                     nodeCompatibility.Version,
@@ -117,7 +117,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                     PathFor("wasm-tools-readme")),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.29",
+                    "0.1.0-preview.29",
                     node.AbsolutePath,
                     nodeCompatibility.Version,
                     PathFor("inspect.mjs"),
@@ -126,7 +126,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                     PathFor("wasm-merge")),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.29",
+                    "0.1.0-preview.29",
                     "1.28.1",
                     "0.24.1",
                     node.AbsolutePath,
@@ -138,7 +138,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                     PathFor("jco-policy")),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.29",
+                    "0.1.0-preview.29",
                     "1.2.4",
                     node.AbsolutePath,
                     nodeCompatibility.Version,

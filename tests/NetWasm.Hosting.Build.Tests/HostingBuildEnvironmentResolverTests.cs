@@ -74,7 +74,7 @@ public sealed class HostingBuildEnvironmentResolverTests
         Assert.Equal(Root, packagePaths.PackageRoot);
         Assert.Equal(HostToolIds.Node, packagePaths.Node?.ToolId);
         Assert.Equal(new Version(50, 1), packagePaths.NodeCompatibility?.Version);
-        Assert.Equal("0.2.0-preview.24", result.Toolchain.PackageVersion);
+        Assert.Equal("0.1.0-preview.24", result.Toolchain.PackageVersion);
         Assert.Equal(Path.Combine(Root, "node"), result.Node.AbsolutePath);
         Assert.Equal(Path.Combine(Root, "wasm-ld"), result.WasmLd.AbsolutePath);
         Assert.Equal("1.256.0", result.Toolchain.WasmTools.WasmToolsVersion);
@@ -177,18 +177,18 @@ public sealed class HostingBuildEnvironmentResolverTests
             NodeCompatibility = nodeCompatibility;
             return new(
                 "NetWasm.Toolchain",
-                "0.2.0-preview.24",
+                "0.1.0-preview.24",
                 Path.Combine(packageRoot, "tools", "toolchain-manifest.json"),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.24",
+                    "0.1.0-preview.24",
                     Path.Combine(packageRoot, "tools", "wit-packages", "command.wit.wasm"),
                     Path.Combine(packageRoot, "tools", "wit-packages", "async-command.wit.wasm"),
                     Path.Combine(packageRoot, "tools", "wit-packages", "compiler.wit.wasm")),
                 Path.Combine(packageRoot, "tools", "jco", "node_modules", "@bytecodealliance", "preview2-shim"),
                 new(
                     "NetWasm.Toolchain",
-                    "0.2.0-preview.24",
+                    "0.1.0-preview.24",
                     "1.256.0",
                     node.AbsolutePath,
                     nodeCompatibility.Version,
@@ -198,11 +198,11 @@ public sealed class HostingBuildEnvironmentResolverTests
                     Path.Combine(packageRoot, "tools", "wasm-tools", "LICENSE-Apache-2.0_WITH_LLVM-exception"),
                     Path.Combine(packageRoot, "tools", "wasm-tools", "LICENSE-MIT"),
                     Path.Combine(packageRoot, "tools", "wasm-tools", "README.md")),
-                new("NetWasm.Toolchain", "0.2.0-preview.24", node.AbsolutePath,
+                new("NetWasm.Toolchain", "0.1.0-preview.24", node.AbsolutePath,
                     nodeCompatibility.Version, "inspect", "binaryen", "wasm-opt", "wasm-merge"),
-                new("NetWasm.Toolchain", "0.2.0-preview.24", "1.28.1", "0.24.1",
+                new("NetWasm.Toolchain", "0.1.0-preview.24", "1.28.1", "0.24.1",
                     node.AbsolutePath, nodeCompatibility.Version, "jco", "lock", "integrity", "notices", "policy"),
-                new("NetWasm.Toolchain", "0.2.0-preview.24", "1.2.4",
+                new("NetWasm.Toolchain", "0.1.0-preview.24", "1.2.4",
                     node.AbsolutePath, nodeCompatibility.Version, "bundle", "rolldown", "lock", "integrity", "notices", "policy"));
         }
     }

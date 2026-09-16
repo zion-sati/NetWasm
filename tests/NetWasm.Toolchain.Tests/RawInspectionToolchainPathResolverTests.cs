@@ -24,7 +24,7 @@ public sealed class RawInspectionToolchainPathResolverTests
             ToolchainPlatformAssetIds.RawInspectionClosure.ToArray(),
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
-        Assert.Equal("0.2.0-preview.23", result.PackageVersion);
+        Assert.Equal("0.1.0-preview.23", result.PackageVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(26, 8, 1), result.NodeVersion);
         Assert.Equal(AssetPath(ToolchainPlatformAssetIds.RawInspectionCommand),
@@ -125,11 +125,11 @@ public sealed class RawInspectionToolchainPathResolverTests
     }
 
     [Theory]
-    [InlineData("wrong", "NetWasm.Toolchain", "0.2.0-preview.23", "132.0.0", true)]
-    [InlineData("binaryen.module", "", "0.2.0-preview.23", "132.0.0", true)]
+    [InlineData("wrong", "NetWasm.Toolchain", "0.1.0-preview.23", "132.0.0", true)]
+    [InlineData("binaryen.module", "", "0.1.0-preview.23", "132.0.0", true)]
     [InlineData("binaryen.module", "NetWasm.Toolchain", "", "132.0.0", true)]
-    [InlineData("binaryen.module", "NetWasm.Toolchain", "0.2.0-preview.23", "", true)]
-    [InlineData("binaryen.module", "NetWasm.Toolchain", "0.2.0-preview.23", "132.0.0", false)]
+    [InlineData("binaryen.module", "NetWasm.Toolchain", "0.1.0-preview.23", "", true)]
+    [InlineData("binaryen.module", "NetWasm.Toolchain", "0.1.0-preview.23", "132.0.0", false)]
     public void ResolveRejectsMalformedAssetProduct(
         string returnedId,
         string packageId,
@@ -152,8 +152,8 @@ public sealed class RawInspectionToolchainPathResolverTests
     }
 
     [Theory]
-    [InlineData("Other.Toolchain", "0.2.0-preview.23")]
-    [InlineData("NetWasm.Toolchain", "0.2.0-preview.20")]
+    [InlineData("Other.Toolchain", "0.1.0-preview.23")]
+    [InlineData("NetWasm.Toolchain", "0.1.0-preview.20")]
     public void ResolveRejectsAssetsFromDifferentPackageIdentities(
         string packageId,
         string packageVersion)
@@ -183,7 +183,7 @@ public sealed class RawInspectionToolchainPathResolverTests
 
     private static ResolvedPlatformAsset CreateAsset(string id) => new(
         "NetWasm.Toolchain",
-        "0.2.0-preview.23",
+        "0.1.0-preview.23",
         id,
         id.StartsWith("binaryen.", StringComparison.Ordinal) ? "132.0.0" : "1",
         AssetPath(id));

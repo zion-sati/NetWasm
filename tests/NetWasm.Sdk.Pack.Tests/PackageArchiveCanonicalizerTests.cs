@@ -20,7 +20,7 @@ public sealed class PackageArchiveCanonicalizerTests
         {
             EntryTimestamp = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000)
         };
-        var identity = new PackageIdentity("NetWasm.Sample", "0.2.0");
+        var identity = new PackageIdentity("NetWasm.Sample", "0.1.0");
         var first = canonicalizer.Canonicalize(new PackageArchiveNormalizationRequest(input, firstPath, identity, policy));
 
         WriteStockLikeArchive(input, corePropertiesName: "random-two.psmdcp", relationshipId: "RANDOM-TWO");
@@ -55,12 +55,12 @@ public sealed class PackageArchiveCanonicalizerTests
         var result = CreateCanonicalizer().Canonicalize(new PackageArchiveNormalizationRequest(
             input,
             output,
-            new PackageIdentity("NetWasm.Sample", "0.2.0"),
+            new PackageIdentity("NetWasm.Sample", "0.1.0"),
             DeterminismPolicy.Default));
 
         Assert.Equal(output, result.Path);
         Assert.Equal("NetWasm.Sample", result.Identity.Id);
-        Assert.Equal("0.2.0", result.Identity.Version);
+        Assert.Equal("0.1.0", result.Identity.Version);
         using var archive = ZipFile.OpenRead(output);
         Assert.Equal([1, 2, 3], ReadEntry(archive, "lib/NetWasm,Version=v0.1/Sample.dll"));
         Assert.Equal([7, 8, 9], ReadEntry(archive, "symbols/NetWasm.Sample.pdb"));
@@ -76,14 +76,14 @@ public sealed class PackageArchiveCanonicalizerTests
             BuildEngine = new PackTestFixtures.RecordingBuildEngine(),
             PackagePath = "/tmp/NetWasm.Sample.0.1.0.nupkg",
             PackageId = "NetWasm.Sample",
-            PackageVersion = "0.2.0",
+            PackageVersion = "0.1.0",
             SourceDateEpoch = "1700000000"
         };
 
         Assert.True(task.Execute());
         Assert.NotNull(canonicalizer.Request);
         Assert.Equal("/tmp/NetWasm.Sample.0.1.0.nupkg", canonicalizer.Request.InputPath);
-        Assert.Equal(new PackageIdentity("NetWasm.Sample", "0.2.0"), canonicalizer.Request.Identity);
+        Assert.Equal(new PackageIdentity("NetWasm.Sample", "0.1.0"), canonicalizer.Request.Identity);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), canonicalizer.Request.Policy.EntryTimestamp);
     }
 
@@ -96,7 +96,7 @@ public sealed class PackageArchiveCanonicalizerTests
             BuildEngine = new PackTestFixtures.RecordingBuildEngine(),
             PackagePath = "/tmp/NetWasm.Sample.0.1.0.nupkg",
             PackageId = "NetWasm.Sample",
-            PackageVersion = "0.2.0"
+            PackageVersion = "0.1.0"
         };
 
         Assert.True(task.Execute());

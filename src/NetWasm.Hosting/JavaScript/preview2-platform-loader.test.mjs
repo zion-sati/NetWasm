@@ -17,7 +17,7 @@ const digest = character => character.repeat(64);
 function toolPackage(overrides = {}) {
   return Object.freeze({
     id: "NetWasm.Toolchain",
-    version: "0.2.0-preview.23",
+    version: "0.1.0-preview.23",
     rootPath: root,
     sha256: digest("a"),
     ...overrides,
@@ -95,7 +95,7 @@ function createFixture(overrides = {}) {
   const manifestBytes = encode(Object.hasOwn(overrides, "manifest") ? overrides.manifest : {
     schemaVersion: "1",
     packageId: "NetWasm.Toolchain",
-    packageVersion: "0.2.0-preview.23",
+    packageVersion: "0.1.0-preview.23",
     assets,
   });
   const files = new Map([
@@ -231,11 +231,11 @@ test("Preview 2 platform loader requires a valid physical package root", async (
 test("Preview 2 platform loader validates manifest identity and exact assets", async () => {
   for (const manifest of [
     null,
-    { schemaVersion: "1", packageId: "NetWasm.Toolchain", packageVersion: "0.2.0-preview.23", assets: [], extra: true },
-    { schemaVersion: "2", packageId: "NetWasm.Toolchain", packageVersion: "0.2.0-preview.23", assets: [{}] },
-    { schemaVersion: "1", packageId: "Other", packageVersion: "0.2.0-preview.23", assets: [{}] },
+    { schemaVersion: "1", packageId: "NetWasm.Toolchain", packageVersion: "0.1.0-preview.23", assets: [], extra: true },
+    { schemaVersion: "2", packageId: "NetWasm.Toolchain", packageVersion: "0.1.0-preview.23", assets: [{}] },
+    { schemaVersion: "1", packageId: "Other", packageVersion: "0.1.0-preview.23", assets: [{}] },
     { schemaVersion: "1", packageId: "NetWasm.Toolchain", packageVersion: "other", assets: [{}] },
-    { schemaVersion: "1", packageId: "NetWasm.Toolchain", packageVersion: "0.2.0-preview.23", assets: [] },
+    { schemaVersion: "1", packageId: "NetWasm.Toolchain", packageVersion: "0.1.0-preview.23", assets: [] },
   ]) {
     const pattern = manifest === null ? /manifest is invalid/i
       : Object.hasOwn(manifest, "extra") ? /manifest shape/i

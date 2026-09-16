@@ -49,29 +49,35 @@ def git(source_root: Path, *arguments: str) -> str:
 
 
 def verify_source(
-    source_root: Path, manifest: dict[str, object], allowed_signers: Path
+    source_root: Path,
+    manifest: dict[str, object],
+    allowed_signers: Path | None = None,
 ) -> None:
     source_commit = str(manifest["sourceCommit"])
     release_tag = str(manifest["releaseTag"])
     if git(source_root, "rev-parse", "HEAD") != source_commit:
         raise ValueError("Checked-out source does not match the release manifest commit.")
     tag_ref = f"refs/tags/{release_tag}"
-    if git(source_root, "cat-file", "-t", tag_ref) != "tag":
-        raise ValueError("Release tag must be an annotated signed tag.")
+    tag_type = git(source_root, "cat-file", "-t", tag_ref)
+    if tag_type not in {"commit", "tag"}:
+        raise ValueError("Release tag does not identify a commit or annotated tag.")
     if git(source_root, "rev-parse", f"{tag_ref}^{{commit}}") != source_commit:
         raise ValueError("Release tag does not peel to the release manifest commit.")
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(source_root),
-            "-c",
-            f"gpg.ssh.allowedSignersFile={allowed_signers.resolve()}",
-            "verify-tag",
-            release_tag,
-        ],
-        check=True,
-    )
+    if allowed_signers is not None:
+        if tag_type != "tag":
+            raise ValueError("Release tag must be an annotated signed tag.")
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(source_root),
+                "-c",
+                f"gpg.ssh.allowedSignersFile={allowed_signers.resolve()}",
+                "verify-tag",
+                release_tag,
+            ],
+            check=True,
+        )
 
 
 def element(parent: ElementTree.Element, name: str) -> ElementTree.Element:
@@ -217,9 +223,9 @@ def main() -> int:
     arguments = parser.parse_args()
 
     manifest = read_manifest(arguments.manifest)
-    if (arguments.source_root is None) != (arguments.allowed_signers is None):
-        parser.error("--source-root and --allowed-signers must be supplied together")
-    if arguments.source_root is not None and arguments.allowed_signers is not None:
+    if arguments.allowed_signers is not None and arguments.source_root is None:
+        parser.error("--allowed-signers requires --source-root")
+    if arguments.source_root is not None:
         verify_source(arguments.source_root, manifest, arguments.allowed_signers)
     packages = validate_packages(arguments.packages, manifest)
     if arguments.require_absent_on_nuget:

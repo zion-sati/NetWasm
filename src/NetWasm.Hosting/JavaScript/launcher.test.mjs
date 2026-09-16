@@ -59,7 +59,7 @@ test("package launcher executes a raw deployment and isolates its result channel
   const root = await mkdtemp(join(tmpdir(), "netwasm-launcher-"));
   try {
     const deploymentRoot = join(root, "deployment");
-    const packageRoot = join(root, "packages", "netwasm.toolchain", "0.2.0-preview.23");
+    const packageRoot = join(root, "packages", "netwasm.toolchain", "0.1.0-preview.23");
     await Promise.all([mkdir(deploymentRoot, { recursive: true }), mkdir(packageRoot, { recursive: true })]);
     const package_ = toolchainPackageRoot === undefined
       ? await writeToolchainPackage(packageRoot)
@@ -176,7 +176,7 @@ export function createFilesystem() {
   const manifestBytes = encoder.encode(JSON.stringify({
     schemaVersion: "1",
     packageId: "NetWasm.Toolchain",
-    packageVersion: "0.2.0-preview.23",
+    packageVersion: "0.1.0-preview.23",
     assets: [
       assetDescriptor("jco.closure-integrity", "1", "tools/jco/closure-integrity.json", closureBytes),
       assetDescriptor("jco.closure-policy", "1", "tools/jco/closure-policy.json", policyBytes),
@@ -200,14 +200,14 @@ export function createFilesystem() {
   }));
   return {
     id: "NetWasm.Toolchain",
-    version: "0.2.0-preview.23",
+    version: "0.1.0-preview.23",
     rootPath: packageRoot,
     sha256: sha256(archiveBytes),
   };
 }
 
 async function describeToolchainPackage(packageRoot) {
-  const version = "0.2.0-preview.23";
+  const version = "0.1.0-preview.23";
   const archiveBytes = await readFile(join(
     packageRoot,
     `netwasm.toolchain.${version}.nupkg`));

@@ -4,7 +4,7 @@
     <AssemblyName>NetWasm.Toolchain</AssemblyName>
     <RootNamespace>NetWasm.Toolchain</RootNamespace>
     <PackageId>NetWasm.Toolchain</PackageId>
-    <Version>0.2.0</Version>
+    <Version>0.1.0</Version>
     <Description>Platform-neutral, integrity-verified NetWasm toolchain assets.</Description>
     <PackageTags>netwasm;toolchain;wasm;binaryen;wasi;wit</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>

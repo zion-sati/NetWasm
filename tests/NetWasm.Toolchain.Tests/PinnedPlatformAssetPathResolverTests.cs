@@ -23,7 +23,7 @@ public sealed class PinnedPlatformAssetPathResolverTests
         var result = resolver.Resolve("binaryen-module");
 
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
-        Assert.Equal("0.2.0-preview.23", result.PackageVersion);
+        Assert.Equal("0.1.0-preview.23", result.PackageVersion);
         Assert.Equal("binaryen-module", result.Id);
         Assert.Equal("132.0.0", result.Version);
         Assert.Equal(AssetPath, result.AbsolutePath);
@@ -115,7 +115,7 @@ public sealed class PinnedPlatformAssetPathResolverTests
     }
 
     [Theory]
-    [InlineData("", "0.2.0-preview.23")]
+    [InlineData("", "0.1.0-preview.23")]
     [InlineData("NetWasm.Toolchain", "")]
     public void ConstructorRejectsBlankPackageIdentity(string packageId, string packageVersion)
     {
@@ -279,7 +279,7 @@ public sealed class PinnedPlatformAssetPathResolverTests
         {
             SchemaVersion = "1",
             PackageId = "NetWasm.Toolchain",
-            PackageVersion = "0.2.0-preview.23",
+            PackageVersion = "0.1.0-preview.23",
             Assets = ImmutableArray.Create(descriptor ?? CreateDescriptor()),
         };
 
