@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.Immutable;
 using NetWasm.Runtime.Pack.Materialization;
 using NetWasm.Runtime.Pack.Planning;
 using NetWasm.Runtime.Pack.Tests.TestSupport;
@@ -14,9 +15,13 @@ public sealed class RuntimeLinkPlannerTests
     {
         var manifest = RuntimePackTestData.Manifest();
         var target = manifest.Targets.Single(item => item.Target == targetName);
-        var request = new RuntimeLinkPlanRequest(JsonSerializer.Serialize(manifest), targetName, 948);
+        var systemLibraries = SystemLibraries(target);
+        var request = new RuntimeLinkPlanRequest(
+            JsonSerializer.Serialize(manifest), targetName, 948, SystemLibraries: systemLibraries);
         var layout = new RuntimeMemoryLayoutCalculator().Calculate(new(target, manifest.WasmPageSize, 948, null, null));
-        var native = new RuntimeLinkArgumentBuilder().Build(new(manifest, target, layout, request.AssetRoot, request.OutputPath)).ToArray();
+        var native = new RuntimeLinkArgumentBuilder().Build(new(
+            manifest, target, layout, request.AssetRoot,
+            systemLibraries.Select(asset => asset.Path).ToImmutableArray(), request.OutputPath)).ToArray();
 
         var actual = RuntimeLinkPlanner.Plan(request);
 
@@ -30,15 +35,17 @@ public sealed class RuntimeLinkPlannerTests
         Assert.Equal(manifest.RuntimeAbi, actual.RuntimeAbi);
         Assert.Equal(manifest.Provenance.ToolchainFingerprint, actual.ToolchainFingerprint);
         Assert.Equal(target.RuntimeArchive.Sha256, actual.Inputs[0].Sha256);
-        Assert.All(actual.Inputs, asset => Assert.StartsWith("/runtime/", asset.Path));
+        Assert.All(actual.Inputs, asset => Assert.StartsWith("/", asset.Path));
     }
 
     [Fact]
     public void RecalculatesMemoryFromEachApplicationStaticEnd()
     {
         var manifest = JsonSerializer.Serialize(RuntimePackTestData.Manifest());
-        var small = RuntimeLinkPlanner.Plan(new(manifest, "wasm32", 948));
-        var large = RuntimeLinkPlanner.Plan(new(manifest, "wasm32", 200_000));
+        var target = RuntimePackTestData.Target("wasm32");
+        var libraries = SystemLibraries(target);
+        var small = RuntimeLinkPlanner.Plan(new(manifest, "wasm32", 948, SystemLibraries: libraries));
+        var large = RuntimeLinkPlanner.Plan(new(manifest, "wasm32", 200_000, SystemLibraries: libraries));
         Assert.True(large.RuntimeGlobalBase > small.RuntimeGlobalBase);
         Assert.True(large.InitialMemorySizeBytes > small.InitialMemorySizeBytes);
         Assert.NotEqual(small.Arguments, large.Arguments);
@@ -51,8 +58,9 @@ public sealed class RuntimeLinkPlannerTests
     public void RejectsUnsafeVirtualPaths(string path)
     {
         var json = JsonSerializer.Serialize(RuntimePackTestData.Manifest());
-        Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(new(json, "wasm32", 948, AssetRoot: path)));
-        Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(new(json, "wasm32", 948, OutputPath: path)));
+        var libraries = SystemLibraries(RuntimePackTestData.Target("wasm32"));
+        Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(new(json, "wasm32", 948, AssetRoot: path, SystemLibraries: libraries)));
+        Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(new(json, "wasm32", 948, OutputPath: path, SystemLibraries: libraries)));
     }
 
     [Fact]
@@ -61,6 +69,12 @@ public sealed class RuntimeLinkPlannerTests
         var json = JsonSerializer.Serialize(RuntimePackTestData.Manifest());
         Assert.Throws<InvalidOperationException>(() => RuntimeLinkPlanner.Plan(new(json, "unsupported", 948)));
         Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(new(json, "wasm32", 948,
-            OutputPath: "/runtime/wasm32/libnetwasm-runtime.a")));
+            OutputPath: "/runtime/wasm32/libnetwasm-runtime.a",
+            SystemLibraries: SystemLibraries(RuntimePackTestData.Target("wasm32")))));
     }
+
+    private static ImmutableArray<RuntimeLinkPlanAsset> SystemLibraries(RuntimePackTarget target) =>
+        target.SystemLibraries.Names
+            .Select(name => new RuntimeLinkPlanAsset($"/emscripten/{name}", RuntimePackTestData.Digest))
+            .ToImmutableArray();
 }

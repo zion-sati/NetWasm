@@ -27,7 +27,7 @@
     <None Include="README.md"
           Pack="true"
           PackagePath="README.md" />
-    <None Include="runtime/**/*.a"
+    <None Include="runtime/*/libnetwasm-runtime.a"
           Pack="true"
           PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="runtime/runtime-pack.json"

@@ -24,11 +24,32 @@ public static class RuntimeLinkPlanner
         var layout = new RuntimeMemoryLayoutCalculator().Calculate(new(
             target, manifest.WasmPageSize, request.ApplicationStaticDataEnd,
             request.InitialHeapSizeBytes, request.MaximumMemorySizeBytes));
-        var link = new RuntimeLinkRequest(manifest, target, layout, request.AssetRoot, request.OutputPath);
+        if (request.SystemLibraries.IsDefault ||
+            request.SystemLibraries.Length != target.SystemLibraries.Names.Length)
+        {
+            throw new InvalidOperationException("The resolved Emscripten system-library closure is incomplete.");
+        }
+
+        for (var index = 0; index < request.SystemLibraries.Length; index++)
+        {
+            ValidateVirtualPath(request.SystemLibraries[index].Path);
+            if (!request.SystemLibraries[index].Path.EndsWith(
+                    "/" + target.SystemLibraries.Names[index], StringComparison.Ordinal) ||
+                request.SystemLibraries[index].Sha256.Length != 64 ||
+                !request.SystemLibraries[index].Sha256.All(Uri.IsHexDigit))
+            {
+                throw new InvalidOperationException("The resolved Emscripten system-library closure is invalid.");
+            }
+        }
+
+        var systemLibraryPaths = request.SystemLibraries.Select(asset => asset.Path).ToImmutableArray();
+        var link = new RuntimeLinkRequest(
+            manifest, target, layout, request.AssetRoot, systemLibraryPaths, request.OutputPath);
         var arguments = new RuntimeLinkArgumentBuilder().Build(link);
-        var assets = ImmutableArray.Create(target.RuntimeArchive).AddRange(target.LinkInputs);
-        var inputs = assets.Select(asset => new RuntimeLinkPlanAsset(
-            request.AssetRoot.TrimEnd('/') + "/" + asset.Path.Replace('\\', '/'), asset.Sha256)).ToImmutableArray();
+        var runtimeInput = new RuntimeLinkPlanAsset(
+            request.AssetRoot.TrimEnd('/') + "/" + target.RuntimeArchive.Path.Replace('\\', '/'),
+            target.RuntimeArchive.Sha256);
+        var inputs = ImmutableArray.Create(runtimeInput).AddRange(request.SystemLibraries);
         if (inputs.Any(asset => asset.Path == request.OutputPath))
         {
             throw new ArgumentException("The runtime output cannot overwrite a runtime input.", nameof(request));
@@ -37,9 +58,10 @@ public static class RuntimeLinkPlanner
         // The existing builder canonicalizes paths using the host platform.
         // Map only those path values back to MEMFS names; every flag/order is unchanged.
         var paths = new Dictionary<string, string>(StringComparer.Ordinal);
-        for (var index = 0; index < assets.Length; index++)
+        paths[Path.GetFullPath(Path.Combine(Path.GetFullPath(request.AssetRoot), target.RuntimeArchive.Path))] = runtimeInput.Path;
+        foreach (var systemLibrary in request.SystemLibraries)
         {
-            paths[Path.GetFullPath(Path.Combine(Path.GetFullPath(request.AssetRoot), assets[index].Path))] = inputs[index].Path;
+            paths[Path.GetFullPath(systemLibrary.Path)] = systemLibrary.Path;
         }
         paths[Path.GetFullPath(request.OutputPath)] = request.OutputPath;
         var virtualArguments = arguments.Select(argument => paths.TryGetValue(argument, out var path) ? path : argument)

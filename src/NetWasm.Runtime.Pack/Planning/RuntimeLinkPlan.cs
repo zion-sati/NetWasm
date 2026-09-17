@@ -9,7 +9,8 @@ public sealed record RuntimeLinkPlanRequest(
     string AssetRoot = "/runtime",
     string OutputPath = "/runtime-linked.wasm",
     long? InitialHeapSizeBytes = null,
-    long? MaximumMemorySizeBytes = null);
+    long? MaximumMemorySizeBytes = null,
+    ImmutableArray<RuntimeLinkPlanAsset> SystemLibraries = default);
 
 public sealed record RuntimeLinkPlanAsset(string Path, string Sha256);
 

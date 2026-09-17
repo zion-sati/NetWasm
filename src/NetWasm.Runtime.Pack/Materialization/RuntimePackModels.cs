@@ -5,6 +5,7 @@ namespace NetWasm.Runtime.Pack.Materialization;
 internal sealed record RuntimePackManifest(
     int SchemaVersion,
     string RuntimeAbi,
+    string EmscriptenVersion,
     long WasmPageSize,
     ImmutableArray<string> Exports,
     RuntimePackProvenance Provenance,
@@ -28,7 +29,11 @@ internal sealed record RuntimePackTarget(
     long DefaultMaximumMemorySizeBytes,
     long MaximumMemorySizeBytes,
     RuntimePackAsset RuntimeArchive,
-    ImmutableArray<RuntimePackAsset> LinkInputs);
+    RuntimePackSystemLibraries SystemLibraries);
+
+internal sealed record RuntimePackSystemLibraries(
+    string CacheFlavor,
+    ImmutableArray<string> Names);
 
 internal sealed record RuntimePackAsset(
     string Path,
@@ -57,6 +62,7 @@ internal sealed record RuntimeLinkRequest(
     RuntimePackTarget Target,
     RuntimeMemoryLayout Layout,
     string AssetRoot,
+    ImmutableArray<string> SystemLibraryPaths,
     string OutputPath);
 
 internal sealed record RuntimeCommand(
@@ -68,6 +74,8 @@ internal sealed record RuntimeMaterializationRequest(
     string ManifestPath,
     string RuntimeLayoutPath,
     string AssetRoot,
+    string EmscriptenRoot,
+    string EmscriptenCacheRoot,
     string WasmLdPath,
     string WasmToolsNodePath,
     string WasmToolsCommandPath,

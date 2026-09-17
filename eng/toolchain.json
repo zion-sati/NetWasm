@@ -12,6 +12,7 @@
     "commit": "4cc02503f584aad493a1d0d35bb5afb710a5510b"
   },
   "wasmTools": "1.256.0",
+  "wasmToolsLinuxX64Sha256": "0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d",
   "wasmtime": "47.0.3",
   "wasiHttpWit": "0.2.11",
   "jco": "1.28.1",

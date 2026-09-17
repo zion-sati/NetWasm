@@ -7,27 +7,22 @@ namespace NetWasm.Runtime.Pack.Tests.Materialization;
 public sealed class RuntimePackManifestReaderTests
 {
     [Fact]
-    public void ReadsCheckedInRuntimePackManifest()
+    public void ReadsGeneratedRuntimePackManifestShape()
     {
-        var path = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "../../../../../src/NetWasm.Runtime.Pack/runtime/runtime-pack.json"));
+        var manifest = RuntimePackManifestReader.ReadJson(
+            JsonSerializer.Serialize(RuntimePackTestData.Manifest()));
 
-        var reader = Assert.IsAssignableFrom<IRuntimePackManifestReader>(
-            new RuntimePackManifestReader());
-        var manifest = reader.Read(path);
-
-        Assert.Equal(1, manifest.SchemaVersion);
+        Assert.Equal(2, manifest.SchemaVersion);
         Assert.Equal("netwasm.runtime.v1", manifest.RuntimeAbi);
+        Assert.Equal("6.0.7", manifest.EmscriptenVersion);
         Assert.Equal(65_536, manifest.WasmPageSize);
-        Assert.Equal(83, manifest.Exports.Length);
+        Assert.Equal(2, manifest.Exports.Length);
         Assert.Equal(["wasm32", "wasm64"], manifest.Targets.Select(static target => target.Target));
         Assert.Equal([4, 8], manifest.Targets.Select(static target => target.PointerSizeBytes));
-        Assert.Equal([94_432, 117_488], manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
+        Assert.Equal([91_968, 114_352], manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
         foreach (var target in manifest.Targets)
         {
-            Assert.Contains(target.LinkInputs,
-                input => input.Path == $"{target.Target}/system/libstandalonewasm-nocatch-memgrow.a");
+            Assert.Contains("libc.a", target.SystemLibraries.Names);
         }
     }
 
@@ -60,7 +55,7 @@ public sealed class RuntimePackManifestReaderTests
     private static RuntimePackManifest?[] InvalidSchemaManifests() =>
     [
         null,
-        RuntimePackTestData.Manifest() with { SchemaVersion = 2 },
+        RuntimePackTestData.Manifest() with { SchemaVersion = 1 },
         RuntimePackTestData.Manifest() with { WasmPageSize = 1 },
     ];
 
@@ -147,7 +142,10 @@ public sealed class RuntimePackManifestReaderTests
     [Fact]
     public void RejectsEmptyLinkClosure()
     {
-        var target = RuntimePackTestData.Target("wasm32") with { LinkInputs = [] };
+        var target = RuntimePackTestData.Target("wasm32") with
+        {
+            SystemLibraries = new("sysroot/lib/wasm32-emscripten", []),
+        };
         var manifest = RuntimePackTestData.Manifest() with
         {
             Targets = [target, RuntimePackTestData.Target("wasm64")],

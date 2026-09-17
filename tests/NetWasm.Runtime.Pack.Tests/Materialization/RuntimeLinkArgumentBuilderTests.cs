@@ -13,17 +13,19 @@ public sealed class RuntimeLinkArgumentBuilderTests
         using var directory = new TemporaryDirectory();
         var manifest = RuntimePackTestData.Manifest();
         var selected = RuntimePackTestData.Target(target);
+        var systemLibrary = directory.PathTo(Path.Combine(target, "libc.a"));
         var arguments = new RuntimeLinkArgumentBuilder().Build(new(
             manifest,
             selected,
             RuntimePackTestData.Layout(target),
             directory.Path,
+            [systemLibrary],
             directory.PathTo("output/runtime.wasm")));
 
         Assert.Equal(machine, arguments[0]);
         Assert.Contains("--whole-archive", arguments);
         Assert.Contains(Path.GetFullPath(directory.PathTo(selected.RuntimeArchive.Path)), arguments);
-        Assert.Contains(Path.GetFullPath(directory.PathTo(selected.LinkInputs[0].Path)), arguments);
+        Assert.Contains(Path.GetFullPath(systemLibrary), arguments);
         Assert.DoesNotContain("--undefined=__emscripten_environ_constructor", arguments);
         Assert.Contains("--no-stack-first", arguments);
         Assert.Contains($"--global-base={RuntimePackTestData.Layout(target).RuntimeGlobalBase}", arguments);
@@ -50,6 +52,7 @@ public sealed class RuntimeLinkArgumentBuilderTests
             target,
             RuntimePackTestData.Layout(),
             directory.Path,
+            [directory.PathTo("libc.a")],
             directory.PathTo("runtime.wasm"))));
     }
 
@@ -62,6 +65,7 @@ public sealed class RuntimeLinkArgumentBuilderTests
             RuntimePackTestData.Target("wasm32"),
             RuntimePackTestData.Layout(),
             directory.Path + Path.DirectorySeparatorChar,
+            [directory.PathTo("libc.a")],
             directory.PathTo("runtime.wasm")));
 
         Assert.Contains(

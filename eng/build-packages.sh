@@ -83,6 +83,8 @@ trap cleanup EXIT
 asset_root="${build_root}/toolchain-assets"
 repository_commit="$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)"
 git -C "${REPOSITORY_ROOT}" worktree add --quiet --detach "${source_root}" "${repository_commit}"
+bash "${source_root}/src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh" \
+  --allow-emscripten
 python3 "${source_root}/eng/project-release-version.py" \
   --source-root "${source_root}" \
   --version "${RELEASE_VERSION}" \

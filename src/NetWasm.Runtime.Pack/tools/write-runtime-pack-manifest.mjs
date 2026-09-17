@@ -39,11 +39,6 @@ const targets = [];
 for (const [target, targetPolicy] of Object.entries(policy.targets)) {
   const measured = JSON.parse(await readFile(join(runtimeRoot, target, "layout.json"), "utf8"));
   const runtimeArchive = await describeAsset(`${target}/libnetwasm-runtime.a`);
-  const linkInputs = [];
-  for (const library of targetPolicy.systemLibraries) {
-    linkInputs.push(await describeAsset(`${target}/system/${library}`));
-  }
-
   targets.push({
     target,
     pointerSizeBytes: targetPolicy.pointerSizeBytes,
@@ -54,13 +49,17 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     defaultMaximumMemorySizeBytes: targetPolicy.defaultMaximumMemorySizeBytes,
     maximumMemorySizeBytes: targetPolicy.maximumMemorySizeBytes,
     runtimeArchive,
-    linkInputs,
+    systemLibraries: {
+      cacheFlavor: target === "wasm64" ? "sysroot/lib/wasm64-emscripten/lto" : "sysroot/lib/wasm32-emscripten",
+      names: targetPolicy.systemLibraries,
+    },
   });
 }
 
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   runtimeAbi: toolchain.runtimeAbi,
+  emscriptenVersion: toolchain.emscripten,
   wasmPageSize: policy.wasmPageSize,
   exports,
   provenance: {

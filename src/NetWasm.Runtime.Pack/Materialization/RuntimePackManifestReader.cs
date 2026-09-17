@@ -40,12 +40,16 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
 
     private static void Validate(RuntimePackManifest? manifest)
     {
-        if (manifest is null || manifest.SchemaVersion != 1 || manifest.WasmPageSize != 65_536)
+        if (manifest is null || manifest.SchemaVersion != 2 || manifest.WasmPageSize != 65_536)
         {
             throw new InvalidOperationException("The NetWasm runtime pack manifest schema is unsupported.");
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(manifest.RuntimeAbi);
+        if (!Version.TryParse(manifest.EmscriptenVersion, out _))
+        {
+            throw new InvalidOperationException("The NetWasm runtime pack Emscripten requirement is invalid.");
+        }
         ValidateProvenance(manifest.Provenance);
         if (manifest.Exports.IsDefaultOrEmpty ||
             manifest.Exports.Any(string.IsNullOrWhiteSpace) ||
@@ -99,14 +103,13 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         }
 
         ValidateAsset(target.RuntimeArchive);
-        if (target.LinkInputs.IsDefaultOrEmpty)
+        if (target.SystemLibraries is null ||
+            string.IsNullOrWhiteSpace(target.SystemLibraries.CacheFlavor) ||
+            target.SystemLibraries.Names.IsDefaultOrEmpty ||
+            target.SystemLibraries.Names.Any(name => string.IsNullOrWhiteSpace(name) || Path.GetFileName(name) != name) ||
+            target.SystemLibraries.Names.Distinct(StringComparer.Ordinal).Count() != target.SystemLibraries.Names.Length)
         {
             throw new InvalidOperationException("The NetWasm runtime link closure is empty.");
-        }
-
-        foreach (var asset in target.LinkInputs)
-        {
-            ValidateAsset(asset);
         }
     }
 

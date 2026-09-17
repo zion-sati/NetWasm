@@ -52,7 +52,7 @@ public sealed class RuntimeModuleMaterializerTests
         Assert.Equal(request.RuntimeLayoutPath, layouts.Path);
         Assert.Equal(request.InitialHeapSizeBytes, calculator.Request?.InitialHeapSizeBytes);
         Assert.Equal(request.MaximumMemorySizeBytes, calculator.Request?.MaximumMemorySizeBytes);
-        Assert.Equal(1 + RuntimePackTestData.Target(target).LinkInputs.Length, assets.Verifications.Count);
+        Assert.Single(assets.Verifications);
         Assert.Equal(request.OutputPath, arguments.Request?.OutputPath);
         Assert.Equal(2, commands.Commands.Count);
         var link = commands.Commands[0];
@@ -99,6 +99,34 @@ public sealed class RuntimeModuleMaterializerTests
             Request(directory, "wasm32") with { ManifestPath = "" }));
     }
 
+    [Fact]
+    public void RejectsMismatchedEmscriptenVersion()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32");
+        directory.Write("upstream/emscripten/emscripten-version.txt", "99.0.0\n");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Create(new RuntimeLayout(2, "wasm32", 0)).Materialize(request));
+
+        Assert.Contains("requires activated Emscripten 6.0.7", exception.Message);
+    }
+
+    [Fact]
+    public void RejectsMissingInstalledEmscriptenSystemLibrary()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32") with
+        {
+            EmscriptenCacheRoot = directory.PathTo("empty-cache"),
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            Create(new RuntimeLayout(2, "wasm32", 0)).Materialize(request));
+
+        Assert.Contains("required Emscripten system library 'libc.a' is unavailable", exception.Message);
+    }
+
     private static RuntimeModuleMaterializer Create(RuntimeLayout layout) => new(
         new RecordingManifestReader(RuntimePackTestData.Manifest()),
         new RecordingLayoutReader(layout),
@@ -108,19 +136,27 @@ public sealed class RuntimeModuleMaterializerTests
         new RecordingCommandInvoker(),
         new ConstantDigestCalculator("digest"));
 
-    private static RuntimeMaterializationRequest Request(TemporaryDirectory directory, string target) => new(
-        directory.PathTo("runtime-pack.json"),
-        directory.PathTo("runtime-layout.json"),
-        directory.Path,
-        directory.PathTo("wasm-ld"),
-        directory.PathTo("node"),
-        directory.PathTo("run-wasm-tools.mjs"),
-        directory.PathTo("wasm-tools.wasm"),
-        directory.PathTo("output/runtime.wasm"),
-        directory.PathTo("logs"),
-        target,
-        null,
-        null);
+    private static RuntimeMaterializationRequest Request(TemporaryDirectory directory, string target)
+    {
+        directory.Write("upstream/emscripten/emscripten-version.txt", "6.0.7\n");
+        var cacheFlavor = RuntimePackTestData.Target(target).SystemLibraries.CacheFlavor;
+        directory.Write(Path.Combine("cache", cacheFlavor, "libc.a"), string.Empty);
+        return new(
+            directory.PathTo("runtime-pack.json"),
+            directory.PathTo("runtime-layout.json"),
+            directory.Path,
+            directory.Path,
+            directory.PathTo("cache"),
+            directory.PathTo("wasm-ld"),
+            directory.PathTo("node"),
+            directory.PathTo("run-wasm-tools.mjs"),
+            directory.PathTo("wasm-tools.wasm"),
+            directory.PathTo("output/runtime.wasm"),
+            directory.PathTo("logs"),
+            target,
+            null,
+            null);
+    }
 
     private sealed class RecordingManifestReader(RuntimePackManifest result) : IRuntimePackManifestReader
     {

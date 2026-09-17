@@ -37,6 +37,7 @@ jobs:
 
           manifest = json.loads(Path("eng/toolchain.json").read_text())
           print(f"node={manifest['node']}")
+          print(f"emscripten={manifest['emscripten']}")
           PY
 
       - name: Install Node.js
@@ -45,12 +46,12 @@ jobs:
           node-version: ${{ steps.toolchain.outputs.node }}
           package-manager-cache: false
 
-      - name: Install Emscripten 6.0.7
+      - name: Install pinned Emscripten
         shell: bash
         run: |
-          git clone --depth 1 --branch 6.0.7 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
-          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.7
-          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.7
+          git clone --depth 1 --branch "${{ steps.toolchain.outputs.emscripten }}" https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "${{ steps.toolchain.outputs.emscripten }}"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "${{ steps.toolchain.outputs.emscripten }}"
 
       - name: Install pinned wasm-tools
         shell: bash
@@ -75,63 +76,112 @@ jobs:
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           npm ci --ignore-scripts --no-audit --no-fund
           bash eng/verify-toolchain.sh
+          bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh --allow-emscripten
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s eng/tests -p 'test_*.py'
           dotnet restore NetWasm.slnx --disable-build-servers --nologo
           dotnet build NetWasm.slnx -c Release --no-restore --disable-build-servers --nologo
           dotnet test NetWasm.slnx -c Release --no-build --no-restore --disable-build-servers --nologo
 
-      - name: Detect runtime-pack input changes
-        id: runtime-pack
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BASE_SHA" HEAD -- \
-              .github/workflows/ci.yml \
-              eng/build-netwasm-runtime.sh \
-              eng/toolchain.json \
-              src/NetWasm.Runtime \
-              src/NetWasm.Runtime.Pack/runtime \
-              src/NetWasm.Runtime.Pack/tools \
-              tests/end-to-end/host-interop/runtime-memory64/bdwgc-wasm64.patch; then
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-          else
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install runtime-pack verification tools
-        if: steps.runtime-pack.outputs.changed == 'true'
+  package:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Read toolchain pins
+        id: toolchain
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ripgrep
-
-      - name: Regenerate canonical runtime pack
-        if: steps.runtime-pack.outputs.changed == 'true'
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("eng/toolchain.json").read_text())
+          print(f"emscripten={manifest['emscripten']}")
+          print(f"wasm_tools={manifest['wasmTools']}")
+          print(f"wasm_tools_sha={manifest['wasmToolsLinuxX64Sha256']}")
+          PY
+      - name: Install pinned native toolchain
         shell: bash
-        env:
-          EM_CACHE: ${{ runner.temp }}/netwasm-emscripten-cache
         run: |
-          rm -rf "$EM_CACHE"
-          mkdir -p "$EM_CACHE"
+          git clone --depth 1 --branch "${{ steps.toolchain.outputs.emscripten }}" https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "${{ steps.toolchain.outputs.emscripten }}"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "${{ steps.toolchain.outputs.emscripten }}"
+          archive="$RUNNER_TEMP/wasm-tools.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors --output "$archive" \
+            "https://github.com/bytecodealliance/wasm-tools/releases/download/v${{ steps.toolchain.outputs.wasm_tools }}/wasm-tools-${{ steps.toolchain.outputs.wasm_tools }}-x86_64-linux.tar.gz"
+          printf '%s  %s\n' '${{ steps.toolchain.outputs.wasm_tools_sha }}' "$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/wasm-tools"
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP/wasm-tools" --strip-components=1
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
+      - name: Build candidate package graph
+        id: version
+        shell: bash
+        run: |
+          version="0.0.0-ci.${GITHUB_RUN_NUMBER}"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh \
-            --allow-emscripten
-
-      - name: Retain canonical runtime-pack candidate
-        if: steps.runtime-pack.outputs.changed == 'true'
+          bash eng/build-packages.sh --version "$version" --output "$RUNNER_TEMP/packages"
+      - name: Retain candidate packages
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: canonical-runtime-pack
-          path: src/NetWasm.Runtime.Pack/runtime/
-          compression-level: 0
+          name: runtime-pack-candidate
+          path: ${{ runner.temp }}/packages/*.nupkg
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
 
-      - name: Verify runtime-pack drift
-        if: steps.runtime-pack.outputs.changed == 'true'
+  runtime-pack-hosts:
+    needs: package
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            host: linux-x64
+          - runner: ubuntu-24.04-arm
+            host: linux-arm64
+          - runner: macos-14
+            host: macos-arm64
+          - runner: windows-2025
+            host: windows-x64
+    runs-on: ${{ matrix.runner }}
+    name: Runtime pack / ${{ matrix.host }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Download candidate packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: runtime-pack-candidate
+          path: ${{ runner.temp }}/packages
+      - name: Read Emscripten pin
+        id: toolchain
         shell: bash
         run: |
-          git diff --exit-code -- src/NetWasm.Runtime.Pack/runtime
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          print(f"emscripten={json.loads(Path('eng/toolchain.json').read_text())['emscripten']}")
+          PY
+      - name: Install pinned Emscripten
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "${{ steps.toolchain.outputs.emscripten }}" https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "${{ steps.toolchain.outputs.emscripten }}"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "${{ steps.toolchain.outputs.emscripten }}"
+      - name: Link wasm32 and wasm64 consumers
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          bash eng/qualify-runtime-pack-host.sh "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}"

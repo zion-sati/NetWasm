@@ -58,9 +58,8 @@ rg -o 'export_name\("[^"]+"\)' \
 
 for target in wasm32 wasm64; do
   target_root="$runtime_root/$target"
-  system_root="$target_root/system"
   rm -rf "$target_root"
-  mkdir -p "$system_root"
+  mkdir -p "$target_root"
 
   layout="$temporary_root/$target.layout.json"
   node - "$layout" "$target" <<'NODE'
@@ -117,8 +116,7 @@ NODE
       echo "missing pinned Emscripten system library '$library' for '$target'" >&2
       exit 1
     }
-    cp "$system_source/$library" "$system_root/$library"
-    system_paths+=("$system_root/$library")
+    system_paths+=("$system_source/$library")
   done
 
   normalization_arguments=(
@@ -131,9 +129,6 @@ NODE
     --prefix "$system_source"
     --archive "$target_root/libnetwasm-runtime.a"
   )
-  for system_path in "${system_paths[@]}"; do
-    normalization_arguments+=(--archive "$system_path")
-  done
   node "$package_root/tools/normalize-archive-paths.mjs" \
     "${normalization_arguments[@]}"
 

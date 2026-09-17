@@ -440,13 +440,13 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
-    public void PackageBuildConsumesTheCheckedInRuntimePackWithoutRegeneration()
+    public void PackageBuildRegeneratesTheRuntimePackFromSource()
     {
         var repositoryRoot = FindRepositoryRoot();
         var script = File.ReadAllText(Path.Combine(repositoryRoot, "eng/build-packages.sh"));
 
-        Assert.DoesNotContain("regenerate-runtime-pack.sh", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("--allow-emscripten", script, StringComparison.Ordinal);
+        Assert.Contains("regenerate-runtime-pack.sh", script, StringComparison.Ordinal);
+        Assert.Contains("--allow-emscripten", script, StringComparison.Ordinal);
         Assert.Contains(
             "src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj",
             script,
@@ -476,6 +476,25 @@ public sealed class SdkToolchainContractTests
             "$EMSDK/upstream/emscripten/cache/sysroot/lib",
             script,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("cp \"$system_source/$library\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RuntimePackageContainsOnlyTheNetWasmOwnedArchive()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var project = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj"));
+
+        Assert.Contains("runtime/*/libnetwasm-runtime.a", project, StringComparison.Ordinal);
+        Assert.DoesNotContain("runtime/**/*.a", project, StringComparison.Ordinal);
+        Assert.DoesNotContain(Directory.EnumerateFiles(
+                Path.Combine(repositoryRoot, "src/NetWasm.Runtime.Pack/runtime"),
+                "*.a",
+                SearchOption.AllDirectories),
+            path => !string.Equals(
+                Path.GetFileName(path), "libnetwasm-runtime.a", StringComparison.Ordinal));
     }
 
     private static XDocument LoadSdkTarget(string fileName)

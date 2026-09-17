@@ -31,7 +31,9 @@ internal sealed class RuntimeModuleMaterializer(
         var target = manifest.Targets.SingleOrDefault(
             target => string.Equals(target.Target, request.Target, StringComparison.Ordinal))
             ?? throw new InvalidOperationException("The requested NetWasm runtime target is unavailable.");
-        VerifyAssets(request.AssetRoot, target);
+        ValidateEmscriptenVersion(request.EmscriptenRoot, manifest.EmscriptenVersion);
+        var systemLibraryPaths = ResolveSystemLibraries(request.EmscriptenCacheRoot, target);
+        VerifyAssets(request.AssetRoot, systemLibraryPaths, target);
         var memoryLayout = memoryLayouts.Calculate(new(
             target,
             manifest.WasmPageSize,
@@ -45,6 +47,7 @@ internal sealed class RuntimeModuleMaterializer(
             target,
             memoryLayout,
             request.AssetRoot,
+            systemLibraryPaths,
             request.OutputPath));
         commands.Invoke(new(
             request.WasmLdPath,
@@ -80,6 +83,8 @@ internal sealed class RuntimeModuleMaterializer(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ManifestPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.RuntimeLayoutPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.AssetRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.EmscriptenRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.EmscriptenCacheRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmLdPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmToolsNodePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmToolsCommandPath);
@@ -89,15 +94,54 @@ internal sealed class RuntimeModuleMaterializer(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Target);
     }
 
-    private void VerifyAssets(string assetRoot, RuntimePackTarget target)
+    private void VerifyAssets(
+        string assetRoot,
+        ImmutableArray<string> systemLibraryPaths,
+        RuntimePackTarget target)
     {
         assetDigests.Verify(ResolveAsset(assetRoot, target.RuntimeArchive.Path), target.RuntimeArchive.Sha256);
-        foreach (var input in target.LinkInputs)
+        if (systemLibraryPaths.Length != target.SystemLibraries.Names.Length)
         {
-            assetDigests.Verify(ResolveAsset(assetRoot, input.Path), input.Sha256);
+            throw new InvalidOperationException("The resolved Emscripten system-library closure is incomplete.");
+        }
+
+        for (var index = 0; index < systemLibraryPaths.Length; index++)
+        {
+            var path = Path.GetFullPath(systemLibraryPaths[index]);
+            if (!string.Equals(Path.GetFileName(path), target.SystemLibraries.Names[index], StringComparison.Ordinal) ||
+                !File.Exists(path))
+            {
+                throw new InvalidOperationException(
+                    $"The required Emscripten system library '{target.SystemLibraries.Names[index]}' is unavailable.");
+            }
         }
     }
 
     private static string ResolveAsset(string assetRoot, string relativePath) =>
         Path.GetFullPath(Path.Combine(assetRoot, relativePath));
+
+    private static ImmutableArray<string> ResolveSystemLibraries(
+        string cacheRoot,
+        RuntimePackTarget target) =>
+        target.SystemLibraries.Names
+            .Select(name => Path.GetFullPath(Path.Combine(
+                cacheRoot,
+                target.SystemLibraries.CacheFlavor.Replace('/', Path.DirectorySeparatorChar),
+                name)))
+            .ToImmutableArray();
+
+    private static void ValidateEmscriptenVersion(string root, string expectedVersion)
+    {
+        var versionPath = Path.Combine(
+            Path.GetFullPath(root), "upstream", "emscripten", "emscripten-version.txt");
+        if (!File.Exists(versionPath) ||
+            !string.Equals(
+                File.ReadAllText(versionPath).Trim().Trim('"'),
+                expectedVersion,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"NetWasm requires activated Emscripten {expectedVersion}; the selected SDK does not match.");
+        }
+    }
 }

@@ -89,6 +89,9 @@ jobs:
 
           manifest = json.loads(Path("source/eng/toolchain.json").read_text())
           print(f"node={manifest['node']}")
+          print(f"emscripten={manifest['emscripten']}")
+          print(f"wasm_tools={manifest['wasmTools']}")
+          print(f"wasm_tools_linux_x64_sha256={manifest['wasmToolsLinuxX64Sha256']}")
           PY
 
       - name: Install Node.js
@@ -97,9 +100,25 @@ jobs:
           node-version: ${{ steps.toolchain.outputs.node }}
           package-manager-cache: false
 
+      - name: Install pinned native toolchain
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "${{ steps.toolchain.outputs.emscripten }}" https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "${{ steps.toolchain.outputs.emscripten }}"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "${{ steps.toolchain.outputs.emscripten }}"
+          archive="$RUNNER_TEMP/wasm-tools-${{ steps.toolchain.outputs.wasm_tools }}-x86_64-linux.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --output "$archive" \
+            "https://github.com/bytecodealliance/wasm-tools/releases/download/v${{ steps.toolchain.outputs.wasm_tools }}/wasm-tools-${{ steps.toolchain.outputs.wasm_tools }}-x86_64-linux.tar.gz"
+          printf '%s  %s\n' '${{ steps.toolchain.outputs.wasm_tools_linux_x64_sha256 }}' "$archive" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/wasm-tools"
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP/wasm-tools" --strip-components=1
+          echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
+
       - name: Build release packages
         shell: bash
         run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           bash source/eng/build-packages.sh \
             --version "${{ steps.release.outputs.version }}" \
             --output "$GITHUB_WORKSPACE/artifacts/packages"

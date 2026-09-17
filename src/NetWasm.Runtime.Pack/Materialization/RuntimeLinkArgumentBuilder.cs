@@ -15,9 +15,9 @@ internal sealed class RuntimeLinkArgumentBuilder : IRuntimeLinkArgumentBuilder
         arguments.Add("--whole-archive");
         arguments.Add(ResolveAsset(request.AssetRoot, request.Target.RuntimeArchive.Path));
         arguments.Add("--no-whole-archive");
-        foreach (var input in request.Target.LinkInputs)
+        foreach (var input in request.SystemLibraryPaths)
         {
-            arguments.Add(ResolveAsset(request.AssetRoot, input.Path));
+            arguments.Add(Path.GetFullPath(input));
         }
 
         arguments.Add("--allow-multiple-definition");

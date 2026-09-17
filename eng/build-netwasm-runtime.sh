@@ -55,20 +55,20 @@ done
 layout="$(cd "$(dirname "$layout")" && pwd)/$(basename "$layout")"
 
 command -v node >/dev/null || { echo "missing required tool: node" >&2; exit 1; }
-runtime_manifest="$repo_root/src/NetWasm.Runtime.Pack/runtime/runtime-pack.json"
-[[ -f "$runtime_manifest" ]] || {
-    echo "missing runtime-pack manifest '$runtime_manifest'" >&2
+runtime_policy="$repo_root/src/NetWasm.Runtime.Pack/runtime/runtime-policy.json"
+[[ -f "$runtime_policy" ]] || {
+    echo "missing runtime-pack policy '$runtime_policy'" >&2
     exit 1
 }
-runtime_layout_values="$(node - "$layout" "$runtime_manifest" "$target" <<'NODE'
+runtime_layout_values="$(node - "$layout" "$runtime_policy" "$target" <<'NODE'
 const fs = require("node:fs");
 
-const [layoutPath, manifestPath, requestedTarget] = process.argv.slice(2);
+const [layoutPath, policyPath, requestedTarget] = process.argv.slice(2);
 let layout;
-let manifest;
+let policy;
 try {
   layout = JSON.parse(fs.readFileSync(layoutPath, "utf8"));
-  manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
 } catch {
   process.stderr.write("runtime layout contract evidence is malformed\n");
   process.exit(1);
@@ -83,17 +83,14 @@ if (!layout || typeof layout !== "object" || Array.isArray(layout) ||
   process.exit(1);
 }
 
-const manifestTarget = Array.isArray(manifest?.targets)
-  ? manifest.targets.find(({ target }) => target === requestedTarget)
-  : undefined;
-if (!manifestTarget || !Number.isSafeInteger(manifestTarget.alignment) ||
-    manifestTarget.alignment <= 0) {
-  process.stderr.write("runtime-pack manifest has no valid target alignment\n");
+if (!policy?.targets?.[requestedTarget] || !Number.isSafeInteger(policy.alignment) ||
+    policy.alignment <= 0) {
+  process.stderr.write("runtime-pack policy has no valid target alignment\n");
   process.exit(1);
 }
 
 const runtimeGlobalBase = Math.ceil(
-  layout.applicationStaticDataEnd / manifestTarget.alignment) * manifestTarget.alignment;
+  layout.applicationStaticDataEnd / policy.alignment) * policy.alignment;
 if (!Number.isSafeInteger(runtimeGlobalBase)) {
   process.stderr.write("runtime layout base exceeds the supported integer range\n");
   process.exit(1);

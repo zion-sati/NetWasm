@@ -31,6 +31,12 @@ public sealed class RuntimeMaterializationTask : Task
     public string AssetRoot { get; set; } = string.Empty;
 
     [Required]
+    public string EmscriptenRoot { get; set; } = string.Empty;
+
+    [Required]
+    public string EmscriptenCacheRoot { get; set; } = string.Empty;
+
+    [Required]
     public string WasmLdPath { get; set; } = string.Empty;
 
     [Required]
@@ -67,6 +73,8 @@ public sealed class RuntimeMaterializationTask : Task
                 ManifestPath,
                 RuntimeLayoutPath,
                 AssetRoot,
+                EmscriptenRoot,
+                EmscriptenCacheRoot,
                 WasmLdPath,
                 WasmToolsNodePath,
                 WasmToolsCommandPath,
