@@ -31,8 +31,6 @@ for tool in emcc emar node wasm-tools; do
 done
 wasm_ld="$EMSDK/upstream/bin/wasm-ld"
 [[ -x "$wasm_ld" ]] || { echo "missing required Emscripten linker" >&2; exit 1; }
-embuilder="$EMSDK/upstream/emscripten/embuilder"
-[[ -x "$embuilder" ]] || { echo "missing required Emscripten system-library builder" >&2; exit 1; }
 em_config="$EMSDK/upstream/emscripten/em-config"
 [[ -x "$em_config" ]] || { echo "missing required Emscripten configuration reader" >&2; exit 1; }
 emscripten_cache_root="$("$em_config" CACHE)"
@@ -49,6 +47,7 @@ gc_source="$dependency_root/bdwgc-v$gc_version"
 
 wasm-tools component embed "$repo_root/src/NetWasm.Runtime/wit" \
   --only-custom --encoding utf8 --output "$temporary_root/runtime-component-type.bin"
+bash "$repo_root/eng/prepare-emscripten-system-libraries.sh"
 
 grep -hEo 'export_name\("[^"]+"\)' \
   "$repo_root"/src/NetWasm.Runtime/*.c \
@@ -96,19 +95,12 @@ NODE
   done < <(node -p \
     'require(process.argv[1]).targets[process.argv[2]].systemLibraries.join("\n")' \
     "$policy" "$target")
-  embuilder_targets=()
   for library in "${system_libraries[@]}"; do
     [[ "$library" == *.a ]] || {
       echo "Emscripten system library '$library' must be a static archive" >&2
       exit 1
     }
-    embuilder_targets+=("${library%.a}")
   done
-  embuilder_arguments=()
-  if [[ "$target" = wasm64 ]]; then
-    embuilder_arguments+=(--wasm64 --lto)
-  fi
-  "$embuilder" "${embuilder_arguments[@]}" build "${embuilder_targets[@]}"
 
   system_paths=()
   for library in "${system_libraries[@]}"; do

@@ -11,19 +11,28 @@ version="$2"
 work_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/netwasm-runtime-host.XXXXXX")"
 trap 'rm -rf "$work_root"' EXIT
 
+dotnet_package_root="$package_root"
+dotnet_work_root="$work_root"
+if command -v cygpath >/dev/null 2>&1; then
+  dotnet_package_root="$(cygpath -w "$package_root")"
+  dotnet_work_root="$(cygpath -w "$work_root")"
+fi
+
+bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prepare-emscripten-system-libraries.sh"
+
 cat > "$work_root/NuGet.Config" <<EOF
 <configuration>
   <packageSources>
     <clear />
-    <add key="candidate" value="$package_root" />
+    <add key="candidate" value="$dotnet_package_root" />
   </packageSources>
 </configuration>
 EOF
 
-export NUGET_PACKAGES="$work_root/packages"
-export DOTNET_CLI_HOME="$work_root/dotnet-home"
-dotnet new install "$package_root/NetWasm.Templates.$version.nupkg" \
-  --nuget-source "$package_root" --force >/dev/null
+export NUGET_PACKAGES="$dotnet_work_root/packages"
+export DOTNET_CLI_HOME="$dotnet_work_root/dotnet-home"
+dotnet new install "$dotnet_package_root/NetWasm.Templates.$version.nupkg" \
+  --nuget-source "$dotnet_package_root" --force >/dev/null
 dotnet new netwasm-app -n RuntimeHost -o "$work_root/app" >/dev/null
 
 for target in wasm32 wasm64; do
