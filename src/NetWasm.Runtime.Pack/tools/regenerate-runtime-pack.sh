@@ -159,8 +159,8 @@ NODE
     wasm-tools validate "$proof" --features all
     wat="$temporary_root/$target-$base.wat"
     wasm-tools print "$proof" > "$wat"
-    heap_index="$(rg '\(export "__heap_base"' "$wat" | sed -E 's/.*global ([0-9]+).*/\1/')"
-    heap_base="$(rg '^  \(global ' "$wat" | sed -n "$((heap_index + 1))p" | sed -E 's/.*const ([0-9]+)\).*/\1/')"
+    heap_index="$(grep -F '(export "__heap_base"' "$wat" | sed -E 's/.*global ([0-9]+).*/\1/')"
+    heap_base="$(grep -E '^  \(global ' "$wat" | sed -n "$((heap_index + 1))p" | sed -E 's/.*const ([0-9]+)\).*/\1/')"
     measured="$((heap_base - base))"
     if [[ -z "$footprint" ]]; then
       footprint="$measured"
