@@ -107,11 +107,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ripgrep
 
+      - name: Regenerate canonical runtime pack
+        if: steps.runtime-pack.outputs.changed == 'true'
+        shell: bash
+        env:
+          EM_CACHE: ${{ runner.temp }}/netwasm-emscripten-cache
+        run: |
+          rm -rf "$EM_CACHE"
+          mkdir -p "$EM_CACHE"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh \
+            --allow-emscripten
+
+      - name: Retain canonical runtime-pack candidate
+        if: steps.runtime-pack.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: canonical-runtime-pack
+          path: src/NetWasm.Runtime.Pack/runtime/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Verify runtime-pack drift
         if: steps.runtime-pack.outputs.changed == 'true'
         shell: bash
         run: |
-          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh \
-            --allow-emscripten
           git diff --exit-code -- src/NetWasm.Runtime.Pack/runtime
