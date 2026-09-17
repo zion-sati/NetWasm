@@ -19,6 +19,12 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prepare-emscripten-system-libraries.sh"
+wasm_ld="$EMSDK/upstream/bin/wasm-ld"
+if [[ -f "$wasm_ld.exe" ]]; then
+  wasm_ld="$wasm_ld.exe"
+fi
+[[ -f "$wasm_ld" ]] || { echo "missing Emscripten wasm-ld: $wasm_ld" >&2; exit 1; }
+export NETWASM_WASM_LD_PATH="$wasm_ld"
 
 cat > "$work_root/NuGet.Config" <<EOF
 <configuration>

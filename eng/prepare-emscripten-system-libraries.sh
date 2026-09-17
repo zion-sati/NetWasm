@@ -27,5 +27,9 @@ for target in wasm32 wasm64; do
   if [[ "$target" = wasm64 ]]; then
     arguments+=(--wasm64 --lto)
   fi
-  "$embuilder" "${arguments[@]}" build "${libraries[@]}"
+  if [[ "${#arguments[@]}" -eq 0 ]]; then
+    "$embuilder" build "${libraries[@]}"
+  else
+    "$embuilder" "${arguments[@]}" build "${libraries[@]}"
+  fi
 done
