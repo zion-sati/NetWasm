@@ -26,7 +26,7 @@ if [[ -n "$emsdk_root" ]]; then
     export EM_CACHE="$emscripten_cache"
   fi
 fi
-for tool in emcc emar node rg wasm-tools; do
+for tool in emcc emar node wasm-tools; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }
 done
 wasm_ld="$EMSDK/upstream/bin/wasm-ld"
@@ -50,7 +50,7 @@ gc_source="$dependency_root/bdwgc-v$gc_version"
 wasm-tools component embed "$repo_root/src/NetWasm.Runtime/wit" \
   --only-custom --encoding utf8 --output "$temporary_root/runtime-component-type.bin"
 
-rg -o 'export_name\("[^"]+"\)' \
+grep -hEo 'export_name\("[^"]+"\)' \
   "$repo_root"/src/NetWasm.Runtime/*.c \
   "$repo_root"/src/NetWasm.Runtime/collector/*.c \
   | sed 's/.*export_name("//;s/")$//' \
