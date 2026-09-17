@@ -120,7 +120,7 @@
         },
         {
           "path": "wasm32/system/libstandalonewasm-nocatch-memgrow.a",
-          "sha256": "1a7a2faade0faa619189c01da4d5e86d09ac6aae79b2addb4fe09b1f6e65ee4b"
+          "sha256": "d60d565f1d1b005e7533bd8f62c4bb51ad4021533782e21f035d21ef6689d03a"
         },
         {
           "path": "wasm32/system/libnoexit.a",
@@ -128,7 +128,7 @@
         },
         {
           "path": "wasm32/system/libclang_rt.builtins.a",
-          "sha256": "fde641d1216d2fb8f5bd3cd70912ea19aa06c949e9434654f26c1c7ed952fa39"
+          "sha256": "04f9fc8086f04e7630e6a2e5332d7f8598b7245ef93444e868f83cec0bdd452f"
         }
       ]
     },
@@ -152,11 +152,11 @@
         },
         {
           "path": "wasm64/system/libc.a",
-          "sha256": "f54655ec97af39dbe7611de6427b641632c7a5b02eda3a538ff2698c381cb605"
+          "sha256": "efd9b84805de2681cb9cd188fb6f7d330472b5f4104af061b54d36d6389c2dda"
         },
         {
           "path": "wasm64/system/libstandalonewasm-nocatch-memgrow.a",
-          "sha256": "6faf801f52e7901f815e544f19c840fd5c85db4e694ef31d3ebdb5cc852490dc"
+          "sha256": "8a19404c2fe759e973f68861a6ef1f8ab874dd974028f0bc0fcd836c885c4237"
         },
         {
           "path": "wasm64/system/libnoexit.a",
@@ -164,7 +164,7 @@
         },
         {
           "path": "wasm64/system/libclang_rt.builtins.a",
-          "sha256": "ecabf5b3553bf07322dd410bccf6a95b24ad3f99f47dfdcb0e2ea606c093d8c2"
+          "sha256": "3af1469cfb6b361bf89dfd52d3567c0a7bee905ad079599470c71addf2d070e5"
         }
       ]
     }
