@@ -12,8 +12,12 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 internal sealed class ManagedMethodBodyEmitter(
     IManagedMethodEmitter managedMethods,
     IManagedMethodSequenceEmitter sequences,
-    IStackTraceMethodIdProvider stackTraceMethodIds) : IManagedMethodBodyEmitter
+    IStackTraceMethodIdProvider stackTraceMethodIds,
+    IManagedHeapSampler heapSampler) : IManagedMethodBodyEmitter
 {
+    private readonly IManagedHeapSampler _heapSampler = heapSampler ??
+        throw new ArgumentNullException(nameof(heapSampler));
+
     public ManagedMethodBodyEmission Emit(
         MethodDefinitionModel method,
         ManagedMethodIdentity callerIdentity,
@@ -30,7 +34,9 @@ internal sealed class ManagedMethodBodyEmitter(
         ArgumentNullException.ThrowIfNull(functionIndices);
 
         var started = Stopwatch.GetTimestamp();
-        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+        var memoryBefore = target.CollectManagedMethodMemoryMetrics
+            ? _heapSampler.Sample()
+            : (long?)null;
         ManagedMethodSequenceEmission? sequenceEmission = null;
         var stackTraceMethodId = stackTraceMethodIds.GetId(
             target.StackTraceMethods,
@@ -56,7 +62,9 @@ internal sealed class ManagedMethodBodyEmitter(
             emission.Body,
             emission.WasmInstructionCount,
             Stopwatch.GetElapsedTime(started).Ticks,
-            Math.Max(memoryBefore, GC.GetTotalMemory(forceFullCollection: false)),
+            memoryBefore is null
+                ? null
+                : Math.Max(memoryBefore.Value, _heapSampler.Sample()),
             ManagedMethodBodyKey.Resolve(structured),
             emission.FilterEnvironment,
             sequenceEmission?.OriginalBlockEmissionCounts ?? []);

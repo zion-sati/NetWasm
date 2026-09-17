@@ -65,6 +65,14 @@ public sealed class RawInspectionToolchainPathResolver(
             resolved.Add(assetId, asset);
         }
 
+        var wasmOpt = resolved[ToolchainPlatformAssetIds.BinaryenWasmOpt];
+        var wasmMerge = resolved[ToolchainPlatformAssetIds.BinaryenWasmMerge];
+        if (!string.Equals(wasmOpt.Version, wasmMerge.Version, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Binaryen wasm-opt and wasm-merge must have one pinned version.");
+        }
+
         return new(
             packageId!,
             packageVersion!,
@@ -72,7 +80,8 @@ public sealed class RawInspectionToolchainPathResolver(
             nodeCompatibility.Version,
             resolved[ToolchainPlatformAssetIds.RawInspectionCommand].AbsolutePath,
             resolved[ToolchainPlatformAssetIds.BinaryenModule].AbsolutePath,
-            resolved[ToolchainPlatformAssetIds.BinaryenWasmOpt].AbsolutePath,
-            resolved[ToolchainPlatformAssetIds.BinaryenWasmMerge].AbsolutePath);
+            wasmOpt.AbsolutePath,
+            wasmMerge.AbsolutePath,
+            wasmOpt.Version);
     }
 }

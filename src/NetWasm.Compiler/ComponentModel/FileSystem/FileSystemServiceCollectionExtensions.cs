@@ -18,6 +18,8 @@ internal static class FileSystemServiceCollectionExtensions
         services.AddSingleton<IDirectoryCreator, SystemDirectoryCreator>();
         services.AddSingleton<IDirectoryDeleter, SystemDirectoryDeleter>();
         services.AddSingleton<IFileMover, SystemFileMover>();
+        services.AddSingleton<IFileCopier, SystemFileCopier>();
+        services.AddSingleton<IWasmCoreModuleValidator, WasmCoreModuleValidator>();
         return services;
     }
 }

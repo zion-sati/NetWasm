@@ -8,6 +8,7 @@ public enum HostExecutableResolutionFailure
     InvalidPathEntry,
     InvalidOverride,
     InvalidFallback,
+    ConfiguredExecutableNotFound,
     ExecutableNotFound,
 }
 

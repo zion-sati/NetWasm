@@ -20,7 +20,8 @@ public sealed class RawModuleLinkExecutionTests
         Assert.Equal((Path.Combine("temporary", "environment.wasm"), request.Target), stages.Environment);
         Assert.Equal(new ComponentCoreModuleMergeRequest("application", "runtime",
             Path.Combine("temporary", "environment.wasm"), Path.Combine("temporary", "merged.wasm"), request.Target), stages.Merge);
-        Assert.Equal((Path.Combine("temporary", "merged.wasm"), "linked", request.Target), stages.Optimization);
+        Assert.Equal((Path.Combine("temporary", "merged.wasm"), "linked", request.Target,
+            FinalWasmOptimization.Size), stages.Optimization);
         Assert.Equal(("linked", "output"), stages.Publication);
         Assert.Equal("temporary", stages.DeletedDirectory);
     }
@@ -78,7 +79,7 @@ public sealed class RawModuleLinkExecutionTests
         public InvalidOperationException Failure { get; } = new();
         public (string, ComponentTarget)? Environment { get; private set; }
         public ComponentCoreModuleMergeRequest? Merge { get; private set; }
-        public (string, string, ComponentTarget)? Optimization { get; private set; }
+        public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
         public (string, string)? Publication { get; private set; }
         public string? DeletedDirectory { get; private set; }
 
@@ -94,10 +95,14 @@ public sealed class RawModuleLinkExecutionTests
             Merge = request;
         }
 
-        public void Optimize(string inputPath, string outputPath, ComponentTarget target)
+        public void Optimize(
+            string inputPath,
+            string outputPath,
+            ComponentTarget target,
+            FinalWasmOptimization optimization)
         {
             Enter("optimize");
-            Optimization = (inputPath, outputPath, target);
+            Optimization = (inputPath, outputPath, target, optimization);
         }
 
         public void Move(string sourcePath, string destinationPath)

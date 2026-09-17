@@ -49,7 +49,8 @@ internal sealed class ComponentizeCliCommand(
             options.World,
             options.Output,
             target,
-            options.RuntimeModule));
+            options.RuntimeModule,
+            Optimization: options.Optimization));
         _textFiles.Write(options.Manifest, CliJson.Serialize(manifest));
         return 0;
     }

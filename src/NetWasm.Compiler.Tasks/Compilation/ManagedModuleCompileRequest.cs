@@ -10,5 +10,7 @@ internal sealed record ManagedModuleCompileRequest(
     string? DiagnosticTracePath,
     string? DiagnosticLogPath,
     bool EmitStackTrace,
+    string Optimization,
+    string? IntermediateOutputPath,
     string? WitPath = null,
     string? WitWorld = null);

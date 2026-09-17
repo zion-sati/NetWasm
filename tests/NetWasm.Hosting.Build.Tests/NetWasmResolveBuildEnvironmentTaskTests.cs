@@ -29,6 +29,13 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal(PathFor("wasm-tools.wasm"), task.WasmToolsModulePath);
         Assert.Equal(PathFor("wasm-opt"), task.BinaryenWasmOptPath);
         Assert.Equal(PathFor("wasm-merge"), task.BinaryenWasmMergePath);
+        Assert.Equal(PathFor("native-wasm-opt"), task.NativeBinaryenWasmOptPath);
+        Assert.Equal("132.0", task.NativeBinaryenWasmOptVersion);
+        Assert.Equal(PathFor("native-wasm-merge"), task.NativeBinaryenWasmMergePath);
+        Assert.Equal("132.0", task.NativeBinaryenWasmMergeVersion);
+        Assert.Equal("native", task.BinaryenWasmOptImplementation);
+        Assert.Equal("native", task.BinaryenWasmMergeImplementation);
+        Assert.Equal("132.0.0", task.BinaryenPortableVersion);
         Assert.Equal(PathFor("binaryen.js"), task.BinaryenPath);
         Assert.Equal(PathFor("wasm-ld"), task.WasmLdPath);
         Assert.Equal("24.0.0", task.WasmLdVersion);
@@ -93,6 +100,15 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                 HostExecutableResolutionSource.EnvironmentRoot),
             new(HostToolIds.WasmLd, new Version(24, 0, 0), []),
             new(
+                new(
+                    new(HostToolIds.BinaryenWasmMerge, PathFor("native-wasm-merge"),
+                        HostExecutableResolutionSource.EnvironmentRoot),
+                    new(HostToolIds.BinaryenWasmMerge, new Version(132, 0), [])),
+                new(
+                    new(HostToolIds.BinaryenWasmOpt, PathFor("native-wasm-opt"),
+                        HostExecutableResolutionSource.EnvironmentRoot),
+                    new(HostToolIds.BinaryenWasmOpt, new Version(132, 0), []))),
+            new(
                 "NetWasm.Toolchain",
                 "0.1.0-preview.29",
                 PathFor("toolchain-manifest.json"),
@@ -123,7 +139,8 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
                     PathFor("inspect.mjs"),
                     PathFor("binaryen.js"),
                     PathFor("wasm-opt"),
-                    PathFor("wasm-merge")),
+                    PathFor("wasm-merge"),
+                    "132.0.0"),
                 new(
                     "NetWasm.Toolchain",
                     "0.1.0-preview.29",

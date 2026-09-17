@@ -1,4 +1,5 @@
 using NetWasm.Compiler.Cli;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Cli.Tests;
@@ -61,7 +62,8 @@ public sealed class ComponentManifestInputReaderTests
                 WasmTarget.Wasm32,
                 null,
                 null,
-                null));
+                null,
+                FinalWasmOptimization.Size));
 
         Assert.Empty(result.JavaScript.Imports);
         Assert.Empty(result.JavaScript.Exports);
@@ -116,7 +118,8 @@ public sealed class ComponentManifestInputReaderTests
             target,
             interopManifest,
             null,
-            null);
+            null,
+            FinalWasmOptimization.Size);
 
     private sealed class RecordingTextFileReader(string content) : ITextFileReader
     {

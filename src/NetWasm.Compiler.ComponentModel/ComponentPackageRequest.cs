@@ -9,4 +9,5 @@ public sealed record ComponentPackageRequest(
     string OutputPath,
     ComponentTarget Target,
     string? RuntimeModulePath = null,
-    ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null);
+    ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null,
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Size);

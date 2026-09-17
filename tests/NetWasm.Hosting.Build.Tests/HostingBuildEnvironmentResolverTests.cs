@@ -14,7 +14,7 @@ public sealed class HostingBuildEnvironmentResolverTests
         Path.Combine(Path.GetTempPath(), "netwasm-hosting-build"));
 
     [Fact]
-    public void CompositionRequiresNode24AndLld24()
+    public void CompositionPinsRequiredHostsAndOptionalBinaryen132()
     {
         var requirements = HostingBuildComposition.Requirements();
 
@@ -33,6 +33,18 @@ public sealed class HostingBuildEnvironmentResolverTests
                 Assert.Equal(new Version(24, 0), lld.MinimumVersionInclusive);
                 Assert.Null(lld.MaximumVersionExclusive);
                 Assert.Empty(lld.RequiredCapabilities);
+            },
+            merge =>
+            {
+                Assert.Equal(HostToolIds.BinaryenWasmMerge, merge.ToolId);
+                Assert.Equal(new Version(132, 0), merge.MinimumVersionInclusive);
+                Assert.Equal(new Version(133, 0), merge.MaximumVersionExclusive);
+            },
+            opt =>
+            {
+                Assert.Equal(HostToolIds.BinaryenWasmOpt, opt.ToolId);
+                Assert.Equal(new Version(132, 0), opt.MinimumVersionInclusive);
+                Assert.Equal(new Version(133, 0), opt.MaximumVersionExclusive);
             });
     }
 
@@ -51,7 +63,7 @@ public sealed class HostingBuildEnvironmentResolverTests
 
         var result = resolver.Resolve(new(Root));
 
-        Assert.Equal(HostToolIds.Required.ToArray(), executables.Requests.Select(x => x.ToolId));
+        Assert.Equal(HostToolIds.Known.ToArray(), executables.Requests.Select(x => x.ToolId));
         Assert.Collection(
             executables.Requests,
             node =>
@@ -68,17 +80,42 @@ public sealed class HostingBuildEnvironmentResolverTests
                 var fallback = Assert.Single(lld.RootFallbacks);
                 Assert.Equal("EMSDK", fallback.RootEnvironmentVariableName);
                 Assert.Equal(Path.Combine("upstream", "bin"), fallback.RelativeDirectory);
-            });
-        Assert.Equal(HostToolIds.Required.ToArray(), probe.Requests.Select(x => x.ToolId));
-        Assert.Equal(HostToolIds.Required.ToArray(), validators.Requests);
+            },
+            merge => AssertBinaryenRequest(
+                merge, "wasm-merge", "NETWASM_WASM_MERGE_PATH"),
+            opt => AssertBinaryenRequest(
+                opt, "wasm-opt", "NETWASM_WASM_OPT_PATH")
+            );
+        Assert.Equal(HostToolIds.Known.ToArray(), probe.Requests.Select(x => x.ToolId));
+        Assert.Equal(HostToolIds.Known.ToArray(), validators.Requests);
         Assert.Equal(Root, packagePaths.PackageRoot);
         Assert.Equal(HostToolIds.Node, packagePaths.Node?.ToolId);
         Assert.Equal(new Version(50, 1), packagePaths.NodeCompatibility?.Version);
         Assert.Equal("0.1.0-preview.24", result.Toolchain.PackageVersion);
         Assert.Equal(Path.Combine(Root, "node"), result.Node.AbsolutePath);
         Assert.Equal(Path.Combine(Root, "wasm-ld"), result.WasmLd.AbsolutePath);
+        Assert.Equal(Path.Combine(Root, "wasm-merge"),
+            result.Binaryen.WasmMerge?.Executable.AbsolutePath);
+        Assert.Equal(Path.Combine(Root, "wasm-opt"),
+            result.Binaryen.WasmOpt?.Executable.AbsolutePath);
         Assert.Equal("1.256.0", result.Toolchain.WasmTools.WasmToolsVersion);
         Assert.Equal(Path.Combine(Root, "node"), result.Toolchain.WasmTools.NodePath);
+    }
+
+    private static void AssertBinaryenRequest(
+        HostExecutableResolutionRequest request,
+        string executable,
+        string overrideName)
+    {
+        Assert.Equal(executable, request.ExecutableName);
+        Assert.Equal(overrideName, request.OverrideEnvironmentVariableName);
+        Assert.Empty(request.EnvironmentFallbacks);
+        Assert.False(request.SearchPath);
+        Assert.Equal(
+            ["NETWASM_EMSDK_ROOT", "EMSDK", "EMSDK_ROOT"],
+            request.RootFallbacks.Select(x => x.RootEnvironmentVariableName));
+        Assert.All(request.RootFallbacks, fallback =>
+            Assert.Equal(Path.Combine("upstream", "bin"), fallback.RelativeDirectory));
     }
 
     [Fact]
@@ -95,6 +132,67 @@ public sealed class HostingBuildEnvironmentResolverTests
         Assert.Throws<ArgumentException>(() => resolver.Resolve(new("")));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(new("relative")));
         Assert.Empty(executables.Requests);
+    }
+
+    [Fact]
+    public void ResolveFallsBackWhenImplicitNativeBinaryenIsMissing()
+    {
+        var resolver = new HostingBuildEnvironmentResolver(
+            new MissingOptionalExecutableResolver(),
+            new RecordingProbe(),
+            new RecordingValidatorResolver(),
+            new RecordingPackagePathResolver());
+
+        var result = resolver.Resolve(new(Root));
+
+        Assert.Null(result.Binaryen.WasmMerge);
+        Assert.Null(result.Binaryen.WasmOpt);
+    }
+
+    [Theory]
+    [InlineData(HostExecutableResolutionFailure.InvalidOverride)]
+    [InlineData(HostExecutableResolutionFailure.InvalidFallback)]
+    [InlineData(HostExecutableResolutionFailure.ConfiguredExecutableNotFound)]
+    public void ResolveRejectsInvalidConfiguredNativeBinaryen(
+        HostExecutableResolutionFailure failure)
+    {
+        var resolver = new HostingBuildEnvironmentResolver(
+            new FailingOptionalExecutableResolver(failure),
+            new RecordingProbe(),
+            new RecordingValidatorResolver(),
+            new RecordingPackagePathResolver());
+
+        var exception = Assert.Throws<HostExecutableResolutionException>(() =>
+            resolver.Resolve(new(Root)));
+
+        Assert.Equal(failure, exception.Failure);
+        Assert.Equal(HostToolIds.BinaryenWasmMerge, exception.ToolId);
+    }
+
+    [Theory]
+    [InlineData(HostExecutableResolutionSource.Path, false)]
+    [InlineData(HostExecutableResolutionSource.Override, true)]
+    [InlineData(HostExecutableResolutionSource.EnvironmentRoot, true)]
+    public void ResolveFallsBackOnlyForIncompatibleImplicitBinaryen(
+        HostExecutableResolutionSource source,
+        bool throws)
+    {
+        var resolver = new HostingBuildEnvironmentResolver(
+            new SourceExecutableResolver(source),
+            new RecordingProbe(),
+            new RejectingBinaryenValidatorResolver(),
+            new RecordingPackagePathResolver());
+
+        if (throws)
+        {
+            Assert.Throws<HostToolCompatibilityException>(() =>
+                resolver.Resolve(new(Root)));
+            return;
+        }
+
+        var result = resolver.Resolve(new(Root));
+        Assert.Null(result.Binaryen.WasmMerge);
+        Assert.Null(result.Binaryen.WasmOpt);
     }
 
     [Fact]
@@ -130,6 +228,50 @@ public sealed class HostingBuildEnvironmentResolverTests
         }
     }
 
+    private sealed class MissingOptionalExecutableResolver : IHostExecutablePathResolver
+    {
+        public ResolvedHostExecutable Resolve(HostExecutableResolutionRequest request)
+        {
+            if (request.ToolId is HostToolIds.BinaryenWasmMerge
+                or HostToolIds.BinaryenWasmOpt)
+            {
+                throw new HostExecutableResolutionException(
+                    request.ToolId,
+                    HostExecutableResolutionFailure.ExecutableNotFound,
+                    "not installed");
+            }
+            return new(request.ToolId, Path.Combine(Root, request.ExecutableName),
+                HostExecutableResolutionSource.Path);
+        }
+    }
+
+    private sealed class FailingOptionalExecutableResolver(
+        HostExecutableResolutionFailure failure) : IHostExecutablePathResolver
+    {
+        public ResolvedHostExecutable Resolve(HostExecutableResolutionRequest request)
+        {
+            if (request.ToolId is HostToolIds.BinaryenWasmMerge
+                or HostToolIds.BinaryenWasmOpt)
+            {
+                throw new HostExecutableResolutionException(
+                    request.ToolId,
+                    failure,
+                    "configured native Binaryen is invalid");
+            }
+            return new(request.ToolId, Path.Combine(Root, request.ExecutableName),
+                HostExecutableResolutionSource.Path);
+        }
+    }
+
+    private sealed class SourceExecutableResolver(HostExecutableResolutionSource source) :
+        IHostExecutablePathResolver
+    {
+        public ResolvedHostExecutable Resolve(HostExecutableResolutionRequest request) =>
+            new(request.ToolId, Path.Combine(Root, request.ExecutableName),
+                request.ToolId is HostToolIds.BinaryenWasmMerge
+                    or HostToolIds.BinaryenWasmOpt ? source : HostExecutableResolutionSource.Path);
+    }
+
     private sealed class RecordingProbe : IHostToolCompatibilityProbe
     {
         private readonly List<ResolvedHostExecutable> _requests = [];
@@ -158,6 +300,32 @@ public sealed class HostingBuildEnvironmentResolverTests
             public ValidatedHostToolCompatibility Validate(
                 HostToolCompatibilityObservation observation) =>
                 new(toolId, observation.Version, observation.Capabilities);
+        }
+    }
+
+    private sealed class RejectingBinaryenValidatorResolver :
+        IHostToolCompatibilityValidatorResolver
+    {
+        public IHostToolCompatibilityValidator Resolve(string toolId) =>
+            toolId is HostToolIds.BinaryenWasmMerge or HostToolIds.BinaryenWasmOpt
+                ? new RejectingValidator(toolId)
+                : new PassValidator(toolId);
+
+        private sealed class PassValidator(string toolId) : IHostToolCompatibilityValidator
+        {
+            public ValidatedHostToolCompatibility Validate(
+                HostToolCompatibilityObservation observation) =>
+                new(toolId, observation.Version, observation.Capabilities);
+        }
+
+        private sealed class RejectingValidator(string toolId) : IHostToolCompatibilityValidator
+        {
+            public ValidatedHostToolCompatibility Validate(
+                HostToolCompatibilityObservation observation) =>
+                throw new HostToolCompatibilityException(
+                    toolId,
+                    HostToolCompatibilityFailure.VersionAtOrAboveMaximum,
+                    "not Binaryen 132");
         }
     }
 
@@ -199,7 +367,7 @@ public sealed class HostingBuildEnvironmentResolverTests
                     Path.Combine(packageRoot, "tools", "wasm-tools", "LICENSE-MIT"),
                     Path.Combine(packageRoot, "tools", "wasm-tools", "README.md")),
                 new("NetWasm.Toolchain", "0.1.0-preview.24", node.AbsolutePath,
-                    nodeCompatibility.Version, "inspect", "binaryen", "wasm-opt", "wasm-merge"),
+                    nodeCompatibility.Version, "inspect", "binaryen", "wasm-opt", "wasm-merge", "132.0.0"),
                 new("NetWasm.Toolchain", "0.1.0-preview.24", "1.28.1", "0.24.1",
                     node.AbsolutePath, nodeCompatibility.Version, "jco", "lock", "integrity", "notices", "policy"),
                 new("NetWasm.Toolchain", "0.1.0-preview.24", "1.2.4",

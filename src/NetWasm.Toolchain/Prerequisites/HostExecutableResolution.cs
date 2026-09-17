@@ -20,7 +20,8 @@ public sealed record HostExecutableResolutionRequest(
     string ExecutableName,
     string OverrideEnvironmentVariableName,
     ImmutableArray<HostExecutableEnvironmentFallback> EnvironmentFallbacks,
-    ImmutableArray<HostExecutableRootFallback> RootFallbacks);
+    ImmutableArray<HostExecutableRootFallback> RootFallbacks,
+    bool SearchPath = true);
 
 public enum HostExecutableResolutionSource
 {

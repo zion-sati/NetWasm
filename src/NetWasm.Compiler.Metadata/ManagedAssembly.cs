@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
+using System.Security.Cryptography;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata;
@@ -14,6 +15,7 @@ namespace NetWasm.Compiler.Metadata;
 public sealed class ManagedAssembly : IDisposable
 {
     private readonly MemoryStream _stream;
+    private readonly byte[] _image;
     private readonly PEReader _peReader;
     private readonly Dictionary<int, TypeDefinitionModel> _types;
     private readonly Dictionary<int, FieldDefinitionModel> _fields;
@@ -22,6 +24,7 @@ public sealed class ManagedAssembly : IDisposable
     private readonly Dictionary<int, ImmutableArray<EntityHandle>> _implementedInterfaces;
     private readonly MetadataAssemblySnapshot _metadata;
     private bool _disposed;
+    private string? _contentSha256;
     private static readonly Dictionary<string, int> PrimitiveInitializerSizes =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
@@ -44,6 +47,7 @@ public sealed class ManagedAssembly : IDisposable
             AssemblyIdentityAliases assemblyIdentityAliases,
             IValueTypeDefinitionStackKindResolver stackKinds)
     {
+        _image = image;
         _stream = new MemoryStream(image, writable: false);
         _peReader = new PEReader(_stream);
         Reader = _peReader.GetMetadataReader();
@@ -85,6 +89,8 @@ public sealed class ManagedAssembly : IDisposable
     public IReadOnlyDictionary<int, TypeDefinitionModel> Types => _types;
     public IReadOnlyDictionary<int, FieldDefinitionModel> Fields => _fields;
     public IReadOnlyDictionary<int, MethodDefinitionModel> Methods => _methods;
+    public string ContentSha256 => _contentSha256 ??=
+        Convert.ToHexStringLower(SHA256.HashData(_image));
     internal MetadataAssemblySnapshot Metadata => _metadata;
     internal PEReader PortableExecutableReader
     {

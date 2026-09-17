@@ -19,7 +19,8 @@ public sealed class BrowserComponentCoreModulesTests
     public void RawPlanPreservesExactVirtualPathsAndAuthoritativeReleaseArguments(bool memory64)
     {
         var target = memory64 ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02;
-        var plan = BrowserComponentCoreModules.CreateLinkPlan(CreateRequest(target), CreateWorkspace());
+        var plan = BrowserComponentCoreModules.CreateLinkPlan(
+            CreateRequest(target) with { Optimization = FinalWasmOptimization.Size }, CreateWorkspace());
         var width = memory64 ? "i64" : "i32";
 
         Assert.Equal(new BrowserWasmTextModule("v/./env.wasm",
@@ -45,8 +46,10 @@ public sealed class BrowserComponentCoreModulesTests
         expectedOptimization.AddRange(["--output", "v/output.wasm"]);
         Assert.Equal(BinaryenToolIds.WasmMerge, plan.Merge.ToolId);
         Assert.Equal(expectedMerge, plan.Merge.Arguments);
-        Assert.Equal(BinaryenToolIds.WasmOpt, plan.Optimization.ToolId);
+        Assert.Equal(BinaryenToolIds.WasmOpt, plan.Optimization!.ToolId);
         Assert.Equal(expectedOptimization, plan.Optimization.Arguments);
+        Assert.Null(plan.Validation);
+        Assert.Null(plan.Copy);
         Assert.Equal(new BrowserComponentExportPruning("v/merged.wasm", "v/sanitized.wasm",
             memory64 ? "cm64p2" : "cm32p2"), plan.ExportPruning);
         Assert.Equal(ExpectedCleanupPaths, plan.CleanupPaths);
@@ -86,7 +89,7 @@ public sealed class BrowserComponentCoreModulesTests
         Assert.Equal(5, plan.CleanupPaths.Length);
         // Workspace disposal has already run and cannot erase the captured values.
         Assert.NotEmpty(plan.TextModules[0].Text);
-        Assert.NotEmpty(plan.Optimization.Arguments);
+        Assert.NotEmpty(plan.Optimization!.Arguments);
     }
 
     [Fact]
@@ -95,8 +98,22 @@ public sealed class BrowserComponentCoreModulesTests
         var request = CreateRequest(ComponentTarget.Wasm32Wasi02) with { OutputPath = "v/application.wasm" };
         var plan = BrowserComponentCoreModules.CreateLinkPlan(request, CreateWorkspace());
         Assert.Contains("v/Application.wasm", plan.Merge.Arguments);
-        Assert.Equal("v/application.wasm", plan.Optimization.Arguments[^1]);
+        Assert.Equal("v/application.wasm", plan.Optimization!.Arguments[^1]);
         Assert.Contains("v/./env.wasm", plan.CleanupPaths);
+    }
+
+    [Fact]
+    public void NonePlanCopiesSanitizedCoreWithoutOptimizerInvocation()
+    {
+        var plan = BrowserComponentCoreModules.CreateLinkPlan(
+            CreateRequest(ComponentTarget.Wasm32Wasi02) with
+            {
+                Optimization = FinalWasmOptimization.None,
+            }, CreateWorkspace());
+
+        Assert.Null(plan.Optimization);
+        Assert.Equal(new BrowserCoreModuleValidation("v/sanitized.wasm"), plan.Validation);
+        Assert.Equal(new BrowserFileCopy("v/sanitized.wasm", "v/output.wasm"), plan.Copy);
     }
 
     [Fact]

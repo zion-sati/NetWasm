@@ -20,6 +20,27 @@ public sealed class ProcessHostToolCompatibilityProbeTests
     }
 
     [Fact]
+    public void ObserveAcceptsBinaryenIntegerVersionBanners()
+    {
+        var executable = CreateVersionReporter("wasm-merge version 132 (build metadata)");
+        try
+        {
+            IHostToolCompatibilityProbe probe = new ProcessHostToolCompatibilityProbe();
+
+            var result = probe.Observe(new(
+                HostToolIds.BinaryenWasmMerge,
+                executable,
+                HostExecutableResolutionSource.EnvironmentRoot));
+
+            Assert.Equal(new Version(132, 0), result.Version);
+        }
+        finally
+        {
+            File.Delete(executable);
+        }
+    }
+
+    [Fact]
     public void ObserveRejectsInvalidProducts()
     {
         var probe = new ProcessHostToolCompatibilityProbe();
@@ -50,6 +71,26 @@ public sealed class ProcessHostToolCompatibilityProbeTests
         }
 
         throw new InvalidOperationException("The test host did not expose an absolute dotnet path.");
+    }
+
+    private static string CreateVersionReporter(string output)
+    {
+        var windows = OperatingSystem.IsWindows();
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            $"netwasm-version-{Guid.NewGuid():N}{(windows ? ".cmd" : ".sh")}");
+        File.WriteAllText(
+            path,
+            windows
+                ? $"@echo off{System.Environment.NewLine}echo {output}{System.Environment.NewLine}"
+                : $"#!/bin/sh{System.Environment.NewLine}echo '{output}'{System.Environment.NewLine}");
+        if (!windows)
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        return path;
     }
 }
 

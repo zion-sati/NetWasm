@@ -56,7 +56,10 @@ public sealed partial class ProcessHostToolCompatibilityProbe : IHostToolCompati
             }
 
             var match = VersionPattern().Match(output);
-            if (!match.Success || !Version.TryParse(match.Value, out var version))
+            var versionText = match.Success && !match.Value.Contains('.')
+                ? $"{match.Value}.0"
+                : match.Value;
+            if (!match.Success || !Version.TryParse(versionText, out var version))
             {
                 throw Invalid(executable.ToolId, "returned an unrecognized version");
             }
@@ -105,6 +108,6 @@ public sealed partial class ProcessHostToolCompatibilityProbe : IHostToolCompati
         }
     }
 
-    [GeneratedRegex(@"(?<![0-9])[0-9]+\.[0-9]+(?:\.[0-9]+)?", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?<![0-9])[0-9]+(?:\.[0-9]+){0,2}(?![0-9])", RegexOptions.CultureInvariant)]
     private static partial Regex VersionPattern();
 }

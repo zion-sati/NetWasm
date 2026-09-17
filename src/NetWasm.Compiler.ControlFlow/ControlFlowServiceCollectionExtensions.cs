@@ -25,6 +25,9 @@ public static class ControlFlowServiceCollectionExtensions
             ValidatedStructuredMethodBuilderFactory>();
         services.AddSingleton<IStructuredMethodValidatorFactory,
             StructuredMethodValidatorFactory>();
+        services.AddSingleton<IStructuredMethodFactory>(static provider =>
+            new StructuredMethodFactory(
+                provider.GetRequiredService<IStructuredMethodValidatorFactory>().Create()));
         return services;
     }
 }

@@ -33,7 +33,9 @@ public static class BrowserComponentCoreModules
             new NetWasmHostComponentShimWriter(modules),
             adapters,
             new BrowserComponentExportPruningCapture(capture),
-            new ComponentCoreModuleOptimizer(tools, new BrowserPlannedFileExistence(capture)));
+            new ComponentCoreModuleOptimizer(tools, new BrowserPlannedFileExistence(capture),
+                new BrowserCoreModuleValidationCapture(capture),
+                new BrowserFileCopyCapture(capture)));
         execution.Run(request, new ComponentCoreModuleWorkspace(
             new BrowserCleanupPathCapture(capture),
             workspace.EnvironmentModulePath,

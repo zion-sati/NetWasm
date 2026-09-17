@@ -14,9 +14,12 @@ public static class BinaryenToolIds
 
 public sealed record BinaryenToolScript(string ToolId, string AbsolutePath);
 
+public sealed record BinaryenNativeTool(string ToolId, string AbsolutePath);
+
 public sealed record BinaryenToolRunnerConfiguration(
     string NodePath,
-    ImmutableArray<BinaryenToolScript> Scripts);
+    ImmutableArray<BinaryenToolScript> Scripts,
+    ImmutableArray<BinaryenNativeTool> NativeTools = default);
 
 public interface IBinaryenToolRunner
 {
@@ -27,18 +30,35 @@ public sealed class BinaryenToolRunner : IBinaryenToolRunner
 {
     private readonly string _nodePath;
     private readonly ImmutableDictionary<string, string> _scripts;
+    private readonly ImmutableDictionary<string, string> _nativeTools;
     private readonly ISystemNodeCommandRunner _node;
+    private readonly IExternalToolRunner? _processes;
 
     public BinaryenToolRunner(
         BinaryenToolRunnerConfiguration configuration,
-        ISystemNodeCommandRunner node)
+        ISystemNodeCommandRunner node) : this(configuration, node, null)
+    {
+    }
+
+    public BinaryenToolRunner(
+        BinaryenToolRunnerConfiguration configuration,
+        ISystemNodeCommandRunner node,
+        IExternalToolRunner? processes)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(node);
         RequireAbsolutePath(configuration.NodePath, nameof(configuration));
         _nodePath = configuration.NodePath;
         _scripts = CreateScriptMap(configuration.Scripts);
+        _nativeTools = CreateNativeToolMap(configuration.NativeTools);
         _node = node;
+        _processes = processes;
+        if (_nativeTools.Count > 0 && _processes is null)
+        {
+            throw new ArgumentException(
+                "Native Binaryen tools require an external process runner.",
+                nameof(processes));
+        }
     }
 
     public ToolResult Run(string toolId, ImmutableArray<string> arguments)
@@ -56,6 +76,13 @@ public sealed class BinaryenToolRunner : IBinaryenToolRunner
             ArgumentNullException.ThrowIfNull(argument);
         }
 
+        if (_nativeTools.TryGetValue(toolId, out var executablePath))
+        {
+            return _processes!.Run(executablePath, arguments) ??
+                throw new InvalidOperationException(
+                    "The external process runner returned no Binaryen result.");
+        }
+
         if (!_scripts.TryGetValue(toolId, out var scriptPath))
         {
             throw new UnsupportedBinaryenToolException(toolId);
@@ -64,6 +91,37 @@ public sealed class BinaryenToolRunner : IBinaryenToolRunner
         return _node.Run(new(_nodePath, scriptPath, arguments)) ??
             throw new InvalidOperationException(
                 "The system Node runner returned no Binaryen result.");
+    }
+
+    private static ImmutableDictionary<string, string> CreateNativeToolMap(
+        ImmutableArray<BinaryenNativeTool> tools)
+    {
+        if (tools.IsDefaultOrEmpty)
+        {
+            return ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal);
+        }
+
+        var result = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        foreach (var tool in tools)
+        {
+            ArgumentNullException.ThrowIfNull(tool);
+            ArgumentException.ThrowIfNullOrWhiteSpace(tool.ToolId);
+            if (!BinaryenToolIds.Required.Contains(tool.ToolId, StringComparer.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"Unsupported native Binaryen tool ID '{tool.ToolId}'.",
+                    nameof(tools));
+            }
+            RequireAbsolutePath(tool.AbsolutePath, nameof(tools));
+            if (result.ContainsKey(tool.ToolId))
+            {
+                throw new ArgumentException(
+                    $"Duplicate native Binaryen tool ID '{tool.ToolId}'.",
+                    nameof(tools));
+            }
+            result.Add(tool.ToolId, tool.AbsolutePath);
+        }
+        return result.ToImmutable();
     }
 
     private static ImmutableDictionary<string, string> CreateScriptMap(

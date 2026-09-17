@@ -80,15 +80,19 @@ public sealed class HostExecutablePathResolver : IHostExecutablePathResolver
         }
 
         var executableFileName = AddExecutableSuffix(request.ExecutableName);
-        var path = _environment.Read(PathVariableName);
-        if (!string.IsNullOrWhiteSpace(path))
+        string? path = null;
+        if (request.SearchPath)
         {
-            var candidates = BuildCandidates(request.ToolId, path, executableFileName);
-            foreach (var candidate in candidates)
+            path = _environment.Read(PathVariableName);
+            if (!string.IsNullOrWhiteSpace(path))
             {
-                if (_presenceChecker.Exists(candidate))
+                var candidates = BuildCandidates(request.ToolId, path, executableFileName);
+                foreach (var candidate in candidates)
                 {
-                    return new(request.ToolId, candidate, HostExecutableResolutionSource.Path);
+                    if (_presenceChecker.Exists(candidate))
+                    {
+                        return new(request.ToolId, candidate, HostExecutableResolutionSource.Path);
+                    }
                 }
             }
         }
@@ -99,7 +103,7 @@ public sealed class HostExecutablePathResolver : IHostExecutablePathResolver
             return fallback;
         }
 
-        if (string.IsNullOrWhiteSpace(path))
+        if (request.SearchPath && string.IsNullOrWhiteSpace(path))
         {
             throw new HostExecutableResolutionException(
                 request.ToolId,
@@ -110,7 +114,9 @@ public sealed class HostExecutablePathResolver : IHostExecutablePathResolver
         throw new HostExecutableResolutionException(
             request.ToolId,
             HostExecutableResolutionFailure.ExecutableNotFound,
-            $"Cannot find '{executableFileName}' for host tool '{request.ToolId}' on PATH{DescribeFallbacks(request)}.");
+            $"Cannot find '{executableFileName}' for host tool '{request.ToolId}'" +
+            (request.SearchPath ? " on PATH" : string.Empty) +
+            $"{DescribeFallbacks(request)}.");
     }
 
     private ResolvedHostExecutable? ResolveEnvironmentFallback(
@@ -140,7 +146,7 @@ public sealed class HostExecutablePathResolver : IHostExecutablePathResolver
             {
                 throw new HostExecutableResolutionException(
                     request.ToolId,
-                    HostExecutableResolutionFailure.ExecutableNotFound,
+                    HostExecutableResolutionFailure.ConfiguredExecutableNotFound,
                     $"The executable selected by {fallback.EnvironmentVariableName} does not exist.");
             }
             return new(
@@ -182,13 +188,17 @@ public sealed class HostExecutablePathResolver : IHostExecutablePathResolver
                 Path.Combine(root, fallback.RelativeDirectory, executableFileName),
                 $"{fallback.RootEnvironmentVariableName} does not produce a valid host-tool path.");
             RequireContainedFallback(request.ToolId, root, candidate);
-            if (_presenceChecker.Exists(candidate))
+            if (!_presenceChecker.Exists(candidate))
             {
-                return new(
+                throw new HostExecutableResolutionException(
                     request.ToolId,
-                    candidate,
-                    HostExecutableResolutionSource.EnvironmentRoot);
+                    HostExecutableResolutionFailure.ConfiguredExecutableNotFound,
+                    $"The executable selected through {fallback.RootEnvironmentVariableName} does not exist.");
             }
+            return new(
+                request.ToolId,
+                candidate,
+                HostExecutableResolutionSource.EnvironmentRoot);
         }
 
         return null;
@@ -215,7 +225,7 @@ public sealed class HostExecutablePathResolver : IHostExecutablePathResolver
         {
             throw new HostExecutableResolutionException(
                 request.ToolId,
-                HostExecutableResolutionFailure.ExecutableNotFound,
+                HostExecutableResolutionFailure.ConfiguredExecutableNotFound,
                 $"The executable selected by {request.OverrideEnvironmentVariableName} does not exist.");
         }
 

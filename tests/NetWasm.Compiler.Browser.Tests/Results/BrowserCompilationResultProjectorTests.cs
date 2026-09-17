@@ -40,6 +40,8 @@ public sealed class BrowserCompilationResultProjectorTests
         Assert.Equal(source.FunctionImports, actual.FunctionImports);
         Assert.Same(manifest, actual.InteropManifest);
         Assert.Equal(new BrowserCompilationEntryPoint("app.dll", "Program", "Main", token, kind, abi), actual.EntryPoint);
+        Assert.Null(actual.CompilerMetrics);
+        Assert.Null(actual.CompilerTiming);
         source.ApplicationModule[0] = 9;
         Assert.Equal(0, actual.ApplicationModule[0]);
     }

@@ -11,7 +11,8 @@ public sealed record RawInspectionToolchainPaths(
     string InspectionCommandPath,
     string BinaryenModulePath,
     string WasmOptPath,
-    string WasmMergePath);
+    string WasmMergePath,
+    string BinaryenVersion);
 
 public interface IRawInspectionToolchainPathResolver
 {

@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace NetWasm.Compiler.ExceptionTypes;
 
@@ -18,11 +19,6 @@ public interface IDiagnosticArtifactManifestWriter
 public sealed class DiagnosticArtifactManifestWriter :
     IDiagnosticArtifactManifestWriter
 {
-    private readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     public DiagnosticArtifactManifestArtifact Write(
         string buildId,
         string wasmSha256,
@@ -37,7 +33,13 @@ public sealed class DiagnosticArtifactManifestWriter :
             buildId,
             wasmSha256,
             exceptionTypeMapSha256);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, _jsonOptions);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(
+            manifest,
+            DiagnosticArtifactJsonContext.Default.DiagnosticArtifactBindingManifest);
         return new(bytes, manifest);
     }
 }
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(DiagnosticArtifactBindingManifest))]
+internal sealed partial class DiagnosticArtifactJsonContext : JsonSerializerContext;

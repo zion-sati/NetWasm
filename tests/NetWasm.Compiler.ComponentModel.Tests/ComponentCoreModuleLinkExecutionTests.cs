@@ -30,7 +30,8 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             "application", "runtime", "environment", "merged", target,
             managed ? "host" : null, managed ? "adapter" : null), stages.Merge);
         Assert.Equal(("merged", "sanitized", width == "wasm64" ? "cm64p2" : "cm32p2"), stages.Exports);
-        Assert.Equal(("sanitized", "output", target), stages.Optimization);
+        Assert.Equal(("sanitized", "output", target, FinalWasmOptimization.Size),
+            stages.Optimization);
         Assert.Equal(managed ? new NetWasmHostComponentShimRequest("host", target) : null, stages.Host);
         Assert.Equal(managed ? new ManagedExecutableComponentAdapterRequest("adapter", target, entry!) : null,
             stages.Adapter);
@@ -84,7 +85,7 @@ public sealed class ComponentCoreModuleLinkExecutionTests
         public NetWasmHostComponentShimRequest? Host { get; private set; }
         public ManagedExecutableComponentAdapterRequest? Adapter { get; private set; }
         public (string, string, string)? Exports { get; private set; }
-        public (string, string, ComponentTarget)? Optimization { get; private set; }
+        public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
 
         public void Write(string outputPath, ComponentTarget target)
         {
@@ -117,10 +118,14 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             Exports = (inputPath, outputPath, prefix);
         }
 
-        public void Optimize(string inputPath, string outputPath, ComponentTarget target)
+        public void Optimize(
+            string inputPath,
+            string outputPath,
+            ComponentTarget target,
+            FinalWasmOptimization optimization)
         {
             Calls.Add("optimize");
-            Optimization = (inputPath, outputPath, target);
+            Optimization = (inputPath, outputPath, target, optimization);
         }
 
         public void Delete(string path) => Calls.Add("delete:" + path);

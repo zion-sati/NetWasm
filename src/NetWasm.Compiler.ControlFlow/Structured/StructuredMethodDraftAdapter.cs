@@ -28,7 +28,7 @@ internal sealed class StructuredMethodDraftAdapter(
     private readonly IStructuredExceptionGroupProjector _exceptionGroups =
         exceptionGroupProjector ?? throw new ArgumentNullException(nameof(exceptionGroupProjector));
 
-    public StructuredMethod Adapt(Draft.StructuredMethodDraft method)
+    public StructuredMethodConstruction Adapt(Draft.StructuredMethodDraft method)
     {
         ArgumentNullException.ThrowIfNull(method);
         var definitions = _blocks.Create(method.ValidatedGraph);

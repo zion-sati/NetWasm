@@ -144,7 +144,7 @@ public sealed class HostExecutablePathResolverTests
         var exception = Assert.Throws<HostExecutableResolutionException>(() =>
             resolver.Resolve(Request(environmentFallbacks: [new("EMSDK_NODE")])));
 
-        Assert.Equal(HostExecutableResolutionFailure.ExecutableNotFound, exception.Failure);
+        Assert.Equal(HostExecutableResolutionFailure.ConfiguredExecutableNotFound, exception.Failure);
         Assert.Equal([OverrideName, "EMSDK_NODE"], environment.ReadNames);
         Assert.Equal([configured], presence.CheckedPaths);
     }
@@ -221,7 +221,7 @@ public sealed class HostExecutablePathResolverTests
         var exception = Assert.Throws<HostExecutableResolutionException>(() =>
             resolver.Resolve(Request()));
 
-        Assert.Equal(HostExecutableResolutionFailure.ExecutableNotFound, exception.Failure);
+        Assert.Equal(HostExecutableResolutionFailure.ConfiguredExecutableNotFound, exception.Failure);
         Assert.Equal([OverrideName], environment.ReadNames);
         Assert.Single(presence.CheckedPaths);
     }
@@ -414,6 +414,65 @@ public sealed class HostExecutablePathResolverTests
         Assert.Equal(
             "Cannot find 'wasm-ld' for host tool 'wasm-ld' on PATH or through the configured EMSDK installation root.",
             exception.Message);
+    }
+
+    [Fact]
+    public void ResolveCanUseOnlyConfiguredRootWithoutReadingPath()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "emsdk");
+        var expected = Path.GetFullPath(
+            Path.Combine(root, "upstream", "bin", "wasm-opt"));
+        var environment = new RecordingEnvironment(
+            ("PATH", FirstDirectory),
+            ("NETWASM_EMSDK_ROOT", root));
+        var presence = new RecordingPresenceChecker(expected);
+        var resolver = Assert.IsAssignableFrom<IHostExecutablePathResolver>(
+            CreateResolver(environment, presence));
+
+        var result = resolver.Resolve(new(
+            HostToolIds.BinaryenWasmOpt,
+            "wasm-opt",
+            "NETWASM_WASM_OPT_PATH",
+            [],
+            [new("NETWASM_EMSDK_ROOT", Path.Combine("upstream", "bin"))],
+            SearchPath: false));
+
+        Assert.Equal(expected, result.AbsolutePath);
+        Assert.Equal(HostExecutableResolutionSource.EnvironmentRoot, result.Source);
+        Assert.DoesNotContain("PATH", environment.ReadNames);
+    }
+
+    [Fact]
+    public void ResolveRejectsMissingConfiguredRootWithoutTryingLowerPriorityRoots()
+    {
+        var preferredRoot = Path.Combine(Path.GetTempPath(), "preferred-emsdk");
+        var secondaryRoot = Path.Combine(Path.GetTempPath(), "secondary-emsdk");
+        var secondaryCandidate = Path.GetFullPath(
+            Path.Combine(secondaryRoot, "upstream", "bin", "wasm-opt"));
+        var environment = new RecordingEnvironment(
+            ("NETWASM_EMSDK_ROOT", preferredRoot),
+            ("EMSDK", secondaryRoot));
+        var presence = new RecordingPresenceChecker(secondaryCandidate);
+        var resolver = Assert.IsAssignableFrom<IHostExecutablePathResolver>(
+            CreateResolver(environment, presence));
+
+        var exception = Assert.Throws<HostExecutableResolutionException>(() =>
+            resolver.Resolve(new(
+                HostToolIds.BinaryenWasmOpt,
+                "wasm-opt",
+                "NETWASM_WASM_OPT_PATH",
+                [],
+                [
+                    new("NETWASM_EMSDK_ROOT", Path.Combine("upstream", "bin")),
+                    new("EMSDK", Path.Combine("upstream", "bin")),
+                ],
+                SearchPath: false)));
+
+        Assert.Equal(
+            HostExecutableResolutionFailure.ConfiguredExecutableNotFound,
+            exception.Failure);
+        Assert.Equal(["NETWASM_WASM_OPT_PATH", "NETWASM_EMSDK_ROOT"], environment.ReadNames);
+        Assert.Single(presence.CheckedPaths);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace NetWasm.Compiler.Diagnostics;
 
@@ -20,10 +21,11 @@ internal sealed class CompilerDiagnosticJsonLineFormatter : ICompilerDiagnosticL
                 entry.Message,
                 entry.ExceptionType,
                 entry.ExceptionMessage,
-                entry.ExceptionStackTrace));
+                entry.ExceptionStackTrace),
+            CompilerDiagnosticLineJsonContext.Default.CompilerDiagnosticFileEntry);
     }
 
-    private sealed record CompilerDiagnosticFileEntry(
+    internal sealed record CompilerDiagnosticFileEntry(
         long Sequence,
         DateTimeOffset TimestampUtc,
         string Category,
@@ -35,3 +37,6 @@ internal sealed class CompilerDiagnosticJsonLineFormatter : ICompilerDiagnosticL
         string? ExceptionMessage,
         string? ExceptionStackTrace);
 }
+
+[JsonSerializable(typeof(CompilerDiagnosticJsonLineFormatter.CompilerDiagnosticFileEntry))]
+internal sealed partial class CompilerDiagnosticLineJsonContext : JsonSerializerContext;

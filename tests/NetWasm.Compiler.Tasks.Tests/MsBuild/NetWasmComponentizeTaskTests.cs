@@ -31,6 +31,7 @@ public sealed class NetWasmComponentizeTaskTests
         task.World = world;
         task.JcoVersion = jco;
         task.Preview2ShimVersion = shim;
+        task.Optimization = "None";
 
         Assert.True(task.Execute());
 
@@ -49,6 +50,14 @@ public sealed class NetWasmComponentizeTaskTests
                 new BinaryenToolScript(BinaryenToolIds.WasmMerge, "wasm-merge"),
             ],
             sessions.BinaryenConfiguration?.Scripts);
+        Assert.Equal(
+            [
+                new BinaryenNativeTool(BinaryenToolIds.WasmOpt,
+                    Path.GetFullPath("native-wasm-opt")),
+                new BinaryenNativeTool(BinaryenToolIds.WasmMerge,
+                    Path.GetFullPath("native-wasm-merge")),
+            ],
+            sessions.BinaryenConfiguration?.NativeTools);
         Assert.Equal(expectedWidth, sessions.Session.Request!.Target.Width);
         Assert.Equal(NullIfEmpty(world), sessions.Session.Request.World);
         Assert.Equal("app.wasm", sessions.Session.Request.CoreModulePath);
@@ -57,6 +66,7 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Equal(NullIfEmpty(jco), inputs.Request.JcoVersion);
         Assert.Equal(NullIfEmpty(shim), inputs.Request.Preview2ShimVersion);
         Assert.Equal("app.dll", entries.Path);
+        Assert.Equal(FinalWasmOptimization.None, sessions.Session.Request.Optimization);
         Assert.True(sessions.Session.IsDisposed);
         Assert.Same(sessions.Session.Manifest, manifests.Request!.Manifest);
         var component = Assert.Single(task.Components);
@@ -107,6 +117,25 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Null(sessions.BinaryenConfiguration);
         Assert.Single(build.Errors);
         Assert.Contains("NWSDK021", build.Errors[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReportsInvalidOptimizationWithoutCreatingSession()
+    {
+        var sessions = new RecordingSessionFactory();
+        var build = new RecordingBuildEngine();
+        var task = CreateTask(
+            sessions,
+            new RecordingManifestInputsReader(),
+            new RecordingManifestWriter(),
+            new RecordingEntryPointReader());
+        task.Optimization = "Speed";
+        task.BuildEngine = build;
+
+        Assert.False(task.Execute());
+        Assert.Null(sessions.WasmToolsCommand);
+        Assert.Null(sessions.BinaryenConfiguration);
+        Assert.Contains("NWSDK021", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -194,6 +223,8 @@ public sealed class NetWasmComponentizeTaskTests
             WasmToolsModulePath = "wasm-tools.wasm",
             BinaryenWasmOptPath = "wasm-opt",
             BinaryenWasmMergePath = "wasm-merge",
+            NativeBinaryenWasmOptPath = Path.GetFullPath("native-wasm-opt"),
+            NativeBinaryenWasmMergePath = Path.GetFullPath("native-wasm-merge"),
             Target = "wasm32",
         };
 

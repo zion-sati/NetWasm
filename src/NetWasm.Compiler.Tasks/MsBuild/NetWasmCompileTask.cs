@@ -56,6 +56,7 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     public string? WitPath { get; set; }
     public string? WitWorld { get; set; }
     public bool EmitStackTrace { get; set; }
+    public string Optimization { get; set; } = "Size";
     public string? StackTraceSymbolsPath { get; set; }
 
     [Required]
@@ -84,6 +85,8 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
                 DiagnosticTracePath,
                 DiagnosticLogPath,
                 EmitStackTrace,
+                Optimization,
+                Path.GetDirectoryName(CompilerMetadataPath),
                 WitPath,
                 WitWorld));
             _artifacts.Write(new(

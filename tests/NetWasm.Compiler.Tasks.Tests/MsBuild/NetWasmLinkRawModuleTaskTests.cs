@@ -20,6 +20,7 @@ public sealed class NetWasmLinkRawModuleTaskTests
         var sessions = new RecordingSessionFactory();
         var task = CreateTask(sessions);
         task.Target = target;
+        task.Optimization = "None";
 
         Assert.True(task.Execute());
 
@@ -38,10 +39,19 @@ public sealed class NetWasmLinkRawModuleTaskTests
                 new BinaryenToolScript(BinaryenToolIds.WasmMerge, "wasm-merge"),
             ],
             sessions.BinaryenConfiguration?.Scripts);
+        Assert.Equal(
+            [
+                new BinaryenNativeTool(BinaryenToolIds.WasmOpt,
+                    Path.GetFullPath("native-wasm-opt")),
+                new BinaryenNativeTool(BinaryenToolIds.WasmMerge,
+                    Path.GetFullPath("native-wasm-merge")),
+            ],
+            sessions.BinaryenConfiguration?.NativeTools);
         Assert.Equal("app.core.wasm", sessions.Session.Request!.ApplicationModulePath);
         Assert.Equal("runtime.wasm", sessions.Session.Request.RuntimeModulePath);
         Assert.Equal("linked.wasm", sessions.Session.Request.OutputPath);
         Assert.Equal(expectedWidth, sessions.Session.Request.Target.Width);
+        Assert.Equal(FinalWasmOptimization.None, sessions.Session.Request.Optimization);
         Assert.True(sessions.Session.IsDisposed);
         var module = Assert.Single(task.Modules);
         Assert.Equal("RawModule", module.GetMetadata("Kind"));
@@ -85,6 +95,22 @@ public sealed class NetWasmLinkRawModuleTaskTests
     }
 
     [Fact]
+    public void RejectsInvalidOptimizationBeforeCreatingSession()
+    {
+        var sessions = new RecordingSessionFactory();
+        var build = new RecordingBuildEngine();
+        var task = CreateTask(sessions);
+        task.Optimization = "Speed";
+        task.BuildEngine = build;
+
+        Assert.False(task.Execute());
+        Assert.Empty(task.Modules);
+        Assert.Null(sessions.WasmToolsCommand);
+        Assert.Null(sessions.BinaryenConfiguration);
+        Assert.Contains("NWSDK026", Assert.Single(build.Errors), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ConstructorRejectsMissingCapabilityAndComposesDefaults()
     {
         Assert.Throws<ArgumentNullException>(() =>
@@ -103,6 +129,8 @@ public sealed class NetWasmLinkRawModuleTaskTests
             WasmToolsModulePath = "wasm-tools.wasm",
             BinaryenWasmOptPath = "wasm-opt",
             BinaryenWasmMergePath = "wasm-merge",
+            NativeBinaryenWasmOptPath = Path.GetFullPath("native-wasm-opt"),
+            NativeBinaryenWasmMergePath = Path.GetFullPath("native-wasm-merge"),
             Target = "wasm32",
         };
 

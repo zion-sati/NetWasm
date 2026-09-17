@@ -6,7 +6,7 @@ internal sealed record ManagedMethodBodyEmission(
     byte[] Body,
     int WasmInstructionCount,
     long CompileDurationTicks,
-    long PeakObservedManagedMemoryBytes,
+    long? PeakObservedManagedMemoryBytes,
     string MethodKey,
     FilterEnvironmentLayout FilterEnvironment,
     ImmutableDictionary<int, int> OriginalBlockEmissionCounts);

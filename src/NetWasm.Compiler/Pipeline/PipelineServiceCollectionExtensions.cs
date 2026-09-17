@@ -27,6 +27,11 @@ internal static class PipelineServiceCollectionExtensions
         services.AddSingleton<ICompilationComplexityStage, CompilationComplexityStage>();
         services.AddSingleton<ICompilationDiagnosticBindingStage,
             CompilationDiagnosticBindingStage>();
+        services.AddSingleton<ICompilationTimestampReader, CompilationTimestampReader>();
+        services.AddSingleton<ICompilationElapsedTimeCalculator,
+            CompilationElapsedTimeCalculator>();
+        services.AddSingleton<ICompilationMetricsRequestFactory,
+            CompilationMetricsRequestFactory>();
         services.AddSingleton<ICompilationPipelineExecutor,
             CompilationPipelineExecutor>();
         services.AddSingleton<NetWasmCompilationPipeline>();

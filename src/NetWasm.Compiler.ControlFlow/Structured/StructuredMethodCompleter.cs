@@ -5,18 +5,16 @@ namespace NetWasm.Compiler.ControlFlow.Structured;
 
 internal sealed class StructuredMethodCompleter(
     IStructuredMethodDraftAdapter drafts,
-    IStructuredMethodValidator validator) : IStructuredMethodCompleter
+    IStructuredMethodFactory methods) : IStructuredMethodCompleter
 {
     private readonly IStructuredMethodDraftAdapter _drafts =
         drafts ?? throw new ArgumentNullException(nameof(drafts));
-    private readonly IStructuredMethodValidator _validator =
-        validator ?? throw new ArgumentNullException(nameof(validator));
+    private readonly IStructuredMethodFactory _structuredMethodFactory =
+        methods ?? throw new ArgumentNullException(nameof(methods));
 
     public StructuredMethod Complete(Draft.StructuredMethodDraft draft)
     {
         ArgumentNullException.ThrowIfNull(draft);
-        var method = _drafts.Adapt(draft);
-        _validator.Validate(method);
-        return method;
+        return _structuredMethodFactory.Create(_drafts.Adapt(draft));
     }
 }

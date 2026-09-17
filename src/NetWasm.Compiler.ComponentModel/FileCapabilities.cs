@@ -92,3 +92,14 @@ public sealed class SystemFileMover : IFileMover
     public void Move(string sourcePath, string destinationPath) =>
         File.Move(sourcePath, destinationPath, overwrite: true);
 }
+
+public interface IFileCopier
+{
+    void Copy(string sourcePath, string destinationPath);
+}
+
+public sealed class SystemFileCopier : IFileCopier
+{
+    public void Copy(string sourcePath, string destinationPath) =>
+        File.Copy(sourcePath, destinationPath, overwrite: true);
+}

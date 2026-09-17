@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Wasm;
 
 namespace NetWasm.Compiler.Browser;
@@ -14,4 +15,9 @@ public sealed record BrowserCompilationResult(
     ImmutableArray<string> RuntimeFeatures,
     ImmutableArray<WasmFunctionImport> FunctionImports,
     HostInteropManifest InteropManifest,
-    BrowserCompilationEntryPoint EntryPoint);
+    BrowserCompilationEntryPoint EntryPoint)
+{
+    public CompilerMetricsReport? CompilerMetrics { get; init; }
+
+    public CompilerAdapterTiming? CompilerTiming { get; init; }
+}

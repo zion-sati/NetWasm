@@ -92,6 +92,13 @@
       <Output TaskParameter="BinaryenPath" PropertyName="NetWasmBinaryenModulePath" />
       <Output TaskParameter="BinaryenWasmOptPath" PropertyName="NetWasmBinaryenWasmOptPath" />
       <Output TaskParameter="BinaryenWasmMergePath" PropertyName="NetWasmBinaryenWasmMergePath" />
+      <Output TaskParameter="NativeBinaryenWasmOptPath" PropertyName="NetWasmNativeBinaryenWasmOptPath" />
+      <Output TaskParameter="NativeBinaryenWasmOptVersion" PropertyName="NetWasmNativeBinaryenWasmOptVersion" />
+      <Output TaskParameter="NativeBinaryenWasmMergePath" PropertyName="NetWasmNativeBinaryenWasmMergePath" />
+      <Output TaskParameter="NativeBinaryenWasmMergeVersion" PropertyName="NetWasmNativeBinaryenWasmMergeVersion" />
+      <Output TaskParameter="BinaryenWasmOptImplementation" PropertyName="NetWasmBinaryenWasmOptImplementation" />
+      <Output TaskParameter="BinaryenWasmMergeImplementation" PropertyName="NetWasmBinaryenWasmMergeImplementation" />
+      <Output TaskParameter="BinaryenPortableVersion" PropertyName="NetWasmBinaryenPortableVersion" />
       <Output TaskParameter="JcoPath" PropertyName="NetWasmJcoPath" />
       <Output TaskParameter="JcoVersion" PropertyName="NetWasmJcoVersion" />
       <Output TaskParameter="Preview2ShimVersion" PropertyName="NetWasmPreview2ShimVersion" />
@@ -99,6 +106,8 @@
       <Output TaskParameter="HostingBundleCommandPath" PropertyName="NetWasmHostingBundleCommandPath" />
       <Output TaskParameter="RolldownVersion" PropertyName="NetWasmRolldownVersion" />
     </NetWasmResolveBuildEnvironmentTask>
+    <Message Importance="Low"
+             Text="NetWasm Binaryen: wasm-merge=$(NetWasmBinaryenWasmMergeImplementation) $(NetWasmNativeBinaryenWasmMergeVersion) $(NetWasmNativeBinaryenWasmMergePath); wasm-opt=$(NetWasmBinaryenWasmOptImplementation) $(NetWasmNativeBinaryenWasmOptVersion) $(NetWasmNativeBinaryenWasmOptPath); portable=$(NetWasmBinaryenPortableVersion)" />
     <PropertyGroup>
       <NetWasmWitPath Condition="'$(NetWasmWitPath)' == '' AND '$(NetWasmComponentContract)' == 'async-command'">$(NetWasmResolvedAsyncCommandWitPackagePath)</NetWasmWitPath>
       <NetWasmWitPath Condition="'$(NetWasmWitPath)' == ''">$(NetWasmResolvedCommandWitPackagePath)</NetWasmWitPath>

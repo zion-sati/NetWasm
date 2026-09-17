@@ -16,9 +16,18 @@ public sealed record ToolchainPackagePaths(
     JcoToolchainPaths Jco,
     HostingBundleToolchainPaths HostingBundle);
 
+public sealed record NativeBinaryenTool(
+    ResolvedHostExecutable Executable,
+    ValidatedHostToolCompatibility Compatibility);
+
+public sealed record NativeBinaryenTools(
+    NativeBinaryenTool? WasmMerge,
+    NativeBinaryenTool? WasmOpt);
+
 public sealed record HostingBuildEnvironment(
     ResolvedHostExecutable Node,
     ValidatedHostToolCompatibility NodeCompatibility,
     ResolvedHostExecutable WasmLd,
     ValidatedHostToolCompatibility WasmLdCompatibility,
+    NativeBinaryenTools Binaryen,
     ToolchainPackagePaths Toolchain);

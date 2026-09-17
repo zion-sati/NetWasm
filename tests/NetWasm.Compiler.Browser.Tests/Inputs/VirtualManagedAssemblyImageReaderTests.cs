@@ -7,6 +7,16 @@ namespace NetWasm.Compiler.Browser.Tests.Inputs;
 public sealed class VirtualManagedAssemblyImageReaderTests
 {
     [Fact]
+    public void ReadsTheActiveSessionRequest()
+    {
+        var resolver = FixedBrowserCompilationRequestResolver.ForInputs(
+            ImmutableDictionary<string, ImmutableArray<byte>>.Empty.Add("app.dll", [4, 2]));
+        var reader = new VirtualManagedAssemblyImageReader(resolver);
+
+        Assert.Equal(new byte[] { 4, 2 }, reader.Read("app.dll"));
+    }
+
+    [Fact]
     public void ReadsExactInputsAndReturnsIndependentOwnedArrays()
     {
         var request = new BrowserCompilationRequest(BrowserCompilationRequestTests.CreateOptions(),
@@ -40,6 +50,8 @@ public sealed class VirtualManagedAssemblyImageReaderTests
     public void RequiresInitializedInputsAndValidPaths()
     {
         Assert.Throws<ArgumentNullException>(() => CreateReader(null!));
+        Assert.Throws<ArgumentNullException>(() => new VirtualManagedAssemblyImageReader(
+            (IBrowserCompilationRequestResolver)null!));
         var reader = CreateReader(ImmutableDictionary<string, ImmutableArray<byte>>.Empty);
         Assert.Throws<ArgumentNullException>(() => reader.Read(null!));
         Assert.Throws<ArgumentException>(() => reader.Read(" "));

@@ -189,6 +189,9 @@ cmake --build "$build_root" --target gc -j 8 >/dev/null
 
 optimization=(-Oz -flto)
 if [[ "$configuration" = debug ]]; then optimization=(-O0); fi
+# NetWasm does not currently publish DWARF. Keep this explicit because recent
+# Emscripten builds can otherwise retain native-runtime DWARF in -O0 output.
+debug_information=(-g0)
 mkdir -p "$(dirname "$output")"
 runtime_work="$(mktemp -d "${TMPDIR:-/tmp}/netwasm-runtime.XXXXXX")"
 trap 'rm -rf "$runtime_work"' EXIT
@@ -259,7 +262,8 @@ if [[ "$output_kind" = relocatable ]]; then
             cd "$repo_root"
             emcc "$relative_source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" \
                 -I"$libc_internal_include" -I"$libc_arch_include" -I"$libc_source_include" \
-                "${defines[@]}" "${target_args[@]}" "${optimization[@]}" -o "$object"
+                "${defines[@]}" "${target_args[@]}" "${optimization[@]}" \
+                "${debug_information[@]}" -o "$object"
         )
         runtime_objects+=("$object")
     done
@@ -290,7 +294,7 @@ else
     emcc_args+=(
         -sGLOBAL_BASE="$runtime_global_base" -sINITIAL_MEMORY="$initial_memory"
         -sALLOW_MEMORY_GROWTH=1 -Wl,--no-entry -Wl,--gc-sections
-        "${optimization[@]}" -o "$output"
+        "${optimization[@]}" "${debug_information[@]}" -o "$output"
     )
     emcc "${emcc_args[@]}"
     wasm-tools validate "$output" --features all

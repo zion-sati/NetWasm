@@ -1,4 +1,5 @@
 using NetWasm.Compiler.Cli;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Cli.Tests;
@@ -19,6 +20,7 @@ public sealed class ComponentizeCliOptionsTests
             "--interop-manifest", "interop.json",
             "--jco-version", "1.2.3",
             "--preview2-shim-version", "4.5.6",
+            "--optimization", "none",
         ]);
 
         Assert.Equal(WasmTarget.Wasm64, options.Target);
@@ -26,6 +28,7 @@ public sealed class ComponentizeCliOptionsTests
         Assert.Equal("interop.json", options.InteropManifest);
         Assert.Equal("1.2.3", options.JcoVersion);
         Assert.Equal("4.5.6", options.Preview2ShimVersion);
+        Assert.Equal(FinalWasmOptimization.None, options.Optimization);
     }
 
     [Fact]
@@ -41,6 +44,28 @@ public sealed class ComponentizeCliOptionsTests
             ]));
 
         Assert.Contains("wasm32", exception.Diagnostic.Message);
+    }
+
+    [Fact]
+    public void DefaultsToSizeOptimizationAndRejectsUnsupportedValue()
+    {
+        var options = ComponentizeCliOptions.Parse([
+            "--core-module", "application.wasm",
+            "--wit", "contract.wit",
+            "--output", "component.wasm",
+            "--manifest", "component.json",
+        ]);
+        Assert.Equal(FinalWasmOptimization.Size, options.Optimization);
+
+        var exception = Assert.Throws<CompilerException>(() =>
+            ComponentizeCliOptions.Parse([
+                "--core-module", "application.wasm",
+                "--wit", "contract.wit",
+                "--output", "component.wasm",
+                "--manifest", "component.json",
+                "--optimization", "speed",
+            ]));
+        Assert.Contains("none", exception.Diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]

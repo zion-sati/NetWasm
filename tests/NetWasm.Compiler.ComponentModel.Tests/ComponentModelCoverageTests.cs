@@ -134,10 +134,12 @@ public sealed class ComponentModelCoverageTests
     {
         using var files = new ComponentModelTestFiles();
         var optimizer = new ComponentCoreModuleOptimizer(
-            new RecordingProcessRunner(), new SystemFileExistence());
+            new RecordingProcessRunner(), new SystemFileExistence(),
+            new WasmCoreModuleValidator(new NoopPackageOperations()),
+            new SystemFileCopier());
         Assert.Throws<CompilerException>(() => optimizer.Optimize(
             files.PathFor("missing.wasm"), files.PathFor("output.wasm"),
-            ComponentTarget.Wasm32Wasi02));
+            ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.Size));
 
         var core = files.Create("core.wasm", 0);
         var package = new ComponentPackageInputValidator(
@@ -219,9 +221,13 @@ public sealed class ComponentModelCoverageTests
             merge, environment, host, managedExecutables, exports, null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleMergeRunner(null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleOptimizer(
-            null!, new SystemFileExistence()));
+            null!, new SystemFileExistence(),
+            new WasmCoreModuleValidator(new NoopPackageOperations()),
+            new SystemFileCopier()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleOptimizer(
-            new RecordingProcessRunner(), null!));
+            new RecordingProcessRunner(), null!,
+            new WasmCoreModuleValidator(new NoopPackageOperations()),
+            new SystemFileCopier()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
             null!, coreLinker, new SystemFileMover()));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageExecution(
@@ -470,7 +476,11 @@ public sealed class ComponentModelCoverageTests
 
     private sealed class NoopOptimizer : IComponentCoreModuleOptimizer
     {
-        public void Optimize(string inputPath, string outputPath, ComponentTarget target)
+        public void Optimize(
+            string inputPath,
+            string outputPath,
+            ComponentTarget target,
+            FinalWasmOptimization optimization)
         {
         }
     }

@@ -7,4 +7,5 @@ public sealed record ComponentCoreModuleLinkRequest(
     string RuntimeModulePath,
     string OutputPath,
     ComponentTarget Target,
-    ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null);
+    ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null,
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Size);

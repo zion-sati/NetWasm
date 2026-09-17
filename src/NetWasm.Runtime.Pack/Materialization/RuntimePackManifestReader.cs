@@ -2,16 +2,12 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace NetWasm.Runtime.Pack.Materialization;
 
 internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     public RuntimePackManifest Read(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -29,7 +25,9 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         RuntimePackManifest? manifest;
         try
         {
-            manifest = JsonSerializer.Deserialize<RuntimePackManifest>(json, JsonOptions);
+            manifest = JsonSerializer.Deserialize(
+                json,
+                RuntimePackJsonContext.Default.RuntimePackManifest);
         }
         catch (JsonException exception)
         {
@@ -125,3 +123,7 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         }
     }
 }
+
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(RuntimePackManifest))]
+internal sealed partial class RuntimePackJsonContext : JsonSerializerContext;

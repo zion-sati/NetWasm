@@ -13,6 +13,7 @@
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">None</NetWasmOptimization>
   </PropertyGroup>
   <ItemGroup>
     <Using Include="Xunit" />

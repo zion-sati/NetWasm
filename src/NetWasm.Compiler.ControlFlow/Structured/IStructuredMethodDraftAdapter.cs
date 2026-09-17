@@ -4,5 +4,5 @@ namespace NetWasm.Compiler.ControlFlow.Structured;
 
 internal interface IStructuredMethodDraftAdapter
 {
-    StructuredMethod Adapt(Draft.StructuredMethodDraft draft);
+    StructuredMethodConstruction Adapt(Draft.StructuredMethodDraft draft);
 }

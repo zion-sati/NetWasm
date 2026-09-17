@@ -156,6 +156,7 @@ internal sealed class CompilationEmissionBuilder(
             ManagedCallSites = analysis.Program.ManagedCallSites,
             DelegateBindings = analysis.Program.DelegateBindings,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
+            CollectManagedMethodMemoryMetrics = options.DiagnosticTracePath is not null,
         };
         var emission = emitter.Emit(request);
         _invariants.Validate(emission.Module, options.Target);

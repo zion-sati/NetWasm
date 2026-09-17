@@ -8,6 +8,7 @@ internal sealed class ManagedMethodBodyEmitterFactory(
     IManagedMethodEmitter managedMethods,
     IManagedMethodSequenceEmitter sequences,
     IStackTraceMethodIdProvider stackTraceMethodIds,
+    IManagedHeapSampler heapSampler,
     ILogger<WasmModuleEmitterFactory> logger) : IManagedMethodBodyEmitterFactory
 {
     public IManagedMethodBodyEmitter Create() =>
@@ -15,6 +16,7 @@ internal sealed class ManagedMethodBodyEmitterFactory(
             new ManagedMethodBodyEmitter(
                 managedMethods,
                 sequences,
-                stackTraceMethodIds),
+                stackTraceMethodIds,
+                heapSampler),
             logger);
 }

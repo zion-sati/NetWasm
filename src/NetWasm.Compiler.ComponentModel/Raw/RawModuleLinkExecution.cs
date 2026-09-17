@@ -38,7 +38,11 @@ public sealed class RawModuleLinkExecution(
                 environment,
                 merged,
                 request.Target));
-            _optimizer.Optimize(merged, workspace.LinkedModulePath, request.Target);
+            _optimizer.Optimize(
+                merged,
+                workspace.LinkedModulePath,
+                request.Target,
+                request.Optimization);
             _files.Move(workspace.LinkedModulePath, request.OutputPath);
         }
         finally

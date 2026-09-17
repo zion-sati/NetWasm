@@ -82,12 +82,18 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
     [Required]
     public string BinaryenWasmMergePath { get; set; } = string.Empty;
 
+    public string NativeBinaryenWasmOptPath { get; set; } = string.Empty;
+
+    public string NativeBinaryenWasmMergePath { get; set; } = string.Empty;
+
     [Required]
     public string Target { get; set; } = string.Empty;
 
     public string JcoVersion { get; set; } = string.Empty;
 
     public string Preview2ShimVersion { get; set; } = string.Empty;
+
+    public string Optimization { get; set; } = "Size";
 
     [Output]
     public ITaskItem[] Components { get; private set; } = [];
@@ -112,6 +118,7 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
                 _ => throw new InvalidOperationException(
                     "The NetWasm component target must be wasm32 or wasm64."),
             };
+            var optimization = ParseOptimization();
             var inputs = _manifestInputs.Read(new(
                 InteropManifestPath,
                 Target,
@@ -136,7 +143,8 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
                 OutputPath,
                 componentTarget,
                 inputs,
-                entryPoint.Abi));
+                entryPoint.Abi,
+                optimization));
             _manifests.Write(new(ComponentManifestPath, manifest));
             Components = [CreateComponentItem(manifest)];
             return true;
@@ -163,7 +171,9 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
         CompilerTaskComposition.CreateBinaryenConfiguration(
             WasmToolsNodePath,
             BinaryenWasmOptPath,
-            BinaryenWasmMergePath);
+            BinaryenWasmMergePath,
+            NullIfEmpty(NativeBinaryenWasmOptPath),
+            NullIfEmpty(NativeBinaryenWasmMergePath));
 
     private TaskItem CreateComponentItem(ComponentManifest manifest)
     {
@@ -178,6 +188,14 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
 
     private static string? NullIfEmpty(string value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private FinalWasmOptimization ParseOptimization() => Optimization switch
+    {
+        "None" => FinalWasmOptimization.None,
+        "Size" => FinalWasmOptimization.Size,
+        _ => throw new InvalidOperationException(
+            "NetWasmOptimization must be None or Size."),
+    };
 
     private static ComponentWitWorldVariant CreateWitWorldVariant(ITaskItem item) =>
         new(

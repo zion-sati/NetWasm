@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Cli;
@@ -14,7 +15,8 @@ internal sealed record ComponentizeCliOptions(
     WasmTarget Target,
     string? InteropManifest,
     string? JcoVersion,
-    string? Preview2ShimVersion)
+    string? Preview2ShimVersion,
+    FinalWasmOptimization Optimization)
 {
     public static ComponentizeCliOptions Parse(string[] arguments)
     {
@@ -28,6 +30,7 @@ internal sealed record ComponentizeCliOptions(
         string? interopManifest = null;
         string? jcoVersion = null;
         string? preview2ShimVersion = null;
+        string? optimization = null;
         CliOptionReader.Read(arguments, (option, value) =>
         {
             switch (option)
@@ -42,6 +45,7 @@ internal sealed record ComponentizeCliOptions(
                 case "--interop-manifest": interopManifest = SetOnce(interopManifest, value, option); break;
                 case "--jco-version": jcoVersion = SetOnce(jcoVersion, value, option); break;
                 case "--preview2-shim-version": preview2ShimVersion = SetOnce(preview2ShimVersion, value, option); break;
+                case "--optimization": optimization = SetOnce(optimization, value, option); break;
                 default:
                     throw CliOptionException.Create(
                     $"unknown componentize option '{option}'");
@@ -57,7 +61,8 @@ internal sealed record ComponentizeCliOptions(
             ParseTarget(target),
             interopManifest,
             jcoVersion,
-            preview2ShimVersion);
+            preview2ShimVersion,
+            ParseOptimization(optimization));
     }
 
     private static WasmTarget ParseTarget(string? value) => value switch
@@ -65,6 +70,14 @@ internal sealed record ComponentizeCliOptions(
         null or "wasm32" => WasmTarget.Wasm32,
         "wasm64" => WasmTarget.Wasm64,
         _ => throw CliOptionException.Create("target must be 'wasm32' or 'wasm64'"),
+    };
+
+    private static FinalWasmOptimization ParseOptimization(string? value) => value switch
+    {
+        null or "size" => FinalWasmOptimization.Size,
+        "none" => FinalWasmOptimization.None,
+        _ => throw CliOptionException.Create(
+            "optimization must be 'none' or 'size'"),
     };
 
     private static string SetOnce(string? current, string value, string option) =>

@@ -12,7 +12,7 @@ public sealed record WasmManagedMethodEmissionMetric(
     int WasmInstructionCount,
     int WasmBodyBytes,
     long CompileDurationTicks,
-    long PeakObservedManagedMemoryBytes,
+    long? PeakObservedManagedMemoryBytes,
     ImmutableDictionary<int, int> OriginalBlockEmissionCounts);
 
 public sealed record WasmStackTraceSymbol(int Id, string Name);

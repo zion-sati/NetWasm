@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Wasm;
+using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler;
 
@@ -29,7 +30,10 @@ public sealed record CompilerOptions(
     bool EmitExceptionTypeMap = true,
     bool EmitStackTrace = false,
     int? EntryMethodToken = null,
-    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction);
+    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
+    ICompilerMetricsObserver? MetricsObserver = null,
+    bool EnableFrontendCache = false,
+    string? IntermediateOutputPath = null);
 
 public sealed partial record CompilationResult(
     byte[] ApplicationModule,

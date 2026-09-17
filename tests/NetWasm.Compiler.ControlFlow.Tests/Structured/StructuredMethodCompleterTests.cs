@@ -21,12 +21,13 @@ public sealed class StructuredMethodCompleterTests
             new New.StructuredExceptionGroupProjector(new New.StructuredControlFlowProjector()))).Adapt(legacy);
         var calls = new List<string>();
         var drafts = new DraftAdapterProbe(projected, calls);
-        var validator = new ValidatorProbe(calls);
-        var completer = new New.StructuredMethodCompleter(drafts, validator);
+        var factory = new StructuredMethodFactoryProbe(calls);
+        var completer = new New.StructuredMethodCompleter(drafts, factory);
 
         var result = ((New.IStructuredMethodCompleter)completer).Complete(legacy);
 
-        Assert.Same(projected, result);
+        Assert.Same(projected, factory.Construction);
+        Assert.Same(factory.Result, result);
         Assert.Equal(["adapt", "validate"], calls);
     }
 
@@ -44,26 +45,42 @@ public sealed class StructuredMethodCompleterTests
             new New.StructuredExceptionGroupProjector(new New.StructuredControlFlowProjector()))).Adapt(
                 DraftMethod(Body(CliValueKind.Void, 0, [], I(0, CilOperation.Return))));
         var drafts = new DraftAdapterProbe(method, calls);
-        var validator = new ValidatorProbe(calls);
+        var factory = new StructuredMethodFactoryProbe(calls);
 
-        Assert.Throws<ArgumentNullException>(() => new New.StructuredMethodCompleter(null!, validator));
+        Assert.Throws<ArgumentNullException>(() => new New.StructuredMethodCompleter(null!, factory));
         Assert.Throws<ArgumentNullException>(() => new New.StructuredMethodCompleter(drafts, null!));
         Assert.Throws<ArgumentNullException>(() =>
-            ((New.IStructuredMethodCompleter)new New.StructuredMethodCompleter(drafts, validator)).Complete(null!));
+            ((New.IStructuredMethodCompleter)new New.StructuredMethodCompleter(drafts, factory)).Complete(null!));
     }
 
-    private sealed class DraftAdapterProbe(New.StructuredMethod result, List<string> calls) :
+    private sealed class DraftAdapterProbe(New.StructuredMethodConstruction result, List<string> calls) :
         New.IStructuredMethodDraftAdapter
     {
-        public New.StructuredMethod Adapt(NwDraft.StructuredMethodDraft draft)
+        public New.StructuredMethodConstruction Adapt(NwDraft.StructuredMethodDraft draft)
         {
             calls.Add("adapt");
             return result;
         }
     }
 
-    private sealed class ValidatorProbe(List<string> calls) : New.IStructuredMethodValidator
+    private sealed class StructuredMethodFactoryProbe(List<string> calls) : New.IStructuredMethodFactory
     {
-        public void Validate(New.StructuredMethod method) => calls.Add("validate");
+        public New.StructuredMethodConstruction? Construction { get; private set; }
+
+        public New.StructuredMethod? Result { get; private set; }
+
+        public New.StructuredMethod Create(New.StructuredMethodConstruction construction)
+        {
+            calls.Add("validate");
+            Construction = construction;
+            return Result = new(
+                construction.Header,
+                construction.EntryBlock,
+                construction.Blocks,
+                construction.Body,
+                construction.TopLevelExceptionGroups,
+                construction.ExceptionGroups,
+                construction.InstructionEntryStacks);
+        }
     }
 }

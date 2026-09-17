@@ -8,6 +8,17 @@ namespace NetWasm.Compiler.Browser.Tests.Wit;
 public sealed class VirtualWitDocumentReaderTests
 {
     [Fact]
+    public void ReadsTheActiveSessionRequest()
+    {
+        var expected = new WitDocument([], [], [], [], "JSON");
+        var resolver = FixedBrowserCompilationRequestResolver.ForDocuments(
+            ImmutableDictionary<string, string>.Empty.Add("contract", "JSON"));
+        var reader = new VirtualWitDocumentReader(resolver, new RecordingJsonReader(expected));
+
+        Assert.Same(expected, reader.Read("contract"));
+    }
+
+    [Fact]
     public void DelegatesTheSelectedNormalizedDocumentWithoutToolExecution()
     {
         var expected = new WitDocument([], [], [], [], "JSON");
@@ -64,6 +75,11 @@ public sealed class VirtualWitDocumentReaderTests
     {
         Assert.Throws<ArgumentNullException>(() => CreateReader(null!, new WitDocumentJsonReader()));
         Assert.Throws<ArgumentNullException>(() => CreateReader(ImmutableDictionary<string, string>.Empty, null!));
+        Assert.Throws<ArgumentNullException>(() => new VirtualWitDocumentReader(
+            (IBrowserCompilationRequestResolver)null!, new WitDocumentJsonReader()));
+        Assert.Throws<ArgumentNullException>(() => new VirtualWitDocumentReader(
+            FixedBrowserCompilationRequestResolver.ForDocuments(
+                ImmutableDictionary<string, string>.Empty), null!));
         var reader = CreateReader(ImmutableDictionary<string, string>.Empty, new WitDocumentJsonReader());
         Assert.Throws<ArgumentNullException>(() => reader.Read(null!));
         Assert.Throws<ArgumentException>(() => reader.Read(" "));

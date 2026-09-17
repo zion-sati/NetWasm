@@ -11,7 +11,9 @@ internal static class EmissionServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddNetWasmEmission();
-        services.AddSingleton<IWasmMethodLowerer, WasmMethodLowerer>();
+        services.AddSingleton<WasmMethodLowerer>();
+        services.AddSingleton<IWasmMethodLowerer>(static provider =>
+            provider.GetRequiredService<WasmMethodLowerer>());
         services.AddSingleton<IWasmMethodProgramBuilder, WasmMethodProgramBuilder>();
         services.AddSingleton<IManagedWasmEmitterFactory, ManagedWasmEmitterFactory>();
         return services;

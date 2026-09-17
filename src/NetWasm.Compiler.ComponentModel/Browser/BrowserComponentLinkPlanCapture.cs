@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.ComponentModel.Browser;
 
 internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> ownedPaths)
 {
-    private enum Phase { Text, Merged, Pruned, Optimized, Cleanup }
+    private enum Phase { Text, Merged, Pruned, Validated, Finalized, Cleanup }
 
     private readonly ImmutableHashSet<string> _ownedPaths = ownedPaths;
     private readonly List<BrowserWasmTextModule> _modules = [];
@@ -16,6 +16,8 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
     private BrowserBinaryenInvocation? _merge;
     private BrowserComponentExportPruning? _exports;
     private BrowserBinaryenInvocation? _optimization;
+    private BrowserCoreModuleValidation? _validation;
+    private BrowserFileCopy? _copy;
 
     public void AddText(string source, string outputPath)
     {
@@ -50,7 +52,7 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
         {
             RequirePhase(Phase.Pruned);
             _optimization = new(toolId, [.. arguments]);
-            _phase = Phase.Optimized;
+            _phase = Phase.Finalized;
             return;
         }
         throw new InvalidOperationException("The link producer requested an unexpected tool.");
@@ -69,6 +71,24 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
     public bool PlannedFileExists(string path) =>
         _phase == Phase.Pruned && string.Equals(_exports?.OutputPath, path, StringComparison.Ordinal);
 
+    public void AddCopy(string inputPath, string outputPath)
+    {
+        RequirePhase(Phase.Validated);
+        _copy = new(inputPath, outputPath);
+        _phase = Phase.Finalized;
+    }
+
+    public void AddValidation(string path)
+    {
+        RequirePhase(Phase.Pruned);
+        if (!string.Equals(_exports!.OutputPath, path, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Core validation requires the export-processed module.");
+        }
+        _validation = new(path);
+        _phase = Phase.Validated;
+    }
+
     public void AddCleanup(string path)
     {
         RequireOwnedPath(path);
@@ -85,11 +105,12 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
     public BrowserComponentCoreModuleLinkPlan Snapshot()
     {
         RequirePhase(Phase.Cleanup);
-        if (_merge is null || _exports is null || _optimization is null || _cleanup.Count != _ownedPaths.Count)
+        if (_cleanup.Count != _ownedPaths.Count)
         {
             throw new InvalidOperationException("The link producer did not capture a complete plan.");
         }
-        return new([.. _modules], _merge, _exports, _optimization, [.. _cleanup]);
+        return new([.. _modules], _merge!, _exports!, _optimization, _validation, _copy,
+            [.. _cleanup]);
     }
 
     private void RequireOwnedPath(string path)
@@ -133,6 +154,18 @@ internal sealed class BrowserComponentExportPruningCapture(BrowserComponentLinkP
 internal sealed class BrowserPlannedFileExistence(BrowserComponentLinkPlanCapture capture) : IFileExistence
 {
     public bool Exists(string path) => capture.PlannedFileExists(path);
+}
+
+internal sealed class BrowserFileCopyCapture(BrowserComponentLinkPlanCapture capture) : IFileCopier
+{
+    public void Copy(string sourcePath, string destinationPath) =>
+        capture.AddCopy(sourcePath, destinationPath);
+}
+
+internal sealed class BrowserCoreModuleValidationCapture(BrowserComponentLinkPlanCapture capture) :
+    IWasmCoreModuleValidator
+{
+    public void Validate(string path) => capture.AddValidation(path);
 }
 
 internal sealed class BrowserCleanupPathCapture(BrowserComponentLinkPlanCapture capture) : IFileDeleter

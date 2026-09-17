@@ -163,6 +163,7 @@ public sealed class CliCommandTests
             "--wit", "contract.wit",
             "--output", "component.wasm",
             "--manifest", "component.json",
+            "--optimization", "none",
         ]);
 
         Assert.Equal(0, result);
@@ -170,6 +171,7 @@ public sealed class CliCommandTests
         Assert.True(validator.Called);
         Assert.NotNull(packager.Request);
         Assert.Equal("wasm32", packager.Request!.Target.Width);
+        Assert.Equal(FinalWasmOptimization.None, packager.Request.Optimization);
         Assert.Equal("component.json", Assert.Single(files.TextWrites).Path);
         Assert.DoesNotContain('\r', Assert.Single(files.TextWrites).Content);
     }

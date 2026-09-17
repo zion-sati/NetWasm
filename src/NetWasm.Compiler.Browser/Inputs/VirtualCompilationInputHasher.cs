@@ -6,20 +6,24 @@ using NetWasm.Compiler.ExceptionTypes;
 
 namespace NetWasm.Compiler.Browser.Inputs;
 
-internal sealed class VirtualCompilationInputHasher(
-    ImmutableDictionary<string, ImmutableArray<byte>> inputs) : ICompilationInputHasher
+internal sealed class VirtualCompilationInputHasher : ICompilationInputHasher
 {
-    private readonly ImmutableDictionary<string, ImmutableArray<byte>> _inputs =
-        inputs ?? throw new ArgumentNullException(nameof(inputs));
+    private readonly ImmutableDictionary<string, ImmutableArray<byte>>? _fixedInputs;
+    private readonly IBrowserCompilationRequestResolver? _requests;
+
+    internal VirtualCompilationInputHasher(
+        ImmutableDictionary<string, ImmutableArray<byte>> inputs) =>
+        _fixedInputs = inputs ?? throw new ArgumentNullException(nameof(inputs));
+
+    public VirtualCompilationInputHasher(IBrowserCompilationRequestResolver requests) =>
+        _requests = requests ?? throw new ArgumentNullException(nameof(requests));
 
     public string Hash(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        if (!_inputs.TryGetValue(path, out var bytes))
-        {
+        var inputs = _requests?.Resolve().Inputs ?? _fixedInputs!;
+        if (!inputs.TryGetValue(path, out var bytes))
             throw new FileNotFoundException("A semantic virtual compiler input was not supplied.", path);
-        }
-
         return Convert.ToHexStringLower(SHA256.HashData(bytes.AsSpan()));
     }
 }

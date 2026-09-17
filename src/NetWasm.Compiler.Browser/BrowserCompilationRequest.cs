@@ -72,6 +72,8 @@ public sealed record BrowserCompilationRequest
     /// </summary>
     public bool SelectManagedExecutableEntryPoint { get; }
 
+    public bool CollectCompilerMetrics { get; init; }
+
     public ImmutableDictionary<string, ImmutableArray<byte>> Inputs { get; }
 
     public ImmutableDictionary<string, string> NormalizedWitDocuments { get; }

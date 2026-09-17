@@ -29,7 +29,8 @@ internal sealed record WasmModuleTarget(
         Plan.RuntimeImportSelection,
         Plan.DelegateRemoveHelperIndex,
         Plan.DelegateEqualityHelperIndex,
-        Request.ManagedCallSites);
+        Request.ManagedCallSites,
+        Request.CollectManagedMethodMemoryMetrics);
 }
 
 internal sealed record InstructionModuleTarget(
@@ -47,7 +48,8 @@ internal sealed record InstructionModuleTarget(
     RuntimeImportSelection RuntimeImportSelection,
     OptionalFunctionIndex DelegateRemoveHelperIndex,
     OptionalFunctionIndex DelegateEqualityHelperIndex,
-    ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites);
+    ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites,
+    bool CollectManagedMethodMemoryMetrics = false);
 
 internal interface IWasmModuleTargetFactory
 {

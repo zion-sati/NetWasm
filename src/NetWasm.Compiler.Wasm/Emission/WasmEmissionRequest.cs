@@ -53,6 +53,8 @@ public sealed record WasmEmissionRequest(
 
     public EntityKey? EntryPointArgumentFactory { get; init; }
 
+    public bool CollectManagedMethodMemoryMetrics { get; init; }
+
     public static WasmEmissionRequest Create(
         MethodDefinitionModel entryPoint,
         IReadOnlyDictionary<EntityKey, StructuredMethod> methods,

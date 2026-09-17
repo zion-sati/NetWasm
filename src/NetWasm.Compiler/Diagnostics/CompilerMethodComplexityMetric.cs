@@ -18,4 +18,4 @@ public sealed record CompilerMethodComplexityMetric(
     int WasmInstructionCount,
     int WasmBodyBytes,
     long CompileDurationTicks,
-    long PeakObservedManagedMemoryBytes);
+    long? PeakObservedManagedMemoryBytes);

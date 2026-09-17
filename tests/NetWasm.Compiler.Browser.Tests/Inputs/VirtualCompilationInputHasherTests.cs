@@ -7,6 +7,17 @@ namespace NetWasm.Compiler.Browser.Tests.Inputs;
 public sealed class VirtualCompilationInputHasherTests
 {
     [Fact]
+    public void HashesTheActiveSessionRequest()
+    {
+        var resolver = FixedBrowserCompilationRequestResolver.ForInputs(
+            ImmutableDictionary<string, ImmutableArray<byte>>.Empty.Add("app.dll", [97, 98, 99]));
+        var hasher = new VirtualCompilationInputHasher(resolver);
+
+        Assert.Equal("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            hasher.Hash("app.dll"));
+    }
+
+    [Fact]
     public void HashesOriginalWitBytesIndependentlyOfNormalizedJson()
     {
         var options = BrowserCompilationRequestTests.CreateOptions();
@@ -40,6 +51,8 @@ public sealed class VirtualCompilationInputHasherTests
     public void RequiresExactSuppliedPathsAndInitializedInputs()
     {
         Assert.Throws<ArgumentNullException>(() => CreateHasher(null!));
+        Assert.Throws<ArgumentNullException>(() => new VirtualCompilationInputHasher(
+            (IBrowserCompilationRequestResolver)null!));
         var hasher = CreateHasher(ImmutableDictionary<string, ImmutableArray<byte>>.Empty.Add("folder/input", [1]));
         var missing = Assert.Throws<FileNotFoundException>(() => hasher.Hash("input"));
         Assert.Equal("input", missing.FileName);

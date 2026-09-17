@@ -32,6 +32,33 @@ public sealed class BinaryenToolRunnerTests
         Assert.Equal(1, node.CallCount);
     }
 
+    [Theory]
+    [InlineData(BinaryenToolIds.WasmOpt)]
+    [InlineData(BinaryenToolIds.WasmMerge)]
+    public void RunSelectsConfiguredNativeToolWithoutPortableRetry(string toolId)
+    {
+        var expected = new ToolResult(9, "", "native failure");
+        var node = new RecordingNodeCommandRunner(new(0, "portable", ""));
+        var processes = new RecordingExternalToolRunner(expected);
+        var configuration = CreateConfiguration() with
+        {
+            NativeTools = [new(toolId,
+                toolId == BinaryenToolIds.WasmOpt ? WasmOptPath : WasmMergePath)],
+        };
+        var runner = new BinaryenToolRunner(configuration, node, processes);
+        var arguments = ImmutableArray.Create("input.wasm", "--output", "output.wasm");
+
+        var result = runner.Run(toolId, arguments);
+
+        Assert.Same(expected, result);
+        Assert.Equal(
+            toolId == BinaryenToolIds.WasmOpt ? WasmOptPath : WasmMergePath,
+            processes.Executable);
+        Assert.Equal(arguments, processes.Arguments);
+        Assert.Equal(1, processes.CallCount);
+        Assert.Equal(0, node.CallCount);
+    }
+
     [Fact]
     public void ConstructorRejectsNullInputs()
     {
@@ -40,6 +67,11 @@ public sealed class BinaryenToolRunnerTests
         Assert.Throws<ArgumentNullException>(() => new BinaryenToolRunner(null!, node));
         Assert.Throws<ArgumentNullException>(() => new BinaryenToolRunner(
             CreateConfiguration(), null!));
+        Assert.Throws<ArgumentException>(() => new BinaryenToolRunner(
+            CreateConfiguration() with
+            {
+                NativeTools = [new(BinaryenToolIds.WasmOpt, WasmOptPath)],
+            }, node, null));
     }
 
     [Theory]
@@ -158,6 +190,22 @@ public sealed class BinaryenToolRunnerTests
             CallCount++;
             Command = command;
             return result!;
+        }
+    }
+
+    private sealed class RecordingExternalToolRunner(ToolResult result) :
+        IExternalToolRunner
+    {
+        public string? Executable { get; private set; }
+        public ImmutableArray<string> Arguments { get; private set; }
+        public int CallCount { get; private set; }
+
+        public ToolResult Run(string executable, IEnumerable<string> arguments)
+        {
+            Executable = executable;
+            Arguments = [.. arguments];
+            CallCount++;
+            return result;
         }
     }
 }

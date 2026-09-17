@@ -18,6 +18,7 @@ internal static class MethodEmissionServiceCollectionExtensions
             ConstructedMethodSetAppender>();
         services.AddSingleton<IManagedMethodEmissionMetricProjector,
             ManagedMethodEmissionMetricProjector>();
+        services.AddSingleton<IManagedHeapSampler, ManagedHeapSampler>();
         services.AddSingleton<IExceptionGroupEnumerator, ExceptionGroupEnumerator>();
         services.AddSingleton<IFilterEmissionCountMerger,
             FilterEmissionCountMerger>();

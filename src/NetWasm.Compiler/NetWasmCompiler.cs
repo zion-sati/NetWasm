@@ -2,6 +2,7 @@ using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.Analysis;
+using NetWasm.Compiler.Caching.Frontend;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Diagnostics;
@@ -35,16 +36,54 @@ public interface INetWasmCompiler
 }
 
 internal sealed class NetWasmCompilationPipeline(
-    ICompilationPipelineExecutor executor) : INetWasmCompiler
+    ICompilationPipelineExecutor executor,
+    IFrontendArtifactCacheRequestFactory frontendArtifacts,
+    IFrontendCacheMetricsObserverFactory metricsObservers) : INetWasmCompiler
 {
     private readonly ICompilationPipelineExecutor _executor = executor ??
         throw new ArgumentNullException(nameof(executor));
+    private readonly IFrontendArtifactCacheRequestFactory _frontendArtifacts =
+        frontendArtifacts ?? throw new ArgumentNullException(nameof(frontendArtifacts));
+    private readonly IFrontendCacheMetricsObserverFactory _metricsObservers =
+        metricsObservers ?? throw new ArgumentNullException(nameof(metricsObservers));
 
     public CompilationResult Compile(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        return _executor.Execute(options);
+        using var frontendRequest = _frontendArtifacts.Begin(options);
+        var observer = options.MetricsObserver;
+        var result = _executor.Execute(observer is null ? options : options with
+        {
+            MetricsObserver = _metricsObservers.Create(observer)
+        });
+        frontendRequest.Commit();
+        return result;
     }
+}
+
+internal interface IFrontendCacheMetricsObserverFactory
+{
+    ICompilerMetricsObserver Create(ICompilerMetricsObserver observer);
+}
+
+internal sealed class FrontendCacheMetricsObserverFactory(
+    IFrontendArtifactCacheMetricsReader metrics) : IFrontendCacheMetricsObserverFactory
+{
+    private readonly IFrontendArtifactCacheMetricsReader _metrics = metrics ??
+        throw new ArgumentNullException(nameof(metrics));
+
+    public ICompilerMetricsObserver Create(ICompilerMetricsObserver observer) =>
+        new FrontendCacheMetricsObserver(
+            observer ?? throw new ArgumentNullException(nameof(observer)),
+            _metrics);
+}
+
+internal sealed class FrontendCacheMetricsObserver(
+    ICompilerMetricsObserver inner,
+    IFrontendArtifactCacheMetricsReader metrics) : ICompilerMetricsObserver
+{
+    public void Report(CompilerMetricsReport report) =>
+        inner.Report(report with { FrontendCache = metrics.Read() });
 }
 
 public static class NetWasmCompilerServiceCollectionExtensions
@@ -58,6 +97,7 @@ public static class NetWasmCompilerServiceCollectionExtensions
         services.AddCompilerLayout();
         services.AddCompilerGarbageCollection();
         services.AddCompilerEmission();
+        services.AddCompilerFrontendCaching();
         services.AddCompilerDiagnostics();
         services.AddCompilerValidation();
         services.AddCompilerExceptionTypes();

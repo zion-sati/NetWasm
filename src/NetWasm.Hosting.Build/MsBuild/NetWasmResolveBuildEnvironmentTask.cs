@@ -37,6 +37,13 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
     [Output] public string BinaryenPath { get; private set; } = string.Empty;
     [Output] public string BinaryenWasmOptPath { get; private set; } = string.Empty;
     [Output] public string BinaryenWasmMergePath { get; private set; } = string.Empty;
+    [Output] public string NativeBinaryenWasmOptPath { get; private set; } = string.Empty;
+    [Output] public string NativeBinaryenWasmOptVersion { get; private set; } = string.Empty;
+    [Output] public string NativeBinaryenWasmMergePath { get; private set; } = string.Empty;
+    [Output] public string NativeBinaryenWasmMergeVersion { get; private set; } = string.Empty;
+    [Output] public string BinaryenWasmOptImplementation { get; private set; } = string.Empty;
+    [Output] public string BinaryenWasmMergeImplementation { get; private set; } = string.Empty;
+    [Output] public string BinaryenPortableVersion { get; private set; } = string.Empty;
     [Output] public string JcoPath { get; private set; } = string.Empty;
     [Output] public string JcoVersion { get; private set; } = string.Empty;
     [Output] public string Preview2ShimVersion { get; private set; } = string.Empty;
@@ -65,6 +72,21 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
             BinaryenPath = result.Toolchain.RawInspection.BinaryenModulePath;
             BinaryenWasmOptPath = result.Toolchain.RawInspection.WasmOptPath;
             BinaryenWasmMergePath = result.Toolchain.RawInspection.WasmMergePath;
+            BinaryenPortableVersion = result.Toolchain.RawInspection.BinaryenVersion;
+            NativeBinaryenWasmOptPath =
+                result.Binaryen.WasmOpt?.Executable.AbsolutePath ?? string.Empty;
+            NativeBinaryenWasmOptVersion =
+                result.Binaryen.WasmOpt?.Compatibility.Version.ToString() ?? string.Empty;
+            NativeBinaryenWasmMergePath =
+                result.Binaryen.WasmMerge?.Executable.AbsolutePath ?? string.Empty;
+            NativeBinaryenWasmMergeVersion =
+                result.Binaryen.WasmMerge?.Compatibility.Version.ToString() ?? string.Empty;
+            BinaryenWasmOptImplementation = result.Binaryen.WasmOpt is null
+                ? "portable"
+                : "native";
+            BinaryenWasmMergeImplementation = result.Binaryen.WasmMerge is null
+                ? "portable"
+                : "native";
             JcoPath = result.Toolchain.Jco.EntryPointPath;
             JcoVersion = result.Toolchain.Jco.JcoVersion;
             Preview2ShimVersion = result.Toolchain.Jco.Preview2ShimVersion;

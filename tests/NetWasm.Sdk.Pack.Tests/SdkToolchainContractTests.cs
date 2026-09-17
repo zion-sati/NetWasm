@@ -138,6 +138,8 @@ public sealed class SdkToolchainContractTests
             targetNamespace + "NetWasmRuntimePackMaterializedPath"));
         Assert.Empty(props.Descendants(
             targetNamespace + "NetWasmRuntimePackLogDirectory"));
+        Assert.Empty(props.Descendants(
+            targetNamespace + "NetWasmRuntimePackMaterializationIdentityPath"));
 
         var resolver = Assert.Single(targets.Descendants(
             targetNamespace + "Target"), target =>
@@ -146,19 +148,55 @@ public sealed class SdkToolchainContractTests
             resolver.ToString(SaveOptions.DisableFormatting),
             StringComparison.Ordinal);
 
-        foreach (var targetName in new[]
-                 {
-                     "NetWasmRuntimePackMaterialize",
-                     "NetWasmRuntimePackCleanMaterializedRuntime",
-                 })
-        {
-            var target = Assert.Single(targets.Descendants(
-                targetNamespace + "Target"), candidate =>
-                (string?)candidate.Attribute("Name") == targetName);
-            Assert.Contains("NetWasmRuntimePackResolveOutputPaths",
-                (string?)target.Attribute("DependsOnTargets"),
-                StringComparison.Ordinal);
-        }
+        Assert.Contains("NetWasmRuntimePackMaterializationIdentityPath",
+            resolver.ToString(SaveOptions.DisableFormatting),
+            StringComparison.Ordinal);
+
+        var identity = Assert.Single(targets.Descendants(
+            targetNamespace + "Target"), candidate =>
+            (string?)candidate.Attribute("Name") ==
+            "NetWasmRuntimePackWriteMaterializationIdentity");
+        Assert.Contains("NetWasmRuntimePackResolveOutputPaths",
+            (string?)identity.Attribute("DependsOnTargets"),
+            StringComparison.Ordinal);
+        var identityWriter = Assert.Single(identity.Descendants(
+            targetNamespace + "WriteLinesToFile"));
+        Assert.Equal("true", (string?)identityWriter.Attribute("WriteOnlyWhenDifferent"));
+
+        var materialize = Assert.Single(targets.Descendants(
+            targetNamespace + "Target"), candidate =>
+            (string?)candidate.Attribute("Name") == "NetWasmRuntimePackMaterialize");
+        Assert.Contains("NetWasmRuntimePackWriteMaterializationIdentity",
+            (string?)materialize.Attribute("DependsOnTargets"),
+            StringComparison.Ordinal);
+        Assert.Contains("@(_NetWasmRuntimePackMaterializationInput)",
+            (string?)materialize.Attribute("Inputs"),
+            StringComparison.Ordinal);
+        Assert.Contains("$(NetWasmRuntimeLayoutPath)",
+            (string?)materialize.Attribute("Inputs"),
+            StringComparison.Ordinal);
+        Assert.Equal("$(NetWasmRuntimePackMaterializedPath)",
+            (string?)materialize.Attribute("Outputs"));
+        var inferredRuntime = Assert.Single(materialize.Descendants(
+            targetNamespace + "_NetWasmRuntimePackMaterialization"));
+        Assert.Contains("Exists('$(NetWasmRuntimePackMaterializedPath)')",
+            (string?)inferredRuntime.Parent?.Attribute("Condition"),
+            StringComparison.Ordinal);
+        Assert.Equal("RuntimeModule",
+            (string?)inferredRuntime.Element(targetNamespace + "Kind"));
+        Assert.Equal("$(NetWasmTarget)",
+            (string?)inferredRuntime.Element(targetNamespace + "WasmTarget"));
+
+        var clean = Assert.Single(targets.Descendants(
+            targetNamespace + "Target"), candidate =>
+            (string?)candidate.Attribute("Name") ==
+            "NetWasmRuntimePackCleanMaterializedRuntime");
+        Assert.Contains("NetWasmRuntimePackResolveOutputPaths",
+            (string?)clean.Attribute("DependsOnTargets"),
+            StringComparison.Ordinal);
+        Assert.Contains("$(NetWasmRuntimePackMaterializationIdentityPath)",
+            clean.ToString(SaveOptions.DisableFormatting),
+            StringComparison.Ordinal);
     }
 
     [Fact]

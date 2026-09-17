@@ -37,8 +37,9 @@ internal static class AnalysisServiceCollectionExtensions
             ReachabilityInstructionAnalyzerFactory>();
         services.AddSingleton<IReachabilityImportClassifierFactory,
             ReachabilityImportClassifierFactory>();
-        services.AddSingleton<IReachableMethodAnalyzerFactory,
-            ReachableMethodAnalyzerFactory>();
+        services.AddSingleton<ReachableMethodAnalyzerFactory>();
+        services.AddSingleton<IReachableMethodAnalyzerFactory>(static provider =>
+            provider.GetRequiredService<ReachableMethodAnalyzerFactory>());
         services.AddSingleton<ITypeTestPlannerFactory, TypeTestPlannerFactory>();
         services.AddSingleton<IRuntimeIntrinsicRegistryFactory,
             RuntimeIntrinsicRegistryFactory>();

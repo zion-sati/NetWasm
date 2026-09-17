@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Xml.Linq;
 
 namespace NetWasm.Sdk.Tests;
 
@@ -316,6 +317,73 @@ public sealed class SdkRoutingTests
     }
 
     [Fact]
+    public void FinalWasmOptimizationDefaultsToSizeAndAllowsExplicitNone()
+    {
+        using var defaultPolicy = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>",
+            includeCompilerTargets: true);
+        using var noFinalOptimization = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>None</NetWasmOptimization>",
+            includeCompilerTargets: true);
+
+        Assert.Equal("Size", defaultPolicy.Property("NetWasmOptimization"));
+        Assert.Equal("None", noFinalOptimization.Property("NetWasmOptimization"));
+    }
+
+    [Fact]
+    public void PackagingIncrementalBoundaryTracksEveryExternalToolAndOptionIdentity()
+    {
+        var targetNamespace = XNamespace.Get(
+            "http://schemas.microsoft.com/developer/msbuild/2003");
+        var targets = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+
+        var identity = Assert.Single(targets.Descendants(
+            targetNamespace + "Target"), target =>
+            (string?)target.Attribute("Name") == "NetWasmWritePackagingIdentity");
+        var identityContract = identity.ToString(SaveOptions.DisableFormatting);
+        foreach (var value in new[]
+                 {
+                     "$(NetWasmOptimization)",
+                     "packagingPolicyRevision=2",
+                     "$(NetWasmTarget)",
+                     "$(NetWasmWorld)",
+                     "$(NetWasmWitPath)",
+                     "$(NetWasmJcoVersion)",
+                     "$(NetWasmPreview2ShimVersion)",
+                     "$(NetWasmNodePath)",
+                     "$(NetWasmWasmToolsCommandPath)",
+                     "$(NetWasmWasmToolsModulePath)",
+                     "$(NetWasmBinaryenWasmOptPath)",
+                     "$(NetWasmBinaryenWasmMergePath)",
+                     "%(NetWasmComponentRuntime.FullPath)",
+                     "%(NetWasmComponentWitVariant.FullPath)",
+                 })
+        {
+            Assert.Contains(value, identityContract, StringComparison.Ordinal);
+        }
+
+        foreach (var targetName in new[]
+                 {
+                     "NetWasmCompilerTasksComponentize",
+                     "NetWasmCompilerTasksLinkRawModule",
+                 })
+        {
+            var packaging = Assert.Single(targets.Descendants(
+                targetNamespace + "Target"), target =>
+                (string?)target.Attribute("Name") == targetName);
+            var inputs = (string?)packaging.Attribute("Inputs");
+            Assert.Contains("$(NetWasmNodePath)", inputs, StringComparison.Ordinal);
+            Assert.Contains("$(NetWasmWasmToolsCommandPath)", inputs, StringComparison.Ordinal);
+            Assert.Contains("$(NetWasmWasmToolsModulePath)", inputs, StringComparison.Ordinal);
+            Assert.Contains("$(NetWasmBinaryenWasmOptPath)", inputs, StringComparison.Ordinal);
+            Assert.Contains("$(NetWasmBinaryenWasmMergePath)", inputs, StringComparison.Ordinal);
+            Assert.Contains("$(NetWasmPackagingIdentityPath)", inputs, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void InnerCollectionReturnsTheEvaluatedPackageReferenceContract()
     {
         using var project = EvaluationProject.Create(
@@ -518,6 +586,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRandomness=$(NetWasmRandomness)" />
                     <Message Importance="High" Text="__NETWASM_PROP__RunWorkingDirectory=$(RunWorkingDirectory)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedStackTrace=$(NetWasmManagedStackTrace)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimization=$(NetWasmOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkPackRoute=@(NetWasmSdkPackRoute)" />

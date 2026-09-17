@@ -20,6 +20,12 @@ using static EmitterTestSupport;
 public sealed class ManagedMethodBodyEmitterTests
 {
     [Fact]
+    public void HeapSamplerReportsTheCurrentManagedHeap()
+    {
+        Assert.True(new ManagedHeapSampler().Sample() > 0);
+    }
+
+    [Fact]
     public void BodyEmitterDelegatesToBodyAndSequenceCapabilities()
     {
         var program = new FakeProgram();
@@ -40,10 +46,12 @@ public sealed class ManagedMethodBodyEmitterTests
             17);
         var methods = new RecordingMethodEmitter(expected);
         var sequences = new RecordingSequenceEmitter(expectedCounts);
+        var heap = new RecordingHeapSampler(100, 200);
         var emitter = new ManagedMethodBodyEmitter(
             methods,
             sequences,
-            new StackTraceMethodIdProvider());
+            new StackTraceMethodIdProvider(),
+            heap);
 
         var result = emitter.Emit(
             method,
@@ -63,6 +71,13 @@ public sealed class ManagedMethodBodyEmitterTests
         Assert.Same(target, sequences.Target);
         Assert.Same(functionIndices, sequences.FunctionIndices);
         Assert.Equal(structured.Body, sequences.Sequence);
+        Assert.Null(result.PeakObservedManagedMemoryBytes);
+        Assert.Equal(0, heap.CallCount);
+        Assert.Throws<ArgumentNullException>(() => new ManagedMethodBodyEmitter(
+            methods,
+            sequences,
+            new StackTraceMethodIdProvider(),
+            null!));
     }
 
     [Fact]
@@ -77,7 +92,8 @@ public sealed class ManagedMethodBodyEmitterTests
         var emitter = new ManagedMethodBodyEmitter(
             methods,
             new RecordingSequenceEmitter([]),
-            new StackTraceMethodIdProvider());
+            new StackTraceMethodIdProvider(),
+            new RecordingHeapSampler());
 
         var result = emitter.Emit(
             method,
@@ -97,6 +113,7 @@ public sealed class ManagedMethodBodyEmitterTests
             new RecordingMethodEmitter(new([], FilterEnvironmentLayout.Empty, 0)),
             new RecordingSequenceEmitter([]),
             new StackTraceMethodIdProvider(),
+            new RecordingHeapSampler(),
             NullLogger<WasmModuleEmitterFactory>.Instance);
 
         var first = factory.Create();
@@ -205,6 +222,7 @@ public sealed class ManagedMethodBodyEmitterTests
             returnEmitter.Commands,
             [CilOperation.Return]),
             new RecordingRootPublicationEmitter(_ => { }));
+        var heap = new RecordingHeapSampler(100, 200);
         var emitter = new ManagedMethodBodyEmitter(
             new ManagedMethodEmitter(
                 layouts,
@@ -236,7 +254,8 @@ public sealed class ManagedMethodBodyEmitterTests
                     layouts,
                     new NetWasm.Compiler.ControlFlow.StackTypeCompatibilityValidator()),
                 dispatcher),
-            new StackTraceMethodIdProvider());
+            new StackTraceMethodIdProvider(),
+            heap);
         var method = program.GetMethod(ConstructorKey);
         var structured = Structure(program, method, I(0, CilOperation.Return));
         var roots = new MethodRootMap(ConstructorKey, [], []);
@@ -246,13 +265,17 @@ public sealed class ManagedMethodBodyEmitterTests
             new ManagedMethodIdentity("Tests.Caller"),
             structured,
             roots,
-            CreateInstructionModuleTarget(program),
+            CreateInstructionModuleTarget(program) with
+            {
+                CollectManagedMethodMemoryMetrics = true,
+            },
             CreateFunctionIndexResolver(program));
 
         Assert.NotEmpty(body.Body);
         Assert.True(body.WasmInstructionCount > 0);
         Assert.True(body.CompileDurationTicks > 0);
-        Assert.True(body.PeakObservedManagedMemoryBytes > 0);
+        Assert.Equal(200, body.PeakObservedManagedMemoryBytes);
+        Assert.Equal(2, heap.CallCount);
         Assert.Equal(1, body.OriginalBlockEmissionCounts[0]);
         Assert.Equal(ConstructorKey.ToString(), body.MethodKey);
         Assert.Same(FilterEnvironmentLayout.Empty, body.FilterEnvironment);
@@ -345,6 +368,20 @@ StructuredMethod structured,
                 "emitted",
                 FilterEnvironmentLayout.Empty,
                 []);
+        }
+    }
+
+    private sealed class RecordingHeapSampler(params long[] samples) :
+        IManagedHeapSampler
+    {
+        private readonly Queue<long> _samples = new(samples);
+
+        public int CallCount { get; private set; }
+
+        public long Sample()
+        {
+            CallCount++;
+            return _samples.Dequeue();
         }
     }
 

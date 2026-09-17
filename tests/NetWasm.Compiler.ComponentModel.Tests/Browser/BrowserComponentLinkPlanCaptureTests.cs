@@ -48,6 +48,43 @@ public sealed class BrowserComponentLinkPlanCaptureTests
         Assert.Equal(5, plan.CleanupPaths.Length);
     }
 
+    [Fact]
+    public void CompleteCopySnapshotHasNoOptimizerInvocation()
+    {
+        var capture = CreateCapture();
+        capture.AddText("(module)", "environment");
+        capture.AddInvocation(BinaryenToolIds.WasmMerge, []);
+        capture.AddExportPruning("merged", "sanitized", "cm32p2");
+        capture.AddValidation("sanitized");
+        capture.AddCopy("sanitized", "output");
+        foreach (var path in new[] { "environment", "host", "adapter", "merged", "sanitized" }) capture.AddCleanup(path);
+
+        var plan = capture.Snapshot();
+
+        Assert.Null(plan.Optimization);
+        Assert.Equal(new BrowserCoreModuleValidation("sanitized"), plan.Validation);
+        Assert.Equal(new BrowserFileCopy("sanitized", "output"), plan.Copy);
+    }
+
+    [Fact]
+    public void CopyFinalizationRequiresValidationOfTheExportProcessedModule()
+    {
+        var capture = CreateCapture();
+        capture.AddText("(module)", "environment");
+        capture.AddInvocation(BinaryenToolIds.WasmMerge, []);
+        capture.AddExportPruning("merged", "sanitized", "cm32p2");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            capture.AddCopy("sanitized", "output"));
+        Assert.Throws<InvalidOperationException>(() =>
+            capture.AddValidation("merged"));
+
+        capture.AddValidation("sanitized");
+        Assert.Throws<InvalidOperationException>(() =>
+            capture.AddValidation("sanitized"));
+        capture.AddCopy("sanitized", "output");
+    }
+
     private static BrowserComponentLinkPlanCapture CreateCapture() => new(
         ImmutableHashSet.Create(StringComparer.Ordinal, "environment", "host", "adapter", "merged", "sanitized"));
 }

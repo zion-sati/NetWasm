@@ -47,8 +47,14 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
     [Required]
     public string BinaryenWasmMergePath { get; set; } = string.Empty;
 
+    public string NativeBinaryenWasmOptPath { get; set; } = string.Empty;
+
+    public string NativeBinaryenWasmMergePath { get; set; } = string.Empty;
+
     [Required]
     public string Target { get; set; } = string.Empty;
+
+    public string Optimization { get; set; } = "Size";
 
     [Output]
     public ITaskItem[] Modules { get; private set; } = [];
@@ -65,6 +71,7 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                 _ => throw new InvalidOperationException(
                     "The NetWasm raw-module target must be wasm32 or wasm64."),
             };
+            var optimization = ParseOptimization();
             using var session = _sessions.Create(
                 CompilerTaskComposition.CreateWasmToolsCommand(
                     WasmToolsNodePath,
@@ -73,12 +80,15 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                 CompilerTaskComposition.CreateBinaryenConfiguration(
                     WasmToolsNodePath,
                     BinaryenWasmOptPath,
-                    BinaryenWasmMergePath));
+                    BinaryenWasmMergePath,
+                    NullIfEmpty(NativeBinaryenWasmOptPath),
+                    NullIfEmpty(NativeBinaryenWasmMergePath)));
             session.Link(new(
                 CoreModulePath,
                 RuntimeModulePath,
                 OutputPath,
-                componentTarget));
+                componentTarget,
+                optimization));
             Modules = [CreateModuleItem()];
             return true;
         }
@@ -103,4 +113,15 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
         item.SetMetadata("WasiVersion", "0.2");
         return item;
     }
+
+    private FinalWasmOptimization ParseOptimization() => Optimization switch
+    {
+        "None" => FinalWasmOptimization.None,
+        "Size" => FinalWasmOptimization.Size,
+        _ => throw new InvalidOperationException(
+            "NetWasmOptimization must be None or Size."),
+    };
+
+    private static string? NullIfEmpty(string value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 }

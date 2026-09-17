@@ -38,8 +38,10 @@
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmManagedStackTrace>
     <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == ''">false</NetWasmManagedStackTrace>
+    <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">Size</NetWasmOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
+    <NetWasmPackagingIdentityPath Condition="'$(NetWasmPackagingIdentityPath)' == ''">$(NetWasmIntermediateOutputPath)packaging.identity</NetWasmPackagingIdentityPath>
     <NetWasmCoreModuleOutputPath Condition="'$(NetWasmCoreModuleOutputPath)' == ''">$(OutputPath)$(AssemblyName).core.wasm</NetWasmCoreModuleOutputPath>
     <NetWasmRuntimeLayoutPath Condition="'$(NetWasmRuntimeLayoutPath)' == ''">$(OutputPath)runtime-layout.json</NetWasmRuntimeLayoutPath>
     <NetWasmInteropManifestPath Condition="'$(NetWasmInteropManifestPath)' == ''">$(OutputPath)interop.json</NetWasmInteropManifestPath>
@@ -138,6 +140,7 @@
                         WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
                         EmitStackTrace="$(NetWasmManagedStackTrace)"
+                        Optimization="$(NetWasmOptimization)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)">
       <Output TaskParameter="ResolvedArtifacts" ItemName="_NetWasmResolvedArtifact" />
       <Output TaskParameter="SemanticBuildId" PropertyName="NetWasmSemanticBuildId" />
@@ -148,10 +151,42 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="NetWasmWritePackagingIdentity"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'">
+    <ItemGroup>
+      <_NetWasmPackagingIdentityLine Remove="@(_NetWasmPackagingIdentityLine)" />
+      <_NetWasmPackagingIdentityLine Include="optimization=$(NetWasmOptimization)" />
+      <_NetWasmPackagingIdentityLine Include="packagingPolicyRevision=2" />
+      <_NetWasmPackagingIdentityLine Include="target=$(NetWasmTarget)" />
+      <_NetWasmPackagingIdentityLine Include="world=$(NetWasmWorld)" />
+      <_NetWasmPackagingIdentityLine Include="wit=$(NetWasmWitPath)" />
+      <_NetWasmPackagingIdentityLine Include="jco=$(NetWasmJcoVersion)" />
+      <_NetWasmPackagingIdentityLine Include="preview2Shim=$(NetWasmPreview2ShimVersion)" />
+      <_NetWasmPackagingIdentityLine Include="node=$(NetWasmNodePath)" />
+      <_NetWasmPackagingIdentityLine Include="wasmToolsCommand=$(NetWasmWasmToolsCommandPath)" />
+      <_NetWasmPackagingIdentityLine Include="wasmToolsModule=$(NetWasmWasmToolsModulePath)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenOpt=$(NetWasmBinaryenWasmOptPath)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenMerge=$(NetWasmBinaryenWasmMergePath)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenPortableVersion=$(NetWasmBinaryenPortableVersion)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenOptImplementation=$(NetWasmBinaryenWasmOptImplementation)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenOptNativePath=$(NetWasmNativeBinaryenWasmOptPath)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenOptNativeVersion=$(NetWasmNativeBinaryenWasmOptVersion)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenMergeImplementation=$(NetWasmBinaryenWasmMergeImplementation)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenMergeNativePath=$(NetWasmNativeBinaryenWasmMergePath)" />
+      <_NetWasmPackagingIdentityLine Include="binaryenMergeNativeVersion=$(NetWasmNativeBinaryenWasmMergeVersion)" />
+      <_NetWasmPackagingIdentityLine Include="runtime=%(NetWasmComponentRuntime.FullPath)" />
+      <_NetWasmPackagingIdentityLine Include="witVariant=%(NetWasmComponentWitVariant.FullPath)" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(NetWasmPackagingIdentityPath)"
+                      Lines="@(_NetWasmPackagingIdentityLine)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+  </Target>
+
   <Target Name="NetWasmCompilerTasksComponentize"
-          DependsOnTargets="NetWasmRuntimePackMaterialize"
+          DependsOnTargets="NetWasmRuntimePackMaterialize;NetWasmWritePackagingIdentity"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'"
-          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmWitPath);$(NetWasmInteropManifestPath)"
+          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmWitPath);@(NetWasmComponentWitVariant);$(NetWasmInteropManifestPath);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
           Outputs="$(NetWasmOutputPath);$(NetWasmComponentManifestPath)">
     <Error Code="NWSDK022"
            Condition="'@(NetWasmComponentRuntime)' == ''"
@@ -176,9 +211,12 @@
                              WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
                              BinaryenWasmOptPath="$(NetWasmBinaryenWasmOptPath)"
                              BinaryenWasmMergePath="$(NetWasmBinaryenWasmMergePath)"
+                             NativeBinaryenWasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
+                             NativeBinaryenWasmMergePath="$(NetWasmNativeBinaryenWasmMergePath)"
                              Target="$(NetWasmTarget)"
                              JcoVersion="$(NetWasmJcoVersion)"
-                             Preview2ShimVersion="$(NetWasmPreview2ShimVersion)">
+                             Preview2ShimVersion="$(NetWasmPreview2ShimVersion)"
+                             Optimization="$(NetWasmOptimization)">
       <Output TaskParameter="Components" ItemName="_NetWasmBuiltComponent" />
       <Output TaskParameter="SelectedWitPath" PropertyName="NetWasmSelectedWitPath" />
       <Output TaskParameter="SelectedWorld" PropertyName="NetWasmSelectedWorld" />
@@ -186,9 +224,9 @@
   </Target>
 
   <Target Name="NetWasmCompilerTasksLinkRawModule"
-          DependsOnTargets="NetWasmRuntimePackMaterialize"
+          DependsOnTargets="NetWasmRuntimePackMaterialize;NetWasmWritePackagingIdentity"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmRawWasm)' == 'true'"
-          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime)"
+          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
           Outputs="$(NetWasmOutputPath)">
     <Error Code="NWSDK028"
            Condition="'@(NetWasmComponentRuntime)' == ''"
@@ -207,7 +245,10 @@
                               WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
                               BinaryenWasmOptPath="$(NetWasmBinaryenWasmOptPath)"
                               BinaryenWasmMergePath="$(NetWasmBinaryenWasmMergePath)"
-                              Target="$(NetWasmTarget)">
+                              NativeBinaryenWasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
+                              NativeBinaryenWasmMergePath="$(NetWasmNativeBinaryenWasmMergePath)"
+                              Target="$(NetWasmTarget)"
+                              Optimization="$(NetWasmOptimization)">
       <Output TaskParameter="Modules" ItemName="_NetWasmBuiltRawModule" />
     </NetWasmLinkRawModuleTask>
   </Target>
@@ -298,7 +339,7 @@
   <Target Name="NetWasmCleanCompilerArtifacts"
           BeforeTargets="CoreClean"
           Condition="'$(TargetFramework)' == 'netwasm0.1'">
-    <Delete Files="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmStackTraceSymbolsPath);$(NetWasmArtifactManifestPath);$(NetWasmOutputPath);$(NetWasmComponentManifestPath);$(NetWasmRawAdapterPath)" />
+    <Delete Files="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmStackTraceSymbolsPath);$(NetWasmArtifactManifestPath);$(NetWasmOutputPath);$(NetWasmComponentManifestPath);$(NetWasmRawAdapterPath);$(NetWasmPackagingIdentityPath)" />
     <RemoveDir Directories="$(NetWasmIntermediateOutputPath)"
                Condition="'$(NetWasmIntermediateOutputPath)' != '' AND Exists('$(NetWasmIntermediateOutputPath)')" />
   </Target>

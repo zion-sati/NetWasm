@@ -272,7 +272,11 @@ public sealed class ComponentWorkflowContractTests
         public string InputPath { get; private set; } = string.Empty;
         public string OutputPath { get; private set; } = string.Empty;
 
-        public void Optimize(string inputPath, string outputPath, ComponentTarget target)
+        public void Optimize(
+            string inputPath,
+            string outputPath,
+            ComponentTarget target,
+            FinalWasmOptimization optimization)
         {
             Calls++;
             InputPath = inputPath;

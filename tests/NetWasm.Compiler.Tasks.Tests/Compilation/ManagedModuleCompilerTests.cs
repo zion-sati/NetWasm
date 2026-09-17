@@ -32,6 +32,8 @@ public sealed class ManagedModuleCompilerTests
             "trace.jsonl",
             "compiler.log",
             true,
+            "None",
+            "obj/netwasm",
             "compiler-wit",
             "netwasm:platform@1.0.0/platform");
 
@@ -56,9 +58,26 @@ public sealed class ManagedModuleCompilerTests
         Assert.Equal(request.SourcePaths, options.SourcePaths);
         Assert.Equal(request.WitPath, options.WitPath);
         Assert.Equal(request.WitWorld, options.WitWorld);
+        Assert.True(options.EnableFrontendCache);
+        Assert.Equal(request.IntermediateOutputPath, options.IntermediateOutputPath);
         Assert.True(options.EmitStackTrace);
         Assert.Equal(0x06000001, options.EntryMethodToken);
         Assert.Equal(CompilerEntryPointKind.ManagedExecutable, options.EntryPointKind);
+    }
+
+    [Fact]
+    public void CompileDisablesFrontendCacheForOptimizedBuilds()
+    {
+        var invoker = new RecordingCompilationInvoker(
+            CompilerTaskTestData.CreateCompilation());
+        var compiler = new ManagedModuleCompiler(
+            new RecordingEntryPointReader(CreateEntryPoint()),
+            new RecordingTargetResolver(WasmTarget.Wasm32), invoker);
+
+        compiler.Compile(new("application.dll", [], [], "wasm32", null, null,
+            false, "Size", "obj/netwasm"));
+
+        Assert.False(invoker.Options!.EnableFrontendCache);
     }
 
     [Fact]

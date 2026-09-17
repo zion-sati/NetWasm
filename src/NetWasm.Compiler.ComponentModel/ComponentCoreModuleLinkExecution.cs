@@ -74,7 +74,8 @@ public sealed class ComponentCoreModuleLinkExecution(
             _optimizer.Optimize(
                 workspace.SanitizedModulePath,
                 request.OutputPath,
-                request.Target);
+                request.Target,
+                request.Optimization);
         }
         finally
         {

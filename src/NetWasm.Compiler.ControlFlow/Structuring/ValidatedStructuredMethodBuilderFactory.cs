@@ -126,6 +126,6 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
                         new global::NetWasm.Compiler.ControlFlow.Structuring.ExceptionScopeFinder()),
                             controlFlowProjector,
                 new Final.StructuredExceptionGroupProjector(controlFlowProjector)),
-                finalValidator));
+                new Final.StructuredMethodFactory(finalValidator)));
     }
 }

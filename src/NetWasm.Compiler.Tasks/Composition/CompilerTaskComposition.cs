@@ -71,12 +71,30 @@ internal static class CompilerTaskComposition
     public static BinaryenToolRunnerConfiguration CreateBinaryenConfiguration(
         string nodePath,
         string wasmOptPath,
-        string wasmMergePath) => new(
+        string wasmMergePath,
+        string? nativeWasmOptPath = null,
+        string? nativeWasmMergePath = null) => new(
             nodePath,
             [
                 new(BinaryenToolIds.WasmOpt, wasmOptPath),
                 new(BinaryenToolIds.WasmMerge, wasmMergePath),
-            ]);
+            ],
+            CreateNativeBinaryenTools(nativeWasmOptPath, nativeWasmMergePath));
+
+    private static System.Collections.Immutable.ImmutableArray<BinaryenNativeTool>
+        CreateNativeBinaryenTools(string? wasmOptPath, string? wasmMergePath)
+    {
+        var tools = System.Collections.Immutable.ImmutableArray.CreateBuilder<BinaryenNativeTool>();
+        if (!string.IsNullOrWhiteSpace(wasmOptPath))
+        {
+            tools.Add(new(BinaryenToolIds.WasmOpt, wasmOptPath));
+        }
+        if (!string.IsNullOrWhiteSpace(wasmMergePath))
+        {
+            tools.Add(new(BinaryenToolIds.WasmMerge, wasmMergePath));
+        }
+        return tools.ToImmutable();
+    }
 
     public static IHostInteropManifestReader CreateHostInteropManifestReader() =>
         new HostInteropManifestReader();
@@ -151,7 +169,8 @@ internal static class CompilerTaskComposition
             services.AddSingleton<IBinaryenToolRunner>(serviceProvider =>
                 new BinaryenToolRunner(
                     binaryenConfiguration,
-                    serviceProvider.GetRequiredService<ISystemNodeCommandRunner>()));
+                    serviceProvider.GetRequiredService<ISystemNodeCommandRunner>(),
+                    serviceProvider.GetRequiredService<IExternalToolRunner>()));
         }
         return services.BuildServiceProvider();
     }

@@ -17,10 +17,25 @@ public sealed class BrowserCompilationRequestTests
 
         Assert.Same(options, request.Options);
         Assert.False(request.SelectManagedExecutableEntryPoint);
+        Assert.False(request.CollectCompilerMetrics);
         Assert.Equal(new byte[] { 1, 2, 3 }, request.Inputs["contracts/compiler.wit.wasm"]);
         Assert.Equal("original JSON", request.NormalizedWitDocuments["contracts/compiler.wit.wasm"]);
         Assert.False(request.Inputs.ContainsKey("compiler.wit.wasm"));
         Assert.False(request.Inputs.ContainsKey("contracts/COMPILER.wit.wasm"));
+    }
+
+    [Fact]
+    public void CompilerMetricsAreExplicitlyOptIn()
+    {
+        var request = new BrowserCompilationRequest(
+            CreateOptions(),
+            new Dictionary<string, byte[]>(),
+            new Dictionary<string, string>())
+        {
+            CollectCompilerMetrics = true,
+        };
+
+        Assert.True(request.CollectCompilerMetrics);
     }
 
     [Fact]

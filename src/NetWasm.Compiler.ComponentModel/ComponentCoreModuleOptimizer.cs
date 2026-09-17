@@ -6,27 +6,50 @@ namespace NetWasm.Compiler.ComponentModel;
 
 public interface IComponentCoreModuleOptimizer
 {
-    void Optimize(string inputPath, string outputPath, ComponentTarget target);
+    void Optimize(
+        string inputPath,
+        string outputPath,
+        ComponentTarget target,
+        FinalWasmOptimization optimization);
 }
 
 public sealed class ComponentCoreModuleOptimizer(
     IBinaryenToolRunner tools,
-    IFileExistence files) : IComponentCoreModuleOptimizer
+    IFileExistence files,
+    IWasmCoreModuleValidator validator,
+    IFileCopier copies) : IComponentCoreModuleOptimizer
 {
     private readonly IBinaryenToolRunner _tools = tools ??
         throw new ArgumentNullException(nameof(tools));
     private readonly IFileExistence _files = files ??
         throw new ArgumentNullException(nameof(files));
+    private readonly IWasmCoreModuleValidator _validator = validator ??
+        throw new ArgumentNullException(nameof(validator));
+    private readonly IFileCopier _copies = copies ??
+        throw new ArgumentNullException(nameof(copies));
 
-    public void Optimize(string inputPath, string outputPath, ComponentTarget target)
+    public void Optimize(
+        string inputPath,
+        string outputPath,
+        ComponentTarget target,
+        FinalWasmOptimization optimization)
     {
         RequireFile(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         ArgumentNullException.ThrowIfNull(target);
+        if (!Enum.IsDefined(optimization))
+        {
+            throw new ArgumentOutOfRangeException(nameof(optimization));
+        }
+        if (optimization == FinalWasmOptimization.None)
+        {
+            _validator.Validate(inputPath);
+            _copies.Copy(inputPath, outputPath);
+            return;
+        }
         var arguments = new List<string>
         {
             inputPath,
-            "-Oz",
             "--remove-unused-module-elements",
             "--strip-debug",
             "--enable-multimemory",
@@ -34,6 +57,7 @@ public sealed class ComponentCoreModuleOptimizer(
             "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
         };
+        arguments.Insert(1, "-Oz");
         if (target.Width == "wasm64")
         {
             arguments.Add("--enable-memory64");
