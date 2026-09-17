@@ -89,6 +89,7 @@ jobs:
           if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
             echo 'changed=true' >> "$GITHUB_OUTPUT"
           elif git diff --quiet "$BASE_SHA" HEAD -- \
+              .github/workflows/ci.yml \
               eng/build-netwasm-runtime.sh \
               eng/toolchain.json \
               src/NetWasm.Runtime \
