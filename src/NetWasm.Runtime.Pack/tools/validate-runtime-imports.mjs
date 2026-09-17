@@ -1,5 +1,5 @@
 import fs from 'node:fs';
 import { validateRuntimeImports } from './runtime-import-validator.mjs';
+import { readFunctionImports } from './wasm-section-reader.mjs';
 
-const module = new WebAssembly.Module(fs.readFileSync(process.argv[2]));
-validateRuntimeImports(WebAssembly.Module.imports(module), process.argv[3]);
+validateRuntimeImports(readFunctionImports(fs.readFileSync(process.argv[2])), process.argv[3]);
