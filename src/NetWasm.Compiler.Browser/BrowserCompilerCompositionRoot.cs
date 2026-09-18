@@ -30,6 +30,8 @@ internal static class BrowserCompilerCompositionRoot
             BrowserCompilationResultProjector>();
         registrations.AddSingleton<IManagedExecutableEntryPointSelector,
             ManagedExecutableEntryPointSelector>();
+        registrations.AddSingleton<IBrowserCompilationPreparationFactory,
+            BrowserCompilationPreparationFactory>();
         registrations.AddSingleton<IBrowserCompilationCommand, BrowserCompilationCommand>();
         var services = registrations.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -39,6 +41,8 @@ internal static class BrowserCompilerCompositionRoot
         return new(
             services,
             services.GetRequiredService<IBrowserCompilationRequestFactory>(),
+            services.GetRequiredService<IBrowserCompilationPreparationFactory>(),
+            services.GetRequiredService<IFrontendArtifactCacheTransport>(),
             services.GetRequiredService<IBrowserCompilationCommand>());
     }
 }
@@ -46,12 +50,18 @@ internal static class BrowserCompilerCompositionRoot
 internal sealed class BrowserCompilerComposition(
     IDisposable services,
     IBrowserCompilationRequestFactory requests,
+    IBrowserCompilationPreparationFactory preparations,
+    IFrontendArtifactCacheTransport frontendArtifacts,
     IBrowserCompilationCommand compiler)
 {
     internal IDisposable Services { get; } = services ??
         throw new ArgumentNullException(nameof(services));
     internal IBrowserCompilationRequestFactory Requests { get; } = requests ??
         throw new ArgumentNullException(nameof(requests));
+    internal IBrowserCompilationPreparationFactory Preparations { get; } = preparations ??
+        throw new ArgumentNullException(nameof(preparations));
+    internal IFrontendArtifactCacheTransport FrontendArtifacts { get; } = frontendArtifacts ??
+        throw new ArgumentNullException(nameof(frontendArtifacts));
     internal IBrowserCompilationCommand Compiler { get; } = compiler ??
         throw new ArgumentNullException(nameof(compiler));
 }

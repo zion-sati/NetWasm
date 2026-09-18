@@ -55,16 +55,27 @@ internal sealed class FrontendArtifactCacheState
 
 internal sealed class FrontendArtifactCacheRequestFactory(
     FrontendArtifactCacheState state,
+    FrontendArtifactTransportStore transport,
     IFrontendArtifactCacheIdentityBuilder identities,
     IFrontendArtifactPayloadPublisher payloadPublisher,
     IFrontendArtifactObjectPublisher objectPublisher) : IFrontendArtifactCacheRequestFactory
 {
+    internal FrontendArtifactCacheRequestFactory(
+        FrontendArtifactCacheState state,
+        IFrontendArtifactCacheIdentityBuilder identities,
+        IFrontendArtifactPayloadPublisher payloadPublisher,
+        IFrontendArtifactObjectPublisher objectPublisher) :
+        this(state, new(), identities, payloadPublisher, objectPublisher)
+    {
+    }
+
     public IFrontendArtifactCacheRequest Begin(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (state.Active is not null)
             throw new InvalidOperationException("The frontend artifact cache already has an active compilation.");
-        state.Active = new(state, options.EnableFrontendCache ? identities.Build(options) : null,
+        state.Active = new(state, options.EnableFrontendCache
+                ? transport.Active.Value?.Context ?? identities.Build(options) : null,
             payloadPublisher, objectPublisher);
         return state.Active;
     }
@@ -89,6 +100,7 @@ internal sealed class FrontendArtifactCacheRequest(
     internal ConcurrentDictionary<string, StructuredMethod> Restored { get; } = new(StringComparer.Ordinal);
     internal ConcurrentDictionary<string, ImmutableArray<byte>> Staged { get; } = new(StringComparer.Ordinal);
     internal ConcurrentDictionary<string, FrontendArtifact> StagedObjects { get; } = new(StringComparer.Ordinal);
+    internal object StagingGate { get; } = new();
     internal long StagedBytes;
     internal long Lookups;
     internal long Hits;
@@ -106,16 +118,19 @@ internal sealed class FrontendArtifactCacheRequest(
     public void Dispose()
     {
         if (_disposed) return;
-        if (ReferenceEquals(state.Active, this))
+        try
         {
-            if (_committed && Context is not null)
+            if (ReferenceEquals(state.Active, this) && _committed && Context is not null)
             {
                 payloadPublisher.Publish(new(Context, Staged));
                 objectPublisher.Publish(new(Context, StagedObjects));
             }
-            state.Active = null;
         }
-        _disposed = true;
+        finally
+        {
+            if (ReferenceEquals(state.Active, this)) state.Active = null;
+            _disposed = true;
+        }
     }
 }
 
@@ -158,7 +173,7 @@ internal sealed class FrontendArtifactCacheIdentityBuilder(
     IManagedAssemblyImageReader images,
     ICompilationInputHasher inputHasher) : IFrontendArtifactCacheIdentityBuilder
 {
-    private const string Schema = "frontend-artifact-cache-v4";
+    internal const string Schema = "frontend-artifact-cache-v4";
     private readonly IEntryAssemblyBindingFingerprinter _bindingFingerprints =
         bindingFingerprints ?? throw new ArgumentNullException(nameof(bindingFingerprints));
     private readonly IManagedAssemblyImageReader _images = images ??

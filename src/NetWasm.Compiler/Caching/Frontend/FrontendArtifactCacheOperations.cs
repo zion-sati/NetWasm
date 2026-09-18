@@ -67,12 +67,22 @@ internal sealed class FrontendArtifactRestorer(
         try
         {
             artifact = hydrator.Hydrate(decoder.Decode(payload));
+            if (!string.Equals(artifact.Analysis.Method.CanonicalName,
+                    method.CanonicalName, StringComparison.Ordinal) ||
+                artifact.Analysis.Method.Definition.Key != method.Definition.Key ||
+                artifact.StructuredMethod.Header.Method.Key != method.Definition.Key ||
+                artifact.StructuredMethod.Header.MethodInstance is { } structuredMethod &&
+                !string.Equals(structuredMethod.CanonicalName, method.CanonicalName,
+                    StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    "The frontend artifact does not match the requested method.");
             request.Restored.TryAdd(method.CanonicalName, artifact.StructuredMethod);
             System.Threading.Interlocked.Increment(ref request.Hits);
             return true;
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or
-            UnauthorizedAccessException or CompilerException or StructuredMethodValidationException)
+            UnauthorizedAccessException or ArgumentException or CompilerException or
+            StructuredMethodValidationException)
         {
             System.Threading.Interlocked.Increment(ref request.Misses);
             artifact = null!;
@@ -127,13 +137,14 @@ internal sealed class FrontendArtifactStager(
         var payload = encoder.Encode(snapshotter.Capture(new(analysis, structured)));
         if (payload.Length > FrontendArtifactPayloadReader.MaximumPayloadBytes) return;
         var key = context.MethodKey(method);
-        if (request.Staged.TryAdd(key, payload))
+        lock (request.StagingGate)
         {
-            request.StagedObjects.TryAdd(key, new(analysis, structured));
-            System.Threading.Interlocked.Increment(ref request.StagedArtifacts);
-            var total = System.Threading.Interlocked.Add(ref request.StagedBytes, payload.Length);
-            if (total > MaximumRequestBytes && request.Staged.TryRemove(key, out var removed))
-                System.Threading.Interlocked.Add(ref request.StagedBytes, -removed.Length);
+            if (request.Staged.ContainsKey(key) ||
+                payload.Length > MaximumRequestBytes - request.StagedBytes) return;
+            request.Staged[key] = payload;
+            request.StagedObjects[key] = new(analysis, structured);
+            request.StagedBytes += payload.Length;
+            request.StagedArtifacts++;
         }
     }
 }

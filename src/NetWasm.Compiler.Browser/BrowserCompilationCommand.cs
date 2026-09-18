@@ -8,37 +8,25 @@ namespace NetWasm.Compiler.Browser;
 
 internal interface IBrowserCompilationCommand
 {
-    BrowserCompilationResult Compile(BrowserCompilationRequest request);
+    BrowserCompilationResult Compile(PreparedBrowserCompilation preparation);
 }
 
 internal sealed class BrowserCompilationCommand(
     INetWasmCompiler compiler,
-    IManagedAssemblyImageReader images,
     IManagedExecutableEntryPointSelector entryPoints,
     IBrowserCompilationResultProjector results) : IBrowserCompilationCommand
 {
-    public BrowserCompilationResult Compile(BrowserCompilationRequest request)
+    public BrowserCompilationResult Compile(PreparedBrowserCompilation preparation)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(preparation);
+        var request = preparation.Request;
         var collectMetrics = request.CollectCompilerMetrics || request.Options.MetricsObserver is not null;
         var adapterStarted = collectMetrics ? Stopwatch.GetTimestamp() : 0;
         var metrics = collectMetrics
             ? new BrowserCompilerMetricsObserver(request.Options.MetricsObserver)
             : null;
-        var options = request.Options with { MetricsObserver = metrics };
-        var image = options.EntryPointKind == CompilerEntryPointKind.ManagedExecutable
-            ? images.Read(options.EntryAssemblyPath)
-            : null;
-        if (request.SelectManagedExecutableEntryPoint)
-        {
-            var selected = entryPoints.SelectEntryPoint(options.EntryAssemblyPath, image!);
-            options = options with
-            {
-                EntryTypeName = selected.TypeName,
-                EntryMethodName = selected.MethodName,
-                EntryMethodToken = selected.MetadataToken,
-            };
-        }
+        var options = preparation.Options with { MetricsObserver = metrics };
+        var image = preparation.EntryImage;
 
         var compilation = compiler.Compile(options);
         var actualEntry = image is null ? null : entryPoints.SelectEntryPoint(
@@ -66,5 +54,41 @@ internal sealed class BrowserCompilationCommand(
                 compilerMetrics.TotalDuration,
                 totalDuration - compilerMetrics.TotalDuration),
         };
+    }
+}
+
+internal sealed record PreparedBrowserCompilation(
+    BrowserCompilationRequest Request,
+    CompilerOptions Options,
+    byte[]? EntryImage);
+
+internal interface IBrowserCompilationPreparationFactory
+{
+    PreparedBrowserCompilation Prepare(BrowserCompilationRequest request);
+}
+
+internal sealed class BrowserCompilationPreparationFactory(
+    IManagedAssemblyImageReader images,
+    IManagedExecutableEntryPointSelector entryPoints) :
+    IBrowserCompilationPreparationFactory
+{
+    public PreparedBrowserCompilation Prepare(BrowserCompilationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var options = request.Options;
+        var image = options.EntryPointKind == CompilerEntryPointKind.ManagedExecutable
+            ? images.Read(options.EntryAssemblyPath)
+            : null;
+        if (request.SelectManagedExecutableEntryPoint)
+        {
+            var selected = entryPoints.SelectEntryPoint(options.EntryAssemblyPath, image!);
+            options = options with
+            {
+                EntryTypeName = selected.TypeName,
+                EntryMethodName = selected.MethodName,
+                EntryMethodToken = selected.MetadataToken,
+            };
+        }
+        return new(request, options, image);
     }
 }

@@ -17,11 +17,11 @@ public sealed class BrowserCompilationCommandTests
         var compiler = new RecordingCompiler(Result());
         var projected = BrowserResult();
         var projector = new RecordingProjector(projected);
-        var command = new BrowserCompilationCommand(
-            compiler, new RecordingImageReader([]), new RecordingEntryPointSelector(), projector);
+        var selector = new RecordingEntryPointSelector();
+        var command = new BrowserCompilationCommand(compiler, selector, projector);
         var request = Request(BrowserCompilationRequestTests.CreateOptions());
 
-        var actual = command.Compile(request);
+        var actual = command.Compile(Prepare(request, [], selector));
 
         Assert.Same(projected, actual);
         Assert.Equal(request.Options, compiler.Options);
@@ -38,14 +38,14 @@ public sealed class BrowserCompilationCommandTests
         var compiler = new RecordingCompiler(Result(), report);
         var forwarded = new RecordingMetricsObserver();
         var projector = new RecordingProjector(BrowserResult());
-        var command = new BrowserCompilationCommand(compiler, new RecordingImageReader([]),
-            new RecordingEntryPointSelector(), projector);
+        var selector = new RecordingEntryPointSelector();
+        var command = new BrowserCompilationCommand(compiler, selector, projector);
         var request = Request(BrowserCompilationRequestTests.CreateOptions() with
         {
             MetricsObserver = forwarded,
         });
 
-        var actual = command.Compile(request);
+        var actual = command.Compile(Prepare(request, [], selector));
 
         Assert.Same(report, actual.CompilerMetrics);
         Assert.NotNull(actual.CompilerTiming);
@@ -60,14 +60,13 @@ public sealed class BrowserCompilationCommandTests
         var compiler = new RecordingCompiler(Result(entry));
         var selector = new RecordingEntryPointSelector();
         var projector = new RecordingProjector(BrowserResult());
-        var command = new BrowserCompilationCommand(compiler, new RecordingImageReader([1, 2, 3]),
-            selector, projector);
+        var command = new BrowserCompilationCommand(compiler, selector, projector);
         var request = Request(BrowserCompilationRequestTests.CreateOptions() with
         {
             EntryPointKind = CompilerEntryPointKind.ManagedExecutable,
         }, selectEntryPoint: true);
 
-        _ = command.Compile(request);
+        _ = command.Compile(Prepare(request, [1, 2, 3], selector));
 
         Assert.Equal([null, 0x0600002a], selector.Tokens);
         Assert.Equal("SelectedType", compiler.Options!.EntryTypeName);
@@ -82,21 +81,27 @@ public sealed class BrowserCompilationCommandTests
     [Fact]
     public void RequiresARequestAndAMetricsReportWhenMetricsWereRequested()
     {
-        var command = new BrowserCompilationCommand(new RecordingCompiler(Result()),
-            new RecordingImageReader([]), new RecordingEntryPointSelector(),
+        var selector = new RecordingEntryPointSelector();
+        var command = new BrowserCompilationCommand(new RecordingCompiler(Result()), selector,
             new RecordingProjector(BrowserResult()));
         Assert.Throws<ArgumentNullException>(() => command.Compile(null!));
         var request = Request(BrowserCompilationRequestTests.CreateOptions()) with
         {
             CollectCompilerMetrics = true,
         };
-        Assert.Throws<InvalidOperationException>(() => command.Compile(request));
+        Assert.Throws<InvalidOperationException>(() => command.Compile(
+            Prepare(request, [], selector)));
     }
 
     private static BrowserCompilationRequest Request(CompilerOptions options,
         bool selectEntryPoint = false) => new(options,
         new Dictionary<string, byte[]> { [options.EntryAssemblyPath] = [1, 2, 3] },
         new Dictionary<string, string>(), selectEntryPoint);
+
+    private static PreparedBrowserCompilation Prepare(BrowserCompilationRequest request,
+        byte[] image, IManagedExecutableEntryPointSelector selector) =>
+        new BrowserCompilationPreparationFactory(new RecordingImageReader(image), selector)
+            .Prepare(request);
 
     private static BrowserCompilationResult BrowserResult() => new([], 0, [], [], null!, null!);
 
