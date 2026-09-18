@@ -1,10 +1,48 @@
 using NetWasm.Compiler.Analysis;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Caching.Frontend;
+
+internal interface IFrontendArtifactCachePreparationFactory
+{
+    FrontendArtifactCacheDescriptor? Prepare(CompilerOptions options);
+}
+
+internal interface IFrontendArtifactCompilationFactory
+{
+    IDisposable Begin(FrontendArtifactCacheDescriptor descriptor,
+        IReadOnlyList<FrontendArtifactCacheEntry> entries);
+}
+
+internal interface IFrontendArtifactPreparationCanceler
+{
+    void Cancel(FrontendArtifactCacheDescriptor descriptor);
+}
+
+internal interface IFrontendArtifactPublicationFactory
+{
+    FrontendArtifactCachePublication? Complete(FrontendArtifactCacheDescriptor descriptor);
+}
+
+internal interface IFrontendArtifactPublicationBatchReader
+{
+    FrontendArtifactCacheBatch Read(FrontendArtifactCachePublication publication);
+}
+
+internal interface IFrontendArtifactPublicationBatchAcknowledger
+{
+    void Acknowledge(FrontendArtifactCachePublication publication,
+        FrontendArtifactCacheBatch batch);
+}
+
+internal interface IFrontendArtifactPublicationAbandoner
+{
+    void Abandon(FrontendArtifactCachePublication publication);
+}
 
 internal interface IFrontendArtifactRestorer
 {
@@ -66,7 +104,8 @@ internal sealed class FrontendArtifactRestorer(
         }
         try
         {
-            artifact = hydrator.Hydrate(decoder.Decode(payload));
+            var decoded = decoder.Decode(payload);
+            artifact = hydrator.Hydrate(decoded);
             if (!string.Equals(artifact.Analysis.Method.CanonicalName,
                     method.CanonicalName, StringComparison.Ordinal) ||
                 artifact.Analysis.Method.Definition.Key != method.Definition.Key ||
@@ -76,6 +115,15 @@ internal sealed class FrontendArtifactRestorer(
                     StringComparison.Ordinal))
                 throw new InvalidDataException(
                     "The frontend artifact does not match the requested method.");
+            if (request.RestoredStructuralKeys.TryAdd(key, 0) &&
+                !request.Budget.TryReserve(0, 0,
+                    FrontendArtifactCachePolicy.EstimateStructuralBytes(payload.Length)))
+            {
+                request.RestoredStructuralKeys.TryRemove(key, out _);
+                System.Threading.Interlocked.Increment(ref request.Misses);
+                artifact = null!;
+                return false;
+            }
             request.Restored.TryAdd(method.CanonicalName, artifact.StructuredMethod);
             System.Threading.Interlocked.Increment(ref request.Hits);
             return true;
@@ -123,8 +171,6 @@ internal sealed class FrontendArtifactStager(
     IFrontendArtifactSnapshotter snapshotter,
     IFrontendArtifactEncoder encoder) : IFrontendArtifactStager
 {
-    private const long MaximumRequestBytes = 64L * 1024 * 1024;
-
     public void Stage(MethodInstanceModel method, StructuredMethod structured)
     {
         ArgumentNullException.ThrowIfNull(method);
@@ -137,12 +183,15 @@ internal sealed class FrontendArtifactStager(
         var payload = encoder.Encode(snapshotter.Capture(new(analysis, structured)));
         if (payload.Length > FrontendArtifactPayloadReader.MaximumPayloadBytes) return;
         var key = context.MethodKey(method);
+        var structuralBytes =
+            FrontendArtifactCachePolicy.EstimateStructuralBytes(payload.Length);
         lock (request.StagingGate)
         {
             if (request.Staged.ContainsKey(key) ||
-                payload.Length > MaximumRequestBytes - request.StagedBytes) return;
+                !request.Budget.TryReserve(1, payload.Length, structuralBytes)) return;
             request.Staged[key] = payload;
             request.StagedObjects[key] = new(analysis, structured);
+            request.StagedStructuralBytes[key] = structuralBytes;
             request.StagedBytes += payload.Length;
             request.StagedArtifacts++;
         }

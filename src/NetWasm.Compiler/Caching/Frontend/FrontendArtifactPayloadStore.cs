@@ -15,6 +15,9 @@ internal sealed class FrontendArtifactMemoryStore
     internal object Gate { get; } = new();
     internal ConcurrentDictionary<string, ImmutableArray<byte>> Payloads { get; } = new(StringComparer.Ordinal);
     internal ConcurrentDictionary<string, byte> LoadedNamespaces { get; } = new(StringComparer.Ordinal);
+    internal string? Namespace { get; set; }
+    internal int EntryCount;
+    internal long TotalBytes;
 }
 
 internal sealed class FrontendArtifactObjectStore
@@ -22,6 +25,9 @@ internal sealed class FrontendArtifactObjectStore
     internal object Gate { get; } = new();
     internal string? Namespace { get; set; }
     internal ConcurrentDictionary<string, FrontendArtifact> Artifacts { get; } = new(StringComparer.Ordinal);
+    internal ConcurrentDictionary<string, long> StructuralBytes { get; } =
+        new(StringComparer.Ordinal);
+    internal long TotalStructuralBytes;
 }
 
 internal sealed record FrontendArtifactObjectReadRequest(FrontendArtifactCacheContext Context, string Key);
@@ -45,7 +51,8 @@ internal sealed class FrontendArtifactObjectReader(FrontendArtifactObjectStore s
 
 internal sealed record FrontendArtifactObjectPublication(
     FrontendArtifactCacheContext Context,
-    ConcurrentDictionary<string, FrontendArtifact> Artifacts);
+    ConcurrentDictionary<string, FrontendArtifact> Artifacts,
+    ConcurrentDictionary<string, long> StructuralBytes);
 
 internal interface IFrontendArtifactObjectPublisher
 {
@@ -62,10 +69,22 @@ internal sealed class FrontendArtifactObjectPublisher(FrontendArtifactObjectStor
             if (!string.Equals(store.Namespace, publication.Context.Namespace, StringComparison.Ordinal))
             {
                 store.Artifacts.Clear();
+                store.StructuralBytes.Clear();
+                store.TotalStructuralBytes = 0;
                 store.Namespace = publication.Context.Namespace;
             }
             foreach (var pair in publication.Artifacts)
-                store.Artifacts.TryAdd(publication.Context.Namespace + "/" + pair.Key, pair.Value);
+            {
+                var compositeKey = publication.Context.Namespace + "/" + pair.Key;
+                if (store.Artifacts.ContainsKey(compositeKey) ||
+                    !publication.StructuralBytes.TryGetValue(pair.Key, out var cost) ||
+                    store.Artifacts.Count >= FrontendArtifactCachePolicy.MaximumArtifacts ||
+                    cost > FrontendArtifactCachePolicy.MaximumStructuralWorkingSetBytes -
+                        store.TotalStructuralBytes) continue;
+                store.Artifacts[compositeKey] = pair.Value;
+                store.StructuralBytes[compositeKey] = cost;
+                store.TotalStructuralBytes += cost;
+            }
         }
     }
 }
@@ -133,6 +152,7 @@ internal sealed class FrontendArtifactPayloadReader(
                 var count = reader.ReadInt32();
                 if (count < 0 || count > MaximumArtifacts) return false;
                 var loaded = new Dictionary<string, ImmutableArray<byte>>(count, StringComparer.Ordinal);
+                long totalBytes = 0;
                 for (var index = 0; index < count; index++)
                 {
                     var key = reader.ReadString();
@@ -143,11 +163,24 @@ internal sealed class FrontendArtifactPayloadReader(
                     var bytes = reader.ReadBytes(length);
                     if (bytes.Length != length || !CryptographicOperations.FixedTimeEquals(checksum, SHA256.HashData(bytes))) return false;
                     if (!loaded.TryAdd(key, [.. bytes])) return false;
+                    totalBytes += length;
                 }
                 if (stream.Position != stream.Length) return false;
+                if (!active.Budget.TryReserve(loaded.Count, totalBytes, 0)) return false;
+                if (!string.Equals(memory.Namespace, request.Context.Namespace,
+                        StringComparison.Ordinal))
+                {
+                    memory.Payloads.Clear();
+                    memory.LoadedNamespaces.Clear();
+                    memory.EntryCount = 0;
+                    memory.TotalBytes = 0;
+                    memory.Namespace = request.Context.Namespace;
+                }
                 foreach (var pair in loaded)
                     memory.Payloads.TryAdd(request.Context.Namespace + "/" + pair.Key, pair.Value);
                 memory.LoadedNamespaces.TryAdd(request.Context.Namespace, 0);
+                memory.EntryCount = loaded.Count;
+                memory.TotalBytes = totalBytes;
                 if (!memory.Payloads.TryGetValue(compositeKey, out payload)) return false;
                 System.Threading.Interlocked.Increment(ref active.DiskHits);
                 return true;

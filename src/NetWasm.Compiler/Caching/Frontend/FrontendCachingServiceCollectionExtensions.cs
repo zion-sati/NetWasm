@@ -22,6 +22,22 @@ internal static class FrontendCachingServiceCollectionExtensions
         services.AddSingleton<FrontendArtifactMemoryStore>();
         services.AddSingleton<FrontendArtifactObjectStore>();
         services.AddSingleton<FrontendArtifactTransportStore>();
+        services.AddSingleton<IFrontendArtifactCachePreparationFactory,
+            FrontendArtifactCachePreparationFactory>();
+        services.AddSingleton<IFrontendArtifactCompilationFactory,
+            FrontendArtifactCompilationFactory>();
+        services.AddSingleton<IFrontendArtifactPreparationCanceler,
+            FrontendArtifactPreparationCanceler>();
+        services.AddSingleton<IFrontendArtifactPublicationFactory,
+            FrontendArtifactPublicationFactory>();
+        services.AddSingleton<IFrontendArtifactPublicationBatchReader,
+            FrontendArtifactPublicationBatchReader>();
+        services.AddSingleton<IFrontendArtifactPublicationBatchAcknowledger,
+            FrontendArtifactPublicationBatchAcknowledger>();
+        services.AddSingleton<IFrontendArtifactPublicationAbandoner,
+            FrontendArtifactPublicationAbandoner>();
+        services.AddSingleton<IFrontendArtifactCompilerIdentity,
+            FrontendArtifactCompilerIdentity>();
         services.AddSingleton<IFrontendArtifactCacheIdentityBuilder,
             FrontendArtifactCacheIdentityBuilder>();
         services.AddSingleton<IEntryAssemblyBindingFingerprinter,
