@@ -19,14 +19,18 @@ internal sealed class BrowserCompilationCommand(
     public BrowserCompilationResult Compile(PreparedBrowserCompilation preparation)
     {
         ArgumentNullException.ThrowIfNull(preparation);
-        var request = preparation.Request;
+        return CompileCore(preparation.Request, preparation.Options, preparation.EntryImage);
+    }
+
+    private BrowserCompilationResult CompileCore(
+        BrowserCompilationRequest request, CompilerOptions preparedOptions, byte[]? image)
+    {
         var collectMetrics = request.CollectCompilerMetrics || request.Options.MetricsObserver is not null;
         var adapterStarted = collectMetrics ? Stopwatch.GetTimestamp() : 0;
         var metrics = collectMetrics
             ? new BrowserCompilerMetricsObserver(request.Options.MetricsObserver)
             : null;
-        var options = preparation.Options with { MetricsObserver = metrics };
-        var image = preparation.EntryImage;
+        var options = preparedOptions with { MetricsObserver = metrics };
 
         var compilation = compiler.Compile(options);
         var actualEntry = image is null ? null : entryPoints.SelectEntryPoint(
