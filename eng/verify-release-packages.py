@@ -48,6 +48,26 @@ def git(source_root: Path, *arguments: str) -> str:
     ).strip()
 
 
+def verify_signature(
+    source_root: Path,
+    allowed_signers: Path,
+    verification_command: str,
+    object_to_verify: str,
+) -> None:
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source_root),
+            "-c",
+            f"gpg.ssh.allowedSignersFile={allowed_signers.resolve()}",
+            verification_command,
+            object_to_verify,
+        ],
+        check=True,
+    )
+
+
 def verify_source(
     source_root: Path,
     manifest: dict[str, object],
@@ -64,19 +84,13 @@ def verify_source(
     if git(source_root, "rev-parse", f"{tag_ref}^{{commit}}") != source_commit:
         raise ValueError("Release tag does not peel to the release manifest commit.")
     if allowed_signers is not None:
-        if tag_type != "tag":
-            raise ValueError("Release tag must be an annotated signed tag.")
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(source_root),
-                "-c",
-                f"gpg.ssh.allowedSignersFile={allowed_signers.resolve()}",
-                "verify-tag",
-                release_tag,
-            ],
-            check=True,
+        object_to_verify = release_tag if tag_type == "tag" else source_commit
+        verification_command = "verify-tag" if tag_type == "tag" else "verify-commit"
+        verify_signature(
+            source_root,
+            allowed_signers,
+            verification_command,
+            object_to_verify,
         )
 
 

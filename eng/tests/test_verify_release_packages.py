@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).parents[1] / "verify-release-packages.py"
@@ -122,8 +123,15 @@ class VerifyReleasePackagesTests(unittest.TestCase):
 
         MODULE.verify_source(source, self.manifest)
 
-        with self.assertRaisesRegex(ValueError, "annotated signed tag"):
+        with mock.patch.object(MODULE, "verify_signature") as verify_signature:
             MODULE.verify_source(source, self.manifest, self.root / "allowed-signers")
+
+        verify_signature.assert_called_once_with(
+            source,
+            self.root / "allowed-signers",
+            "verify-commit",
+            self.manifest["sourceCommit"],
+        )
 
 
 if __name__ == "__main__":
