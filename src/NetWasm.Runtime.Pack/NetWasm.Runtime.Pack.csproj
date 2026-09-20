@@ -7,7 +7,7 @@
     <PackageId>NetWasm.Runtime.Pack</PackageId>
     <Description>Relocatable NetWasm runtime archives materialized for each application.</Description>
     <PackageTags>netwasm;runtime;wasi;wasm</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsPackable>true</IsPackable>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
@@ -27,9 +27,18 @@
     <None Include="README.md"
           Pack="true"
           PackagePath="README.md" />
+    <None Include="runtime/LICENSE.txt"
+          Pack="true"
+          PackagePath="LICENSE.txt" />
     <None Include="runtime/*/libnetwasm-runtime.a"
           Pack="true"
           PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="runtime/wasm32/system-libraries/*.a"
+          Pack="true"
+          PackagePath="runtime/wasm32/system-libraries/" />
+    <None Include="runtime/wasm64/system-libraries/*.a"
+          Pack="true"
+          PackagePath="runtime/wasm64/system-libraries/" />
     <None Include="runtime/runtime-pack.json"
           Pack="true"
           PackagePath="runtime/runtime-pack.json" />

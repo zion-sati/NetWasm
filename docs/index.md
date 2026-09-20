@@ -9,8 +9,8 @@ There is no production-support or compatibility commitment.
 - [Size measurements and methodology](size-and-methodology.md) — reproduce the
   88,344-byte C# component and read the Rust comparison and JSON scenario limits.
 - [Support status and roadmap](support-status.md)
-- [Quickstart](../QUICKSTART.md) — includes the activated Emscripten
-  6.0.7 prerequisite that supplies Node.js 24+ and LLD 24+.
+- [Quickstart](../QUICKSTART.md) — create and run an application with tools
+  restored through NuGet.
 - [CLI, build, and deployment](cli-build-deployment.md)
 - [Targets and output formats](targets-and-outputs.md)
 - [Compiler diagnostics](diagnostics.md)

@@ -39,3 +39,8 @@ The `wit/wasi-0.2.11/LICENSE.md` and provenance files are copied unchanged.
 WASI dependency inputs below NetWasm WIT worlds follow those upstream terms as
 well. Source files that retain an upstream copyright, license, or provenance
 header remain governed by that notice in addition to this path map.
+
+The Linux `NetWasm.HostTools` NuGet packages also redistribute Ubuntu GCC
+`libatomic.so.1` under GPL-3.0 with the GCC Runtime Library Exception. Each
+package carries its copyright, license text, and exact corresponding-source
+locations under `licenses/`; the binary is not checked into this source tree.

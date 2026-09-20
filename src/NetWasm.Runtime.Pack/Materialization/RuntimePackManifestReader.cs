@@ -40,7 +40,7 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
 
     private static void Validate(RuntimePackManifest? manifest)
     {
-        if (manifest is null || manifest.SchemaVersion != 2 || manifest.WasmPageSize != 65_536)
+        if (manifest is null || manifest.SchemaVersion != 3 || manifest.WasmPageSize != 65_536)
         {
             throw new InvalidOperationException("The NetWasm runtime pack manifest schema is unsupported.");
         }
@@ -104,12 +104,25 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
 
         ValidateAsset(target.RuntimeArchive);
         if (target.SystemLibraries is null ||
-            string.IsNullOrWhiteSpace(target.SystemLibraries.CacheFlavor) ||
             target.SystemLibraries.Names.IsDefaultOrEmpty ||
             target.SystemLibraries.Names.Any(name => string.IsNullOrWhiteSpace(name) || Path.GetFileName(name) != name) ||
-            target.SystemLibraries.Names.Distinct(StringComparer.Ordinal).Count() != target.SystemLibraries.Names.Length)
+            target.SystemLibraries.Names.Distinct(StringComparer.Ordinal).Count() != target.SystemLibraries.Names.Length ||
+            target.SystemLibraries.Assets.IsDefaultOrEmpty ||
+            target.SystemLibraries.Assets.Length != target.SystemLibraries.Names.Length)
         {
             throw new InvalidOperationException("The NetWasm runtime link closure is empty.");
+        }
+
+        for (var index = 0; index < target.SystemLibraries.Assets.Length; index++)
+        {
+            var asset = target.SystemLibraries.Assets[index];
+            ValidateAsset(asset);
+            if (!string.Equals(asset.Path,
+                $"{target.Target}/system-libraries/{target.SystemLibraries.Names[index]}",
+                StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The NetWasm runtime system-library path is invalid.");
+            }
         }
     }
 

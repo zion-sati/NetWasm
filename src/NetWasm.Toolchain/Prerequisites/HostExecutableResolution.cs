@@ -29,6 +29,7 @@ public enum HostExecutableResolutionSource
     Override,
     EnvironmentExecutable,
     EnvironmentRoot,
+    Package,
 }
 
 public sealed record ResolvedHostExecutable(

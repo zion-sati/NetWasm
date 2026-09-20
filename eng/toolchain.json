@@ -7,9 +7,207 @@
   "nodeMinimumMajor": 24,
   "playwright": "1.62.1",
   "emscripten": "6.0.7",
+  "runtimePackLicenseSources": {
+    "emscripten": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86",
+    "musl": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b",
+    "compilerRt": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+  },
   "llvmLld": {
     "version": "24.0.0",
     "commit": "4cc02503f584aad493a1d0d35bb5afb710a5510b"
+  },
+  "hostArtifacts": {
+    "schemaVersion": 1,
+    "emsdkReleaseCommit": "a2e0030dc9be61ddd58161b8548cf3584cfb374c",
+    "linuxNodePatcher": {
+      "package": "patchelf",
+      "version": "0.18.0-1.1build1",
+      "runpath": "$ORIGIN"
+    },
+    "gccLibatomicSource": {
+      "version": "14.2.0-4ubuntu2~24.04.1",
+      "descriptorUrl": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/gcc-14_14.2.0-4ubuntu2~24.04.1.dsc",
+      "descriptorSha256": "50950080874a6ec6780dd60c243e21d9cda9d736bb32bca98d16095d27cc01b5",
+      "sourceArchiveUrl": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/gcc-14_14.2.0.orig.tar.gz",
+      "sourceArchiveSha256": "768c314c11eeab56ccebb91eb42ec4a41122fa94f0d83400126401942622197b",
+      "debianPatchUrl": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/gcc-14_14.2.0-4ubuntu2~24.04.1.debian.tar.xz",
+      "debianPatchSha256": "cfece214c2fb790ef5f3baffb9a53e40618e7ae12d053610b251e94d77d08ade"
+    },
+    "winArm64LldCMakeFlags": [
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
+      "-DLLVM_ENABLE_PROJECTS=lld",
+      "-DLLVM_TARGETS_TO_BUILD=WebAssembly",
+      "-DLLVM_INCLUDE_TESTS=OFF",
+      "-DLLVM_INCLUDE_EXAMPLES=OFF",
+      "-DLLVM_INCLUDE_BENCHMARKS=OFF",
+      "-DLLVM_ENABLE_ASSERTIONS=OFF",
+      "-DLLVM_ENABLE_LIBXML2=OFF",
+      "-DLLVM_ENABLE_ZSTD=OFF",
+      "-DLLVM_ENABLE_ZLIB=OFF",
+      "-DLLVM_ENABLE_TERMINFO=OFF",
+      "-DLLVM_BUILD_LLVM_DYLIB=OFF",
+      "-DLLVM_LINK_LLVM_DYLIB=OFF",
+      "-DBUILD_SHARED_LIBS=OFF",
+      "-DLLVM_PARALLEL_LINK_JOBS=1"
+    ],
+    "licenseSources": {
+      "llvm": {
+        "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/LICENSE.TXT",
+        "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"
+      },
+      "lld": {
+        "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/lld/LICENSE.TXT",
+        "sha256": "f7891568956e34643eb6a0db1462db30820d40d7266e2a78063f2fe233ece5a0"
+      },
+      "blake3": {
+        "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/BLAKE3/LICENSE",
+        "sha256": "6a94bedb8b707ed97f6e310d0d015ab14e0683ffa0a612b02958581b9cc9fc0e"
+      },
+      "llvmThirdParty": [
+        {
+          "path": "llvm/lib/Support/xxhash.cpp",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/xxhash.cpp",
+          "sha256": "699389b388a56d0caf330bb872739b2e23d51a22b7e2f758f2c11fac9936752d",
+          "noticeBlock": 0
+        },
+        {
+          "path": "llvm/include/llvm/Support/xxhash.h",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/include/llvm/Support/xxhash.h",
+          "sha256": "2a5c9e06ca8ad4cbd4d0da6ba4c135e11626bf369be1490769d7bee9499c4b4b",
+          "noticeBlock": 0
+        },
+        {
+          "path": "llvm/lib/Support/ConvertUTF.cpp",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/ConvertUTF.cpp",
+          "sha256": "bdbbdf159f5dda86bf70faa4be49f810a01c9e4c4f866889aedf2eec1efcd798",
+          "noticeBlock": 1
+        },
+        {
+          "path": "llvm/lib/Support/UnicodeNameToCodepointGenerated.cpp",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/UnicodeNameToCodepointGenerated.cpp",
+          "sha256": "36d0880990bab4f512d943df0225080c1cd68d7c5721da2f50fac7346083e48c",
+          "noticeBlock": 0
+        },
+        {
+          "path": "llvm/lib/Support/regcomp.c",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/regcomp.c",
+          "sha256": "7f930ec43f21e591d6d2fc814b4557d597a2146b2c64c16ae7aff255f28d9a0c",
+          "noticeBlock": 0
+        },
+        {
+          "path": "llvm/lib/Support/regex_impl.h",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/regex_impl.h",
+          "sha256": "90cf33f4d2c50f516b669e8d17310e94f9241eb33b3ca2098478c41dab130f52",
+          "noticeBlock": 0
+        },
+        {
+          "path": "llvm/lib/Support/regstrlcpy.c",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/regstrlcpy.c",
+          "sha256": "b717e3355fdca040c161a7a179de9db1c9253da6519e60b77a074cbf5f7d423f",
+          "noticeBlock": 0
+        },
+        {
+          "path": "llvm/lib/Support/MD5.cpp",
+          "url": "https://raw.githubusercontent.com/llvm/llvm-project/4cc02503f584aad493a1d0d35bb5afb710a5510b/llvm/lib/Support/MD5.cpp",
+          "sha256": "7b7e82f5508a7d5551b78a1140b1d6aa9cba87282168219743cb6377cd5f9acd",
+          "noticeBlock": 0
+        }
+      ],
+      "binaryen": {
+        "url": "https://raw.githubusercontent.com/WebAssembly/binaryen/version_132/LICENSE",
+        "sha256": "64c0d02491e16eced74826440ecd2bcf7722d37fa586faf457b2494293afbffe"
+      },
+      "gccLibatomicCopyright": {
+        "url": "https://changelogs.ubuntu.com/changelogs/pool/main/g/gcc-14/gcc-14_14.2.0-4ubuntu2~24.04.1/copyright",
+        "sha256": "20390f8a6f3b1e4d7cb45dd8652dabb259bbef688cbad839bcdb0b9ba7252f79"
+      },
+      "gpl3": {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING3",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+      },
+      "llvmThirdPartyNoticeSha256": "8236cea0876b2f4d9159152de5f10de91822a73c2804aa776e3b3ca8824fe1a3"
+    },
+    "hosts": {
+      "linux-x64": {
+        "emsdk": {
+          "url": "https://storage.googleapis.com/webassembly/emscripten-releases-builds/linux/a2e0030dc9be61ddd58161b8548cf3584cfb374c/wasm-binaries.tar.xz",
+          "sha256": "3de9c1db1857fd4ebdeed87e45629418dbb929f557b4c72b9f2b4b013473ba1e"
+        },
+        "node": {
+          "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz",
+          "sha256": "982aa24dd8be4c889c6a8ab337ddff3b0896645b20f4239356e80552c16277ee"
+        },
+        "nodeExecutableSha256": "ad19784f7e90ba789a099eccba77ede8dc90a778c424f1c10a70fed3ff903fdc",
+        "packagedNodeExecutableSha256": "2e08e8c427149a3f383c175d575699b7e9b9b25683aa3bd300becf394ba09542",
+        "libatomicExecutableSha256": "9d8a34468e614a71a6427dbabb0ac24eb8cb1e324dc6aa3bf95eb6f59201f000",
+        "libatomic": {
+          "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_amd64.deb",
+          "sha256": "fe49cbbc7be753528380c724a8eef5f1e31dffa9221f692c5069048d81c7449d"
+        },
+        "nodeRoot": "node-v26.7.0-linux-x64"
+      },
+      "linux-arm64": {
+        "emsdk": {
+          "url": "https://storage.googleapis.com/webassembly/emscripten-releases-builds/linux/a2e0030dc9be61ddd58161b8548cf3584cfb374c/wasm-binaries-arm64.tar.xz",
+          "sha256": "416c7d180f2420551dfff5fa0861a3cb29ccde960290d96e0732370a09799616"
+        },
+        "node": {
+          "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-arm64.tar.xz",
+          "sha256": "afc7a004018485092ac8985b817b0d5684472bd9472e0b57d2ab88737e50090d"
+        },
+        "nodeExecutableSha256": "9507fea66ea788dfb2bbef1380ef6ef8940697ef1de15bee62b279e6cfef035c",
+        "packagedNodeExecutableSha256": "42092458a713f37d01be997f7e178f507b522e9dd502815cd66579fc96147ca0",
+        "libatomicExecutableSha256": "2896f2608b49113496e6872c77cb591f51f4e646fec01e59f517a971199979fe",
+        "libatomic": {
+          "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+          "sha256": "fdeab74e7ad8572cf69c7024e8040c7ac851f6e667d35f0d429e7a0352840f73"
+        },
+        "nodeRoot": "node-v26.7.0-linux-arm64"
+      },
+      "osx-arm64": {
+        "emsdk": {
+          "url": "https://storage.googleapis.com/webassembly/emscripten-releases-builds/mac/a2e0030dc9be61ddd58161b8548cf3584cfb374c/wasm-binaries-arm64.tar.xz",
+          "sha256": "b4e36889fb158825144060c99fb16881dbaf970b425f5a6af7a2a860e2d9c20b"
+        },
+        "node": {
+          "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-darwin-arm64.tar.xz",
+          "sha256": "595d2f934e081b82961d1a5fd41c6dbd0c5a952d9e8be5b4566ab754426968d2"
+        },
+        "nodeRoot": "node-v26.7.0-darwin-arm64"
+      },
+      "win-x64": {
+        "emsdk": {
+          "url": "https://storage.googleapis.com/webassembly/emscripten-releases-builds/win/a2e0030dc9be61ddd58161b8548cf3584cfb374c/wasm-binaries.zip",
+          "sha256": "203bfab44c5674871dd527fadc21fc36f67add3db809adea7309e474cc8a85c8"
+        },
+        "node": {
+          "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-win-x64.zip",
+          "sha256": "d3bd72755141ed32bbcd841228ee81897c8a98d50dfa7dae2179399a0a7c90f8"
+        },
+        "nodeRoot": "node-v26.7.0-win-x64"
+      },
+      "win-arm64": {
+        "llvmSource": {
+          "url": "https://codeload.github.com/llvm/llvm-project/tar.gz/4cc02503f584aad493a1d0d35bb5afb710a5510b",
+          "treeSha256": "2c33ef59dad998b421e65809d0d6c148d72116a57b963d37c8730a532b4e2645"
+        },
+        "lldRelease": {
+          "url": "https://github.com/zion-sati/NetWasm.NativeTools/releases/download/lld-v24.0.0-win-arm64.1/wasm-ld-24.0.0-win-arm64.1.zip",
+          "sha256": "bc6c7b161989a05322d4c95b0b11e5f77cb091a528311e37c6f935b895a83826",
+          "builderCommit": "180e34187e7c16e0485cd5381f3b8a6b738a1926"
+        },
+        "binaryen": {
+          "url": "https://github.com/WebAssembly/binaryen/releases/download/version_132/binaryen-version_132-arm64-windows.tar.gz",
+          "sha256": "1dd7dfac7d4a6021619e6f75dd8475e528d75928d3f0b084f4068fabac694442"
+        },
+        "node": {
+          "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-win-arm64.zip",
+          "sha256": "be8775204cfceca5a73c30f91bf0de5e85274c01b776dc13f16b91aa251ebb01"
+        },
+        "nodeRoot": "node-v26.7.0-win-arm64"
+      }
+    }
   },
   "wasmTools": "1.256.0",
   "wasmToolsLinuxX64Sha256": "0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d",

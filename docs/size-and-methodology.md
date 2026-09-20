@@ -14,8 +14,8 @@ using System;
 Console.WriteLine(42);
 ```
 
-From a new project directory, with the prerequisites installed and Emscripten
-activated:
+From a new project directory with the .NET SDK installed, restore the host
+tools through NuGet:
 
 ```sh
 dotnet new install NetWasm.Templates

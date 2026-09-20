@@ -7,8 +7,10 @@ node_modules/
 # CI/package-built NetWasm runtime pack products
 /src/NetWasm.Runtime.Pack/runtime/runtime-pack.json
 /src/NetWasm.Runtime.Pack/runtime/runtime-exports.txt
+/src/NetWasm.Runtime.Pack/runtime/LICENSE.txt
 /src/NetWasm.Runtime.Pack/runtime/*/layout.json
 /src/NetWasm.Runtime.Pack/runtime/*/libnetwasm-runtime.a
+/src/NetWasm.Runtime.Pack/runtime/*/system-libraries/
 TestResults/
 .DS_Store
 __pycache__/

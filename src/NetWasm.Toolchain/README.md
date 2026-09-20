@@ -19,11 +19,11 @@ dynamically loaded command families remain outside the package contract. The
 closure locks, integrity inventories and third-party notices are packaged beside
 their entry points.
 
-An activated Emscripten 6.0.7 SDK supplies the native Node 24+ and
-wasm-ld/LLD 24+ host prerequisites. The platform-neutral wasm-tools WASI module is bundled here;
-Wasmtime is optional and is not required by the standard SDK build, run or
-publish path. NetWasm does not introduce a host-RID layout or download native
-tools during the build.
+The native Node, wasm-ld, wasm-merge and wasm-opt executables live in the
+separate `NetWasm.HostTools.<host RID>` package selected by an application or
+test project's SDK. The platform-neutral wasm-tools WASI module is bundled
+here. Wasmtime is optional and is not required by the standard SDK build, run
+or publish path. Builds do not download native tools.
 
 The package retains the pinned source WIT closures and their provenance
 manifests under `tools/wit`, `tools/async-wit` and `tools/compiler-wit`.

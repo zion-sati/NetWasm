@@ -37,7 +37,7 @@ public sealed class SyntheticNetWasmTestExecutor : ITestExecutor
         ArgumentNullException.ThrowIfNull(frameworkHandle);
         foreach (var test in tests)
         {
-            RecordPassed(test, frameworkHandle);
+            Record(test, frameworkHandle);
         }
     }
 
@@ -50,7 +50,7 @@ public sealed class SyntheticNetWasmTestExecutor : ITestExecutor
         ArgumentNullException.ThrowIfNull(frameworkHandle);
         foreach (var source in sources)
         {
-            RecordPassed(CreateTestCase(source), frameworkHandle);
+            Record(CreateTestCase(source), frameworkHandle);
         }
     }
 
@@ -67,13 +67,16 @@ public sealed class SyntheticNetWasmTestExecutor : ITestExecutor
             source);
     }
 
-    private static void RecordPassed(TestCase test, IFrameworkHandle frameworkHandle)
+    private static void Record(TestCase test, IFrameworkHandle frameworkHandle)
     {
+        var failed = Environment.GetEnvironmentVariable("NETWASM_VSTEST_FAIL_CANARY") == "1";
+        var outcome = failed ? TestOutcome.Failed : TestOutcome.Passed;
         frameworkHandle.RecordStart(test);
         frameworkHandle.RecordResult(new TestResult(test)
         {
-            Outcome = TestOutcome.Passed,
+            Outcome = outcome,
+            ErrorMessage = failed ? "Synthetic failing canary." : null,
         });
-        frameworkHandle.RecordEnd(test, TestOutcome.Passed);
+        frameworkHandle.RecordEnd(test, outcome);
     }
 }

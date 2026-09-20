@@ -7,8 +7,19 @@ public sealed class HostingBuildEnvironmentResolver(
     IHostExecutablePathResolver executables,
     IHostToolCompatibilityProbe compatibilityProbe,
     IHostToolCompatibilityValidatorResolver compatibilityValidators,
-    IToolchainPackagePathResolver packagePaths) : IHostingBuildEnvironmentResolver
+    IToolchainPackagePathResolver packagePaths,
+    IHostToolsPackageResolver? hostPackages,
+    IHostToolsExecutableChooser? overrides) : IHostingBuildEnvironmentResolver
 {
+    public HostingBuildEnvironmentResolver(
+        IHostExecutablePathResolver executables,
+        IHostToolCompatibilityProbe compatibilityProbe,
+        IHostToolCompatibilityValidatorResolver compatibilityValidators,
+        IToolchainPackagePathResolver packagePaths)
+        : this(executables, compatibilityProbe, compatibilityValidators, packagePaths, null, null)
+    {
+    }
+
     private static readonly ImmutableArray<HostExecutableResolutionRequest> ToolRequests =
     [
         new(
@@ -56,6 +67,8 @@ public sealed class HostingBuildEnvironmentResolver(
         compatibilityValidators ?? throw new ArgumentNullException(nameof(compatibilityValidators));
     private readonly IToolchainPackagePathResolver _packagePaths = packagePaths ??
         throw new ArgumentNullException(nameof(packagePaths));
+    private readonly IHostToolsPackageResolver? _hostPackages = hostPackages;
+    private readonly IHostToolsExecutableChooser? _overrides = overrides;
 
     public HostingBuildEnvironment Resolve(HostingBuildEnvironmentRequest request)
     {
@@ -66,6 +79,11 @@ public sealed class HostingBuildEnvironmentResolver(
             throw new ArgumentException(
                 "The Toolchain package root must be absolute.",
                 nameof(request));
+        }
+
+        if (request.HostToolsPackageRoot is not null)
+        {
+            return ResolveRestoredTools(request);
         }
 
         var products = ToolRequests
@@ -80,6 +98,44 @@ public sealed class HostingBuildEnvironmentResolver(
             new(
                 ResolveOptionalTool(WasmMergeRequest),
                 ResolveOptionalTool(WasmOptRequest)),
+            _packagePaths.Resolve(
+                Path.GetFullPath(request.ToolchainPackageRoot),
+                node.Executable,
+                node.Compatibility));
+    }
+
+    private HostingBuildEnvironment ResolveRestoredTools(HostingBuildEnvironmentRequest request)
+    {
+        if (_hostPackages is null || _overrides is null)
+        {
+            throw new InvalidOperationException("Restored host-tool resolution is not configured.");
+        }
+        var package = _hostPackages.Resolve(new(
+            request.HostToolsPackageRoot!,
+            request.HostToolsPackageId ?? string.Empty,
+            request.HostToolsPackageVersion ?? string.Empty,
+            request.HostRid ?? string.Empty));
+        HostToolProduct Tool(string role, string toolId, string exactVersion)
+        {
+            var packaged = new ResolvedHostExecutable(
+                toolId,
+                package.Roles[role],
+                HostExecutableResolutionSource.Package);
+            var selected = _overrides.Choose(packaged);
+            return ResolveTool(selected, exactVersion);
+        }
+
+        var node = Tool("node", HostToolIds.Node, package.NodeVersion);
+        var linker = Tool("wasm-ld", HostToolIds.WasmLd, package.WasmLdVersion);
+        var merge = Tool("wasm-merge", HostToolIds.BinaryenWasmMerge, package.BinaryenVersion);
+        var opt = Tool("wasm-opt", HostToolIds.BinaryenWasmOpt, package.BinaryenVersion);
+        return new(
+            node.Executable,
+            node.Compatibility,
+            linker.Executable,
+            linker.Compatibility,
+            new(new(merge.Executable, merge.Compatibility),
+                new(opt.Executable, opt.Compatibility)),
             _packagePaths.Resolve(
                 Path.GetFullPath(request.ToolchainPackageRoot),
                 node.Executable,
@@ -129,15 +185,32 @@ public sealed class HostingBuildEnvironmentResolver(
         var executable = _executables.Resolve(request) ??
             throw new InvalidOperationException(
                 "The host executable resolver returned no product.");
+        return ResolveTool(executable, null);
+    }
+
+    private HostToolProduct ResolveTool(ResolvedHostExecutable executable, string? exactPackageVersion)
+    {
         var observation = _compatibilityProbe.Observe(executable) ??
             throw new InvalidOperationException(
                 "The host compatibility probe returned no observation.");
-        var validator = _compatibilityValidators.Resolve(request.ToolId) ??
+        var validator = _compatibilityValidators.Resolve(executable.ToolId) ??
             throw new InvalidOperationException(
                 "The host compatibility resolver returned no validator.");
         var compatibility = validator.Validate(observation) ??
             throw new InvalidOperationException(
                 "The host compatibility validator returned no product.");
+        if (executable.Source == HostExecutableResolutionSource.Package)
+        {
+            var expected = exactPackageVersion!.Contains('.')
+                ? exactPackageVersion
+                : $"{exactPackageVersion}.0";
+            if (!Version.TryParse(expected, out var expectedVersion) ||
+                compatibility.Version != expectedVersion)
+            {
+                throw new InvalidDataException(
+                    $"Restored host tool '{executable.ToolId}' is version {compatibility.Version}; expected {exactPackageVersion}.");
+            }
+        }
         return new(executable, compatibility);
     }
 

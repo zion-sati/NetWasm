@@ -50,14 +50,15 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     maximumMemorySizeBytes: targetPolicy.maximumMemorySizeBytes,
     runtimeArchive,
     systemLibraries: {
-      cacheFlavor: target === "wasm64" ? "sysroot/lib/wasm64-emscripten/lto" : "sysroot/lib/wasm32-emscripten",
       names: targetPolicy.systemLibraries,
+      assets: await Promise.all(targetPolicy.systemLibraries.map((name) =>
+        describeAsset(`${target}/system-libraries/${name}`))),
     },
   });
 }
 
 const manifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   runtimeAbi: toolchain.runtimeAbi,
   emscriptenVersion: toolchain.emscripten,
   wasmPageSize: policy.wasmPageSize,

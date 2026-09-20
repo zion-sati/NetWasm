@@ -43,8 +43,9 @@ public static class HostingBuildComposition
             OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal);
+        var environment = new SystemHostEnvironmentVariableReader();
         var executableResolver = new HostExecutablePathResolver(
-            new SystemHostEnvironmentVariableReader(),
+            environment,
             new FilePresenceChecker(),
             new SystemHostPathCanonicalizer(),
             convention);
@@ -57,7 +58,11 @@ public static class HostingBuildComposition
             executableResolver,
             new ProcessHostToolCompatibilityProbe(),
             new HostToolCompatibilityValidatorResolver(HostToolIds.Known, registrations),
-            new ToolchainPackagePathResolver());
+            new ToolchainPackagePathResolver(),
+            new HostToolsPackageResolver(
+                new PhysicalHostToolsPackageFileReader(),
+                new JsonHostToolsPackageManifestReader()),
+            new HostToolsOverrideSelector(environment, executableResolver));
     }
 
     internal static ImmutableArray<HostToolCompatibilityRequirement> Requirements() =>

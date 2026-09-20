@@ -5,17 +5,19 @@
 alias to the tested NetWasm identity.
 
 Executable projects use restored, platform-neutral `NetWasm.Toolchain`,
-`NetWasm.Hosting`, and `NetWasm.Hosting.Build` packages. The SDK validates the
-Node 24 or newer and wasm-ld/LLD 24 or newer supplied by an activated
-Emscripten 6.0.7 SDK before
-building. The platform-neutral `wasm-tools` module is restored through
+`NetWasm.Hosting`, and `NetWasm.Hosting.Build` packages. They also restore one
+`NetWasm.HostTools.<host RID>` package containing the pinned Node, LLD and
+Binaryen executables for the development host. The SDK validates those tools
+before building. The platform-neutral `wasm-tools` module is restored through
 `NetWasm.Toolchain`; Wasmtime is optional and is not part of the standard build,
 run or publish path. The SDK creates a manifest-complete local deployment and
 execution request for `dotnet run`; `dotnet publish` copies that exact portable
 closure or, with `-p:NetWasmPublishTarget=browser`, emits the browser-selected
 closure. Release JavaScript is minified by default.
 
-Host tools come from the activated Emscripten SDK.
+Plain libraries do not restore host tools. Their runnable consumers select
+their own development host package. Host tools never enter the application
+deployment or a library's dependency graph.
 
 The compiler/runtime layer supplies componentization through the
 `NetWasmComponentizeDependsOn` target seam. It receives the core module, WIT,
@@ -40,4 +42,4 @@ The SDK-owned pack boundary is selected only for projects declaring
 targets.
 
 See the repository's [package-consumer quickstart](../../docs/sdk-quickstart.md)
-for the pinned Emscripten activation and application templates.
+for supported hosts, restore behavior and application templates.

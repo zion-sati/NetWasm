@@ -19,10 +19,10 @@ memory. Deploy the compiled program to a compatible WASI host.
 ## Try it
 
 Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
-Git, Python 3 and Emscripten SDK 6.0.7 using the
-[prerequisite instructions](docs/sdk-quickstart.md#1-install-the-prerequisites).
-Activated Emscripten supplies Node.js 24+ and LLD 24+; you do not need separate
-LLVM, Node.js or Wasm-tool installations.
+then follow the [host and restore notes](docs/sdk-quickstart.md#1-install-net).
+The SDK restores its pinned Node, LLD and Binaryen tools for your development
+host through NuGet. You do not need to install Emscripten, Git or Python to
+build an ordinary app or test project.
 
 Install, create, run and publish:
 
@@ -30,6 +30,7 @@ Install, create, run and publish:
 dotnet new install NetWasm.Templates
 dotnet new netwasm-app -n HelloNetWasm
 cd HelloNetWasm
+dotnet restore
 dotnet run
 dotnet publish -c Release -o publish/local
 ```
@@ -49,7 +50,7 @@ The component is self-contained with respect to .NET: no CLR, Mono,
 `dotnet.js`, application DLLs, or NetWasm installation is required at runtime.
 A WebAssembly host is still required. **Build with .NET; run without .NET.**
 
-For Windows setup, browser publishing and dual-target libraries, follow the
+For Windows host support, browser publishing and dual-target libraries, follow the
 [complete SDK quickstart](docs/sdk-quickstart.md).
 
 ## More than Hello World
@@ -163,10 +164,10 @@ NetWasm is experimental and intended for evaluation and early integration.
 Source and ABI compatibility can change; this is not a production-support
 commitment.
 
-Development hosts: macOS ARM64, Linux ARM64/x64 and Windows x64. The normal
+Development hosts: macOS ARM64, Linux ARM64/x64 and Windows ARM64/x64. The normal
 portable output is a wasm32 WASI Preview 2 Component. Raw wasm32/wasm64 and
 JavaScript-host integration are advanced alternatives; wasm64 Components
-remain blocked by upstream tooling. Windows ARM64 is unsupported.
+remain blocked by upstream tooling.
 
 Runtime reflection, `dynamic`, runtime assembly loading and managed threading
 are outside the profile. General `System.IO.File`/`Directory`/`FileStream`,

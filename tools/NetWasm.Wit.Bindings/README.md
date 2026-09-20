@@ -11,9 +11,10 @@ Install the tool:
 dotnet tool install --global NetWasm.Wit.Bindings.Tool
 ```
 
-The package carries NetWasm's pinned platform-neutral `wasm-tools` module. It
-uses Node.js 24 or newer from the activated Emscripten SDK, so no native
-`wasm-tools` installation is required.
+The package carries NetWasm's pinned platform-neutral `wasm-tools` module. The
+standalone command requires Node.js 24 or newer on `PATH`, or you can set
+`NETWASM_NODE_PATH` to its executable. It does not require Emscripten or a native
+`wasm-tools` installation.
 
 ```sh
 netwasm-wit-bindgen \

@@ -41,6 +41,7 @@ class VerifyReleasePackagesTests(unittest.TestCase):
         version: str = "0.1.0-rc.1",
         dependency_version: str = "[0.1.0-rc.1]",
         repository_commit: str | None = None,
+        host_manifest: dict[str, object] | None = None,
     ) -> Path:
         repository_commit = repository_commit or "a" * 40
         path = self.root / f"{package_id}.{version}.nupkg"
@@ -62,6 +63,8 @@ class VerifyReleasePackagesTests(unittest.TestCase):
 """
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr(f"{package_id}.nuspec", nuspec)
+            if host_manifest is not None:
+                archive.writestr("tools/host-tools-manifest.json", json.dumps(host_manifest))
         return path
 
     def test_accepts_exact_allowlisted_package(self) -> None:
@@ -101,6 +104,45 @@ class VerifyReleasePackagesTests(unittest.TestCase):
         self.assertEqual("PASS", receipt["status"])
         self.assertEqual(1, receipt["packageCount"])
         self.assertEqual(64, len(receipt["packages"][0]["sha256"]))
+
+    def test_host_package_requires_release_source_and_records_provenance(self) -> None:
+        package_id = "NetWasm.HostTools.osx-arm64"
+        host_manifest = {
+            "hostRid": "osx-arm64",
+            "sourceCommit": self.manifest["sourceCommit"],
+            "upstream": {"node": "26.7.0"},
+        }
+        package = self.create_package(
+            package_id=package_id, host_manifest=host_manifest
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires release source"):
+            MODULE.inspect_package(package, self.manifest)
+
+        source = self.root / "source"
+        source.mkdir()
+        with mock.patch.object(MODULE.subprocess, "run") as verify_host:
+            result = MODULE.inspect_package(package, self.manifest, source)
+
+        self.assertEqual(host_manifest, result["hostTools"])
+        arguments = verify_host.call_args.args[0]
+        self.assertIn("--source-commit", arguments)
+        self.assertIn(self.manifest["sourceCommit"], arguments)
+        self.assertIn(str(source / "eng/toolchain.json"), arguments)
+
+    def test_runtime_pack_requires_release_source_and_runs_closure_gate(self) -> None:
+        package = self.create_package(package_id="NetWasm.Runtime.Pack")
+        with self.assertRaisesRegex(ValueError, "requires release source"):
+            MODULE.inspect_package(package, self.manifest)
+
+        source = self.root / "source"
+        source.mkdir()
+        with mock.patch.object(MODULE.subprocess, "run") as verify_runtime:
+            MODULE.inspect_package(package, self.manifest, source)
+
+        arguments = verify_runtime.call_args.args[0]
+        self.assertIn("verify-runtime-pack-package.py", arguments[1])
+        self.assertIn(str(source), arguments)
 
     def test_accepts_github_release_lightweight_tag_without_signer_policy(self) -> None:
         source = self.root / "source"

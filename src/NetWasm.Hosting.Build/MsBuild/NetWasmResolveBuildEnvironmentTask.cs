@@ -20,13 +20,19 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
 
     [Required]
     public string ToolchainPackageRoot { get; set; } = string.Empty;
+    public string HostToolsPackageRoot { get; set; } = string.Empty;
+    public string HostToolsPackageId { get; set; } = string.Empty;
+    public string HostToolsPackageVersion { get; set; } = string.Empty;
+    public string HostRid { get; set; } = string.Empty;
 
     [Output] public string NodePath { get; private set; } = string.Empty;
+    [Output] public string NodeSource { get; private set; } = string.Empty;
     [Output] public string NodeVersion { get; private set; } = string.Empty;
     [Output] public string WasmToolsCommandPath { get; private set; } = string.Empty;
     [Output] public string WasmToolsModulePath { get; private set; } = string.Empty;
     [Output] public string WasmToolsVersion { get; private set; } = string.Empty;
     [Output] public string WasmLdPath { get; private set; } = string.Empty;
+    [Output] public string WasmLdSource { get; private set; } = string.Empty;
     [Output] public string WasmLdVersion { get; private set; } = string.Empty;
     [Output] public string ToolchainPackageId { get; private set; } = string.Empty;
     [Output] public string ToolchainPackageVersion { get; private set; } = string.Empty;
@@ -55,13 +61,23 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
     {
         try
         {
-            var result = _resolver.Resolve(new(ToolchainPackageRoot));
+            var request = string.IsNullOrWhiteSpace(HostToolsPackageRoot)
+                ? new HostingBuildEnvironmentRequest(ToolchainPackageRoot)
+                : new HostingBuildEnvironmentRequest(
+                    ToolchainPackageRoot,
+                    HostToolsPackageRoot,
+                    HostToolsPackageId,
+                    HostToolsPackageVersion,
+                    HostRid);
+            var result = _resolver.Resolve(request);
             NodePath = result.Node.AbsolutePath;
+            NodeSource = result.Node.Source.ToString();
             NodeVersion = result.NodeCompatibility.Version.ToString();
             WasmToolsCommandPath = result.Toolchain.WasmTools.CommandPath;
             WasmToolsModulePath = result.Toolchain.WasmTools.ModulePath;
             WasmToolsVersion = result.Toolchain.WasmTools.WasmToolsVersion;
             WasmLdPath = result.WasmLd.AbsolutePath;
+            WasmLdSource = result.WasmLd.Source.ToString();
             WasmLdVersion = result.WasmLdCompatibility.Version.ToString();
             ToolchainPackageId = result.Toolchain.PackageId;
             ToolchainPackageVersion = result.Toolchain.PackageVersion;

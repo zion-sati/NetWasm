@@ -32,8 +32,8 @@ internal sealed record RuntimePackTarget(
     RuntimePackSystemLibraries SystemLibraries);
 
 internal sealed record RuntimePackSystemLibraries(
-    string CacheFlavor,
-    ImmutableArray<string> Names);
+    ImmutableArray<string> Names,
+    ImmutableArray<RuntimePackAsset> Assets);
 
 internal sealed record RuntimePackAsset(
     string Path,
@@ -74,8 +74,6 @@ internal sealed record RuntimeMaterializationRequest(
     string ManifestPath,
     string RuntimeLayoutPath,
     string AssetRoot,
-    string EmscriptenRoot,
-    string EmscriptenCacheRoot,
     string WasmLdPath,
     string WasmToolsNodePath,
     string WasmToolsCommandPath,

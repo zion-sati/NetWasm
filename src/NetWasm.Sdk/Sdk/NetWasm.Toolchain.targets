@@ -10,6 +10,11 @@
     <NetWasmToolchainPackageRoot Condition="'$(NetWasmToolchainPackageRoot)' == '' AND '$(NuGetPackageRoot)' != ''">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'netwasm.toolchain', '$(NetWasmToolchainPackageVersion)'))))</NetWasmToolchainPackageRoot>
     <NetWasmHostingPackageRoot Condition="'$(NetWasmHostingPackageRoot)' == '' AND '$(PkgNetWasm_Hosting)' != ''">$([System.IO.Path]::GetFullPath('$(PkgNetWasm_Hosting)'))</NetWasmHostingPackageRoot>
     <NetWasmHostingPackageRoot Condition="'$(NetWasmHostingPackageRoot)' == '' AND '$(NuGetPackageRoot)' != ''">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'netwasm.hosting', '$(NetWasmHostingPackageVersion)'))))</NetWasmHostingPackageRoot>
+    <NetWasmHostToolsPackageRoot Condition="'$(NetWasmHostToolsPackageId)' == 'NetWasm.HostTools.linux-x64' AND '$(PkgNetWasm_HostTools_linux-x64)' != ''">$(PkgNetWasm_HostTools_linux-x64)</NetWasmHostToolsPackageRoot>
+    <NetWasmHostToolsPackageRoot Condition="'$(NetWasmHostToolsPackageId)' == 'NetWasm.HostTools.linux-arm64' AND '$(PkgNetWasm_HostTools_linux-arm64)' != ''">$(PkgNetWasm_HostTools_linux-arm64)</NetWasmHostToolsPackageRoot>
+    <NetWasmHostToolsPackageRoot Condition="'$(NetWasmHostToolsPackageId)' == 'NetWasm.HostTools.osx-arm64' AND '$(PkgNetWasm_HostTools_osx-arm64)' != ''">$(PkgNetWasm_HostTools_osx-arm64)</NetWasmHostToolsPackageRoot>
+    <NetWasmHostToolsPackageRoot Condition="'$(NetWasmHostToolsPackageId)' == 'NetWasm.HostTools.win-x64' AND '$(PkgNetWasm_HostTools_win-x64)' != ''">$(PkgNetWasm_HostTools_win-x64)</NetWasmHostToolsPackageRoot>
+    <NetWasmHostToolsPackageRoot Condition="'$(NetWasmHostToolsPackageId)' == 'NetWasm.HostTools.win-arm64' AND '$(PkgNetWasm_HostTools_win-arm64)' != ''">$(PkgNetWasm_HostTools_win-arm64)</NetWasmHostToolsPackageRoot>
 
     <NetWasmToolchainCommandWitPackagePath Condition="'$(NetWasmToolchainCommandWitPackagePath)' == '' AND '$(NetWasmToolchainPackageRoot)' != ''">$([System.IO.Path]::Combine('$(NetWasmToolchainPackageRoot)', 'tools', 'wit-packages', 'command.wit.wasm'))</NetWasmToolchainCommandWitPackagePath>
     <NetWasmToolchainAsyncCommandWitPackagePath Condition="'$(NetWasmToolchainAsyncCommandWitPackagePath)' == '' AND '$(NetWasmToolchainPackageRoot)' != ''">$([System.IO.Path]::Combine('$(NetWasmToolchainPackageRoot)', 'tools', 'wit-packages', 'async-command.wit.wasm'))</NetWasmToolchainAsyncCommandWitPackagePath>
@@ -58,30 +63,61 @@
     <!-- The ordinary Run target consumes these standard .NET properties. -->
     <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmNodePath)' != ''">$(NetWasmNodePath)</NetWasmRunNodeCommand>
     <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NETWASM_NODE_PATH)' != ''">$(NETWASM_NODE_PATH)</NetWasmRunNodeCommand>
-    <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(EMSDK_NODE)' != ''">$(EMSDK_NODE)</NetWasmRunNodeCommand>
-    <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == ''">node</NetWasmRunNodeCommand>
+    <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmHostToolsPackageRoot)' != '' AND ('$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64')">$([System.IO.Path]::Combine('$(NetWasmHostToolsPackageRoot)', 'tools', 'bin', 'node.exe'))</NetWasmRunNodeCommand>
+    <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmHostToolsPackageRoot)' != ''">$([System.IO.Path]::Combine('$(NetWasmHostToolsPackageRoot)', 'tools', 'bin', 'node'))</NetWasmRunNodeCommand>
     <RunCommand Condition="'$(OutputType)' == 'Exe' AND '$(RunCommand)' == ''">$(NetWasmRunNodeCommand)</RunCommand>
     <RunArguments Condition="'$(OutputType)' == 'Exe' AND '$(RunArguments)' == ''">&quot;$(NetWasmLocalLauncherPath)&quot; --descriptor &quot;$(NetWasmExecutionDescriptorPath)&quot; --request &quot;$(NetWasmExecutionRequestPath)&quot; --result &quot;$(NetWasmExecutionResultPath)&quot; --replace-result --</RunArguments>
     <RunWorkingDirectory Condition="'$(OutputType)' == 'Exe' AND '$(RunWorkingDirectory)' == ''">$(MSBuildProjectDirectory)</RunWorkingDirectory>
   </PropertyGroup>
 
+  <Target Name="NetWasmSdkValidateHostToolsHost"
+          BeforeTargets="CollectPackageReferences;GenerateRestoreGraphFile;Restore;CoreCompile;Run;Publish"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRequiresHostTools)' == 'true'">
+    <Error Code="NWSDK041"
+           Condition="'$(NetWasmHostToolsPackageId)' == ''"
+           Text="NetWasm does not support this development host ($(NETCoreSdkRuntimeIdentifier)). Supported hosts: linux-x64, linux-arm64, osx-arm64, win-x64, win-arm64." />
+    <Error Code="NWSDK044"
+           Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' AND '$(NetWasmBuildHostOSArchitecture)' == 'Arm64'"
+           Text="An x64 .NET SDK on Windows ARM64 cannot select the NetWasm x64 host-tools package. Install the native ARM64 .NET SDK and restore again." />
+  </Target>
+
+  <Target Name="NetWasmSdkReportHostLockFileMigration"
+          BeforeTargets="CollectPackageReferences;GenerateRestoreGraphFile;Restore"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmUsesHostQualifiedLockFile)' == 'true'">
+    <Error Code="NWSDK043"
+           Condition="'$(RestoreLockedMode)' == 'true' AND !Exists('$(MSBuildProjectDirectory)/$(NuGetLockFilePath)')"
+           Text="Locked restore requires $(NuGetLockFilePath) for this development host. Restore without locked mode to generate it, or set NuGetLockFilePath explicitly." />
+    <Message Importance="High"
+             Condition="Exists('$(MSBuildProjectDirectory)/packages.lock.json') AND !Exists('$(MSBuildProjectDirectory)/$(NuGetLockFilePath)') AND '$(RestoreLockedMode)' != 'true'"
+             Text="NetWasm now uses $(NuGetLockFilePath) for this development host. Existing packages.lock.json is unchanged; review and remove it from source control after migration, or explicitly set NuGetLockFilePath to retain that name." />
+  </Target>
+
   <Target Name="NetWasmSdkResolveBuildEnvironment"
           BeforeTargets="CoreCompile;Publish;Run"
           DependsOnTargets="ResolvePackageAssets"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRequiresHostTools)' == 'true' AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK034"
            Condition="'$(NetWasmToolchainPackageRoot)' == '' OR !Exists('$(NetWasmToolchainPackageRoot)')"
            Text="NetWasm.Toolchain was not restored as a platform-neutral package." />
     <Error Code="NWSDK035"
            Condition="'$(NetWasmHostingPackageRoot)' == '' OR !Exists('$(NetWasmHostingPackageRoot)')"
            Text="NetWasm.Hosting was not restored for SDK host composition." />
-    <NetWasmResolveBuildEnvironmentTask ToolchainPackageRoot="$(NetWasmToolchainPackageRoot)">
+    <Error Code="NWSDK042"
+           Condition="'$(NetWasmHostToolsPackageRoot)' == '' OR !Exists('$(NetWasmHostToolsPackageRoot)')"
+           Text="$(NetWasmHostToolsPackageId) [$(NetWasmHostToolsPackageVersion)] is not restored for this development host. Run dotnet restore on this host." />
+    <NetWasmResolveBuildEnvironmentTask ToolchainPackageRoot="$(NetWasmToolchainPackageRoot)"
+                                        HostToolsPackageRoot="$(NetWasmHostToolsPackageRoot)"
+                                        HostToolsPackageId="$(NetWasmHostToolsPackageId)"
+                                        HostToolsPackageVersion="$(NetWasmHostToolsPackageVersion)"
+                                        HostRid="$(NETCoreSdkRuntimeIdentifier)">
       <Output TaskParameter="NodePath" PropertyName="NetWasmNodePath" />
+      <Output TaskParameter="NodeSource" PropertyName="NetWasmNodeSource" />
       <Output TaskParameter="NodeVersion" PropertyName="NetWasmNodeVersion" />
       <Output TaskParameter="WasmToolsCommandPath" PropertyName="NetWasmWasmToolsCommandPath" />
       <Output TaskParameter="WasmToolsModulePath" PropertyName="NetWasmWasmToolsModulePath" />
       <Output TaskParameter="WasmToolsVersion" PropertyName="NetWasmWasmToolsVersion" />
       <Output TaskParameter="WasmLdPath" PropertyName="NetWasmWasmLdPath" />
+      <Output TaskParameter="WasmLdSource" PropertyName="NetWasmWasmLdSource" />
       <Output TaskParameter="WasmLdVersion" PropertyName="NetWasmWasmLdVersion" />
       <Output TaskParameter="ToolchainPackageId" PropertyName="NetWasmResolvedToolchainPackageId" />
       <Output TaskParameter="ToolchainPackageVersion" PropertyName="NetWasmResolvedToolchainPackageVersion" />
@@ -108,6 +144,8 @@
     </NetWasmResolveBuildEnvironmentTask>
     <Message Importance="Low"
              Text="NetWasm Binaryen: wasm-merge=$(NetWasmBinaryenWasmMergeImplementation) $(NetWasmNativeBinaryenWasmMergeVersion) $(NetWasmNativeBinaryenWasmMergePath); wasm-opt=$(NetWasmBinaryenWasmOptImplementation) $(NetWasmNativeBinaryenWasmOptVersion) $(NetWasmNativeBinaryenWasmOptPath); portable=$(NetWasmBinaryenPortableVersion)" />
+    <Message Importance="Normal"
+             Text="NetWasm host tools: Node=$(NetWasmNodeSource) $(NetWasmNodeVersion); wasm-ld=$(NetWasmWasmLdSource) $(NetWasmWasmLdVersion); Binaryen=$(NetWasmBinaryenWasmOptImplementation)." />
     <PropertyGroup>
       <NetWasmWitPath Condition="'$(NetWasmWitPath)' == '' AND '$(NetWasmComponentContract)' == 'async-command'">$(NetWasmResolvedAsyncCommandWitPackagePath)</NetWasmWitPath>
       <NetWasmWitPath Condition="'$(NetWasmWitPath)' == ''">$(NetWasmResolvedCommandWitPackagePath)</NetWasmWitPath>
@@ -170,7 +208,7 @@
 
   <Target Name="NetWasmSdkValidateLifecycleTarget"
           BeforeTargets="CoreCompile;Publish;Run"
-          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRequiresHostTools)' == 'true'">
     <Error Code="NWSDK004"
            Condition="'$(NetWasmPublishTargetNormalized)' != 'portable' AND '$(NetWasmPublishTargetNormalized)' != 'browser'"
            Text="NetWasmPublishTarget must be 'portable' or 'browser'." />

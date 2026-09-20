@@ -49,10 +49,13 @@ The target width and host contract are separate choices. “Supported” below
 means the named output boundary; it does not give a component capability to a
 raw core module or make browser APIs implicit.
 
-Supported development hosts for the first preview are macOS ARM64, Linux ARM64,
-Linux x64 and Windows x64. Windows ARM64 is unsupported because Emscripten 6.0.7
-does not ship an upstream native Windows ARM64 toolchain; x64 emulation is not a
-supported NetWasm development-host configuration.
+Supported development hosts are macOS ARM64, Linux ARM64/x64 and Windows
+ARM64/x64. The SDK restores one native tool package for the development host;
+Windows ARM64 requires the native ARM64 .NET SDK. An x64 .NET SDK running under
+Windows ARM64 emulation cannot select the ARM64 tool package.
+The pinned macOS Node binary requires macOS 13.5 or newer. Linux host tools
+require glibc 2.28 or newer; the restored Linux package includes Node's
+`libatomic.so.1` dependency.
 
 | Output boundary | wasm32 | wasm64 / Memory64 |
 | --- | --- | --- |

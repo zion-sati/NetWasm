@@ -35,8 +35,8 @@ public static class RuntimeLinkPlanner
             ValidateVirtualPath(request.SystemLibraries[index].Path);
             if (!request.SystemLibraries[index].Path.EndsWith(
                     "/" + target.SystemLibraries.Names[index], StringComparison.Ordinal) ||
-                request.SystemLibraries[index].Sha256.Length != 64 ||
-                !request.SystemLibraries[index].Sha256.All(Uri.IsHexDigit))
+                !string.Equals(request.SystemLibraries[index].Sha256,
+                    target.SystemLibraries.Assets[index].Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("The resolved Emscripten system-library closure is invalid.");
             }

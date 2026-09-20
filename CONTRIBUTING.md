@@ -7,9 +7,25 @@ interop.
 
 ## Local setup
 
-Use the pinned versions in `global.json` and `eng/toolchain.json`. Set
-`NETWASM_EMSDK_ROOT` to the pinned Emscripten installation before the toolchain
-check, as shown in the [quickstart](QUICKSTART.md):
+Use the pinned versions in `global.json` and `eng/toolchain.json`. Building
+the toolchain or regenerating runtime packs is a maintainer workflow: it needs
+Git, Python 3 and the full pinned Emscripten 6.0.7 SDK. On macOS or Linux:
+
+```sh
+git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+cd ~/emsdk
+./emsdk install 6.0.7
+./emsdk activate 6.0.7
+source ~/emsdk/emsdk_env.sh
+export NETWASM_EMSDK_ROOT="$EMSDK"
+```
+
+On Windows, install Git and Python 3, then use the official `emsdk.ps1`
+installer for version 6.0.7 and set `NETWASM_EMSDK_ROOT` to that installation.
+The ordinary package consumer workflow in the [quickstart](QUICKSTART.md) does
+not need these maintainer tools.
+
+From the repository root, run:
 
 ```sh
 dotnet restore NetWasm.slnx

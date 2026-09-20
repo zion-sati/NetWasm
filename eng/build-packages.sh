@@ -154,10 +154,16 @@ for project in "${projects[@]}"; do
     -p:NetWasmToolchainWasmToolsAssetRoot="${wasm_tools_root}"
 done
 
+expected_count="$(python3 -c 'import json,sys; packages=json.load(open(sys.argv[1], encoding="utf-8"))["packages"]; print(sum(not item.startswith("NetWasm.HostTools.") for item in packages))' "${source_root}/eng/release-manifest.json")"
 package_count="$(find "${OUTPUT_DIR}" -maxdepth 1 -type f -name 'NetWasm.*.nupkg' | wc -l | tr -d ' ')"
-if [[ "${package_count}" -ne 13 ]]; then
-  echo "Expected exactly 13 NetWasm core packages, found ${package_count}." >&2
+if [[ "${package_count}" -ne "${expected_count}" ]]; then
+  echo "Expected exactly ${expected_count} NetWasm neutral packages, found ${package_count}." >&2
   exit 1
 fi
 
-printf 'Built 13 NetWasm core packages at %s in %s\n' "${RELEASE_VERSION}" "${OUTPUT_DIR}"
+python3 "${source_root}/eng/verify-runtime-pack-package.py" \
+  --package "${OUTPUT_DIR}/NetWasm.Runtime.Pack.${RELEASE_VERSION}.nupkg" \
+  --pins-root "${source_root}" \
+  --version "${RELEASE_VERSION}"
+
+printf 'Built %s NetWasm neutral packages at %s in %s\n' "${expected_count}" "${RELEASE_VERSION}" "${OUTPUT_DIR}"

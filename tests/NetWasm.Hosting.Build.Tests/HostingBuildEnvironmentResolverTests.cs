@@ -213,6 +213,109 @@ public sealed class HostingBuildEnvironmentResolverTests
             executables, probe, validators, null!));
     }
 
+    [Fact]
+    public void ResolveUsesAllFourValidatedPackagedExecutables()
+    {
+        var packages = new RecordingHostToolsPackageResolver();
+        var chooser = new RecordingHostToolsChooser();
+        var probe = new PackagedProbe();
+        var toolchain = new RecordingPackagePathResolver();
+        IHostingBuildEnvironmentResolver resolver = new HostingBuildEnvironmentResolver(
+            new RecordingExecutableResolver(), probe,
+            new RecordingValidatorResolver(), toolchain, packages, chooser);
+
+        var result = resolver.Resolve(PackagedRequest());
+
+        Assert.Equal("NetWasm.HostTools.osx-arm64", packages.Request?.PackageId);
+        Assert.Equal("0.2.5-preview.1", packages.Request?.PackageVersion);
+        Assert.Equal("osx-arm64", packages.Request?.HostRid);
+        Assert.Equal(HostToolIds.Known.ToArray(), chooser.Requests.Select(x => x.ToolId));
+        Assert.All(chooser.Requests, selected =>
+            Assert.Equal(HostExecutableResolutionSource.Package, selected.Source));
+        Assert.Equal(HostToolIds.Known.ToArray(), probe.Requests.Select(x => x.ToolId));
+        Assert.Equal(HostExecutableResolutionSource.Package, result.Node.Source);
+        Assert.Equal(HostExecutableResolutionSource.Package, result.WasmLd.Source);
+        Assert.Equal(HostExecutableResolutionSource.Package,
+            result.Binaryen.WasmMerge?.Executable.Source);
+        Assert.Equal(HostExecutableResolutionSource.Package,
+            result.Binaryen.WasmOpt?.Executable.Source);
+        Assert.Equal(result.Node.AbsolutePath, result.Toolchain.WasmTools.NodePath);
+        Assert.Equal(Root, toolchain.PackageRoot);
+    }
+
+    [Fact]
+    public void ResolveRejectsUnexpectedPackagedVersionBeforeToolchainResolution()
+    {
+        var probe = new PackagedProbe(nodeVersion: new Version(26, 8, 0));
+        var toolchain = new RecordingPackagePathResolver();
+        IHostingBuildEnvironmentResolver resolver = new HostingBuildEnvironmentResolver(
+            new RecordingExecutableResolver(), probe,
+            new RecordingValidatorResolver(), toolchain,
+            new RecordingHostToolsPackageResolver(), new RecordingHostToolsChooser());
+
+        var exception = Assert.Throws<InvalidDataException>(() => resolver.Resolve(PackagedRequest()));
+
+        Assert.Contains(HostToolIds.Node, exception.Message, StringComparison.Ordinal);
+        Assert.Null(toolchain.PackageRoot);
+        Assert.Single(probe.Requests);
+    }
+
+    private static HostingBuildEnvironmentRequest PackagedRequest() => new(
+        Root,
+        Path.Combine(Root, "host-tools"),
+        "NetWasm.HostTools.osx-arm64",
+        "0.2.5-preview.1",
+        "osx-arm64");
+
+    private sealed class RecordingHostToolsPackageResolver : IHostToolsPackageResolver
+    {
+        public HostToolsPackageRequest? Request { get; private set; }
+
+        public HostToolsPackagePaths Resolve(HostToolsPackageRequest request)
+        {
+            Request = request;
+            return new(request.PackageId, request.PackageVersion, request.HostRid,
+                "26.7.0", "24.0.0", "132",
+                new Dictionary<string, string>
+                {
+                    ["node"] = Path.Combine(Root, "host-tools", "node"),
+                    ["wasm-ld"] = Path.Combine(Root, "host-tools", "wasm-ld"),
+                    ["wasm-merge"] = Path.Combine(Root, "host-tools", "wasm-merge"),
+                    ["wasm-opt"] = Path.Combine(Root, "host-tools", "wasm-opt"),
+                }.ToImmutableDictionary(StringComparer.Ordinal));
+        }
+    }
+
+    private sealed class RecordingHostToolsChooser : IHostToolsExecutableChooser
+    {
+        private readonly List<ResolvedHostExecutable> _requests = [];
+        public ImmutableArray<ResolvedHostExecutable> Requests => [.. _requests];
+
+        public ResolvedHostExecutable Choose(ResolvedHostExecutable packaged)
+        {
+            _requests.Add(packaged);
+            return packaged;
+        }
+    }
+
+    private sealed class PackagedProbe(Version? nodeVersion = null) : IHostToolCompatibilityProbe
+    {
+        private readonly List<ResolvedHostExecutable> _requests = [];
+        public ImmutableArray<ResolvedHostExecutable> Requests => [.. _requests];
+
+        public HostToolCompatibilityObservation Observe(ResolvedHostExecutable executable)
+        {
+            _requests.Add(executable);
+            var version = executable.ToolId switch
+            {
+                HostToolIds.Node => nodeVersion ?? new Version(26, 7, 0),
+                HostToolIds.WasmLd => new Version(24, 0, 0),
+                _ => new Version(132, 0),
+            };
+            return new(executable.ToolId, version, []);
+        }
+    }
+
     private sealed class RecordingExecutableResolver : IHostExecutablePathResolver
     {
         private readonly List<HostExecutableResolutionRequest> _requests = [];

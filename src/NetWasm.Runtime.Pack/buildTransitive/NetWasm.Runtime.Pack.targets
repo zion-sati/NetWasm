@@ -3,10 +3,6 @@
     <NetWasmRuntimePackRoot Condition="'$(NetWasmRuntimePackRoot)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'runtime'))</NetWasmRuntimePackRoot>
     <NetWasmRuntimePackManifestPath Condition="'$(NetWasmRuntimePackManifestPath)' == ''">$([System.IO.Path]::Combine('$(NetWasmRuntimePackRoot)', 'runtime-pack.json'))</NetWasmRuntimePackManifestPath>
     <NetWasmRuntimePackSelectorAssemblyPath Condition="'$(NetWasmRuntimePackSelectorAssemblyPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'lib', 'net10.0', 'NetWasm.Runtime.Pack.dll'))</NetWasmRuntimePackSelectorAssemblyPath>
-    <NetWasmEmscriptenRoot Condition="'$(NetWasmEmscriptenRoot)' == '' AND '$(EMSDK)' != ''">$(EMSDK)</NetWasmEmscriptenRoot>
-    <NetWasmEmscriptenRoot Condition="'$(NetWasmEmscriptenRoot)' == '' AND '$(EMSDK_ROOT)' != ''">$(EMSDK_ROOT)</NetWasmEmscriptenRoot>
-    <NetWasmEmscriptenCacheRoot Condition="'$(NetWasmEmscriptenCacheRoot)' == '' AND '$(EM_CACHE)' != ''">$(EM_CACHE)</NetWasmEmscriptenCacheRoot>
-    <NetWasmEmscriptenCacheRoot Condition="'$(NetWasmEmscriptenCacheRoot)' == '' AND '$(NetWasmEmscriptenRoot)' != ''">$([System.IO.Path]::Combine('$(NetWasmEmscriptenRoot)', 'upstream', 'emscripten', 'cache'))</NetWasmEmscriptenCacheRoot>
     <NetWasmRuntimePackProvided>true</NetWasmRuntimePackProvided>
   </PropertyGroup>
 
@@ -25,8 +21,6 @@
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </NetWasmRuntimePackAsset>
     <_NetWasmRuntimePackMaterializationInput Include="$(NetWasmRuntimePackRoot)/**/*" />
-    <_NetWasmRuntimePackMaterializationInput Include="$(NetWasmEmscriptenCacheRoot)/sysroot/lib/wasm32-emscripten/*.a;$(NetWasmEmscriptenCacheRoot)/sysroot/lib/wasm64-emscripten/lto/*.a"
-                                                Condition="'$(NetWasmEmscriptenCacheRoot)' != ''" />
   </ItemGroup>
 
   <Target Name="NetWasmRuntimePackResolveOutputPaths"
@@ -45,7 +39,7 @@
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'">
     <WriteLinesToFile File="$(NetWasmRuntimePackMaterializationIdentityPath)"
-                      Lines="target=$(NetWasmTarget);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);emscriptenRoot=$(NetWasmEmscriptenRoot);emscriptenCache=$(NetWasmEmscriptenCacheRoot);wasmLd=$(NetWasmWasmLdPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath)"
+                      Lines="target=$(NetWasmTarget);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath)"
                       Overwrite="true"
                       WriteOnlyWhenDifferent="true" />
   </Target>
@@ -60,17 +54,12 @@
     <Error Code="NWPACK002"
            Condition="'$(NetWasmWasmLdPath)' == '' OR !Exists('$(NetWasmWasmLdPath)')"
            Text="The pinned NetWasm wasm-ld executable is unavailable." />
-    <Error Code="NWPACK006"
-           Condition="'$(NetWasmEmscriptenRoot)' == '' OR !Exists('$(NetWasmEmscriptenRoot)') OR '$(NetWasmEmscriptenCacheRoot)' == '' OR !Exists('$(NetWasmEmscriptenCacheRoot)')"
-           Text="Activate the Emscripten SDK required by NetWasm, or set NetWasmEmscriptenRoot and NetWasmEmscriptenCacheRoot." />
     <Error Code="NWPACK003"
            Condition="'$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
            Text="The pinned platform-neutral NetWasm wasm-tools command is unavailable." />
     <RuntimeMaterializationTask ManifestPath="$(NetWasmRuntimePackManifestPath)"
                                 RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
                                 AssetRoot="$(NetWasmRuntimePackRoot)"
-                                EmscriptenRoot="$(NetWasmEmscriptenRoot)"
-                                EmscriptenCacheRoot="$(NetWasmEmscriptenCacheRoot)"
                                 WasmLdPath="$(NetWasmWasmLdPath)"
                                 WasmToolsNodePath="$(NetWasmNodePath)"
                                 WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
