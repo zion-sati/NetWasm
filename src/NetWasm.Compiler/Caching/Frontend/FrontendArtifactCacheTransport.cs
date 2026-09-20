@@ -28,11 +28,6 @@ internal sealed class FrontendArtifactWorkingSetBudget
     private long _encodedBytes;
     private long _structuralBytes;
 
-    internal (int Artifacts, long EncodedBytes, long StructuralBytes) Read()
-    {
-        lock (_gate) return (_artifacts, _encodedBytes, _structuralBytes);
-    }
-
     internal bool TryReserve(int artifacts, long encodedBytes, long structuralBytes)
     {
         if (artifacts < 0 || encodedBytes < 0 || structuralBytes < 0) return false;

@@ -1161,12 +1161,9 @@ public sealed class FrontendArtifactCacheActorTests
         Assert.False(budget.TryReserve(0, 0, 2));
         Assert.False(budget.TryReserve(2, 0, 0));
         Assert.True(budget.TryReserve(1, 1, 1));
-        Assert.Equal((
-            FrontendArtifactCachePolicy.MaximumArtifacts,
-            FrontendArtifactCachePolicy.MaximumEncodedWorkingSetBytes,
-            FrontendArtifactCachePolicy.MaximumStructuralWorkingSetBytes),
-            budget.Read());
         Assert.False(budget.TryReserve(1, 0, 0));
+        Assert.False(budget.TryReserve(0, 1, 0));
+        Assert.False(budget.TryReserve(0, 0, 1));
         Assert.False(budget.TryReserve(-1, 0, 0));
     }
 
