@@ -46,6 +46,46 @@ public sealed class FrontendArtifactCacheActorTests
     }
 
     [Fact]
+    public void ReleasedTransportFacadeOnlyForwardsToItsSevenCapabilities()
+    {
+        var probe = new ForwardingTransportProbe();
+        var transport = new FrontendArtifactCacheTransport(
+            probe, probe, probe, probe, probe, probe, probe);
+        var options = Options(enabled: true);
+        var descriptor = new FrontendArtifactCacheDescriptor(
+            "schema", "namespace", "preparation");
+        var entries = new List<FrontendArtifactCacheEntry>();
+        var publication = new FrontendArtifactCachePublication("token", 0, 0);
+        var batch = new FrontendArtifactCacheBatch("token", "batch", [], true);
+        probe.Descriptor = descriptor;
+        probe.Publication = publication;
+        probe.Batch = batch;
+
+        Assert.Same(descriptor, transport.Prepare(options));
+        Assert.Same(probe.Scope, transport.BeginCompilation(descriptor, entries));
+        transport.CancelPreparation(descriptor);
+        Assert.Same(publication, transport.CompleteCompilation(descriptor));
+        Assert.Same(batch, transport.ReadBatch(publication));
+        transport.AcknowledgeBatch(publication, batch);
+        transport.Abandon(publication);
+
+        Assert.Same(options, probe.Options);
+        Assert.Same(descriptor, probe.SuppliedDescriptor);
+        Assert.Same(entries, probe.Entries);
+        Assert.Same(publication, probe.SuppliedPublication);
+        Assert.Same(batch, probe.SuppliedBatch);
+        Assert.Equal([
+            "prepare", "begin", "cancel", "complete", "read",
+            "acknowledge", "abandon",
+        ], probe.Events);
+
+        var failure = new InvalidOperationException("probe");
+        probe.ReadFailure = failure;
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() =>
+            transport.ReadBatch(publication)));
+    }
+
+    [Fact]
     public void TransportActorsEnforceLifecycleAndCanAbandonPublication()
     {
         var context = Context(null) with { Namespace = new string('a', 64) };
@@ -530,7 +570,8 @@ public sealed class FrontendArtifactCacheActorTests
         var builder = new FrontendArtifactCacheIdentityBuilder(
             new EntryAssemblyBindingFingerprinter(),
             new ManagedAssemblyImageReader(),
-            new CompilationInputHasher());
+            new CompilationInputHasher(),
+            new FrontendArtifactCompilerIdentity());
         var intermediate = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         var wit = Path.GetTempFileName();
         File.WriteAllText(wit, "fixture");
@@ -574,11 +615,14 @@ public sealed class FrontendArtifactCacheActorTests
         Assert.Null(builder.Build(options with { EntryAssemblyPath = intermediate + ".missing" }));
         Assert.Throws<ArgumentNullException>(() => builder.Build(null!));
         Assert.Throws<ArgumentNullException>(() => new FrontendArtifactCacheIdentityBuilder(
-            null!, new ManagedAssemblyImageReader(), new CompilationInputHasher()));
+            null!, new ManagedAssemblyImageReader(), new CompilationInputHasher(),
+            new FrontendArtifactCompilerIdentity()));
         Assert.Throws<ArgumentNullException>(() => new FrontendArtifactCacheIdentityBuilder(
-            new EntryAssemblyBindingFingerprinter(), null!, new CompilationInputHasher()));
+            new EntryAssemblyBindingFingerprinter(), null!, new CompilationInputHasher(),
+            new FrontendArtifactCompilerIdentity()));
         Assert.Throws<ArgumentNullException>(() => new FrontendArtifactCacheIdentityBuilder(
-            new EntryAssemblyBindingFingerprinter(), new ManagedAssemblyImageReader(), null!));
+            new EntryAssemblyBindingFingerprinter(), new ManagedAssemblyImageReader(), null!,
+            new FrontendArtifactCompilerIdentity()));
         File.Delete(wit);
     }
 
@@ -1369,6 +1413,81 @@ public sealed class FrontendArtifactCacheActorTests
     {
         public FrontendArtifactObjectPublication? Publication { get; private set; }
         public void Publish(FrontendArtifactObjectPublication publication) => Publication = publication;
+    }
+
+    private sealed class ForwardingTransportProbe :
+        IFrontendArtifactCachePreparationFactory,
+        IFrontendArtifactCompilationFactory,
+        IFrontendArtifactPreparationCanceler,
+        IFrontendArtifactPublicationFactory,
+        IFrontendArtifactPublicationBatchReader,
+        IFrontendArtifactPublicationBatchAcknowledger,
+        IFrontendArtifactPublicationAbandoner
+    {
+        public List<string> Events { get; } = [];
+        public CompilerOptions? Options { get; private set; }
+        public FrontendArtifactCacheDescriptor? Descriptor { get; set; }
+        public FrontendArtifactCacheDescriptor? SuppliedDescriptor { get; private set; }
+        public IReadOnlyList<FrontendArtifactCacheEntry>? Entries { get; private set; }
+        public IDisposable Scope { get; } = new MemoryStream();
+        public FrontendArtifactCachePublication? Publication { get; set; }
+        public FrontendArtifactCachePublication? SuppliedPublication { get; private set; }
+        public FrontendArtifactCacheBatch? Batch { get; set; }
+        public FrontendArtifactCacheBatch? SuppliedBatch { get; private set; }
+        public Exception? ReadFailure { get; set; }
+
+        public FrontendArtifactCacheDescriptor? Prepare(CompilerOptions options)
+        {
+            Events.Add("prepare");
+            Options = options;
+            return Descriptor;
+        }
+
+        public IDisposable Begin(FrontendArtifactCacheDescriptor descriptor,
+            IReadOnlyList<FrontendArtifactCacheEntry> entries)
+        {
+            Events.Add("begin");
+            SuppliedDescriptor = descriptor;
+            Entries = entries;
+            return Scope;
+        }
+
+        public void Cancel(FrontendArtifactCacheDescriptor descriptor)
+        {
+            Events.Add("cancel");
+            SuppliedDescriptor = descriptor;
+        }
+
+        public FrontendArtifactCachePublication? Complete(
+            FrontendArtifactCacheDescriptor descriptor)
+        {
+            Events.Add("complete");
+            SuppliedDescriptor = descriptor;
+            return Publication;
+        }
+
+        public FrontendArtifactCacheBatch Read(
+            FrontendArtifactCachePublication publication)
+        {
+            Events.Add("read");
+            SuppliedPublication = publication;
+            if (ReadFailure is not null) throw ReadFailure;
+            return Batch!;
+        }
+
+        public void Acknowledge(FrontendArtifactCachePublication publication,
+            FrontendArtifactCacheBatch batch)
+        {
+            Events.Add("acknowledge");
+            SuppliedPublication = publication;
+            SuppliedBatch = batch;
+        }
+
+        public void Abandon(FrontendArtifactCachePublication publication)
+        {
+            Events.Add("abandon");
+            SuppliedPublication = publication;
+        }
     }
 
     private sealed class OversizeEncoder : IFrontendArtifactEncoder

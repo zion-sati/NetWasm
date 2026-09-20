@@ -1,7 +1,9 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission;
@@ -30,7 +32,9 @@ internal static class WasmModuleEmissionCompositionRoot
         IManagedExceptionObjectProvider exceptionObjects,
         ITypeDescriptorSource typeDescriptors,
         WasmEmissionRequest request,
-        ILogger<WasmModuleEmitterFactory> logger)
+        ILogger<WasmModuleEmitterFactory> logger,
+        IManagedLayoutForkSource? layoutForks,
+        int workerCount)
     {
         var services = new ServiceCollection();
         services.AddWasmModuleEmission(
@@ -51,6 +55,25 @@ internal static class WasmModuleEmissionCompositionRoot
             exceptionObjects,
             typeDescriptors,
             logger);
+        if (layoutForks is not null && workerCount > 1)
+        {
+            var shared = new ManagedBodySharedCapabilities(
+                types, typeDefinitions, fields, methods, symbols,
+                typeClassifier, intrinsics, targetLayout, typeLayouts,
+                staticFields, staticData, runtimeObjects, exceptionObjects,
+                typeDescriptors, logger);
+            services.AddSingleton<IManagedBodyWorkerFactory>(
+                new ManagedBodyWorkerFactory(shared));
+            services.AddSingleton<IManagedBodyBatchEmitterFactory>(provider =>
+                new ManagedBodyBatchEmitterFactory(layoutForks, workerCount,
+                    provider.GetRequiredService<IManagedBodyWorkerFactory>()));
+            services.Replace(ServiceDescriptor.Singleton<
+                IManagedDefinitionSetAppender,
+                ParallelManagedDefinitionSetAppender>());
+            services.Replace(ServiceDescriptor.Singleton<
+                IConstructedMethodSetAppender,
+                ParallelConstructedMethodSetAppender>());
+        }
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,

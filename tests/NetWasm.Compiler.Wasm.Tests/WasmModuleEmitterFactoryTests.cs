@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NetWasm.Compiler.Wasm.Emission;
 
 namespace NetWasm.Compiler.Wasm.Tests;
@@ -6,6 +7,17 @@ using static EmitterTestSupport;
 
 public sealed class WasmModuleEmitterFactoryTests
 {
+    [Fact]
+    public void RetainsReleasedOneLoggerConstructor()
+    {
+        var constructor = typeof(WasmModuleEmitterFactory).GetConstructor(
+            [typeof(ILogger<WasmModuleEmitterFactory>)]);
+
+        Assert.NotNull(constructor);
+        Assert.True(constructor.GetParameters()[0].IsOptional);
+        Assert.IsType<WasmModuleEmitterFactory>(constructor.Invoke([null]));
+    }
+
     [Fact]
     public void ComposesAndDisposesAFreshEmitterGraphPerModule()
     {

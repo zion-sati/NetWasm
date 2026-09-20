@@ -114,8 +114,8 @@ internal sealed class FrontendArtifactTransportPublisher(
 }
 
 internal sealed class FrontendArtifactPayloadPublicationFanout(
-    FrontendArtifactPayloadPublisher disk,
-    FrontendArtifactTransportPublisher transport) : IFrontendArtifactPayloadPublisher
+    IFrontendArtifactPayloadPublisher disk,
+    IFrontendArtifactPayloadPublisher transport) : IFrontendArtifactPayloadPublisher
 {
     public void Publish(FrontendArtifactPayloadPublication publication)
     {

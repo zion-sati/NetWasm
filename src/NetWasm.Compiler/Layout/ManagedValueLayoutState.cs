@@ -12,4 +12,16 @@ internal sealed class ManagedValueLayoutState
     public Dictionary<CliTypeIdentity, ValueLayout> Values { get; } = [];
 
     public HashSet<CliTypeIdentity> CompletedMetadataLayouts { get; } = [];
+
+    public ManagedValueLayoutState() { }
+
+    public ManagedValueLayoutState(ManagedValueLayoutState source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        foreach (var pair in source.Fields) Fields.Add(pair.Key, pair.Value);
+        foreach (var pair in source.ConstructedFields)
+            ConstructedFields.Add(pair.Key, pair.Value);
+        foreach (var pair in source.Values) Values.Add(pair.Key, pair.Value);
+        CompletedMetadataLayouts.UnionWith(source.CompletedMetadataLayouts);
+    }
 }

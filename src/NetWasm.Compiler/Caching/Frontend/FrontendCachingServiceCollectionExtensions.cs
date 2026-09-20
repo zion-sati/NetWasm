@@ -45,8 +45,10 @@ internal static class FrontendCachingServiceCollectionExtensions
         services.AddSingleton<IFrontendArtifactPayloadReader, FrontendArtifactPayloadReader>();
         services.AddSingleton<FrontendArtifactPayloadPublisher>();
         services.AddSingleton<FrontendArtifactTransportPublisher>();
-        services.AddSingleton<IFrontendArtifactPayloadPublisher,
-            FrontendArtifactPayloadPublicationFanout>();
+        services.AddSingleton<IFrontendArtifactPayloadPublisher>(static provider =>
+            new FrontendArtifactPayloadPublicationFanout(
+                provider.GetRequiredService<FrontendArtifactPayloadPublisher>(),
+                provider.GetRequiredService<FrontendArtifactTransportPublisher>()));
         services.AddSingleton<IFrontendArtifactCacheTransport,
             FrontendArtifactCacheTransport>();
         services.AddSingleton<IFrontendArtifactObjectReader, FrontendArtifactObjectReader>();

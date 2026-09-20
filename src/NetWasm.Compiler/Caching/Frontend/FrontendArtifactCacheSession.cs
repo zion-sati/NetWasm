@@ -247,14 +247,6 @@ internal sealed class FrontendArtifactCacheIdentityBuilder(
     private readonly IFrontendArtifactCompilerIdentity _compilerIdentity =
         compilerIdentity ?? throw new ArgumentNullException(nameof(compilerIdentity));
 
-    internal FrontendArtifactCacheIdentityBuilder(
-        IEntryAssemblyBindingFingerprinter bindingFingerprints,
-        IManagedAssemblyImageReader images,
-        ICompilationInputHasher inputHasher) : this(bindingFingerprints, images,
-        inputHasher, new FrontendArtifactCompilerIdentity())
-    {
-    }
-
     public FrontendArtifactCacheContext? Build(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

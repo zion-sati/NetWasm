@@ -6,6 +6,8 @@ internal static class LayoutServiceCollectionExtensions
 {
     public static IServiceCollection AddCompilerLayout(this IServiceCollection services)
     {
+        services.AddSingleton<NetWasm.Compiler.Core.IManagedLayoutForkSourceFactory,
+            ManagedLayoutForkSourceFactory>();
         services.AddSingleton<IExplicitValueLayoutResolver,
             ExplicitValueLayoutResolver>();
         services.AddSingleton<IValueLayoutResolverFactory,

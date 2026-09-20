@@ -55,8 +55,15 @@ public interface IWasmModuleEmitterFactory
 }
 
 public sealed class WasmModuleEmitterFactory(
-    ILogger<WasmModuleEmitterFactory>? logger = null) : IWasmModuleEmitterFactory
+    ILogger<WasmModuleEmitterFactory>? logger,
+    IManagedLayoutForkSourceFactory? layoutForks,
+    CompilerParallelism? parallelism) : IWasmModuleEmitterFactory
 {
+    // Keep the constructor signature shipped in 0.2.3 for existing consumers.
+    public WasmModuleEmitterFactory(
+        ILogger<WasmModuleEmitterFactory>? logger = null)
+        : this(logger, null, null) { }
+
     public WasmModuleEmissionResult Emit(
         ITypeRepository types,
         ITypeDefinitionResolver typeDefinitions,
@@ -74,7 +81,15 @@ public sealed class WasmModuleEmitterFactory(
         IRuntimeObjectLayout runtimeObjects,
         IManagedExceptionObjectProvider exceptionObjects,
         ITypeDescriptorSource typeDescriptors,
-        WasmEmissionRequest request) => WasmModuleEmissionCompositionRoot.Emit(
+        WasmEmissionRequest request)
+    {
+        var workerCount = OperatingSystem.IsBrowser()
+            ? 1
+            : parallelism?.WorkerCount ?? 1;
+        var forks = workerCount > 1 && layoutForks is not null
+            ? layoutForks.Create(targetLayout, types, typeDefinitions, fields)
+            : null;
+        return WasmModuleEmissionCompositionRoot.Emit(
             types,
             typeDefinitions,
             fields,
@@ -92,5 +107,8 @@ public sealed class WasmModuleEmitterFactory(
             exceptionObjects,
             typeDescriptors,
             request,
-            logger ?? NullLogger<WasmModuleEmitterFactory>.Instance);
+            logger ?? NullLogger<WasmModuleEmitterFactory>.Instance,
+            forks,
+            workerCount);
+    }
 }
