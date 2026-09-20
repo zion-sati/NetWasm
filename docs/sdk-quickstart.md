@@ -7,103 +7,29 @@ subprocess API, or managed threading/thread-pool runtime. Its in-memory streams,
 selected WASI HTTP and CLI contracts, async reactor, and read-only timezone
 mount are deliberately narrower capabilities.
 
-## 1. Install the prerequisites
+## 1. Install .NET
 
-Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
-Git and Python 3, then install the pinned Emscripten SDK. Python is used by the
-`emsdk` installer; it is not a NetWasm runtime dependency. Emscripten supplies
-the Node.js and LLVM/LLD versions used by the NetWasm SDK. The supported
-minimums are Node.js 24+ and LLD 24+.
+Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0).
+The supported development hosts are Linux x64/ARM64, macOS ARM64 and Windows
+x64/ARM64. On Windows ARM64, use the native ARM64 .NET SDK; the x64 SDK under
+emulation cannot select the ARM64 host-tools package.
+The pinned Linux tools need glibc 2.28 or newer; the Linux package carries
+Node's `libatomic.so.1` dependency. The pinned macOS Node binary needs macOS
+13.5 or newer.
 
-### macOS and Linux
+For an ordinary application or test project, no separate Emscripten, Node.js,
+LLVM/LLD, Binaryen, Git or Python installation is needed. `dotnet restore`
+selects one host-tools NuGet package for the machine doing the build. That
+package supplies the pinned Node, `wasm-ld`, `wasm-merge` and `wasm-opt` tools.
+The first restore downloads the package (about 79 MB compressed on macOS
+ARM64, plus the other NetWasm dependencies); NuGet caches it for subsequent
+projects. Package sizes differ by host. Builds do not download tools.
 
-Minimal Debian/Ubuntu images may need
-`apt-get install git python3 xz-utils` before running the `emsdk` installer.
-
-```bash
-git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-cd ~/emsdk
-./emsdk install 6.0.7
-./emsdk activate 6.0.7
-source ~/emsdk/emsdk_env.sh
-```
-
-Run the `source` command in each new shell before using NetWasm. It sets
-`EMSDK` and `EMSDK_NODE`; NetWasm uses that activated SDK selection without
-requiring the Node directory on `PATH`. NetWasm resolves `wasm-ld` from
-`$EMSDK/upstream/bin`, so no extra `PATH` edit is needed.
-
-### Windows x64 PowerShell
-
-The first preview supports Windows x64 development hosts. Windows ARM64 is not
-a supported development host because Emscripten 6.0.7 does not provide an
-upstream native Windows ARM64 toolchain. Running the x64 toolchain through
-emulation is not part of the supported NetWasm setup.
-
-Windows does not include a working Python installation by default. Install the
-.NET SDK, [Git for Windows](https://gitforwindows.org/) and
-[Python 3](https://www.python.org/downloads/windows/) before cloning `emsdk`.
-If you use [WinGet](https://learn.microsoft.com/en-us/windows/package-manager/winget/install),
-for example:
-
-```powershell
-winget install --id Microsoft.DotNet.SDK.10 --exact
-winget install --id Git.Git --exact
-winget install --id Python.Python.3.14 --exact
-```
-
-Python 3.14 is an installation example, not a NetWasm-specific Python version
-requirement. You can use the official installers instead of WinGet. With the
-Python installer, enable its option to add Python to `PATH`.
-
-Open a new PowerShell terminal after installing the prerequisites, then verify:
-
-```powershell
-dotnet --version
-git --version
-python --version
-```
-
-`python --version` must report a Python 3 version. A Windows app-execution alias
-that opens the Microsoft Store or reports "Python was not found" is not an
-installed interpreter; install Python and reopen the terminal before continuing.
-
-```powershell
-git clone https://github.com/emscripten-core/emsdk.git "$env:USERPROFILE\emsdk"
-Set-Location "$env:USERPROFILE\emsdk"
-Set-ExecutionPolicy -Scope Process Bypass
-.\emsdk.ps1 install 6.0.7
-.\emsdk.ps1 activate 6.0.7
-. .\emsdk_env.ps1
-```
-
-The execution-policy change applies only to this PowerShell process; it does
-not alter the user or machine policy. Dot-source `emsdk_env.ps1` in each new
-PowerShell session before using NetWasm.
-
-Verify the active shell:
-
-```bash
-dotnet --version
-emcc --version
-"$EMSDK_NODE" --version
-"$EMSDK/upstream/bin/wasm-ld" --version
-```
-
-In PowerShell, use:
-
-```powershell
-dotnet --version
-emcc --version
-& "$env:EMSDK_NODE" --version
-& "$env:EMSDK\upstream\bin\wasm-ld.exe" --version
-```
-
-The expected tool families are .NET SDK 10.0.3xx or a newer .NET 10 feature
-band, Emscripten 6.0.7, Node.js 24 or newer, and LLD 24 or newer. The
-platform-neutral `wasm-tools` module
-is carried and verified by `NetWasm.Toolchain`; Wasmtime is optional and is not
-needed for the standard SDK build, run or publish journey.
+After a successful restore, `dotnet build --no-restore`, `dotnet run
+--no-build --no-restore` and `dotnet test --no-build --no-restore` can use the
+cached packages offline. `dotnet clean` leaves the shared NuGet cache intact.
+Wasmtime remains optional and is not needed for the standard SDK build, run or
+publish journey.
 
 ## 2. Install the templates
 
@@ -125,6 +51,23 @@ dotnet run
 The template prints `42`. Debug builds include managed stack traces by default.
 Release omits their instrumentation and symbol sidecar unless
 `NetWasmManagedStackTrace=true`.
+
+An application or runnable test project restores one host-tools package. A
+plain or dual-target library does not; its consumer selects the host package.
+If you move a restored checkout to another development host, run `dotnet
+restore` again. An ambient `node`, `wasm-ld` or Binaryen installation does not
+replace the restored defaults. For an intentional override, set
+`NETWASM_NODE_PATH`, `NETWASM_WASM_LD_PATH`, `NETWASM_WASM_MERGE_PATH` or
+`NETWASM_WASM_OPT_PATH` to the corresponding executable's absolute path.
+Invalid overrides fail validation rather than falling back silently.
+
+If you enable NuGet lock files with `RestorePackagesWithLockFile=true`, the SDK
+uses a host-qualified name such as `packages.linux-x64.lock.json` for an app or
+test project. Commit the files for the development hosts you support. A
+checkout with an older `packages.lock.json` can run an unlocked restore to
+generate the new host file, then review and remove the old file. To keep a
+deliberate custom name, set `NuGetLockFilePath` explicitly; one explicit lock
+file shared across different hosts must be regenerated for each host.
 
 ### Host capabilities
 
@@ -214,6 +157,7 @@ netwasm-wit-bindgen --wit service.wit --world example:service@1.0.0/service --ou
 ```
 
 Omit `--world` when the WIT document contains exactly one world. The tool
-carries the pinned platform-neutral wasm-tools module and uses Node.js 24+
-from the activated Emscripten SDK; it does not require a native `wasm-tools`
-installation.
+carries the pinned platform-neutral wasm-tools module and does not require a
+native `wasm-tools` installation. This standalone command is separate from the
+SDK build: it still needs Node.js 24+ available on `PATH`, through
+`NETWASM_NODE_PATH` or through `EMSDK_NODE`.

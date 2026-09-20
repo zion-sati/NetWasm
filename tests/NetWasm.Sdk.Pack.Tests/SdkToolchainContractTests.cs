@@ -34,7 +34,8 @@ public sealed class SdkToolchainContractTests
         Assert.Contains("NetWasmJcoPath", source, StringComparison.Ordinal);
         Assert.Contains("NetWasmNodePath", source, StringComparison.Ordinal);
         Assert.Contains("$(NETWASM_NODE_PATH)", source, StringComparison.Ordinal);
-        Assert.Contains("$(EMSDK_NODE)", source, StringComparison.Ordinal);
+        Assert.Contains("NetWasmHostToolsPackageRoot", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("$(EMSDK_NODE)", source, StringComparison.Ordinal);
         Assert.Contains("NetWasmTranspileComponentTask", source, StringComparison.Ordinal);
     }
 
@@ -56,7 +57,7 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
-    public void RunCommandUsesTheValidatedNodeSelectionOrderAtEvaluationTime()
+    public void RunCommandUsesTheRestoredHostPackageWhenNoOverrideIsSet()
     {
         var document = LoadSdkTarget("NetWasm.Toolchain.targets");
         var commands = document
@@ -82,10 +83,14 @@ public sealed class SdkToolchainContractTests
             },
             command =>
             {
-                Assert.Equal("$(EMSDK_NODE)", command.Value);
-                Assert.Contains("$(EMSDK_NODE)", command.Condition, StringComparison.Ordinal);
+                Assert.Contains("NetWasmHostToolsPackageRoot", command.Value, StringComparison.Ordinal);
+                Assert.Contains("win-arm64", command.Condition, StringComparison.Ordinal);
             },
-            command => Assert.Equal("node", command.Value));
+            command =>
+            {
+                Assert.Contains("NetWasmHostToolsPackageRoot", command.Value, StringComparison.Ordinal);
+                Assert.Contains("NetWasmHostToolsPackageRoot", command.Condition, StringComparison.Ordinal);
+            });
     }
 
     [Fact]
@@ -476,11 +481,11 @@ public sealed class SdkToolchainContractTests
             "$EMSDK/upstream/emscripten/cache/sysroot/lib",
             script,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("cp \"$system_source/$library\"", script, StringComparison.Ordinal);
+        Assert.Contains("cp \"$system_source/$library\"", script, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void RuntimePackageContainsOnlyTheNetWasmOwnedArchive()
+    public void RuntimePackageContainsTheExactRuntimeAndSystemArchivePaths()
     {
         var repositoryRoot = FindRepositoryRoot();
         var project = File.ReadAllText(Path.Combine(
@@ -488,13 +493,9 @@ public sealed class SdkToolchainContractTests
             "src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj"));
 
         Assert.Contains("runtime/*/libnetwasm-runtime.a", project, StringComparison.Ordinal);
+        Assert.Contains("runtime/wasm32/system-libraries/*.a", project, StringComparison.Ordinal);
+        Assert.Contains("runtime/wasm64/system-libraries/*.a", project, StringComparison.Ordinal);
         Assert.DoesNotContain("runtime/**/*.a", project, StringComparison.Ordinal);
-        Assert.DoesNotContain(Directory.EnumerateFiles(
-                Path.Combine(repositoryRoot, "src/NetWasm.Runtime.Pack/runtime"),
-                "*.a",
-                SearchOption.AllDirectories),
-            path => !string.Equals(
-                Path.GetFileName(path), "libnetwasm-runtime.a", StringComparison.Ordinal));
     }
 
     private static XDocument LoadSdkTarget(string fileName)

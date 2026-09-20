@@ -8,8 +8,7 @@ import argparse
 import hashlib
 import json
 import subprocess
-import urllib.error
-import urllib.request
+import sys
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -117,7 +116,7 @@ def sha256(path: Path) -> str:
 
 
 def inspect_package(
-    path: Path, manifest: dict[str, object]
+    path: Path, manifest: dict[str, object], source_root: Path | None = None
 ) -> dict[str, object]:
     with zipfile.ZipFile(path) as archive:
         invalid_entry = archive.testzip()
@@ -127,6 +126,11 @@ def inspect_package(
         if len(nuspecs) != 1:
             raise ValueError("Package archive must contain exactly one nuspec.")
         root = ElementTree.fromstring(archive.read(nuspecs[0]))
+        host_manifest = (
+            json.loads(archive.read("tools/host-tools-manifest.json"))
+            if "tools/host-tools-manifest.json" in archive.namelist()
+            else None
+        )
 
     metadata = element(root, "metadata")
     package_id = text(metadata, "id")
@@ -159,7 +163,52 @@ def inspect_package(
                     f"[{expected_version}]."
                 )
 
-    return {
+    if package_id == "NetWasm.Runtime.Pack":
+        if source_root is None:
+            raise ValueError("Runtime-pack release verification requires release source.")
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("verify-runtime-pack-package.py")),
+                "--package", str(path),
+                "--pins-root", str(source_root),
+                "--version", expected_version,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    host_receipt: dict[str, object] | None = None
+    if package_id.startswith("NetWasm.HostTools."):
+        if source_root is None:
+            raise ValueError("Host-tools release verification requires release source.")
+        rid = package_id.removeprefix("NetWasm.HostTools.")
+        subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("verify-host-tools-package.py")),
+                "--package", str(path),
+                "--rid", rid,
+                "--version", expected_version,
+                "--pins", str(source_root / "eng/toolchain.json"),
+                "--source-commit", str(manifest["sourceCommit"]),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if host_manifest is None:
+            raise ValueError(f"{package_id} has no host-tools manifest.")
+        host_receipt = {
+            "hostRid": host_manifest["hostRid"],
+            "sourceCommit": host_manifest["sourceCommit"],
+            "upstream": host_manifest["upstream"],
+        }
+    elif host_manifest is not None:
+        raise ValueError(f"Unexpected host-tools manifest in {package_id}.")
+
+    result = {
         "id": package_id,
         "version": version,
         "fileName": path.name,
@@ -168,14 +217,17 @@ def inspect_package(
         "repositoryCommit": repository.get("commit"),
         "dependencies": dependencies,
     }
+    if host_receipt is not None:
+        result["hostTools"] = host_receipt
+    return result
 
 
 def validate_packages(
-    package_root: Path, manifest: dict[str, object]
+    package_root: Path, manifest: dict[str, object], source_root: Path | None = None
 ) -> list[dict[str, object]]:
     expected_ids = set(manifest["packages"])
     package_paths = sorted(package_root.glob("*.nupkg"))
-    packages = [inspect_package(path, manifest) for path in package_paths]
+    packages = [inspect_package(path, manifest, source_root) for path in package_paths]
     actual_ids = [str(package["id"]) for package in packages]
     if len(actual_ids) != len(set(actual_ids)):
         raise ValueError("Package directory contains duplicate package IDs.")
@@ -187,26 +239,6 @@ def validate_packages(
             f"Package allowlist mismatch; missing={missing}, unexpected={unexpected}."
         )
     return sorted(packages, key=lambda package: str(package["id"]))
-
-
-def require_absent_from_nuget(packages: list[dict[str, object]]) -> None:
-    for package in packages:
-        package_id = str(package["id"])
-        version = str(package["version"])
-        url = (
-            "https://api.nuget.org/v3-flatcontainer/"
-            f"{package_id.lower()}/index.json"
-        )
-        try:
-            with urllib.request.urlopen(url, timeout=30) as response:
-                versions = json.load(response).get("versions", [])
-        except urllib.error.HTTPError as error:
-            if error.code == 404:
-                versions = []
-            else:
-                raise
-        if version in versions:
-            raise ValueError(f"{package_id} {version} already exists on NuGet.org.")
 
 
 def write_receipt(
@@ -231,19 +263,24 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--packages", type=Path, required=True)
     parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--pins-root", type=Path,
+                        help="Unreleased CI source checkout used only for pinned host-artifact validation")
     parser.add_argument("--allowed-signers", type=Path)
     parser.add_argument("--receipt", type=Path)
-    parser.add_argument("--require-absent-on-nuget", action="store_true")
     arguments = parser.parse_args()
 
     manifest = read_manifest(arguments.manifest)
     if arguments.allowed_signers is not None and arguments.source_root is None:
         parser.error("--allowed-signers requires --source-root")
+    if arguments.pins_root is not None and arguments.source_root is not None:
+        parser.error("--pins-root and --source-root are mutually exclusive")
     if arguments.source_root is not None:
         verify_source(arguments.source_root, manifest, arguments.allowed_signers)
-    packages = validate_packages(arguments.packages, manifest)
-    if arguments.require_absent_on_nuget:
-        require_absent_from_nuget(packages)
+    if arguments.pins_root is not None and git(arguments.pins_root, "rev-parse", "HEAD") != manifest["sourceCommit"]:
+        raise ValueError("CI source does not match the package manifest commit.")
+    packages = validate_packages(
+        arguments.packages, manifest, arguments.source_root or arguments.pins_root
+    )
     if arguments.receipt is not None:
         write_receipt(arguments.receipt, manifest, packages)
     print(

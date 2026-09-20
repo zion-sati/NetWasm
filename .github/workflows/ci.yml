@@ -136,8 +136,110 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+  host-tools:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            rid: linux-x64
+          - runner: ubuntu-24.04-arm
+            rid: linux-arm64
+          - runner: macos-14
+            rid: osx-arm64
+          - runner: windows-2025
+            rid: win-x64
+          - runner: windows-11-vs2026-arm
+            rid: win-arm64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.13'
+      - name: Install pinned Linux Node patcher
+        if: startsWith(matrix.rid, 'linux-')
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y patchelf=0.18.0-1.1build1
+      - name: Build and verify native host package
+        shell: bash
+        run: |
+          python eng/build-host-tools-package.py \
+            --rid "${{ matrix.rid }}" \
+            --version "0.0.0-ci.${GITHUB_RUN_NUMBER}" \
+            --output "$RUNNER_TEMP/host-packages" \
+            --cache "$RUNNER_TEMP/host-tools-inputs"
+          bash eng/verify-host-tools-repeatability.sh \
+            "${{ matrix.rid }}" "0.0.0-ci.${GITHUB_RUN_NUMBER}" \
+            "$RUNNER_TEMP/host-tools-inputs" \
+            "$RUNNER_TEMP/host-packages/NetWasm.HostTools.${{ matrix.rid }}.0.0.0-ci.${GITHUB_RUN_NUMBER}.nupkg"
+      - name: Retain native host package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: host-tools-${{ matrix.rid }}
+          path: ${{ runner.temp }}/host-packages/*.nupkg
+          if-no-files-found: error
+          retention-days: 2
+
+  verify-packages:
+    needs: [package, host-tools]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.13'
+      - name: Download neutral packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: runtime-pack-candidate
+          path: ${{ runner.temp }}/packages
+      - name: Download native host packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: host-tools-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/packages
+      - name: Verify complete candidate set
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          manifest = json.loads(Path('eng/release-manifest.json').read_text())
+          manifest['releaseVersion'] = '0.0.0-ci.' + os.environ['GITHUB_RUN_NUMBER']
+          manifest['sourceCommit'] = subprocess.check_output(
+              ['git', 'rev-parse', 'HEAD'], text=True).strip()
+          manifest['releaseTag'] = 'ci-' + os.environ['GITHUB_RUN_NUMBER']
+          Path(os.environ['RUNNER_TEMP'], 'candidate-manifest.json').write_text(
+              json.dumps(manifest, indent=2) + '\n')
+          PY
+          python eng/verify-release-packages.py \
+            --manifest "$RUNNER_TEMP/candidate-manifest.json" \
+            --packages "$RUNNER_TEMP/packages" \
+            --pins-root .
+
   runtime-pack-hosts:
-    needs: package
+    needs: [package, host-tools, verify-packages]
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -145,12 +247,19 @@ jobs:
         include:
           - runner: ubuntu-24.04
             host: linux-x64
+            rid: linux-x64
           - runner: ubuntu-24.04-arm
             host: linux-arm64
+            rid: linux-arm64
           - runner: macos-14
             host: macos-arm64
+            rid: osx-arm64
           - runner: windows-2025
             host: windows-x64
+            rid: win-x64
+          - runner: windows-11-vs2026-arm
+            host: windows-arm64
+            rid: win-arm64
     runs-on: ${{ matrix.runner }}
     name: Runtime pack / ${{ matrix.host }}
     steps:
@@ -160,28 +269,23 @@ jobs:
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: global.json
+      - name: Install minimum supported .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.300
       - name: Download candidate packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: runtime-pack-candidate
           path: ${{ runner.temp }}/packages
-      - name: Read Emscripten pin
-        id: toolchain
+      - name: Download matching native host package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: host-tools-${{ matrix.rid }}
+          path: ${{ runner.temp }}/packages
+      - name: Qualify SDK consumers with restored host tools
         shell: bash
+        env:
+          NETWASM_QUALIFY_SDK_VERSION: 10.0.300
         run: |
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pathlib import Path
-          print(f"emscripten={json.loads(Path('eng/toolchain.json').read_text())['emscripten']}")
-          PY
-      - name: Install pinned Emscripten
-        shell: bash
-        run: |
-          git clone --depth 1 --branch "${{ steps.toolchain.outputs.emscripten }}" https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
-          "$RUNNER_TEMP/emsdk/emsdk" install "${{ steps.toolchain.outputs.emscripten }}"
-          "$RUNNER_TEMP/emsdk/emsdk" activate "${{ steps.toolchain.outputs.emscripten }}"
-      - name: Link wasm32 and wasm64 consumers
-        shell: bash
-        run: |
-          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          bash eng/qualify-runtime-pack-host.sh "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}"
+          bash eng/qualify-sdk-consumers.sh "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}"

@@ -48,6 +48,10 @@ gc_source="$dependency_root/bdwgc-v$gc_version"
 wasm-tools component embed "$repo_root/src/NetWasm.Runtime/wit" \
   --only-custom --encoding utf8 --output "$temporary_root/runtime-component-type.bin"
 bash "$repo_root/eng/prepare-emscripten-system-libraries.sh"
+python3 "$repo_root/eng/stage-runtime-pack-license.py" \
+  --emsdk-root "$EMSDK" \
+  --toolchain "$toolchain" \
+  --output "$runtime_root/LICENSE.txt"
 
 grep -hEo 'export_name\("[^"]+"\)' \
   "$repo_root"/src/NetWasm.Runtime/*.c \
@@ -103,12 +107,15 @@ NODE
   done
 
   system_paths=()
+  mkdir -p "$target_root/system-libraries"
   for library in "${system_libraries[@]}"; do
     [[ -f "$system_source/$library" ]] || {
       echo "missing pinned Emscripten system library '$library' for '$target'" >&2
       exit 1
     }
-    system_paths+=("$system_source/$library")
+    packaged_library="$target_root/system-libraries/$library"
+    cp "$system_source/$library" "$packaged_library"
+    system_paths+=("$packaged_library")
   done
 
   normalization_arguments=(
@@ -121,6 +128,12 @@ NODE
     --prefix "$system_source"
     --archive "$target_root/libnetwasm-runtime.a"
   )
+  if [[ -n "${HOME:-}" ]]; then
+    normalization_arguments+=(--prefix "$HOME")
+  fi
+  for library in "${system_paths[@]}"; do
+    normalization_arguments+=(--archive "$library")
+  done
   node "$package_root/tools/normalize-archive-paths.mjs" \
     "${normalization_arguments[@]}"
 

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>NetWasm.HostTools.$(NetWasmHostRid)</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Pinned native build tools for a supported NetWasm development host.</Description>
+    <PackageTags>netwasm;toolchain;node;lld;binaryen</PackageTags>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(NetWasmHostToolsStagingRoot)' != ''">
+    <None Include="$(NetWasmHostToolsStagingRoot)/tools/bin/*"
+          Pack="true" PackagePath="tools/bin/" />
+    <None Include="$(NetWasmHostToolsStagingRoot)/tools/host-tools-manifest.json"
+          Pack="true" PackagePath="tools/host-tools-manifest.json" />
+    <None Include="$(NetWasmHostToolsStagingRoot)/licenses/*"
+          Pack="true" PackagePath="licenses/" />
+    <None Include="$(NetWasmHostToolsStagingRoot)/LICENSE.txt"
+          Pack="true" PackagePath="LICENSE.txt" />
+    <None Include="$(NetWasmHostToolsStagingRoot)/README.md"
+          Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+  <Target Name="ValidateNetWasmHostToolsPackInputs" BeforeTargets="Pack">
+    <Error Condition="'$(NetWasmHostRid)' == ''"
+           Text="NetWasmHostRid is required to pack a host-tools package." />
+    <Error Condition="'$(NetWasmHostToolsStagingRoot)' == '' OR !Exists('$(NetWasmHostToolsStagingRoot)/tools/host-tools-manifest.json')"
+           Text="A validated host-tools staging root is required." />
+  </Target>
+
+  <Import Project="../../eng/NetWasm.DeterministicPackageArchive.targets" />
+</Project>

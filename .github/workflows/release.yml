@@ -123,7 +123,103 @@ jobs:
             --version "${{ steps.release.outputs.version }}" \
             --output "$GITHUB_WORKSPACE/artifacts/packages"
 
-      - name: Validate release packages
+      - name: Retain neutral release packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: netwasm-neutral-${{ steps.release.outputs.version }}
+          path: artifacts/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+
+  host-tools:
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            rid: linux-x64
+          - runner: ubuntu-24.04-arm
+            rid: linux-arm64
+          - runner: macos-14
+            rid: osx-arm64
+          - runner: windows-2025
+            rid: win-x64
+          - runner: windows-11-vs2026-arm
+            rid: win-arm64
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+          fetch-depth: 0
+          path: source
+      - name: Verify source revision
+        shell: bash
+        run: |
+          test "$(git -C source rev-parse HEAD)" = "${{ needs.build.outputs.source_commit }}"
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: source/global.json
+      - name: Install Python for package production
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.13'
+      - name: Install pinned Linux Node patcher
+        if: startsWith(matrix.rid, 'linux-')
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y patchelf=0.18.0-1.1build1
+      - name: Build pinned native package
+        shell: bash
+        run: |
+          python source/eng/build-host-tools-package.py \
+            --rid "${{ matrix.rid }}" \
+            --version "${{ needs.build.outputs.version }}" \
+            --output "$RUNNER_TEMP/host-packages" \
+            --cache "$RUNNER_TEMP/host-tools-inputs"
+      - name: Retain host package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: host-tools-${{ matrix.rid }}
+          path: ${{ runner.temp }}/host-packages/*.nupkg
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+
+  aggregate:
+    needs: [build, host-tools]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out release infrastructure
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.build.outputs.infrastructure_commit }}
+          path: infrastructure
+      - name: Check out release source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+          fetch-depth: 0
+          path: source
+      - name: Download neutral release packages
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: netwasm-neutral-${{ needs.build.outputs.version }}
+          path: artifacts
+      - name: Download all native packages
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: host-tools-*
+          merge-multiple: true
+          path: artifacts/packages
+      - name: Verify complete release set and source
         shell: bash
         run: |
           python3 infrastructure/eng/verify-release-packages.py \
@@ -133,20 +229,19 @@ jobs:
             --allowed-signers infrastructure/eng/release-signers \
             --receipt artifacts/release-package-receipt.json
           (cd artifacts && sha256sum packages/*.nupkg > SHA256SUMS)
-
-      - name: Retain release artifacts
+      - name: Retain verified release artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: netwasm-${{ steps.release.outputs.version }}
+          name: netwasm-${{ needs.build.outputs.version }}
           path: artifacts/
           compression-level: 0
           if-no-files-found: error
           retention-days: 7
 
   publish:
-    needs: build
+    needs: [build, aggregate]
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 150
     environment: nuget-release
     permissions:
       contents: read
@@ -157,6 +252,18 @@ jobs:
         with:
           ref: ${{ needs.build.outputs.infrastructure_commit }}
           path: infrastructure
+
+      - name: Check out release source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+          fetch-depth: 0
+          path: source
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: source/global.json
 
       - name: Download release artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
@@ -187,29 +294,64 @@ jobs:
                   raise SystemExit(f"Release artifact {name} does not match the GitHub Release.")
           PY
 
-      - name: Revalidate artifacts and NuGet.org identity availability
+      - name: Revalidate release artifacts
         shell: bash
         run: |
           (cd artifacts && sha256sum --check SHA256SUMS)
           python3 infrastructure/eng/verify-release-packages.py \
             --manifest artifacts/release-manifest.json \
             --packages artifacts/packages \
-            --receipt artifacts/publish-package-receipt.json \
-            --require-absent-on-nuget
+            --source-root source \
+            --allowed-signers infrastructure/eng/release-signers \
+            --receipt artifacts/publish-package-receipt.json
 
-      - name: Request temporary NuGet.org credential
-        id: login
+      - name: Request credential for prerequisites
+        id: login_prerequisites
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
           user: ${{ vars.NUGET_USER }}
 
-      - name: Publish packages
+      - name: Publish and verify prerequisites
         shell: bash
         env:
-          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.login_prerequisites.outputs.NUGET_API_KEY }}
         run: |
-          while IFS= read -r package; do
-            dotnet nuget push "$package" \
-              --api-key "$NUGET_API_KEY" \
-              --source https://api.nuget.org/v3/index.json
-          done < <(find artifacts/packages -maxdepth 1 -type f -name '*.nupkg' | LC_ALL=C sort)
+          cd source
+          python3 ../infrastructure/eng/publish-release-packages.py \
+            --manifest ../artifacts/release-manifest.json \
+            --packages ../artifacts/packages \
+            --stage prerequisites
+
+      - name: Request credential for SDK
+        id: login_sdk
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish and verify SDK
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.login_sdk.outputs.NUGET_API_KEY }}
+        run: |
+          cd source
+          python3 ../infrastructure/eng/publish-release-packages.py \
+            --manifest ../artifacts/release-manifest.json \
+            --packages ../artifacts/packages \
+            --stage SDK
+
+      - name: Request credential for templates
+        id: login_templates
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish and verify templates
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.login_templates.outputs.NUGET_API_KEY }}
+        run: |
+          cd source
+          python3 ../infrastructure/eng/publish-release-packages.py \
+            --manifest ../artifacts/release-manifest.json \
+            --packages ../artifacts/packages \
+            --stage templates

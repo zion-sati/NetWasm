@@ -12,7 +12,7 @@ public sealed class RuntimePackManifestReaderTests
         var manifest = RuntimePackManifestReader.ReadJson(
             JsonSerializer.Serialize(RuntimePackTestData.Manifest()));
 
-        Assert.Equal(2, manifest.SchemaVersion);
+        Assert.Equal(3, manifest.SchemaVersion);
         Assert.Equal("netwasm.runtime.v1", manifest.RuntimeAbi);
         Assert.Equal("6.0.7", manifest.EmscriptenVersion);
         Assert.Equal(65_536, manifest.WasmPageSize);
@@ -23,6 +23,8 @@ public sealed class RuntimePackManifestReaderTests
         foreach (var target in manifest.Targets)
         {
             Assert.Contains("libc.a", target.SystemLibraries.Names);
+            Assert.Equal($"{target.Target}/system-libraries/libc.a",
+                Assert.Single(target.SystemLibraries.Assets).Path);
         }
     }
 
@@ -144,13 +146,33 @@ public sealed class RuntimePackManifestReaderTests
     {
         var target = RuntimePackTestData.Target("wasm32") with
         {
-            SystemLibraries = new("sysroot/lib/wasm32-emscripten", []),
+            SystemLibraries = new([], []),
         };
         var manifest = RuntimePackTestData.Manifest() with
         {
             Targets = [target, RuntimePackTestData.Target("wasm64")],
         };
         Assert.Equal("The NetWasm runtime link closure is empty.", ReadInvalid(manifest).Message);
+    }
+
+    [Fact]
+    public void RejectsSystemLibraryOutsideThePackagedClosure()
+    {
+        var target = RuntimePackTestData.Target("wasm32");
+        var wrong = target with
+        {
+            SystemLibraries = target.SystemLibraries with
+            {
+                Assets = [RuntimePackTestData.Asset("wasm32/other/libc.a")],
+            },
+        };
+        var manifest = RuntimePackTestData.Manifest() with
+        {
+            Targets = [wrong, RuntimePackTestData.Target("wasm64")],
+        };
+
+        Assert.Equal("The NetWasm runtime system-library path is invalid.",
+            ReadInvalid(manifest).Message);
     }
 
     [Theory]

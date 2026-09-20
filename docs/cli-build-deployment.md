@@ -55,8 +55,10 @@ netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
 ```
 
 Omit `--world` when the document contains exactly one world. The tool carries
-the pinned platform-neutral wasm-tools module and uses Node.js 24+ from the
-activated Emscripten SDK; no native `wasm-tools` installation is required.
+the pinned platform-neutral wasm-tools module; no native `wasm-tools`
+installation is required. Unlike an SDK application build, this standalone
+command needs Node.js 24+ on `PATH`, through `NETWASM_NODE_PATH` or through
+`EMSDK_NODE`.
 
 `componentize` accepts required `--core-module`, `--wit`, `--output`, and
 `--manifest`, plus optional `--runtime-module`, `--world`, `--target`,

@@ -1,15 +1,8 @@
 # NetWasm quickstart
 
-Install .NET SDK 10.0.300 or newer, Git, Python 3, and Emscripten SDK 6.0.7.
-Activating emsdk supplies the supported Node.js 24+ and LLD 24+ toolchain:
-
-```sh
-git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-cd ~/emsdk
-./emsdk install 6.0.7
-./emsdk activate 6.0.7
-source ~/emsdk/emsdk_env.sh
-```
+Install .NET SDK 10.0.300 or newer. The application SDK restores its pinned
+native build tools from NuGet for Linux x64/ARM64, macOS ARM64 and Windows
+x64/ARM64. No Emscripten, Git or Python setup is needed to use it.
 
 Create and run an application:
 
@@ -23,17 +16,10 @@ dotnet run
 dotnet publish -c Release -o publish
 ```
 
-See the [complete SDK quickstart](docs/sdk-quickstart.md) for Windows setup,
+See the [complete SDK quickstart](docs/sdk-quickstart.md) for supported hosts,
 capability grants, browser publishing, and library templates. Read the
 [support status](docs/support-status.md) and [limitations](docs/LIMITATIONS.md)
 before porting an existing application.
 
-For contributors building the toolchain itself, install the same prerequisites
-and run:
-
-```sh
-dotnet restore NetWasm.slnx
-npm ci
-eng/verify-toolchain.sh
-dotnet build NetWasm.slnx -c Release --no-restore
-```
+Contributors rebuilding the runtime packs need the pinned full Emscripten SDK;
+see [contributor setup](CONTRIBUTING.md#local-setup).

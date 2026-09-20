@@ -3,7 +3,18 @@ using NetWasm.Toolchain.Resolution;
 
 namespace NetWasm.Hosting.Build.Environment;
 
-public sealed record HostingBuildEnvironmentRequest(string ToolchainPackageRoot);
+public sealed record HostingBuildEnvironmentRequest(
+    string ToolchainPackageRoot,
+    string? HostToolsPackageRoot,
+    string? HostToolsPackageId,
+    string? HostToolsPackageVersion,
+    string? HostRid)
+{
+    public HostingBuildEnvironmentRequest(string toolchainPackageRoot)
+        : this(toolchainPackageRoot, null, null, null, null)
+    {
+    }
+}
 
 public sealed record ToolchainPackagePaths(
     string PackageId,

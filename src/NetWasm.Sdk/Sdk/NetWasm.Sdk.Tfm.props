@@ -21,6 +21,7 @@
     <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.1.0</NetWasmToolchainPackageVersion>
     <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.1.0</NetWasmHostingPackageVersion>
     <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.1.0</NetWasmHostingBuildPackageVersion>
+    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostToolsPackageVersion)' == ''">0.1.0</NetWasmHostToolsPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -58,6 +59,13 @@
     <CopyBuildOutputToPublishDirectory>false</CopyBuildOutputToPublishDirectory>
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
+    <!-- A test root must declare IsTestProject during its first restore. -->
+    <NetWasmRequiresHostTools Condition="'$(NetWasmRequiresHostTools)' == ''">false</NetWasmRequiresHostTools>
+    <NetWasmRequiresHostTools Condition="'$(OutputType)' == 'Exe' OR '$(IsTestProject)' == 'true'">true</NetWasmRequiresHostTools>
+    <NetWasmBuildHostOSArchitecture>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)</NetWasmBuildHostOSArchitecture>
+    <NetWasmHostToolsPackageId Condition="'$(NetWasmRequiresHostTools)' == 'true' AND ('$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'linux-arm64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'osx-arm64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64')">NetWasm.HostTools.$(NETCoreSdkRuntimeIdentifier)</NetWasmHostToolsPackageId>
+    <NetWasmUsesHostQualifiedLockFile Condition="'$(NetWasmRequiresHostTools)' == 'true' AND '$(RestorePackagesWithLockFile)' == 'true' AND '$(NuGetLockFilePath)' == '' AND '$(NetWasmHostToolsPackageId)' != ''">true</NetWasmUsesHostQualifiedLockFile>
+    <NuGetLockFilePath Condition="'$(NetWasmUsesHostQualifiedLockFile)' == 'true'">packages.$(NETCoreSdkRuntimeIdentifier).lock.json</NuGetLockFilePath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
@@ -80,7 +88,7 @@
   </PropertyGroup>
 
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.PackageVersions.props"
-          Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmCompilerTasksPackageVersion)' == ''" />
+          Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND ('$(NetWasmCompilerTasksPackageVersion)' == '' OR '$(NetWasmHostToolsPackageVersion)' == '')" />
 
   <ItemGroup Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
     <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)NetWasm.Sdk.Analyzers.globalconfig" />
@@ -88,37 +96,65 @@
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRefPackageId)' != ''">
     <PackageReference Include="$(NetWasmRefPackageId)"
-                      Version="$(NetWasmRefPackageVersion)"
                       PrivateAssets="all"
-                      IncludeAssets="compile" />
+                      IncludeAssets="compile">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRefPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRefPackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Compiler.Tasks"
-                      Version="$(NetWasmCompilerTasksPackageVersion)"
-                      PrivateAssets="all" />
+                      PrivateAssets="all">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmCompilerTasksPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmCompilerTasksPackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Runtime.Wasm32"
-                      Version="$(NetWasmRuntimePackageVersion)"
                       PrivateAssets="all"
-                      Condition="'$(NetWasmTarget)' == 'wasm32'" />
+                      Condition="'$(NetWasmTarget)' == 'wasm32'">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRuntimePackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRuntimePackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Runtime.Wasm64"
-                      Version="$(NetWasmRuntimePackageVersion)"
                       PrivateAssets="all"
-                      Condition="'$(NetWasmTarget)' == 'wasm64'" />
+                      Condition="'$(NetWasmTarget)' == 'wasm64'">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRuntimePackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRuntimePackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Runtime.Pack"
-                      Version="$(NetWasmRuntimePackPackageVersion)"
-                      PrivateAssets="all" />
+                      PrivateAssets="all">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmRuntimePackPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmRuntimePackPackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Toolchain"
-                      Version="$(NetWasmToolchainPackageVersion)"
                       PrivateAssets="all"
                       GeneratePathProperty="true"
-                      ExcludeAssets="compile;runtime;analyzers" />
+                      ExcludeAssets="compile;runtime;analyzers">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmToolchainPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmToolchainPackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Hosting"
-                      Version="$(NetWasmHostingPackageVersion)"
                       PrivateAssets="all"
                       GeneratePathProperty="true"
-                      ExcludeAssets="compile;runtime;analyzers" />
+                      ExcludeAssets="compile;runtime;analyzers">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmHostingPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmHostingPackageVersion)</VersionOverride>
+    </PackageReference>
     <PackageReference Include="NetWasm.Hosting.Build"
-                      Version="$(NetWasmHostingBuildPackageVersion)"
                       PrivateAssets="all"
                       GeneratePathProperty="true"
-                      ExcludeAssets="compile;runtime;analyzers" />
+                      ExcludeAssets="compile;runtime;analyzers">
+      <Version Condition="'$(ManagePackageVersionsCentrally)' != 'true'">$(NetWasmHostingBuildPackageVersion)</Version>
+      <VersionOverride Condition="'$(ManagePackageVersionsCentrally)' == 'true'">$(NetWasmHostingBuildPackageVersion)</VersionOverride>
+    </PackageReference>
+    <PackageReference Include="$(NetWasmHostToolsPackageId)"
+                      Version="[$(NetWasmHostToolsPackageVersion)]"
+                      PrivateAssets="all"
+                      GeneratePathProperty="true"
+                      ExcludeAssets="all"
+                      Condition="'$(NetWasmRequiresHostTools)' == 'true' AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' != 'true'" />
+    <PackageReference Include="$(NetWasmHostToolsPackageId)"
+                      VersionOverride="[$(NetWasmHostToolsPackageVersion)]"
+                      PrivateAssets="all"
+                      GeneratePathProperty="true"
+                      ExcludeAssets="all"
+                      Condition="'$(NetWasmRequiresHostTools)' == 'true' AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' == 'true'" />
   </ItemGroup>
 </Project>

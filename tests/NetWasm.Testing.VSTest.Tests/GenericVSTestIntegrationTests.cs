@@ -6,8 +6,10 @@ namespace NetWasm.Testing.VSTest.Tests;
 
 public sealed class GenericVSTestIntegrationTests
 {
-    [Fact]
-    public async Task StockVSTestSelectsTheNetWasmProviderAndRunsAFrameworkNeutralAdapter()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StockVSTestPreservesFrameworkNeutralAdapterOutcome(bool failCanary)
     {
         using var fixture = GenericVSTestFixture.Create();
         var startInfo = new ProcessStartInfo
@@ -28,6 +30,10 @@ public sealed class GenericVSTestIntegrationTests
         startInfo.ArgumentList.Add($"/ResultsDirectory:{fixture.ResultsRoot}");
         startInfo.ArgumentList.Add("/Logger:trx;LogFileName=result.trx");
         startInfo.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en-US";
+        if (failCanary)
+        {
+            startInfo.Environment["NETWASM_VSTEST_FAIL_CANARY"] = "1";
+        }
 
         using var process = new Process { StartInfo = startInfo };
         Assert.True(process.Start());
@@ -48,13 +54,13 @@ public sealed class GenericVSTestIntegrationTests
             }
         }
 
-        Assert.Equal(0, process.ExitCode);
+        Assert.Equal(failCanary ? 1 : 0, process.ExitCode);
         var counters = XDocument.Load(fixture.ResultPath)
             .Descendants()
             .Single(element => element.Name.LocalName == "Counters");
         Assert.Equal("1", counters.Attribute("total")!.Value);
-        Assert.Equal("1", counters.Attribute("passed")!.Value);
-        Assert.Equal("0", counters.Attribute("failed")!.Value);
+        Assert.Equal(failCanary ? "0" : "1", counters.Attribute("passed")!.Value);
+        Assert.Equal(failCanary ? "1" : "0", counters.Attribute("failed")!.Value);
     }
 
     private static string DotnetPath()
