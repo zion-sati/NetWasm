@@ -5,10 +5,19 @@ using NetWasm.Compiler.Metadata;
 namespace NetWasm.Compiler.Layout;
 
 internal sealed class ManagedStaticDataBuilderFactory(
-    IExceptionTypeNameResolver exceptionTypeNames) : IManagedStaticDataBuilderFactory
+    IExceptionTypeNameResolver exceptionTypeNames,
+    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata) :
+    IManagedStaticDataBuilderFactory
 {
     private readonly IExceptionTypeNameResolver _exceptionTypeNames = exceptionTypeNames ??
         throw new System.ArgumentNullException(nameof(exceptionTypeNames));
+    private readonly IAssignableTypeMetadataBuilderFactory _assignableTypeMetadata =
+        assignableTypeMetadata ?? throw new ArgumentNullException(nameof(assignableTypeMetadata));
+
+    internal ManagedStaticDataBuilderFactory(IExceptionTypeNameResolver exceptionTypeNames) :
+        this(exceptionTypeNames, new EmptyAssignableTypeMetadataBuilderFactory())
+    {
+    }
 
     public IManagedStaticDataBuilder Create(
         MetadataCompilationSnapshot metadata,
@@ -25,6 +34,14 @@ internal sealed class ManagedStaticDataBuilderFactory(
         var state = new ManagedStaticDataBuildState();
         var bitmaps = new StaticReferenceBitmapBuilder();
         var objectLayouts = new ObjectLayoutResolver(typeDefinitions, types);
+        var assignableTypes = _assignableTypeMetadata.Create(
+            metadata,
+            typeFinder,
+            typeDefinitions,
+            identities,
+            identityBaseTypes,
+            types,
+            state);
         return new ManagedStaticDataBuilder(
             types,
             state,
@@ -37,7 +54,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types,
                 types.Target,
                 state,
-                bitmaps),
+                bitmaps,
+                assignableTypes),
             new ConstructedTypeDescriptorBuilder(
                 typeFinder,
                 typeDefinitions,
@@ -46,7 +64,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types,
                 types.Target,
                 state,
-                bitmaps),
+                bitmaps,
+                assignableTypes),
             new ValueTypeDescriptorBuilder(
                 typeRepository,
                 identities,

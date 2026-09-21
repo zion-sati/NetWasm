@@ -21,6 +21,8 @@ internal static class LayoutServiceCollectionExtensions
         services.AddSingleton<IExceptionTypeNameResolver, ExceptionTypeNameResolver>();
         services.AddSingleton<IManagedStaticDataBuilderFactory,
             ManagedStaticDataBuilderFactory>();
+        services.AddSingleton<IAssignableTypeMetadataBuilderFactory,
+            AssignableTypeMetadataBuilderFactory>();
         services.AddSingleton<IManagedLayoutCompiler, ManagedLayoutCompiler>();
         services.AddSingleton<ITypeLayoutProviderFactory, TypeLayoutProviderFactory>();
         services.AddSingleton<IInstanceFieldLayoutProviderFactory,

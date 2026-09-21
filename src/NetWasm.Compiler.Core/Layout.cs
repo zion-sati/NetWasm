@@ -45,7 +45,11 @@ public readonly record struct TypeDescriptorLayout(
     int ObjectSize,
     int BitmapAddress,
     int BitmapBitCount,
-    EntityKey? Finalizer);
+    EntityKey? Finalizer)
+{
+    public int AssignableTypeIdsAddress { get; init; }
+    public int AssignableTypeIdCount { get; init; }
+}
 public readonly record struct ConstructedTypeDescriptorLayout(
     CliTypeIdentity Type,
     int TypeId,
@@ -53,7 +57,11 @@ public readonly record struct ConstructedTypeDescriptorLayout(
     int ObjectSize,
     int BitmapAddress,
     int BitmapBitCount,
-    string? Finalizer);
+    string? Finalizer)
+{
+    public int AssignableTypeIdsAddress { get; init; }
+    public int AssignableTypeIdCount { get; init; }
+}
 public readonly record struct ValueTypeDescriptorLayout(
     CliTypeIdentity Type,
     int TypeId,

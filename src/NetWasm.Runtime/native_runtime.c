@@ -37,6 +37,8 @@ typedef struct {
     netwasm_address_t size;
     netwasm_address_t bitmap_address;
     u32 bitmap_bits;
+    netwasm_address_t assignable_type_ids_address;
+    u32 assignable_type_id_count;
     u32 has_finalizer;
     netwasm_address_t value_size;
     int value_contains_references;
@@ -575,6 +577,7 @@ __attribute__((export_name("is_assignable")))
 u32 is_assignable(netwasm_reference_t object, u32 target_type_id)
 {
     u32 actual_type_id;
+    u32 index;
     if (object == 0 || target_type_id == 0) {
         return 0;
     }
@@ -586,6 +589,15 @@ u32 is_assignable(netwasm_reference_t object, u32 target_type_id)
         if (actual_type_id >= type_capacity ||
             !type_descriptors[actual_type_id].registered) {
             return 0;
+        }
+        for (index = 0;
+             index < type_descriptors[actual_type_id].assignable_type_id_count;
+             index++) {
+            const u32 *assignable_type_ids = (const u32 *)(uintptr_t)
+                type_descriptors[actual_type_id].assignable_type_ids_address;
+            if (assignable_type_ids[index] == target_type_id) {
+                return 1;
+            }
         }
         actual_type_id = type_descriptors[actual_type_id].base_type_id;
     }
@@ -763,6 +775,8 @@ void register_type(
     netwasm_address_t size,
     netwasm_address_t bitmap_address,
     u32 bitmap_bits,
+    netwasm_address_t assignable_type_ids_address,
+    u32 assignable_type_id_count,
     u32 has_finalizer)
 {
     TypeDescriptor *entry;
@@ -780,6 +794,8 @@ void register_type(
     entry->base_type_id = base_type_id;
     entry->bitmap_address = bitmap_address;
     entry->bitmap_bits = bitmap_bits;
+    entry->assignable_type_ids_address = assignable_type_ids_address;
+    entry->assignable_type_id_count = assignable_type_id_count;
     entry->has_finalizer = has_finalizer;
     entry->registered = 1;
 }
