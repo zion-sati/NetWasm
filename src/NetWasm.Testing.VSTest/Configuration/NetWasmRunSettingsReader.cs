@@ -1,5 +1,4 @@
-using System.Xml;
-using System.Xml.Linq;
+using Microsoft.VisualStudio.TestPlatform.ObjectModel.Utilities;
 
 namespace NetWasm.Testing.VSTest.Configuration;
 
@@ -17,52 +16,29 @@ internal sealed class NetWasmRunSettingsReader : INetWasmRunSettingsReader
 
         try
         {
-            var document = XDocument.Parse(runsettingsXml, LoadOptions.None);
-            var runConfigurations = document.Descendants()
-                .Where(element => element.Name.LocalName == "RunConfiguration")
-                .Take(2)
-                .ToArray();
-            if (runConfigurations.Length != 1)
+            var runConfiguration = XmlRunSettingsUtilities.GetRunConfigurationNode(runsettingsXml);
+            if (!runConfiguration.TargetFrameworkSet)
             {
                 return false;
             }
 
-            var targetFramework = SingleValue(runConfigurations[0], "TargetFrameworkVersion");
-            if (!string.Equals(
-                    targetFramework,
-                    SupportedTargetFrameworkMoniker,
-                    StringComparison.Ordinal))
+            var targetFramework = runConfiguration.TargetFramework?.Name;
+            if (targetFramework is null ||
+                !targetFramework.Equals(SupportedTargetFrameworkMoniker, StringComparison.Ordinal))
             {
                 return false;
             }
 
             configuration = new NetWasmRunConfiguration(
                 targetFramework,
-                OptionalSingleValue(runConfigurations[0], "DotnetHostPath"));
+                string.IsNullOrWhiteSpace(runConfiguration.DotnetHostPath)
+                    ? null
+                    : runConfiguration.DotnetHostPath);
             return true;
         }
-        catch (XmlException)
+        catch (Exception)
         {
             return false;
         }
     }
-
-    private static string? OptionalSingleValue(XElement parent, string localName)
-    {
-        var values = parent.Elements()
-            .Where(element => element.Name.LocalName == localName)
-            .Take(2)
-            .Select(element => element.Value)
-            .ToArray();
-        return values.Length switch
-        {
-            0 => null,
-            1 when !string.IsNullOrWhiteSpace(values[0]) => values[0],
-            _ => throw new XmlException($"Run settings contain an invalid {localName} value."),
-        };
-    }
-
-    private static string SingleValue(XElement parent, string localName) =>
-        OptionalSingleValue(parent, localName)
-        ?? throw new XmlException($"Run settings do not contain {localName}.");
 }

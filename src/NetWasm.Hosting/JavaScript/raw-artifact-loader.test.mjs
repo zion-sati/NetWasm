@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { loadRawArtifacts } from "./raw-artifact-loader.mjs";
+import {
+  loadRawArtifacts,
+  projectRawModuleInventory,
+} from "./raw-artifact-loader.mjs";
 
 const encoder = new TextEncoder();
 const application = Buffer.from(
@@ -177,6 +180,38 @@ test("rejects invalid compiled modules and generated adapter namespaces", async 
       importModule: async () => namespace,
     })), /adapter module/);
   }
+});
+
+test("projects duplicate physical imports into one logical ABI identity", () => {
+  const inventory = projectRawModuleInventory([
+    { module: "host", name: "member", kind: "function" },
+    { module: "host", name: "member", kind: "function" },
+    { module: "host", name: "other", kind: "memory" },
+  ], [{ name: "run", kind: "function" }]);
+  assert.deepEqual(inventory, {
+    imports: [
+      { module: "host", name: "member", kind: "function" },
+      { module: "host", name: "other", kind: "memory" },
+    ],
+    exports: [{ name: "run", kind: "function" }],
+  });
+  assert.equal(Object.isFrozen(inventory), true);
+  assert.equal(Object.isFrozen(inventory.imports), true);
+  assert.throws(() => projectRawModuleInventory([
+    { module: "host", name: "member", kind: "function" },
+    { module: "host", name: "member", kind: "memory" },
+  ], []), /conflicting kinds/);
+});
+
+test("preserves import tuples containing separator characters", () => {
+  const inventory = projectRawModuleInventory([
+    { module: "host\u0000member", name: "tail", kind: "function" },
+    { module: "host", name: "member\u0000tail", kind: "memory" },
+  ], []);
+  assert.deepEqual(inventory.imports, [
+    { module: "host\u0000member", name: "tail", kind: "function" },
+    { module: "host", name: "member\u0000tail", kind: "memory" },
+  ]);
 });
 
 test("rejects malformed runtime layouts and mismatched interop manifests", async () => {

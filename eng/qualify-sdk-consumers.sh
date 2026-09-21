@@ -1,14 +1,66 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 2 ]]; then
-  echo "usage: eng/qualify-sdk-consumers.sh <package-directory> <version>" >&2
+if [[ "$#" -lt 2 ]]; then
+  echo "usage: eng/qualify-sdk-consumers.sh <package-directory> <version> [--host-tools-version VERSION] [--sdk-evaluation-output PATH --producer-manifest PATH --asset-receipt-output PATH] [--skip-test-consumers]" >&2
   exit 2
 fi
 
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 package_root="$(cd "$1" && pwd -P)"
 version="$2"
+shift 2
+host_tools_version="$version"
+skip_test_consumers=false
+sdk_evaluation_output=""
+producer_manifest=""
+asset_receipt_output=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --host-tools-version)
+      [[ "$#" -ge 2 ]] || { echo "--host-tools-version requires a version" >&2; exit 2; }
+      host_tools_version="$2"
+      shift 2
+      ;;
+    --skip-test-consumers)
+      skip_test_consumers=true
+      shift
+      ;;
+    --sdk-evaluation-output)
+      [[ "$#" -ge 2 ]] || { echo "--sdk-evaluation-output requires a path" >&2; exit 2; }
+      sdk_evaluation_output="$2"
+      shift 2
+      ;;
+    --producer-manifest)
+      [[ "$#" -ge 2 ]] || { echo "--producer-manifest requires a path" >&2; exit 2; }
+      producer_manifest="$2"
+      shift 2
+      ;;
+    --asset-receipt-output)
+      [[ "$#" -ge 2 ]] || { echo "--asset-receipt-output requires a path" >&2; exit 2; }
+      asset_receipt_output="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+if [[ -n "$sdk_evaluation_output" ]]; then
+  mkdir -p "$(dirname "$sdk_evaluation_output")"
+  sdk_evaluation_output="$(cd "$(dirname "$sdk_evaluation_output")" && pwd -P)/$(basename "$sdk_evaluation_output")"
+fi
+if [[ -n "$producer_manifest" || -n "$asset_receipt_output" ]]; then
+  [[ -n "$producer_manifest" && -n "$asset_receipt_output" && -n "$sdk_evaluation_output" ]] || {
+    echo "Asset receipt output requires SDK evaluation output and a producer manifest." >&2
+    exit 2
+  }
+  producer_manifest="$(cd "$(dirname "$producer_manifest")" && pwd -P)/$(basename "$producer_manifest")"
+  [[ -f "$producer_manifest" ]] || { echo "Producer manifest does not exist." >&2; exit 2; }
+  mkdir -p "$(dirname "$asset_receipt_output")"
+  asset_receipt_output="$(cd "$(dirname "$asset_receipt_output")" && pwd -P)/$(basename "$asset_receipt_output")"
+fi
 work_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/netwasm-runtime-host.XXXXXX")"
 trap 'rm -rf "$work_root"' EXIT
 consumer_root="$work_root/consumer with spaces"
@@ -21,6 +73,7 @@ run_log() {
   local log_path="$1"
   shift
   if ! "$@" > "$log_path" 2>&1; then
+    echo "Qualification stage failed: $(basename "$log_path" .log)" >&2
     cat "$log_path" >&2
     return 1
   fi
@@ -55,6 +108,7 @@ assert_run_42() {
   local actual
   actual="$(tr -d '\r' < "$log_path" | tail -n 1)"
   if [[ "$actual" != 42 ]]; then
+    echo "Qualification stage failed: $(basename "$log_path" .log)" >&2
     cat "$log_path" >&2
     echo "Expected application stdout to end with 42; received: $actual" >&2
     return 1
@@ -75,6 +129,7 @@ cat > "$work_root/NuGet.Config" <<EOF
   <packageSources>
     <clear />
     <add key="candidate" value="$dotnet_package_root" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
   </packageSources>
 </configuration>
 EOF
@@ -84,10 +139,40 @@ export DOTNET_CLI_HOME="$dotnet_work_root/dotnet-home"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_CLI_UI_LANGUAGE=en-US
 
+if [[ -n "${NETWASM_QUALIFY_DOTNET_ROOT:-}" ]]; then
+  expected_dotnet="$(cd "$NETWASM_QUALIFY_DOTNET_ROOT" && pwd -P)/dotnet"
+  actual_dotnet="$(command -v dotnet)"
+  [[ "$actual_dotnet" == "$expected_dotnet" ]] || {
+    echo "Qualification did not select the isolated dotnet host." >&2
+    exit 1
+  }
+  [[ "$(dotnet --list-sdks | wc -l | tr -d ' ')" == 1 ]] || {
+    echo "Qualification dotnet root contains more than one SDK." >&2
+    exit 1
+  }
+  expected_major="${NETWASM_QUALIFY_SDK_VERSION%%.*}"
+  if dotnet --list-runtimes | awk '{ print $2 }' | cut -d. -f1 | grep -Fvxq "$expected_major"; then
+    echo "Qualification dotnet root contains another runtime major." >&2
+    exit 1
+  fi
+fi
+
 unset EMSDK EMSDK_ROOT EMSDK_NODE NETWASM_EMSDK_ROOT
 unset NETWASM_NODE_PATH NETWASM_WASM_LD_PATH
 unset NETWASM_WASM_OPT_PATH NETWASM_WASM_MERGE_PATH
 
+if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
+  cat > "$work_root/global.json" <<EOF
+{
+  "sdk": {
+    "version": "$NETWASM_QUALIFY_SDK_VERSION",
+    "rollForward": "disable",
+    "allowPrerelease": true
+  }
+}
+EOF
+fi
+cd "$work_root"
 run_log "$work_root/template-install.log" \
   dotnet new install "$dotnet_package_root/NetWasm.Templates.$version.nupkg" \
     --nuget-source "$dotnet_package_root" --force
@@ -98,7 +183,9 @@ if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
     echo "The template SDK selection has changed; minimum-SDK qualification needs review" >&2
     exit 1
   fi
-  sed 's/"rollForward": "latestFeature"/"rollForward": "disable"/' \
+  sed \
+    -e "s/\"version\": \"[^\"]*\"/\"version\": \"$NETWASM_QUALIFY_SDK_VERSION\"/" \
+    -e 's/"rollForward": "latestFeature"/"rollForward": "disable"/' \
     "$app_root/global.json" > "$app_root/global.json.tmp"
   mv "$app_root/global.json.tmp" "$app_root/global.json"
 fi
@@ -118,6 +205,41 @@ fi
 run_log "$work_root/app-restore-debug.log" \
   dotnet restore "$app_project" --configfile "$work_root/NuGet.Config" \
     --disable-build-servers --nologo
+evaluated_netwasm_sdk_version="$(dotnet msbuild "$app_project" \
+  -getProperty:NetWasmSdkPackageVersion -nologo | tr -d '\r')"
+evaluated_netwasm_sdk_root="$(dotnet msbuild "$app_project" \
+  -getProperty:NetWasmSdkPackageRoot -nologo | tr -d '\r')"
+if [[ "$evaluated_netwasm_sdk_version" != "$version" || -z "$evaluated_netwasm_sdk_root" ]]; then
+  echo "The evaluated NetWasm SDK package does not match the candidate." >&2
+  exit 1
+fi
+if [[ -n "$sdk_evaluation_output" ]]; then
+  python3 - "$sdk_evaluation_output" "$evaluated_netwasm_sdk_version" \
+    "$evaluated_netwasm_sdk_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+if output.exists():
+    raise SystemExit(f"SDK evaluation evidence already exists: {output}")
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(json.dumps({
+    "packageVersion": sys.argv[2],
+    "packageRoot": str(Path(sys.argv[3]).resolve()),
+}, indent=2) + "\n", encoding="utf-8")
+PY
+fi
+if [[ -n "$asset_receipt_output" ]]; then
+  python3 "$source_root/eng/verify-managed-candidate-assets.py" \
+    --assets "$app_root/obj/project.assets.json" \
+    --sdk-evaluation "$sdk_evaluation_output" \
+    --packages-root "$package_cache_root" \
+    --producer-manifest "$producer_manifest" \
+    --candidate-version "$version" \
+    --released-baseline-version "$host_tools_version" \
+    --output "$asset_receipt_output"
+fi
 if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
   evaluated_sdk="$(dotnet msbuild "$app_project" -getProperty:NETCoreSdkVersion -nologo | tr -d '\r')"
   if [[ "$evaluated_sdk" != "$NETWASM_QUALIFY_SDK_VERSION" ]]; then
@@ -141,7 +263,7 @@ host_rid="$(dotnet msbuild "$app_project" \
   echo "The SDK did not evaluate a development-host RID" >&2
   exit 1
 }
-host_package_root="$package_cache_root/netwasm.hosttools.$host_rid/$version"
+host_package_root="$package_cache_root/netwasm.hosttools.$host_rid/$host_tools_version"
 node_name=node
 if [[ "$host_rid" == win-* ]]; then
   node_name=node.exe
@@ -200,6 +322,7 @@ for target in wasm32 wasm64; do
   if [[ "$target" = wasm64 ]]; then
     target_arguments+=(-p:NetWasmRawWasm=true)
   fi
+  rm -rf "$app_root/obj" "$app_root/bin"
   run_log "$work_root/app-restore-$target.log" \
     dotnet restore "$app_project" --configfile "$work_root/NuGet.Config" \
       --disable-build-servers --nologo "${target_arguments[@]}"
@@ -252,6 +375,65 @@ for target in wasm32 wasm64; do
   fi
 done
 
+if [[ "${NETWASM_QUALIFY_SDK_VERSION:-}" == 11.* ]]; then
+  cat > "$app_root/Program.cs" <<'EOF'
+using System;
+
+public sealed record Cat(int Value);
+public sealed record Dog(int Value);
+public union Pet(Cat, Dog);
+public sealed class Holder<T>(T value)
+{
+    public T Value = value;
+}
+
+public static class Program
+{
+    public static int Main()
+    {
+        Pet[] values = [new Cat(20), new Dog(22)];
+        var holder = new Holder<Pet>(values[1]);
+        object boxed = holder.Value;
+        var before = GC.CollectionCount(0);
+        for (var index = 0; index < 4096; index++)
+        {
+            _ = new byte[1024];
+        }
+        GC.Collect();
+        var after = GC.CollectionCount(0);
+        var sum = values[0] switch { Cat cat => cat.Value, Dog dog => dog.Value }
+            + ((Pet)boxed switch { Cat cat => cat.Value, Dog dog => dog.Value });
+        if (after <= before || sum != 42 || holder.Value is not Dog { Value: 22 })
+        {
+            return 1;
+        }
+        Console.WriteLine(42);
+        return 0;
+    }
+}
+EOF
+  for configuration in Debug Release; do
+    for target in wasm32 wasm64; do
+      target_arguments=(-p:NetWasmTarget="$target")
+      if [[ "$target" = wasm64 ]]; then
+        target_arguments+=(-p:NetWasmRawWasm=true)
+      fi
+      rm -rf "$app_root/obj" "$app_root/bin"
+      run_log "$work_root/csharp15-gc-restore-$configuration-$target.log" \
+        dotnet restore "$app_project" --configfile "$work_root/NuGet.Config" \
+          --disable-build-servers --nologo "${target_arguments[@]}"
+      run_log "$work_root/csharp15-gc-build-$configuration-$target.log" \
+        dotnet build "$app_project" -c "$configuration" --no-restore \
+          --disable-build-servers --nologo -p:LangVersion=15.0 \
+          -p:NetWasmOptimization=None "${target_arguments[@]}"
+      assert_run_42 "$work_root/csharp15-gc-run-$configuration-$target.log" \
+        --project "$app_project" -c "$configuration" --no-build --no-restore \
+        --disable-build-servers -p:LangVersion=15.0 \
+        -p:NetWasmOptimization=None "${target_arguments[@]}"
+    done
+  done
+fi
+
 library_root="$consumer_root/library"
 library_project="$library_root/RuntimeLibrary.csproj"
 library_packages="$consumer_root/library-packages"
@@ -286,6 +468,7 @@ cat > "$work_root/NuGet.WithLibrary.Config" <<EOF
     <clear />
     <add key="candidate" value="$dotnet_package_root" />
     <add key="library" value="$dotnet_library_packages" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
   </packageSources>
 </configuration>
 EOF
@@ -342,6 +525,7 @@ assert_run_42 "$work_root/transitive-desktop-run.log" \
   --project "$desktop_consumer_root/TransitiveDesktop.csproj" -c Debug \
   --no-restore --disable-build-servers
 
+if [[ "$skip_test_consumers" == false ]]; then
 test_root="$consumer_root/tunit"
 mkdir -p "$test_root"
 cp "$app_root/global.json" "$test_root/global.json"
@@ -443,6 +627,7 @@ cat > "$work_root/NuGet.WithVSTest.Config" <<EOF
     <clear />
     <add key="candidate" value="$dotnet_package_root" />
     <add key="qualification-adapter" value="$dotnet_adapter_feed" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
   </packageSources>
 </configuration>
 EOF
@@ -485,6 +670,7 @@ expect_failure_contains "$work_root/vstest-failing-test.log" 'Failed!' \
   env NETWASM_VSTEST_FAIL_CANARY=1 dotnet test "$vstest_project" -c Debug \
     --no-build --no-restore --disable-build-servers --nologo
 assert_log_contains "$work_root/vstest-failing-test.log" 'NetWasm.GenericVSTest.Contract'
+fi
 
 corrupt_package_root="$consumer_root/corrupt-host-package"
 cp -R "$host_package_root" "$corrupt_package_root"

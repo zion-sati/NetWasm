@@ -5,5 +5,13 @@
     <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
+    <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
+    <ProjectReference Include="../NetWasm.Testing.OracleHost/NetWasm.Testing.OracleHost.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../NetWasm.Testing.CompilerHost/NetWasm.Testing.CompilerHost.csproj"
+                      ReferenceOutputAssembly="false" />
+    <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
+    <Compile Include="../TestInfrastructure/WasmModuleInspection.cs"
+             Link="WasmModuleInspection.cs" />
   </ItemGroup>
 </Project>

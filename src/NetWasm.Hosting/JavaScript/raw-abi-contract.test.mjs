@@ -242,6 +242,20 @@ test("rejects malformed and duplicate physical descriptors", () => {
   }
 });
 
+test("preserves distinct import tuples containing separator characters", () => {
+  const plan = buildRawAbiPlan({
+    contractKey: commandComponentContract,
+    abi: commandAbi({ imports: [
+      functionImport("host\u0000member", "tail"),
+      functionImport("host", "member\u0000tail"),
+    ] }),
+  });
+  assert.deepEqual(plan.imports, [
+    functionImport("host\u0000member", "tail"),
+    functionImport("host", "member\u0000tail"),
+  ]);
+});
+
 test("rejects Preview 1 and wrong-target imports", () => {
   for (const module of [
     "wasi_snapshot_preview1",

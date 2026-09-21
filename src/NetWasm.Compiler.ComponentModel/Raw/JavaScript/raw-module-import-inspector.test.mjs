@@ -77,11 +77,15 @@ for (const kind of ["memory", "table", "global", "tag", "unknown"]) {
   });
 }
 
-test("inspection rejects duplicate core identities before decoding functions", async () => {
-  await assert.rejects(inspectRawModuleImports(new Uint8Array(), {
+test("inspection folds equivalent physical imports into one logical binding", async () => {
+  const result = await inspectRawModuleImports(new Uint8Array(), {
     readCoreImports: () => [entry("host", "member"), entry("host", "member")],
-    readFunctionImports() { assert.fail("Cannot decode duplicate import inventory."); },
-  }), { code: "duplicate-import" });
+    readFunctionImports: () => [
+      signature("host", "member"),
+      signature("host", "member"),
+    ],
+  });
+  assert.deepEqual(result, [signature("host", "member")]);
 });
 
 for (const [name, signatures] of [
@@ -97,6 +101,22 @@ for (const [name, signatures] of [
     }), { code: "inconsistent-import-inventory" });
   });
 }
+
+test("inspection rejects missing or conflicting signatures for duplicate physical imports", async () => {
+  const inventory = [entry("host", "member"), entry("host", "member")];
+  for (const signatures of [
+    [signature("host", "member")],
+    [signature("host", "member"), {
+      ...signature("host", "member"),
+      parameters: ["f32"],
+    }],
+  ]) {
+    await assert.rejects(inspectRawModuleImports(new Uint8Array(), {
+      readCoreImports: () => inventory,
+      readFunctionImports: () => signatures,
+    }), { code: "inconsistent-import-inventory" });
+  }
+});
 
 test("inspection preserves core reader failure and never invokes function reader", async () => {
   const cause = new Error("core rejected");

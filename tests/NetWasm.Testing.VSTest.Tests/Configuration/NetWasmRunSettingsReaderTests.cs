@@ -11,7 +11,7 @@ public sealed class NetWasmRunSettingsReaderTests
             <RunSettings>
               <RunConfiguration>
                 <TargetFrameworkVersion>NetWasm,Version=v0.1</TargetFrameworkVersion>
-                <DotnetHostPath>/tools/dotnet</DotnetHostPath>
+                <DotNetHostPath>/tools/dotnet</DotNetHostPath>
               </RunConfiguration>
             </RunSettings>
             """;
@@ -32,8 +32,6 @@ public sealed class NetWasmRunSettingsReaderTests
     [InlineData("<RunSettings><RunConfiguration><TargetFrameworkVersion>netwasm0.1</TargetFrameworkVersion></RunConfiguration></RunSettings>")]
     [InlineData("<RunSettings><RunConfiguration><TargetFrameworkVersion>NetWasm,Version=v0.2</TargetFrameworkVersion></RunConfiguration></RunSettings>")]
     [InlineData("<RunSettings><RunConfiguration><TargetFrameworkVersion>.NETCoreApp,Version=v10.0</TargetFrameworkVersion></RunConfiguration></RunSettings>")]
-    [InlineData("<RunSettings><RunConfiguration><TargetFrameworkVersion>NetWasm,Version=v0.1</TargetFrameworkVersion><TargetFrameworkVersion>NetWasm,Version=v0.1</TargetFrameworkVersion></RunConfiguration></RunSettings>")]
-    [InlineData("<RunSettings><RunConfiguration><TargetFrameworkVersion>NetWasm,Version=v0.1</TargetFrameworkVersion></RunConfiguration><RunConfiguration><TargetFrameworkVersion>NetWasm,Version=v0.1</TargetFrameworkVersion></RunConfiguration></RunSettings>")]
     public void DeclinesMalformedAliasedOrNonNetWasmSettings(string? settings)
     {
         Assert.False(new NetWasmRunSettingsReader().TryRead(settings, out var configuration));

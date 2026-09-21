@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Xml.Linq;
 using NetWasm.Testing.VSTest.Hosting;
 
@@ -14,6 +16,7 @@ public sealed class VSTestPackageContractTests
         "README.md",
         "THIRD-PARTY-NOTICES.txt",
         "TestHost-THIRD-PARTY-NOTICES.txt",
+        "VSTestRunner-THIRD-PARTY-NOTICES.txt",
         "[Content_Types].xml",
         "_rels/.rels",
         "buildTransitive/NetWasm.Testing.VSTest.targets",
@@ -32,6 +35,28 @@ public sealed class VSTestPackageContractTests
         "tools/net10.0/any/testhost/testhost.dll",
         "tools/net10.0/any/testhost/testhost.manifest.json",
         "tools/net10.0/any/testhost/testhost.runtimeconfig.json",
+        "tools/net10.0/any/vstest/Microsoft.CodeCoverage.IO.dll",
+        "tools/net10.0/any/vstest/Microsoft.Extensions.DependencyModel.dll",
+        "tools/net10.0/any/vstest/Microsoft.Extensions.FileSystemGlobbing.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.CommunicationUtilities.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.CoreUtilities.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.CrossPlatEngine.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.PlatformAbstractions.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.Utilities.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.VsTestConsole.TranslationLayer.dll",
+        "tools/net10.0/any/vstest/Microsoft.TestPlatform.VsTestConsole.TranslationLayer.xml",
+        "tools/net10.0/any/vstest/Microsoft.VisualStudio.TestPlatform.Client.dll",
+        "tools/net10.0/any/vstest/Microsoft.VisualStudio.TestPlatform.Common.dll",
+        "tools/net10.0/any/vstest/Microsoft.VisualStudio.TestPlatform.ObjectModel.dll",
+        "tools/net10.0/any/vstest/Newtonsoft.Json.dll",
+        "tools/net10.0/any/vstest/datacollector.deps.json",
+        "tools/net10.0/any/vstest/datacollector.dll",
+        "tools/net10.0/any/vstest/datacollector.dll.config",
+        "tools/net10.0/any/vstest/datacollector.runtimeconfig.json",
+        "tools/net10.0/any/vstest/vstest.console.deps.json",
+        "tools/net10.0/any/vstest/vstest.console.dll",
+        "tools/net10.0/any/vstest/vstest.console.dll.config",
+        "tools/net10.0/any/vstest/vstest.console.runtimeconfig.json",
     ];
 
     [Fact]
@@ -100,6 +125,27 @@ public sealed class VSTestPackageContractTests
             Assert.DoesNotContain(
                 nuspec.Descendants(),
                 element => element.Name.LocalName is "dependencies" or "dependency");
+
+            var provider = package.GetEntry(
+                "tools/net10.0/any/NetWasm.Testing.VSTest.RuntimeProvider.dll");
+            Assert.NotNull(provider);
+            using var providerBytes = new MemoryStream();
+            using (var providerStream = provider.Open())
+            {
+                providerStream.CopyTo(providerBytes);
+            }
+            providerBytes.Position = 0;
+            using var pe = new PEReader(providerBytes);
+            var metadata = pe.GetMetadataReader();
+            var references = metadata.AssemblyReferences
+                .Select(handle => metadata.GetString(metadata.GetAssemblyReference(handle).Name))
+                .ToArray();
+            Assert.DoesNotContain("System.Xml.XDocument", references);
+            Assert.DoesNotContain("System.Xml.ReaderWriter", references);
+            var threadingReference = metadata.AssemblyReferences
+                .Select(metadata.GetAssemblyReference)
+                .Single(reference => metadata.GetString(reference.Name) == "System.Threading");
+            Assert.True(threadingReference.Version.Major <= 8);
         }
 
         var extractionRoot = Path.Combine(directory.Path, "extracted");
@@ -122,6 +168,18 @@ public sealed class VSTestPackageContractTests
         Assert.Equal(
             "$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any'))",
             propertyGroup.Element("_NetWasmVSTestExtensionPath")!.Value);
+        Assert.Equal(
+            "$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any/vstest/vstest.console.dll'))",
+            propertyGroup.Element("_NetWasmVSTestConsolePath")!.Value);
+        Assert.Equal(
+            "$([System.IO.Path]::Combine('$(MSBuildToolsPath)', 'vstest.console.dll'))",
+            propertyGroup.Element("_NetWasmSdkVSTestConsolePath")!.Value);
+        var consolePath = propertyGroup.Element("VSTestConsolePath");
+        Assert.NotNull(consolePath);
+        Assert.Equal(
+            "'$(VSTestConsolePath)' == '' OR '$(VSTestConsolePath)' == '$(_NetWasmSdkVSTestConsolePath)'",
+            consolePath.Attribute("Condition")!.Value);
+        Assert.Equal("$(_NetWasmVSTestConsolePath)", consolePath.Value);
         AssertConditionalAppendOrder(propertyGroup, "VSTestTestAdapterPath");
         AssertConditionalAppendOrder(propertyGroup, "VSTestCLIRunSettings");
         Assert.Empty(document.Descendants("Import"));
