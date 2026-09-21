@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>NetWasm.Runtime.Wasm32.Package</AssemblyName>
     <PackageId>NetWasm.Runtime.Wasm32</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.4.0</Version>
     <Description>NetWasm wasm32 managed runtime implementation assets.</Description>
     <PackageTags>netwasm;runtime;wasm32;wasm</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

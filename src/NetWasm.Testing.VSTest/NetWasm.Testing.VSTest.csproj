@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>NetWasm.Testing.VSTest</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.4.0</Version>
     <Description>Framework-neutral VSTest runtime-provider bridge for NetWasm test artifacts.</Description>
     <PackageTags>netwasm;vstest;testing;wasm</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>

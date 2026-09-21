@@ -4,7 +4,7 @@
     <AssemblyName>NetWasm.Templates</AssemblyName>
     <RootNamespace>NetWasm.Templates</RootNamespace>
     <PackageId>NetWasm.Templates</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.4.0</Version>
     <Description>Project templates for the experimental NetWasm profile.</Description>
     <PackageTags>netwasm;templates;wasm;dotnet-new</PackageTags>
     <PackageType>Template</PackageType>
