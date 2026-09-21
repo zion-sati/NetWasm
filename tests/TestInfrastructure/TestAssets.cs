@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace NetWasm.TestInfrastructure;
 
@@ -69,6 +70,80 @@ public sealed class TestAssets : IDisposable
 
     public string CompileSource(string assemblyName, string source, params string[] references)
         => CompileSourceCore(assemblyName, source, allowUnsafe: false, references);
+
+    public string CompileSourceWithCompiler(
+        string assemblyName,
+        string source,
+        string sdkVersion,
+        string languageVersion,
+        IReadOnlyList<string>? features = null,
+        bool allowUnsafe = false,
+        bool warningsAsErrors = false,
+        params string[] references)
+    {
+        var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
+        var output = Path.Combine(Directory, assemblyName + ".dll");
+        File.WriteAllText(sourcePath, source);
+        Compile(
+            Root,
+            CoreLib,
+            output,
+            [sourcePath],
+            allowUnsafe,
+            optimize: false,
+            references,
+            sdkVersion,
+            languageVersion,
+            features,
+            warningsAsErrors);
+        return output;
+    }
+
+    public string CompileSourceWithDesktopFramework(
+        string assemblyName,
+        string source,
+        string sdkVersion,
+        string frameworkVersion,
+        string languageVersion,
+        IReadOnlyList<string>? features = null,
+        bool allowUnsafe = false,
+        bool warningsAsErrors = false)
+    {
+        var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
+        var output = Path.Combine(Directory, assemblyName + ".dll");
+        File.WriteAllText(sourcePath, source);
+        var dotnetRoot = Path.GetDirectoryName(ResolveDotNetHost())
+            ?? throw new InvalidOperationException("dotnet root is unavailable");
+        var referenceDirectory = Path.Combine(
+            dotnetRoot,
+            "packs",
+            "Microsoft.NETCore.App.Ref",
+            frameworkVersion,
+            "ref",
+            "net11.0");
+        if (!System.IO.Directory.Exists(referenceDirectory))
+        {
+            throw new InvalidOperationException(
+                $"Pinned desktop reference pack is unavailable: {referenceDirectory}");
+        }
+        var references = System.IO.Directory
+            .EnumerateFiles(referenceDirectory, "*.dll", SearchOption.TopDirectoryOnly)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Compile(
+            Root,
+            null,
+            output,
+            [sourcePath],
+            allowUnsafe,
+            optimize: false,
+            references,
+            sdkVersion,
+            languageVersion,
+            features,
+            warningsAsErrors);
+        return output;
+    }
 
     public string CompileOptimizedSource(
         string assemblyName,
@@ -241,13 +316,16 @@ public sealed class TestAssets : IDisposable
         string[] sources,
         bool allowUnsafe,
         bool optimize,
-        params string[] references)
+        string[] references,
+        string? sdkVersionOverride = null,
+        string languageVersion = "latest",
+        IReadOnlyList<string>? features = null,
+        bool warningsAsErrors = false)
     {
-        var sdkVersion = File.ReadAllText(Path.Combine(root, "global.json"))
+        var sdkVersion = sdkVersionOverride ?? File.ReadAllText(Path.Combine(root, "global.json"))
             .Split("\"version\": \"", StringSplitOptions.None)[1]
             .Split('"')[0];
-        var dotnet = Environment.ProcessPath
-                     ?? throw new InvalidOperationException("dotnet host path is unavailable");
+        var dotnet = ResolveDotNetHost();
         var csc = Path.Combine(
             Path.GetDirectoryName(dotnet)!,
             "sdk",
@@ -266,7 +344,7 @@ public sealed class TestAssets : IDisposable
             "-nologo",
             "-noconfig",
             "-nostdlib",
-            "-langversion:latest",
+            "-langversion:" + languageVersion,
             "-define:NETWASM_REF_STRUCT_GENERICS;NETWASM_REGEX_STRING_CREATE;SYSTEM_TEXT_REGULAREXPRESSIONS",
             "-deterministic+",
             optimize ? "-optimize+" : "-optimize-",
@@ -278,6 +356,10 @@ public sealed class TestAssets : IDisposable
         {
             start.ArgumentList.Add(argument);
         }
+        if (features is { Count: > 0 })
+        {
+            start.ArgumentList.Add("-features:" + string.Join(",", features));
+        }
         if (coreLib is not null)
         {
             start.ArgumentList.Add("-reference:" + coreLib);
@@ -285,6 +367,10 @@ public sealed class TestAssets : IDisposable
         if (allowUnsafe)
         {
             start.ArgumentList.Add("-unsafe+");
+        }
+        if (warningsAsErrors)
+        {
+            start.ArgumentList.Add("-warnaserror+");
         }
         foreach (var reference in references)
         {
@@ -301,8 +387,7 @@ public sealed class TestAssets : IDisposable
         process.WaitForExit();
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException(
-                "Roslyn failed: " + standardOutput + standardError);
+            throw new RoslynCompilationException(standardOutput + standardError);
         }
     }
 
@@ -317,4 +402,65 @@ public sealed class TestAssets : IDisposable
         return current?.FullName
             ?? throw new InvalidOperationException("repository root was not found");
     }
+
+    private static string ResolveDotNetHost()
+    {
+        var executableName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+        var configuredHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredHost) && File.Exists(configuredHost))
+        {
+            return ResolveLinkTarget(configuredHost);
+        }
+
+        var configuredRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrWhiteSpace(configuredRoot))
+        {
+            var rootedHost = Path.Combine(configuredRoot, executableName);
+            if (File.Exists(rootedHost))
+            {
+                return ResolveLinkTarget(rootedHost);
+            }
+        }
+
+        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                     .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pathHost = Path.Combine(directory, executableName);
+            if (File.Exists(pathHost))
+            {
+                return ResolveLinkTarget(pathHost);
+            }
+        }
+
+        var processPath = Environment.ProcessPath;
+        if (processPath is not null &&
+            string.Equals(Path.GetFileName(processPath), executableName, StringComparison.OrdinalIgnoreCase))
+        {
+            return ResolveLinkTarget(processPath);
+        }
+
+        throw new InvalidOperationException("dotnet host path is unavailable");
+    }
+
+    private static string ResolveLinkTarget(string path) =>
+        File.ResolveLinkTarget(path, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(path);
+}
+
+public sealed partial class RoslynCompilationException : InvalidOperationException
+{
+    public RoslynCompilationException(string compilerOutput)
+        : base("Roslyn rejected the fixture.")
+    {
+        DiagnosticCodes = DiagnosticCodePattern()
+            .Matches(compilerOutput)
+            .Select(match => match.Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public IReadOnlyList<string> DiagnosticCodes { get; }
+
+    [GeneratedRegex(@"\bCS\d{4}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex DiagnosticCodePattern();
 }

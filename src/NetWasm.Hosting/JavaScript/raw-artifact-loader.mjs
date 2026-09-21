@@ -103,12 +103,34 @@ function inspectModule(module) {
   } catch {
     throw new TypeError("raw module compiler returned an invalid module");
   }
-  return Object.freeze({
-    imports: Object.freeze(imports.map(value => Object.freeze({
+  return projectRawModuleInventory(imports, exports);
+}
+
+export function projectRawModuleInventory(imports, exports) {
+  const projectedImports = [];
+  const importKindsByModule = new Map();
+  for (const value of imports) {
+    let importKinds = importKindsByModule.get(value.module);
+    if (importKinds === undefined) {
+      importKinds = new Map();
+      importKindsByModule.set(value.module, importKinds);
+    }
+    const existingKind = importKinds.get(value.name);
+    if (existingKind !== undefined) {
+      if (existingKind !== value.kind) {
+        throw new TypeError("raw module import identity has conflicting kinds");
+      }
+      continue;
+    }
+    importKinds.set(value.name, value.kind);
+    projectedImports.push(Object.freeze({
       module: value.module,
       name: value.name,
       kind: value.kind,
-    }))),
+    }));
+  }
+  return Object.freeze({
+    imports: Object.freeze(projectedImports),
     exports: Object.freeze(exports.map(value => Object.freeze({
       name: value.name,
       kind: value.kind,

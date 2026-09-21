@@ -27,6 +27,21 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Read pinned .NET 11 SDK
+        id: csharp15
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          print(f"sdk={json.loads(Path('eng/csharp15-toolchain.json').read_text())['sdk11Version']}")
+          PY
+
+      - name: Install pinned .NET 11 SDK for C# 15 fixtures
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: ${{ steps.csharp15.outputs.sdk }}
+
       - name: Read pinned Node.js version
         id: toolchain
         shell: bash

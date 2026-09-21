@@ -124,7 +124,7 @@ internal sealed class PortableTestHostAssetResolver : IPortableTestHostAssetReso
     private static string Hash(string path)
     {
         using var stream = File.OpenRead(path);
-        return Convert.ToHexStringLower(SHA256.HashData(stream));
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     private static StringComparison PathComparison =>

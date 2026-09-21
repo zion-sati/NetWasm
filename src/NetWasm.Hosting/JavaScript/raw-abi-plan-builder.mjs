@@ -83,7 +83,7 @@ function validateDescriptors(value, keys, label, hasModule) {
   if (!Array.isArray(value)) {
     throw new TypeError(`${label} descriptors are required`);
   }
-  const seen = new Set();
+  const seen = new Map();
   const descriptors = value.map(descriptor => {
     assertExactObject(descriptor, keys, `${label} descriptor`);
     if (hasModule && (typeof descriptor.module !== "string" || descriptor.module.length === 0)) {
@@ -93,11 +93,16 @@ function validateDescriptors(value, keys, label, hasModule) {
         || !descriptorKinds.has(descriptor.kind)) {
       throw new TypeError(`${label} descriptor is invalid`);
     }
-    const identity = hasModule ? `${descriptor.module}\u0000${descriptor.name}` : descriptor.name;
-    if (seen.has(identity)) {
+    const identity = hasModule ? descriptor.module : "";
+    let names = seen.get(identity);
+    if (names === undefined) {
+      names = new Set();
+      seen.set(identity, names);
+    }
+    if (names.has(descriptor.name)) {
       throw new TypeError(`${label} descriptor is duplicated`);
     }
-    seen.add(identity);
+    names.add(descriptor.name);
     return Object.freeze(hasModule
       ? { module: descriptor.module, name: descriptor.name, kind: descriptor.kind }
       : { name: descriptor.name, kind: descriptor.kind });

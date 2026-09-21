@@ -25,7 +25,7 @@
       "id": "netwasm.raw-inspection.inspector",
       "version": "1",
       "relativePath": "tools/netwasm/raw/raw-module-import-inspector.mjs",
-      "sha256": "cdc8bf9c616551e3a8e47cf2a89a82801cc0171ac3c302ec5aa07e71a7bcb6b7"
+      "sha256": "aa835377679d0491f0fec7b0a0f5d27673584edd307ad91c72d2145dec2c3b51"
     },
     {
       "id": "netwasm.raw-inspection.core-reader",

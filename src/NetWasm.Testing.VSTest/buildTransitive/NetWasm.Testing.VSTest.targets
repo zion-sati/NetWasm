@@ -1,7 +1,10 @@
 <Project>
   <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == 'NetWasm' AND '$(TargetFrameworkVersion)' == 'v0.1'">
     <_NetWasmVSTestExtensionPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any'))</_NetWasmVSTestExtensionPath>
+    <_NetWasmVSTestConsolePath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/net10.0/any/vstest/vstest.console.dll'))</_NetWasmVSTestConsolePath>
+    <_NetWasmSdkVSTestConsolePath>$([System.IO.Path]::Combine('$(MSBuildToolsPath)', 'vstest.console.dll'))</_NetWasmSdkVSTestConsolePath>
     <_NetWasmVSTestLoadingStrategy>RunConfiguration.TestAdapterLoadingStrategy=Explicit,DefaultRuntimeProviders,ExtensionsDirectory</_NetWasmVSTestLoadingStrategy>
+    <VSTestConsolePath Condition="'$(VSTestConsolePath)' == '' OR '$(VSTestConsolePath)' == '$(_NetWasmSdkVSTestConsolePath)'">$(_NetWasmVSTestConsolePath)</VSTestConsolePath>
     <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' != ''">$(VSTestTestAdapterPath);$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
     <VSTestTestAdapterPath Condition="'$(VSTestTestAdapterPath)' == ''">$(_NetWasmVSTestExtensionPath)</VSTestTestAdapterPath>
     <VSTestCLIRunSettings Condition="'$(VSTestCLIRunSettings)' != ''">$(VSTestCLIRunSettings);$(_NetWasmVSTestLoadingStrategy)</VSTestCLIRunSettings>

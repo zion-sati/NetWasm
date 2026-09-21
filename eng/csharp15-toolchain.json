@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sdk10MinimumVersion": "10.0.300",
+  "sdk10BuildVersion": "10.0.302",
+  "sdk11Version": "11.0.100-rc.1.26425.128",
+  "roslynVersion": "5.11.0-1.26425.128",
+  "roslynCommit": "3551975be08744f0418857c5bed8ab1545c5dd47",
+  "browserRuntimeFrameworkVersion": "11.0.0-rc.1.26425.128",
+  "browserWorkloadManifestVersion": "11.0.100-rc.1.26425.128"
+}
