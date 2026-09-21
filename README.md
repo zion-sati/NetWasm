@@ -20,6 +20,8 @@ memory. Deploy the compiled program to a compatible WASI host.
 
 Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
 then follow the [host and restore notes](docs/sdk-quickstart.md#1-install-net).
+Projects using C# 15 select the .NET 11 SDK; projects using earlier language
+versions can stay on .NET 10, and neither path requires both SDKs.
 The SDK restores its pinned Node, LLD and Binaryen tools for your development
 host through NuGet. You do not need to install Emscripten, Git or Python to
 build an ordinary app or test project.
@@ -57,6 +59,7 @@ For Windows host support, browser publishing and dual-target libraries, follow t
 
 The 88 KB program is the baseline, not the boundary. NetWasm already covers a practical .NET development loop:
 
+- C# 15 when the project selects the .NET 11 SDK, while the default template remains on .NET 10;
 - `dotnet build`, `dotnet run`, `dotnet publish` and `dotnet test`;
 - [TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) tests through the generic VSTest bridge and ordinary `dotnet test`;
 - independently packaged ports for LINQ, HTTP, JSON, XML, Regex, Hashing and reflection-free dependency injection;

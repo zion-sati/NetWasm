@@ -28,6 +28,12 @@ contracts.
 
 ### Core language, runtime, and selected library profile
 
+The supported profile includes C# 15 in stable language mode when the project
+selects the .NET 11 SDK. Projects using earlier language versions remain
+supported with the .NET 10 SDK. NetWasm consumes the resulting CIL, so this
+does not add runtime reflection, `dynamic`, runtime assembly loading, or other
+features outside the profile described below.
+
 The supported profile includes direct CIL-to-Wasm compilation, closed-world
 reachability and concrete generic specialization, exact GC, exceptions,
 finalization, value types, arrays, delegates, generic interface/virtual
