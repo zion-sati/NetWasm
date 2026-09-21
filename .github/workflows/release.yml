@@ -209,12 +209,12 @@ jobs:
           fetch-depth: 0
           path: source
       - name: Download neutral release packages
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: netwasm-neutral-${{ needs.build.outputs.version }}
           path: artifacts
       - name: Download all native packages
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: host-tools-*
           merge-multiple: true
@@ -266,7 +266,7 @@ jobs:
           global-json-file: source/global.json
 
       - name: Download release artifacts
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: netwasm-${{ needs.build.outputs.version }}
           path: artifacts

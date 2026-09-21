@@ -222,12 +222,12 @@ jobs:
         with:
           python-version: '3.13'
       - name: Download neutral packages
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: runtime-pack-candidate
           path: ${{ runner.temp }}/packages
       - name: Download native host packages
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: host-tools-*
           merge-multiple: true
@@ -362,17 +362,17 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "sdk-version=$sdk_version" >> "$GITHUB_OUTPUT"
       - name: Download candidate packages
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: runtime-pack-candidate
           path: ${{ runner.temp }}/packages
       - name: Download matching native host package
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: host-tools-${{ matrix.rid }}
           path: ${{ runner.temp }}/packages
       - name: Download candidate provenance
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: candidate-receipt
           path: ${{ runner.temp }}
