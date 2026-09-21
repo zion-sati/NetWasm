@@ -139,7 +139,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="0.0.0-ci.${GITHUB_RUN_NUMBER}"
+          version="0.4.0-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           echo "value=$version" >> "$GITHUB_OUTPUT"
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           bash eng/build-packages.sh --version "$version" --output "$RUNNER_TEMP/packages"
@@ -149,7 +149,7 @@ jobs:
           name: runtime-pack-candidate
           path: ${{ runner.temp }}/packages/*.nupkg
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 14
 
   host-tools:
     runs-on: ${{ matrix.runner }}
@@ -190,22 +190,23 @@ jobs:
       - name: Build and verify native host package
         shell: bash
         run: |
+          version="0.4.0-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           python eng/build-host-tools-package.py \
             --rid "${{ matrix.rid }}" \
-            --version "0.0.0-ci.${GITHUB_RUN_NUMBER}" \
+            --version "$version" \
             --output "$RUNNER_TEMP/host-packages" \
             --cache "$RUNNER_TEMP/host-tools-inputs"
           bash eng/verify-host-tools-repeatability.sh \
-            "${{ matrix.rid }}" "0.0.0-ci.${GITHUB_RUN_NUMBER}" \
+            "${{ matrix.rid }}" "$version" \
             "$RUNNER_TEMP/host-tools-inputs" \
-            "$RUNNER_TEMP/host-packages/NetWasm.HostTools.${{ matrix.rid }}.0.0.0-ci.${GITHUB_RUN_NUMBER}.nupkg"
+            "$RUNNER_TEMP/host-packages/NetWasm.HostTools.${{ matrix.rid }}.$version.nupkg"
       - name: Retain native host package
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: host-tools-${{ matrix.rid }}
           path: ${{ runner.temp }}/host-packages/*.nupkg
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 14
 
   verify-packages:
     needs: [package, host-tools]
@@ -241,10 +242,10 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path('eng/release-manifest.json').read_text())
-          manifest['releaseVersion'] = '0.0.0-ci.' + os.environ['GITHUB_RUN_NUMBER']
+          manifest['releaseVersion'] = '0.4.0-ci.' + os.environ['GITHUB_RUN_ID'] + '.' + os.environ['GITHUB_RUN_ATTEMPT']
           manifest['sourceCommit'] = subprocess.check_output(
               ['git', 'rev-parse', 'HEAD'], text=True).strip()
-          manifest['releaseTag'] = 'ci-' + os.environ['GITHUB_RUN_NUMBER']
+          manifest['releaseTag'] = 'ci-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
           Path(os.environ['RUNNER_TEMP'], 'candidate-manifest.json').write_text(
               json.dumps(manifest, indent=2) + '\n')
           PY
@@ -252,6 +253,46 @@ jobs:
             --manifest "$RUNNER_TEMP/candidate-manifest.json" \
             --packages "$RUNNER_TEMP/packages" \
             --pins-root .
+      - name: Record immutable candidate provenance
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          packages = {}
+          for path in sorted(Path(os.environ['RUNNER_TEMP'], 'packages').glob('*.nupkg')):
+              packages[path.name] = {
+                  'bytes': path.stat().st_size,
+                  'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+              }
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          receipt = {
+              'schemaVersion': 1,
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'pullRequest': event.get('pull_request', {}).get('number'),
+              'pullRequestHead': event.get('pull_request', {}).get('head', {}).get('sha'),
+              'pullRequestBase': event.get('pull_request', {}).get('base', {}).get('sha'),
+              'checkedOutCommit': head,
+              'checkedOutTree': subprocess.check_output(['git', 'rev-parse', f'{head}^{{tree}}'], text=True).strip(),
+              'workflowRunId': os.environ['GITHUB_RUN_ID'],
+              'workflowRunAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'candidateVersion': '0.4.0-ci.' + os.environ['GITHUB_RUN_ID'] + '.' + os.environ['GITHUB_RUN_ATTEMPT'],
+              'sdk10Version': '10.0.300',
+              'csharp15Toolchain': json.loads(Path('eng/csharp15-toolchain.json').read_text()),
+              'nativeToolchain': json.loads(Path('eng/toolchain.json').read_text()),
+              'packages': packages,
+          }
+          Path(os.environ['RUNNER_TEMP'], 'candidate-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PY
+      - name: Retain candidate provenance
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: candidate-receipt
+          path: ${{ runner.temp }}/candidate-receipt.json
+          if-no-files-found: error
+          retention-days: 14
 
   runtime-pack-hosts:
     needs: [package, host-tools, verify-packages]
@@ -259,35 +300,60 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        sdk-major: [10, 11]
+        host: [linux-x64, linux-arm64, macos-arm64, windows-x64, windows-arm64]
         include:
-          - runner: ubuntu-24.04
-            host: linux-x64
+          - host: linux-x64
+            runner: ubuntu-24.04
             rid: linux-x64
-          - runner: ubuntu-24.04-arm
-            host: linux-arm64
+            architecture: x64
+          - host: linux-arm64
+            runner: ubuntu-24.04-arm
             rid: linux-arm64
-          - runner: macos-14
-            host: macos-arm64
+            architecture: arm64
+          - host: macos-arm64
+            runner: macos-14
             rid: osx-arm64
-          - runner: windows-2025
-            host: windows-x64
+            architecture: arm64
+          - host: windows-x64
+            runner: windows-2025
             rid: win-x64
-          - runner: windows-11-vs2026-arm
-            host: windows-arm64
+            architecture: x64
+          - host: windows-arm64
+            runner: windows-11-vs2026-arm
             rid: win-arm64
+            architecture: arm64
     runs-on: ${{ matrix.runner }}
-    name: Runtime pack / ${{ matrix.host }}
+    name: Runtime pack / ${{ matrix.host }} / SDK ${{ matrix.sdk-major }}
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Install .NET SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
-        with:
-          global-json-file: global.json
-      - name: Install minimum supported .NET SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
-        with:
-          dotnet-version: 10.0.300
+      - name: Install one isolated .NET SDK and runtime
+        id: isolated-dotnet
+        shell: bash
+        env:
+          SDK_MAJOR: ${{ matrix.sdk-major }}
+          DOTNET_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          if [[ "$SDK_MAJOR" == 10 ]]; then
+            sdk_version=10.0.300
+          else
+            sdk_version=$(python3 -c 'import json; print(json.load(open("eng/csharp15-toolchain.json"))["sdk11Version"])')
+          fi
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --output "$RUNNER_TEMP/dotnet-install.sh" https://dot.net/v1/dotnet-install.sh
+          bash "$RUNNER_TEMP/dotnet-install.sh" \
+            --version "$sdk_version" \
+            --architecture "$DOTNET_ARCHITECTURE" \
+            --install-dir "$RUNNER_TEMP/dotnet-isolated" \
+            --no-path
+          echo "$RUNNER_TEMP/dotnet-isolated" >> "$GITHUB_PATH"
+          {
+            echo "DOTNET_ROOT=$RUNNER_TEMP/dotnet-isolated"
+            echo "DOTNET_MULTILEVEL_LOOKUP=0"
+            echo "NETWASM_QUALIFY_DOTNET_ROOT=$RUNNER_TEMP/dotnet-isolated"
+          } >> "$GITHUB_ENV"
+          echo "sdk-version=$sdk_version" >> "$GITHUB_OUTPUT"
       - name: Download candidate packages
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -298,9 +364,34 @@ jobs:
         with:
           name: host-tools-${{ matrix.rid }}
           path: ${{ runner.temp }}/packages
+      - name: Download candidate provenance
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: candidate-receipt
+          path: ${{ runner.temp }}
+      - name: Verify consumed candidate artifacts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          receipt = json.loads(Path(os.environ['RUNNER_TEMP'], 'candidate-receipt.json').read_text())
+          expected_version = '${{ needs.package.outputs.version }}'
+          if receipt['candidateVersion'] != expected_version:
+              raise SystemExit('Candidate receipt version does not match the package job output.')
+          local = sorted(Path(os.environ['RUNNER_TEMP'], 'packages').glob('*.nupkg'))
+          if not local:
+              raise SystemExit('Candidate package directory is empty.')
+          for path in local:
+              expected = receipt['packages'].get(path.name)
+              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              if expected is None or expected['bytes'] != path.stat().st_size or expected['sha256'] != actual:
+                  raise SystemExit(f'Candidate package does not match its receipt: {path.name}')
+          PY
       - name: Qualify SDK consumers with restored host tools
         shell: bash
         env:
-          NETWASM_QUALIFY_SDK_VERSION: 10.0.300
+          NETWASM_QUALIFY_SDK_VERSION: ${{ steps.isolated-dotnet.outputs.sdk-version }}
         run: |
           bash eng/qualify-sdk-consumers.sh "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}"

@@ -140,8 +140,11 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_CLI_UI_LANGUAGE=en-US
 
 if [[ -n "${NETWASM_QUALIFY_DOTNET_ROOT:-}" ]]; then
-  expected_dotnet="$(cd "$NETWASM_QUALIFY_DOTNET_ROOT" && pwd -P)/dotnet"
-  actual_dotnet="$(command -v dotnet)"
+  isolated_root="$(cd "$NETWASM_QUALIFY_DOTNET_ROOT" && pwd -P)"
+  expected_dotnet="$isolated_root/dotnet"
+  [[ -f "$expected_dotnet" ]] || expected_dotnet="$isolated_root/dotnet.exe"
+  expected_dotnet="$(realpath "$expected_dotnet")"
+  actual_dotnet="$(realpath "$(command -v dotnet)")"
   [[ "$actual_dotnet" == "$expected_dotnet" ]] || {
     echo "Qualification did not select the isolated dotnet host." >&2
     exit 1
