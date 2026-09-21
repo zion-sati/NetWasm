@@ -5,6 +5,14 @@ namespace NetWasm.Sdk.Tests;
 
 public sealed class SdkRoutingTests
 {
+    private static string RepositoryRoot()
+    {
+        var root = Directory.GetCurrentDirectory();
+        while (!File.Exists(Path.Combine(root, "eng/NetWasm.ReleaseVersion.txt")))
+            root = Directory.GetParent(root)?.FullName ?? throw new DirectoryNotFoundException();
+        return root;
+    }
+
     [Fact]
     public async Task TaskAssemblyOutputFollowsAnExternalSdkBuildRoot()
     {
@@ -62,7 +70,8 @@ public sealed class SdkRoutingTests
         Assert.Equal("true", project.Property("NetWasmSdkCustomGenerateNuspecOverride"));
         Assert.Equal("true", project.Property("IsPackable"));
         Assert.Equal("true", project.Property("DisableStandardFrameworkResolution"));
-        Assert.Equal("0.1.0", project.Property("NetWasmSdkPackageVersion"));
+        var releaseVersion = File.ReadAllText(Path.Combine(RepositoryRoot(), "eng/NetWasm.ReleaseVersion.txt")).Trim();
+        Assert.Equal(releaseVersion, project.Property("NetWasmSdkPackageVersion"));
         Assert.Equal("false", project.Property("CopyBuildOutputToPublishDirectory"));
         Assert.Equal("false", project.Property("CopyOutputSymbolsToPublishDirectory"));
         Assert.Equal(["custom"], project.Items("NetWasmSdkPackRoute"));
