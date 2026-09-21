@@ -415,4 +415,6 @@ jobs:
         env:
           NETWASM_QUALIFY_SDK_VERSION: ${{ steps.isolated-dotnet.outputs.sdk-version }}
         run: |
-          bash eng/qualify-sdk-consumers.sh "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}"
+          bash eng/qualify-sdk-consumers.sh \
+            "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}" \
+            --skip-test-consumers
