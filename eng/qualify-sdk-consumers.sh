@@ -491,11 +491,15 @@ cat > "$wasm_consumer_root/TransitiveWasm.csproj" <<'EOF'
   </ItemGroup>
 </Project>
 EOF
-cat > "$desktop_consumer_root/TransitiveDesktop.csproj" <<'EOF'
+desktop_target_framework=net10.0
+if [[ "${NETWASM_QUALIFY_SDK_VERSION:-}" == 11.* ]]; then
+  desktop_target_framework=net11.0
+fi
+cat > "$desktop_consumer_root/TransitiveDesktop.csproj" <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>${desktop_target_framework}</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="RuntimeLibrary" Version="1.0.0" />
