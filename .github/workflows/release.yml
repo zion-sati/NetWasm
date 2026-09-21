@@ -28,7 +28,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out release infrastructure
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: infrastructure
@@ -45,7 +45,7 @@ jobs:
             grep -Fqx "${RELEASE_TAG}"
 
       - name: Check out release source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
           fetch-depth: 0
@@ -75,7 +75,7 @@ jobs:
           printf 'infrastructure_commit=%s\n' "${infrastructure_commit}" >> "${GITHUB_OUTPUT}"
 
       - name: Install .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: source/global.json
 
@@ -124,7 +124,7 @@ jobs:
             --output "$GITHUB_WORKSPACE/artifacts/packages"
 
       - name: Retain neutral release packages
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: netwasm-neutral-${{ steps.release.outputs.version }}
           path: artifacts/
@@ -152,7 +152,7 @@ jobs:
             rid: win-arm64
     steps:
       - name: Check out release source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.build.outputs.tag }}
           fetch-depth: 0
@@ -162,7 +162,7 @@ jobs:
         run: |
           test "$(git -C source rev-parse HEAD)" = "${{ needs.build.outputs.source_commit }}"
       - name: Install .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: source/global.json
       - name: Install Python for package production
@@ -184,7 +184,7 @@ jobs:
             --output "$RUNNER_TEMP/host-packages" \
             --cache "$RUNNER_TEMP/host-tools-inputs"
       - name: Retain host package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: host-tools-${{ matrix.rid }}
           path: ${{ runner.temp }}/host-packages/*.nupkg
@@ -198,23 +198,23 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out release infrastructure
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.build.outputs.infrastructure_commit }}
           path: infrastructure
       - name: Check out release source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.build.outputs.tag }}
           fetch-depth: 0
           path: source
       - name: Download neutral release packages
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: netwasm-neutral-${{ needs.build.outputs.version }}
           path: artifacts
       - name: Download all native packages
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: host-tools-*
           merge-multiple: true
@@ -230,7 +230,7 @@ jobs:
             --receipt artifacts/release-package-receipt.json
           (cd artifacts && sha256sum packages/*.nupkg > SHA256SUMS)
       - name: Retain verified release artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: netwasm-${{ needs.build.outputs.version }}
           path: artifacts/
@@ -248,25 +248,25 @@ jobs:
       id-token: write
     steps:
       - name: Check out release infrastructure
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.build.outputs.infrastructure_commit }}
           path: infrastructure
 
       - name: Check out release source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.build.outputs.tag }}
           fetch-depth: 0
           path: source
 
       - name: Install pinned .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: source/global.json
 
       - name: Download release artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: netwasm-${{ needs.build.outputs.version }}
           path: artifacts
