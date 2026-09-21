@@ -17,6 +17,12 @@ The pinned Linux tools need glibc 2.28 or newer; the Linux package carries
 Node's `libatomic.so.1` dependency. The pinned macOS Node binary needs macOS
 13.5 or newer.
 
+The default templates stay on .NET 10. To compile C# 15 source, select the
+.NET 11 SDK version recorded in [`eng/csharp15-toolchain.json`](../eng/csharp15-toolchain.json)
+in the project's `global.json` and allow prerelease SDKs while .NET 11 is a
+prerelease. An isolated .NET 11 SDK installation is sufficient; NetWasm does
+not also require the .NET 10 SDK. The target framework remains `netwasm0.1`.
+
 For an ordinary application or test project, no separate Emscripten, Node.js,
 LLVM/LLD, Binaryen, Git or Python installation is needed. `dotnet restore`
 selects one host-tools NuGet package for the machine doing the build. That

@@ -100,6 +100,8 @@ internal static class WasmRuntimeImports
                 CliValueKind.ManagedAddress,
                 CliValueKind.ManagedAddress,
                 CliValueKind.I4,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4,
                 CliValueKind.I4))),
         new(RuntimeImportSymbol.RegisterStaticRoot, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,

@@ -13,8 +13,31 @@ internal sealed class ConstructedTypeDescriptorBuilder(
     ManagedTypeLayouts types,
     WasmTargetLayout target,
     ManagedStaticDataBuildState state,
-    IStaticReferenceBitmapBuilder bitmaps) : IConstructedTypeDescriptorBuilder
+    IStaticReferenceBitmapBuilder bitmaps,
+    IAssignableTypeMetadataBuilder assignableTypes) : IConstructedTypeDescriptorBuilder
 {
+    internal ConstructedTypeDescriptorBuilder(
+        ITypeFinder typeFinder,
+        ITypeDefinitionResolver typeDefinitions,
+        IMetadataIdentityBaseTypeResolver baseTypes,
+        IObjectLayoutResolver objectLayouts,
+        ManagedTypeLayouts types,
+        WasmTargetLayout target,
+        ManagedStaticDataBuildState state,
+        IStaticReferenceBitmapBuilder bitmaps) :
+        this(
+            typeFinder,
+            typeDefinitions,
+            baseTypes,
+            objectLayouts,
+            types,
+            target,
+            state,
+            bitmaps,
+            EmptyAssignableTypeMetadataBuilder.Instance)
+    {
+    }
+
     private readonly ITypeFinder _typeFinder = typeFinder ??
         throw new ArgumentNullException(nameof(typeFinder));
     private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ??
@@ -31,6 +54,8 @@ internal sealed class ConstructedTypeDescriptorBuilder(
         throw new ArgumentNullException(nameof(state));
     private readonly IStaticReferenceBitmapBuilder _bitmaps = bitmaps ??
         throw new ArgumentNullException(nameof(bitmaps));
+    private readonly IAssignableTypeMetadataBuilder _assignableTypes = assignableTypes ??
+        throw new ArgumentNullException(nameof(assignableTypes));
 
     public void Build()
     {
@@ -53,15 +78,21 @@ internal sealed class ConstructedTypeDescriptorBuilder(
                 : _baseTypes.GetBaseType(type) is CliTypeIdentity baseType
                     ? _objectLayouts.Resolve(baseType).TypeId
                     : 0;
+            var bitmapAddress = _state.Cursor;
+            AddSegment(bitmap);
+            var assignableTypes = _assignableTypes.Build(type);
             _state.ConstructedTypeDescriptors.Add(new ConstructedTypeDescriptorLayout(
                 type,
                 layout.TypeId,
                 baseTypeId,
                 layout.Size,
-                _state.Cursor,
+                bitmapAddress,
                 bitCount,
-                Finalizer: null));
-            AddSegment(bitmap);
+                Finalizer: null)
+            {
+                AssignableTypeIdsAddress = assignableTypes.Address,
+                AssignableTypeIdCount = assignableTypes.Count,
+            });
         }
     }
 

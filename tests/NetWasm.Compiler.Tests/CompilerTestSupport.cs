@@ -174,7 +174,7 @@ internal static class CompilerTestSupport
             "let targetFrame=0;let targetClause=0;" +
             "let filterSearchFloor=0;let application=null;" +
             "let nextPollable=1;const watchedTokens=[];const weakHandles=[0];const gcHandles=[null];const canceledTokens=new Set();" +
-            "const typeBases=new Map(),typeSizes=new Map(),valueTypeSizes=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
+            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),valueTypeSizes=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
             "const z=()=>0;" +
             "const raw=size=>{const p=heap;heap=(heap+size+3)&~3;" +
             "const pages=Math.ceil(heap/65536);const current=memory.buffer.byteLength/65536;" +
@@ -240,7 +240,7 @@ internal static class CompilerTestSupport
             "out.setInt32(result+20,shape,true);return result;};" +
             "const isAssignable=(object,target)=>{if(!object)return 0;" +
             "let type=new DataView(memory.buffer).getInt32(object,true);" +
-            "while(type){if(type===target)return 1;type=typeBases.get(type)||0;}return 0;};" +
+            "while(type){if(type===target||typeAssignable.get(type)?.has(target))return 1;type=typeBases.get(type)||0;}return 0;};" +
             "const arrayCopy=(source,sourceIndex,destination,destinationIndex,length)=>{" +
             "const v=new DataView(memory.buffer),sourceElement=v.getInt32(source+12,true)," +
             "destinationElement=v.getInt32(destination+12,true)," +
@@ -284,7 +284,9 @@ internal static class CompilerTestSupport
             "native_alloc:nativeAlloc,native_realloc:nativeRealloc,native_free:p=>nativeSizes.delete(p)," +
             "native_aligned_alloc:nativeAlignedAlloc,native_aligned_realloc:nativeAlignedRealloc," +
             "native_aligned_free:p=>nativeSizes.delete(p)," +
-            "register_type:(type,base,size)=>{typeBases.set(type,base);typeSizes.set(type,size);}," +
+            "register_type:(type,base,size,bitmap,bits,assignables,count)=>{" +
+            "typeBases.set(type,base);typeSizes.set(type,size);const ids=new Set(),v=new DataView(memory.buffer);" +
+            "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);}," +
             "register_value_type:(type,size)=>valueTypeSizes.set(type,size)," +
             "register_static_root:z,root_frame_enter:rootEnter,root_frame_leave:rootLeave," +
             "value_frame_enter:valueEnter,value_frame_leave:valueLeave," +
