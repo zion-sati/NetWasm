@@ -259,6 +259,109 @@ public sealed class ArrayInstructionEmitterTests
         Assert.Contains(WasmOpcodes.I32Store, GetCodeBytes(request));
     }
 
+    [Fact]
+    public void GenericReferenceElementStorePerformsRuntimeElementCheck()
+    {
+        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var elementType = CliTypeIdentity.Named(
+            Assembly,
+            "Test",
+            "Reference",
+            isValueType: false);
+        var request = CreateRequest(
+            CilOperation.StoreArrayElement,
+            [
+                CliValueKind.ManagedReference,
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
+            ],
+            new CilOperand.TypeIdentity(elementType));
+
+        Emit((IInstructionCommandProvider)emitter, request);
+
+        Assert.Empty(request.Stack);
+        Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
+    }
+
+    [Fact]
+    public void MutableReferenceElementAddressChecksExactElementTypeUnlessReadonly()
+    {
+        var elementType = CliTypeIdentity.Named(
+            Assembly,
+            "Test",
+            "Reference",
+            isValueType: false);
+        var mutableBase = CreateRequest(
+            CilOperation.LoadArrayElementAddress,
+            [CliValueKind.ManagedReference, CliValueKind.I4],
+            new CilOperand.TypeIdentity(elementType));
+        var mutableWriter = new RecordingInstructionWriter();
+        var mutable = mutableBase with
+        {
+            Header = mutableBase.Header with
+            {
+                Instructions =
+                [
+                    I(-2, CilOperation.Nop),
+                    I(-1, CilOperation.Nop),
+                    mutableBase.Instruction,
+                ],
+            },
+        };
+        RegisterInstructionWriter(mutable, mutableWriter);
+        var missingBase = CreateRequest(
+            CilOperation.LoadArrayElementAddress,
+            [CliValueKind.ManagedReference, CliValueKind.I4],
+            new CilOperand.TypeIdentity(elementType));
+        var missingWriter = new RecordingInstructionWriter();
+        var missing = missingBase with
+        {
+            Header = missingBase.Header with
+            {
+                Instructions =
+                [
+                    I(-2, CilOperation.Nop),
+                    I(-1, CilOperation.Nop),
+                ],
+            },
+        };
+        RegisterInstructionWriter(missing, missingWriter);
+        var readonlyBase = CreateRequest(
+            CilOperation.LoadArrayElementAddress,
+            [CliValueKind.ManagedReference, CliValueKind.I4],
+            new CilOperand.TypeIdentity(elementType));
+        var readonlyWriter = new RecordingInstructionWriter();
+        var readonlyRequest = readonlyBase with
+        {
+            Header = readonlyBase.Header with
+            {
+                Instructions =
+                [
+                    I(-1, CilOperation.Readonly),
+                    readonlyBase.Instruction,
+                ],
+            },
+        };
+        RegisterInstructionWriter(readonlyRequest, readonlyWriter);
+
+        Emit((IInstructionCommandProvider)CreateEmitter(
+            new RecordingLayoutProvider(),
+            out _), mutable);
+        Emit((IInstructionCommandProvider)CreateEmitter(
+            new RecordingLayoutProvider(),
+            out _), readonlyRequest);
+        Emit((IInstructionCommandProvider)CreateEmitter(
+            new RecordingLayoutProvider(),
+            out _), missing);
+
+        Assert.Equal(
+            GetCodeBytes(readonlyRequest).Count(value => value == WasmOpcodes.Throw) + 1,
+            GetCodeBytes(mutable).Count(value => value == WasmOpcodes.Throw));
+        Assert.Equal(
+            GetCodeBytes(mutable).Count(value => value == WasmOpcodes.Throw),
+            GetCodeBytes(missing).Count(value => value == WasmOpcodes.Throw));
+    }
+
     private static void Emit<TProvider>(
         TProvider emitter,
         InstructionEmissionRequest request)

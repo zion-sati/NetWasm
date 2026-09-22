@@ -29,6 +29,7 @@ public sealed class RectangularArrayEmitterTests
                 layouts,
                 CreateAddressInstructions(layouts),
                 layouts,
+                layouts,
                 exceptions));
         var arrayType = CliTypeIdentity.Array(
             CliTypeIdentity.Primitive("i4", CliValueKind.I4),
@@ -66,6 +67,7 @@ public sealed class RectangularArrayEmitterTests
                 layouts,
                 CreateAddressInstructions(layouts),
                 layouts,
+                layouts,
                 new RecordingExceptionEmitter()));
         var request = CreateInstructionRequest(
             CilOperation.LoadRectangularArrayElement,
@@ -88,6 +90,7 @@ public sealed class RectangularArrayEmitterTests
                 layouts,
                 CreateAddressInstructions(layouts),
                 layouts,
+                layouts,
                 new RecordingExceptionEmitter()));
         var arrayType = CliTypeIdentity.Array(
             CliTypeIdentity.Named(Assembly, "Test", "Reference", false),
@@ -101,6 +104,77 @@ public sealed class RectangularArrayEmitterTests
         emitter.Emit(new(request, 0), GetCodeWriter(request));
 
         Assert.Contains(WasmOpcodes.I32Multiply, GetCodeBytes(request));
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, true)]
+    public void RankOneReferenceAddressUsesSharedArrayHeaderAndReadonlyPolicy(
+        bool memory64,
+        bool hasPrefix,
+        bool isReadonly)
+    {
+        var layouts = new RecordingLayoutProvider(
+            memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32);
+        var exceptions = new RecordingExceptionEmitter();
+        var emitter = ThroughAddressContract(
+            new RectangularArrayElementAddressEmitter(
+                layouts,
+                layouts,
+                layouts,
+                CreateAddressInstructions(layouts),
+                layouts,
+                layouts,
+                exceptions));
+        var arrayType = CliTypeIdentity.Array(
+            CliTypeIdentity.Named(Assembly, "Test", "Reference", false),
+            1);
+        var original = CreateInstructionRequest(
+            CilOperation.LoadRectangularArrayElementAddress,
+            [CliValueKind.ManagedReference, CliValueKind.I4],
+            new CilOperand.TypeIdentity(arrayType),
+            maxStack: 2);
+        var writer = new RecordingInstructionWriter();
+        var request = original with
+        {
+            Header = original.Header with
+            {
+                Instructions = hasPrefix
+                    ?
+                    [
+                        I(-2, CilOperation.Nop),
+                        I(-1, isReadonly ? CilOperation.Readonly : CilOperation.Nop),
+                        original.Instruction,
+                    ]
+                    :
+                    [
+                        I(-2, CilOperation.Nop),
+                        I(-1, CilOperation.Nop),
+                    ],
+            },
+        };
+        RegisterInstructionWriter(request, writer);
+
+        emitter.Emit(new(request, 0), GetCodeWriter(request));
+
+        Assert.Equal(
+            isReadonly
+                ? [
+                    ManagedExceptionKind.NullReference,
+                    ManagedExceptionKind.IndexOutOfRange,
+                    ManagedExceptionKind.IndexOutOfRange,
+                ]
+                : [
+                    ManagedExceptionKind.NullReference,
+                    ManagedExceptionKind.ArrayTypeMismatch,
+                    ManagedExceptionKind.IndexOutOfRange,
+                    ManagedExceptionKind.IndexOutOfRange,
+                ],
+            exceptions.Kinds);
+        Assert.Equal(
+            memory64,
+            GetCodeBytes(request).Contains(WasmOpcodes.I64ExtendI32Unsigned));
     }
 
     [Theory]

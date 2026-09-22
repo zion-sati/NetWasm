@@ -30,8 +30,7 @@ internal sealed class ResolvingInstanceFieldLayoutProvider(
             catch (Exception recovery)
                 when (recovery is CompilerException or KeyNotFoundException)
             {
-                ExceptionDispatchInfo.Capture(missing).Throw();
-                throw;
+                return Rethrow(missing);
             }
         }
     }
@@ -55,9 +54,14 @@ internal sealed class ResolvingInstanceFieldLayoutProvider(
             catch (Exception recovery)
                 when (recovery is CompilerException or KeyNotFoundException)
             {
-                ExceptionDispatchInfo.Capture(missing).Throw();
-                throw;
+                return Rethrow(missing);
             }
         }
+    }
+
+    private static FieldLayout Rethrow(Exception exception)
+    {
+        // Throw never returns; the same-line fallback exists only for C# flow analysis.
+        ExceptionDispatchInfo.Capture(exception).Throw(); return default!;
     }
 }

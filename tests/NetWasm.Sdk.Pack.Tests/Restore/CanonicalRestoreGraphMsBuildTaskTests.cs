@@ -78,8 +78,10 @@ public sealed class CanonicalRestoreGraphMsBuildTaskTests
                 """);
             var task = new CanonicalRestoreGraphMsBuildTask
             {
-                BuildEngine = new BuildEngine(), GraphPath = path,
-                TargetFrameworkAlias = "netwasm0.1", CanonicalTargetFramework = "NetWasm,Version=v0.1"
+                BuildEngine = new BuildEngine(),
+                GraphPath = path,
+                TargetFrameworkAlias = "netwasm0.1",
+                CanonicalTargetFramework = "NetWasm,Version=v0.1"
             };
 
             Assert.True(task.Execute());
@@ -93,8 +95,10 @@ public sealed class CanonicalRestoreGraphMsBuildTaskTests
 
     private static CanonicalRestoreGraphMsBuildTask Create(RecordingCanonicalizer canonicalizer, MemoryStreams streams) => new(canonicalizer, streams, streams)
     {
-        BuildEngine = new BuildEngine(), GraphPath = "graph.json",
-        TargetFrameworkAlias = "netwasm0.1", CanonicalTargetFramework = "NetWasm,Version=v0.1"
+        BuildEngine = new BuildEngine(),
+        GraphPath = "graph.json",
+        TargetFrameworkAlias = "netwasm0.1",
+        CanonicalTargetFramework = "NetWasm,Version=v0.1"
     };
 
     private sealed class RecordingCanonicalizer : IRestoreGraphCanonicalizer

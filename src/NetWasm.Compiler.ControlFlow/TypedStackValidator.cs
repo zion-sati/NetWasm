@@ -750,12 +750,14 @@ public sealed class TypedStackValidator(
         CilInstruction instruction)
     {
         var index = body.Instructions.IndexOf(instruction);
-        if (body.Instructions[index + 1].Operation != CilOperation.LoadArrayElementAddress)
+        if (body.Instructions[index + 1].Operation is not (
+                CilOperation.LoadArrayElementAddress or
+                CilOperation.LoadRectangularArrayElementAddress))
         {
             throw Invalid(
                 body,
                 instruction,
-                "readonly. must immediately precede ldelema");
+                "readonly. must immediately precede an array element address load");
         }
     }
 

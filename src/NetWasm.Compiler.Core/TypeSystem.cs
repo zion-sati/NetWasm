@@ -239,7 +239,7 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         elementType);
 
     public static CliTypeIdentity Array(CliTypeIdentity elementType, int rank) => new(
-        $"{elementType.CanonicalName}[{new string(',', rank - 1)}]",
+        $"{elementType.CanonicalName}[{(rank == 1 ? "*" : new string(',', rank - 1))}]",
         CliTypeShape.Array,
         CliValueKind.ManagedReference,
         isValueType: false,

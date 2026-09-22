@@ -547,6 +547,37 @@ public sealed class CoreModelTests
     }
 
     [Fact]
+    public void VectorAndRankOneArrayIdentitiesRemainDistinctThroughComposition()
+    {
+        var element = CliTypeIdentity.Named(
+            Assembly, "Example", "Node", isValueType: false);
+        var vector = CliTypeIdentity.SzArray(element);
+        var rankOne = CliTypeIdentity.Array(element, 1);
+        var wrapper = CliTypeIdentity.Named(
+            Assembly, "Example", "Wrapper`1", isValueType: false);
+        var vectorWrapper = CliTypeIdentity.GenericInstantiation(wrapper, [vector]);
+        var rankOneWrapper = CliTypeIdentity.GenericInstantiation(wrapper, [rankOne]);
+        var identities = new HashSet<CliTypeIdentity>
+        {
+            vector,
+            rankOne,
+            vectorWrapper,
+            rankOneWrapper,
+        };
+
+        Assert.Equal($"{element.CanonicalName}[]", vector.CanonicalName);
+        Assert.Equal($"{element.CanonicalName}[*]", rankOne.CanonicalName);
+        Assert.NotEqual(vector, rankOne);
+        Assert.NotEqual(vectorWrapper, rankOneWrapper);
+        Assert.Equal(4, identities.Count);
+        Assert.Equal(
+            CliTypeIdentity.Array(element, 1),
+            CliTypeIdentity.Array(
+                CliTypeIdentity.GenericParameter(method: false, index: 0),
+                1).Substitute([element]));
+    }
+
+    [Fact]
     public void StructuralTypeIdentitiesCoverEverySupportedShapeAndSubstitution()
     {
         var scalar = CliTypeIdentity.Primitive("i4", CliValueKind.I4);

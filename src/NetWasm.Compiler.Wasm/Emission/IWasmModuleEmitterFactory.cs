@@ -83,9 +83,8 @@ public sealed class WasmModuleEmitterFactory(
         ITypeDescriptorSource typeDescriptors,
         WasmEmissionRequest request)
     {
-        var workerCount = OperatingSystem.IsBrowser()
-            ? 1
-            : parallelism?.WorkerCount ?? 1;
+        var workerCount = SelectWorkerCount(
+            OperatingSystem.IsBrowser(), parallelism);
         var forks = workerCount > 1 && layoutForks is not null
             ? layoutForks.Create(targetLayout, types, typeDefinitions, fields)
             : null;
@@ -111,4 +110,9 @@ public sealed class WasmModuleEmitterFactory(
             forks,
             workerCount);
     }
+
+    internal static int SelectWorkerCount(
+        bool browserHost, CompilerParallelism? parallelism) => browserHost
+        ? 1
+        : parallelism?.WorkerCount ?? 1;
 }

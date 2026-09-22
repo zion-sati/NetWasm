@@ -709,6 +709,7 @@ internal sealed class RecordingLayoutProvider(
     IEnumMetadataSource
 {
     public EntityKey? ObjectRequest { get; private set; }
+    public CliTypeIdentity? ObjectIdentityRequest { get; private set; }
     public EntityKey? FieldRequest { get; private set; }
     public EntityKey? StaticFieldRequest { get; private set; }
     public string? StringRequest { get; private set; }
@@ -746,7 +747,11 @@ internal sealed class RecordingLayoutProvider(
         return new ObjectLayout(9, 16, []);
     }
 
-    public ObjectLayout GetObjectLayout(CliTypeIdentity type) => new(9, 16, []);
+    public ObjectLayout GetObjectLayout(CliTypeIdentity type)
+    {
+        ObjectIdentityRequest = type;
+        return new ObjectLayout(9, 16, []);
+    }
 
     public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout)
     {

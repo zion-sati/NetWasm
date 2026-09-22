@@ -40,6 +40,7 @@ typedef struct {
     netwasm_address_t assignable_type_ids_address;
     u32 assignable_type_id_count;
     u32 has_finalizer;
+    u32 is_interface;
     netwasm_address_t value_size;
     int value_contains_references;
     int value_registered;
@@ -573,15 +574,12 @@ void initialize(
     initialized = 1;
 }
 
-__attribute__((export_name("is_assignable")))
-u32 is_assignable(netwasm_reference_t object, u32 target_type_id)
+static u32 is_type_assignable(u32 actual_type_id, u32 target_type_id)
 {
-    u32 actual_type_id;
     u32 index;
-    if (object == 0 || target_type_id == 0) {
+    if (actual_type_id == 0 || target_type_id == 0) {
         return 0;
     }
-    actual_type_id = *(u32 *)(uintptr_t)object;
     while (actual_type_id != 0) {
         if (actual_type_id == target_type_id) {
             return 1;
@@ -602,6 +600,14 @@ u32 is_assignable(netwasm_reference_t object, u32 target_type_id)
         actual_type_id = type_descriptors[actual_type_id].base_type_id;
     }
     return 0;
+}
+
+__attribute__((export_name("is_assignable")))
+u32 is_assignable(netwasm_reference_t object, u32 target_type_id)
+{
+    return object == 0
+        ? 0
+        : is_type_assignable(*(u32 *)(uintptr_t)object, target_type_id);
 }
 
 __attribute__((export_name("exception_frame_enter")))
@@ -777,7 +783,8 @@ void register_type(
     u32 bitmap_bits,
     netwasm_address_t assignable_type_ids_address,
     u32 assignable_type_id_count,
-    u32 has_finalizer)
+    u32 has_finalizer,
+    u32 is_interface)
 {
     TypeDescriptor *entry;
     if (type_id >= type_capacity) {
@@ -797,6 +804,7 @@ void register_type(
     entry->assignable_type_ids_address = assignable_type_ids_address;
     entry->assignable_type_id_count = assignable_type_id_count;
     entry->has_finalizer = has_finalizer;
+    entry->is_interface = is_interface;
     entry->registered = 1;
 }
 
@@ -1472,15 +1480,21 @@ u32 array_copy(
     netwasm_reference_t source_data;
     netwasm_reference_t destination_data;
 
+    enum {
+        ARRAY_COPY_SUCCESS = 0,
+        ARRAY_COPY_TYPE_MISMATCH = 1,
+        ARRAY_COPY_ELEMENT_CAST_FAILURE = 2
+    };
+
     if (source == 0 || destination == 0) {
-        return 0;
+        return ARRAY_COPY_TYPE_MISMATCH;
     }
     source_type_id = *(u32 *)(uintptr_t)source;
     destination_type_id = *(u32 *)(uintptr_t)destination;
     if (source_type_id >= type_capacity || destination_type_id >= type_capacity ||
         type_data_kinds[source_type_id] != NETWASM_OBJECT_DATA_ARRAY ||
         type_data_kinds[destination_type_id] != NETWASM_OBJECT_DATA_ARRAY) {
-        return 0;
+        return ARRAY_COPY_TYPE_MISMATCH;
     }
     source_element_type_id = *(u32 *)(uintptr_t)(
         source + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET);
@@ -1488,17 +1502,27 @@ u32 array_copy(
         destination + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET);
     if (source_element_type_id >= type_capacity ||
         destination_element_type_id >= type_capacity) {
-        return 0;
+        return ARRAY_COPY_TYPE_MISMATCH;
     }
     source_element = &type_descriptors[source_element_type_id];
     destination_element = &type_descriptors[destination_element_type_id];
     if (!source_element->registered || !destination_element->registered) {
-        return 0;
+        return ARRAY_COPY_TYPE_MISMATCH;
+    }
+    if (!is_type_assignable(source_type_id, destination_type_id) &&
+        !is_type_assignable(destination_type_id, source_type_id) &&
+        !source_element->is_interface && !destination_element->is_interface) {
+        return ARRAY_COPY_TYPE_MISMATCH;
+    }
+    if (source_element->value_registered != destination_element->value_registered) {
+        return ARRAY_COPY_TYPE_MISMATCH;
+    }
+    if (source_element->value_registered &&
+        source_element->value_size != destination_element->value_size) {
+        return ARRAY_COPY_TYPE_MISMATCH;
     }
     if (length == 0) {
-        return source_element->value_registered == destination_element->value_registered &&
-            (!source_element->value_registered ||
-             source_element_type_id == destination_element_type_id);
+        return ARRAY_COPY_SUCCESS;
     }
     source_data = *(netwasm_reference_t *)(uintptr_t)(
         source + NETWASM_ARRAY_DATA_POINTER_OFFSET);
@@ -1516,7 +1540,7 @@ u32 array_copy(
                 netwasm_reference_t value = source_values[offset - 1];
                 if (value != 0 &&
                     !is_assignable(value, destination_element_type_id)) {
-                    return 0;
+                    return ARRAY_COPY_ELEMENT_CAST_FAILURE;
                 }
                 collector_store_reference(
                     destination,
@@ -1528,7 +1552,7 @@ u32 array_copy(
                 netwasm_reference_t value = source_values[offset];
                 if (value != 0 &&
                     !is_assignable(value, destination_element_type_id)) {
-                    return 0;
+                    return ARRAY_COPY_ELEMENT_CAST_FAILURE;
                 }
                 collector_store_reference(
                     destination,
@@ -1536,14 +1560,9 @@ u32 array_copy(
                     value);
             }
         }
-        return 1;
+        return ARRAY_COPY_SUCCESS;
     }
 
-    if (!source_element->value_registered || !destination_element->value_registered ||
-        source_element_type_id != destination_element_type_id ||
-        source_element->value_size != destination_element->value_size) {
-        return 0;
-    }
     collector_move_value_range(
         destination,
         (void *)(uintptr_t)(destination_data +
@@ -1553,7 +1572,7 @@ u32 array_copy(
         length,
         source_element->value_size,
         destination_element->value_descriptor);
-    return 1;
+    return ARRAY_COPY_SUCCESS;
 }
 
 __attribute__((export_name("array_clone")))

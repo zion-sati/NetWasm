@@ -43,7 +43,8 @@ internal sealed class RuntimeStateInitializer(
                 descriptor.BitmapBitCount,
                 descriptor.AssignableTypeIdsAddress,
                 descriptor.AssignableTypeIdCount,
-                descriptor.Finalizer is not null);
+                descriptor.Finalizer is not null,
+                descriptor.IsInterface);
         }
         foreach (var descriptor in descriptors.ConstructedTypeDescriptors)
         {
@@ -56,7 +57,8 @@ internal sealed class RuntimeStateInitializer(
                 descriptor.BitmapBitCount,
                 descriptor.AssignableTypeIdsAddress,
                 descriptor.AssignableTypeIdCount,
-                descriptor.Finalizer is not null);
+                descriptor.Finalizer is not null,
+                descriptor.IsInterface);
         }
         foreach (var descriptor in descriptors.ValueTypeDescriptors)
         {
@@ -128,7 +130,8 @@ internal sealed class RuntimeStateInitializer(
         int bitmapBitCount,
         int assignableTypeIdsAddress,
         int assignableTypeIdCount,
-        bool hasFinalizer)
+        bool hasFinalizer,
+        bool isInterface)
     {
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.I32Constant,
@@ -148,6 +151,9 @@ internal sealed class RuntimeStateInitializer(
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.I32Constant,
             WasmInstructionOperand.Signed(hasFinalizer ? 1 : 0)));
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Constant,
+            WasmInstructionOperand.Signed(isInterface ? 1 : 0)));
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(

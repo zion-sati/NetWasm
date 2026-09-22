@@ -92,6 +92,7 @@ internal sealed class ConstructedTypeDescriptorBuilder(
             {
                 AssignableTypeIdsAddress = assignableTypes.Address,
                 AssignableTypeIdCount = assignableTypes.Count,
+                IsInterface = definition.IsInterface,
             });
         }
     }

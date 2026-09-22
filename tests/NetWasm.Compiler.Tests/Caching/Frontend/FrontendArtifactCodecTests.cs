@@ -48,6 +48,18 @@ public sealed class FrontendArtifactCodecTests
             "post-return",
             decoded.Analysis.Method.Definition.WitPostReturn!.FunctionName);
         Assert.Contains("\ud800x\udfff", decoded.Analysis.Instructions.Strings);
+        Assert.Contains(
+            decoded.Analysis.Instructions.RuntimeTypes,
+            type => type.CanonicalName.EndsWith("[]", StringComparison.Ordinal));
+        Assert.Contains(
+            decoded.Analysis.Instructions.RuntimeTypes,
+            type => type.CanonicalName.EndsWith("[*]", StringComparison.Ordinal));
+        Assert.Equal(
+            2,
+            decoded.Analysis.Instructions.RuntimeTypes.Count(type =>
+                type.Shape == CliTypeShape.GenericInstantiation &&
+                type.TypeArguments[0].Shape is
+                    CliTypeShape.SzArray or CliTypeShape.Array));
         Assert.Same(
             decoded.Analysis.Body.Instructions[0],
             decoded.StructuredMethod.Header.Instructions[0]);
@@ -233,12 +245,17 @@ public sealed class FrontendArtifactCodecTests
         var value = CliTypeIdentity.Named(Assembly, "Fixture", "Value", true)
             .WithStackStorageType(primitive);
         var array = CliTypeIdentity.Array(value, 2);
+        var vector = CliTypeIdentity.SzArray(value);
+        var rankOne = CliTypeIdentity.Array(value, 1);
         var types = ImmutableArray.Create(
             primitive,
             owner,
-            CliTypeIdentity.SzArray(value),
+            vector,
+            rankOne,
             array,
             CliTypeIdentity.GenericInstantiation(owner, [value]),
+            CliTypeIdentity.GenericInstantiation(owner, [vector]),
+            CliTypeIdentity.GenericInstantiation(owner, [rankOne]),
             CliTypeIdentity.GenericParameter(method: false, 0),
             CliTypeIdentity.GenericParameter(method: true, 0),
             CliTypeIdentity.ManagedByReference(value),

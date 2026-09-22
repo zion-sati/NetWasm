@@ -231,7 +231,6 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
             }
             return false;
         }
-
     }
 
     private static CliTypeIdentity? TryGetArgument(

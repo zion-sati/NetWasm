@@ -100,12 +100,12 @@ internal sealed class WholeProgramAnalyzerFactory(
             typeFinder,
             calls,
             methodImplementations);
-        var browserHost = OperatingSystem.IsBrowser();
-        var workerCount = browserHost ? 1 : Environment.ProcessorCount;
+        var concurrency = SelectConcurrency(
+            OperatingSystem.IsBrowser(), Environment.ProcessorCount);
         var methodAnalyzerWorkers =
             System.Collections.Immutable.ImmutableArray
-                .CreateBuilder<IReachableMethodAnalyzer>(workerCount);
-        for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
+                .CreateBuilder<IReachableMethodAnalyzer>(concurrency.WorkerCount);
+        for (var workerIndex = 0; workerIndex < concurrency.WorkerCount; workerIndex++)
         {
             methodAnalyzerWorkers.Add(methodAnalyzers.Create(
             methodBodies,
@@ -117,13 +117,9 @@ internal sealed class WholeProgramAnalyzerFactory(
             instructionAnalyzer));
         }
         var methodAnalyzerBatch = methodAnalyzerWorkers.MoveToImmutable();
-        IReachableMethodBatchAnalyzer methodBatchAnalyzer = browserHost
-            ? new SynchronousReachableMethodBatchAnalyzer(
-                methodAnalyzerBatch[0],
-                reachableMethodBatchObserver)
-            : new ReachableMethodBatchAnalyzer(
-                methodAnalyzerBatch,
-                reachableMethodBatchObserver);
+        var methodBatchAnalyzer = CreateMethodBatchAnalyzer(
+            concurrency.Synchronous, methodAnalyzerBatch,
+            reachableMethodBatchObserver);
         var asyncBindingResolver = new DelegateJavaScriptAsyncBindingResolver(
             javaScriptAsyncBindings);
         var importClassifier = importClassifiers.Create(
@@ -176,6 +172,18 @@ internal sealed class WholeProgramAnalyzerFactory(
         return new WholeProgramAnalyzer(closure);
     }
 
+    internal static AnalysisConcurrency SelectConcurrency(
+        bool browserHost, int processorCount) => browserHost
+        ? new(1, true)
+        : new(processorCount, false);
+
+    internal static IReachableMethodBatchAnalyzer CreateMethodBatchAnalyzer(
+        bool synchronous,
+        ImmutableArray<IReachableMethodAnalyzer> workers,
+        IReachableMethodBatchObserver observer) => synchronous
+        ? new SynchronousReachableMethodBatchAnalyzer(workers[0], observer)
+        : new ReachableMethodBatchAnalyzer(workers, observer);
+
     private static Dictionary<AssemblyIdentity, IReadOnlyList<AssemblyIdentity>>
         BuildModuleDependencies(MetadataCompilationSnapshot metadata)
     {
@@ -189,6 +197,10 @@ internal sealed class WholeProgramAnalyzerFactory(
             ]);
     }
 }
+
+internal readonly record struct AnalysisConcurrency(
+    int WorkerCount,
+    bool Synchronous);
 
 internal sealed class DelegateJavaScriptAsyncBindingResolver(
     Func<MethodDefinitionModel, JavaScriptAsyncMethodBinding?> resolve) :

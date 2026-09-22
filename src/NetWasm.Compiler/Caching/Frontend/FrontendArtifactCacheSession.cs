@@ -68,9 +68,7 @@ internal sealed class FrontendArtifactCompilerIdentity : IFrontendArtifactCompil
         ComponentAnchors.Select(static type => type.Assembly)
             .Distinct()
             .Select(static assembly => (
-                Name: assembly.GetName().Name ??
-                    throw new InvalidOperationException(
-                        "A compiler component assembly has no name."),
+                Name: assembly.GetName().Name!,
                 Mvid: assembly.ManifestModule.ModuleVersionId))
             .OrderBy(static component => component.Name, StringComparer.Ordinal)
             .Select(static component => component.Name + "|" +

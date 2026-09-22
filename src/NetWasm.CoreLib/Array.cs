@@ -89,28 +89,12 @@ namespace System
             int sourceIndex,
             T[] destinationArray,
             int destinationIndex,
-            int length)
-        {
-            ValidateRange(sourceArray, sourceIndex, length);
-            ValidateRange(destinationArray, destinationIndex, length);
-            if (ReferenceEquals(sourceArray, destinationArray) &&
-                destinationIndex > sourceIndex &&
-                destinationIndex < sourceIndex + length)
-            {
-                for (var offset = length - 1; offset >= 0; offset--)
-                {
-                    destinationArray[destinationIndex + offset] =
-                        sourceArray[sourceIndex + offset];
-                }
-                return;
-            }
-
-            for (var offset = 0; offset < length; offset++)
-            {
-                destinationArray[destinationIndex + offset] =
-                    sourceArray[sourceIndex + offset];
-            }
-        }
+            int length) => Copy(
+                (Array)sourceArray,
+                sourceIndex,
+                destinationArray,
+                destinationIndex,
+                length);
 
         public static void Copy(Array sourceArray, Array destinationArray, int length)
         {
@@ -131,16 +115,29 @@ namespace System
         {
             ArgumentNullException.ThrowIfNull(sourceArray);
             ArgumentNullException.ThrowIfNull(destinationArray);
+            if (sourceArray.Rank != destinationArray.Rank)
+            {
+                throw new RankException();
+            }
             ValidateRange(sourceArray.Length, sourceIndex, length);
             ValidateRange(destinationArray.Length, destinationIndex, length);
-            if (!InternalCopy(
-                    sourceArray,
-                    sourceIndex,
-                    destinationArray,
-                    destinationIndex,
-                    length))
+            var status = InternalCopy(
+                sourceArray,
+                sourceIndex,
+                destinationArray,
+                destinationIndex,
+                length);
+            if (status == ArrayCopyStatus.TypeMismatch)
             {
                 throw new ArrayTypeMismatchException();
+            }
+            if (status == ArrayCopyStatus.ElementCastFailure)
+            {
+                throw new InvalidCastException();
+            }
+            if (status != ArrayCopyStatus.Success)
+            {
+                throw new InvalidOperationException();
             }
         }
 
@@ -805,12 +802,19 @@ namespace System
         }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern bool InternalCopy(
+        private static extern ArrayCopyStatus InternalCopy(
             Array sourceArray,
             int sourceIndex,
             Array destinationArray,
             int destinationIndex,
             int length);
+
+        private enum ArrayCopyStatus
+        {
+            Success,
+            TypeMismatch,
+            ElementCastFailure,
+        }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void InternalClear(Array array, int index, int length);

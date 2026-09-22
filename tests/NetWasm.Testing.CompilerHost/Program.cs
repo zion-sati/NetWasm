@@ -40,10 +40,10 @@ try
         registrations.Replace(ServiceDescriptor.Singleton(
             new CompilerParallelism(workerOverride)));
     using var services = registrations.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true,
-        });
+    {
+        ValidateOnBuild = true,
+        ValidateScopes = true,
+    });
     var application = new CompilerHostApplication(
         services.GetRequiredService<INetWasmCompiler>(),
         services.GetRequiredService<IMetadataCompilationLoader>());

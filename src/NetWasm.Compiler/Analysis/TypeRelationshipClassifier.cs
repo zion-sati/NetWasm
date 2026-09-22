@@ -79,17 +79,59 @@ internal sealed class TypeRelationshipClassifier(
 
     private bool AreArraysAssignable(CliTypeIdentity candidate, CliTypeIdentity target)
     {
-        if (candidate.Shape != target.Shape
-            || candidate.ArrayRank != target.ArrayRank
+        if (!AreArrayShapesCompatible(candidate, target)
+            || GetArrayRank(candidate) != GetArrayRank(target)
             || candidate.ElementType is null
             || target.ElementType is null)
         {
             return false;
         }
 
-        return IsManagedReference(candidate.ElementType) && IsManagedReference(target.ElementType)
-            ? Classify(candidate.ElementType, target.ElementType).IsAssignmentCompatible
-            : SameType(candidate.ElementType, target.ElementType);
+        return AreArrayElementsCompatible(candidate.ElementType, target.ElementType);
+    }
+
+    private static int GetArrayRank(CliTypeIdentity type) =>
+        type.Shape == CliTypeShape.SzArray ? 1 : type.ArrayRank;
+
+    private static bool AreArrayShapesCompatible(
+        CliTypeIdentity candidate,
+        CliTypeIdentity target) =>
+        candidate.Shape == target.Shape ||
+        candidate.Shape == CliTypeShape.SzArray &&
+        target.Shape == CliTypeShape.Array &&
+        target.ArrayRank == 1;
+
+    private bool AreArrayElementsCompatible(
+        CliTypeIdentity candidate,
+        CliTypeIdentity target)
+    {
+        if (IsManagedReference(candidate) && IsManagedReference(target))
+        {
+            return Classify(candidate, target).IsAssignmentCompatible;
+        }
+
+        if (SameType(candidate, target))
+        {
+            return true;
+        }
+
+        var candidateReducedType = GetReducedArrayElementType(candidate);
+        return candidateReducedType is not null &&
+               candidateReducedType == GetReducedArrayElementType(target);
+    }
+
+    private static string? GetReducedArrayElementType(CliTypeIdentity type)
+    {
+        var storage = type.StackStorageType ?? type;
+        return storage.CanonicalName switch
+        {
+            "primitive:i1" or "primitive:u1" => "i1/u1",
+            "primitive:i2" or "primitive:u2" => "i2/u2",
+            "primitive:i4" or "primitive:u4" => "i4/u4",
+            "primitive:i8" or "primitive:u8" => "i8/u8",
+            "primitive:nativeint" or "primitive:nativeuint" => "nativeint/nativeuint",
+            _ => null,
+        };
     }
 
     private static bool IsManagedReference(CliTypeIdentity type)
@@ -110,17 +152,23 @@ internal sealed class TypeRelationshipClassifier(
                 && left.GenericParameterIndex == right.GenericParameterIndex;
         }
 
-        if (left.Equals(right))
-        {
-            return true;
-        }
-
         if (left.Shape is CliTypeShape.SzArray or CliTypeShape.Array ||
             right.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
         {
             return left.Shape == right.Shape &&
                    left.ArrayRank == right.ArrayRank &&
                    SameType(left.ElementType!, right.ElementType!);
+        }
+
+        if (left.Equals(right))
+        {
+            return true;
+        }
+
+        if (left.Shape == CliTypeShape.Primitive ||
+            right.Shape == CliTypeShape.Primitive)
+        {
+            return false;
         }
 
         if (left.Shape == CliTypeShape.GenericInstantiation ||
@@ -257,7 +305,7 @@ internal sealed class TypeRelationshipClassifier(
         if (candidate.Shape != CliTypeShape.SzArray ||
             target.Shape != CliTypeShape.GenericInstantiation ||
             target.TypeArguments.Length != 1 ||
-            !SameType(candidate.ElementType!, target.TypeArguments[0]))
+            !AreArrayElementsCompatible(candidate.ElementType!, target.TypeArguments[0]))
         {
             return false;
         }

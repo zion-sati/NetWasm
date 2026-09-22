@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
@@ -71,6 +72,36 @@ public sealed class TypeTestInstructionEmitterTests
     }
 
     [Fact]
+    public void NullableFallbackTestsTheBoxedUnderlyingTypeId()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var emitter = new TypeTestInstructionEmitter(
+            layouts,
+            new AddressInstructionEmitter(layouts),
+            layouts,
+            CreateTypeOperands(new FakeProgram()),
+            WasmRuntimeImports.CreateCatalog(),
+            new ImplicitExceptionEmitter(layouts, layouts, 7),
+            new NullableTypeResolver());
+        var underlying = ValueType();
+        var nullable = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Assembly, "System", "Nullable`1", isValueType: true),
+            [underlying]);
+        var request = WithCaller(
+            CreateRequest(
+                CilOperation.IsInstance,
+                new CilOperand.TypeIdentity(nullable)),
+            CreateCaller());
+
+        AsTypeTest(emitter).Test(
+            request,
+            GetCodeWriter(request),
+            returnNullOnFailure: true);
+
+        Assert.Equal(underlying, layouts.ObjectIdentityRequest);
+    }
+
+    [Fact]
     public void PlannedSiteWithNoMatchingTypesThrowsOnFailure()
     {
         var caller = CreateCaller();
@@ -128,7 +159,8 @@ public sealed class TypeTestInstructionEmitterTests
         var layouts = new RecordingLayoutProvider();
         return new TypeTestInstructionEmitter(layouts, new AddressInstructionEmitter(layouts), layouts, CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts, 7));
+            new ImplicitExceptionEmitter(layouts, layouts, 7),
+            new NullableTypeResolver());
     }
 
     private static ITypeTestEmitter AsTypeTest(TypeTestInstructionEmitter emitter) =>

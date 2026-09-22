@@ -13,32 +13,35 @@ internal static class BrowserComponentExportPruner
         var writer = new VirtualModuleWriter();
         new WasmCoreModuleExportEditor(new VirtualModuleExistence(), reader, writer)
             .RetainComponentExports(InputPath, OutputPath, prefix);
-        return writer.Module ?? throw new InvalidOperationException("The export editor returned no module.");
+        return writer.Module;
     }
 
-    private sealed class VirtualModuleExistence : IFileExistence
+    internal sealed class VirtualModuleExistence : IFileExistence
     {
         public bool Exists(string path) => string.Equals(path, InputPath, StringComparison.Ordinal);
     }
 
-    private sealed class VirtualModuleReader(byte[] module) : IByteFileReader
+    internal sealed class VirtualModuleReader(byte[] module) : IByteFileReader
     {
         public byte[] Read(string path) => string.Equals(path, InputPath, StringComparison.Ordinal)
             ? module
             : throw new InvalidOperationException("The export editor requested an unexpected virtual input.");
     }
 
-    private sealed class VirtualModuleWriter : IByteFileWriter
+    internal sealed class VirtualModuleWriter : IByteFileWriter
     {
-        public byte[]? Module { get; private set; }
+        private byte[]? _module;
+
+        public byte[] Module => _module ?? throw new InvalidOperationException(
+            "The export editor returned no module.");
 
         public void Write(string path, byte[] content)
         {
-            if (!string.Equals(path, OutputPath, StringComparison.Ordinal) || Module is not null)
+            if (!string.Equals(path, OutputPath, StringComparison.Ordinal) || _module is not null)
             {
                 throw new InvalidOperationException("The export editor requested an unexpected virtual output.");
             }
-            Module = content.AsSpan().ToArray();
+            _module = content.AsSpan().ToArray();
         }
     }
 }

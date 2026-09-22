@@ -73,16 +73,24 @@ internal static class ManagedBodyWorkerCompositionRoot
                 ValidateOnBuild = true,
                 ValidateScopes = true,
             });
+        return Resolve(provider, provider, logger);
+    }
+
+    internal static ManagedBodyWorker Resolve(
+        ServiceProvider provider,
+        IDisposable owner,
+        MethodBufferedLogger logger)
+    {
         try
         {
-            return new(provider,
+            return new(owner,
                 provider.GetRequiredService<IManagedDefinitionFunctionAppender>(),
                 provider.GetRequiredService<IConstructedMethodFunctionAppender>(),
                 logger);
         }
         catch
         {
-            provider.Dispose();
+            owner.Dispose();
             throw;
         }
     }

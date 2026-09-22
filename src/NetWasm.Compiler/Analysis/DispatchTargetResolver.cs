@@ -68,7 +68,7 @@ internal sealed class DispatchTargetResolver(
             return ResolveInstance(
                 helper,
                 [],
-                [receiver.ElementType!]);
+                [declaration.DeclaringType.TypeArguments[0]]);
         }
         var interfaceDispatch = typeDefinitions.ResolveTypeIdentity(
             declaration.DeclaringType).IsInterface;

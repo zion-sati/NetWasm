@@ -5,12 +5,14 @@ using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 
 namespace NetWasm.Compiler.Analysis;
 
 internal sealed class TypeTestPlanner(
     ITypeOperandResolver typeOperands,
-    ITypeRelationshipClassifier relationships) : ITypeTestPlanner
+    ITypeRelationshipClassifier relationships,
+    INullableTypeResolver nullableTypes) : ITypeTestPlanner
 {
     public ImmutableDictionary<string, TypeTestSiteModel> Build(
         IEnumerable<ManagedMethodBody> methods,
@@ -24,7 +26,12 @@ internal sealed class TypeTestPlanner(
                 .Select(instruction =>
                 {
                     var target = typeOperands.Resolve(instruction, method.Method);
-                    return (Method: method.Method, Instruction: instruction, Target: target);
+                    var membershipTarget = nullableTypes.Resolve(target) ?? target;
+                    return (
+                        Method: method.Method,
+                        Instruction: instruction,
+                        Target: target,
+                        MembershipTarget: membershipTarget);
                 }))
             .Where(candidate =>
                 candidate.Instruction.Operation != CilOperation.UnboxAny ||
@@ -35,7 +42,7 @@ internal sealed class TypeTestPlanner(
                 candidate.Target,
                 allocatedTypes
                     .Where(allocatedType => relationships
-                        .Classify(allocatedType, candidate.Target)
+                        .Classify(allocatedType, candidate.MembershipTarget)
                         .IsAssignmentCompatible)
                     .OrderBy(allocatedType => allocatedType.CanonicalName, StringComparer.Ordinal)
                     .ToImmutableArray()))

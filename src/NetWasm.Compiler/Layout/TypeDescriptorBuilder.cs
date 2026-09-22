@@ -7,6 +7,7 @@ namespace NetWasm.Compiler.Layout;
 
 internal sealed class TypeDescriptorBuilder(
     ITypeIdentityResolver identities,
+    ITypeDefinitionResolver typeDefinitions,
     IMetadataIdentityBaseTypeResolver baseTypes,
     IObjectLayoutResolver objectLayouts,
     ReachableProgram program,
@@ -18,6 +19,7 @@ internal sealed class TypeDescriptorBuilder(
 {
     internal TypeDescriptorBuilder(
         ITypeIdentityResolver identities,
+        ITypeDefinitionResolver typeDefinitions,
         IMetadataIdentityBaseTypeResolver baseTypes,
         IObjectLayoutResolver objectLayouts,
         ReachableProgram program,
@@ -27,6 +29,7 @@ internal sealed class TypeDescriptorBuilder(
         IStaticReferenceBitmapBuilder bitmaps) :
         this(
             identities,
+            typeDefinitions,
             baseTypes,
             objectLayouts,
             program,
@@ -40,6 +43,8 @@ internal sealed class TypeDescriptorBuilder(
 
     private readonly ITypeIdentityResolver _identities = identities ??
         throw new ArgumentNullException(nameof(identities));
+    private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ??
+        throw new ArgumentNullException(nameof(typeDefinitions));
     private readonly IMetadataIdentityBaseTypeResolver _baseTypes = baseTypes ??
         throw new ArgumentNullException(nameof(baseTypes));
     private readonly IObjectLayoutResolver _objectLayouts = objectLayouts ??
@@ -89,6 +94,7 @@ internal sealed class TypeDescriptorBuilder(
             {
                 AssignableTypeIdsAddress = assignableTypes.Address,
                 AssignableTypeIdCount = assignableTypes.Count,
+                IsInterface = _typeDefinitions.ResolveTypeIdentity(typeIdentity).IsInterface,
             });
         }
     }
