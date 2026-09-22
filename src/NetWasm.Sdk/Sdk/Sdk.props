@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- This immutable identity belongs to the resolved SDK package itself.
          Dependency versions remain independently selectable below the SDK. -->
-    <NetWasmSdkPackageVersion>0.4.0</NetWasmSdkPackageVersion>
+    <NetWasmSdkPackageVersion>0.4.1</NetWasmSdkPackageVersion>
     <NetWasmSdkPackageRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</NetWasmSdkPackageRoot>
   </PropertyGroup>
 </Project>
