@@ -14,4 +14,14 @@
     <Compile Include="../TestInfrastructure/WasmModuleInspection.cs"
              Link="WasmModuleInspection.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Correctness/netwasm-oracle.mjs"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Correctness/exception-metadata.mjs"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Correctness/reactor-oracle-imports.mjs"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Correctness/refreshable-data-view.mjs"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

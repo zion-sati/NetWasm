@@ -96,7 +96,7 @@ internal sealed class ManagedBodyBatchEmitter(
             failure => failure is not null);
         var logLimit = failedIndex < 0 ? count : failedIndex + 1;
         for (var index = 0; index < logLimit; index++)
-            owners[index]?.Logger.Replay(index);
+            owners[index]!.Logger.Replay(index);
         if (failedIndex >= 0)
             failures[failedIndex]!.Throw();
         forks.Publisher.Publish();

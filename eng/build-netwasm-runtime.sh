@@ -130,7 +130,8 @@ command -v emar >/dev/null || {
     echo "missing Emscripten archiver; set NETWASM_EMSDK_ROOT to an emsdk installation" >&2
     exit 1
 }
-actual_emscripten="$(emcc --version | sed -n '1s/.*) \([0-9][0-9.]*\) .*/\1/p')"
+actual_emscripten="$(emcc --version | sed -nE \
+    '1s/.*\) ([0-9]+(\.[0-9]+)+)([-+][^ ]+)? .*/\1/p')"
 [[ "$actual_emscripten" = "$emscripten_version" ]] || {
     echo "Emscripten $emscripten_version is required; found $actual_emscripten" >&2
     exit 1

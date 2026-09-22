@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
 
@@ -14,7 +15,8 @@ internal sealed class TypeTestInstructionEmitter(
     ITypeLayoutProvider typeLayouts,
     ICilTypeOperandResolver types,
     IRuntimeImportResolver runtimeImports,
-    IImplicitExceptionEmitter exceptions) :
+    IImplicitExceptionEmitter exceptions,
+    INullableTypeResolver nullableTypes) :
     InstructionCommandProvider,
     ITypeTestEmitter
 {
@@ -95,9 +97,9 @@ internal sealed class TypeTestInstructionEmitter(
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
-        var targetTypeId = instruction.Operand is CilOperand.Entity entity
-            ? typeLayouts.GetObjectLayout(entity.Key).TypeId
-            : typeLayouts.GetObjectLayout(types.Resolve(instruction, method)).TypeId;
+        var target = types.Resolve(instruction, method);
+        var membershipTarget = nullableTypes.Resolve(target) ?? target;
+        var targetTypeId = typeLayouts.GetObjectLayout(membershipTarget).TypeId;
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(targetTypeId)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable)))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));

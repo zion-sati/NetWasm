@@ -21,7 +21,12 @@ namespace System.Collections.Generic
             System.Array.IndexOf(array, value);
 
         internal static void CopyTo<T>(T[] array, T[] destination, int index) =>
-            System.Array.Copy(array, 0, destination, index, array.Length);
+            System.Array.Copy(
+                (System.Array)array,
+                0,
+                (System.Array)destination,
+                index,
+                array.Length);
 
         internal static void Add<T>(T[] array, T value) => ThrowFixedSize();
 

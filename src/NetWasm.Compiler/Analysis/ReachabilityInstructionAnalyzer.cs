@@ -150,10 +150,14 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 CilOperation.UnboxAny)
             {
                 var castType = typeOperands.Resolve(instruction, request.Method);
-                if (instruction.Operation != CilOperation.UnboxAny || !castType.IsValueType)
+                var nullableUnderlyingType = nullableTypes.Resolve(castType);
+                if (instruction.Operation != CilOperation.UnboxAny ||
+                    !castType.IsValueType ||
+                    nullableUnderlyingType is not null)
                 {
-                    runtimeTypes.Add(castType);
-                    constructedTypes.Add(castType);
+                    var membershipType = nullableUnderlyingType ?? castType;
+                    runtimeTypes.Add(membershipType);
+                    constructedTypes.Add(membershipType);
                     if (castType.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
                     {
                         allocatedTypes.Add(castType);
@@ -182,8 +186,14 @@ internal sealed class ReachabilityInstructionAnalyzer(
             }
             else if (instruction.Operand is CilOperand.TypeIdentity type)
             {
-                runtimeTypes.Add(type.Value);
-                constructedTypes.Add(type.Value);
+                var runtimeType = instruction.Operation is
+                        CilOperation.CastClass or
+                        CilOperation.IsInstance or
+                        CilOperation.UnboxAny
+                    ? nullableTypes.Resolve(type.Value) ?? type.Value
+                    : type.Value;
+                runtimeTypes.Add(runtimeType);
+                constructedTypes.Add(runtimeType);
                 if (instruction.Operation is (CilOperation.CastClass or CilOperation.IsInstance) &&
                     type.Value.Shape is (CliTypeShape.SzArray or CliTypeShape.Array))
                 {

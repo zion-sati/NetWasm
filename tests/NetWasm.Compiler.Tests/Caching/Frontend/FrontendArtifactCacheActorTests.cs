@@ -125,6 +125,91 @@ public sealed class FrontendArtifactCacheActorTests
     }
 
     [Fact]
+    public void TransportHandlesInactiveEmptyAndRepeatedDisposalPaths()
+    {
+        var nullTransport = CreateTransport(new NullIdentityBuilder(), new(), new(), new());
+        Assert.Null(nullTransport.Prepare(Options(enabled: true)));
+
+        var context = Context(null) with { Namespace = new string('a', 64) };
+        var store = new FrontendArtifactTransportStore();
+        var transport = CreateTransport(new FixedIdentityBuilder(context), new(), new(), store);
+        var descriptor = Assert.IsType<FrontendArtifactCacheDescriptor>(
+            transport.Prepare(Options(enabled: true)));
+        var scope = transport.BeginCompilation(descriptor, []);
+
+        Assert.Null(transport.CompleteCompilation(descriptor));
+        scope.Dispose();
+        scope.Dispose();
+    }
+
+    [Fact]
+    public void TransportRejectsOversizeImportBatchesBeforePublishingThem()
+    {
+        var context = Context(null) with { Namespace = new string('a', 64) };
+        var memory = new FrontendArtifactMemoryStore();
+        var transport = CreateTransport(new FixedIdentityBuilder(context), memory, new(), new());
+        var descriptor = Assert.IsType<FrontendArtifactCacheDescriptor>(
+            transport.Prepare(Options(enabled: true)));
+        var tooMany = Enumerable.Repeat<FrontendArtifactCacheEntry>(null!,
+            FrontendArtifactCachePolicy.MaximumArtifacts + 1).ToArray();
+        using (transport.BeginCompilation(descriptor, tooMany))
+            Assert.Empty(memory.Payloads);
+
+        descriptor = Assert.IsType<FrontendArtifactCacheDescriptor>(
+            transport.Prepare(Options(enabled: true)));
+        var payload = new byte[FrontendArtifactPayloadReader.MaximumPayloadBytes];
+        var tooLarge = Enumerable.Range(0, 19).Select(index =>
+        {
+            var key = index.ToString("x64", System.Globalization.CultureInfo.InvariantCulture);
+            return new FrontendArtifactCacheEntry(key, payload,
+                FrontendArtifactCacheTransportProtocol.Checksum(
+                    descriptor.Schema, descriptor.Namespace, key, payload));
+        }).ToArray();
+        using (transport.BeginCompilation(descriptor, tooLarge))
+            Assert.Empty(memory.Payloads);
+    }
+
+    [Fact]
+    public void TransportHashValidationRejectsEveryMalformedShape()
+    {
+        Assert.False(FrontendArtifactCacheTransportProtocol.IsHash(null));
+        Assert.False(FrontendArtifactCacheTransportProtocol.IsHash("abc"));
+        Assert.False(FrontendArtifactCacheTransportProtocol.IsHash(new string('A', 64)));
+        Assert.False(FrontendArtifactCacheTransportProtocol.IsHash(
+            new string('a', 63) + "g"));
+        Assert.True(FrontendArtifactCacheTransportProtocol.IsHash(new string('0', 64)));
+        Assert.True(FrontendArtifactCacheTransportProtocol.IsHash(new string('f', 64)));
+    }
+
+    [Fact]
+    public void TransportSplitsPublicationAtTheByteLimit()
+    {
+        var context = Context(null) with { Namespace = new string('a', 64) };
+        var store = new FrontendArtifactTransportStore();
+        var transport = CreateTransport(new FixedIdentityBuilder(context), new(), new(), store);
+        var descriptor = Assert.IsType<FrontendArtifactCacheDescriptor>(
+            transport.Prepare(Options(enabled: true)));
+        using var scope = transport.BeginCompilation(descriptor, []);
+        new FrontendArtifactTransportPublisher(store).Publish(new(context,
+            new ConcurrentDictionary<string, ImmutableArray<byte>>
+            {
+                [new string('b', 64)] = ImmutableArray.Create(new byte[3 * 1024 * 1024]),
+                [new string('c', 64)] = ImmutableArray.Create(new byte[3 * 1024 * 1024]),
+            }));
+        var publication = Assert.IsType<FrontendArtifactCachePublication>(
+            transport.CompleteCompilation(descriptor));
+
+        var first = transport.ReadBatch(publication);
+        Assert.Single(first.Entries);
+        Assert.False(first.IsFinal);
+        transport.AcknowledgeBatch(publication, first);
+        var second = transport.ReadBatch(publication);
+        Assert.Single(second.Entries);
+        Assert.True(second.IsFinal);
+        transport.AcknowledgeBatch(publication, second);
+    }
+
+    [Fact]
     public void PublicationFanoutPublishesToActiveTransport()
     {
         var context = Context(null) with { Namespace = new string('a', 64) };
@@ -623,6 +708,9 @@ public sealed class FrontendArtifactCacheActorTests
         Assert.Throws<ArgumentNullException>(() => new FrontendArtifactCacheIdentityBuilder(
             new EntryAssemblyBindingFingerprinter(), new ManagedAssemblyImageReader(), null!,
             new FrontendArtifactCompilerIdentity()));
+        Assert.Throws<ArgumentNullException>(() => new FrontendArtifactCacheIdentityBuilder(
+            new EntryAssemblyBindingFingerprinter(), new ManagedAssemblyImageReader(),
+            new CompilationInputHasher(), null!));
         File.Delete(wit);
     }
 
@@ -835,6 +923,22 @@ public sealed class FrontendArtifactCacheActorTests
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), out _));
             Assert.False(reader.TryRead(new(context,
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), out _));
+
+            var boundedState = new FrontendArtifactCacheState();
+            var boundedResolver = new FrontendArtifactCacheRequestResolver(boundedState);
+            var transport = new FrontendArtifactTransportStore();
+            var active = new ActiveFrontendArtifactCache(context);
+            Assert.True(active.Budget.TryReserve(0,
+                FrontendArtifactCachePolicy.MaximumEncodedWorkingSetBytes, 0));
+            transport.Active.Value = active;
+            var boundedFactory = new FrontendArtifactCacheRequestFactory(boundedState,
+                transport, new FrontendArtifactMemoryStore(),
+                new FixedIdentityBuilder(context), new RecordingPublisher(),
+                new RecordingObjectPublisher());
+            using var boundedRequest = boundedFactory.Begin(Options(enabled: true));
+            Assert.False(new FrontendArtifactPayloadReader(
+                new FrontendArtifactMemoryStore(), boundedResolver).TryRead(new(context,
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), out _));
 
             File.WriteAllBytes(Path.Combine(directory, "artifacts.bin"), [0]);
             var corruptState = new FrontendArtifactCacheState();
@@ -1091,7 +1195,58 @@ public sealed class FrontendArtifactCacheActorTests
                 Analysis = snapshot.Analysis with { Method = wrongMethod },
             });
         Assert.False(restorer.TryRestore(artifact.Analysis.Method, out _));
-        Assert.Equal(4, state.Active!.Misses);
+        var wrongDefinitionAssembly = snapshot.Analysis.Method with
+        {
+            Definition = snapshot.Analysis.Method.Definition with
+            {
+                Key = new(new AssemblyIdentity("Other"),
+                    snapshot.Analysis.Method.Definition.Key.MetadataToken),
+            },
+        };
+        memory.Payloads[context.Namespace + "/" + key] =
+            new FrontendArtifactEncoder().Encode(snapshot with
+            {
+                Analysis = snapshot.Analysis with { Method = wrongDefinitionAssembly },
+            });
+        Assert.False(restorer.TryRestore(artifact.Analysis.Method, out _));
+        memory.Payloads[context.Namespace + "/" + key] =
+            new FrontendArtifactEncoder().Encode(snapshot with
+            {
+                StructuredMethod = snapshot.StructuredMethod with
+                {
+                    Header = snapshot.StructuredMethod.Header with
+                    {
+                        Method = snapshot.StructuredMethod.Header.Method with
+                        {
+                            Key = new(new AssemblyIdentity("Other"),
+                                snapshot.StructuredMethod.Header.Method.Key.MetadataToken),
+                        },
+                    },
+                },
+            });
+        Assert.False(restorer.TryRestore(artifact.Analysis.Method, out _));
+        var methodInstance = Assert.IsType<MethodInstanceModel>(
+            snapshot.StructuredMethod.Header.MethodInstance);
+        memory.Payloads[context.Namespace + "/" + key] =
+            new FrontendArtifactEncoder().Encode(snapshot with
+            {
+                StructuredMethod = snapshot.StructuredMethod with
+                {
+                    Header = snapshot.StructuredMethod.Header with
+                    {
+                        MethodInstance = methodInstance with
+                        {
+                            Definition = methodInstance.Definition with
+                            {
+                                Key = new(methodInstance.Definition.Key.Assembly,
+                                    methodInstance.Definition.Key.MetadataToken + 1),
+                            },
+                        },
+                    },
+                },
+            });
+        Assert.False(restorer.TryRestore(artifact.Analysis.Method, out _));
+        Assert.Equal(7, state.Active!.Misses);
     }
 
     [Fact]

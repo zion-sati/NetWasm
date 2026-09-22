@@ -68,7 +68,8 @@ public sealed class UnboxAnyInstructionEmitterTests
             new ValueFrameAddressEmitter(layouts));
         var typeTests = new TypeTestInstructionEmitter(layouts, new AddressInstructionEmitter(layouts), layouts, types,
             WasmRuntimeImports.CreateCatalog(),
-            exceptions);
+            exceptions,
+            new NullableTypeResolver());
         return new UnboxAnyInstructionEmitter(
             types,
             unboxes,

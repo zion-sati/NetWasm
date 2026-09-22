@@ -96,25 +96,20 @@ internal sealed class MethodBufferedLogger(
 
         internal void Replay(BufferedLogEvent entry)
         {
-            switch (entry)
+            if (entry is BufferedLogEvent.ScopeBegin begin)
             {
-                case BufferedLogEvent.ScopeBegin begin:
-                    _scopes.Push(logger.BeginScope(begin.State) ?? EmptyScope.Instance);
-                    break;
-                case BufferedLogEvent.ScopeEnd:
-                    if (_scopes.Count == 0)
-                        throw new InvalidOperationException(
-                            "Emission log scope ended without a start.");
-                    _scopes.Pop().Dispose();
-                    break;
-                case BufferedLogEvent.Message message:
-                    logger.Log(message.Level, message.EventId, message.State,
-                        message.Exception,
-                        static (captured, _) => captured.Message);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(entry));
+                _scopes.Push(logger.BeginScope(begin.State) ?? EmptyScope.Instance);
+                return;
             }
+            if (entry is BufferedLogEvent.ScopeEnd)
+            {
+                _scopes.Pop().Dispose();
+                return;
+            }
+            var message = (BufferedLogEvent.Message)entry;
+            logger.Log(message.Level, message.EventId, message.State,
+                message.Exception,
+                static (captured, _) => captured.Message);
         }
 
         public void Dispose()
@@ -152,12 +147,14 @@ internal sealed class MethodBufferedLogger(
                         pair.Key, SnapshotValue(pair.Value))).ToImmutableArray()
                     : []);
 
-        public static object CaptureScope<TState>(TState state) =>
-            state is IEnumerable<KeyValuePair<string, object?>>
-                ? Capture(state, state?.ToString() ?? string.Empty)
-                : state is string text
-                    ? text
-                    : state?.ToString() ?? string.Empty;
+        public static object CaptureScope<TState>(TState state)
+            where TState : notnull
+        {
+            var message = state.ToString() ?? string.Empty;
+            if (state is IEnumerable<KeyValuePair<string, object?>>)
+                return Capture(state, message);
+            return state is string text ? text : message;
+        }
 
         private static object? SnapshotValue(object? value) =>
             value is null or string || value.GetType().IsValueType

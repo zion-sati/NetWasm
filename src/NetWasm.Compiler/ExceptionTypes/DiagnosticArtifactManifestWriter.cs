@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -42,4 +43,5 @@ public sealed class DiagnosticArtifactManifestWriter :
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiagnosticArtifactBindingManifest))]
+[ExcludeFromCodeCoverage]
 internal sealed partial class DiagnosticArtifactJsonContext : JsonSerializerContext;

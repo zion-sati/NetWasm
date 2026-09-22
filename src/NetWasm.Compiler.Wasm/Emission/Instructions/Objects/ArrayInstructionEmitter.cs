@@ -158,19 +158,7 @@ internal sealed class ArrayInstructionEmitter(
             arraySlot + 2,
             CliValueKind.ManagedReference);
         EmitBoundsCheck(code, arrayLocal, indexLocal);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
-        addresses.Emit(code, AddressOperation.EqualZero);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(objects.ArrayElementTypeIdOffset))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable)))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        exceptions.Emit(code, ManagedExceptionKind.ArrayTypeMismatch);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        EmitReferenceStoreTypeCheck(code, arrayLocal, valueLocal);
         ManagedMemoryEmitter.EmitArrayElementAddress(
             code,
             layouts.Target,
@@ -184,6 +172,26 @@ internal sealed class ArrayInstructionEmitter(
             0,
             layouts.Target.ObjectReferenceSize);
         request.Stack.RemoveRange(arraySlot, 3);
+    }
+
+    private void EmitReferenceStoreTypeCheck(
+        IWasmInstructionWriter code,
+        int arrayLocal,
+        int valueLocal)
+    {
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
+        addresses.Emit(code, AddressOperation.EqualZero);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(objects.ArrayElementTypeIdOffset))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable)))));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        exceptions.Emit(code, ManagedExceptionKind.ArrayTypeMismatch);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private void EmitLoadElement(InstructionEmissionRequest request, IWasmInstructionWriter code)
@@ -258,6 +266,29 @@ internal sealed class ArrayInstructionEmitter(
             arraySlot + 1,
             CliValueKind.I4);
         EmitBoundsCheck(code, arrayLocal, indexLocal);
+        if (elementType.StackKind == CliValueKind.ManagedReference &&
+            !HasReadonlyPrefix(request))
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)arrayLocal)));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Load,
+                WasmInstructionOperand.Memory(
+                    2,
+                    (uint)objects.ArrayElementTypeIdOffset)));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(
+                    typeLayouts.GetObjectLayout(elementType).TypeId)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.If,
+                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            exceptions.Emit(code, ManagedExceptionKind.ArrayTypeMismatch);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        }
         ManagedMemoryEmitter.EmitArrayElementAddress(
             code,
             layouts.Target,
@@ -290,6 +321,10 @@ internal sealed class ArrayInstructionEmitter(
             arraySlot + 2,
             elementType.StackKind);
         EmitBoundsCheck(code, arrayLocal, indexLocal);
+        if (elementType.StackKind == CliValueKind.ManagedReference)
+        {
+            EmitReferenceStoreTypeCheck(code, arrayLocal, valueLocal);
+        }
         ManagedMemoryEmitter.EmitArrayElementAddress(
             code,
             layouts.Target,
@@ -312,6 +347,20 @@ internal sealed class ArrayInstructionEmitter(
                 elementSize);
         }
         request.Stack.RemoveRange(arraySlot, 3);
+    }
+
+    private static bool HasReadonlyPrefix(InstructionEmissionRequest request)
+    {
+        var instructions = request.Header.Instructions;
+        for (var index = 1; index < instructions.Length; index++)
+        {
+            if (instructions[index].Offset == request.Instruction.Offset)
+            {
+                return instructions[index - 1].Operation == CilOperation.Readonly;
+            }
+        }
+
+        return false;
     }
 
     private int GetElementSize(CliTypeIdentity elementType) =>

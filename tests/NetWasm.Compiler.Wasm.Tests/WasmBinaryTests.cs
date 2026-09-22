@@ -411,6 +411,7 @@ public sealed class WasmBinaryTests
                 CliValueKind.ManagedAddress,
                 CliValueKind.I4,
                 CliValueKind.I4,
+                CliValueKind.I4,
             ]));
         Assert.Equal(CliValueKind.ManagedAddress, rootEnter.Type.Result);
         Assert.True(rootEnter.Type.Parameters.SequenceEqual([CliValueKind.I4]));

@@ -264,7 +264,8 @@ public sealed class BrowserCompilerTests
             FrontendArtifactCachePublication publication) =>
             new(publication.Token, new string('f', 32), [], true);
         public void AcknowledgeBatch(FrontendArtifactCachePublication publication,
-            FrontendArtifactCacheBatch batch) { }
+            FrontendArtifactCacheBatch batch)
+        { }
         public void Abandon(FrontendArtifactCachePublication publication) => Abandoned = true;
     }
 

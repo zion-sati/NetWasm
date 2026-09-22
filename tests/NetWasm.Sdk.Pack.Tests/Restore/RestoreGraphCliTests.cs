@@ -46,7 +46,8 @@ public sealed class RestoreGraphCliTests
                 StartInfo = new ProcessStartInfo("dotnet")
                 {
                     WorkingDirectory = repository.FullName,
-                    RedirectStandardOutput = true, RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     UseShellExecute = false
                 }
             };

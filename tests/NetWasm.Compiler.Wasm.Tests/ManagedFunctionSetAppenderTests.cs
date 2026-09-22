@@ -126,6 +126,43 @@ public sealed class ManagedFunctionSetAppenderTests
             fixture.Target, null!));
     }
 
+    [Fact]
+    public void ParallelDefinitionSetSkipsBatchCreationWhenThereAreNoMethods()
+    {
+        var fixture = new Fixture();
+        var appender = new ParallelManagedDefinitionSetAppender(
+            new ThrowingBatchFactory());
+
+        appender.Append(fixture.Functions, fixture.Environments,
+            fixture.Emissions, [],
+            ImmutableDictionary<EntityKey, StructuredMethod>.Empty,
+            ImmutableDictionary<EntityKey, MethodRootMap>.Empty,
+            fixture.Target, fixture.Resolver);
+
+        Assert.Empty(fixture.Functions);
+        Assert.Empty(fixture.Environments);
+        Assert.Empty(fixture.Emissions);
+    }
+
+    [Fact]
+    public void ParallelConstructedSetSkipsBatchCreationWhenThereAreNoMethods()
+    {
+        var fixture = new Fixture();
+        var appender = new ParallelConstructedMethodSetAppender(
+            new ThrowingBatchFactory());
+
+        appender.Append(fixture.Functions, fixture.Environments,
+            fixture.Emissions, [],
+            ImmutableDictionary<string, MethodInstanceModel>.Empty,
+            ImmutableDictionary<string, StructuredMethod>.Empty,
+            ImmutableDictionary<string, MethodRootMap>.Empty,
+            fixture.Target, fixture.Resolver);
+
+        Assert.Empty(fixture.Functions);
+        Assert.Empty(fixture.Environments);
+        Assert.Empty(fixture.Emissions);
+    }
+
     private static IManagedDefinitionSetAppender AsSet(
         ManagedDefinitionSetAppender appender) => new[] { appender }
         .Cast<IManagedDefinitionSetAppender>().Single();
@@ -186,5 +223,11 @@ public sealed class ManagedFunctionSetAppenderTests
             ManagedMethodIdentity callerIdentity, MethodInstanceModel method, StructuredMethod structured,
             MethodRootMap rootMap, InstructionModuleTarget target,
             IFunctionIndexResolver functionIndices) => Methods.Add(method);
+    }
+
+    private sealed class ThrowingBatchFactory : IManagedBodyBatchEmitterFactory
+    {
+        public IManagedBodyBatchEmitter Create() =>
+            throw new InvalidOperationException("An empty set must not create a batch.");
     }
 }

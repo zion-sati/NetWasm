@@ -49,6 +49,7 @@ public readonly record struct TypeDescriptorLayout(
 {
     public int AssignableTypeIdsAddress { get; init; }
     public int AssignableTypeIdCount { get; init; }
+    public bool IsInterface { get; init; }
 }
 public readonly record struct ConstructedTypeDescriptorLayout(
     CliTypeIdentity Type,
@@ -61,6 +62,7 @@ public readonly record struct ConstructedTypeDescriptorLayout(
 {
     public int AssignableTypeIdsAddress { get; init; }
     public int AssignableTypeIdCount { get; init; }
+    public bool IsInterface { get; init; }
 }
 public readonly record struct ValueTypeDescriptorLayout(
     CliTypeIdentity Type,

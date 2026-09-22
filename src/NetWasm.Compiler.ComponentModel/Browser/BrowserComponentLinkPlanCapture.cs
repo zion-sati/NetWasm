@@ -69,7 +69,7 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
     }
 
     public bool PlannedFileExists(string path) =>
-        _phase == Phase.Pruned && string.Equals(_exports?.OutputPath, path, StringComparison.Ordinal);
+        _phase == Phase.Pruned && string.Equals(_exports!.OutputPath, path, StringComparison.Ordinal);
 
     public void AddCopy(string inputPath, string outputPath)
     {

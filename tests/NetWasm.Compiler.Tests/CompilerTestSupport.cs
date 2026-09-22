@@ -174,7 +174,7 @@ internal static class CompilerTestSupport
             "let targetFrame=0;let targetClause=0;" +
             "let filterSearchFloor=0;let application=null;" +
             "let nextPollable=1;const watchedTokens=[];const weakHandles=[0];const gcHandles=[null];const canceledTokens=new Set();" +
-            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),valueTypeSizes=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
+            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
             "const z=()=>0;" +
             "const raw=size=>{const p=heap;heap=(heap+size+3)&~3;" +
             "const pages=Math.ceil(heap/65536);const current=memory.buffer.byteLength/65536;" +
@@ -238,21 +238,25 @@ internal static class CompilerTestSupport
             "out.setInt32(result+4,total,true);out.setInt32(result+8,data,true);" +
             "out.setInt32(result+12,element,true);out.setInt32(result+16,rank,true);" +
             "out.setInt32(result+20,shape,true);return result;};" +
-            "const isAssignable=(object,target)=>{if(!object)return 0;" +
-            "let type=new DataView(memory.buffer).getInt32(object,true);" +
+            "const isTypeAssignable=(type,target)=>{" +
             "while(type){if(type===target||typeAssignable.get(type)?.has(target))return 1;type=typeBases.get(type)||0;}return 0;};" +
+            "const isAssignable=(object,target)=>{if(!object)return 0;" +
+            "return isTypeAssignable(new DataView(memory.buffer).getInt32(object,true),target);};" +
             "const arrayCopy=(source,sourceIndex,destination,destinationIndex,length)=>{" +
             "const v=new DataView(memory.buffer),sourceElement=v.getInt32(source+12,true)," +
             "destinationElement=v.getInt32(destination+12,true)," +
             "sourceSize=valueTypeSizes.get(sourceElement),destinationSize=valueTypeSizes.get(destinationElement);" +
-            "if((sourceSize!==undefined)!==(destinationSize!==undefined))return 0;" +
+            "const sourceType=v.getInt32(source,true),destinationType=v.getInt32(destination,true);" +
+            "if(!isTypeAssignable(sourceType,destinationType)&&!isTypeAssignable(destinationType,sourceType)&&!typeInterfaces.has(sourceElement)&&!typeInterfaces.has(destinationElement))return 1;" +
+            "if((sourceSize!==undefined)!==(destinationSize!==undefined))return 1;" +
             "const sourceData=v.getInt32(source+8,true),destinationData=v.getInt32(destination+8,true);" +
-            "if(sourceSize!==undefined){if(sourceElement!==destinationElement||sourceSize!==destinationSize)return 0;" +
+            "if(sourceSize!==undefined){if(sourceSize!==destinationSize)return 1;" +
             "const bytes=length*sourceSize,copy=new Uint8Array(memory.buffer,sourceData+sourceIndex*sourceSize,bytes).slice();" +
-            "new Uint8Array(memory.buffer,destinationData+destinationIndex*destinationSize,bytes).set(copy);return 1;}" +
-            "const values=[];for(let i=0;i<length;i++){const value=v.getInt32(sourceData+(sourceIndex+i)*4,true);" +
-            "if(value&&!isAssignable(value,destinationElement))return 0;values.push(value);}" +
-            "for(let i=0;i<length;i++)v.setInt32(destinationData+(destinationIndex+i)*4,values[i],true);return 1;};" +
+            "new Uint8Array(memory.buffer,destinationData+destinationIndex*destinationSize,bytes).set(copy);return 0;}" +
+            "const backward=source===destination&&destinationIndex>sourceIndex&&destinationIndex<sourceIndex+length;" +
+            "for(let step=0;step<length;step++){const i=backward?length-step-1:step;const value=v.getInt32(sourceData+(sourceIndex+i)*4,true);" +
+            "if(value&&!isAssignable(value,destinationElement))return 2;" +
+            "v.setInt32(destinationData+(destinationIndex+i)*4,value,true);}return 0;};" +
             "const arrayClear=(array,index,length)=>{const v=new DataView(memory.buffer)," +
             "element=v.getInt32(array+12,true),size=valueTypeSizes.get(element)||4,data=v.getInt32(array+8,true);" +
             "new Uint8Array(memory.buffer,data+index*size,length*size).fill(0);};" +
@@ -263,7 +267,7 @@ internal static class CompilerTestSupport
             "for(let d=0;d<rank;d++)v.setInt32(dims+d*4,v.getInt32(shape+d*8,true),true);" +
             "clone=rectangularArray(rank,dims,type,element,size||0,size===undefined?1:0);}" +
             "else clone=array(length,type,element,size||4);" +
-            "return arrayCopy(source,0,clone,0,length)?clone:0;};" +
+            "return arrayCopy(source,0,clone,0,length)===0?clone:0;};" +
             "const beginThrow=exception=>{lastException=exception;targetFrame=0;targetClause=0;" +
             "const v=new DataView(memory.buffer);" +
             "for(let frame=exceptionFrames.length;frame>filterSearchFloor;frame--){" +
@@ -284,9 +288,9 @@ internal static class CompilerTestSupport
             "native_alloc:nativeAlloc,native_realloc:nativeRealloc,native_free:p=>nativeSizes.delete(p)," +
             "native_aligned_alloc:nativeAlignedAlloc,native_aligned_realloc:nativeAlignedRealloc," +
             "native_aligned_free:p=>nativeSizes.delete(p)," +
-            "register_type:(type,base,size,bitmap,bits,assignables,count)=>{" +
+            "register_type:(type,base,size,bitmap,bits,assignables,count,finalizer,isInterface)=>{" +
             "typeBases.set(type,base);typeSizes.set(type,size);const ids=new Set(),v=new DataView(memory.buffer);" +
-            "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);}," +
+            "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);if(isInterface)typeInterfaces.add(type);}," +
             "register_value_type:(type,size)=>valueTypeSizes.set(type,size)," +
             "register_static_root:z,root_frame_enter:rootEnter,root_frame_leave:rootLeave," +
             "value_frame_enter:valueEnter,value_frame_leave:valueLeave," +

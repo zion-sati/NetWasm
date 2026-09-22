@@ -12,6 +12,7 @@ internal sealed class RectangularArrayElementAddressEmitter(
     IRectangularArrayLayoutProvider rectangularLayouts,
     IAddressInstructionEmitter addresses,
     IValueLayoutProvider values,
+    ITypeLayoutProvider typeLayouts,
     IImplicitExceptionEmitter exceptions) : IRectangularArrayElementAddressEmitter
 {
     public void Emit(
@@ -27,6 +28,32 @@ internal sealed class RectangularArrayElementAddressEmitter(
             request.ArraySlot,
             CliValueKind.ManagedReference);
         EmitNullCheck(code, arrayLocal);
+
+        if (instruction.Instruction.Operation ==
+                CilOperation.LoadRectangularArrayElementAddress &&
+            elementType.StackKind == CliValueKind.ManagedReference &&
+            !HasReadonlyPrefix(instruction))
+        {
+            Get(code, arrayLocal);
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Load,
+                WasmInstructionOperand.Memory(2, 0)));
+            WriteI32(code, typeLayouts.GetObjectLayout(arrayType).TypeId);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
+            ThrowIf(code, ManagedExceptionKind.ArrayTypeMismatch);
+        }
+
+        if (arrayType.ArrayRank == 1)
+        {
+            EmitRankOneAddress(
+                instruction,
+                code,
+                arrayLocal,
+                request.ArraySlot,
+                elementType);
+            return;
+        }
 
         var shape = rectangularLayouts.Provide();
         var accumulator = instruction.Context.NumericTemporaryI4;
@@ -79,6 +106,61 @@ internal sealed class RectangularArrayElementAddressEmitter(
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
         }
         addresses.Emit(code, AddressOperation.Add);
+    }
+
+    private void EmitRankOneAddress(
+        InstructionEmissionRequest request,
+        IWasmInstructionWriter code,
+        int arrayLocal,
+        int arraySlot,
+        CliTypeIdentity elementType)
+    {
+        var indexLocal = GetStackLocal(
+            request.Context,
+            arraySlot + 1,
+            CliValueKind.I4);
+        Get(code, indexLocal);
+        WriteI32(code, 0);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanSigned));
+        ThrowIf(code, ManagedExceptionKind.IndexOutOfRange);
+
+        Get(code, indexLocal);
+        Get(code, arrayLocal);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(
+                2,
+                (uint)objects.ArrayLengthOffset)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
+        ThrowIf(code, ManagedExceptionKind.IndexOutOfRange);
+
+        Get(code, arrayLocal);
+        ManagedMemoryEmitter.EmitReferenceLoad(
+            code,
+            layouts.Target,
+            objects.ArrayDataPointerOffset);
+        Get(code, indexLocal);
+        WriteI32(code, GetElementSize(elementType));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
+        if (layouts.Target.UsesMemory64)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+        }
+        addresses.Emit(code, AddressOperation.Add);
+    }
+
+    private static bool HasReadonlyPrefix(InstructionEmissionRequest request)
+    {
+        var instructions = request.Header.Instructions;
+        for (var index = 1; index < instructions.Length; index++)
+        {
+            if (instructions[index].Offset == request.Instruction.Offset)
+            {
+                return instructions[index - 1].Operation == CilOperation.Readonly;
+            }
+        }
+
+        return false;
     }
 
     private void EmitShapeFieldAddress(

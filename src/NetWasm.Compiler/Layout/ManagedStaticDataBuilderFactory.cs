@@ -48,6 +48,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
             new StaticFieldStorageBuilder(typeRepository, fields, program, types, state),
             new TypeDescriptorBuilder(
                 identities,
+                typeDefinitions,
                 identityBaseTypes,
                 objectLayouts,
                 program,

@@ -164,6 +164,45 @@ public sealed class BinaryenToolRunnerTests
             BinaryenToolIds.WasmOpt, []));
     }
 
+    [Fact]
+    public void RunRejectsNullNativeResult()
+    {
+        var configuration = CreateConfiguration() with
+        {
+            NativeTools = [new(BinaryenToolIds.WasmOpt, WasmOptPath)],
+        };
+        var runner = new BinaryenToolRunner(
+            configuration,
+            new RecordingNodeCommandRunner(new(0, "", "")),
+            new NullExternalToolRunner());
+
+        Assert.Throws<InvalidOperationException>(() =>
+            runner.Run(BinaryenToolIds.WasmOpt, []));
+    }
+
+    [Fact]
+    public void ConstructorRejectsInvalidNativeToolConfiguration()
+    {
+        var node = new RecordingNodeCommandRunner(new(0, "", ""));
+        var processes = new RecordingExternalToolRunner(new(0, "", ""));
+
+        Assert.Throws<ArgumentNullException>(() => new BinaryenToolRunner(
+            CreateConfiguration() with { NativeTools = [null!] }, node, processes));
+        Assert.Throws<ArgumentException>(() => new BinaryenToolRunner(
+            CreateConfiguration() with
+            {
+                NativeTools = [new("unknown", WasmOptPath)],
+            }, node, processes));
+        Assert.Throws<ArgumentException>(() => new BinaryenToolRunner(
+            CreateConfiguration() with
+            {
+                NativeTools = [
+                    new(BinaryenToolIds.WasmOpt, WasmOptPath),
+                    new(BinaryenToolIds.WasmOpt, WasmOptPath),
+                ],
+            }, node, processes));
+    }
+
     private static BinaryenToolRunner CreateRunner(ISystemNodeCommandRunner node) =>
         new(CreateConfiguration(), node);
 
@@ -207,5 +246,10 @@ public sealed class BinaryenToolRunnerTests
             CallCount++;
             return result;
         }
+    }
+
+    private sealed class NullExternalToolRunner : IExternalToolRunner
+    {
+        public ToolResult Run(string executable, IEnumerable<string> arguments) => null!;
     }
 }

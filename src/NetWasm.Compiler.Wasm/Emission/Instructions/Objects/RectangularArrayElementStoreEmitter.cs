@@ -33,6 +33,7 @@ internal sealed class RectangularArrayElementStoreEmitter(
             request.Context,
             valueSlot,
             elementType.StackKind);
+        EmitNullCheck(request, code, arraySlot);
         if (elementType.StackKind == CliValueKind.ManagedReference)
         {
             EmitReferenceTypeCheck(request, code, arraySlot, valueLocal);
@@ -56,6 +57,23 @@ internal sealed class RectangularArrayElementStoreEmitter(
                 GetElementSize(elementType));
         }
         request.Stack.RemoveRange(arraySlot, arrayType.ArrayRank + 2);
+    }
+
+    private void EmitNullCheck(
+        InstructionEmissionRequest request,
+        IWasmInstructionWriter code,
+        int arraySlot)
+    {
+        Get(code, GetStackLocal(
+            request.Context,
+            arraySlot,
+            CliValueKind.ManagedReference));
+        addressInstructions.Emit(code, AddressOperation.EqualZero);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.If,
+            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        exceptions.Emit(code, ManagedExceptionKind.NullReference);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private void EmitReferenceTypeCheck(

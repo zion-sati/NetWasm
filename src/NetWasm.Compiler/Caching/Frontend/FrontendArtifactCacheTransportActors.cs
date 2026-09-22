@@ -62,7 +62,7 @@ internal sealed class FrontendArtifactCompilationFactory(
     {
         if (entries.Count > FrontendArtifactCachePolicy.MaximumArtifacts) return;
         long total = 0;
-        var validated = new Dictionary<string, ImmutableArray<byte>>(entries.Count,
+        var validated = new Dictionary<string, byte[]>(entries.Count,
             StringComparer.Ordinal);
         foreach (var entry in entries)
         {
@@ -73,13 +73,14 @@ internal sealed class FrontendArtifactCompilationFactory(
                 !CryptographicOperations.FixedTimeEquals(entry.Checksum,
                     FrontendArtifactCacheTransportProtocol.Checksum(descriptor.Schema,
                         descriptor.Namespace, entry.Key, entry.Payload)) ||
-                !validated.TryAdd(entry.Key, ImmutableArray.Create(entry.Payload))) return;
+                !validated.TryAdd(entry.Key, entry.Payload)) return;
             total += entry.Payload.Length;
             if (total > FrontendArtifactCachePolicy.MaximumEncodedWorkingSetBytes) return;
         }
-        if (!budget.TryReserve(validated.Count, total, 0)) return;
+        _ = budget.TryReserve(validated.Count, total, 0);
         foreach (var pair in validated)
-            memory.Payloads[descriptor.Namespace + "/" + pair.Key] = pair.Value;
+            memory.Payloads[descriptor.Namespace + "/" + pair.Key] =
+                ImmutableArray.Create(pair.Value);
         memory.LoadedNamespaces.TryAdd(descriptor.Namespace, 0);
         memory.Namespace = descriptor.Namespace;
         memory.EntryCount = validated.Count;

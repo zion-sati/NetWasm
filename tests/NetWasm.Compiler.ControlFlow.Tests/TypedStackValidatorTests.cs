@@ -57,6 +57,20 @@ public sealed class TypedStackValidatorTests
 
         _ = Validate(valid);
 
+        var rankOneArray = CliTypeIdentity.Array(
+            CliTypeIdentity.Primitive("primitive:i4", CliValueKind.I4),
+            1);
+        _ = Validate(Body(
+            CliValueKind.ManagedAddress,
+            2,
+            [],
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(2, CilOperation.Readonly),
+            I(3, CilOperation.LoadRectangularArrayElementAddress,
+                new CilOperand.TypeIdentity(rankOneArray)),
+            I(4, CilOperation.Return)));
+
         AssertDiagnostic(
             () => Validate(Body(
                 CliValueKind.NativeInt,
@@ -132,7 +146,7 @@ public sealed class TypedStackValidatorTests
                 I(0, CilOperation.Readonly),
                 I(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
                 I(2, CilOperation.Return))),
-            "readonly. must immediately precede ldelema");
+            "readonly. must immediately precede an array element address load");
     }
 
     [Fact]

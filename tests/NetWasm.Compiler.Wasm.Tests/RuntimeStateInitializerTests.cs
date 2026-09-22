@@ -69,6 +69,50 @@ public sealed class RuntimeStateInitializerTests
     }
 
     [Fact]
+    public void TypeRegistrationEmitsInterfaceTraitAfterFinalizerTrait()
+    {
+        var descriptors = new FixedTypeDescriptorSource(
+            [new TypeDescriptorLayout(
+                EmitterTestSupport.TypeKey,
+                7,
+                0,
+                16,
+                100,
+                3,
+                null)
+            {
+                IsInterface = true,
+            }],
+            [],
+            []);
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var code = new GeneratedFunctionWriterFactory().Create();
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+        var recordingCode = new GeneratedFunctionWriterLease(
+            code.Bytes,
+            code.Snapshots,
+            writer);
+
+        new RuntimeStateInitializer(
+            descriptors,
+            new FixedStaticDataLayout([]),
+            imports,
+            new RecordingAddressEmitter(),
+            new RecordingRuntimeCoreInitializer()).Initialize(
+                recordingCode,
+                TestRuntimeInitialization.Create(512));
+
+        var instructions = writer.ToInstructions();
+        var registerType = (uint)imports.Resolve(RuntimeImportSymbol.RegisterType);
+        var callIndex = Enumerable.Range(0, instructions.Length).Single(index =>
+            instructions[index].Opcode == WasmOpcodes.Call &&
+            instructions[index].Operand.UnsignedValue == registerType);
+        Assert.True(callIndex >= 2);
+        Assert.Equal(0, instructions[callIndex - 2].Operand.SignedValue);
+        Assert.Equal(1, instructions[callIndex - 1].Operand.SignedValue);
+    }
+
+    [Fact]
     public void EnabledStackTracePlanInitializesExceptionTraceLayout()
     {
         var imports = WasmRuntimeImports.CreateCatalog();

@@ -17,17 +17,15 @@ internal sealed class AssignableTypeMetadataBuilder(
 {
     private const int TypeIdSize = sizeof(int);
 
-    private readonly (CliTypeIdentity Type, int TypeId)[] _runtimeInterfaceTypes =
+    private readonly (CliTypeIdentity Type, int TypeId)[] _runtimeAssignableTypes =
         types.Objects
             .Select(pair =>
                 (Type: identities.GetTypeIdentity(pair.Key), pair.Value.TypeId))
             .Concat(types.ConstructedObjects.Select(pair =>
                 (Type: pair.Key, pair.Value.TypeId)))
-            .Where(target => target.Type.Shape is not
-                (CliTypeShape.SzArray or CliTypeShape.Array))
-            .Where(target => target.Type.Shape is
-                (CliTypeShape.Named or CliTypeShape.GenericInstantiation))
-            .Where(target => IsClosedRuntimeInterface(typeDefinitions, target.Type))
+            .Where(target => IsClosedRuntimeAssignableTarget(
+                typeDefinitions,
+                target.Type))
             .ToArray();
 
     public AssignableTypeMetadataLayout Build(CliTypeIdentity candidate)
@@ -39,7 +37,7 @@ internal sealed class AssignableTypeMetadataBuilder(
             return default;
         }
 
-        var typeIds = _runtimeInterfaceTypes
+        var typeIds = _runtimeAssignableTypes
             .Where(target => relationships
                 .Classify(candidate, target.Type)
                 .IsAssignmentCompatible)
@@ -66,13 +64,29 @@ internal sealed class AssignableTypeMetadataBuilder(
         return new AssignableTypeMetadataLayout(address, typeIds.Length);
     }
 
-    private static bool IsClosedRuntimeInterface(
+    private static bool IsClosedRuntimeAssignableTarget(
         ITypeDefinitionResolver typeDefinitions,
         CliTypeIdentity type)
     {
+        if (type.ContainsGenericParameters)
+        {
+            return false;
+        }
+
+        if (type.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
+        {
+            return true;
+        }
+
+        if (type.Shape is not (CliTypeShape.Named or CliTypeShape.GenericInstantiation))
+        {
+            return false;
+        }
+
         var definition = typeDefinitions.ResolveTypeIdentity(type);
-        return definition.IsInterface &&
-               (type.Shape == CliTypeShape.GenericInstantiation ||
-                definition.GenericArity == 0);
+        return definition.IsInterface ||
+               type.Shape == CliTypeShape.GenericInstantiation &&
+               definition.GenericParameterVariances.Any(variance =>
+                   variance != CliGenericVariance.Invariant);
     }
 }

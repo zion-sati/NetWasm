@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -39,4 +40,5 @@ internal sealed class CompilerDiagnosticJsonLineFormatter : ICompilerDiagnosticL
 }
 
 [JsonSerializable(typeof(CompilerDiagnosticJsonLineFormatter.CompilerDiagnosticFileEntry))]
+[ExcludeFromCodeCoverage]
 internal sealed partial class CompilerDiagnosticLineJsonContext : JsonSerializerContext;

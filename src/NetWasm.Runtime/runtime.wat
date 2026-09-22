@@ -10,6 +10,10 @@
   (global $filter_search_floor (mut i32) (i32.const 0))
   (global $type_object_cache (mut i32) (i32.const 0))
   (global $type_sizes (mut i32) (i32.const 0))
+  (global $type_bases (mut i32) (i32.const 0))
+  (global $type_assignable_addresses (mut i32) (i32.const 0))
+  (global $type_assignable_counts (mut i32) (i32.const 0))
+  (global $type_interfaces (mut i32) (i32.const 0))
   (global $type_capacity (mut i32) (i32.const 0))
 
   (func $reserve (param $size i32) (result i32)
@@ -85,19 +89,69 @@
     i32.const 4
     i32.mul
     call $reserve
-    global.set $type_sizes)
+    global.set $type_sizes
+    local.get $required_type_capacity
+    i32.const 4
+    i32.mul
+    call $reserve
+    global.set $type_bases
+    local.get $required_type_capacity
+    i32.const 4
+    i32.mul
+    call $reserve
+    global.set $type_assignable_addresses
+    local.get $required_type_capacity
+    i32.const 4
+    i32.mul
+    call $reserve
+    global.set $type_assignable_counts
+    local.get $required_type_capacity
+    i32.const 4
+    i32.mul
+    call $reserve
+    global.set $type_interfaces)
 
   ;; The portable runtime preserves the native runtime ABI. A future collector replaces
   ;; these registration no-ops with exact BDWGC descriptors and root ranges.
   (func (export "register_type")
     (param $type_id i32) (param $base_type_id i32) (param $size i32) (param $bitmap i32)
-    (param $bit_count i32) (param $has_finalizer i32)
+    (param $bit_count i32) (param $assignable_types i32)
+    (param $assignable_type_count i32) (param $has_finalizer i32)
+    (param $is_interface i32)
     global.get $type_sizes
     local.get $type_id
     i32.const 2
     i32.shl
     i32.add
     local.get $size
+    i32.store
+    global.get $type_bases
+    local.get $type_id
+    i32.const 2
+    i32.shl
+    i32.add
+    local.get $base_type_id
+    i32.store
+    global.get $type_assignable_addresses
+    local.get $type_id
+    i32.const 2
+    i32.shl
+    i32.add
+    local.get $assignable_types
+    i32.store
+    global.get $type_assignable_counts
+    local.get $type_id
+    i32.const 2
+    i32.shl
+    i32.add
+    local.get $assignable_type_count
+    i32.store
+    global.get $type_interfaces
+    local.get $type_id
+    i32.const 2
+    i32.shl
+    i32.add
+    local.get $is_interface
     i32.store)
 
   (func (export "register_value_type")
@@ -129,6 +183,86 @@
 
   (func (export "value_frame_leave") (param $frame i32))
 
+  (func $is_type_assignable
+    (param $actual_type_id i32) (param $target_type_id i32) (result i32)
+    (local $index i32)
+    (local $count i32)
+    (local $address i32)
+    local.get $target_type_id
+    i32.eqz
+    if
+      i32.const 0
+      return
+    end
+    block $types_done
+      loop $types
+        local.get $actual_type_id
+        i32.eqz
+        br_if $types_done
+        local.get $actual_type_id
+        local.get $target_type_id
+        i32.eq
+        if
+          i32.const 1
+          return
+        end
+        local.get $actual_type_id
+        global.get $type_capacity
+        i32.ge_u
+        br_if $types_done
+        global.get $type_assignable_addresses
+        local.get $actual_type_id
+        i32.const 2
+        i32.shl
+        i32.add
+        i32.load
+        local.set $address
+        global.get $type_assignable_counts
+        local.get $actual_type_id
+        i32.const 2
+        i32.shl
+        i32.add
+        i32.load
+        local.set $count
+        i32.const 0
+        local.set $index
+        block $ids_done
+          loop $ids
+            local.get $index
+            local.get $count
+            i32.ge_u
+            br_if $ids_done
+            local.get $address
+            local.get $index
+            i32.const 2
+            i32.shl
+            i32.add
+            i32.load
+            local.get $target_type_id
+            i32.eq
+            if
+              i32.const 1
+              return
+            end
+            local.get $index
+            i32.const 1
+            i32.add
+            local.set $index
+            br $ids
+          end
+        end
+        global.get $type_bases
+        local.get $actual_type_id
+        i32.const 2
+        i32.shl
+        i32.add
+        i32.load
+        local.set $actual_type_id
+        br $types
+      end
+    end
+    i32.const 0)
+
   (func $is_assignable (export "is_assignable")
     (param $object i32) (param $target_type_id i32) (result i32)
     local.get $object
@@ -139,7 +273,7 @@
       local.get $object
       i32.load
       local.get $target_type_id
-      i32.eq
+      call $is_type_assignable
     end)
 
   ;; Portable EH frames are linked bump allocations. The portable runtime has
