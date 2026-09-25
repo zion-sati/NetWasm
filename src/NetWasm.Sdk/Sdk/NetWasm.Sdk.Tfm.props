@@ -15,13 +15,13 @@
     <NetWasmSdkDeclaredTargetFrameworks Condition="'$(TargetFramework)' != ''">$(TargetFramework)</NetWasmSdkDeclaredTargetFrameworks>
     <NetWasmSdkContainsCustomProfile Condition="'$(NetWasmSdkDeclaredTargetFrameworks)' != ''">$([System.String]::Copy(';$(NetWasmSdkDeclaredTargetFrameworks);').Contains(';netwasm0.1;'))</NetWasmSdkContainsCustomProfile>
     <NetWasmRefPackageId Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageId)' == ''">NetWasm.Ref</NetWasmRefPackageId>
-    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.4.1</NetWasmRefPackageVersion>
-    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.4.1</NetWasmRuntimePackageVersion>
-    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.4.1</NetWasmRuntimePackPackageVersion>
-    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.4.1</NetWasmToolchainPackageVersion>
-    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.4.1</NetWasmHostingPackageVersion>
-    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.4.1</NetWasmHostingBuildPackageVersion>
-    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostToolsPackageVersion)' == ''">0.4.1</NetWasmHostToolsPackageVersion>
+    <NetWasmRefPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRefPackageVersion)' == ''">0.4.2-preview.1</NetWasmRefPackageVersion>
+    <NetWasmRuntimePackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackageVersion)' == ''">0.4.2-preview.1</NetWasmRuntimePackageVersion>
+    <NetWasmRuntimePackPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmRuntimePackPackageVersion)' == ''">0.4.2-preview.1</NetWasmRuntimePackPackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmToolchainPackageVersion)' == ''">0.4.2-preview.1</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingPackageVersion)' == ''">0.4.2-preview.1</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostingBuildPackageVersion)' == ''">0.4.2-preview.1</NetWasmHostingBuildPackageVersion>
+    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true' AND '$(NetWasmHostToolsPackageVersion)' == ''">0.4.2-preview.1</NetWasmHostToolsPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -78,10 +78,10 @@
       stock restore remains the source of truth; desktop inner builds never
       see this item.
     -->
-    <NetWasmRefPackageVersion Condition="'$(NetWasmRefPackageVersion)' == ''">0.4.1</NetWasmRefPackageVersion>
-    <NetWasmToolchainPackageVersion Condition="'$(NetWasmToolchainPackageVersion)' == ''">0.4.1</NetWasmToolchainPackageVersion>
-    <NetWasmHostingPackageVersion Condition="'$(NetWasmHostingPackageVersion)' == ''">0.4.1</NetWasmHostingPackageVersion>
-    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmHostingBuildPackageVersion)' == ''">0.4.1</NetWasmHostingBuildPackageVersion>
+    <NetWasmRefPackageVersion Condition="'$(NetWasmRefPackageVersion)' == ''">0.4.2-preview.1</NetWasmRefPackageVersion>
+    <NetWasmToolchainPackageVersion Condition="'$(NetWasmToolchainPackageVersion)' == ''">0.4.2-preview.1</NetWasmToolchainPackageVersion>
+    <NetWasmHostingPackageVersion Condition="'$(NetWasmHostingPackageVersion)' == ''">0.4.2-preview.1</NetWasmHostingPackageVersion>
+    <NetWasmHostingBuildPackageVersion Condition="'$(NetWasmHostingBuildPackageVersion)' == ''">0.4.2-preview.1</NetWasmHostingBuildPackageVersion>
     <BuildProjectReferences Condition="'$(NoBuild)' == 'true'">false</BuildProjectReferences>
     <NuGetBuildTasksPackTargets>$(MSBuildThisFileDirectory)NuGetBuildTasksPackTargets.targets</NuGetBuildTasksPackTargets>
     <ImportNuGetBuildTasksPackTargetsFromSdk>true</ImportNuGetBuildTasksPackTargetsFromSdk>

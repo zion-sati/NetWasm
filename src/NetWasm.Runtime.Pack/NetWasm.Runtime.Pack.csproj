@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>NetWasm.Runtime.Pack</AssemblyName>
     <RootNamespace>NetWasm.Runtime.Pack</RootNamespace>
-    <Version>0.4.1</Version>
+    <Version>0.4.2-preview.1</Version>
     <PackageId>NetWasm.Runtime.Pack</PackageId>
     <Description>Relocatable NetWasm runtime archives materialized for each application.</Description>
     <PackageTags>netwasm;runtime;wasi;wasm</PackageTags>
