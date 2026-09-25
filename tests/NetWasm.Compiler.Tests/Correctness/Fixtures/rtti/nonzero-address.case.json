@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "caseId": "rtti.rank-one-nonzero-address",
+  "featureIds": ["S09", "S10"],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "RttiRankOneNonZeroBoundAddress",
+  "namespace": "RttiRankOneArray",
+  "entryMethod": "Run",
+  "inputs": [0],
+  "expectations": [{ "input": 0, "returnValue": 42, "exceptionType": null }],
+  "referencePaths": [],
+  "referenceAssemblyAliases": { "System.Private.CoreLib": "NetWasm.CoreLib" },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.RttiArrayOperationCompilationTests.CompilerPreservesMutableAddressForNonZeroBoundRankOneArray"
+}

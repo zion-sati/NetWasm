@@ -1,0 +1,136 @@
+using System;
+using System.Runtime.CompilerServices;
+
+namespace NetWasm.Correctness.ReadonlyCopies;
+
+public interface ICounter
+{
+    int Increment();
+}
+
+public struct Counter(int number) : ICounter
+{
+    public int Number = number;
+    public int Increment() => ++Number;
+}
+
+public sealed class Holder(int number)
+{
+    public Counter Mutable = new(number);
+    public readonly Counter Readonly = new(number);
+    public Counter Value => Mutable;
+}
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0:
+            {
+                var original = new Counter(41);
+                var copy = original;
+                return copy.Increment() == 42 && original.Number == 41 && copy.Number == 42 ? 42 : -1;
+            }
+            case 1:
+            {
+                var value = new Counter(41);
+                return ReadonlyArgument(in value) == 42 && value.Number == 41 ? 42 : -2;
+            }
+            case 2:
+            {
+                var holder = new Holder(41);
+                return holder.Readonly.Increment() == 42 && holder.Readonly.Number == 41 ? 42 : -3;
+            }
+            case 3:
+            {
+                var values = new[] { new Counter(41), new Counter(7) };
+                ref readonly var selected = ref values[0];
+                return selected.Increment() == 42 && selected.Number == 41 && values[0].Number == 41 && values[1].Number == 7 ? 42 : -4;
+            }
+            case 4:
+            {
+                var holder = new Holder(41);
+                ref readonly var selected = ref ReadonlyReturn(holder);
+                return selected.Increment() == 42 && holder.Mutable.Number == 41 ? 42 : -5;
+            }
+            case 5:
+            {
+                var value = new Counter(41);
+                return WritableArgument(ref value) == 42 && value.Number == 42 ? 42 : -6;
+            }
+            case 6:
+            {
+                var value = new Counter(41);
+                return GenericReadonly(in value) == 42 && value.Number == 41 ? 42 : -7;
+            }
+            case 7:
+            {
+                var value = new Counter(41);
+                return GenericWritable(ref value) == 42 && value.Number == 42 ? 42 : -8;
+            }
+            case 8:
+            {
+                var holder = new Holder(41);
+                return holder.Value.Increment() == 42 && holder.Mutable.Number == 41 ? 42 : -9;
+            }
+            case 9:
+            {
+                var values = new[] { new Counter(41), new Counter(7) };
+                var span = values.AsSpan();
+                return span[0].Increment() == 42 && values[0].Number == 42 && values[1].Number == 7 ? 42 : -10;
+            }
+            case 10:
+            {
+                var values = new[] { new Counter(41), new Counter(7) };
+                var span = (ReadOnlySpan<Counter>)values;
+                return span[0].Increment() == 42 && values[0].Number == 41 && values[1].Number == 7 ? 42 : -11;
+            }
+            case 11:
+            {
+                var original = (First: new Counter(41), Second: new Counter(7));
+                var copy = original;
+                return copy.First.Increment() == 42 && original.First.Number == 41 &&
+                    copy.First.Number == 42 && copy.Second.Number == 7 && original.Second.Number == 7 ? 42 : -12;
+            }
+            case 12:
+            {
+                var value = (Counter?)new Counter(41);
+                return value.Value.Increment() == 42 && value.Value.Number == 41 ? 42 : -13;
+            }
+            case 13:
+            {
+                var value = new Counter(41);
+                ICounter boxed = value;
+                return boxed.Increment() == 42 && value.Number == 41 && ((Counter)boxed).Number == 42 ? 42 : -14;
+            }
+            case 14:
+            case 15:
+            {
+                var left = new Counter(41);
+                var right = new Counter(41);
+                ref var selected = ref (input == 14 ? ref left : ref right);
+                return selected.Increment() == 42 && left.Number == (input == 14 ? 42 : 41) &&
+                    right.Number == (input == 15 ? 42 : 41) ? 42 : -15;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int ReadonlyArgument(in Counter value) => value.Increment();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int WritableArgument(ref Counter value) => value.Increment();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ref readonly Counter ReadonlyReturn(Holder holder) => ref holder.Mutable;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int GenericReadonly<T>(in T value) where T : struct, ICounter => value.Increment();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int GenericWritable<T>(ref T value) where T : struct, ICounter => value.Increment();
+}

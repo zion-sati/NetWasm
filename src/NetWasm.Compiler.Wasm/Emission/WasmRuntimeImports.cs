@@ -200,6 +200,7 @@ internal static class WasmRuntimeImports
                 CliValueKind.I4,
                 CliValueKind.ManagedAddress,
                 CliValueKind.ManagedAddress,
+                CliValueKind.ManagedAddress,
                 CliValueKind.I4))),
         new(RuntimeImportSymbol.AllocateValueArray, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
@@ -221,6 +222,12 @@ internal static class WasmRuntimeImports
                 CliValueKind.I4,
                 CliValueKind.I4,
                 CliValueKind.I4))),
+        new(RuntimeImportSymbol.AllocateBoundedRectangularArray, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeAllocateBoundedRectangularArray,
+            WasmFunctionType.Create(CliValueKind.ManagedReference,
+                CliValueKind.I4, CliValueKind.ManagedAddress, CliValueKind.I4,
+                CliValueKind.I4, CliValueKind.I4, CliValueKind.I4))),
         new(RuntimeImportSymbol.ArrayRank, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeArrayRank,
@@ -232,6 +239,18 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeArrayGetLength,
             WasmFunctionType.Create(
                 CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.ArrayGetLowerBound, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeArrayGetLowerBound,
+            WasmFunctionType.Create(CliValueKind.I4,
+                CliValueKind.ManagedReference, CliValueKind.I4))),
+        new(RuntimeImportSymbol.ArrayGetValue, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeArrayGetValue,
+            WasmFunctionType.Create(
+                CliValueKind.ManagedReference,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4))),
         new(RuntimeImportSymbol.ArrayCopy, new WasmFunctionImport(
@@ -289,8 +308,8 @@ internal static class WasmRuntimeImports
                 RuntimeAbi.RuntimeWeakHandleCreate,
                 WasmFunctionType.Create(
                     CliValueKind.I4,
-                    CliValueKind.ManagedReference,
-                    CliValueKind.I4))),
+                CliValueKind.ManagedReference,
+                CliValueKind.I4))),
             new(RuntimeImportSymbol.WeakHandleGet, new WasmFunctionImport(
                 RuntimeAbi.RuntimeModule,
                 RuntimeAbi.RuntimeWeakHandleGet,

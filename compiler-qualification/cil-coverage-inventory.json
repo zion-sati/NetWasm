@@ -1,0 +1,935 @@
+{
+  "schemaVersion": 2,
+  "internalLoweredOperations": [
+    "DefaultValue",
+    "DelegateCombine",
+    "DelegateRemove",
+    "DelegateEqual",
+    "DelegateNotEqual",
+    "CompareExchange",
+    "MaterializeType",
+    "GetObjectType",
+    "InitializeArrayData",
+    "NewRectangularArray",
+    "LoadRectangularArrayElement",
+    "StoreRectangularArrayElement",
+    "LoadRectangularArrayElementAddress"
+  ],
+  "families": {
+    "ConstantsStackLocalsArguments": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsFoundationalValueTypeAndConstrainedOperations",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsFieldsCallsConstructionAndScalarOperations",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/ConstantsStackEmitterTests.cs#ScalarConstantUsesExpectedStackKind",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/SameIlDifferentialTests.cs#ExecutesTheExactDesktopPeThroughCoreClrAndNetWasm"
+    },
+    "Numeric": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsCoreLibNumericOperationsAndConversionMetadata",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsEveryBinaryIntegerOperation",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/NumericInstructionEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/PrimitiveArithmeticDifferentialTests.cs#DebugAndReleasePrimitiveArithmeticMatchesDesktopDotNet"
+    },
+    "ValueObjectBlockMemory": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsFoundationalValueTypeAndConstrainedOperations",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsUnsafeMemoryKernelOperations",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/ValueObjectBlockMemoryEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/UnsafeByReferenceDifferentialTests.cs#DebugAndReleaseByReferencePointerAndSpanCodeMatchesDesktopDotNet"
+    },
+    "ArraysFieldsStatics": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsEveryPrimitiveArrayLoadAndStore",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsAddressArrayDelegateAndTypeOperations",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/ArrayInstructionEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/ValueAndCallDifferentialTests.cs#DebugAndReleaseValuesStorageAndDispatchMatchDesktopDotNet"
+    },
+    "AllocationBoxingTypes": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsCheckedIntegerArithmeticAndClassCasts",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsAddressArrayDelegateAndTypeOperations",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/BoxingInstructionEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/ValueAndCallDifferentialTests.cs#DebugAndReleaseValuesStorageAndDispatchMatchDesktopDotNet"
+    },
+    "CallsAndCallableLoading": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsFoundationalValueTypeAndConstrainedOperations",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsConstrainedValueReceiverAndRejectsMalformedOperands",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/CallInstructionEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/ValueAndCallDifferentialTests.cs#DebugAndReleaseValuesStorageAndDispatchMatchDesktopDotNet"
+    },
+    "Delegates": {
+      "decoder": "tests/NetWasm.Compiler.Tests/Correctness/LambdaIteratorDifferentialTests.cs#DebugAndReleaseClosuresAndIteratorsMatchDesktopDotNet",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsAddressArrayDelegateAndTypeOperations",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/DelegateInstructionEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/LambdaIteratorDifferentialTests.cs#DebugAndReleaseClosuresAndIteratorsMatchDesktopDotNet"
+    },
+    "StructuredControlFlow": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsTypedExceptionRegionsAndNormalizedTransfers",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsCliBranchConditionTypes",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/StructuredControlFlowInstructionHandlerTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/ControlFlowDifferentialTests.cs#DebugAndReleaseControlFlowMatchesDesktopDotNet"
+    },
+    "ExceptionsAndRoots": {
+      "decoder": "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsTypedExceptionRegionsAndNormalizedTransfers",
+      "validator": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ExceptionEntriesAreValidatedAndRetainedAsStructuredRegions",
+      "emitter": "tests/NetWasm.Compiler.Wasm.Tests/ExceptionAndReturnEmitterTests.cs",
+      "semantic": "tests/NetWasm.Compiler.Tests/Correctness/ExceptionControlFlowDifferentialTests.cs#DebugAndReleaseExceptionTransfersMatchDesktopDotNet"
+    }
+  },
+  "cfgRules": [
+    {
+      "id": "method-entry",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/ControlFlowGraphBuilderTests.cs#GraphBuildsConditionalJoinAndLeavesUnreachableBlockMarked"
+    },
+    {
+      "id": "branch-and-switch-targets",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/ControlFlowGraphBuilderTests.cs#GraphRejectsEmptyInvalidTargetAndFallingOffEnd"
+    },
+    {
+      "id": "post-terminator",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/ControlFlowGraphBuilderTests.cs#GraphBuildsConditionalJoinAndLeavesUnreachableBlockMarked"
+    },
+    {
+      "id": "try-handler-filter-boundaries",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/ControlFlowGraphBuilderTests.cs#GraphMakesExceptionalFilterEdgesExplicitAndReciprocal"
+    },
+    {
+      "id": "malformed-filter-boundaries",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/ControlFlowGraphBuilderTests.cs#GraphBuilderRejectsMalformedExceptionFiltersDeterministically"
+    }
+  ],
+  "stackRules": [
+    {
+      "id": "empty-and-value-joins",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorRejectsMergesWithDifferentStackShapes"
+    },
+    {
+      "id": "backedges-and-switch-fanin",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsCliBranchConditionTypes"
+    },
+    {
+      "id": "managed-references-and-pointers",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsAddressArrayDelegateAndTypeOperations"
+    },
+    {
+      "id": "value-types",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorAcceptsConstrainedValueReceiverAndRejectsMalformedOperands"
+    },
+    {
+      "id": "handler-filter-entry",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ExceptionEntriesAreValidatedAndRetainedAsStructuredRegions"
+    },
+    {
+      "id": "leave-clears-stack",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorRejectsPeekAndControlTransferStackErrors"
+    },
+    {
+      "id": "invalid-depth-and-type-merges",
+      "evidence": "tests/NetWasm.Compiler.ControlFlow.Tests/TypedStackValidatorTests.cs#ValidatorRejectsMergesWithDifferentStackShapes"
+    }
+  ],
+  "semanticFamilies": [
+    {
+      "id": "S01",
+      "name": "Evidence, assertions, runners",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/OracleComparerTests.cs#AcceptsEquivalentValuesAndManagedExceptions",
+        "tests/NetWasm.Compiler.Tests/Correctness/DifferentialCorpusRunnerTests.cs#RunCompilesBothProfilesAndExecutesBothTargets",
+        "tests/NetWasm.Compiler.Tests/Correctness/NetWasmOracleRunnerTests.cs#CompileAndRunExecutesWasm32AndWasm64",
+        "tests/NetWasm.Compiler.Tests/Correctness/TypedTraceDifferentialTests.cs#ComparesOrderedTypedTraceRecordsAcrossDesktopAndNetWasm"
+      ],
+      "gap": "F01–F08; strict imports, first-attempt status, independent expectations, non-vacuous assertions, truthful per-cell results",
+      "priority": "P0",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "unit-and-composition"
+    },
+    {
+      "id": "S02",
+      "name": "Metadata and signature identity",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/MetadataAssemblyIdentityTests.cs#EntryAssemblyIdentityUsesCanonicalAssemblyQualifiedDisplay",
+        "tests/NetWasm.Compiler.Tests/GenericMetadataOperandCompilationTests.cs#CompilerExecutesContextualGenericMetadataOperands",
+        "tests/NetWasm.Compiler.Metadata.Tests/CilDecoderTests.cs#DecoderRetainsResolvedStackKindsForExternalEnumFields"
+      ],
+      "gap": "Aliases, overloads, nested closed generics, assembly identities, signatures and reference closure must lead to the correct executed target; malformed metadata must fail at its owner",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S03",
+      "name": "C# language lowering",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/LanguageSurfaceCompilationTests.cs#CompilerExecutesDeclarationsOperatorsEventsAndParameterModifiers",
+        "tests/NetWasm.Compiler.Tests/ModernLanguageCompilationTests.cs#CompilerLowersCSharpFourteenExtensionMembersAndFieldBackedProperties",
+        "tests/NetWasm.Compiler.Tests/CSharp15CompilationTests.cs#CompilerPreservesFocusedCSharpFifteenRuntimeSemantics"
+      ],
+      "gap": "Selected supported records/patterns/unions/extensions/collection expressions, ref safety, evaluation order and null/default branches across pinned language versions and both CIL settings/widths",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S04",
+      "name": "Constants, locals, arguments, returns",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/SameIlDifferentialTests.cs#ExecutesTheExactDesktopPeThroughCoreClrAndNetWasm",
+        "tests/NetWasm.Compiler.Tests/Correctness/ValueAndCallDifferentialTests.cs#DebugAndReleaseValuesStorageAndDispatchMatchDesktopDotNet",
+        "tests/NetWasm.Compiler.Tests/WideValueStackCompilationTests.cs#CompilerNormalizesConstructedNativeIntegerStackKinds"
+      ],
+      "gap": "Boundary values through every storage/call position; sign/zero extension; value and reference liveness at joins; distinguish constant-folded from runtime paths",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S05",
+      "name": "Integer/native/wide arithmetic",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/NumericCompilationTests.cs#CompilerExecutesIntegerBitwiseShiftDivisionAndRemainderOperations",
+        "tests/NetWasm.Compiler.Tests/MixedNativeArithmeticCompilationTests.cs#CheckedNativeArithmeticPreservesValuesAndOverflow",
+        "tests/NetWasm.Compiler.Tests/Correctness/CoreLibScalarCorpusTests.cs#ObjectDisposedExceptionThrowIfPreservesExceptionClassAndHResult"
+      ],
+      "gap": "All supported widths/signedness, checked/wrapping behavior, division/remainder edges, shift-count masking and native-width differences; explicitly qualify selected Int128/UInt128 paths",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S06",
+      "name": "Numeric casts",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/NumericCompilationTests.cs#CompilerExecutesCompleteSafeCheckedConversionMatrix",
+        "tests/NetWasm.Compiler.Tests/Correctness/PrimitiveArithmeticDifferentialTests.cs#DebugAndReleasePrimitiveArithmeticMatchesDesktopDotNet",
+        "tests/NetWasm.Compiler.Tests/Correctness/SameIlDifferentialTests.cs#ExecutesTheExactDesktopPeThroughCoreClrAndNetWasm"
+      ],
+      "gap": "Full supported conversion relationships with representative edge partitions, including float/double intermediates, NaN/infinity, precision/range boundaries and required exceptions",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S07",
+      "name": "Floating-point arithmetic/comparisons/math",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/PrimitiveCompilationTests.cs#CompilerExecutesFloatingPointAndMathContracts",
+        "tests/NetWasm.Compiler.Tests/Correctness/MathDifferentialTests.cs#MathAndMathFMatchTheDesktopOracleAtBoundaryAndRepresentativeInputs"
+      ],
+      "gap": "NaN-safe assertions; both operand orders and comparison/branch forms; signed zero, subnormal transitions, infinities, remainder, and operation-specific accuracy",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S08",
+      "name": "Decimal, Half, scalar numeric APIs",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/DecimalCompilationTests.cs#CompilerMatchesDesktopDecimalBoundaryCorpusExactly",
+        "tests/NetWasm.Compiler.Tests/Correctness/CoreLibScalarCorpusTests.cs#ObjectDisposedExceptionThrowIfPreservesExceptionClassAndHResult",
+        "tests/NetWasm.Compiler.Tests/IConvertibleTypeCodeCompilationTests.cs#CompilerExecutesIConvertibleAndTypeCodeContracts"
+      ],
+      "gap": "Decimal scale/rounding/overflow/conversions, binary↔decimal limits, Half conversion/classification, generic numeric contracts; Convert semantics must not be conflated with casts",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S09",
+      "name": "RTTI, casts, assignability",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/RttiCastCorrectnessCompilationTests.cs#CompilerPreservesRuntimeCastAndArrayAssignmentSemantics",
+        "tests/NetWasm.Compiler.Tests/TypeRelationshipClassifierActorTests.cs#GenericVarianceRequiresCompatibleReferenceTypeArguments",
+        "tests/NetWasm.Compiler.Tests/TypeTestPlannerTests.cs#FactoryCreatesPlannerWithNullableSupport"
+      ],
+      "gap": "Positive/negative/null relationships; variance, closed substitutions, planned/fallback type tests, subsequent dispatch/store; reuse repaired cases",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S10",
+      "name": "Arrays and typed element operations",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/RttiArrayOperationCompilationTests.cs#CompilerExecutesDistinctSzAndRankOneArraySemantics",
+        "tests/NetWasm.Compiler.Tests/RectangularArrayCompilationTests.cs#CompilerValidatesRectangularArraysForEveryTargetAndOptimization",
+        "tests/NetWasm.Compiler.Tests/ArrayNonGenericCompilationTests.cs#NonGenericCopyAndClearExecuteForEveryProfile"
+      ],
+      "gap": "SZ/jagged/rectangular/true rank-one distinctions, store/address checks, copy overlap and partial failure, rank/bounds/null precedence, generic interface views",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S11",
+      "name": "Boxing, nullable, enums, equality/hash",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/NullableBoxingCompilationTests.cs#CompilerExecutesNullableBoxAndUnboxAnyContracts",
+        "tests/NetWasm.Compiler.Tests/EnumBoxingCompatibilityCompilationTests.cs#CompilerUnboxesEnumsThroughTheirUnderlyingStorageType",
+        "tests/NetWasm.Compiler.Tests/EnumLayoutInteractionCompilationTests.cs#CompilerExecutesEnumLayoutInteractionsAcrossTargets",
+        "tests/NetWasm.Compiler.Tests/BoxedValueCallCompilationTests.cs#CompilerPreservesConsecutiveUnboxedValueArguments",
+        "tests/NetWasm.Compiler.Tests/EqualityComparerCompilationTests.cs#CompilerExecutesDefaultInt32Comparer"
+      ],
+      "gap": "Representation × box/unbox/type-test/dispatch/collection use; nullable empty/nonempty, enum widths/signs, struct padding and references, NaN equality versus operators",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S12",
+      "name": "Generic/virtual/interface/static-abstract calls",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/GenericMethodDispatchCompilationTests.cs#CompilerPreservesConstructedGenericBaseAutoPropertyAcrossClosedDescendants",
+        "tests/NetWasm.Compiler.Tests/ConstructedGenericCastCompilationTests.cs#CompilerCastsBaseReferencesToExactConstructedGenericTypes",
+        "tests/NetWasm.Compiler.Tests/Correctness/ValueAndCallDifferentialTests.cs#DebugAndReleaseValuesStorageAndDispatchMatchDesktopDotNet"
+      ],
+      "gap": "Exact versus variant slot selection, constrained calls, multi-assembly substitution, recursion, ref/value/nullable/enum substitutions and post-call state",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S13",
+      "name": "Delegates, closures, function pointers, events",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/DispatchAndDelegateCompilationTests.cs#CompilerExecutesStaticClosedAndVirtualDelegates",
+        "tests/NetWasm.Compiler.Tests/DelegateBindingConversionCompilationTests.cs#CompilerExecutesReferenceDelegateBindingFamilies",
+        "tests/NetWasm.Compiler.Tests/Correctness/LambdaIteratorDifferentialTests.cs#DebugAndReleaseClosuresAndIteratorsMatchDesktopDotNet"
+      ],
+      "gap": "Open/closed receivers, variance, multicast order/removal/equality, managed indirect calls, captured lifetime and throwing callbacks; keep unmanaged dynamic linkage excluded",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S14",
+      "name": "Value layout and managed references",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/WideValueStackCompilationTests.cs#CompilerNormalizesConstructedNativeIntegerStackKinds",
+        "tests/NetWasm.Compiler.Tests/ManagedByReferenceCompilationTests.cs#CompilerPreservesScalarReferenceLocalsArgumentsAndReturns",
+        "tests/NetWasm.Compiler.Tests/NestedScalarByReferenceCompilationTests.cs#CompilerPreservesNestedScalarReferenceForwarding",
+        "tests/NetWasm.Compiler.Tests/FixedBufferCompilationTests.cs#CompilerExecutesFixedBufferIndexingAcrossEveryProfile"
+      ],
+      "gap": "Packed/explicit/sequential/nested layouts, copy versus alias, readonly defensive copies, array/field/ref-return paths and exact reference slots across widths",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S15",
+      "name": "Unsafe, spans, buffers, native allocation",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/UnsafeByReferenceDifferentialTests.cs#DebugAndReleaseByReferencePointerAndSpanCodeMatchesDesktopDotNet",
+        "tests/NetWasm.Compiler.Tests/NativeMemoryCompilationTests.cs#CompilerPreservesCanonicalByteAccessForEveryTargetAndOptimization",
+        "tests/NetWasm.Compiler.Tests/UnsafeMemoryMarshalP11CompatibilityTests.cs#CompilerLowersP11UnsafeAndMemoryMarshalReferenceContracts",
+        "tests/NetWasm.Compiler.Tests/BufferAndMemoryCompatibilityCompilationTests.cs#CompilerValidatesBufferAndMemoryContractsForEveryProfile"
+      ],
+      "gap": "Valid unaligned accesses, zero/one/boundary lengths, overlap where promised, ref/pointer arithmetic, alignment and checked length math, real allocation/free ownership",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S16",
+      "name": "Exact roots and real collection",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/RootFramePreservationCompilationTests.cs#LiveReferenceSurvivesHelperCallAndSubsequentAllocation",
+        "tests/NetWasm.Compiler.Tests/GcRuntimeTargetMatrixCompilationTests.cs#CompilerValidatesGcRuntimeContractsAcrossCilAndAddressWidths",
+        "tests/NetWasm.Compiler.GarbageCollection.Tests/RootMapTests.cs#AllocationCapabilityPropagatesTransitivelyButNotToLeafMethods"
+      ],
+      "gap": "Root slot × value representation × allocation/exception/call boundary, real reclamation versus retention, interior references, memory growth; a JS GC no-op is not qualification",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "linked-runtime"
+    },
+    {
+      "id": "S17",
+      "name": "Finalizers, weak/pinned/strong handles",
+      "existingEvidence": [
+        "tests/NetWasm.Runtime.Tests/run.sh",
+        "tests/NetWasm.Compiler.Tests/WeakReferenceCompatibilityCompilationTests.cs#CompilerExecutesNonGenericWeakReferenceContract",
+        "tests/NetWasm.Compiler.Tests/GCHandleCompatibilityCompilationTests.cs#CompilerExecutesGCHandleContract"
+      ],
+      "gap": "Real collector lifecycle, suppression/re-registration/resurrection, handle disposal/retargeting and weak clearing, pin lifetime; assert allowed lifecycle outcomes rather than incidental GC timing",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "linked-runtime"
+    },
+    {
+      "id": "S18",
+      "name": "CFG, branches, loops, switch, stack joins",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/ControlFlowDifferentialTests.cs#DebugAndReleaseControlFlowMatchesDesktopDotNet"
+      ],
+      "gap": "Both branch outcomes, zero/one/many iterations, nested exits, side effects and value joins; new type/exception families combined with the established CFG witnesses",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S19",
+      "name": "Exceptions, filters, fault/finally, cleanup",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/ExceptionControlFlowDifferentialTests.cs#DebugAndReleaseExceptionTransfersMatchDesktopDotNet",
+        "tests/NetWasm.Compiler.Tests/Correctness/CleanupOutcomeDifferentialTests.cs#SuccessFailureAndCancellationCleanupMatchDesktopDotNet",
+        "tests/NetWasm.Compiler.Tests/FaultExceptionRegionCompilationTests.cs#FaultHandlerRunsOnlyForExceptionalExit"
+      ],
+      "gap": "Filter true/false/throw, two-pass ordering, rethrow versus new throw, cleanup replacing an exception, roots during unwind, exact managed category and no raw trap",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S20",
+      "name": "Static state and initialization",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/ModuleInitializerCompilationTests.cs#CompilerExecutesOrdinaryModuleInitializersOnceBeforeManagedEntryPoints",
+        "tests/NetWasm.Compiler.Tests/ExportInitializationCompilationTests.cs#RequestedExportCanBeTheFirstManagedEntryBoundaryInvoked"
+      ],
+      "gap": "Per-closed-type statics, once/order/re-entry/failed initialization, repeated exports and independent instances; CLR-permitted initialization timing rather than one accidental order",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S21",
+      "name": "Task/ValueTask/reactor/cancellation/timers",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/DeterministicAsyncContractDifferentialTests.cs#ExplicitEventPumpMatchesDesktopAcrossAsyncContracts"
+      ],
+      "gap": "Sync/suspended/fault/cancel paths, completion-registration ordering, timer/cancellation disposal and root lifetime, real host wake/poll/drain paths",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "real-host"
+    },
+    {
+      "id": "S22",
+      "name": "Iterators and async enumeration",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/EnumerableIteratorContractDifferentialTests.cs#EnumerationStagesCleanupAndIteratorExitsMatchDesktop"
+      ],
+      "gap": "GetEnumerator/MoveNext/Current/Dispose failures, early break, repeated enumeration, pending async MoveNext cancellation and disposal; exact effects and allowed ordering",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S23",
+      "name": "Strings, Unicode, encoding, parsing/formatting",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/PrimitiveDifferentialCompilationTests.cs#CompilerMatchesDesktopDotNetForSeededDoubleRoundTrips"
+      ],
+      "gap": "Finite round trips plus explicit exceptional values, malformed input/fallback policy, surrogate and chunk boundaries, empty/null, ordinal/invariant behavior and exact buffer counts",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S24",
+      "name": "Collections, comparers, LINQ",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/CollectionCompatibilityCorpusTests.cs#CollectionsMatchDesktopAcrossCompilerProfilesAndTargets",
+        "tests/NetWasm.Compiler.Tests/Correctness/EnumerableIteratorContractDifferentialTests.cs#EnumerationStagesCleanupAndIteratorExitsMatchDesktop"
+      ],
+      "gap": "Empty/single/resize/remove/reinsert, collision-heavy and stateful comparers, mutation/version checks, stable ordering where promised, nullable/enum/struct/NaN keys and lazy disposal",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S25",
+      "name": "Managed streams and pipelines",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/ManagedIoCompatibilityCorpusTests.cs#ManagedIoMatchesDesktopAcrossCompilerProfilesAndTargets"
+      ],
+      "gap": "Short reads/writes, chunk and segment boundaries, EOF, cancellation, completion/disposal ownership, synchronous/delayed completion and backpressure in the supported reactor profile",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "real-host"
+    },
+    {
+      "id": "S26",
+      "name": "Dates, clocks, timezone, environment, randomness",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/DateTimeCompilationTests.cs#CompilerFormatsRoundTripDateTextAcrossTargets",
+        "tests/NetWasm.Compiler.Tests/EnvironmentCompilationTests.cs#EnumerationAndMutationShareGuestState"
+      ],
+      "gap": "Calendar/epoch/range transitions, asset absence/corruption, capability denial, environment/argument encoding and isolation; deterministic APIs separate from host entropy/clocks",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "real-host"
+    },
+    {
+      "id": "S27",
+      "name": "Source generators and closed-world DI",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/Correctness/StjSourceGenerationAcceptanceTests.cs#OrdinarySourceGeneratedMetadataExecutesForEveryProfileAndTarget",
+        "tests/NetWasm.Compiler.Tests/Correctness/RegexSourceGenerationAcceptanceTests.cs#OrdinarySourceGeneratedRegexExecutesForEveryProfileAndTarget"
+      ],
+      "gap": "Generated assembly/source identity, desktop generator proof, multi-context/assembly closure, failure/null/async shapes, scopes/keyed/open-generic closure; no compiler framework special cases",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    },
+    {
+      "id": "S28",
+      "name": "Adjacent library profiles",
+      "existingEvidence": [],
+      "gap": "Reconcile every actual 0.4.1 package/profile with its owning suite and consumer command; streams, callbacks, cancellation and cross-library lifetime cases, not PackageReference-only coverage",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "external-library",
+      "externalEvidence": "Adjacent Libraries 0.4.1 package/profile qualification is not bound to this worktree; reconcile its owning suite and immutable package evidence in M7."
+    },
+    {
+      "id": "S29",
+      "name": "JavaScript/raw-host interop",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/HostInteropCompilationTests.cs#CompilerBuildsIdiomaticTaskAndValueTaskImports"
+      ],
+      "gap": "Real scalar/string/byte/callback/Promise round trips, NaN/zero/64-bit transport, resource lifetime/reentrancy, memory growth, error propagation and absent imports",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "real-host"
+    },
+    {
+      "id": "S30",
+      "name": "WIT/Canonical ABI/WASI Components",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/WitBindingTargetMatrixTests.cs#GeneratedManagedTypesExecuteForEveryProfile"
+      ],
+      "gap": "Nested records/variants/options/results/lists, flatten/spill boundaries, ownership/post-return, UTF-8, callbacks where supported, capability denial; raw wasm64 is not wasm64 Component support",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "real-host"
+    },
+    {
+      "id": "S31",
+      "name": "SDK, CLI, runtime packs and public consumers",
+      "existingEvidence": [
+        "tests/NetWasm.Sdk.Pack.Tests/TemplateContractTests.cs#NamedProjectsPreferTheirOwnDirectory",
+        "tests/NetWasm.Sdk.Pack.Tests/RestoreEvidenceTests.cs#ReaderParsesAuthoritativeTargetsAndDependencyEdges"
+      ],
+      "gap": "Real build/run/test/publish/clean, immutable fresh restore, target/RID/version identity, missing/corrupt assets, transitive generator/reference routing and no sibling-checkout dependencies",
+      "priority": "P2",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "package-consumer"
+    },
+    {
+      "id": "S32",
+      "name": "Caches, parallel compiler work, linking, diagnostics and exclusions",
+      "existingEvidence": [
+        "tests/NetWasm.Compiler.Tests/UnsupportedBoundaryCompilationTests.cs#UnmanagedDynamicLinkageHasDeterministicDiagnostic"
+      ],
+      "gap": "Warm/cold and serial/parallel semantic equivalence, invalidation identity and cancellation, final-link preservation, trace lifetime/no instrumentation effects, exact rejection contracts",
+      "priority": "P1",
+      "status": "unqualified",
+      "requiredExecution": [
+        "wasm32",
+        "raw-wasm64"
+      ],
+      "requiredBackend": "simulated-or-linked"
+    }
+  ],
+  "operationObligations": [
+    {
+      "id": "stack-storage",
+      "obligations": [
+        "S04"
+      ],
+      "operations": [
+        "Nop",
+        "LoadArgument",
+        "LoadArgumentAddress",
+        "StoreArgument",
+        "LoadLocal",
+        "LoadLocalAddress",
+        "StoreLocal",
+        "LoadInt32",
+        "LoadInt64",
+        "LoadFloat32",
+        "LoadFloat64",
+        "LoadNull",
+        "LoadString",
+        "Duplicate",
+        "Pop",
+        "Return"
+      ]
+    },
+    {
+      "id": "metadata-identity",
+      "obligations": [
+        "S02",
+        "S09"
+      ],
+      "operations": [
+        "LoadTypeToken",
+        "LoadFieldToken",
+        "MaterializeType",
+        "GetObjectType"
+      ]
+    },
+    {
+      "id": "field-storage",
+      "obligations": [
+        "S14",
+        "S20"
+      ],
+      "operations": [
+        "LoadField",
+        "LoadFieldAddress",
+        "StoreField",
+        "LoadStaticField",
+        "LoadStaticFieldAddress",
+        "StoreStaticField"
+      ]
+    },
+    {
+      "id": "value-memory",
+      "obligations": [
+        "S14",
+        "S15"
+      ],
+      "operations": [
+        "LoadObject",
+        "StoreObject",
+        "CopyObject",
+        "InitializeObject",
+        "SizeOf",
+        "LocalAllocate",
+        "CopyBlock",
+        "InitializeBlock",
+        "Unaligned"
+      ]
+    },
+    {
+      "id": "initial-values",
+      "obligations": [
+        "S04",
+        "S10",
+        "S11"
+      ],
+      "operations": [
+        "InitializeArrayData",
+        "DefaultValue"
+      ]
+    },
+    {
+      "id": "arithmetic",
+      "obligations": [
+        "S05",
+        "S07"
+      ],
+      "operations": [
+        "Add",
+        "Subtract",
+        "Multiply",
+        "BitwiseAnd",
+        "BitwiseOr",
+        "BitwiseXor",
+        "ShiftLeft",
+        "ShiftRightSigned",
+        "ShiftRightUnsigned",
+        "Negate",
+        "OnesComplement",
+        "AddChecked",
+        "AddCheckedUnsigned",
+        "SubtractChecked",
+        "SubtractCheckedUnsigned",
+        "MultiplyChecked",
+        "MultiplyCheckedUnsigned",
+        "Divide",
+        "DivideUnsigned",
+        "Remainder",
+        "RemainderUnsigned"
+      ]
+    },
+    {
+      "id": "conversions",
+      "obligations": [
+        "S06",
+        "S07",
+        "S08"
+      ],
+      "operations": [
+        "ConvertInt32",
+        "ConvertInt32Unsigned",
+        "ConvertInt64",
+        "ConvertInt64Unsigned",
+        "ConvertNativeInt",
+        "ConvertNativeUInt",
+        "ConvertFloat32",
+        "ConvertFloat64",
+        "ConvertFloatUnsigned",
+        "CheckFinite",
+        "ConvertNumeric"
+      ]
+    },
+    {
+      "id": "comparisons",
+      "obligations": [
+        "S05",
+        "S07",
+        "S18"
+      ],
+      "operations": [
+        "CompareEqual",
+        "CompareGreaterThanSigned",
+        "CompareGreaterThanUnsigned",
+        "CompareLessThanSigned",
+        "CompareLessThanUnsigned"
+      ]
+    },
+    {
+      "id": "branches",
+      "obligations": [
+        "S18",
+        "S07"
+      ],
+      "operations": [
+        "Branch",
+        "BranchIfTrue",
+        "BranchIfFalse",
+        "BranchIfEqual",
+        "BranchIfNotEqual",
+        "BranchIfGreaterThanSigned",
+        "BranchIfGreaterThanUnsigned",
+        "BranchIfGreaterThanOrEqualSigned",
+        "BranchIfGreaterThanOrEqualUnsigned",
+        "BranchIfLessThanSigned",
+        "BranchIfLessThanUnsigned",
+        "BranchIfLessThanOrEqualSigned",
+        "BranchIfLessThanOrEqualUnsigned",
+        "Switch"
+      ]
+    },
+    {
+      "id": "callables",
+      "obligations": [
+        "S12",
+        "S13"
+      ],
+      "operations": [
+        "LoadFunction",
+        "LoadVirtualFunction",
+        "Call",
+        "CallVirtual",
+        "CallIndirect",
+        "Constrained"
+      ]
+    },
+    {
+      "id": "delegates",
+      "obligations": [
+        "S13"
+      ],
+      "operations": [
+        "DelegateCombine",
+        "DelegateRemove",
+        "DelegateEqual",
+        "DelegateNotEqual"
+      ]
+    },
+    {
+      "id": "single-thread-memory-order",
+      "obligations": [
+        "S14",
+        "S32"
+      ],
+      "operations": [
+        "CompareExchange",
+        "Volatile"
+      ]
+    },
+    {
+      "id": "allocation-and-boxing",
+      "obligations": [
+        "S09",
+        "S11",
+        "S16",
+        "S17"
+      ],
+      "operations": [
+        "NewObject",
+        "Box",
+        "Unbox",
+        "UnboxAny"
+      ]
+    },
+    {
+      "id": "array-storage",
+      "obligations": [
+        "S09",
+        "S10",
+        "S14"
+      ],
+      "operations": [
+        "Readonly",
+        "NewArray",
+        "NewRectangularArray",
+        "LoadArrayLength",
+        "LoadArrayElementReference",
+        "StoreArrayElementReference",
+        "LoadArrayElement",
+        "LoadArrayElementAddress",
+        "StoreArrayElement",
+        "LoadRectangularArrayElement",
+        "StoreRectangularArrayElement",
+        "LoadRectangularArrayElementAddress"
+      ]
+    },
+    {
+      "id": "type-tests",
+      "obligations": [
+        "S09",
+        "S11",
+        "S12"
+      ],
+      "operations": [
+        "CastClass",
+        "IsInstance"
+      ]
+    },
+    {
+      "id": "exception-transfer",
+      "obligations": [
+        "S16",
+        "S19"
+      ],
+      "operations": [
+        "Throw",
+        "Rethrow",
+        "Leave",
+        "EndFinally",
+        "EndFilter"
+      ]
+    },
+    {
+      "id": "diagnostic-break",
+      "obligations": [
+        "S32"
+      ],
+      "operations": [
+        "Break"
+      ]
+    }
+  ]
+}

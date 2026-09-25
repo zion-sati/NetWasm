@@ -7,6 +7,8 @@ public sealed class CilSafepointClassifierTests
     [Theory]
     [InlineData(CilOperation.NewObject)]
     [InlineData(CilOperation.NewArray)]
+    [InlineData(CilOperation.NewRectangularArray)]
+    [InlineData(CilOperation.NewBoundedRectangularArray)]
     [InlineData(CilOperation.Box)]
     [InlineData(CilOperation.DelegateCombine)]
     [InlineData(CilOperation.DelegateRemove)]
@@ -17,6 +19,18 @@ public sealed class CilSafepointClassifierTests
     {
         Assert.True(CilSafepointClassifier.RequiresUnconditionalRootDecision(
             Instruction(operation)));
+        Assert.True(CilSafepointClassifier.MayTransferControlExceptionally(
+            Instruction(operation)));
+    }
+
+    [Theory]
+    [InlineData(CilOperation.LoadRectangularArrayElement)]
+    [InlineData(CilOperation.LoadRectangularArrayElementAddress)]
+    [InlineData(CilOperation.StoreRectangularArrayElement)]
+    public void RectangularAccessRetainsExceptionalLiveness(CilOperation operation)
+    {
+        Assert.True(CilSafepointClassifier.MayTransferControlExceptionally(Instruction(operation)));
+        Assert.False(CilSafepointClassifier.RequiresUnconditionalRootDecision(Instruction(operation)));
     }
 
     [Fact]

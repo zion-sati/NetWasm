@@ -8,6 +8,7 @@ internal static class MemoryInstructionServiceCollectionExtensions
     public static IServiceCollection AddWasmMemoryInstructions(
         this IServiceCollection services)
     {
+        services.AddSingleton<IStaticInitializationEmitter, StaticInitializationEmitter>();
         services.AddInstructionCommandProvider<ValueObjectBlockMemoryEmitter>();
         services.AddInstructionCommandProvider<FieldInstructionEmitter>();
         services.AddInstructionCommandProvider<StaticFieldInstructionEmitter>();

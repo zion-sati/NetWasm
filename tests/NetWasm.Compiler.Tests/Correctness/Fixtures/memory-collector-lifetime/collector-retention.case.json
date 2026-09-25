@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "caseId": "memory.collector-retention",
+  "featureIds": [
+    "S16",
+    "S17"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "memory-collector-lifetime/Program.cs.txt"
+  ],
+  "name": "CollectorRetention",
+  "namespace": "NetWasm.Correctness.CollectorLifetime",
+  "entryMethod": "Retention",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 1,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 2,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 3,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 4,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 5,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 6,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 7,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 8,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 9,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 10,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 11,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Runtime.InteropServices": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "executionBackend": "Linked",
+  "requiredRuntimeCapabilities": "GarbageCollection, Finalization, WeakReferenceClearing",
+  "allowUnsafe": true,
+  "supportsBatchedOracle": false,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.MemoryBoundaryTests.RealCollectionPreservesLiveRootsInteriorReferencesAndOwnedHandles"
+}

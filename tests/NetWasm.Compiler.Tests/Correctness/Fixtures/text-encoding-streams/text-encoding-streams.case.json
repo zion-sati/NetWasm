@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "caseId": "text.encoding-streams",
+  "featureIds": ["S23", "S25"],
+  "inputKind": "CSharp",
+  "sourceFiles": ["text-encoding-streams/Program.cs.txt"],
+  "name": "EncodingStreams",
+  "namespace": "NetWasm.Correctness.EncodingStreams",
+  "entryMethod": "Run",
+  "inputs": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "expectations": [
+    {"input": 0, "returnValue": 42, "exceptionType": null},
+    {"input": 1, "returnValue": 42, "exceptionType": null},
+    {"input": 2, "returnValue": 42, "exceptionType": null},
+    {"input": 3, "returnValue": 42, "exceptionType": null},
+    {"input": 4, "returnValue": 42, "exceptionType": null},
+    {"input": 5, "returnValue": 42, "exceptionType": null},
+    {"input": 6, "returnValue": 42, "exceptionType": null},
+    {"input": 7, "returnValue": 42, "exceptionType": null},
+    {"input": 8, "returnValue": 42, "exceptionType": null},
+    {"input": 9, "returnValue": 42, "exceptionType": null}
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Memory": "NetWasm.CoreLib",
+    "System.Text.Encoding.Extensions": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.EncodingStreamBoundaryTests.IncrementalCodecsAndShortStreamsPreserveCountsStateAndOwnership"
+}

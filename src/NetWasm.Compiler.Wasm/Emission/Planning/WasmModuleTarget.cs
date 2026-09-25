@@ -59,16 +59,17 @@ internal interface IWasmModuleTargetFactory
 internal sealed class WasmModuleTargetFactory(
 IWasmModulePlanner planner,
 IModuleDataPlanner moduleDataPlanner,
-IStructuredMethodEmissionPlanner methodEmissions) : IWasmModuleTargetFactory
+IStructuredMethodEmissionPlanner methodEmissions,
+IStaticInitializerFunctionPlanner staticInitializers) : IWasmModuleTargetFactory
 {
     public WasmModuleTarget Create(WasmEmissionRequest request)
     {
         var plannedMethods = methodEmissions.Plan(request);
         var plan = planner.Build(request, plannedMethods);
-        var moduleData = moduleDataPlanner.Build(
+        var moduleData = staticInitializers.Build(request, plan, moduleDataPlanner.Build(
             plannedMethods,
             request.StaticInitializers,
-            request.ConstructedStaticInitializers);
+            request.ConstructedStaticInitializers));
         return new(
             request,
             plan,

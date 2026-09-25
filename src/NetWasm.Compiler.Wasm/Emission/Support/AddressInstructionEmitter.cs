@@ -39,6 +39,12 @@ internal sealed class AddressInstructionEmitter(ITargetLayout layouts) :
             case AddressOperation.EqualZero:
                 code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
                 break;
+            case AddressOperation.Equal when layouts.Target.UsesMemory64:
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Equal));
+                break;
+            case AddressOperation.Equal:
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(operation));
         }

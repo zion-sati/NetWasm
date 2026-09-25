@@ -36,7 +36,8 @@ internal sealed class WasmModuleEmitter(
     IModuleImportCollector moduleImports,
     IEntryPointValidator entryPoints,
     IManagedBoundaryPlanValidator boundaryPlans,
-    IWasmModuleEmissionResultBuilder results) : IWasmModuleEmitter
+    IWasmModuleEmissionResultBuilder results,
+    IStaticInitializerFunctionAppender staticInitializers) : IWasmModuleEmitter
 {
     private readonly IMethodRepository _methods =
         methods ?? throw new ArgumentNullException(nameof(methods));
@@ -114,6 +115,7 @@ internal sealed class WasmModuleEmitter(
         _delegateFunctions.Append(functions, delegateInvokes, request.DelegateTypes,
             plan.DelegateCountHelperIndex, plan.DelegateLeafHelperIndex,
             plan.DelegateEqualityHelperIndex, delegateInvokeTarget, functionIndices);
+        staticInitializers.Append(functions, moduleData.StaticInitializerFunctions);
 
         var initialization = new RuntimeInitializationPlan(
             moduleData.StaticDataEnd,
@@ -127,7 +129,7 @@ internal sealed class WasmModuleEmitter(
                         StaticInitializerGuard.KeyFor(initializer)];
                     return new ModuleInitializerCall(
                         guard.Address,
-                        functionIndices.Resolve(initializer));
+                        guard.FunctionIndex.Value);
                 })
             ],
         };

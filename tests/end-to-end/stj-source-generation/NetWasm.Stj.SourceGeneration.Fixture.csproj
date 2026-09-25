@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+    <!-- global.json pins the ordinary SDK generator to 10.0.302. The pinned
+         dotnet/runtime-corelib baseline is 811225a482702af7ecc35d817966bc70b88a3a23
+         (.NET 11-era); source intentionally uses their common STJ contract. -->
+
+    <!-- The acceptance test checks these files to prove that the ordinary SDK
+         System.Text.Json generator ran during the host build. -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SourceGenerationFixture.cs" />
+  </ItemGroup>
+</Project>

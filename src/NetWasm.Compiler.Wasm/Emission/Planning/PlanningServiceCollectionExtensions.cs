@@ -27,6 +27,7 @@ internal static class PlanningServiceCollectionExtensions
         services.AddTransient<IManagedBoundaryPlanBuilder>(provider =>
             provider.GetRequiredService<ManagedBoundaryPlanBuilder>());
         services.AddSingleton<ModuleDataPlanner>();
+        services.AddSingleton<IStaticInitializerFunctionPlanner, StaticInitializerFunctionPlanner>();
         services.AddSingleton<IStructuredExceptionGroupKeyFactory, StructuredExceptionGroupKeyFactory>();
         services.AddSingleton<IStackTraceMethodPlanBuilder,
             StackTraceMethodPlanBuilder>();

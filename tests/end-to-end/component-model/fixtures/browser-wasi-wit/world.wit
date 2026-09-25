@@ -1,0 +1,10 @@
+package netwasm:test-wasi@1.0.0;
+
+interface acceptance {
+    sample: func() -> u64;
+}
+
+world test-wasi {
+    import wasi:random/random@0.2.11;
+    export acceptance;
+}

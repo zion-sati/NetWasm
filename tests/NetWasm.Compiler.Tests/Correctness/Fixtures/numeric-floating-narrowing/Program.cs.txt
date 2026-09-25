@@ -1,0 +1,129 @@
+using System;
+
+namespace NetWasm.Correctness.FloatingNarrowing;
+
+public static class EntryPoint
+{
+    // Positive/negative pairs. Operands and expected finite encodings are exact.
+    // NaN results are classified, never required to preserve sign or payload.
+    private static readonly long[] Sources =
+    [
+        0x0L, unchecked((long)0x8000000000000000UL), 0x1L,
+        unchecked((long)0x8000000000000001UL), 0xfffffffffffffL, unchecked((long)0x800fffffffffffffUL),
+        0x10000000000000L, unchecked((long)0x8010000000000000UL), 0x36a0000000000000L,
+        unchecked((long)0xb6a0000000000000UL), 0x36b0000000000000L, unchecked((long)0xb6b0000000000000UL),
+        0x36b8000000000000L, unchecked((long)0xb6b8000000000000UL), 0x380fffffc0000000L,
+        unchecked((long)0xb80fffffc0000000UL), 0x3810000000000000L, unchecked((long)0xb810000000000000UL),
+        0x3ff0000000000000L, unchecked((long)0xbff0000000000000UL), 0x3ff0000020000000L,
+        unchecked((long)0xbff0000020000000UL), 0x47efffffe0000000L, unchecked((long)0xc7efffffe0000000UL),
+        0x7fefffffffffffffL, unchecked((long)0xffefffffffffffffUL), 0x7ff0000000000000L,
+        unchecked((long)0xfff0000000000000UL), 0x7ff8000000000001L, unchecked((long)0xfff8000000000001UL),
+        0x7ff0000000000001L, unchecked((long)0xfff0000000000001UL), 0x368fffffffffffffL,
+        unchecked((long)0xb68fffffffffffffUL), 0x3690000000000000L, unchecked((long)0xb690000000000000UL),
+        0x3690000000000001L, unchecked((long)0xb690000000000001UL), 0x36a7ffffffffffffL,
+        unchecked((long)0xb6a7ffffffffffffUL), 0x36a8000000000000L, unchecked((long)0xb6a8000000000000UL),
+        0x36a8000000000001L, unchecked((long)0xb6a8000000000001UL), 0x380fffffdfffffffL,
+        unchecked((long)0xb80fffffdfffffffUL), 0x380fffffe0000000L, unchecked((long)0xb80fffffe0000000UL),
+        0x380fffffe0000001L, unchecked((long)0xb80fffffe0000001UL), 0x3ff000000fffffffL,
+        unchecked((long)0xbff000000fffffffUL), 0x3ff0000010000000L, unchecked((long)0xbff0000010000000UL),
+        0x3ff0000010000001L, unchecked((long)0xbff0000010000001UL), 0x3ff000002fffffffL,
+        unchecked((long)0xbff000002fffffffUL), 0x3ff0000030000000L, unchecked((long)0xbff0000030000000UL),
+        0x3ff0000030000001L, unchecked((long)0xbff0000030000001UL), 0x47efffffefffffffL,
+        unchecked((long)0xc7efffffefffffffUL), 0x47effffff0000000L, unchecked((long)0xc7effffff0000000UL),
+        0x47effffff0000001L, unchecked((long)0xc7effffff0000001UL)
+    ];
+    private static readonly int[] ExpectedSingle =
+    [
+        0x0, unchecked((int)0x80000000U), 0x0,
+        unchecked((int)0x80000000U), 0x0, unchecked((int)0x80000000U),
+        0x0, unchecked((int)0x80000000U), 0x1,
+        unchecked((int)0x80000001U), 0x2, unchecked((int)0x80000002U),
+        0x3, unchecked((int)0x80000003U), 0x7fffff,
+        unchecked((int)0x807fffffU), 0x800000, unchecked((int)0x80800000U),
+        0x3f800000, unchecked((int)0xbf800000U), 0x3f800001,
+        unchecked((int)0xbf800001U), 0x7f7fffff, unchecked((int)0xff7fffffU),
+        0x7f800000, unchecked((int)0xff800000U), 0x7f800000,
+        unchecked((int)0xff800000U), 0x7fc00000, unchecked((int)0xffc00000U),
+        0x7fc00000, unchecked((int)0xffc00000U), 0x0,
+        unchecked((int)0x80000000U), 0x0, unchecked((int)0x80000000U),
+        0x1, unchecked((int)0x80000001U), 0x1,
+        unchecked((int)0x80000001U), 0x2, unchecked((int)0x80000002U),
+        0x2, unchecked((int)0x80000002U), 0x7fffff,
+        unchecked((int)0x807fffffU), 0x800000, unchecked((int)0x80800000U),
+        0x800000, unchecked((int)0x80800000U), 0x3f800000,
+        unchecked((int)0xbf800000U), 0x3f800000, unchecked((int)0xbf800000U),
+        0x3f800001, unchecked((int)0xbf800001U), 0x3f800001,
+        unchecked((int)0xbf800001U), 0x3f800002, unchecked((int)0xbf800002U),
+        0x3f800002, unchecked((int)0xbf800002U), 0x7f7fffff,
+        unchecked((int)0xff7fffffU), 0x7f800000, unchecked((int)0xff800000U),
+        0x7f800000, unchecked((int)0xff800000U)
+    ];
+    private static readonly long[] ExpectedWidened =
+    [
+        0x0L, unchecked((long)0x8000000000000000UL), 0x0L,
+        unchecked((long)0x8000000000000000UL), 0x0L, unchecked((long)0x8000000000000000UL),
+        0x0L, unchecked((long)0x8000000000000000UL), 0x36a0000000000000L,
+        unchecked((long)0xb6a0000000000000UL), 0x36b0000000000000L, unchecked((long)0xb6b0000000000000UL),
+        0x36b8000000000000L, unchecked((long)0xb6b8000000000000UL), 0x380fffffc0000000L,
+        unchecked((long)0xb80fffffc0000000UL), 0x3810000000000000L, unchecked((long)0xb810000000000000UL),
+        0x3ff0000000000000L, unchecked((long)0xbff0000000000000UL), 0x3ff0000020000000L,
+        unchecked((long)0xbff0000020000000UL), 0x47efffffe0000000L, unchecked((long)0xc7efffffe0000000UL),
+        0x7ff0000000000000L, unchecked((long)0xfff0000000000000UL), 0x7ff0000000000000L,
+        unchecked((long)0xfff0000000000000UL), 0x7ff8000000000000L, unchecked((long)0xfff8000000000000UL),
+        0x7ff8000000000000L, unchecked((long)0xfff8000000000000UL), 0x0L,
+        unchecked((long)0x8000000000000000UL), 0x0L, unchecked((long)0x8000000000000000UL),
+        0x36a0000000000000L, unchecked((long)0xb6a0000000000000UL), 0x36a0000000000000L,
+        unchecked((long)0xb6a0000000000000UL), 0x36b0000000000000L, unchecked((long)0xb6b0000000000000UL),
+        0x36b0000000000000L, unchecked((long)0xb6b0000000000000UL), 0x380fffffc0000000L,
+        unchecked((long)0xb80fffffc0000000UL), 0x3810000000000000L, unchecked((long)0xb810000000000000UL),
+        0x3810000000000000L, unchecked((long)0xb810000000000000UL), 0x3ff0000000000000L,
+        unchecked((long)0xbff0000000000000UL), 0x3ff0000000000000L, unchecked((long)0xbff0000000000000UL),
+        0x3ff0000020000000L, unchecked((long)0xbff0000020000000UL), 0x3ff0000020000000L,
+        unchecked((long)0xbff0000020000000UL), 0x3ff0000040000000L, unchecked((long)0xbff0000040000000UL),
+        0x3ff0000040000000L, unchecked((long)0xbff0000040000000UL), 0x47efffffe0000000L,
+        unchecked((long)0xc7efffffe0000000UL), 0x7ff0000000000000L, unchecked((long)0xfff0000000000000UL),
+        0x7ff0000000000000L, unchecked((long)0xfff0000000000000UL)
+    ];
+    private static long _source;
+    private static long _narrowed;
+    private static long _checked;
+    private static long _widened;
+    private static bool _nan;
+
+    public static int Run(int input)
+    {
+        _source = Sources[input];
+        var source = BitConverter.Int64BitsToDouble(_source);
+        var narrowed = (float)source;
+        var checkedNarrowed = checked((float)source);
+        var widened = (double)narrowed;
+        _nan = (unchecked((ulong)_source) & 0x7fffffffffffffffUL) > 0x7ff0000000000000UL;
+        if (_nan)
+        {
+            _narrowed = float.IsNaN(narrowed) ? 1 : 0;
+            _checked = float.IsNaN(checkedNarrowed) ? 1 : 0;
+            _widened = double.IsNaN(widened) ? 1 : 0;
+            if (_narrowed != 1) return -1;
+            if (_checked != 1) return -2;
+            if (_widened != 1) return -3;
+        }
+        else
+        {
+            _narrowed = BitConverter.SingleToInt32Bits(narrowed);
+            _checked = BitConverter.SingleToInt32Bits(checkedNarrowed);
+            _widened = BitConverter.DoubleToInt64Bits(widened);
+            if (_narrowed != ExpectedSingle[input]) return -1;
+            if (_checked != ExpectedSingle[input]) return -2;
+            if (_widened != ExpectedWidened[input]) return -3;
+        }
+        return 42;
+    }
+
+    public static int Trace() => 4;
+    public static int TraceCount() => 4;
+    public static int TraceKind(int index) => index == 0 ? 5 : _nan ? 1 : index == 3 ? 5 : 4;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index switch { 0 => _source, 1 => _narrowed, 2 => _checked, 3 => _widened, _ => throw new ArgumentOutOfRangeException(nameof(index)) };
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

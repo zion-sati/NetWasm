@@ -1,0 +1,147 @@
+using System;
+
+namespace NetWasm.Correctness.MathBoundary;
+
+public static class EntryPoint
+{
+    // Math.Pow does not promise bit-identical results across runtimes:
+    // https://learn.microsoft.com/dotnet/api/system.math.pow#remarks
+    // For this small finite power, allow eight representable steps toward
+    // zero from -8. This is a case-specific accuracy budget, not a blanket
+    // tolerance for all powers, classifications, or numeric conversions.
+    private const double PowerTolerance = 8 * 8.881784197001252E-16;
+
+    public static int Run(int input) => input switch
+    {
+        1 => DoubleBoundaryContract(),
+        2 => TranscendentalContract(),
+        3 => SingleBoundaryContract(),
+        4 => IntegerExceptionContract(),
+        5 => Math.BigMul(int.MaxValue, int.MaxValue) == 4611686014132420609L ? 100 : 1,
+        6 => UnsignedBigMulContract(),
+        7 => DivRemContract(),
+        8 => FiniteComparisonContract(),
+        _ => 0,
+    };
+
+    public static int Trace() => 0;
+
+    private static bool SameBits(double left, double right) =>
+        BitConverter.DoubleToInt64Bits(left) == BitConverter.DoubleToInt64Bits(right);
+
+    private static bool SameBits(float left, float right) =>
+        BitConverter.SingleToInt32Bits(left) == BitConverter.SingleToInt32Bits(right);
+
+    private static bool FiniteNear(double actual, double expected, double tolerance) =>
+        double.IsFinite(actual) && double.IsFinite(expected) &&
+        double.IsFinite(tolerance) && tolerance >= 0 &&
+        Math.Abs(actual - expected) <= tolerance;
+
+    private static int FiniteComparisonContract()
+    {
+        if (FiniteNear(double.NaN, 1, 0.1) ||
+            FiniteNear(double.PositiveInfinity, 1, 0.1) ||
+            FiniteNear(double.NegativeInfinity, 1, 0.1)) return 1;
+        if (FiniteNear(1, double.NaN, 0.1) ||
+            FiniteNear(1, double.PositiveInfinity, 0.1) ||
+            FiniteNear(1, 1, double.NaN) ||
+            FiniteNear(1, 1, double.PositiveInfinity) ||
+            FiniteNear(1, 1, -0.1)) return 2;
+        if (FiniteNear(1.5, 1, 0.25) ||
+            !FiniteNear(1.25, 1, 0.25) || !FiniteNear(1, 1, 0)) return 3;
+        if (SameBits(-0.0, 0.0) || SameBits(-0.0f, 0.0f)) return 4;
+        if (!FiniteNear(-8 + PowerTolerance, -8, PowerTolerance) ||
+            FiniteNear(-8 + 9 * 8.881784197001252E-16, -8, PowerTolerance) ||
+            FiniteNear(8, -8, PowerTolerance)) return 5;
+        return 100;
+    }
+
+    private static int DoubleBoundaryContract()
+    {
+        var negativeNaN = BitConverter.Int64BitsToDouble(unchecked((long)0xFFF8000000000011UL));
+        if (!SameBits(Math.Abs(-0.0), 0.0)) return 1;
+        if (BitConverter.DoubleToInt64Bits(Math.Abs(negativeNaN)) !=
+            unchecked((long)0x7FF8000000000011UL)) return 2;
+        if (!SameBits(Math.CopySign(negativeNaN, 1.0),
+            BitConverter.Int64BitsToDouble(unchecked((long)0x7FF8000000000011UL)))) return 3;
+        if (!SameBits(Math.Min(-0.0, 0.0), -0.0)) return 4;
+        if (!SameBits(Math.Max(-0.0, 0.0), 0.0)) return 5;
+        if (!SameBits(Math.BitIncrement(-0.0), double.Epsilon)) return 6;
+        if (!SameBits(Math.BitDecrement(0.0), -double.Epsilon)) return 7;
+        if (!SameBits(Math.Round(-0.5), -0.0)) return 8;
+        if (Math.Round(2.5) != 2 || Math.Round(3.5) != 4 ||
+            Math.Round(-2.5, MidpointRounding.AwayFromZero) != -3) return 9;
+        if (!SameBits(Math.Floor(-0.0), -0.0) || !SameBits(Math.Ceiling(-0.0), -0.0) ||
+            !SameBits(Math.Truncate(-0.0), -0.0)) return 10;
+        if (Math.ILogB(double.Epsilon) != -1074 ||
+            Math.ILogB(double.PositiveInfinity) != int.MaxValue) return 11;
+        return 100;
+    }
+
+    private static int TranscendentalContract()
+    {
+        const double tolerance = 1E-11;
+        if (!FiniteNear(Math.Acos(0.5), 1.0471975511965979, tolerance) ||
+            !FiniteNear(Math.Asin(0.5), 0.5235987755982989, tolerance) ||
+            !FiniteNear(Math.Atan(1.0), 0.7853981633974483, tolerance)) return 1;
+        if (!FiniteNear(Math.Atan2(-0.0, -1.0), -Math.PI, 0) ||
+            !FiniteNear(Math.Atan2(0.0, -1.0), Math.PI, 0)) return 2;
+        if (!FiniteNear(Math.Exp(1.0), Math.E, tolerance) ||
+            !FiniteNear(Math.Log(2.0), 0.6931471805599453, tolerance) ||
+            !FiniteNear(Math.Log10(10.0), 1.0, tolerance) ||
+            !FiniteNear(Math.Log2(8.0), 3.0, tolerance)) return 3;
+        var largeRoot = Math.Cbrt(double.MaxValue);
+        var smallRoot = Math.Cbrt(double.Epsilon);
+        if (!FiniteNear(Math.Pow(-2.0, 3.0), -8.0, PowerTolerance)) return 41;
+        if (!FiniteNear(Math.Cbrt(-27.0), -3.0, tolerance)) return 42;
+        if (!FiniteNear(Math.Asinh(double.MaxValue), 710.4758600739439, tolerance)) return 43;
+        if (!double.IsFinite(Math.Acosh(double.MaxValue))) return 44;
+        if (!double.IsFinite(largeRoot) || !(largeRoot >= 5.64E102)) return 45;
+        if (!double.IsFinite(smallRoot) || !(smallRoot > 0)) return 46;
+        if (!FiniteNear(Math.Sinh(1.0), 1.1752011936438014, tolerance) ||
+            !FiniteNear(Math.Cosh(1.0), 1.5430806348152437, tolerance) ||
+            !FiniteNear(Math.Tanh(1.0), 0.7615941559557649, tolerance) ||
+            Math.Tanh(double.PositiveInfinity) != 1.0 ||
+            Math.Sinh(double.Epsilon) != double.Epsilon) return 5;
+        return 100;
+    }
+
+    private static int SingleBoundaryContract()
+    {
+        var negativeNaN = BitConverter.Int32BitsToSingle(unchecked((int)0xFFC00011U));
+        var absoluteNaN = MathF.Abs(negativeNaN);
+        var copiedNaN = MathF.CopySign(negativeNaN, 1.0f);
+        if (!float.IsNaN(absoluteNaN) || BitConverter.SingleToInt32Bits(absoluteNaN) < 0 ||
+            !float.IsNaN(copiedNaN) || BitConverter.SingleToInt32Bits(copiedNaN) < 0) return 1;
+        if (!SameBits(MathF.Round(-0.5f), -0.0f) ||
+            MathF.Round(2.5f) != 2.0f || MathF.Round(3.5f) != 4.0f) return 2;
+        try { _ = MathF.Round(1.2345f, 20); return 3; }
+        catch (ArgumentOutOfRangeException) { }
+        if (MathF.ILogB(float.Epsilon) != -149) return 31;
+        if (MathF.Tanh(float.PositiveInfinity) != 1.0f) return 32;
+        if (MathF.Sinh(float.Epsilon) != float.Epsilon) return 33;
+        return 100;
+    }
+
+    private static int IntegerExceptionContract()
+    {
+        try { _ = Math.Abs(int.MinValue); return 1; }
+        catch (OverflowException) { }
+        try { _ = Math.Clamp(2, 3, 1); return 2; }
+        catch (ArgumentException) { }
+        return 100;
+    }
+
+    private static int UnsignedBigMulContract()
+    {
+        var product = Math.BigMul(ulong.MaxValue, ulong.MaxValue, out var low);
+        if (product != ulong.MaxValue - 1 || low != 1) return 1;
+        return 100;
+    }
+
+    private static int DivRemContract()
+    {
+        if (Math.DivRem(-17, 5).Quotient != -3 || Math.DivRem(-17, 5).Remainder != -2) return 5;
+        return 100;
+    }
+}

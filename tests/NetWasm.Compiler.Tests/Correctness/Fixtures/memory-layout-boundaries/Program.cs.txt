@@ -1,0 +1,233 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NetWasm.Correctness.LayoutBoundaries;
+
+public struct Empty;
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct Packed
+{
+    public byte Tag;
+    public long Value;
+    public short Tail;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 2)]
+public struct AlignedPair
+{
+    public byte Tag;
+    public int Value;
+    public short Tail;
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 16)]
+public struct Union
+{
+    [FieldOffset(0)] public int Integer;
+    [FieldOffset(0)] public float Single;
+    [FieldOffset(8)] public long Wide;
+    [FieldOffset(8)] public double Double;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct Nested
+{
+    public byte Before;
+    public Packed Inner;
+    public byte After;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct NativePair
+{
+    public byte Before;
+    public nint Pointer;
+    public nuint Unsigned;
+    public byte After;
+}
+
+public struct Pair<T>
+{
+    public T First;
+    public T Second;
+}
+
+public struct ReferenceValue
+{
+    public object? Reference;
+    public long Number;
+}
+
+public sealed class Holder
+{
+    public byte Before;
+    public Pair<ReferenceValue> Pair;
+    public byte After;
+}
+
+[InlineArray(3)]
+public struct InlineValues
+{
+    private Packed _element0;
+}
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0:
+                return Unsafe.SizeOf<Empty>() == 1 && Unsafe.SizeOf<Pair<Empty>>() == 2 ? 42 : -1;
+            case 1:
+            {
+                var value = new Packed();
+                ref var start = ref value.Tag;
+                return Unsafe.SizeOf<Packed>() == 11 &&
+                    Unsafe.ByteOffset(ref start, ref Unsafe.As<long, byte>(ref value.Value)) == 1 &&
+                    Unsafe.ByteOffset(ref start, ref Unsafe.As<short, byte>(ref value.Tail)) == 9 ? 42 : -2;
+            }
+            case 2:
+            {
+                var value = new AlignedPair();
+                return Unsafe.SizeOf<AlignedPair>() == 8 &&
+                    Unsafe.ByteOffset(ref value.Tag, ref Unsafe.As<int, byte>(ref value.Value)) == 2 &&
+                    Unsafe.ByteOffset(ref value.Tag, ref Unsafe.As<short, byte>(ref value.Tail)) == 6 ? 42 : -3;
+            }
+            case 3:
+            {
+                var value = new Union { Integer = 0x3f800000, Wide = 123 };
+                if (value.Single != 1f || value.Wide != 123 || Unsafe.SizeOf<Union>() != 16) return -4;
+                value.Single = -0f;
+                return value.Integer == int.MinValue && value.Wide == 123 ? 42 : -5;
+            }
+            case 4:
+            {
+                var value = new Union { Wide = 0x3ff0000000000000, Integer = 123 };
+                if (value.Double != 1d || value.Integer != 123) return -6;
+                value.Double = -0d;
+                return value.Wide == long.MinValue && value.Integer == 123 ? 42 : -7;
+            }
+            case 5:
+            {
+                var value = new Nested { Before = 7, Inner = new Packed { Tag = 8, Value = 1234567890123, Tail = -9 }, After = 10 };
+                ref var nestedValue = ref value.Inner.Value;
+                nestedValue++;
+                return Unsafe.SizeOf<Nested>() == 13 && value.Before == 7 && value.Inner.Tag == 8 &&
+                    value.Inner.Value == 1234567890124 && value.Inner.Tail == -9 && value.After == 10 ? 42 : -8;
+            }
+            case 6:
+            {
+                var values = new Packed[3];
+                values[0] = new Packed { Tag = 1, Value = 11, Tail = 111 };
+                values[1] = new Packed { Tag = 2, Value = 22, Tail = 222 };
+                values[2] = new Packed { Tag = 3, Value = 33, Tail = 333 };
+                ref var selected = ref values[1];
+                selected.Value = 42;
+                return Unsafe.ByteOffset(ref values[0], ref values[1]) == 11 &&
+                    values[0].Value == 11 && values[1].Tag == 2 && values[1].Value == 42 &&
+                    values[1].Tail == 222 && values[2].Value == 33 ? 42 : -9;
+            }
+            case 7:
+            {
+                var value = new NativePair { Before = 7, Pointer = -42, Unsigned = nuint.MaxValue, After = 9 };
+                return Unsafe.SizeOf<NativePair>() == 2 + 2 * IntPtr.Size &&
+                    Unsafe.ByteOffset(ref value.Before, ref Unsafe.As<nint, byte>(ref value.Pointer)) == 1 &&
+                    Unsafe.ByteOffset(ref value.Before, ref value.After) == 1 + 2 * IntPtr.Size &&
+                    value.Pointer == -42 && value.Unsigned == nuint.MaxValue && value.Before == 7 && value.After == 9 ? 42 : -10;
+            }
+            case 8:
+            {
+                var original = new Packed { Tag = 7, Value = 1234567890123, Tail = -9 };
+                var copy = Copy(original);
+                copy.Value++;
+                return original.Value == 1234567890123 && copy.Value == 1234567890124 &&
+                    copy.Tag == 7 && copy.Tail == -9 ? 42 : -11;
+            }
+            case 9:
+            {
+                var original = new Packed { Tag = 7, Value = 1234567890123, Tail = -9 };
+                object box = original;
+                original.Value = 5;
+                var copy = (Packed)box;
+                copy.Tail = 6;
+                var again = (Packed)box;
+                return again.Tag == 7 && again.Value == 1234567890123 && again.Tail == -9 &&
+                    original.Value == 5 && copy.Tail == 6 ? 42 : -12;
+            }
+            case 10:
+            {
+                var reference = new object();
+                var original = new Pair<ReferenceValue>
+                {
+                    First = new ReferenceValue { Reference = reference, Number = 11 },
+                    Second = new ReferenceValue { Reference = reference, Number = 22 },
+                };
+                var copy = Copy(original);
+                copy.First = default;
+                return ReferenceEquals(original.First.Reference, reference) && original.First.Number == 11 &&
+                    copy.First.Reference is null && copy.First.Number == 0 &&
+                    ReferenceEquals(copy.Second.Reference, reference) && copy.Second.Number == 22 ? 42 : -13;
+            }
+            case 11:
+            {
+                var reference = new object();
+                var holder = new Holder { Before = 7, After = 9 };
+                holder.Pair.Second = new ReferenceValue { Reference = reference, Number = 11 };
+                ref var value = ref Select(holder);
+                value.Number = 42;
+                return holder.Before == 7 && holder.After == 9 && holder.Pair.First.Reference is null &&
+                    holder.Pair.First.Number == 0 && ReferenceEquals(holder.Pair.Second.Reference, reference) &&
+                    holder.Pair.Second.Number == 42 ? 42 : -14;
+            }
+            case 12:
+            {
+                var value = new Packed { Tag = 7, Value = 1234567890123, Tail = -9 };
+                value = default;
+                var bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref value, 1));
+                if (bytes.Length != 11) return -15;
+                for (var index = 0; index < bytes.Length; index++)
+                    if (bytes[index] != 0) return -16;
+                return 42;
+            }
+            case 13:
+            {
+                var values = new InlineValues();
+                values[0] = new Packed { Tag = 1, Value = 11, Tail = 111 };
+                values[1] = new Packed { Tag = 2, Value = 22, Tail = 222 };
+                values[2] = new Packed { Tag = 3, Value = 33, Tail = 333 };
+                values[1].Value = 42;
+                return Unsafe.SizeOf<InlineValues>() == 33 && values[0].Value == 11 &&
+                    values[1].Tag == 2 && values[1].Value == 42 && values[1].Tail == 222 &&
+                    values[2].Value == 33 ? 42 : -17;
+            }
+            case 14:
+            {
+                var narrow = Copy(new Pair<byte> { First = 7, Second = 9 });
+                var wide = Copy(new Pair<long> { First = long.MinValue, Second = long.MaxValue });
+                var nested = Copy(new Pair<Pair<byte>> { First = narrow, Second = new Pair<byte> { First = 11, Second = 13 } });
+                return Unsafe.SizeOf<Pair<byte>>() == 2 && Unsafe.SizeOf<Pair<long>>() == 16 &&
+                    narrow.First == 7 && narrow.Second == 9 && wide.First == long.MinValue && wide.Second == long.MaxValue &&
+                    nested.First.Second == 9 && nested.Second.First == 11 && nested.Second.Second == 13 ? 42 : -18;
+            }
+            case 15:
+            {
+                var value = new Nested { Before = 7, Inner = new Packed { Tag = 8, Value = 9, Tail = 10 }, After = 11 };
+                ref var alias = ref value.Inner;
+                alias = Copy(new Packed { Tag = 12, Value = long.MinValue, Tail = -13 });
+                return value.Before == 7 && value.After == 11 && value.Inner.Tag == 12 &&
+                    value.Inner.Value == long.MinValue && value.Inner.Tail == -13 ? 42 : -19;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Copy<T>(T value) => value;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ref ReferenceValue Select(Holder holder) => ref holder.Pair.Second;
+}

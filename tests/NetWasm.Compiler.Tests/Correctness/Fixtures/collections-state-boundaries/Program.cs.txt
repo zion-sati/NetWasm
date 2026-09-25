@@ -1,0 +1,120 @@
+using System;
+using System.Collections.Generic;
+
+namespace NetWasm.Correctness.CollectionStateBoundaries;
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0: Collisions(); break;
+            case 1: RemovalDuringEnumeration(); break;
+            case 2: ComparerFailure(); break;
+            case 3: LiveView(); break;
+            case 4: ValueKeys(); break;
+            default: throw new ArgumentOutOfRangeException(nameof(input));
+        }
+        return 42;
+    }
+
+    private static void Require(bool condition)
+    {
+        if (!condition) throw new InvalidOperationException("Collection contract mismatch.");
+    }
+
+    private static void Collisions()
+    {
+        var comparer = new StatefulComparer();
+        var values = new Dictionary<int, int>(1, comparer);
+        Require(values.Count == 0 && !values.TryGetValue(0, out _));
+        for (var i = 0; i < 65; i++) values.Add(i, i * 7);
+        for (var i = 0; i < 65; i += 2) Require(values.Remove(i));
+        for (var i = 0; i < 65; i += 2) Require(values.TryAdd(i, -i));
+        Require(values.Count == 65 && !values.TryAdd(1, -1));
+        for (var i = 0; i < 65; i++) Require(values[i] == ((i & 1) == 0 ? -i : i * 7));
+        values.TrimExcess();
+        for (var i = 0; i < 65; i++) Require(values[i] == ((i & 1) == 0 ? -i : i * 7));
+        Require(comparer.HashCalls > 0 && comparer.EqualsCalls > 0 && ReferenceEquals(values.Comparer, comparer));
+    }
+
+    private static void RemovalDuringEnumeration()
+    {
+        var values = new Dictionary<int, string> { [1] = "one", [2] = "two", [3] = "three" };
+        using var iterator = values.GetEnumerator();
+        Require(iterator.MoveNext());
+        var first = iterator.Current.Key;
+        Require(values.Remove(first));
+        var seen = new HashSet<int>();
+        while (iterator.MoveNext()) Require(iterator.Current.Key != first && seen.Add(iterator.Current.Key));
+        Require(seen.Count == 2);
+        using var clearing = values.GetEnumerator();
+        Require(clearing.MoveNext());
+        values.Clear();
+        Require(!clearing.MoveNext() && values.Count == 0);
+    }
+
+    private static void ComparerFailure()
+    {
+        var comparer = new StatefulComparer();
+        var values = new Dictionary<int, int>(comparer) { [1] = 10, [2] = 20 };
+        comparer.Throw = true;
+        var caught = false;
+        try { values.Add(3, 30); }
+        catch (InvalidOperationException exception) { caught = ReferenceEquals(exception, comparer.Failure); }
+        Require(caught && values.Count == 2);
+        comparer.Throw = false;
+        Require(values[1] == 10 && values[2] == 20 && !values.ContainsKey(3));
+        values.Add(3, 30);
+        Require(values.Count == 3 && values[3] == 30);
+    }
+
+    private static void LiveView()
+    {
+        var values = new SortedSet<int> { 1, 2, 3, 4, 5 };
+        var view = values.GetViewBetween(2, 4);
+        Require(view.Count == 3 && view.Min == 2 && view.Max == 4);
+        Require(view.Remove(3) && !values.Contains(3));
+        Require(values.Add(3) && view.Contains(3));
+        var caught = false;
+        try { view.Add(6); }
+        catch (ArgumentOutOfRangeException) { caught = true; }
+        Require(caught && values.Count == 5 && !values.Contains(6));
+        view.Clear();
+        Require(values.SetEquals([1, 5]) && view.Count == 0);
+    }
+
+    private static void ValueKeys()
+    {
+        var nullable = new HashSet<int?> { null, 0, 1, null };
+        Require(nullable.Count == 3 && nullable.Contains(null) && nullable.Remove(null) && !nullable.Contains(null));
+        var values = new Dictionary<Key, string>();
+        values.Add(new Key(Kind.High, 1), "first");
+        values.Add(new Key(Kind.High, 2), "second");
+        Require(values[new Key(Kind.High, 1)] == "first" && values[new Key(Kind.High, 2)] == "second");
+        Require(!values.TryAdd(new Key(Kind.High, 1), "changed") && values.Count == 2);
+    }
+
+    private enum Kind : ulong { High = 0x8000000000000000 }
+    private readonly record struct Key(Kind Kind, int Number);
+
+    private sealed class StatefulComparer : IEqualityComparer<int>
+    {
+        public int HashCalls;
+        public int EqualsCalls;
+        public bool Throw;
+        public readonly InvalidOperationException Failure = new("Planned comparer failure.");
+        public int GetHashCode(int value)
+        {
+            HashCalls++;
+            if (Throw) throw Failure;
+            return 1;
+        }
+        public bool Equals(int left, int right)
+        {
+            EqualsCalls++;
+            return left == right;
+        }
+    }
+}

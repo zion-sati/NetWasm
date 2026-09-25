@@ -1,0 +1,115 @@
+using System;
+
+namespace NetWasm.Correctness.NumericPrecision;
+
+public static class EntryPoint
+{
+    private static long _source;
+    private static long _converted;
+    private static long _returned;
+    private static int _integerKind;
+    private static int _floatingKind;
+
+    public static int Run(int input)
+    {
+        _source = _converted = _returned = 0;
+        if (input < 10) return IntSingle(input);
+        if (input < 20) return IntDouble(input - 10);
+        return LongDouble(input - 20);
+    }
+
+    private static int IntSingle(int index)
+    {
+        var source = index switch
+        {
+            0 => 0, 1 => -1, 2 => 16_777_215, 3 => 16_777_216,
+            4 => 16_777_217, 5 => 16_777_219, 6 => -16_777_217, 7 => int.MinValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        };
+        var expectedBits = index switch
+        {
+            0 => 0, 1 => unchecked((int)0xbf800000), 2 => 0x4b7fffff, 3 => 0x4b800000,
+            4 => 0x4b800000, 5 => 0x4b800002, 6 => unchecked((int)0xcb800000),
+            7 => unchecked((int)0xcf000000), _ => 0,
+        };
+        var expectedBack = index switch { 4 => 16_777_216, 5 => 16_777_220, 6 => -16_777_216, _ => source };
+        _integerKind = 2;
+        _floatingKind = 4;
+        _source = source;
+        var converted = (float)source;
+        _converted = BitConverter.SingleToInt32Bits(converted);
+        var returned = checked((int)converted);
+        _returned = returned;
+        if (_converted != expectedBits) return -1;
+        if (returned != expectedBack) return -2;
+        return 42;
+    }
+
+    private static int IntDouble(int index)
+    {
+        var source = index switch
+        {
+            0 => 0, 1 => -1, 2 => 16_777_215, 3 => 16_777_216, 4 => 16_777_217,
+            5 => 16_777_219, 6 => -16_777_217, 7 => int.MinValue, 8 => int.MaxValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        };
+        var expectedBits = index switch
+        {
+            0 => 0L, 1 => unchecked((long)0xbff0000000000000), 2 => 0x416fffffe0000000L,
+            3 => 0x4170000000000000L, 4 => 0x4170000010000000L, 5 => 0x4170000030000000L,
+            6 => unchecked((long)0xc170000010000000), 7 => unchecked((long)0xc1e0000000000000),
+            8 => 0x41dfffffffc00000L, _ => 0L,
+        };
+        _integerKind = 2;
+        _floatingKind = 5;
+        _source = source;
+        var converted = (double)source;
+        _converted = BitConverter.DoubleToInt64Bits(converted);
+        var returned = checked((int)converted);
+        _returned = returned;
+        if (_converted != expectedBits) return -1;
+        if (returned != source) return -2;
+        return 42;
+    }
+
+    private static int LongDouble(int index)
+    {
+        var source = index switch
+        {
+            0 => 0L, 1 => -1L, 2 => 9_007_199_254_740_991L, 3 => 9_007_199_254_740_992L,
+            4 => 9_007_199_254_740_993L, 5 => 9_007_199_254_740_995L,
+            6 => -9_007_199_254_740_993L, 7 => long.MinValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        };
+        var expectedBits = index switch
+        {
+            0 => 0L, 1 => unchecked((long)0xbff0000000000000), 2 => 0x433fffffffffffffL,
+            3 => 0x4340000000000000L, 4 => 0x4340000000000000L, 5 => 0x4340000000000002L,
+            6 => unchecked((long)0xc340000000000000), 7 => unchecked((long)0xc3e0000000000000),
+            _ => 0L,
+        };
+        var expectedBack = index switch
+        {
+            4 => 9_007_199_254_740_992L, 5 => 9_007_199_254_740_996L,
+            6 => -9_007_199_254_740_992L, _ => source,
+        };
+        _integerKind = 3;
+        _floatingKind = 5;
+        _source = source;
+        var converted = (double)source;
+        _converted = BitConverter.DoubleToInt64Bits(converted);
+        var returned = checked((long)converted);
+        _returned = returned;
+        if (_converted != expectedBits) return -1;
+        if (returned != expectedBack) return -2;
+        return 42;
+    }
+
+    public static int Trace() => 3;
+    public static int TraceCount() => 3;
+    public static int TraceKind(int index) => index == 1 ? _floatingKind : _integerKind;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index switch { 0 => _source, 1 => _converted, 2 => _returned, _ => throw new ArgumentOutOfRangeException(nameof(index)) };
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

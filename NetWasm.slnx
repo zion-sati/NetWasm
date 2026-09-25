@@ -31,6 +31,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NetWasm.Compiler.Core.Tests/NetWasm.Compiler.Core.Tests.csproj" />
+    <Project Path="tests/NetWasm.Compiler.Metadata.Tests/NetWasm.Compiler.Metadata.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.ControlFlow.Tests/NetWasm.Compiler.ControlFlow.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.GarbageCollection.Tests/NetWasm.Compiler.GarbageCollection.Tests.csproj" />
     <Project Path="tests/NetWasm.Compiler.Wasm.Tests/NetWasm.Compiler.Wasm.Tests.csproj" />

@@ -297,7 +297,7 @@ public sealed class CoreModelTests
         var constructed = new ConstructedTypeDescriptorLayout(
             valueType, 11, 10, 32, 104, 4, "Example.Value::Finalize");
         var valueDescriptor = new ValueTypeDescriptorLayout(
-            valueType, 12, 8, 108, 2);
+            valueType, 12, 8, 4, 108, 2);
 
         Assert.Equal(valueType, value.Type);
         Assert.Equal(4, value.Alignment);
@@ -312,6 +312,7 @@ public sealed class CoreModelTests
         Assert.Equal(valueType, valueDescriptor.Type);
         Assert.Equal(12, valueDescriptor.TypeId);
         Assert.Equal(8, valueDescriptor.Size);
+        Assert.Equal(4, valueDescriptor.BoxedPayloadOffset);
         Assert.Equal(108, valueDescriptor.BitmapAddress);
         Assert.Equal(2, valueDescriptor.BitmapBitCount);
     }

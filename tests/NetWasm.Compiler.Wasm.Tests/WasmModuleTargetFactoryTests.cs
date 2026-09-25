@@ -33,7 +33,8 @@ public sealed class WasmModuleTargetFactoryTests
                 layouts,
                 new ExceptionGroupEnumerator(),
                 new StructuredExceptionGroupKeyFactory()),
-            new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()));
+            new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()),
+            new StaticInitializerFunctionPlanner(layouts, program));
 
         var target = factory.Create(request);
 
@@ -70,7 +71,8 @@ public sealed class WasmModuleTargetFactoryTests
                 layouts,
                 new ExceptionGroupEnumerator(),
                 new StructuredExceptionGroupKeyFactory()),
-            new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()));
+            new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()),
+            new StaticInitializerFunctionPlanner(layouts, program));
 
         var target = factory.Create(request);
 

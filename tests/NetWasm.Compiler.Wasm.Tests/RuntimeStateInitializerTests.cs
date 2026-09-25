@@ -39,7 +39,7 @@ public sealed class RuntimeStateInitializerTests
                 new(EmitterTestSupport.TypeKey, 2, 1, 20, 104, 4, EmitterTestSupport.EntryKey),
             ],
             [new(CliTypeIdentity.FromStackKind(CliValueKind.I4), 3, 0, 24, 108, 5, null)],
-            [new(CliTypeIdentity.FromStackKind(CliValueKind.I8), 4, 8, 112, 6)]);
+            [new(CliTypeIdentity.FromStackKind(CliValueKind.I8), 4, 8, 8, 112, 6)]);
         var staticData = new FixedStaticDataLayout([200, 204]);
         var imports = new RecordingRuntimeImportResolver();
         var addresses = new RecordingAddressEmitter();
@@ -162,7 +162,7 @@ public sealed class RuntimeStateInitializerTests
     }
 
     [Fact]
-    public void ModuleInitializersUseOneTimeGuardsBeforeCallingManagedCode()
+    public void ModuleInitializersDelegateToTheirPlannedGuardFunction()
     {
         var code = new GeneratedFunctionWriterFactory().Create();
         var instructionWriter = new EmitterTestSupport.RecordingInstructionWriter();
@@ -184,14 +184,11 @@ public sealed class RuntimeStateInitializerTests
             new RecordingRuntimeCoreInitializer()).Initialize(recordingCode, plan);
         var instructions = instructionWriter.ToInstructions();
 
-        Assert.Equal(3, addresses.Constants.Count(address => address == 256));
+        Assert.DoesNotContain(256, addresses.Constants);
         Assert.Contains(instructions, instruction =>
             instruction.Opcode == WasmOpcodes.Call &&
             instruction.Operand.UnsignedValue == 37);
-        Assert.Equal(2, instructions.Count(instruction =>
-            instruction.Opcode == WasmOpcodes.I32Store));
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.If);
-        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.End);
+        Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
     }
 
     private static byte[] Emit(

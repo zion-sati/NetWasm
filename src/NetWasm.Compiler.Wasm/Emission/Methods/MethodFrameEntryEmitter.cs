@@ -33,11 +33,11 @@ internal sealed class MethodFrameEntryEmitter(
                 context.RuntimeImportSelection);
         }
 
-        if (context.RootMap.SlotCount != 0)
+        if (context.RootSlotCount != 0)
         {
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(context.RootMap.SlotCount)));
+                WasmInstructionOperand.Signed(context.RootSlotCount)));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.RootFrameEnter))));

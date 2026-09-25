@@ -14,7 +14,7 @@ internal sealed class WeakHandleCreateIntrinsicEmitter(IRuntimeImportResolver ru
             WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.ManagedReference))));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.I4))));
+            WasmInstructionOperand.Unsigned((uint)request.Local(1, CliValueKind.I4))));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.WeakHandleCreate))));

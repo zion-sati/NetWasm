@@ -64,7 +64,7 @@ internal sealed class NumericConversionInstructionEmitter(
         else if (source == CliValueKind.NativeInt &&
                  destination is CliValueKind.I4 or CliValueKind.I8)
         {
-            EmitFromNativeInt(code, destination);
+            EmitFromNativeInt(code, destination, unsigned);
         }
         else
         {
@@ -106,7 +106,8 @@ internal sealed class NumericConversionInstructionEmitter(
 
     private void EmitFromNativeInt(
         IWasmInstructionWriter code,
-        CliValueKind destination)
+        CliValueKind destination,
+        bool unsigned)
     {
         if (layouts.Target.UsesMemory64)
         {
@@ -117,7 +118,9 @@ internal sealed class NumericConversionInstructionEmitter(
         }
         else if (destination == CliValueKind.I8)
         {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Signed));
+            code.Write(WasmInstruction.NoOperand(unsigned
+                ? WasmOpcodes.I64ExtendI32Unsigned
+                : WasmOpcodes.I64ExtendI32Signed));
         }
     }
 
@@ -360,6 +363,11 @@ internal sealed class NumericConversionInstructionEmitter(
         bool lower)
     {
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(local))));
+        // Checked CIL conversion tests the integer obtained by truncating toward
+        // zero. Keep the original floating local intact for the conversion.
+        code.Write(WasmInstruction.NoOperand(source == CliValueKind.F4
+            ? WasmOpcodes.F32Truncate
+            : WasmOpcodes.F64Truncate));
         if (source == CliValueKind.F4) code.Write(WasmInstruction.WithOperand(WasmOpcodes.F32Constant, WasmInstructionOperand.Float32((float)bound)));
         else code.Write(WasmInstruction.WithOperand(WasmOpcodes.F64Constant, WasmInstructionOperand.Float64(bound)));
         if (source == CliValueKind.F4)

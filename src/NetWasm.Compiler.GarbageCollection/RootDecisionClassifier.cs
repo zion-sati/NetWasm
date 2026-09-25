@@ -58,10 +58,12 @@ public sealed class RootDecisionClassifier(
         return instruction.Operand switch
         {
             CilOperand.Entity target =>
+                IsAllocatingStaticCall(_methods.GetMethod(target.Key), null, request) ||
                 _methods.GetMethod(target.Key).JSImport is not null ||
                 request.AllocatingMethods.Contains(target.Key) &&
                 _methods.GetMethod(target.Key).HasBody,
             CilOperand.MethodInstance target =>
+                IsAllocatingStaticCall(target.Value.Definition, target.Value.DeclaringType, request) ||
                 target.Value.Definition.JSImport is not null ||
                 (target.Value.IsConstructed
                     ? request.AllocatingConstructedMethods.Contains(target.Value.CanonicalName)
@@ -84,16 +86,36 @@ public sealed class RootDecisionClassifier(
         };
         if (field is null)
             return false;
-        var initializer = _types.GetTypeDefinition(field.DeclaringType)
+        return IsAllocatingInitializer(field.DeclaringType,
+            (instruction.Operand as CilOperand.FieldInstance)?.Value.DeclaringType,
+            allocatingMethods, allocatingConstructedMethods);
+    }
+
+    private bool IsAllocatingStaticCall(
+        MethodDefinitionModel method,
+        CliTypeIdentity? declaringType,
+        RootDecisionRequest request) =>
+        method.IsStatic && method.Name != ".cctor" &&
+        IsAllocatingInitializer(method.DeclaringType, declaringType,
+            request.AllocatingMethods, request.AllocatingConstructedMethods);
+
+    private bool IsAllocatingInitializer(
+        EntityKey typeDefinition,
+        CliTypeIdentity? declaringType,
+        ISet<EntityKey> allocatingMethods,
+        ISet<string> allocatingConstructedMethods)
+    {
+        var initializer = _types.GetTypeDefinition(typeDefinition)
             .Methods.Select(_methods.GetMethod)
             .SingleOrDefault(method => method.Name == ".cctor");
         if (initializer is null)
             return false;
-        if (instruction.Operand is CilOperand.FieldInstance constructedField &&
-            constructedField.Value.DeclaringType.Shape == CliTypeShape.GenericInstantiation)
+        // Allocation capabilities include the failure boundary of every
+        // reachable initializer, even if its managed body does not allocate.
+        if (declaringType is { Shape: CliTypeShape.GenericInstantiation })
         {
             var canonicalName =
-                $"{constructedField.Value.DeclaringType.CanonicalName}::" +
+                $"{declaringType.CanonicalName}::" +
                 $"0x{initializer.Key.MetadataToken:x8}";
             return allocatingConstructedMethods.Contains(canonicalName);
         }

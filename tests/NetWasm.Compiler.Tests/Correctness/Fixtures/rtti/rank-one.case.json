@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "caseId": "rtti.rank-one-operations",
+  "featureIds": ["S09", "S10"],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "RttiRankOneArray",
+  "namespace": "RttiRankOneArray",
+  "entryMethod": "Run",
+  "inputs": [0, 1, 2, 3, 4],
+  "expectations": [
+    { "input": 0, "returnValue": 42, "exceptionType": null },
+    { "input": 1, "returnValue": 42, "exceptionType": null },
+    { "input": 2, "returnValue": null, "exceptionType": "System.ArrayTypeMismatchException" },
+    { "input": 3, "returnValue": 42, "exceptionType": null },
+    { "input": 4, "returnValue": 42, "exceptionType": null }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": { "System.Private.CoreLib": "NetWasm.CoreLib" },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.RttiArrayOperationCompilationTests.CompilerExecutesDistinctSzAndRankOneArraySemantics"
+}

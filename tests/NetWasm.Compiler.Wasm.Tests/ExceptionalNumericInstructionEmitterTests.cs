@@ -236,21 +236,30 @@ public sealed class ExceptionalNumericInstructionEmitterTests
     }
 
     [Theory]
-    [InlineData(CliValueKind.F4, WasmOpcodes.F32Divide, WasmOpcodes.F32Truncate)]
-    [InlineData(CliValueKind.F8, WasmOpcodes.F64Divide, WasmOpcodes.F64Truncate)]
-    public void FloatingRemainderUsesTruncateAndMultiply(
-        CliValueKind type,
-        byte divisionOpcode,
-        byte truncateOpcode)
+    [InlineData(CliValueKind.F4, WasmTarget.Wasm32)]
+    [InlineData(CliValueKind.F8, WasmTarget.Wasm32)]
+    [InlineData(CliValueKind.F4, WasmTarget.Wasm64)]
+    [InlineData(CliValueKind.F8, WasmTarget.Wasm64)]
+    public void FloatingRemainderDelegatesOperandAndScratchLocals(
+        CliValueKind type, WasmTarget target)
     {
         var exceptions = new RecordingImplicitExceptionEmitter();
+        var remainder = new RecordingFloatingRemainderEmitter();
         var request = CreateRequest(CilOperation.Remainder, type, type);
 
-        Emit(CreateEmitter(exceptions: exceptions), request);
+        Emit(CreateEmitter(target, exceptions: exceptions, floatingRemainder: remainder), request);
 
         Assert.Equal([type], request.Stack);
-        Assert.Contains(divisionOpcode, GetCodeBytes(request));
-        Assert.Contains(truncateOpcode, GetCodeBytes(request));
+        Assert.Equal(1, remainder.CallCount);
+        Assert.Equal(type, remainder.Type);
+        Assert.Same(GetCodeWriter(request), remainder.Writer);
+        Assert.Equal(WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+            request.Context.StackLocals, 0, type, WasmTargetLayout.For(target)), remainder.Left);
+        Assert.Equal(WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+            request.Context.StackLocals, 1, type, WasmTargetLayout.For(target)), remainder.Right);
+        Assert.Equal(request.Context.NumericTemporaryI4, remainder.Count);
+        Assert.Equal(request.Context.NumericTemporaryI8, remainder.Sign);
+        Assert.Empty(GetCodeBytes(request));
         Assert.Empty(exceptions.Kinds);
     }
 
@@ -277,12 +286,14 @@ public sealed class ExceptionalNumericInstructionEmitterTests
     private static IInstructionCommandProvider CreateEmitter(
         WasmTarget target = WasmTarget.Wasm32,
         ICheckedBinaryEmitter? checkedBinary = null,
-        IImplicitExceptionEmitter? exceptions = null)
+        IImplicitExceptionEmitter? exceptions = null,
+        IFloatingRemainderEmitter? floatingRemainder = null)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         return AsProvider(new ExceptionalNumericInstructionEmitter(
             layouts,
             checkedBinary ?? new RecordingCheckedBinaryEmitter(),
+            floatingRemainder ?? new RecordingFloatingRemainderEmitter(),
             exceptions ?? new RecordingImplicitExceptionEmitter()));
     }
 
@@ -306,6 +317,29 @@ public sealed class ExceptionalNumericInstructionEmitterTests
 
     private static IInstructionCommandProvider AsProvider(
         IInstructionCommandProvider provider) => provider;
+
+    private sealed class RecordingFloatingRemainderEmitter : IFloatingRemainderEmitter
+    {
+        public int CallCount { get; private set; }
+        public CliValueKind Type { get; private set; }
+        public IWasmInstructionWriter? Writer { get; private set; }
+        public int Left { get; private set; }
+        public int Right { get; private set; }
+        public int Count { get; private set; }
+        public int Sign { get; private set; }
+
+        public void Emit(IWasmInstructionWriter code, CliValueKind type,
+            int leftLocal, int rightLocal, int countLocal, int signLocal)
+        {
+            CallCount++;
+            Writer = code;
+            Type = type;
+            Left = leftLocal;
+            Right = rightLocal;
+            Count = countLocal;
+            Sign = signLocal;
+        }
+    }
 
     private sealed class RecordingCheckedBinaryEmitter : ICheckedBinaryEmitter
     {

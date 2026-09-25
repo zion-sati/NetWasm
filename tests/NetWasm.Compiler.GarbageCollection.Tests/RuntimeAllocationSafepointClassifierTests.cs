@@ -23,6 +23,8 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.WeakReferenceRuntime", "Set")]
     [InlineData("System.GCHandleRuntime", "Create")]
     [InlineData("System.GCHandleRuntime", "Set")]
+    [InlineData("System.GCCollectionRuntime", "Collect")]
+    [InlineData("System.GCFinalizerRuntime", "WaitForPending")]
     public void ClassifyRecognizesEveryRuntimeAllocationBoundary(
         string typeName,
         string methodName)

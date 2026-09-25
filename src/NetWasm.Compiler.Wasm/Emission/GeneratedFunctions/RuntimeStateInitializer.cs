@@ -66,6 +66,7 @@ internal sealed class RuntimeStateInitializer(
                 WasmOpcodes.I32Constant,
                 WasmInstructionOperand.Signed(descriptor.TypeId)));
             addresses.Emit(code.Instructions, descriptor.Size);
+            addresses.Emit(code.Instructions, descriptor.BoxedPayloadOffset);
             addresses.Emit(code.Instructions, descriptor.BitmapAddress);
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Constant,
@@ -89,36 +90,13 @@ internal sealed class RuntimeStateInitializer(
         }
     }
 
-    private void InitializeModule(
+    private static void InitializeModule(
         GeneratedFunctionWriterLease code,
         ModuleInitializerCall initializer)
     {
-        addresses.Emit(code.Instructions, initializer.GuardAddress);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Load,
-            WasmInstructionOperand.Memory(2, 0)));
-        code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        addresses.Emit(code.Instructions, initializer.GuardAddress);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(1)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Store,
-            WasmInstructionOperand.Memory(2, 0)));
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)initializer.FunctionIndex)));
-        addresses.Emit(code.Instructions, initializer.GuardAddress);
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(2)));
-        code.Instructions.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Store,
-            WasmInstructionOperand.Memory(2, 0)));
-        code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private void EmitTypeDescriptor(

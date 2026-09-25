@@ -12,6 +12,65 @@ using static EmitterTestSupport;
 
 public sealed class ExceptionRegionEmitterTests
 {
+    [Theory]
+    [InlineData(CilExceptionRegionKind.Finally, WasmTarget.Wasm32)]
+    [InlineData(CilExceptionRegionKind.Finally, WasmTarget.Wasm64)]
+    [InlineData(CilExceptionRegionKind.Catch, WasmTarget.Wasm32)]
+    [InlineData(CilExceptionRegionKind.Catch, WasmTarget.Wasm64)]
+    [InlineData(CilExceptionRegionKind.Fault, WasmTarget.Wasm32)]
+    [InlineData(CilExceptionRegionKind.Fault, WasmTarget.Wasm64)]
+    public void FinallyBodyDoesNotBranchOnTheAlreadyPendingNormalContinuation(
+        CilExceptionRegionKind kind,
+        WasmTarget target)
+    {
+        var program = new FakeProgram();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var method = Structure(
+            program,
+            program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.Return));
+        var protectedBody = new StructuredSequence([]);
+        var handlerBody = new StructuredSequence([]);
+        var continuationBody = new StructuredSequence([]);
+        var group = Group(0, 1,
+            [new StructuredExceptionCode(protectedBody)],
+            [Clause(kind, kind == CilExceptionRegionKind.Catch ? TypeKey : null, handlerBody)],
+            [Continuation(42, continuationBody)]);
+        var visits = new List<StructuredSequence>();
+
+        CreateEmitter(program, layouts, imports).Emit(
+            new WasmInstructionWriter(new WasmBinaryWriter(new WasmBinaryBuffer())),
+            WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null),
+            CreateContext(group),
+            false,
+            CreateModuleData(group),
+            (sequence, context, _, _, leaveDepth) =>
+            {
+                visits.Add(sequence);
+                if (ReferenceEquals(sequence, protectedBody))
+                {
+                    Assert.Same(group, context.ActiveExceptionGroup);
+                    Assert.Equal(0, leaveDepth);
+                }
+                else if (ReferenceEquals(sequence, handlerBody))
+                {
+                    Assert.Same(group, context.ActiveExceptionGroup);
+                    Assert.Equal(kind == CilExceptionRegionKind.Finally ? (int?)null : 0, leaveDepth);
+                }
+                else
+                {
+                    Assert.Same(continuationBody, sequence);
+                    Assert.Null(context.ActiveExceptionGroup);
+                    Assert.Null(leaveDepth);
+                }
+            });
+
+        Assert.Equal([protectedBody, handlerBody, continuationBody], visits);
+    }
+
     [Fact]
     public void RegionRejectsAnUndefinedExceptionGroup()
     {
@@ -314,7 +373,7 @@ public sealed class ExceptionRegionEmitterTests
     }
 
     [Fact]
-    public void FinallyClearsHandledNestedExceptionBeforeTestingExceptionalExit()
+    public void FinallyInitializesAndReloadsItsOwnPendingExceptionRoot()
     {
         var program = new FakeProgram();
         var imports = WasmRuntimeImports.CreateCatalog();
@@ -331,9 +390,7 @@ public sealed class ExceptionRegionEmitterTests
             [Clause(CilExceptionRegionKind.Finally, null)],
             []);
         var context = CreateContext(group);
-        var outputBuffer = new WasmBinaryBuffer();
-        var output = new WasmBinaryWriter(outputBuffer);
-        var code = new WasmInstructionWriter(output);
+        var code = new RecordingInstructionWriter();
 
         CreateEmitter(program, layouts, imports).Emit(
             code,
@@ -344,14 +401,63 @@ public sealed class ExceptionRegionEmitterTests
             CreateModuleData(group),
             (_, _, _, _, _) => { });
 
-        var bytes = new WasmBinarySnapshotReader(outputBuffer).Read();
-        var exceptionTemporaryStores = bytes
-            .Select((value, index) => (value, index))
-            .Count(item =>
-                item.value == WasmOpcodes.LocalSet &&
-                item.index + 1 < bytes.Length &&
-                bytes[item.index + 1] == context.ExceptionTemporary);
-        Assert.Equal(3, exceptionTemporaryStores);
+        var instructions = code.ToInstructions();
+        Assert.Equal(2, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Store));
+        Assert.Equal(2, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Load));
+        Assert.All(instructions.Where(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I32Load),
+            instruction => Assert.Equal(0u, instruction.Operand.Offset));
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, CilExceptionRegionKind.Catch)]
+    [InlineData(WasmTarget.Wasm64, CilExceptionRegionKind.Catch)]
+    [InlineData(WasmTarget.Wasm32, CilExceptionRegionKind.Finally)]
+    [InlineData(WasmTarget.Wasm64, CilExceptionRegionKind.Finally)]
+    [InlineData(WasmTarget.Wasm32, CilExceptionRegionKind.Fault)]
+    [InlineData(WasmTarget.Wasm64, CilExceptionRegionKind.Fault)]
+    public void NestedHandlerOwnsItsRootAndContinuationRetainsTheEnclosingCatch(
+        WasmTarget target, CilExceptionRegionKind kind)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var method = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return));
+        var handler = new StructuredSequence([new StructuredLoopContinue()]);
+        var continuation = new StructuredSequence([new StructuredLoopBreak()]);
+        var group = Group(1, 1, [new StructuredExceptionCode(StructuredSequence.Empty)],
+            [Clause(kind, kind == CilExceptionRegionKind.Catch ? TypeKey : null, handler)],
+            [Continuation(20, continuation)]);
+        var context = CreateContext(group) with
+        {
+            ActiveCatchRootSlot = 5,
+            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(group.Id, 6),
+        };
+        var code = new RecordingInstructionWriter();
+        var handlers = 0;
+        var continuations = 0;
+        CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
+            new StructuredExceptionRegion(group.Id, null), context, false, CreateModuleData(group),
+            (sequence, actual, _, _, _) =>
+            {
+                if (ReferenceEquals(sequence, handler))
+                {
+                    handlers++;
+                    Assert.Equal(kind == CilExceptionRegionKind.Catch ? 6 : 5, actual.ActiveCatchRootSlot);
+                }
+                if (ReferenceEquals(sequence, continuation))
+                {
+                    continuations++;
+                    Assert.Equal(5, actual.ActiveCatchRootSlot);
+                }
+            });
+        Assert.Equal(1, handlers);
+        Assert.Equal(1, continuations);
+        var memory = code.ToInstructions().Where(instruction => instruction.Opcode is
+            WasmOpcodes.I32Load or WasmOpcodes.I64Load or WasmOpcodes.I32Store or WasmOpcodes.I64Store).ToArray();
+        Assert.NotEmpty(memory);
+        Assert.All(memory, instruction => Assert.Equal(
+            (uint)(6 * layouts.Target.ObjectReferenceSize), instruction.Operand.Offset));
     }
 
     [Fact]
@@ -868,7 +974,11 @@ public sealed class ExceptionRegionEmitterTests
             15,
             16,
             17,
-            18);
+            18)
+        {
+            ExceptionRootSlots = groups.Select((group, index) => (group.Id, index))
+                .ToImmutableDictionary(item => item.Id, item => item.index),
+        };
     }
 
     private static int[] Calls(byte[] code) => [.. code

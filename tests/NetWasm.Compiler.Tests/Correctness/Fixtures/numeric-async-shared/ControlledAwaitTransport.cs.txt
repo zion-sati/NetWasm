@@ -1,0 +1,95 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+
+namespace NetWasm.Correctness.AsyncNumericFixtures;
+
+// Managed fixture code, not a host: explicit gates prove suspension and resumption.
+public static class ControlledAwaitTransport
+{
+    public static T Run<T>(T value, int route)
+    {
+        var synchronous = (route & 1) == 0;
+        var first = new Gate(synchronous);
+        var second = new Gate(synchronous);
+        var progress = new Progress();
+        var task = route < 2
+            ? ThroughTask(value, first, second, progress)
+            : ThroughValueTask(value, first, second, progress).AsTask();
+        return CompleteOperation(task, first, second, progress, synchronous);
+    }
+
+    public static T CompleteOperation<T>(Task<T> task, Gate first, Gate second, Progress progress, bool synchronous)
+    {
+        if (synchronous)
+        {
+            if (!task.IsCompleted || progress.Step != 3 || first.Registrations != 0 || second.Registrations != 0)
+                throw new InvalidOperationException();
+        }
+        else
+        {
+            if (task.IsCompleted || progress.Step != 1 || first.Registrations != 1 || second.Registrations != 0)
+                throw new InvalidOperationException();
+            first.Complete();
+            if (task.IsCompleted || progress.Step != 2 || second.Registrations != 1)
+                throw new InvalidOperationException();
+            second.Complete();
+            if (!task.IsCompleted || progress.Step != 3)
+                throw new InvalidOperationException();
+        }
+        return task.GetAwaiter().GetResult();
+    }
+
+    private static async Task<T> ThroughTask<T>(T value, Gate first, Gate second, Progress progress)
+    {
+        var local = value;
+        progress.Step = 1;
+        await first;
+        progress.Step = 2;
+        await second;
+        progress.Step = 3;
+        return local;
+    }
+
+    private static async ValueTask<T> ThroughValueTask<T>(T value, Gate first, Gate second, Progress progress)
+    {
+        var local = value;
+        progress.Step = 1;
+        await first;
+        progress.Step = 2;
+        await second;
+        progress.Step = 3;
+        return local;
+    }
+
+    public sealed class Progress
+    {
+        public int Step;
+    }
+
+    public sealed class Gate(bool completed) : INotifyCompletion
+    {
+        private Action? _continuation;
+        public bool IsCompleted { get; private set; } = completed;
+        public int Registrations { get; private set; }
+        public Gate GetAwaiter() => this;
+        public void GetResult()
+        {
+            if (!IsCompleted) throw new InvalidOperationException();
+        }
+        public void OnCompleted(Action continuation)
+        {
+            if (IsCompleted || _continuation is not null) throw new InvalidOperationException();
+            _continuation = continuation;
+            Registrations++;
+        }
+        public void Complete()
+        {
+            if (IsCompleted || _continuation is null) throw new InvalidOperationException();
+            var continuation = _continuation;
+            _continuation = null;
+            IsCompleted = true;
+            continuation();
+        }
+    }
+}

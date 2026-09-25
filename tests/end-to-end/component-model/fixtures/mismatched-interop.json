@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "target": "wasm64",
+  "imports": [],
+  "exports": [],
+  "callbacks": [],
+  "statusAbi": {
+    "successStatus": 0,
+    "hostFailureStatus": 1,
+    "scalarResultOffset": 0
+  },
+  "targetLayout": {
+    "managedReferenceSize": 8,
+    "stringLengthOffset": 8,
+    "stringDataOffset": 12
+  }
+}

@@ -49,8 +49,14 @@ internal sealed class ImplicitExceptionDiscovery(
                 break;
             case CilOperation.NewArray:
             case CilOperation.NewRectangularArray:
+            case CilOperation.NewBoundedRectangularArray:
                 requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
                 requirements.Add(new(ManagedExceptionKind.Overflow, "System.OverflowException"));
+                if (instruction.Operation == CilOperation.NewBoundedRectangularArray)
+                {
+                    requirements.Add(new(
+                        ManagedExceptionKind.ArgumentOutOfRange, "System.ArgumentOutOfRangeException"));
+                }
                 break;
             case CilOperation.LoadField:
             case CilOperation.StoreField:
@@ -86,7 +92,6 @@ internal sealed class ImplicitExceptionDiscovery(
             case CilOperation.LoadArrayElement:
             case CilOperation.LoadArrayElementAddress:
             case CilOperation.LoadRectangularArrayElement:
-            case CilOperation.LoadRectangularArrayElementAddress:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));
                 requirements.Add(new(
                     ManagedExceptionKind.IndexOutOfRange,
@@ -95,6 +100,7 @@ internal sealed class ImplicitExceptionDiscovery(
             case CilOperation.StoreArrayElementReference:
             case CilOperation.StoreArrayElement:
             case CilOperation.StoreRectangularArrayElement:
+            case CilOperation.LoadRectangularArrayElementAddress:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));
                 requirements.Add(new(
                     ManagedExceptionKind.IndexOutOfRange,

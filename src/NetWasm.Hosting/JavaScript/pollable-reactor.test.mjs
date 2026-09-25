@@ -189,3 +189,35 @@ test("validates dependencies, pollables, and token ownership", () => {
   reactor.watch({ block() {} }, 1);
   assert.throws(() => reactor.watch({ block() {} }, 1), /already watched/);
 });
+
+test("independent reactors own identical tokens and shutdown separately", async () => {
+  const firstWait = deferred();
+  const secondWait = deferred();
+  const first = fixture();
+  const second = fixture();
+  let firstDisposed = 0;
+  let secondDisposed = 0;
+  first.reactor.watch({
+    block() { return firstWait.promise; },
+    dispose() { firstDisposed++; },
+  }, 1);
+  second.reactor.watch({
+    block() { return secondWait.promise; },
+    dispose() { secondDisposed++; },
+  }, 1);
+  first.jobs.shift()();
+  second.jobs.shift()();
+  first.reactor.close();
+  assert.equal(firstDisposed, 1);
+  assert.equal(secondDisposed, 0);
+  firstWait.resolve();
+  secondWait.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(first.calls, []);
+  assert.deepEqual(second.calls, ["ready:1"]);
+  assert.equal(firstDisposed, 1);
+  assert.equal(secondDisposed, 1);
+  second.reactor.close();
+  assert.equal(secondDisposed, 1);
+});

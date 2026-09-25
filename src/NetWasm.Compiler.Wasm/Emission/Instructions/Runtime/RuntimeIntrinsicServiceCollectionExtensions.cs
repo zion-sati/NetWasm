@@ -15,6 +15,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ArrayLengthIntrinsicEmitter>();
         services.AddSingleton<ArrayRankIntrinsicEmitter>();
         services.AddSingleton<ArrayGetLengthIntrinsicEmitter>();
+        services.AddSingleton<ArrayGetLowerBoundIntrinsicEmitter>();
+        services.AddSingleton<ArrayGetValueIntrinsicEmitter>();
         services.AddSingleton<ArrayCopyIntrinsicEmitter>();
         services.AddSingleton<ArrayClearIntrinsicEmitter>();
         services.AddSingleton<ArrayCloneIntrinsicEmitter>();
@@ -133,6 +135,10 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.ArrayRank);
         AddRegistration<ArrayGetLengthIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayGetLength);
+        AddRegistration<ArrayGetLowerBoundIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayGetLowerBound);
+        AddRegistration<ArrayGetValueIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayGetValue);
         AddRegistration<ArrayCopyIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayCopy);
         AddRegistration<ArrayClearIntrinsicEmitter>(

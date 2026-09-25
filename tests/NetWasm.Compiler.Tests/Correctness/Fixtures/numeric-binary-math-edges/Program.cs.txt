@@ -1,0 +1,488 @@
+using System;
+
+namespace NetWasm.Correctness.BinaryMathEdges;
+
+public static class EntryPoint
+{
+    // Frozen special-value rules and exact dyadic powers, independently audited.
+    // Atan2 nonzero angles use mathematical quarter-pi constants with a two-ULP
+    // qualification budget. NaNs use classification; zeros/infinities are exact.
+    private static readonly bool[] Single = [
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false
+    ];
+    private static readonly int[] Operations = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+    ];
+    private static readonly ulong[] Left = [
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL,
+        0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL,
+        0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL,
+        0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL,
+        0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL,
+        0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0x40800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL,
+        0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL, 0xc0800000UL,
+        0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL,
+        0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0x3e800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL,
+        0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0xbe800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL,
+        0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL,
+        0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL,
+        0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL,
+        0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL,
+        0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL,
+        0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL,
+        0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL,
+        0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL,
+        0x80000000UL, 0x80000000UL, 0x80000000UL, 0x80000000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL,
+        0x3f800000UL, 0x3f800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL, 0xbf800000UL,
+        0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0x7f800000UL, 0xff800000UL, 0xff800000UL,
+        0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0xff800000UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL,
+        0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0x7fc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL,
+        0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0xffc00011UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL, 0x7f800001UL,
+        0x7f800001UL, 0x7f800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL, 0xff800001UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL,
+        0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL,
+        0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0x4010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL,
+        0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL, 0xc010000000000000UL,
+        0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL,
+        0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0x3fd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL,
+        0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0xbfd0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL,
+        0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL,
+        0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL,
+        0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL,
+        0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL,
+        0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL,
+        0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL,
+        0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL,
+        0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL,
+        0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL,
+        0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL,
+        0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL,
+        0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL, 0x7ff0000000000001UL,
+        0x7ff0000000000001UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL, 0xfff0000000000001UL
+    ];
+    private static readonly ulong[] Right = [
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL,
+        0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL,
+        0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL,
+        0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL,
+        0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL,
+        0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL,
+        0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL,
+        0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL,
+        0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL, 0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x40000000UL, 0xc0000000UL, 0x40400000UL, 0xc0400000UL,
+        0x3f000000UL, 0xbf000000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL,
+        0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL,
+        0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL,
+        0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL,
+        0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL,
+        0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL,
+        0x7f800001UL, 0xff800001UL, 0x0UL, 0x80000000UL, 0x3f800000UL, 0xbf800000UL, 0x7f800000UL, 0xff800000UL, 0x7fc00011UL, 0xffc00011UL, 0x7f800001UL, 0xff800001UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL,
+        0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL,
+        0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL,
+        0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL,
+        0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0x4008000000000000UL, 0xc008000000000000UL,
+        0x3fe0000000000000UL, 0xbfe0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL,
+        0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL,
+        0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL,
+        0x7ff0000000000001UL, 0xfff0000000000001UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL
+    ];
+    private static readonly bool[] ExpectedNaN = [
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        true, true, true, true, false, false, false, false, false, false, false, false,
+        false, false, false, false, true, true, true, true, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, true, true, false, false,
+        true, true, true, true, false, false, false, false, false, false, false, false,
+        false, false, false, false, true, true, true, true, false, false, false, false,
+        false, false, false, false, true, true, false, false, true, true, true, true,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        true, true, true, true, false, false, false, false, false, false, false, false,
+        true, true, false, false, true, true, true, true, false, false, false, false,
+        false, false, false, false, false, false, false, false, true, true, true, true,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        true, true, true, true, false, false, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, false, false, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        false, false, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, false, false, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, false, false, false, false,
+        false, false, true, true, true, true, false, false, false, false, false, false,
+        true, true, true, true, false, false, false, false, false, false, true, true,
+        true, true, false, false, false, false, false, false, true, true, true, true,
+        false, false, false, false, false, false, true, true, true, true, false, false,
+        false, false, false, false, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        true, true, true, true, false, false, false, false, false, false, false, false,
+        false, false, false, false, true, true, true, true, false, false, false, false,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, false, true, true, false, false,
+        true, true, true, true, false, false, false, false, false, false, false, false,
+        false, false, false, false, true, true, true, true, false, false, false, false,
+        false, false, false, false, true, true, false, false, true, true, true, true,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        true, true, true, true, false, false, false, false, false, false, false, false,
+        true, true, false, false, true, true, true, true, false, false, false, false,
+        false, false, false, false, false, false, false, false, true, true, true, true,
+        false, false, false, false, false, false, false, false, false, false, false, false,
+        true, true, true, true, false, false, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, false, false, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        false, false, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, false, false, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, false, false, false, false,
+        false, false, true, true, true, true, false, false, false, false, false, false,
+        true, true, true, true, false, false, false, false, false, false, true, true,
+        true, true, false, false, false, false, false, false, true, true, true, true,
+        false, false, false, false, false, false, true, true, true, true, false, false,
+        false, false, false, false, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true,
+        true, true, true, true, true, true, true, true, true, true, true, true
+    ];
+    private static readonly ulong[] Expected = [
+        0x3f800000UL, 0x3f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x80000000UL, 0xff800000UL, 0x0UL, 0x7f800000UL, 0x80000000UL, 0xff800000UL,
+        0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL,
+        0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL, 0x3f800000UL,
+        0x3f800000UL, 0x3f800000UL, 0xbf800000UL, 0xbf800000UL, 0x3f800000UL, 0x3f800000UL, 0xbf800000UL, 0xbf800000UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x40800000UL, 0x3e800000UL, 0x41800000UL, 0x3d800000UL, 0x42800000UL, 0x3c800000UL,
+        0x40000000UL, 0x3f000000UL, 0x7f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0xc0800000UL, 0xbe800000UL,
+        0x41800000UL, 0x3d800000UL, 0xc2800000UL, 0xbc800000UL, 0x0UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3f800000UL, 0x3f800000UL, 0x3e800000UL, 0x40800000UL, 0x3d800000UL, 0x41800000UL, 0x3c800000UL, 0x42800000UL, 0x3f000000UL, 0x40000000UL, 0x0UL, 0x7f800000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0xbe800000UL, 0xc0800000UL, 0x3d800000UL, 0x41800000UL, 0xbc800000UL, 0xc2800000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x7f800000UL, 0x0UL,
+        0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3f800000UL, 0x3f800000UL, 0xff800000UL, 0x80000000UL, 0x7f800000UL, 0x0UL, 0xff800000UL, 0x80000000UL, 0x7f800000UL, 0x0UL, 0x7f800000UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3f800000UL, 0x3f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3f800000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x40490fdbUL, 0x0UL, 0x40490fdbUL,
+        0x0UL, 0x40490fdbUL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x80000000UL, 0xc0490fdbUL, 0x80000000UL, 0xc0490fdbUL, 0x80000000UL, 0xc0490fdbUL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3fc90fdbUL, 0x3fc90fdbUL, 0x3f490fdbUL, 0x4016cbe4UL, 0x0UL, 0x40490fdbUL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0xbfc90fdbUL, 0xbfc90fdbUL, 0xbf490fdbUL, 0xc016cbe4UL, 0x80000000UL, 0xc0490fdbUL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3fc90fdbUL, 0x3fc90fdbUL, 0x3fc90fdbUL, 0x3fc90fdbUL, 0x3f490fdbUL, 0x4016cbe4UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0xbfc90fdbUL, 0xbfc90fdbUL,
+        0xbfc90fdbUL, 0xbfc90fdbUL, 0xbf490fdbUL, 0xc016cbe4UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x8000000000000000UL, 0xfff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x8000000000000000UL, 0xfff0000000000000UL,
+        0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0xbff0000000000000UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x4010000000000000UL, 0x3fd0000000000000UL, 0x4030000000000000UL, 0x3fb0000000000000UL, 0x4050000000000000UL, 0x3f90000000000000UL,
+        0x4000000000000000UL, 0x3fe0000000000000UL, 0x7ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0xc010000000000000UL, 0xbfd0000000000000UL,
+        0x4030000000000000UL, 0x3fb0000000000000UL, 0xc050000000000000UL, 0xbf90000000000000UL, 0x0UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x3fd0000000000000UL, 0x4010000000000000UL, 0x3fb0000000000000UL, 0x4030000000000000UL, 0x3f90000000000000UL, 0x4050000000000000UL, 0x3fe0000000000000UL, 0x4000000000000000UL, 0x0UL, 0x7ff0000000000000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0xbfd0000000000000UL, 0xc010000000000000UL, 0x3fb0000000000000UL, 0x4030000000000000UL, 0xbf90000000000000UL, 0xc050000000000000UL,
+        0x0UL, 0x0UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x7ff0000000000000UL, 0x0UL,
+        0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0xfff0000000000000UL, 0x8000000000000000UL, 0x7ff0000000000000UL, 0x0UL, 0xfff0000000000000UL, 0x8000000000000000UL, 0x7ff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x400921fb54442d18UL, 0x0UL, 0x400921fb54442d18UL,
+        0x0UL, 0x400921fb54442d18UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x8000000000000000UL, 0xc00921fb54442d18UL, 0x8000000000000000UL, 0xc00921fb54442d18UL, 0x8000000000000000UL, 0xc00921fb54442d18UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x3ff921fb54442d18UL, 0x3ff921fb54442d18UL, 0x3fe921fb54442d18UL, 0x4002d97c7f3321d2UL, 0x0UL, 0x400921fb54442d18UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0xbff921fb54442d18UL, 0xbff921fb54442d18UL, 0xbfe921fb54442d18UL, 0xc002d97c7f3321d2UL, 0x8000000000000000UL, 0xc00921fb54442d18UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x3ff921fb54442d18UL, 0x3ff921fb54442d18UL, 0x3ff921fb54442d18UL, 0x3ff921fb54442d18UL, 0x3fe921fb54442d18UL, 0x4002d97c7f3321d2UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0xbff921fb54442d18UL, 0xbff921fb54442d18UL,
+        0xbff921fb54442d18UL, 0xbff921fb54442d18UL, 0xbfe921fb54442d18UL, 0xc002d97c7f3321d2UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL
+    ];
+    private static readonly ulong[] Tolerances = [
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 2UL, 0UL, 2UL,
+        0UL, 2UL, 0UL, 0UL, 0UL, 0UL, 0UL, 2UL, 0UL, 2UL, 0UL, 2UL,
+        0UL, 0UL, 0UL, 0UL, 2UL, 2UL, 2UL, 2UL, 0UL, 2UL, 0UL, 0UL,
+        0UL, 0UL, 2UL, 2UL, 2UL, 2UL, 0UL, 2UL, 0UL, 0UL, 0UL, 0UL,
+        2UL, 2UL, 2UL, 2UL, 2UL, 2UL, 0UL, 0UL, 0UL, 0UL, 2UL, 2UL,
+        2UL, 2UL, 2UL, 2UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 2UL, 0UL, 2UL,
+        0UL, 2UL, 0UL, 0UL, 0UL, 0UL, 0UL, 2UL, 0UL, 2UL, 0UL, 2UL,
+        0UL, 0UL, 0UL, 0UL, 2UL, 2UL, 2UL, 2UL, 0UL, 2UL, 0UL, 0UL,
+        0UL, 0UL, 2UL, 2UL, 2UL, 2UL, 0UL, 2UL, 0UL, 0UL, 0UL, 0UL,
+        2UL, 2UL, 2UL, 2UL, 2UL, 2UL, 0UL, 0UL, 0UL, 0UL, 2UL, 2UL,
+        2UL, 2UL, 2UL, 2UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL,
+        0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL
+    ];
+
+    public static int Run(int input)
+    {
+        if (input >= 648) return PowSpecialValueSign(input - 648);
+        if (Single[input])
+        {
+            var left = BitConverter.UInt32BitsToSingle((uint)Left[input]);
+            var right = BitConverter.UInt32BitsToSingle((uint)Right[input]);
+            var result = Operations[input] == 0 ? MathF.Pow(left, right) : MathF.Atan2(left, right);
+            if (ExpectedNaN[input]) return float.IsNaN(result) ? 42 : -1;
+            if (float.IsNaN(result)) return -2;
+            var actual = BitConverter.SingleToUInt32Bits(result);
+            var expected = (uint)Expected[input];
+            if (Tolerances[input] == 0) return actual == expected ? 42 : -3;
+            if ((actual & 0x80000000U) != (expected & 0x80000000U)) return -4;
+            var distance = actual >= expected ? actual - expected : expected - actual;
+            return distance <= Tolerances[input] ? 42 : -5;
+        }
+        else
+        {
+            var left = BitConverter.UInt64BitsToDouble(Left[input]);
+            var right = BitConverter.UInt64BitsToDouble(Right[input]);
+            var result = Operations[input] == 0 ? Math.Pow(left, right) : Math.Atan2(left, right);
+            if (ExpectedNaN[input]) return double.IsNaN(result) ? 42 : -1;
+            if (double.IsNaN(result)) return -2;
+            var actual = BitConverter.DoubleToUInt64Bits(result);
+            var expected = Expected[input];
+            if (Tolerances[input] == 0) return actual == expected ? 42 : -3;
+            if ((actual & 0x8000000000000000UL) != (expected & 0x8000000000000000UL)) return -4;
+            var distance = actual >= expected ? actual - expected : expected - actual;
+            return distance <= Tolerances[input] ? 42 : -5;
+        }
+    }
+
+    private static int PowSpecialValueSign(int input)
+    {
+        // Both exponent signs, fractional neighbours of one, precision boundaries,
+        // and extreme finite exponents. Only pairs 0, 2 and 8 are odd integers.
+        uint[] singleExponents =
+        [
+            0x3f800000U, 0x40000000U, 0x40400000U, 0x3f000000U,
+            0x3fc00000U, 0x40600000U, 0x3f7fffffU, 0x3f800001U,
+            0x4b7fffffU, 0x4b800000U, 0x7f7fffffU, 0x00000001U,
+        ];
+        ulong[] doubleExponents =
+        [
+            0x3ff0000000000000UL, 0x4000000000000000UL,
+            0x4008000000000000UL, 0x3fe0000000000000UL,
+            0x3ff8000000000000UL, 0x400c000000000000UL,
+            0x3fefffffffffffffUL, 0x3ff0000000000001UL,
+            0x433fffffffffffffUL, 0x4340000000000000UL,
+            0x7fefffffffffffffUL, 0x0000000000000001UL,
+        ];
+        var single = input < 96;
+        var basis = input / 24 % 4;
+        var pair = input % 24 / 2;
+        var negativeExponent = (input & 1) != 0;
+        var negativeBase = (basis & 1) != 0;
+        var infiniteBase = basis >= 2;
+        var negativeResult = negativeBase && pair is 0 or 2 or 8;
+        var infiniteResult = infiniteBase != negativeExponent;
+        if (single)
+        {
+            var basisBits = (infiniteBase ? 0x7f800000U : 0U) |
+                (negativeBase ? 0x80000000U : 0U);
+            var exponentBits = singleExponents[pair] |
+                (negativeExponent ? 0x80000000U : 0U);
+            var expected = (infiniteResult ? 0x7f800000U : 0U) |
+                (negativeResult ? 0x80000000U : 0U);
+            var result = MathF.Pow(BitConverter.UInt32BitsToSingle(basisBits),
+                BitConverter.UInt32BitsToSingle(exponentBits));
+            return BitConverter.SingleToUInt32Bits(result) == expected ? 42 : -6;
+        }
+        else
+        {
+            var basisBits = (infiniteBase ? 0x7ff0000000000000UL : 0UL) |
+                (negativeBase ? 0x8000000000000000UL : 0UL);
+            var exponentBits = doubleExponents[pair] |
+                (negativeExponent ? 0x8000000000000000UL : 0UL);
+            var expected = (infiniteResult ? 0x7ff0000000000000UL : 0UL) |
+                (negativeResult ? 0x8000000000000000UL : 0UL);
+            var result = Math.Pow(BitConverter.UInt64BitsToDouble(basisBits),
+                BitConverter.UInt64BitsToDouble(exponentBits));
+            return BitConverter.DoubleToUInt64Bits(result) == expected ? 42 : -6;
+        }
+    }
+}

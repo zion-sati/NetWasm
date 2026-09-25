@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { readExceptionClause } from "./exception-metadata.mjs";
 import { createReactorOracleImports } from "./reactor-oracle-imports.mjs";
 import { createRefreshableDataView } from "./refreshable-data-view.mjs";
+import { createDeclaredOracleImports } from "./declared-oracle-imports.mjs";
 
 var [modulePath, inputText, target = "wasm32", staticDataEndOrConfiguration,
   explicitHostConfigurationPath] =
@@ -45,8 +46,8 @@ var memory = createTargetMemory();
 var heap = 16;
 var runtimeInitialized = false;
 var lastException = 0;
-var targetFrame = 0;
-var targetClause = 0;
+var terminalExceptionTypeId = null;
+var departedExceptionFrame = null;
 var filterSearchFloor = 0;
 var application;
 var wasiEnvironmentReads = 0;
@@ -63,6 +64,7 @@ var typeSizes = new Map();
 var typeAssignable = new Map();
 var typeInterfaces = new Set();
 var valueTypeSizes = new Map();
+var valueTypePayloadOffsets = new Map();
 var typeObjects = new Map();
 var exceptionFrames = [];
 var stackTraceFrames = [];
@@ -363,7 +365,7 @@ var allocateArray = (
   }
   return pointer;
 };
-var allocateRectangularArray = (rank, dimensions, type, element, size, references) => {
+var allocateRectangularArray = (rank, dimensions, type, element, size, references, bounded = false) => {
   if (rank <= 0 || rank > 32) return zeroAddress();
   const view = createRefreshableDataView(memory);
   const dimensionAddress = asNumber(dimensions);
@@ -377,7 +379,7 @@ var allocateRectangularArray = (rank, dimensions, type, element, size, reference
         (length !== 0 && total > Math.floor(1073741823 / length))) return zeroAddress();
     total *= length;
   }
-  const shape = raw(rank * 8);
+  const shape = raw(rank * (bounded ? 12 : 8));
   const elements = total === 0
     ? zeroAddress()
     : raw(total * (references ? (memory64 ? 8 : 4) : size));
@@ -388,17 +390,19 @@ var allocateRectangularArray = (rank, dimensions, type, element, size, reference
     output.setInt32(asNumber(plus(shape, dimension * 8)), length, true);
     output.setInt32(asNumber(plus(shape, dimension * 8 + 4)), stride, true);
     stride *= length;
+    if (bounded) output.setInt32(asNumber(plus(shape, rank * 8 + dimension * 4)),
+      view.getInt32(dimensionAddress + (rank + dimension) * 4, true), true);
   }
   output.setInt32(asNumber(plus(array, memory64 ? 8 : 4)), total, true);
   if (memory64) {
     output.setBigInt64(asNumber(plus(array, 16)), elements, true);
     output.setInt32(asNumber(plus(array, 24)), element, true);
-    output.setInt32(asNumber(plus(array, 28)), rank, true);
+    output.setInt32(asNumber(plus(array, 28)), bounded ? rank | 0x80000000 : rank, true);
     output.setBigInt64(asNumber(plus(array, 32)), shape, true);
   } else {
     output.setInt32(asNumber(plus(array, 8)), asNumber(elements), true);
     output.setInt32(asNumber(plus(array, 12)), element, true);
-    output.setInt32(asNumber(plus(array, 16)), rank, true);
+    output.setInt32(asNumber(plus(array, 16)), bounded ? rank | 0x80000000 : rank, true);
     output.setInt32(asNumber(plus(array, 20)), asNumber(shape), true);
   }
   return array;
@@ -480,17 +484,20 @@ var cloneArray = source => {
   const valueSize = valueTypeSizes.get(element);
   let clone;
   if (typeSizes.get(type) === (memory64 ? 40 : 24)) {
-    const rank = view.getInt32(address + (memory64 ? 28 : 16), true);
+    const rankFlags = view.getInt32(address + (memory64 ? 28 : 16), true);
+    const rank = rankFlags & 0x7fffffff;
     const shape = memory64
       ? view.getBigUint64(address + 32, true)
       : view.getUint32(address + 20, true);
-    const dimensions = raw(rank * 4);
+    const dimensions = raw(rank * (rankFlags < 0 ? 8 : 4));
     const output = createRefreshableDataView(memory);
     for (let dimension = 0; dimension < rank; dimension++) {
       output.setInt32(
         asNumber(plus(dimensions, dimension * 4)),
         output.getInt32(asNumber(plus(shape, dimension * 8)), true),
         true);
+      if (rankFlags < 0) output.setInt32(asNumber(plus(dimensions, (rank + dimension) * 4)),
+        output.getInt32(asNumber(plus(shape, rank * 8 + dimension * 4)), true), true);
     }
     clone = allocateRectangularArray(
       rank,
@@ -498,7 +505,8 @@ var cloneArray = source => {
       type,
       element,
       valueSize ?? 0,
-      valueSize === undefined ? 1 : 0);
+      valueSize === undefined ? 1 : 0,
+      rankFlags < 0);
   } else {
     clone = allocateArray(
       length,
@@ -537,11 +545,10 @@ var captureStackTrace = exception => {
 };
 var dispatchException = exception => {
   lastException = exception;
-  targetFrame = 0;
-  targetClause = 0;
   var view = createRefreshableDataView(memory);
   for (var frame = exceptionFrames.length; frame > filterSearchFloor; frame--) {
     var active = exceptionFrames[frame - 1];
+    active.targetClause = 0;
     var rawCount = active.count >>> 0;
     var filtered = (rawCount >>> 31) !== 0;
     var count = rawCount & 0x7fffffff;
@@ -558,13 +565,13 @@ var dispatchException = exception => {
         if (kind === 0) {
           accepted = isAssignable(exception, entry.value);
         } else {
-          var saved = [lastException, targetFrame, targetClause, filterSearchFloor];
+          var saved = [lastException, filterSearchFloor];
           filterSearchFloor = frame;
           accepted = application.exports["netwasm.filter"](
             entry.value,
             exception,
             active.environment);
-          [lastException, targetFrame, targetClause, filterSearchFloor] = saved;
+          [lastException, filterSearchFloor] = saved;
         }
       } else {
         accepted = isAssignable(
@@ -572,8 +579,7 @@ var dispatchException = exception => {
           view.getInt32(asNumber(plus(active.metadata, clause * 4)), true));
       }
       if (accepted) {
-        targetFrame = frame;
-        targetClause = clause + 1;
+        active.targetClause = clause + 1;
         return;
       }
     }
@@ -591,6 +597,9 @@ var runtimeValues = {
     runtimeInitialized = true;
   },
   allocate,
+  // This compiler-only oracle retains its allocations. Collection is explicitly
+  // simulated; it must not qualify reclamation, weak clearing, or finalization.
+  collect: zero,
   component_realloc: componentReallocate,
   component_free: zero,
   native_alloc: nativeAlloc,
@@ -611,8 +620,9 @@ var runtimeValues = {
     typeAssignable.set(type, ids);
     if (isInterface) typeInterfaces.add(type);
   },
-  register_value_type(type, size) {
+  register_value_type(type, size, boxedPayloadOffset) {
     valueTypeSizes.set(type, Number(size));
+    valueTypePayloadOffsets.set(type, Number(boxedPayloadOffset));
   },
   register_static_root: zero,
   root_frame_enter: rootEnter,
@@ -659,12 +669,13 @@ var runtimeValues = {
   allocate_reference_array: allocateArray,
   allocate_value_array: allocateArray,
   allocate_rectangular_array: allocateRectangularArray,
+  allocate_bounded_rectangular_array: (...args) => allocateRectangularArray(...args, true),
   array_rank(array) {
     const view = createRefreshableDataView(memory);
     const address = asNumber(array);
     const type = view.getInt32(address, true);
     if (typeSizes.get(type) !== (memory64 ? 40 : 24)) return 1;
-    return view.getInt32(address + (memory64 ? 28 : 16), true);
+    return view.getInt32(address + (memory64 ? 28 : 16), true) & 0x7fffffff;
   },
   array_get_length(array, dimension) {
     const view = createRefreshableDataView(memory);
@@ -675,12 +686,44 @@ var runtimeValues = {
         ? view.getInt32(address + (memory64 ? 8 : 4), true)
         : -1;
     }
-    const rank = view.getInt32(address + (memory64 ? 28 : 16), true);
+    const rank = view.getInt32(address + (memory64 ? 28 : 16), true) & 0x7fffffff;
     if (dimension < 0 || dimension >= rank) return -1;
     const shape = memory64
       ? view.getBigInt64(address + 32, true)
       : view.getInt32(address + 20, true);
     return view.getInt32(asNumber(plus(shape, dimension * 8)), true);
+  },
+  array_get_lower_bound(array, dimension) {
+    const view = createRefreshableDataView(memory);
+    const address = asNumber(array);
+    const type = view.getInt32(address, true);
+    if (typeSizes.get(type) !== (memory64 ? 40 : 24)) return 0;
+    const rankFlags = view.getInt32(address + (memory64 ? 28 : 16), true);
+    if (rankFlags >= 0) return 0;
+    const rank = rankFlags & 0x7fffffff;
+    const shape = memory64 ? view.getBigInt64(address + 32, true) : view.getInt32(address + 20, true);
+    return view.getInt32(asNumber(plus(shape, rank * 8 + dimension * 4)), true);
+  },
+  array_get_value(array, index) {
+    const view = createRefreshableDataView(memory);
+    const address = asNumber(array);
+    const length = view.getInt32(address + (memory64 ? 8 : 4), true);
+    if (index < 0 || index >= length) throw new Error("array index out of range");
+    const data = memory64
+      ? view.getBigUint64(address + 16, true)
+      : view.getUint32(address + 8, true);
+    const element = view.getInt32(address + (memory64 ? 24 : 12), true);
+    const valueSize = valueTypeSizes.get(element);
+    if (valueSize === undefined) {
+      return memory64
+        ? view.getBigUint64(asNumber(plus(data, index * 8)), true)
+        : view.getUint32(asNumber(plus(data, index * 4)), true);
+    }
+    const boxed = allocate(typeSizes.get(element), element);
+    const payload = valueTypePayloadOffsets.get(element);
+    new Uint8Array(memory.buffer, asNumber(plus(boxed, payload)), valueSize).set(
+      new Uint8Array(memory.buffer, asNumber(plus(data, index * valueSize)), valueSize));
+    return boxed;
   },
   array_copy: copyArray,
   array_clear: clearArray,
@@ -721,6 +764,7 @@ var runtimeValues = {
       metadata,
       count,
       environment: 0,
+      targetClause: 0,
     });
     return exceptionFrames.length;
   },
@@ -729,18 +773,19 @@ var runtimeValues = {
   },
   exception_frame_leave(token) {
     if (token !== exceptionFrames.length) throw new Error("unbalanced EH frame");
-    exceptionFrames.pop();
+    departedExceptionFrame = exceptionFrames.pop();
   },
   exception_frame_target_clause(token) {
-    return token === targetFrame ? targetClause : 0;
+    if (token !== exceptionFrames.length + 1) throw new Error("unbalanced EH query");
+    return departedExceptionFrame.targetClause;
   },
   finalizer_safepoint: zeroAddress,
 };
-var runtime = new Proxy(runtimeValues, {
-  get(target, name) { return target[name] ?? zero; },
-});
-var host = new Proxy({ write_i32: zero }, {
-  get(target, name) { return target[name] ?? zero; },
+var runtime = createDeclaredOracleImports("netwasm.runtime.v1", runtimeValues);
+var host = createDeclaredOracleImports("netwasm.host.v1", {
+  write_i32: zero,
+  // Report through the oracle observation, not an ignored host callback.
+  report_terminal_exception_v1(typeId) { terminalExceptionTypeId = typeId; },
 });
 
 try {
@@ -853,14 +898,15 @@ function resetRuntimeState() {
   heap = 16;
   runtimeInitialized = false;
   lastException = 0;
-  targetFrame = 0;
-  targetClause = 0;
+  terminalExceptionTypeId = null;
+  departedExceptionFrame = null;
   filterSearchFloor = 0;
   typeBases = new Map();
   typeSizes = new Map();
   typeAssignable = new Map();
   typeInterfaces = new Set();
   valueTypeSizes = new Map();
+  valueTypePayloadOffsets = new Map();
   typeObjects = new Map();
   exceptionFrames = [];
   stackTraceFrames = [];
@@ -908,11 +954,11 @@ function readTraceRecords() {
 }
 
 function createException(error) {
-  var exceptionTypeId = lastException
+  var exceptionTypeId = terminalExceptionTypeId ?? (lastException
     ? createRefreshableDataView(memory).getInt32(asNumber(lastException), true)
-    : null;
+    : null);
   return {
-    kind: lastException ? "exception" : "trap",
+    kind: exceptionTypeId !== null ? "exception" : "trap",
     value: null,
     exceptionTypeId,
     trace: readTrace(),

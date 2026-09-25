@@ -56,13 +56,24 @@ internal sealed class ExceptionAndReturnEmitter(
 
     private void EmitRethrow(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        var slot = request.Context.ActiveCatchRootSlot ?? throw new InvalidOperationException(
+            "rethrow was emitted outside a catch handler");
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)request.Context.RootFrame)));
+        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target,
+            checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)request.Context.ExceptionTemporary)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ExceptionTemporary))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.BeginRethrow)))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)request.Context.RootFrame)));
+        ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target,
+            checked(slot * layouts.Target.ObjectReferenceSize), layouts.Target.ObjectReferenceSize);
         if (request.Context.LeaveFrameOnRethrow)
         {
             methodFrameExits.Emit(code, request.Context);
         }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ExceptionTemporary))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Throw, WasmInstructionOperand.Unsigned((uint)(0))));
         request.Stack.Clear();
     }

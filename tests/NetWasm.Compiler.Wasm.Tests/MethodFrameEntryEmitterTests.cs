@@ -12,6 +12,44 @@ using static EmitterTestSupport;
 public sealed class MethodFrameEntryEmitterTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExceptionRootsComposeWithFilterAndStackTraceFrames(bool includeFilterAndTrace)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var context = CreateMethodEmissionContext() with
+        {
+            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), 0),
+            ValueLayout = new ValueFrameLayout(includeFilterAndTrace ? 16 : 0, [], [], [], []),
+            FilterEnvironment = includeFilterAndTrace
+                ? new FilterEnvironmentLayout(16, 1, 0, [])
+                : FilterEnvironmentLayout.Empty,
+            StackTraceMethodId = includeFilterAndTrace ? 1 : 0,
+            RuntimeImportSelection = new(WasmModuleProfile.CoreApplication,
+                IncludeTerminalExceptionReporter: true, IncludeStackTrace: true),
+        };
+        var code = new RecordingInstructionWriter();
+        CreateMethodFrameEntry(program, layouts, imports).Emit(code,
+            new StructuredMethodHeader(program.GetMethod(EntryKey), null, 1, [], [], []), context);
+        CreateMethodFrameExit(imports).Emit(code, context);
+        var instructions = code.ToInstructions();
+        Assert.Equal(0, context.RootMap.SlotCount);
+        Assert.Equal(1, context.RootSlotCount);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter));
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameLeave));
+        Assert.Equal(includeFilterAndTrace ? 2 : 1, instructions.Count(instruction =>
+            instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameEnter)));
+        Assert.Equal(includeFilterAndTrace ? 2 : 1, instructions.Count(instruction =>
+            instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(RuntimeImportSymbol.RootFrameLeave)));
+    }
+
+    [Theory]
     [InlineData(WasmTarget.Wasm32, 0)]
     [InlineData(WasmTarget.Wasm32, 1)]
     [InlineData(WasmTarget.Wasm64, 1)]

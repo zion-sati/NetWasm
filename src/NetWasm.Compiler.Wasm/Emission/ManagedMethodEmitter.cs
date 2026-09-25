@@ -80,7 +80,7 @@ internal sealed class ManagedMethodEmitter(
             emissionLayout.LocalTypes,
             layouts.Target);
         frames.Emit(code, emissionStructure.Header, context);
-        if (rootMap.SlotCount != 0 || valueLayout.Size != 0 ||
+        if (context.RootSlotCount != 0 || valueLayout.Size != 0 ||
             stackTraceMethodId != 0 ||
             filterEnvironment.RootSlotCount != 0)
         {

@@ -1,6 +1,7 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text.Json;
+using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
@@ -10,28 +11,33 @@ using static CompilerTestSupport;
 public sealed class CSharp15CompilationTests
 {
     [Theory]
-    [MemberData(nameof(CSharpFifteenRuntimeCases))]
+    [MemberData(nameof(CSharpFifteenRuntimeConfigurations))]
     public void CompilerPreservesFocusedCSharpFifteenRuntimeSemantics(
         string assemblyName,
         string entryPoint,
         string source,
-        int expected)
+        int expected,
+        bool optimize,
+        WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSourceWithCompiler(
             assemblyName,
             source,
             PinnedSdk11(),
-            "15.0");
+            "15.0",
+            optimize);
 
         var result = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
             entryPoint,
             "Run",
-            []));
+            [],
+            Target: target));
 
-        Assert.Equal(expected, ExecuteWithNode(result.ApplicationModule, assets.Directory, 0));
+        Assert.Equal(expected, ExecuteWithStandardWasiNode(
+            result.ApplicationModule, assets.Directory, 0, target, result.StaticDataEnd));
     }
 
     [Theory]
@@ -1217,6 +1223,20 @@ public sealed class CSharp15CompilationTests
             "CS9174"
         },
     };
+
+    public static IEnumerable<object[]> CSharpFifteenRuntimeConfigurations()
+    {
+        foreach (var row in CSharpFifteenRuntimeCases)
+        {
+            foreach (var optimize in new[] { false, true })
+            {
+                foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+                {
+                    yield return [.. row, optimize, target];
+                }
+            }
+        }
+    }
 
     public static TheoryData<string, string, string, int> CSharpFifteenRuntimeCases => new()
     {

@@ -11,13 +11,12 @@ using NetWasm.Compiler.Wasm.Emission.Support;
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 internal sealed class StaticFieldInstructionEmitter(
-    ITypeRepository types,
     IFieldRepository fieldRepository,
-    IMethodRepository methods,
     ITargetLayout layouts,
     IStaticFieldLayoutProvider fields,
     IValueLayoutProvider values,
-    IAddressInstructionEmitter addresses) : InstructionCommandProvider
+    IAddressInstructionEmitter addresses,
+    IStaticInitializationEmitter initialization) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -133,30 +132,6 @@ internal sealed class StaticFieldInstructionEmitter(
     private void EmitEnsureInitialized(InstructionEmissionRequest request, IWasmInstructionWriter code, IFunctionIndexResolver functionIndices)
     {
         var instruction = request.Instruction;
-        var key = GetInitializerKey(instruction);
-        if (key is null ||
-            !request.Target.ModuleData.StaticInitializerGuards.TryGetValue(key, out var guard))
-        {
-            return;
-        }
-        addresses.Emit(code, guard.Address);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        addresses.Emit(code, guard.Address);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(1)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Store, WasmInstructionOperand.Memory(2, (uint)(0))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(guard.Direct is EntityKey direct
-            ? functionIndices.Resolve(direct)
-            : functionIndices.Resolve(guard.Constructed!)))));
-        addresses.Emit(code, guard.Address);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(2)));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Store, WasmInstructionOperand.Memory(2, (uint)(0))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-    }
-
-    private string? GetInitializerKey(CilInstruction instruction)
-    {
         FieldDefinitionModel field;
         CliTypeIdentity? declaringType = null;
         if (instruction.Operand is CilOperand.FieldInstance instance)
@@ -168,18 +143,8 @@ internal sealed class StaticFieldInstructionEmitter(
         {
             field = fieldRepository.GetField(CilOperandReader.GetEntity(instruction));
         }
-        var initializer = types
-            .GetTypeDefinition(field.DeclaringType)
-            .Methods
-            .Select(methods.GetMethod)
-            .SingleOrDefault(method => method.Name == ".cctor");
-        if (initializer is null)
-        {
-            return null;
-        }
-        return declaringType?.Shape == CliTypeShape.GenericInstantiation
-            ? $"{declaringType.CanonicalName}::0x{initializer.Key.MetadataToken:x8}"
-            : StaticInitializerGuard.KeyFor(initializer.Key);
+        initialization.Emit(new(field.DeclaringType, declaringType,
+            request.Target.ModuleData), code, functionIndices);
     }
 
     private int GetStackLocal(

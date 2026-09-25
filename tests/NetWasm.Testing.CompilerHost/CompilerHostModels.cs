@@ -24,7 +24,9 @@ internal sealed record CompilationRequest(
     CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
     bool CollectCompilerMetrics = true,
     bool EnableFrontendCache = false,
-    string? IntermediateOutputPath = null);
+    string? IntermediateOutputPath = null,
+    string? RuntimeLayoutPath = null,
+    string? InteropManifestPath = null);
 
 internal sealed record CompilationResponse(
     ImmutableDictionary<int, string> TypeNames,

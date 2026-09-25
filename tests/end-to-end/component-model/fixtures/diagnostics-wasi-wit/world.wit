@@ -1,0 +1,34 @@
+package netwasm:diagnostics@1.0.0;
+
+interface acceptance {
+    sample: func() -> u64;
+    trace-activity: func() -> u64;
+    trace-diagnostic: func() -> u64;
+    trace-current: func() -> u64;
+    trace: func() -> u64;
+    qualification-contract: func() -> u64;
+    metrics-synchronous: func() -> u64;
+    metrics-listener: func() -> u64;
+    metrics-counter: func() -> u64;
+    metrics-gauge: func() -> u64;
+    metrics-up-down: func() -> u64;
+    metrics-histogram: func() -> u64;
+    metrics-observable-value: func() -> u64;
+    metrics-observable-measurement: func() -> u64;
+    metrics-observable-sequence: func() -> u64;
+    metrics: func() -> u64;
+    boundary: func() -> u64;
+}
+
+world diagnostics {
+    import wasi:cli/environment@0.2.11;
+    import wasi:clocks/monotonic-clock@0.2.11;
+    import wasi:clocks/wall-clock@0.2.11;
+    import wasi:filesystem/types@0.2.11;
+    import wasi:filesystem/preopens@0.2.11;
+    import wasi:random/random@0.2.11;
+    import wasi:io/poll@0.2.11;
+    import netwasm:runtime/reactor-host@1.0.0;
+    export netwasm:runtime/reactor-guest@1.0.0;
+    export acceptance;
+}

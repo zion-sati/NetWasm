@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "caseId": "rtti.delegate-null-receiver",
+  "featureIds": [
+    "S09",
+    "S12",
+    "S13"
+  ],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "DelegateReceivers",
+  "namespace": "DelegateReceivers",
+  "entryMethod": "RunOpenNull",
+  "inputs": [
+    0
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": null,
+      "exceptionType": "System.NullReferenceException"
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Private.CoreLib": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.EmittedDelegateReceiverTests.OpenInstanceDelegateWithNullReceiverThrowsManagedNullReference"
+}

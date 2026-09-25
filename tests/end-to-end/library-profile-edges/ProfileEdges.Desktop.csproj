@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="[$(DesktopLibrariesVersion)]" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="[$(DesktopLibrariesVersion)]" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="[$(DesktopLibrariesVersion)]" />
+    <PackageReference Include="Microsoft.Extensions.Primitives" Version="[$(DesktopLibrariesVersion)]" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="[$(DesktopLibrariesVersion)]" />
+    <PackageReference Include="System.IO.Pipelines" Version="[$(DesktopLibrariesVersion)]" />
+  </ItemGroup>
+</Project>

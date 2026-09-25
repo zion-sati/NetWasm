@@ -76,27 +76,42 @@ internal sealed class ValueLayoutResolver(
                 .Where(field => !field.IsStatic)
                 .OrderBy(field => field.Key.MetadataToken)
                 .ToArray();
-            if (definition.LayoutKind == CliTypeLayoutKind.Explicit)
-            {
-                layout = _explicitLayouts.Resolve(type, definition, [.. instanceFields]);
-                return PublishLayout(type, layout, hasCachedLayout, existing);
-            }
-            if (definition.PackingSize != 0)
-                throw Unsupported(type, $"non-default packing size {definition.PackingSize}");
-            if (definition.InlineArrayLength != 0 && instanceFields.Length != 1)
-                throw Unsupported(type, "inline array must declare exactly one instance field");
-
+            if (definition.PackingSize is not (0 or 1 or 2 or 4 or 8 or 16 or 32 or 64 or 128))
+                throw Unsupported(type, $"invalid packing size {definition.PackingSize}");
+            if (definition.DeclaredSize < 0)
+                throw Unsupported(type, "negative declared size");
             var typeArguments = type.Shape == CliTypeShape.GenericInstantiation
                 ? type.TypeArguments
                 : [];
+            if (definition.LayoutKind == CliTypeLayoutKind.Explicit)
+            {
+                var resolvedFields = instanceFields.Select(field => new ExplicitFieldStorage(
+                    field,
+                    ResolveFieldLayout(type, layout, field.SignatureType.Substitute(typeArguments), next)))
+                    .ToImmutableArray();
+                var plan = _explicitLayouts.Resolve(type, definition, resolvedFields, _target);
+                for (var index = 0; index < instanceFields.Length; index++)
+                    _state.Fields.TryAdd(instanceFields[index].Key, plan.Fields[index]);
+                layout = plan.Value;
+                return PublishLayout(type, layout, hasCachedLayout, existing);
+            }
+            if (definition.InlineArrayLength != 0 && instanceFields.Length != 1)
+                throw Unsupported(type, "inline array must declare exactly one instance field");
+
             var offset = 0;
             var alignment = layout.Alignment;
             var references = ImmutableArray.CreateBuilder<int>();
+            var byReferences = ImmutableArray.CreateBuilder<int>();
             foreach (var field in instanceFields)
             {
                 var fieldType = field.SignatureType.Substitute(typeArguments);
                 var fieldLayout = ResolveFieldLayout(type, layout, fieldType, next);
-                offset = ManagedTypeLayoutCompiler.Align(offset, fieldLayout.Alignment);
+                var fieldAlignment = definition.PackingSize == 0
+                    ? fieldLayout.Alignment
+                    : Math.Min(definition.PackingSize, fieldLayout.Alignment);
+                if (fieldLayout.ContainsReferences)
+                    fieldAlignment = Math.Max(fieldAlignment, _target.ObjectReferenceAlignment);
+                offset = ManagedTypeLayoutCompiler.Align(offset, fieldAlignment);
                 var resolvedField = new FieldLayout(offset)
                 {
                     Size = fieldLayout.Size,
@@ -118,19 +133,22 @@ internal sealed class ValueLayoutResolver(
                 {
                     foreach (var referenceOffset in fieldLayout.ReferenceOffsets)
                         references.Add(offset + element * fieldLayout.Size + referenceOffset);
+                    foreach (var byReferenceOffset in fieldLayout.ByReferenceOffsets)
+                        byReferences.Add(offset + element * fieldLayout.Size + byReferenceOffset);
                 }
                 offset += checked(fieldLayout.Size * repetitions);
-                alignment = Math.Max(alignment, fieldLayout.Alignment);
+                alignment = Math.Max(alignment, fieldAlignment);
             }
-            if (definition.DeclaredSize != 0 && definition.DeclaredSize < offset)
-                throw Unsupported(
-                    type,
-                    $"declared size {definition.DeclaredSize} is smaller than its fields");
             var totalSize = Math.Max(layout.Size, Math.Max(offset, definition.DeclaredSize));
             var size = totalSize == 0
                 ? 1
-                : ManagedTypeLayoutCompiler.Align(totalSize, alignment);
-            layout = new ValueLayout(type, size, alignment, references.ToImmutable());
+                : definition.DeclaredSize == 0 || references.Count != 0
+                    ? ManagedTypeLayoutCompiler.Align(totalSize, alignment)
+                    : totalSize;
+            layout = new ValueLayout(type, size, alignment, references.ToImmutable())
+            {
+                ByReferenceOffsets = byReferences.ToImmutable(),
+            };
         }
 
         return PublishLayout(
@@ -162,7 +180,10 @@ internal sealed class ValueLayoutResolver(
                 ResolvePrimitive(type),
                 PublishDefinitionFields: false),
             CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer => new ValueLayoutSeed(
-                new ValueLayout(type, _target.AddressSize, _target.AddressSize, type.Shape == CliTypeShape.ManagedByReference ? [0] : []),
+                new ValueLayout(type, _target.AddressSize, _target.AddressSize, type.Shape == CliTypeShape.ManagedByReference ? [0] : [])
+                {
+                    ByReferenceOffsets = type.Shape == CliTypeShape.ManagedByReference ? [0] : [],
+                },
                 PublishDefinitionFields: false),
             _ => new ValueLayoutSeed(
                 new ValueLayout(type, Size: 0, Alignment: 1, []),

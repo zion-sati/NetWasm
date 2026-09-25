@@ -178,6 +178,9 @@ public sealed class ManagedAssembly : IDisposable
                         (field.Attributes & FieldAttributes.Static) != 0)
                     {
                         LiteralValue = ReadLiteralValue(field, fieldType, fieldKey),
+                        ExplicitOffset = field.GetOffset() is var offset && offset >= 0
+                            ? offset
+                            : null,
                     });
             }
 
@@ -271,6 +274,7 @@ public sealed class ManagedAssembly : IDisposable
                     IsInterface = (definition.Attributes & TypeAttributes.Interface) != 0,
                     IsAbstract = (definition.Attributes & TypeAttributes.Abstract) != 0,
                     IsSealed = (definition.Attributes & TypeAttributes.Sealed) != 0,
+                    IsBeforeFieldInit = (definition.Attributes & TypeAttributes.BeforeFieldInit) != 0,
                     IsEnum = isEnum,
                     EnumUnderlyingType = enumUnderlyingType,
                     EnumMembers = enumMembers,

@@ -1,0 +1,105 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NetWasm.Correctness.ExactRootSlots;
+
+public struct Slots
+{
+    public WeakReference<byte[]> Weak;
+    public nuint OpaqueAddress;
+    public object? Strong;
+}
+
+public sealed class Holder
+{
+    public Slots Value;
+}
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0:
+            {
+                var holder = CreateHolder(keepStrong: false);
+                GC.Collect();
+                GC.Collect();
+                var dead = !holder.Value.Weak.TryGetTarget(out _);
+                var nonzero = holder.Value.OpaqueAddress != 0;
+                GC.KeepAlive(holder);
+                return dead && nonzero ? 42 : -1;
+            }
+            case 1:
+            {
+                var holder = CreateHolder(keepStrong: true);
+                GC.Collect();
+                GC.Collect();
+                var live = MatchesStrong(holder);
+                GC.KeepAlive(holder);
+                return live ? 42 : -2;
+            }
+            case 2:
+            {
+                var holder = CreateHolder(keepStrong: true);
+                if (!MatchesStrong(holder)) return -3;
+                ClearStrong(holder);
+                GC.Collect();
+                GC.Collect();
+                var dead = !holder.Value.Weak.TryGetTarget(out _);
+                var nonzero = holder.Value.OpaqueAddress != 0;
+                GC.KeepAlive(holder);
+                return dead && nonzero ? 42 : -4;
+            }
+            case 3:
+            {
+                var box = CreateBox();
+                GC.Collect();
+                GC.Collect();
+                var slots = (Slots)box;
+                var dead = !slots.Weak.TryGetTarget(out _);
+                var nonzero = slots.OpaqueAddress != 0;
+                GC.KeepAlive(box);
+                return dead && nonzero ? 42 : -5;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Holder CreateHolder(bool keepStrong) => new() { Value = CreateSlots(keepStrong) };
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static object CreateBox() => CreateSlots(keepStrong: false);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Slots CreateSlots(bool keepStrong)
+    {
+        var bytes = new byte[] { 7, 42, 9 };
+        var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+        try
+        {
+            // The address is retained only as opaque numeric data. It is never
+            // dereferenced after releasing the pin, even if the object moves
+            // or is collected. The managed Strong field is the positive control.
+            return new Slots
+            {
+                Weak = new WeakReference<byte[]>(bytes),
+                OpaqueAddress = (nuint)pin.AddrOfPinnedObject(),
+                Strong = keepStrong ? bytes : null,
+            };
+        }
+        finally { pin.Free(); }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool MatchesStrong(Holder holder) =>
+        holder.Value.Weak.TryGetTarget(out var bytes) && ReferenceEquals(bytes, holder.Value.Strong) &&
+        bytes[0] == 7 && bytes[1] == 42 && bytes[2] == 9;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ClearStrong(Holder holder) => holder.Value.Strong = null;
+}

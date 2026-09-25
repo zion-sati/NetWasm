@@ -50,7 +50,10 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.NullableGetUnderlyingType => [ArgumentNull],
 
             RuntimeIntrinsic.ArrayGetLength or
+            RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt => [NullReference, IndexOutOfRange],
+
+            RuntimeIntrinsic.ArrayGetValue => [NullReference, OutOfMemory],
 
             RuntimeIntrinsic.NativeMemoryAlloc or
             RuntimeIntrinsic.NativeMemoryRealloc or

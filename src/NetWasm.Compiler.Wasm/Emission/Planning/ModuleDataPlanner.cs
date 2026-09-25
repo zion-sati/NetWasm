@@ -18,6 +18,8 @@ internal sealed record ModuleDataPlan(
     ImmutableDictionary<string, StaticInitializerGuard> StaticInitializerGuards,
     int StaticDataEnd)
 {
+    public StaticInitializerFunctionPlan? StaticInitializerFunctions { get; init; }
+
     public static ModuleDataPlan Empty { get; } = new(
         ImmutableDictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>.Empty,
         [],

@@ -1,0 +1,137 @@
+using System;
+using System.Collections.Generic;
+
+namespace NetWasm.Correctness.BoxedRepresentation;
+
+public enum SignedByte : sbyte { Edge = sbyte.MinValue }
+public enum UnsignedByte : byte { Edge = byte.MaxValue }
+public enum SignedShort : short { Edge = short.MinValue }
+public enum UnsignedShort : ushort { Edge = ushort.MaxValue }
+public enum SignedInt : int { Edge = int.MinValue }
+public enum UnsignedInt : uint { Edge = uint.MaxValue }
+public enum SignedLong : long { Edge = long.MinValue }
+public enum UnsignedLong : ulong { Edge = ulong.MaxValue }
+
+public readonly struct ReferenceValue(string text, long number) : IEquatable<ReferenceValue>
+{
+    public readonly string Text = text;
+    public readonly long Number = number;
+
+    public bool Equals(ReferenceValue other) => Text == other.Text && Number == other.Number;
+}
+
+public interface IMutablePayload
+{
+    void Clear();
+    int Count { get; }
+}
+
+public struct Payload<T>(T value, object marker) : IMutablePayload where T : struct
+{
+    public T Value = value;
+    public object Marker = marker;
+    public int Count { get; private set; } = 0;
+
+    public void Clear()
+    {
+        Value = default;
+        Count++;
+    }
+}
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        var operation = input % 5;
+        return (input / 5) switch
+        {
+            0 => Check(SignedByte.Edge, operation),
+            1 => Check(UnsignedByte.Edge, operation),
+            2 => Check(SignedShort.Edge, operation),
+            3 => Check(UnsignedShort.Edge, operation),
+            4 => Check(SignedInt.Edge, operation),
+            5 => Check(UnsignedInt.Edge, operation),
+            6 => Check(SignedLong.Edge, operation),
+            7 => Check(UnsignedLong.Edge, operation),
+            8 => Check(new ReferenceValue("retained", long.MinValue), operation),
+            _ => throw new ArgumentOutOfRangeException(nameof(input)),
+        };
+    }
+
+    private static int Check<T>(T value, int operation) where T : struct
+    {
+        switch (operation)
+        {
+            case 0:
+            {
+                T? populated = value;
+                object boxed = populated;
+                var unboxed = Unbox<T>(boxed);
+                var optional = boxed as T?;
+                return boxed is T && boxed.GetType() == typeof(T) &&
+                    unboxed.HasValue && optional.HasValue &&
+                    EqualityComparer<T>.Default.Equals(value, unboxed.Value) &&
+                    EqualityComparer<T>.Default.Equals(value, optional.Value) ? 42 : -1;
+            }
+            case 1:
+            {
+                T? empty = null;
+                object? boxed = empty;
+                return boxed is null && !Unbox<T>(boxed).HasValue &&
+                    !Unbox<T>(null).HasValue ? 42 : -2;
+            }
+            case 2:
+            {
+                object unrelated = new object();
+                if ((unrelated as T?).HasValue) return -3;
+                try
+                {
+                    _ = Unbox<T>(unrelated);
+                    return -4;
+                }
+                catch (InvalidCastException)
+                {
+                    return 42;
+                }
+            }
+            case 3:
+            {
+                object? missing = null;
+                try
+                {
+                    _ = (T)missing!;
+                    return -5;
+                }
+                catch (NullReferenceException)
+                {
+                    return 42;
+                }
+            }
+            case 4:
+            {
+                var marker = new object();
+                var original = new Payload<T>(value, marker);
+                object boxed = original;
+                IMutablePayload alias = (IMutablePayload)boxed;
+                var copy = (Payload<T>)boxed;
+                copy.Clear();
+                if (alias.Count != 0 || original.Count != 0 || copy.Count != 1 ||
+                    !EqualityComparer<T>.Default.Equals(((Payload<T>)boxed).Value, value) ||
+                    !EqualityComparer<T>.Default.Equals(copy.Value, default)) return -6;
+                alias.Clear();
+                var after = (Payload<T>)boxed;
+                return alias.Count == 1 && after.Count == 1 && original.Count == 0 &&
+                    EqualityComparer<T>.Default.Equals(after.Value, default) &&
+                    EqualityComparer<T>.Default.Equals(original.Value, value) &&
+                    ReferenceEquals(boxed, alias) && ReferenceEquals(after.Marker, marker) &&
+                    ReferenceEquals(copy.Marker, marker) && ReferenceEquals(original.Marker, marker)
+                    ? 42 : -7;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation));
+        }
+    }
+
+    private static T? Unbox<T>(object? value) where T : struct => (T?)value;
+}

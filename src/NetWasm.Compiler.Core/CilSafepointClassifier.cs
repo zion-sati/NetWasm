@@ -10,6 +10,8 @@ public static class CilSafepointClassifier
         instruction.Operation is
             CilOperation.NewObject or
             CilOperation.NewArray or
+            CilOperation.NewRectangularArray or
+            CilOperation.NewBoundedRectangularArray or
             CilOperation.Box or
             CilOperation.DelegateCombine or
             CilOperation.DelegateRemove or
@@ -26,6 +28,8 @@ public static class CilSafepointClassifier
             CilOperation.CallIndirect or
             CilOperation.NewObject or
             CilOperation.NewArray or
+            CilOperation.NewRectangularArray or
+            CilOperation.NewBoundedRectangularArray or
             CilOperation.Box or
             CilOperation.Unbox or
             CilOperation.UnboxAny or
@@ -41,6 +45,9 @@ public static class CilSafepointClassifier
             CilOperation.LoadArrayElementAddress or
             CilOperation.StoreArrayElementReference or
             CilOperation.StoreArrayElement or
+            CilOperation.LoadRectangularArrayElement or
+            CilOperation.LoadRectangularArrayElementAddress or
+            CilOperation.StoreRectangularArrayElement or
             CilOperation.Divide or
             CilOperation.DivideUnsigned or
             CilOperation.Remainder or

@@ -1,0 +1,93 @@
+using System;
+using System.Collections.Generic;
+
+namespace NetWasm.Correctness.FloatingKeys;
+
+public static class EntryPoint
+{
+    // Distinct NaN signs/payloads, both zero signs, infinities, and finite keys.
+    private static readonly int[] Singles =
+    [
+        0x7fc00001, unchecked((int)0xffc01234U), unchecked((int)0x80000000U), 0,
+        unchecked((int)0xff800000U), 0x7f800000, unchecked((int)0xbf800000U), 0x3f800000,
+    ];
+    private static readonly long[] Doubles =
+    [
+        0x7ff8000000000001L, unchecked((long)0xfff8000000001234UL), long.MinValue, 0,
+        unchecked((long)0xfff0000000000000UL), 0x7ff0000000000000L,
+        unchecked((long)0xbff0000000000000UL), 0x3ff0000000000000L,
+    ];
+    // Independent equivalence classes and CompareTo order. NaNs sort first,
+    // and both zeros share a class. No floating operation builds expectations.
+    private static readonly int[] Ranks = [-2, -2, 1, 1, -1, 3, 0, 2];
+    private static readonly int[] Metrics = new int[8];
+    private static long _left;
+    private static long _right;
+    private static int _kind;
+
+    public static int Run(int input)
+    {
+        for (var index = 0; index < Metrics.Length; index++) Metrics[index] = 0;
+        var single = input < 64;
+        var pair = input % 64;
+        var left = pair / 8;
+        var right = pair % 8;
+        var equivalent = Ranks[left] == Ranks[right];
+        var order = Ranks[left] < Ranks[right] ? -1 : Ranks[left] > Ranks[right] ? 1 : 0;
+        _kind = single ? 4 : 5;
+        if (single)
+        {
+            _left = Singles[left];
+            _right = Singles[right];
+            return Check(BitConverter.Int32BitsToSingle(Singles[left]), BitConverter.Int32BitsToSingle(Singles[right]), equivalent, order);
+        }
+        _left = Doubles[left];
+        _right = Doubles[right];
+        return Check(BitConverter.Int64BitsToDouble(Doubles[left]), BitConverter.Int64BitsToDouble(Doubles[right]), equivalent, order);
+    }
+
+    private static int Check<T>(T left, T right, bool equivalent, int expectedOrder) where T : struct
+    {
+        var equality = EqualityComparer<T>.Default;
+        Metrics[0] = equality.Equals(left, right) ? 1 : 0;
+        if ((Metrics[0] == 1) != equivalent) return -1;
+        var order = Comparer<T>.Default.Compare(left, right);
+        Metrics[1] = order < 0 ? -1 : order > 0 ? 1 : 0;
+        if (Metrics[1] != expectedOrder) return -2;
+        Metrics[2] = !equivalent || equality.GetHashCode(left) == equality.GetHashCode(right) ? 1 : 0;
+        Metrics[3] = !equivalent || left.GetHashCode() == right.GetHashCode() ? 1 : 0;
+        if (Metrics[2] != 1 || Metrics[3] != 1) return -3;
+
+        var dictionary = new Dictionary<T, int> { [left] = 11 };
+        if (dictionary.ContainsKey(right) != equivalent) return -4;
+        var found = dictionary.TryGetValue(right, out var value);
+        if (found != equivalent || (found && value != 11)) return -5;
+        dictionary[right] = 22;
+        Metrics[4] = dictionary.Count;
+        if (dictionary.Count != (equivalent ? 1 : 2)) return -6;
+        if (dictionary[left] != (equivalent ? 22 : 11) || dictionary[right] != 22) return -7;
+        if (!dictionary.Remove(right)) return -8;
+        Metrics[5] = dictionary.Count;
+        if (dictionary.ContainsKey(right) || dictionary.ContainsKey(left) == equivalent) return -9;
+        if (dictionary.Count != (equivalent ? 0 : 1)) return -10;
+
+        var set = new HashSet<T>();
+        if (!set.Add(left)) return -11;
+        if (set.Add(right) == equivalent) return -12;
+        Metrics[6] = set.Count;
+        if (set.Count != (equivalent ? 1 : 2) || !set.Contains(left) || !set.Contains(right)) return -13;
+        if (!set.Remove(right)) return -14;
+        Metrics[7] = set.Count;
+        if (set.Contains(right) || set.Contains(left) == equivalent) return -15;
+        if (set.Count != (equivalent ? 0 : 1)) return -16;
+        return 42;
+    }
+
+    public static int Trace() => 10;
+    public static int TraceCount() => 10;
+    public static int TraceKind(int index) => index < 2 ? _kind : 2;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index == 0 ? _left : index == 1 ? _right : Metrics[index - 2];
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

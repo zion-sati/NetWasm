@@ -10,6 +10,72 @@ using static EmitterTestSupport;
 
 public sealed class ValueFrameLayoutPlannerTests
 {
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, 0)]
+    [InlineData(WasmTarget.Wasm64, 0)]
+    [InlineData(WasmTarget.Wasm32, 1)]
+    [InlineData(WasmTarget.Wasm64, 1)]
+    [InlineData(WasmTarget.Wasm32, 2)]
+    [InlineData(WasmTarget.Wasm64, 2)]
+    [InlineData(WasmTarget.Wasm32, 3)]
+    [InlineData(WasmTarget.Wasm64, 3)]
+    public void ArrayValueCopiesReserveDistinctAlignedElementStorage(
+        WasmTarget target,
+        int rank)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var valueType = CliTypeIdentity.Named(Assembly, "Test", "ReferencePair", isValueType: true);
+        var values = new ArrayElementValueLayouts(valueType, layouts.Target.ObjectReferenceSize);
+        var planner = ThroughContract(new ValueFrameLayoutPlanner(
+            program, program, layouts, values,
+            CreateTypeOperands(program), CreateTypeIdentities(program),
+            CreateArgumentTypes(program), CreateArgumentSignatureTypes(program)));
+        var operation = rank == 0
+            ? CilOperation.LoadArrayElement
+            : CilOperation.LoadRectangularArrayElement;
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 4, [],
+        [
+            I(0, CilOperation.LocalAllocate),
+            I(3, operation, Operand(valueType)),
+            I(7, operation, Operand(valueType)),
+            I(11, operation, Operand(CliTypeIdentity.FromStackKind(CliValueKind.I4))),
+            I(15, operation, Operand(CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference))),
+        ]);
+
+        var layout = planner.Create(Header(body));
+
+        var alignment = layouts.Target.ObjectReferenceAlignment;
+        Assert.Equal(2, layout.TemporaryOffsets.Count);
+        Assert.Equal(alignment, layout.TemporaryOffsets[3]);
+        Assert.Equal(alignment + values.Layout.Size, layout.TemporaryOffsets[7]);
+        Assert.Equal(alignment + 2 * values.Layout.Size, layout.Size);
+        Assert.Equal([valueType, valueType], values.Requests);
+        Assert.Empty(layout.LocalOffsets);
+        Assert.Empty(layout.ArgumentOffsets);
+
+        CilOperand.TypeIdentity Operand(CliTypeIdentity element) => new(
+            rank == 0 ? element : CliTypeIdentity.Array(element, rank));
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void BoundedArrayConstructionReservesLengthsAndLowerBounds(WasmTarget target)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var array = CliTypeIdentity.Array(CliTypeIdentity.FromStackKind(CliValueKind.I4), 3);
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 6, [],
+            [I(17, CilOperation.NewBoundedRectangularArray, new CilOperand.TypeIdentity(array))]);
+
+        var layout = ThroughContract(CreateValueFrameLayoutPlanner(program, layouts)).Create(Header(body));
+
+        Assert.Equal(24, layout.Size);
+        Assert.Equal(0, Assert.Single(layout.TemporaryOffsets).Value);
+        Assert.True(layout.TemporaryOffsets.ContainsKey(17));
+    }
+
     [Fact]
     public void PlansAddressTakenArgumentsLocalsAndValueTemporaries()
     {
@@ -229,6 +295,20 @@ public sealed class ValueFrameLayoutPlannerTests
     private static IValueFrameLayoutPlanner ThroughContract(
         ValueFrameLayoutPlanner planner) =>
         new[] { planner }.Cast<IValueFrameLayoutPlanner>().Single();
+
+    private sealed class ArrayElementValueLayouts(CliTypeIdentity element, int referenceSize) :
+        IValueLayoutProvider
+    {
+        public ValueLayout Layout { get; } = new(element, 3 * referenceSize, referenceSize, [0]);
+        public List<CliTypeIdentity> Requests { get; } = [];
+
+        public ValueLayout GetValueLayout(CliTypeIdentity type)
+        {
+            Requests.Add(type);
+            Assert.Equal(element, type);
+            return Layout;
+        }
+    }
 
     private sealed class PlannerFixture :
         IFieldRepository,

@@ -1,0 +1,196 @@
+using System;
+
+namespace NetWasm.Correctness.StaticInitialization;
+
+public static class Probe
+{
+    public static int Count;
+    public static int Order;
+    public static readonly Exception Failure = new InvalidOperationException();
+}
+
+public static class Once
+{
+    public static int Value;
+    static Once() { Probe.Count++; Value = 41; }
+    public static int Next() => ++Value;
+}
+
+public static class Closed<T>
+{
+    public static int Value;
+    public static readonly object Identity;
+    static Closed() { Probe.Count++; Value = 41; Identity = new object(); }
+}
+
+public static class Outer<T>
+{
+    public static class Inner<U>
+    {
+        public static int Value;
+        static Inner() { Probe.Count++; Value = 41; }
+    }
+}
+
+public class BaseDependency
+{
+    public static int Value;
+    static BaseDependency() { Probe.Order = Probe.Order * 10 + 1; Value = 40; }
+}
+
+public sealed class DerivedDependency : BaseDependency
+{
+    public static int Result;
+    static DerivedDependency()
+    {
+        Result = Value + 2;
+        Probe.Order = Probe.Order * 10 + 2;
+    }
+}
+
+public sealed class Recursive
+{
+    public static readonly Recursive Instance;
+    public int Value;
+    static Recursive() { Probe.Count++; Instance = new Recursive(); }
+    private Recursive() { Value = Instance is null ? 42 : -1; }
+}
+
+public static class CycleA
+{
+    public static int Value;
+    static CycleA()
+    {
+        Probe.Order = Probe.Order * 10 + 1;
+        Value = CycleB.Value + 22;
+    }
+}
+
+public static class CycleB
+{
+    public static int Value;
+    static CycleB()
+    {
+        Probe.Order = Probe.Order * 10 + 2;
+        Value = CycleA.Value + 20;
+    }
+}
+
+public static class Failing
+{
+    static Failing() { Probe.Count++; throw Probe.Failure; }
+    public static int Read() => 42;
+}
+
+public static class Failing<T>
+{
+    static Failing() { Probe.Count++; throw Probe.Failure; }
+    public static int Read() => 42;
+}
+
+public static class Relaxed
+{
+    // BeforeFieldInit deliberately has no observable timing assertion: only
+    // reading the initialized field must see its final value.
+    public static readonly int Value = 42;
+}
+
+public struct WithStatic
+{
+    public static int Shared;
+    public int Number;
+    static WithStatic() { Probe.Count++; Shared = 41; }
+    public static int Next() => ++Shared;
+}
+
+public sealed class Node(int value)
+{
+    public int Value = value;
+    public Node? Next;
+}
+
+public static class Allocating
+{
+    public static readonly Node First;
+    public static readonly Node Second;
+    static Allocating()
+    {
+        Probe.Count++;
+        First = new Node(11);
+        Second = new Node(31) { Next = First };
+    }
+}
+
+public static class EntryPoint
+{
+    // This shared-CIL corpus checks once-only state and original identity across
+    // desktop's wrapper and NetWasm's direct-exception profile. The dedicated
+    // StaticInitializationFailureTests assert NetWasm's exact exception shape.
+    private static bool IsOriginalFailure(Exception failure) =>
+        ReferenceEquals(failure, Probe.Failure) ||
+        failure is TypeInitializationException wrapper && ReferenceEquals(wrapper.InnerException, Probe.Failure);
+
+    public static int Run(int input)
+    {
+        Probe.Count = 0;
+        Probe.Order = 0;
+        switch (input)
+        {
+            case 0:
+                var first = Once.Next();
+                var second = Once.Next();
+                return first == 42 && second == 43 && Once.Value == 43 && Probe.Count == 1 ? 42 : -1;
+            case 1:
+                Closed<int>.Value++;
+                return Closed<int>.Value == 42 && Closed<string>.Value == 41 && Probe.Count == 2 &&
+                    !ReferenceEquals(Closed<int>.Identity, Closed<string>.Identity) ? 42 : -2;
+            case 2:
+                Outer<int>.Inner<string>.Value++;
+                return Outer<int>.Inner<string>.Value == 42 && Outer<string>.Inner<int>.Value == 41 &&
+                    Outer<int>.Inner<int>.Value == 41 && Probe.Count == 3 ? 42 : -3;
+            case 3:
+                return DerivedDependency.Result == 42 && BaseDependency.Value == 40 && Probe.Order == 12 ? 42 : -4;
+            case 4:
+                return Recursive.Instance.Value == 42 && Probe.Count == 1 &&
+                    ReferenceEquals(Recursive.Instance, Recursive.Instance) ? 42 : -5;
+            case 5:
+                return CycleA.Value == 42 && CycleB.Value == 20 && Probe.Order == 12 ? 42 : -6;
+            case 6:
+                for (var attempt = 0; attempt < 2; attempt++)
+                {
+                    try { _ = Failing.Read(); return -7; }
+                    catch (Exception failure)
+                    {
+                        if (!IsOriginalFailure(failure)) return -8;
+                    }
+                }
+                return Probe.Count == 1 ? 42 : -9;
+            case 7:
+                return Relaxed.Value;
+            case 8:
+                var instance = new WithStatic { Number = 7 };
+                return WithStatic.Next() == 42 && WithStatic.Next() == 43 && instance.Number == 7 &&
+                    Probe.Count == 1 ? 42 : -10;
+            case 9:
+                for (var attempt = 0; attempt < 2; attempt++)
+                {
+                    try { _ = Failing<int>.Read(); return -11; }
+                    catch (Exception failure)
+                    {
+                        if (!IsOriginalFailure(failure)) return -12;
+                    }
+                    try { _ = Failing<string>.Read(); return -13; }
+                    catch (Exception failure)
+                    {
+                        if (!IsOriginalFailure(failure)) return -14;
+                    }
+                }
+                return Probe.Count == 2 ? 42 : -15;
+            case 10:
+                return Allocating.First.Value + Allocating.Second.Value == 42 &&
+                    ReferenceEquals(Allocating.Second.Next, Allocating.First) && Probe.Count == 1 ? 42 : -16;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+}

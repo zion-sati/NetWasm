@@ -23,6 +23,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Array", "get_Length") => RuntimeIntrinsic.ArrayLength,
                 ("System.Array", "get_Rank") => RuntimeIntrinsic.ArrayRank,
                 ("System.Array", "GetLength") => RuntimeIntrinsic.ArrayGetLength,
+                ("System.Array", "GetLowerBound") => RuntimeIntrinsic.ArrayGetLowerBound,
+                ("System.Array", "InternalGetValue") => RuntimeIntrinsic.ArrayGetValue,
                 ("System.Array", "InternalCopy") => RuntimeIntrinsic.ArrayCopy,
                 ("System.Array", "InternalClear") => RuntimeIntrinsic.ArrayClear,
                 ("System.Array", "InternalClone") => RuntimeIntrinsic.ArrayClone,

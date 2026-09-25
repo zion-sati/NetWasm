@@ -1,0 +1,166 @@
+using System;
+using System.Runtime.CompilerServices;
+
+namespace NetWasm.Correctness.UnwindRoots;
+
+public sealed class Payload(int number)
+{
+    public int Number = number;
+}
+
+public sealed class PayloadException(Payload value) : Exception
+{
+    public Payload Value = value;
+}
+
+public sealed class Marker : Exception;
+
+public sealed class Resource : IDisposable
+{
+    private readonly Payload _value = new(41);
+    public void Dispose()
+    {
+        EntryPoint.Mark(2);
+        GC.Collect();
+        _value.Number++;
+        EntryPoint.LastDisposed = _value;
+        EntryPoint.Mark(3);
+    }
+}
+
+public static class EntryPoint
+{
+    private static int[] _events = [];
+    private static int _count;
+    public static Payload? LastDisposed;
+
+    public static int Run(int input)
+    {
+        _events = new int[6];
+        _count = 0;
+        LastDisposed = null;
+        switch (input)
+        {
+            case 0:
+                try
+                {
+                    try { Mark(1); ThrowPayload(); }
+                    finally { Mark(3); GC.Collect(); }
+                }
+                catch (PayloadException observed) when (Inspect(observed))
+                {
+                    Mark(4);
+                    GC.Collect();
+                    if (observed.Value.Number != 42) return -1;
+                }
+                return Matches([1, 2, 3, 4]);
+            case 1:
+            {
+                var value = new Payload(41);
+                try
+                {
+                    try { Mark(1); ThrowMarker(); }
+                    finally { Mark(2); GC.Collect(); value.Number++; }
+                }
+                catch (Marker) { Mark(3); GC.Collect(); }
+                return value.Number == 42 ? Matches([1, 2, 3]) : -2;
+            }
+            case 2:
+            {
+                ref var interior = ref CreateInterior();
+                try
+                {
+                    try { Mark(1); ThrowMarker(); }
+                    finally { Mark(2); GC.Collect(); interior++; }
+                }
+                catch (Marker) { Mark(3); GC.Collect(); }
+                return interior == 42 ? Matches([1, 2, 3]) : -3;
+            }
+            case 3:
+                try
+                {
+                    using var resource = new Resource();
+                    Mark(1);
+                    ThrowMarker();
+                }
+                catch (Marker) { Mark(4); GC.Collect(); }
+                return LastDisposed?.Number == 42 ? Matches([1, 2, 3, 4]) : -4;
+            case 4:
+                try
+                {
+                    try { Mark(1); ThrowPayload(); }
+                    finally { Mark(4); GC.Collect(); }
+                }
+                catch (PayloadException observed) when (InspectAndThrow(observed)) { return -5; }
+                catch (PayloadException observed)
+                {
+                    Mark(3);
+                    GC.Collect();
+                    if (observed.Value.Number != 42) return -6;
+                }
+                return Matches([1, 2, 4, 3]);
+            case 5:
+            {
+                var original = CreateException();
+                try
+                {
+                    try { Mark(1); throw original; }
+                    catch (PayloadException observed)
+                    {
+                        Mark(2);
+                        GC.Collect();
+                        if (!ReferenceEquals(observed, original) || observed.Value.Number != 42) return -7;
+                        throw;
+                    }
+                    finally { Mark(3); GC.Collect(); }
+                }
+                catch (PayloadException observed)
+                {
+                    Mark(4);
+                    GC.Collect();
+                    if (!ReferenceEquals(observed, original) || observed.Value.Number != 42) return -8;
+                }
+                return Matches([1, 2, 3, 4]);
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    public static void Mark(int value) => _events[_count++] = value;
+
+    private static int Matches(int[] expected)
+    {
+        if (_count != expected.Length) return -9;
+        for (var index = 0; index < _count; index++)
+            if (_events[index] != expected[index]) return -10;
+        return 42;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static PayloadException CreateException() => new(new Payload(42));
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowPayload() => throw CreateException();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowMarker() => throw new Marker();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ref int CreateInterior() => ref new Payload(41).Number;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool Inspect(PayloadException value)
+    {
+        Mark(2);
+        GC.Collect();
+        return value.Value.Number == 42;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool InspectAndThrow(PayloadException value)
+    {
+        if (!Inspect(value)) return true;
+        throw new Marker();
+    }
+}

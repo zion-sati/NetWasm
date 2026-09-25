@@ -1,0 +1,83 @@
+// Managed port of Sun fdlibm s_sin.c. Upstream: biosbits/fdlibm
+// commit dfd9eaed985332a1c3af98c2bab4004eea217d3d.
+// Adaptations: C# bit access, immutable local tables and bounded stack scratch.
+/* @(#)s_sin.c 1.3 95/01/18 */
+/*
+ * ====================================================
+ * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+ *
+ * Developed at SunSoft, a Sun Microsystems, Inc. business.
+ * Permission to use, copy, modify, and distribute this
+ * software is freely granted, provided that this notice
+ * is preserved.
+ * ====================================================
+ */
+
+/* sin(x)
+ * Return sine function of x.
+ *
+ * kernel function:
+ *    __kernel_sin        ... sine function on [-pi/4,pi/4]
+ *    __kernel_cos        ... cose function on [-pi/4,pi/4]
+ *    __ieee754_rem_pio2    ... argument reduction routine
+ *
+ * Method.
+ *      Let S,C and T denote the sin, cos and tan respectively on
+ *    [-PI/4, +PI/4]. Reduce the argument x to y1+y2 = x-k*pi/2
+ *    in [-pi/4 , +pi/4], and let n = k mod 4.
+ *    We have
+ *
+ *          n        sin(x)      cos(x)        tan(x)
+ *     ----------------------------------------------------------
+ *        0           S       C         T
+ *        1           C      -S        -1/T
+ *        2          -S      -C         T
+ *        3          -C       S        -1/T
+ *     ----------------------------------------------------------
+ *
+ * Special cases:
+ *      Let trig be any of sin, cos, or tan.
+ *      trig(+-INF)  is NaN, with signals;
+ *      trig(NaN)    is that NaN;
+ *
+ * Accuracy:
+ *    TRIG(x) returns trig(x) nearly rounded
+ */
+
+namespace System;
+
+public static partial class Math
+{
+    public static double Sin(double value)
+    {
+
+        Span<double> y = stackalloc double[2];
+        var z = 0.0;
+        var n = 0;
+        var ix = 0;
+
+        /* High word of value. */
+        ix = FdHigh(value);
+
+        /* |value| ~< pi/4 */
+        ix &= 0x7fffffff;
+        if (ix <= 0x3fe921fb) return FdKernelSin(value, z, 0);
+
+        /* Sin(Inf or NaN) is NaN */
+        else if (ix >= 0x7ff00000) return value - value;
+
+        /* argument reduction needed */
+        else
+        {
+            n = FdRemPio2(value, y);
+            switch (n & 3)
+            {
+                case 0: return FdKernelSin(y[0], y[1], 1);
+                case 1: return FdKernelCos(y[0], y[1]);
+                case 2: return -FdKernelSin(y[0], y[1], 1);
+                default:
+                    return -FdKernelCos(y[0], y[1]);
+            }
+        }
+    }
+}

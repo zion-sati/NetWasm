@@ -1,0 +1,18 @@
+package netwasm:mixed@1.0.0;
+
+interface arithmetic {
+  add: func(left: s32, right: s32) -> s32;
+}
+
+interface acceptance {
+  run: func(value: s32) -> s32;
+}
+
+world mixed-boundary {
+  import arithmetic;
+  import wasi:clocks/wall-clock@0.2.11;
+  import wasi:clocks/monotonic-clock@0.2.11;
+  import netwasm:runtime/reactor-host@1.0.0;
+  export acceptance;
+  export netwasm:runtime/reactor-guest@1.0.0;
+}

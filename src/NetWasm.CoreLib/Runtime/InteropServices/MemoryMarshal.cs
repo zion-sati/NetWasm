@@ -273,7 +273,7 @@ namespace System.Runtime.InteropServices
         {
             if (byteLength < Unsafe.SizeOf<T>())
             {
-                throw new ArgumentException();
+                throw new ArgumentOutOfRangeException();
             }
         }
 

@@ -1,0 +1,322 @@
+using System;
+using System.Runtime.CompilerServices;
+
+namespace NetWasm.Correctness.ConversionTransport;
+
+public static class EntryPoint
+{
+    // Each row crosses every route before and after an intentionally lossy
+    // conversion. Stage-local assertions prevent compensating errors.
+    private static readonly int[] Kinds =
+    [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3, 3, 3, 3, 3,
+        3, 3, 3, 3,
+    ];
+    private static readonly int[] Widths =
+    [
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64, 32, 64, 32, 64,
+        32, 64, 32, 64,
+    ];
+    private static readonly ulong[] Sources =
+    [
+        0x0UL, 0x0UL, 0x1UL, 0x1UL, 0xffffffff80000000UL, 0xffffffff80000000UL, 0xffffffff80000001UL, 0xffffffff80000001UL,
+        0x7fffffffUL, 0x7fffffffUL, 0x7ffffffeUL, 0x7ffffffeUL, 0x7ffffffdUL, 0x7ffffffdUL, 0xffffffffffffffffUL, 0xffffffffffffffffUL,
+        0xfffffdUL, 0xfffffdUL, 0xffffffffff000003UL, 0xffffffffff000003UL, 0xfffffeUL, 0xfffffeUL, 0xffffffffff000002UL, 0xffffffffff000002UL,
+        0xffffffUL, 0xffffffUL, 0xffffffffff000001UL, 0xffffffffff000001UL, 0x1000000UL, 0x1000000UL, 0xffffffffff000000UL, 0xffffffffff000000UL,
+        0x1000001UL, 0x1000001UL, 0xfffffffffeffffffUL, 0xfffffffffeffffffUL, 0x1000002UL, 0x1000002UL, 0xfffffffffefffffeUL, 0xfffffffffefffffeUL,
+        0x1000003UL, 0x1000003UL, 0xfffffffffefffffdUL, 0xfffffffffefffffdUL, 0x1000004UL, 0x1000004UL, 0xfffffffffefffffcUL, 0xfffffffffefffffcUL,
+        0x1000005UL, 0x1000005UL, 0xfffffffffefffffbUL, 0xfffffffffefffffbUL, 0x0UL, 0x0UL, 0x1UL, 0x1UL,
+        0xffffffffUL, 0xffffffffUL, 0xfffffffeUL, 0xfffffffeUL, 0xfffffffdUL, 0xfffffffdUL, 0xfffffdUL, 0xfffffdUL,
+        0xfffffeUL, 0xfffffeUL, 0xffffffUL, 0xffffffUL, 0x1000000UL, 0x1000000UL, 0x1000001UL, 0x1000001UL,
+        0x1000002UL, 0x1000002UL, 0x1000003UL, 0x1000003UL, 0x1000004UL, 0x1000004UL, 0x1000005UL, 0x1000005UL,
+        0x0UL, 0x0UL, 0x1UL, 0x1UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000001UL, 0x8000000000000001UL,
+        0x7fffffffffffffffUL, 0x7fffffffffffffffUL, 0x7ffffffffffffffeUL, 0x7ffffffffffffffeUL, 0x7ffffffffffffffdUL, 0x7ffffffffffffffdUL, 0xffffffffffffffffUL, 0xffffffffffffffffUL,
+        0xfffffdUL, 0xfffffdUL, 0xffffffffff000003UL, 0xffffffffff000003UL, 0xfffffeUL, 0xfffffeUL, 0xffffffffff000002UL, 0xffffffffff000002UL,
+        0xffffffUL, 0xffffffUL, 0xffffffffff000001UL, 0xffffffffff000001UL, 0x1000000UL, 0x1000000UL, 0xffffffffff000000UL, 0xffffffffff000000UL,
+        0x1000001UL, 0x1000001UL, 0xfffffffffeffffffUL, 0xfffffffffeffffffUL, 0x1000002UL, 0x1000002UL, 0xfffffffffefffffeUL, 0xfffffffffefffffeUL,
+        0x1000003UL, 0x1000003UL, 0xfffffffffefffffdUL, 0xfffffffffefffffdUL, 0x1000004UL, 0x1000004UL, 0xfffffffffefffffcUL, 0xfffffffffefffffcUL,
+        0x1000005UL, 0x1000005UL, 0xfffffffffefffffbUL, 0xfffffffffefffffbUL, 0x1ffffffffffffdUL, 0x1ffffffffffffdUL, 0xffe0000000000003UL, 0xffe0000000000003UL,
+        0x1ffffffffffffeUL, 0x1ffffffffffffeUL, 0xffe0000000000002UL, 0xffe0000000000002UL, 0x1fffffffffffffUL, 0x1fffffffffffffUL, 0xffe0000000000001UL, 0xffe0000000000001UL,
+        0x20000000000000UL, 0x20000000000000UL, 0xffe0000000000000UL, 0xffe0000000000000UL, 0x20000000000001UL, 0x20000000000001UL, 0xffdfffffffffffffUL, 0xffdfffffffffffffUL,
+        0x20000000000002UL, 0x20000000000002UL, 0xffdffffffffffffeUL, 0xffdffffffffffffeUL, 0x20000000000003UL, 0x20000000000003UL, 0xffdffffffffffffdUL, 0xffdffffffffffffdUL,
+        0x20000000000004UL, 0x20000000000004UL, 0xffdffffffffffffcUL, 0xffdffffffffffffcUL, 0x20000000000005UL, 0x20000000000005UL, 0xffdffffffffffffbUL, 0xffdffffffffffffbUL,
+        0x8000000000000003UL, 0x8000000000000003UL, 0x8000000000000002UL, 0x8000000000000002UL, 0x0UL, 0x0UL, 0x1UL, 0x1UL,
+        0xffffffffffffffffUL, 0xffffffffffffffffUL, 0xfffffffffffffffeUL, 0xfffffffffffffffeUL, 0xfffffffffffffffdUL, 0xfffffffffffffffdUL, 0xfffffdUL, 0xfffffdUL,
+        0xfffffeUL, 0xfffffeUL, 0xffffffUL, 0xffffffUL, 0x1000000UL, 0x1000000UL, 0x1000001UL, 0x1000001UL,
+        0x1000002UL, 0x1000002UL, 0x1000003UL, 0x1000003UL, 0x1000004UL, 0x1000004UL, 0x1000005UL, 0x1000005UL,
+        0x1ffffffffffffdUL, 0x1ffffffffffffdUL, 0x1ffffffffffffeUL, 0x1ffffffffffffeUL, 0x1fffffffffffffUL, 0x1fffffffffffffUL, 0x20000000000000UL, 0x20000000000000UL,
+        0x20000000000001UL, 0x20000000000001UL, 0x20000000000002UL, 0x20000000000002UL, 0x20000000000003UL, 0x20000000000003UL, 0x20000000000004UL, 0x20000000000004UL,
+        0x20000000000005UL, 0x20000000000005UL, 0x7ffffffffffffffdUL, 0x7ffffffffffffffdUL, 0x7ffffffffffffffeUL, 0x7ffffffffffffffeUL, 0x7fffffffffffffffUL, 0x7fffffffffffffffUL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000001UL, 0x8000000000000001UL, 0x8000000000000002UL, 0x8000000000000002UL, 0x8000000000000003UL, 0x8000000000000003UL,
+        0x8000000000000004UL, 0x8000000000000004UL, 0x8000000000000005UL, 0x8000000000000005UL,
+    ];
+    private static readonly ulong[] ExpectedFloating =
+    [
+        0x0UL, 0x0UL, 0x3f800000UL, 0x3ff0000000000000UL, 0xcf000000UL, 0xc1e0000000000000UL, 0xcf000000UL, 0xc1dfffffffc00000UL,
+        0x4f000000UL, 0x41dfffffffc00000UL, 0x4f000000UL, 0x41dfffffff800000UL, 0x4f000000UL, 0x41dfffffff400000UL, 0xbf800000UL, 0xbff0000000000000UL,
+        0x4b7ffffdUL, 0x416fffffa0000000UL, 0xcb7ffffdUL, 0xc16fffffa0000000UL, 0x4b7ffffeUL, 0x416fffffc0000000UL, 0xcb7ffffeUL, 0xc16fffffc0000000UL,
+        0x4b7fffffUL, 0x416fffffe0000000UL, 0xcb7fffffUL, 0xc16fffffe0000000UL, 0x4b800000UL, 0x4170000000000000UL, 0xcb800000UL, 0xc170000000000000UL,
+        0x4b800000UL, 0x4170000010000000UL, 0xcb800000UL, 0xc170000010000000UL, 0x4b800001UL, 0x4170000020000000UL, 0xcb800001UL, 0xc170000020000000UL,
+        0x4b800002UL, 0x4170000030000000UL, 0xcb800002UL, 0xc170000030000000UL, 0x4b800002UL, 0x4170000040000000UL, 0xcb800002UL, 0xc170000040000000UL,
+        0x4b800002UL, 0x4170000050000000UL, 0xcb800002UL, 0xc170000050000000UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3ff0000000000000UL,
+        0x4f800000UL, 0x41efffffffe00000UL, 0x4f800000UL, 0x41efffffffc00000UL, 0x4f800000UL, 0x41efffffffa00000UL, 0x4b7ffffdUL, 0x416fffffa0000000UL,
+        0x4b7ffffeUL, 0x416fffffc0000000UL, 0x4b7fffffUL, 0x416fffffe0000000UL, 0x4b800000UL, 0x4170000000000000UL, 0x4b800000UL, 0x4170000010000000UL,
+        0x4b800001UL, 0x4170000020000000UL, 0x4b800002UL, 0x4170000030000000UL, 0x4b800002UL, 0x4170000040000000UL, 0x4b800002UL, 0x4170000050000000UL,
+        0x0UL, 0x0UL, 0x3f800000UL, 0x3ff0000000000000UL, 0xdf000000UL, 0xc3e0000000000000UL, 0xdf000000UL, 0xc3e0000000000000UL,
+        0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL, 0xbf800000UL, 0xbff0000000000000UL,
+        0x4b7ffffdUL, 0x416fffffa0000000UL, 0xcb7ffffdUL, 0xc16fffffa0000000UL, 0x4b7ffffeUL, 0x416fffffc0000000UL, 0xcb7ffffeUL, 0xc16fffffc0000000UL,
+        0x4b7fffffUL, 0x416fffffe0000000UL, 0xcb7fffffUL, 0xc16fffffe0000000UL, 0x4b800000UL, 0x4170000000000000UL, 0xcb800000UL, 0xc170000000000000UL,
+        0x4b800000UL, 0x4170000010000000UL, 0xcb800000UL, 0xc170000010000000UL, 0x4b800001UL, 0x4170000020000000UL, 0xcb800001UL, 0xc170000020000000UL,
+        0x4b800002UL, 0x4170000030000000UL, 0xcb800002UL, 0xc170000030000000UL, 0x4b800002UL, 0x4170000040000000UL, 0xcb800002UL, 0xc170000040000000UL,
+        0x4b800002UL, 0x4170000050000000UL, 0xcb800002UL, 0xc170000050000000UL, 0x5a000000UL, 0x433ffffffffffffdUL, 0xda000000UL, 0xc33ffffffffffffdUL,
+        0x5a000000UL, 0x433ffffffffffffeUL, 0xda000000UL, 0xc33ffffffffffffeUL, 0x5a000000UL, 0x433fffffffffffffUL, 0xda000000UL, 0xc33fffffffffffffUL,
+        0x5a000000UL, 0x4340000000000000UL, 0xda000000UL, 0xc340000000000000UL, 0x5a000000UL, 0x4340000000000000UL, 0xda000000UL, 0xc340000000000000UL,
+        0x5a000000UL, 0x4340000000000001UL, 0xda000000UL, 0xc340000000000001UL, 0x5a000000UL, 0x4340000000000002UL, 0xda000000UL, 0xc340000000000002UL,
+        0x5a000000UL, 0x4340000000000002UL, 0xda000000UL, 0xc340000000000002UL, 0x5a000000UL, 0x4340000000000002UL, 0xda000000UL, 0xc340000000000002UL,
+        0xdf000000UL, 0xc3e0000000000000UL, 0xdf000000UL, 0xc3e0000000000000UL, 0x0UL, 0x0UL, 0x3f800000UL, 0x3ff0000000000000UL,
+        0x5f800000UL, 0x43f0000000000000UL, 0x5f800000UL, 0x43f0000000000000UL, 0x5f800000UL, 0x43f0000000000000UL, 0x4b7ffffdUL, 0x416fffffa0000000UL,
+        0x4b7ffffeUL, 0x416fffffc0000000UL, 0x4b7fffffUL, 0x416fffffe0000000UL, 0x4b800000UL, 0x4170000000000000UL, 0x4b800000UL, 0x4170000010000000UL,
+        0x4b800001UL, 0x4170000020000000UL, 0x4b800002UL, 0x4170000030000000UL, 0x4b800002UL, 0x4170000040000000UL, 0x4b800002UL, 0x4170000050000000UL,
+        0x5a000000UL, 0x433ffffffffffffdUL, 0x5a000000UL, 0x433ffffffffffffeUL, 0x5a000000UL, 0x433fffffffffffffUL, 0x5a000000UL, 0x4340000000000000UL,
+        0x5a000000UL, 0x4340000000000000UL, 0x5a000000UL, 0x4340000000000001UL, 0x5a000000UL, 0x4340000000000002UL, 0x5a000000UL, 0x4340000000000002UL,
+        0x5a000000UL, 0x4340000000000002UL, 0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL,
+        0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL,
+        0x5f000000UL, 0x43e0000000000000UL, 0x5f000000UL, 0x43e0000000000000UL,
+    ];
+    private static readonly ulong[] ExpectedBack =
+    [
+        0x0UL, 0x0UL, 0x1UL, 0x1UL, 0xffffffff80000000UL, 0xffffffff80000000UL, 0xffffffff80000000UL, 0xffffffff80000001UL,
+        0x80000000UL, 0x7fffffffUL, 0x80000000UL, 0x7ffffffeUL, 0x80000000UL, 0x7ffffffdUL, 0xffffffffffffffffUL, 0xffffffffffffffffUL,
+        0xfffffdUL, 0xfffffdUL, 0xffffffffff000003UL, 0xffffffffff000003UL, 0xfffffeUL, 0xfffffeUL, 0xffffffffff000002UL, 0xffffffffff000002UL,
+        0xffffffUL, 0xffffffUL, 0xffffffffff000001UL, 0xffffffffff000001UL, 0x1000000UL, 0x1000000UL, 0xffffffffff000000UL, 0xffffffffff000000UL,
+        0x1000000UL, 0x1000001UL, 0xffffffffff000000UL, 0xfffffffffeffffffUL, 0x1000002UL, 0x1000002UL, 0xfffffffffefffffeUL, 0xfffffffffefffffeUL,
+        0x1000004UL, 0x1000003UL, 0xfffffffffefffffcUL, 0xfffffffffefffffdUL, 0x1000004UL, 0x1000004UL, 0xfffffffffefffffcUL, 0xfffffffffefffffcUL,
+        0x1000004UL, 0x1000005UL, 0xfffffffffefffffcUL, 0xfffffffffefffffbUL, 0x0UL, 0x0UL, 0x1UL, 0x1UL,
+        0x100000000UL, 0xffffffffUL, 0x100000000UL, 0xfffffffeUL, 0x100000000UL, 0xfffffffdUL, 0xfffffdUL, 0xfffffdUL,
+        0xfffffeUL, 0xfffffeUL, 0xffffffUL, 0xffffffUL, 0x1000000UL, 0x1000000UL, 0x1000000UL, 0x1000001UL,
+        0x1000002UL, 0x1000002UL, 0x1000004UL, 0x1000003UL, 0x1000004UL, 0x1000004UL, 0x1000004UL, 0x1000005UL,
+        0x0UL, 0x0UL, 0x1UL, 0x1UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0xffffffffffffffffUL, 0xffffffffffffffffUL,
+        0xfffffdUL, 0xfffffdUL, 0xffffffffff000003UL, 0xffffffffff000003UL, 0xfffffeUL, 0xfffffeUL, 0xffffffffff000002UL, 0xffffffffff000002UL,
+        0xffffffUL, 0xffffffUL, 0xffffffffff000001UL, 0xffffffffff000001UL, 0x1000000UL, 0x1000000UL, 0xffffffffff000000UL, 0xffffffffff000000UL,
+        0x1000000UL, 0x1000001UL, 0xffffffffff000000UL, 0xfffffffffeffffffUL, 0x1000002UL, 0x1000002UL, 0xfffffffffefffffeUL, 0xfffffffffefffffeUL,
+        0x1000004UL, 0x1000003UL, 0xfffffffffefffffcUL, 0xfffffffffefffffdUL, 0x1000004UL, 0x1000004UL, 0xfffffffffefffffcUL, 0xfffffffffefffffcUL,
+        0x1000004UL, 0x1000005UL, 0xfffffffffefffffcUL, 0xfffffffffefffffbUL, 0x20000000000000UL, 0x1ffffffffffffdUL, 0xffe0000000000000UL, 0xffe0000000000003UL,
+        0x20000000000000UL, 0x1ffffffffffffeUL, 0xffe0000000000000UL, 0xffe0000000000002UL, 0x20000000000000UL, 0x1fffffffffffffUL, 0xffe0000000000000UL, 0xffe0000000000001UL,
+        0x20000000000000UL, 0x20000000000000UL, 0xffe0000000000000UL, 0xffe0000000000000UL, 0x20000000000000UL, 0x20000000000000UL, 0xffe0000000000000UL, 0xffe0000000000000UL,
+        0x20000000000000UL, 0x20000000000002UL, 0xffe0000000000000UL, 0xffdffffffffffffeUL, 0x20000000000000UL, 0x20000000000004UL, 0xffe0000000000000UL, 0xffdffffffffffffcUL,
+        0x20000000000000UL, 0x20000000000004UL, 0xffe0000000000000UL, 0xffdffffffffffffcUL, 0x20000000000000UL, 0x20000000000004UL, 0xffe0000000000000UL, 0xffdffffffffffffcUL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x0UL, 0x0UL, 0x1UL, 0x1UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0x0UL, 0xfffffdUL, 0xfffffdUL,
+        0xfffffeUL, 0xfffffeUL, 0xffffffUL, 0xffffffUL, 0x1000000UL, 0x1000000UL, 0x1000000UL, 0x1000001UL,
+        0x1000002UL, 0x1000002UL, 0x1000004UL, 0x1000003UL, 0x1000004UL, 0x1000004UL, 0x1000004UL, 0x1000005UL,
+        0x20000000000000UL, 0x1ffffffffffffdUL, 0x20000000000000UL, 0x1ffffffffffffeUL, 0x20000000000000UL, 0x1fffffffffffffUL, 0x20000000000000UL, 0x20000000000000UL,
+        0x20000000000000UL, 0x20000000000000UL, 0x20000000000000UL, 0x20000000000002UL, 0x20000000000000UL, 0x20000000000004UL, 0x20000000000000UL, 0x20000000000004UL,
+        0x20000000000000UL, 0x20000000000004UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL, 0x8000000000000000UL,
+    ];
+
+    public static int Run(int input)
+    {
+        var index = input / 7;
+        var route = input % 7;
+        return Kinds[index] switch
+        {
+            0 => Int32RoundTrip(index, route),
+            1 => UInt32RoundTrip(index, route),
+            2 => Int64RoundTrip(index, route),
+            3 => UInt64RoundTrip(index, route),
+            _ => throw new ArgumentOutOfRangeException(nameof(input)),
+        };
+    }
+
+    private static int Int32RoundTrip(int index, int route)
+    {
+        var source = Transport(unchecked((int)Sources[index]), route);
+        if (unchecked((ulong)source) != Sources[index]) return -1;
+        if (Widths[index] == 32)
+        {
+            var converted = (float)source;
+            if (BitConverter.SingleToUInt32Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.SingleToUInt32Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((int)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+        else
+        {
+            var converted = (double)source;
+            if (BitConverter.DoubleToUInt64Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.DoubleToUInt64Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((int)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+    }
+
+    private static int UInt32RoundTrip(int index, int route)
+    {
+        var source = Transport(unchecked((uint)Sources[index]), route);
+        if (unchecked((ulong)source) != Sources[index]) return -1;
+        if (Widths[index] == 32)
+        {
+            var converted = (float)source;
+            if (BitConverter.SingleToUInt32Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.SingleToUInt32Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((uint)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+        else
+        {
+            var converted = (double)source;
+            if (BitConverter.DoubleToUInt64Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.DoubleToUInt64Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((uint)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+    }
+
+    private static int Int64RoundTrip(int index, int route)
+    {
+        var source = Transport(unchecked((long)Sources[index]), route);
+        if (unchecked((ulong)source) != Sources[index]) return -1;
+        if (Widths[index] == 32)
+        {
+            var converted = (float)source;
+            if (BitConverter.SingleToUInt32Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.SingleToUInt32Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((long)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+        else
+        {
+            var converted = (double)source;
+            if (BitConverter.DoubleToUInt64Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.DoubleToUInt64Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((long)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+    }
+
+    private static int UInt64RoundTrip(int index, int route)
+    {
+        var source = Transport(unchecked((ulong)Sources[index]), route);
+        if (unchecked((ulong)source) != Sources[index]) return -1;
+        if (Widths[index] == 32)
+        {
+            var converted = (float)source;
+            if (BitConverter.SingleToUInt32Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.SingleToUInt32Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((ulong)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+        else
+        {
+            var converted = (double)source;
+            if (BitConverter.DoubleToUInt64Bits(converted) != ExpectedFloating[index]) return -2;
+            var transported = Transport(converted, route);
+            if (BitConverter.DoubleToUInt64Bits(transported) != ExpectedFloating[index]) return -3;
+            var returned = checked((ulong)transported);
+            return unchecked((ulong)returned) == ExpectedBack[index] ? 42 : -4;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Transport<T>(T value, int route)
+    {
+        switch (route)
+        {
+            case 0: return Identity(value);
+            case 1:
+                var array = new T[2];
+                array[1] = value;
+                return array[1];
+            case 2: return new Cell<T> { Value = value }.Value;
+            case 3: return Select(false, default!, value);
+            case 4: return Select(true, value, default!);
+            case 5:
+                Func<T, T> callback = Identity;
+                return callback(value);
+            case 6:
+                Func<T> callbackWithCapture = () => value;
+                return Invoke(callbackWithCapture);
+            default: throw new ArgumentOutOfRangeException(nameof(route));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Identity<T>(T value) => value;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Select<T>(bool first, T left, T right) => first ? left : right;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Invoke<T>(Func<T> callback) => callback();
+
+    private sealed class Cell<T>
+    {
+        public T Value = default!;
+    }
+}

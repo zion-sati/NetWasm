@@ -9,6 +9,7 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions;
 internal sealed class ExceptionalNumericInstructionEmitter(
     ITargetLayout layouts,
     ICheckedBinaryEmitter checkedBinary,
+    IFloatingRemainderEmitter floatingRemainder,
     IImplicitExceptionEmitter exceptions) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -241,26 +242,9 @@ internal sealed class ExceptionalNumericInstructionEmitter(
         var left = request.Stack.Count - 2;
         var leftLocal = GetStackLocal(request.Context, left, type);
         var rightLocal = GetStackLocal(request.Context, left + 1, type);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(leftLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(leftLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(rightLocal))));
-        if (type == CliValueKind.F4)
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F32Divide));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F32Truncate));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(rightLocal))));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F32Multiply));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F32Subtract));
-        }
-        else
-        {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F64Divide));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F64Truncate));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(rightLocal))));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F64Multiply));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.F64Subtract));
-        }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(leftLocal))));
+        floatingRemainder.Emit(
+            code, type, leftLocal, rightLocal,
+            request.Context.NumericTemporaryI4, request.Context.NumericTemporaryI8);
         request.Stack.RemoveAt(left + 1);
         request.Stack[left] = type;
     }

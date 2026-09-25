@@ -1,0 +1,174 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace NetWasm.Correctness.ArrayShapes;
+
+public sealed class Marker(int value) { public int Value = value; }
+public struct Pair { public Marker Marker; public int Number; }
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0:
+            {
+                object vector = new string[1];
+                object jagged = new string[1][];
+                object rectangle = new string[1, 1];
+                return vector is object[] && vector is not object[,] &&
+                    jagged is object[][] && jagged is object[] && jagged is not object[,] &&
+                    rectangle is object[,] && rectangle is not object[] && rectangle is not object[][]
+                    ? 42 : -1;
+            }
+            case 1:
+            {
+                var original = new string[1, 2];
+                object[,] view = original;
+                view[0, 1] = "stored";
+                return original[0, 1] == "stored" && (string)view[0, 1] == "stored" ? 42 : -2;
+            }
+            case 2:
+            {
+                var original = new string[,] { { "unchanged" } };
+                object[,] view = original;
+                try { view[0, 0] = new object(); return -3; }
+                catch (ArrayTypeMismatchException)
+                {
+                    return original[0, 0] == "unchanged" ? 42 : -4;
+                }
+            }
+            case 3:
+            {
+                object[,] view = new string[,] { { "unchanged" } };
+                try { ref var value = ref Address(view); value = "changed"; return -5; }
+                catch (ArrayTypeMismatchException)
+                {
+                    return (string)view[0, 0] == "unchanged" ? 42 : -6;
+                }
+            }
+            case 4:
+                return RoundTrip(42) == 42 && RoundTrip<int?>(42) == 42 &&
+                    RoundTrip<int?>(null) is null ? 42 : -7;
+            case 5:
+            {
+                string[,]? missing = null;
+                try { _ = missing![-1, -1]; return -8; }
+                catch (NullReferenceException) { return 42; }
+            }
+            case 6:
+            {
+                var values = new int[1, 2];
+                try { _ = values[-1, 0]; return -9; }
+                catch (IndexOutOfRangeException) { return 42; }
+            }
+            case 7:
+            {
+                var values = new int[1, 2];
+                try { _ = values[0, 2]; return -10; }
+                catch (IndexOutOfRangeException) { return 42; }
+            }
+            case 8:
+            {
+                var source = new object[,] { { "first", new object(), "last" } };
+                var destination = new string[,] { { "old0", "old1", "old2" } };
+                try { Array.Copy(source, destination, 3); return -11; }
+                catch (InvalidCastException)
+                {
+                    return destination[0, 0] == "first" && destination[0, 1] == "old1" &&
+                        destination[0, 2] == "old2" ? 42 : -12;
+                }
+            }
+            case 9:
+            {
+                var values = new int[,] { { 1, 2 }, { 3, 4 } };
+                Array.Copy(values, 0, values, 1, 3);
+                return values[0, 0] == 1 && values[0, 1] == 1 &&
+                    values[1, 0] == 2 && values[1, 1] == 3 ? 42 : -13;
+            }
+            case 10:
+            {
+                var original = new string[1][];
+                object[][] view = original;
+                var inner = new[] { "before" };
+                view[0] = inner;
+                inner[0] = "after";
+                return ReferenceEquals(original[0], inner) && (string)view[0][0] == "after" ? 42 : -14;
+            }
+            case 11:
+            {
+                var original = new[] { new[] { "unchanged" } };
+                object[][] view = original;
+                var before = original[0];
+                try { view[0] = new object[1]; return -15; }
+                catch (ArrayTypeMismatchException)
+                {
+                    return ReferenceEquals(original[0], before) && original[0][0] == "unchanged" ? 42 : -16;
+                }
+            }
+            case 12:
+            {
+                object rectangle = new string[1, 1];
+                return rectangle is IEnumerable && rectangle is not IEnumerable<object> &&
+                    rectangle is not IList<object> && rectangle is not IReadOnlyList<object> ? 42 : -17;
+            }
+            case 13:
+            {
+                IEnumerable values = new int[,] { { 1, 2 }, { 3, 4 } };
+                var expected = 1;
+                foreach (var value in values)
+                {
+                    if ((int)value != expected) return -18;
+                    expected++;
+                }
+                return expected == 5 ? 42 : -19;
+            }
+            case 14:
+            {
+                var marker = new Marker(42);
+                var values = new Pair[1, 1];
+                values[0, 0] = new Pair { Marker = marker, Number = 11 };
+                var copy = Read(values);
+                copy.Number = 22;
+                copy.Marker.Value = 43;
+                return values[0, 0].Number == 11 && copy.Number == 22 &&
+                    ReferenceEquals(values[0, 0].Marker, marker) && marker.Value == 43 ? 42 : -20;
+            }
+            case 15:
+            {
+                var original = new string[,] { { "before" } };
+                object?[,] view = original;
+                view[0, 0] = null;
+                return original[0, 0] is null && view[0, 0] is null ? 42 : -21;
+            }
+            case 16:
+            {
+                var empty = new string[0, 3];
+                var count = 0;
+                foreach (var value in empty) count++;
+                return count == 0 && empty.Rank == 2 && empty.Length == 0 &&
+                    empty.GetLength(0) == 0 && empty.GetLength(1) == 3 ? 42 : -22;
+            }
+            case 17:
+            {
+                var original = new[] { new[] { "nested" } };
+                IList<object[]> view = original;
+                return view.Count == 1 && ReferenceEquals(view[0], original[0]) &&
+                    (string)view[0][0] == "nested" ? 42 : -23;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    private static ref object Address(object[,] values) => ref values[0, 0];
+    private static T Read<T>(T[,] values) => values[0, 0];
+    private static T RoundTrip<T>(T value)
+    {
+        var values = new T[1, 1];
+        values[0, 0] = value;
+        return Read(values);
+    }
+}

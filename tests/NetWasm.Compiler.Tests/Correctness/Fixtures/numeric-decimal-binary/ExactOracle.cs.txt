@@ -1,0 +1,47 @@
+using System;
+using System.Numerics;
+
+namespace NetWasm.Correctness.DecimalBinaryConversions;
+
+public static partial class EntryPoint
+{
+    // Desktop .NET 10 conversion is not the selected profile authority.
+    // This unbounded rational oracle independently searches the binary exponent.
+    // Only the desktop entry reaches BigInteger. Run executes the actual APIs.
+    public static int RunExactOracle(int input)
+    {
+        input %= Low.Length * 4;
+        var row = input / 4;
+        var single = input % 2 == 0;
+        var negative = input / 2 % 2 != 0;
+        var numerator = new BigInteger(unchecked((uint)Low[row])) |
+            new BigInteger(unchecked((uint)Middle[row])) << 32 |
+            new BigInteger(unchecked((uint)High[row])) << 64;
+        var actual = negative ? 1UL << (single ? 31 : 63) : 0;
+        if (!numerator.IsZero)
+        {
+            var denominator = BigInteger.Pow(10, Scales[row]);
+            var exponent = -94;
+            // Every nonzero Decimal is normal in both target formats.
+            while (exponent + 1 >= 0
+                ? numerator >= denominator << (exponent + 1)
+                : numerator << -(exponent + 1) >= denominator) exponent++;
+            var width = single ? 23 : 52;
+            var shift = width - exponent;
+            if (shift >= 0) numerator <<= shift;
+            else denominator <<= -shift;
+            var significand = BigInteger.DivRem(numerator, denominator, out var remainder);
+            var comparison = (remainder * 2).CompareTo(denominator);
+            if (comparison > 0 || (comparison == 0 && !significand.IsEven)) significand++;
+            if (significand == BigInteger.One << (width + 1))
+            {
+                significand >>= 1;
+                exponent++;
+            }
+            actual |= (ulong)(exponent + (single ? 127 : 1023)) << width |
+                (ulong)(significand - (BigInteger.One << width));
+        }
+        var expected = single ? ExpectedSingle[input / 2] : ExpectedDouble[input / 2];
+        return actual == expected ? 42 : -3;
+    }
+}

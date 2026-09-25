@@ -13,6 +13,29 @@ public sealed class FrontendArtifactCodecTests
 {
     private static readonly AssemblyIdentity Assembly = new("Dependency");
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void RoundTripPreservesExplicitFieldOffset(int? offset)
+    {
+        var snapshot = CreateStressSnapshot();
+        var field = snapshot.Analysis.Instructions.Fields[0];
+        field = field with { Definition = field.Definition with { ExplicitOffset = offset } };
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Instructions = snapshot.Analysis.Instructions with { Fields = [field] },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+        var decoded = new FrontendArtifactDecoder().Decode(payload);
+        Assert.Equal(offset, Assert.Single(decoded.Analysis.Instructions.Fields).Definition.ExplicitOffset);
+        Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
+    }
+
     [Fact]
     public void RoundTripPreservesEveryTaggedVariantDeterministically()
     {

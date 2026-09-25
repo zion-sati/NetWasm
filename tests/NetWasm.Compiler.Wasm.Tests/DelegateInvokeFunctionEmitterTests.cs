@@ -5,6 +5,7 @@ using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -12,6 +13,72 @@ using static EmitterTestSupport;
 
 public sealed class DelegateInvokeFunctionEmitterTests
 {
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, false, false, 4)]
+    [InlineData(WasmTarget.Wasm64, false, false, 4)]
+    [InlineData(WasmTarget.Wasm32, true, false, 4)]
+    [InlineData(WasmTarget.Wasm64, true, false, 4)]
+    [InlineData(WasmTarget.Wasm32, false, true, 4)]
+    [InlineData(WasmTarget.Wasm64, false, true, 4)]
+    [InlineData(WasmTarget.Wasm32, false, true, 16)]
+    [InlineData(WasmTarget.Wasm64, false, true, 16)]
+    public void PassesTheStoredObjectOrAlignedBoxedPayloadToTheTarget(
+        WasmTarget target, bool isStatic, bool isValueType, int alignment)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var callbackType = CallbackType();
+        var signature = MethodSignatureModel.Create(CliValueKind.I4);
+        var invoke = CreateInvoke(callbackType, signature);
+        var targetMethod = CreateTarget(signature, "Receiver", isStatic,
+            Key(0x06000025), isValueType);
+        var values = new FixedValueLayoutProvider(alignment);
+        var writers = new RecordingWriterFactory();
+        var emitter = CreateEmitter(layouts, values, writers);
+        var resolver = CreateResolver(callbackType, targetMethod);
+
+        ((IDelegateInvokeFunctionEmitter)emitter).Emit(invoke,
+            CreateTargetProgram(callbackType, invoke, targetMethod), resolver);
+
+        var instructions = writers.Instructions.ToInstructions();
+        var targetCall = WasmInstruction.WithOperand(WasmOpcodes.Call,
+            WasmInstructionOperand.Unsigned((uint)resolver.Resolve(targetMethod)));
+        var callIndex = Assert.Single(Enumerable.Range(0, instructions.Length),
+            index => instructions[index] == targetCall);
+        if (isStatic)
+        {
+            Assert.Equal(WasmOpcodes.If, instructions[callIndex - 1].Opcode);
+            Assert.Null(values.RequestedType);
+            return;
+        }
+
+        var expected = new List<WasmInstruction>
+        {
+            WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned(0)),
+            WasmInstruction.WithOperand(layouts.Target.UsesMemory64
+                    ? WasmOpcodes.I64Load : WasmOpcodes.I32Load,
+                WasmInstructionOperand.Memory(layouts.Target.UsesMemory64 ? 3u : 2u,
+                    (uint)layouts.DelegateTargetOffset)),
+        };
+        if (isValueType)
+        {
+            var payloadOffset = alignment == 16 ? 16 : layouts.Target.ObjectHeaderSize;
+            expected.Add(WasmInstruction.WithOperand(layouts.Target.UsesMemory64
+                    ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant,
+                layouts.Target.UsesMemory64
+                    ? WasmInstructionOperand.Signed64(payloadOffset)
+                    : WasmInstructionOperand.Signed(payloadOffset)));
+            expected.Add(WasmInstruction.NoOperand(layouts.Target.UsesMemory64
+                ? WasmOpcodes.I64Add : WasmOpcodes.I32Add));
+            Assert.Equal(targetMethod.DeclaringType, values.RequestedType);
+        }
+        else
+        {
+            Assert.Null(values.RequestedType);
+        }
+        Assert.Equal(expected, instructions.Skip(callIndex - expected.Count).Take(expected.Count));
+    }
+
     [Fact]
     public void EmitsRootedCheckedDelegateDispatchFunction()
     {
@@ -160,7 +227,8 @@ public sealed class DelegateInvokeFunctionEmitterTests
 
     private static DelegateInvokeFunctionEmitter CreateEmitter(
         RecordingLayoutProvider layouts,
-        IValueLayoutProvider? values = null) =>
+        IValueLayoutProvider? values = null,
+        IGeneratedFunctionWriterFactory? writers = null) =>
         new DelegateInvokeFunctionEmitter(
             layouts,
             values ?? layouts,
@@ -170,7 +238,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
             new ExceptionPayloadBlockEmitter(layouts),
             new ManagedMethodFunctionTypeResolver(),
             new DelegateInvocationTargetSelector(),
-            new GeneratedFunctionWriterFactory());
+            writers ?? new GeneratedFunctionWriterFactory());
 
     private static CliTypeIdentity CallbackType() =>
         CliTypeIdentity.Named(Assembly, "Test", "Callback", isValueType: false);
@@ -200,7 +268,8 @@ public sealed class DelegateInvokeFunctionEmitterTests
         MethodSignatureModel signature,
         string name,
         bool isStatic,
-        EntityKey key)
+        EntityKey key,
+        bool isValueType = false)
     {
         var definition = new MethodDefinitionModel(
             key,
@@ -211,7 +280,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
             1);
         return new(
             definition,
-            CliTypeIdentity.Named(Assembly, "Test", name, isValueType: false),
+            CliTypeIdentity.Named(Assembly, "Test", name, isValueType),
             [],
             signature);
     }
@@ -272,5 +341,27 @@ public sealed class DelegateInvokeFunctionEmitterTests
             type.Equals(referencedType)
                 ? new(type, 16, 8, [0, 8])
                 : new(type, 8, 8, []);
+    }
+
+    private sealed class FixedValueLayoutProvider(int alignment) : IValueLayoutProvider
+    {
+        public CliTypeIdentity? RequestedType { get; private set; }
+
+        public ValueLayout GetValueLayout(CliTypeIdentity type)
+        {
+            RequestedType = type;
+            return new(type, alignment, alignment, []);
+        }
+    }
+
+    private sealed class RecordingWriterFactory : IGeneratedFunctionWriterFactory
+    {
+        public RecordingInstructionWriter Instructions { get; } = new();
+
+        public GeneratedFunctionWriterLease Create()
+        {
+            var buffer = new WasmBinaryBuffer();
+            return new(new WasmBinaryWriter(buffer), new WasmBinarySnapshotReader(buffer), Instructions);
+        }
     }
 }

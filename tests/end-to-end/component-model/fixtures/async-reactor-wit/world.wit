@@ -1,0 +1,18 @@
+package netwasm:test-reactor@1.0.0;
+
+interface acceptance {
+    start: func(value: s32, delay-milliseconds: u32) -> bool;
+    start-faulted: func(delay-milliseconds: u32) -> bool;
+    observe-failure: func() -> bool;
+    is-completed: func() -> bool;
+    %result: func() -> s32;
+    start-cancelled: func(delay-milliseconds: u32) -> bool;
+}
+
+world test-reactor {
+    import wasi:clocks/monotonic-clock@0.2.11;
+    import wasi:io/poll@0.2.11;
+    import netwasm:runtime/reactor-host@1.0.0;
+    export netwasm:runtime/reactor-guest@1.0.0;
+    export acceptance;
+}

@@ -1,0 +1,6 @@
+package wasi:io@0.2.11;
+
+interface error {
+  resource error {
+  }
+}

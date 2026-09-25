@@ -15,7 +15,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 3;
+    private const ushort SchemaVersion = 4;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -307,12 +307,14 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 var isStatic = ReadBoolean();
                 var initialData = ReadBytes();
                 var literalValue = ReadNullableStruct(reader.ReadUInt64);
+                var explicitOffset = ReadNullableStruct(reader.ReadInt32);
                 var signatureType = tables.Type(reader.ReadInt32());
                 var definition = new FieldDefinitionModel(
                     key, declaringTypeKey, name, signatureType, isStatic)
                 {
                     InitialData = initialData,
                     LiteralValue = literalValue,
+                    ExplicitOffset = explicitOffset,
                 };
                 return new(
                     definition,

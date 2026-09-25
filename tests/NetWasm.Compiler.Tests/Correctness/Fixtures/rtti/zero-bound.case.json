@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "caseId": "rtti.rank-one-zero-bound",
+  "featureIds": ["S09", "S10"],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "RttiRankOneZeroBound",
+  "namespace": "RttiRankOneArray",
+  "entryMethod": "Run",
+  "inputs": [5],
+  "expectations": [{ "input": 5, "returnValue": 42, "exceptionType": null }],
+  "referencePaths": [],
+  "referenceAssemblyAliases": { "System.Private.CoreLib": "NetWasm.CoreLib" },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.RttiArrayOperationCompilationTests.CompilerPreservesZeroBasedRankOneArrayIdentity"
+}

@@ -1636,8 +1636,10 @@ public sealed class TypedStackValidatorTests
             "expected managed receiver");
     }
 
-    [Fact]
-    public void ValidatorRejectsRectangularArrayOperationsWithScalarTypeOperands()
+    [Theory]
+    [InlineData(CilOperation.NewRectangularArray)]
+    [InlineData(CilOperation.NewBoundedRectangularArray)]
+    public void ValidatorRejectsRectangularArrayOperationsWithScalarTypeOperands(CilOperation operation)
     {
         var scalar = CliTypeIdentity.Primitive("primitive:i4", CliValueKind.I4);
 
@@ -1645,7 +1647,7 @@ public sealed class TypedStackValidatorTests
             CliValueKind.Void,
             1,
             [],
-            I(0, CilOperation.NewRectangularArray, new CilOperand.TypeIdentity(scalar)),
+            I(0, operation, new CilOperand.TypeIdentity(scalar)),
             I(1, CilOperation.Pop),
             I(2, CilOperation.Return))));
 
@@ -1669,6 +1671,18 @@ public sealed class TypedStackValidatorTests
             I(2, CilOperation.NewRectangularArray, new CilOperand.TypeIdentity(array)),
             I(3, CilOperation.Pop),
             I(4, CilOperation.Return)));
+
+        _ = Validate(Body(
+            CliValueKind.Void,
+            4,
+            [],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(-2)),
+            I(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
+            I(2, CilOperation.LoadInt32, new CilOperand.ConstantI4(5)),
+            I(3, CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
+            I(4, CilOperation.NewBoundedRectangularArray, new CilOperand.TypeIdentity(array)),
+            I(5, CilOperation.Pop),
+            I(6, CilOperation.Return)));
 
         _ = Validate(Body(
             CliValueKind.Void,

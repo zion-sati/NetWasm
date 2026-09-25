@@ -13,7 +13,8 @@ internal sealed class RectangularArrayElementAddressEmitter(
     IAddressInstructionEmitter addresses,
     IValueLayoutProvider values,
     ITypeLayoutProvider typeLayouts,
-    IImplicitExceptionEmitter exceptions) : IRectangularArrayElementAddressEmitter
+    IImplicitExceptionEmitter exceptions,
+    IRuntimeImportResolver runtimeImports) : IRectangularArrayElementAddressEmitter
 {
     public void Emit(
         RectangularArrayElementAddressRequest request,
@@ -65,10 +66,7 @@ internal sealed class RectangularArrayElementAddressEmitter(
                 instruction.Context,
                 request.ArraySlot + dimension + 1,
                 CliValueKind.I4);
-            Get(code, indexLocal);
-            WriteI32(code, 0);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanSigned));
-            ThrowIf(code, ManagedExceptionKind.IndexOutOfRange);
+            NormalizeIndex(code, arrayLocal, indexLocal, dimension);
 
             Get(code, indexLocal);
             EmitShapeFieldAddress(code, arrayLocal, shape, dimension);
@@ -99,12 +97,13 @@ internal sealed class RectangularArrayElementAddressEmitter(
             layouts.Target,
             objects.ArrayDataPointerOffset);
         Get(code, accumulator);
-        WriteI32(code, GetElementSize(elementType));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
         if (layouts.Target.UsesMemory64)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
         }
+        addresses.Emit(code, GetElementSize(elementType));
+        code.Write(WasmInstruction.NoOperand(layouts.Target.UsesMemory64
+            ? WasmOpcodes.I64Multiply : WasmOpcodes.I32Multiply));
         addresses.Emit(code, AddressOperation.Add);
     }
 
@@ -119,10 +118,7 @@ internal sealed class RectangularArrayElementAddressEmitter(
             request.Context,
             arraySlot + 1,
             CliValueKind.I4);
-        Get(code, indexLocal);
-        WriteI32(code, 0);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanSigned));
-        ThrowIf(code, ManagedExceptionKind.IndexOutOfRange);
+        NormalizeIndex(code, arrayLocal, indexLocal, 0);
 
         Get(code, indexLocal);
         Get(code, arrayLocal);
@@ -140,13 +136,27 @@ internal sealed class RectangularArrayElementAddressEmitter(
             layouts.Target,
             objects.ArrayDataPointerOffset);
         Get(code, indexLocal);
-        WriteI32(code, GetElementSize(elementType));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
         if (layouts.Target.UsesMemory64)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
         }
+        addresses.Emit(code, GetElementSize(elementType));
+        code.Write(WasmInstruction.NoOperand(layouts.Target.UsesMemory64
+            ? WasmOpcodes.I64Multiply : WasmOpcodes.I32Multiply));
         addresses.Emit(code, AddressOperation.Add);
+    }
+
+    private void NormalizeIndex(IWasmInstructionWriter code, int array, int index, int dimension)
+    {
+        Get(code, index);
+        Get(code, array);
+        WriteI32(code, dimension);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.Call,
+            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+                RuntimeImportSymbol.ArrayGetLowerBound))));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
+        Set(code, index);
     }
 
     private static bool HasReadonlyPrefix(InstructionEmissionRequest request)

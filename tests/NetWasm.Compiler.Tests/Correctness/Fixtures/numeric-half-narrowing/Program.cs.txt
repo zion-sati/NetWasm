@@ -1,0 +1,48 @@
+using System;
+
+namespace NetWasm.Correctness.HalfNarrowing;
+
+public static class EntryPoint
+{
+    // Exact Single/Double encodings immediately below/at/above binary16
+    // midpoints; expected tie outcomes use the target's even significand.
+    // Each checked/unchecked conversion is a separate manifest input.
+    private static readonly ulong[] Sources = [0x32ffffffUL, 0x33000000UL, 0x33000001UL, 0xb2ffffffUL, 0xb3000000UL, 0xb3000001UL, 0x33bfffffUL, 0x33c00000UL, 0x33c00001UL, 0xb3bfffffUL, 0xb3c00000UL, 0xb3c00001UL, 0x37ffbfffUL, 0x37ffc000UL, 0x37ffc001UL, 0xb7ffbfffUL, 0xb7ffc000UL, 0xb7ffc001UL, 0x38001fffUL, 0x38002000UL, 0x38002001UL, 0xb8001fffUL, 0xb8002000UL, 0xb8002001UL, 0x387f9fffUL, 0x387fa000UL, 0x387fa001UL, 0xb87f9fffUL, 0xb87fa000UL, 0xb87fa001UL, 0x387fdfffUL, 0x387fe000UL, 0x387fe001UL, 0xb87fdfffUL, 0xb87fe000UL, 0xb87fe001UL, 0x38800fffUL, 0x38801000UL, 0x38801001UL, 0xb8800fffUL, 0xb8801000UL, 0xb8801001UL, 0x38802fffUL, 0x38803000UL, 0x38803001UL, 0xb8802fffUL, 0xb8803000UL, 0xb8803001UL, 0x3f7fefffUL, 0x3f7ff000UL, 0x3f7ff001UL, 0xbf7fefffUL, 0xbf7ff000UL, 0xbf7ff001UL, 0x3f800fffUL, 0x3f801000UL, 0x3f801001UL, 0xbf800fffUL, 0xbf801000UL, 0xbf801001UL, 0x3f802fffUL, 0x3f803000UL, 0x3f803001UL, 0xbf802fffUL, 0xbf803000UL, 0xbf803001UL, 0x447fefffUL, 0x447ff000UL, 0x447ff001UL, 0xc47fefffUL, 0xc47ff000UL, 0xc47ff001UL, 0x44800fffUL, 0x44801000UL, 0x44801001UL, 0xc4800fffUL, 0xc4801000UL, 0xc4801001UL, 0x477fcfffUL, 0x477fd000UL, 0x477fd001UL, 0xc77fcfffUL, 0xc77fd000UL, 0xc77fd001UL, 0x477fefffUL, 0x477ff000UL, 0x477ff001UL, 0xc77fefffUL, 0xc77ff000UL, 0xc77ff001UL, 0x0UL, 0x80000000UL, 0x33800000UL, 0xb3800000UL, 0x387fc000UL, 0xb87fc000UL, 0x38800000UL, 0xb8800000UL, 0x3f800000UL, 0xbf800000UL, 0x477fe000UL, 0xc77fe000UL, 0x1UL, 0x7fffffUL, 0x800000UL, 0x7f7fffffUL, 0x7f800000UL, 0x7f800001UL, 0x7fc00000UL, 0x7fc0007bUL, 0x80000001UL, 0x807fffffUL, 0x80800000UL, 0xff7fffffUL, 0xff800000UL, 0xff800001UL, 0xffc00000UL, 0xffc0007bUL, 0x3e5fffffffffffffUL, 0x3e60000000000000UL, 0x3e60000000000001UL, 0xbe5fffffffffffffUL, 0xbe60000000000000UL, 0xbe60000000000001UL, 0x3e77ffffffffffffUL, 0x3e78000000000000UL, 0x3e78000000000001UL, 0xbe77ffffffffffffUL, 0xbe78000000000000UL, 0xbe78000000000001UL, 0x3efff7ffffffffffUL, 0x3efff80000000000UL, 0x3efff80000000001UL, 0xbefff7ffffffffffUL, 0xbefff80000000000UL, 0xbefff80000000001UL, 0x3f0003ffffffffffUL, 0x3f00040000000000UL, 0x3f00040000000001UL, 0xbf0003ffffffffffUL, 0xbf00040000000000UL, 0xbf00040000000001UL, 0x3f0ff3ffffffffffUL, 0x3f0ff40000000000UL, 0x3f0ff40000000001UL, 0xbf0ff3ffffffffffUL, 0xbf0ff40000000000UL, 0xbf0ff40000000001UL, 0x3f0ffbffffffffffUL, 0x3f0ffc0000000000UL, 0x3f0ffc0000000001UL, 0xbf0ffbffffffffffUL, 0xbf0ffc0000000000UL, 0xbf0ffc0000000001UL, 0x3f1001ffffffffffUL, 0x3f10020000000000UL, 0x3f10020000000001UL, 0xbf1001ffffffffffUL, 0xbf10020000000000UL, 0xbf10020000000001UL, 0x3f1005ffffffffffUL, 0x3f10060000000000UL, 0x3f10060000000001UL, 0xbf1005ffffffffffUL, 0xbf10060000000000UL, 0xbf10060000000001UL, 0x3feffdffffffffffUL, 0x3feffe0000000000UL, 0x3feffe0000000001UL, 0xbfeffdffffffffffUL, 0xbfeffe0000000000UL, 0xbfeffe0000000001UL, 0x3ff001ffffffffffUL, 0x3ff0020000000000UL, 0x3ff0020000000001UL, 0xbff001ffffffffffUL, 0xbff0020000000000UL, 0xbff0020000000001UL, 0x3ff005ffffffffffUL, 0x3ff0060000000000UL, 0x3ff0060000000001UL, 0xbff005ffffffffffUL, 0xbff0060000000000UL, 0xbff0060000000001UL, 0x408ffdffffffffffUL, 0x408ffe0000000000UL, 0x408ffe0000000001UL, 0xc08ffdffffffffffUL, 0xc08ffe0000000000UL, 0xc08ffe0000000001UL, 0x409001ffffffffffUL, 0x4090020000000000UL, 0x4090020000000001UL, 0xc09001ffffffffffUL, 0xc090020000000000UL, 0xc090020000000001UL, 0x40eff9ffffffffffUL, 0x40effa0000000000UL, 0x40effa0000000001UL, 0xc0eff9ffffffffffUL, 0xc0effa0000000000UL, 0xc0effa0000000001UL, 0x40effdffffffffffUL, 0x40effe0000000000UL, 0x40effe0000000001UL, 0xc0effdffffffffffUL, 0xc0effe0000000000UL, 0xc0effe0000000001UL, 0x0UL, 0x8000000000000000UL, 0x3e70000000000000UL, 0xbe70000000000000UL, 0x3f0ff80000000000UL, 0xbf0ff80000000000UL, 0x3f10000000000000UL, 0xbf10000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL, 0x40effc0000000000UL, 0xc0effc0000000000UL, 0x1UL, 0xfffffffffffffUL, 0x10000000000000UL, 0x7fefffffffffffffUL, 0x7ff0000000000000UL, 0x7ff0000000000001UL, 0x7ff8000000000000UL, 0x7ff800000000007bUL, 0x8000000000000001UL, 0x800fffffffffffffUL, 0x8010000000000000UL, 0xffefffffffffffffUL, 0xfff0000000000000UL, 0xfff0000000000001UL, 0xfff8000000000000UL, 0xfff800000000007bUL];
+    private static readonly int[] Widths = [32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64];
+    // -1 means NaN classification only, never a required NaN payload.
+    private static readonly int[] Expected = [0, 0, 1, 32768, 32768, 32769, 1, 2, 2, 32769, 32770, 32770, 511, 512, 512, 33279, 33280, 33280, 512, 512, 513, 33280, 33280, 33281, 1022, 1022, 1023, 33790, 33790, 33791, 1023, 1024, 1024, 33791, 33792, 33792, 1024, 1024, 1025, 33792, 33792, 33793, 1025, 1026, 1026, 33793, 33794, 33794, 15359, 15360, 15360, 48127, 48128, 48128, 15360, 15360, 15361, 48128, 48128, 48129, 15361, 15362, 15362, 48129, 48130, 48130, 25599, 25600, 25600, 58367, 58368, 58368, 25600, 25600, 25601, 58368, 58368, 58369, 31742, 31742, 31743, 64510, 64510, 64511, 31743, 31744, 31744, 64511, 64512, 64512, 0, 32768, 1, 32769, 1023, 33791, 1024, 33792, 15360, 48128, 31743, 64511, 0, 0, 0, 31744, 31744, -1, -1, -1, 32768, 32768, 32768, 64512, 64512, -1, -1, -1, 0, 0, 1, 32768, 32768, 32769, 1, 2, 2, 32769, 32770, 32770, 511, 512, 512, 33279, 33280, 33280, 512, 512, 513, 33280, 33280, 33281, 1022, 1022, 1023, 33790, 33790, 33791, 1023, 1024, 1024, 33791, 33792, 33792, 1024, 1024, 1025, 33792, 33792, 33793, 1025, 1026, 1026, 33793, 33794, 33794, 15359, 15360, 15360, 48127, 48128, 48128, 15360, 15360, 15361, 48128, 48128, 48129, 15361, 15362, 15362, 48129, 48130, 48130, 25599, 25600, 25600, 58367, 58368, 58368, 25600, 25600, 25601, 58368, 58368, 58369, 31742, 31742, 31743, 64510, 64510, 64511, 31743, 31744, 31744, 64511, 64512, 64512, 0, 32768, 1, 32769, 1023, 33791, 1024, 33792, 15360, 48128, 31743, 64511, 0, 0, 0, 31744, 31744, -1, -1, -1, 32768, 32768, 32768, 64512, 64512, -1, -1, -1];
+    private static ulong _source;
+    private static int _result;
+
+    public static int Run(int input)
+    {
+        var row = input / 2;
+        _source = Sources[row];
+        _result = 0;
+        Half result;
+        if (Widths[row] == 32)
+        {
+            var value = BitConverter.UInt32BitsToSingle((uint)_source);
+            result = (input & 1) == 0 ? unchecked((Half)value) : checked((Half)value);
+        }
+        else
+        {
+            var value = BitConverter.UInt64BitsToDouble(_source);
+            result = (input & 1) == 0 ? unchecked((Half)value) : checked((Half)value);
+        }
+        if (Expected[row] == -1)
+        {
+            _result = Half.IsNaN(result) ? 1 : 0;
+            return _result == 1 ? 42 : -1;
+        }
+        _result = BitConverter.HalfToUInt16Bits(result);
+        return _result == Expected[row] ? 42 : -2;
+    }
+
+    public static int Trace() => 2;
+    public static int TraceCount() => 2;
+    public static int TraceKind(int index) => index == 0 ? 3 : 2;
+    public static int TraceEventId(int index) => index;
+    public static int TracePayloadLow(int index) => index == 0 ? unchecked((int)_source) : _result;
+    public static int TracePayloadHigh(int index) => index == 0 ? unchecked((int)(_source >> 32)) : 0;
+}

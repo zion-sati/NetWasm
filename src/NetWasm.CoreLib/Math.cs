@@ -62,16 +62,6 @@ namespace System
             return Atan2(Sqrt((1 - value) * (1 + value)), value);
         }
 
-        public static double Acosh(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value < 1) return double.NaN;
-            if (value == 1) return 0;
-            if (IsInfinity(value)) return value;
-            if (value > 1e154) return Log(value) + 0.6931471805599453;
-            return Log(value + Sqrt(value - 1) * Sqrt(value + 1));
-        }
-
         public static double Asin(double value)
         {
             if (IsNaN(value)) return value;
@@ -225,17 +215,6 @@ namespace System
             return BitConverter.UInt64BitsToDouble(magnitude | signBit);
         }
 
-        public static double Cos(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (IsInfinity(value)) return double.NaN;
-            var reduced = ReduceAngle(value);
-            var sign = 1.0;
-            if (reduced > PI / 2) { reduced = PI - reduced; sign = -1; }
-            else if (reduced < -PI / 2) { reduced = PI + reduced; sign = -1; }
-            return sign * CosPolynomial(reduced);
-        }
-
         public static double Cosh(double value)
         {
             if (IsNaN(value)) return value;
@@ -319,29 +298,6 @@ namespace System
             return (quotient, left - quotient * right);
         }
 
-        public static double Exp(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value == double.PositiveInfinity) return value;
-            if (value == double.NegativeInfinity) return 0;
-            if (value > 709.782712893384) return double.PositiveInfinity;
-            if (value < -745.133219101941) return 0;
-            const double inverseLn2 = 1.4426950408889634;
-            const double ln2High = 0.6931471803691238;
-            const double ln2Low = 1.9082149292705877E-10;
-            var scaled = value * inverseLn2;
-            var exponent = scaled >= 0 ? (int)(scaled + 0.5) : (int)(scaled - 0.5);
-            var remainder = (value - exponent * ln2High) - exponent * ln2Low;
-            var result = 1.0;
-            var term = 1.0;
-            for (var index = 1; index <= 20; index++)
-            {
-                term *= remainder / index;
-                result += term;
-            }
-            return ScaleB(result, exponent);
-        }
-
         public static decimal Floor(decimal value) => decimal.Floor(value);
 
         public static double FusedMultiplyAdd(double left, double right, double addend)
@@ -400,26 +356,6 @@ namespace System
                 while (absolute < 1) { absolute *= 2; exponent--; }
             }
             return exponent;
-        }
-
-        public static double Log(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value < 0) return double.NaN;
-            if (value == 0) return double.NegativeInfinity;
-            if (value == double.PositiveInfinity) return value;
-            var exponent = 0;
-            while (value > 2) { value *= 0.5; exponent++; }
-            while (value < 0.5) { value *= 2; exponent--; }
-            var z = (value - 1) / (value + 1);
-            var z2 = z * z;
-            var series = 0.0;
-            for (var denominator = 35; denominator >= 3; denominator -= 2)
-            {
-                series = 2.0 / denominator + z2 * series;
-            }
-            series = z * (2 + z2 * series);
-            return series + exponent * 0.6931471803691238 + exponent * 1.9082149292705877E-10;
         }
 
         public static double Log(double value, double newBase)
@@ -516,13 +452,13 @@ namespace System
             }
             if (x == 0)
             {
-                if (y < 0) return IsNegative(x) && y % 2 != 0 ? double.NegativeInfinity : double.PositiveInfinity;
-                return IsNegative(x) && y % 2 != 0 ? x : 0;
+                if (y < 0) return IsNegative(x) && Abs(y % 2) == 1 ? double.NegativeInfinity : double.PositiveInfinity;
+                return IsNegative(x) && Abs(y % 2) == 1 ? x : 0;
             }
             if (IsInfinity(x))
             {
-                if (y < 0) return IsNegative(x) && y % 2 != 0 ? -0.0 : 0.0;
-                return IsNegative(x) && y % 2 != 0 ? double.NegativeInfinity : double.PositiveInfinity;
+                if (y < 0) return IsNegative(x) && Abs(y % 2) == 1 ? -0.0 : 0.0;
+                return IsNegative(x) && Abs(y % 2) == 1 ? double.NegativeInfinity : double.PositiveInfinity;
             }
             if (x < 0)
             {
@@ -600,39 +536,7 @@ namespace System
             return value < 0 ? -1 : value > 0 ? 1 : 0;
         }
 
-        public static double Sin(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (IsInfinity(value)) return double.NaN;
-            var reduced = ReduceAngle(value);
-            var sign = 1.0;
-            if (reduced > PI / 2) reduced = PI - reduced;
-            else if (reduced < -PI / 2) { reduced = PI + reduced; sign = -1; }
-            return sign * SinPolynomial(reduced);
-        }
-
         public static (double Sin, double Cos) SinCos(double value) => (Sin(value), Cos(value));
-
-        public static double Sinh(double value)
-        {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            if (Abs(value) < 1e-8) return value + value * value * value / 6;
-            var exponential = Exp(value);
-            return 0.5 * (exponential - 1 / exponential);
-        }
-
-        public static double Tan(double value) => Sin(value) / Cos(value);
-
-        public static double Tanh(double value)
-        {
-            if (IsNaN(value) || value == 0) return value;
-            if (IsInfinity(value)) return IsNegative(value) ? -1 : 1;
-            if (value > 20) return 1;
-            if (value < -20) return -1;
-            if (Abs(value) < 1e-8) return value;
-            var exponential = Exp(2 * value);
-            return (exponential - 1) / (exponential + 1);
-        }
 
         public static decimal Truncate(decimal value) => decimal.Truncate(value);
 
@@ -730,40 +634,6 @@ namespace System
             return result;
         }
 
-        private static double CosPolynomial(double value)
-        {
-            var square = value * value;
-            var term = 1.0;
-            var result = term;
-            for (var index = 1; index <= 11; index++)
-            {
-                term *= -square / ((2 * index - 1) * (2 * index));
-                result += term;
-            }
-            return result;
-        }
-
-        private static double SinPolynomial(double value)
-        {
-            var square = value * value;
-            var term = value;
-            var result = term;
-            for (var index = 1; index <= 11; index++)
-            {
-                term *= -square / ((2 * index) * (2 * index + 1));
-                result += term;
-            }
-            return result;
-        }
-
-        private static double ReduceAngle(double value)
-        {
-            var result = value % Tau;
-            if (result > PI) result -= Tau;
-            else if (result < -PI) result += Tau;
-            return result;
-        }
-
         private static double TruncateCore(double value)
         {
             if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
@@ -789,7 +659,7 @@ namespace System
             return mode switch
             {
                 MidpointRounding.ToEven => RoundCore(value),
-                MidpointRounding.AwayFromZero => value >= 0 ? TruncateCore(value + 0.5) : TruncateCore(value - 0.5),
+                MidpointRounding.AwayFromZero => TruncateCore(value + CopySign(0.49999999999999994, value)),
                 MidpointRounding.ToZero => TruncateCore(value),
                 MidpointRounding.ToNegativeInfinity => FloorCore(value),
                 MidpointRounding.ToPositiveInfinity => CeilingCore(value),
@@ -863,8 +733,23 @@ namespace System
         public static float Atan(float value) => (float)Math.Atan(value);
         public static float Atan2(float y, float x) => (float)Math.Atan2(y, x);
         public static float Atanh(float value) => (float)Math.Atanh(value);
-        public static float BitDecrement(float value) => (float)Math.BitDecrement(value);
-        public static float BitIncrement(float value) => (float)Math.BitIncrement(value);
+        public static float BitDecrement(float value)
+        {
+            var bits = BitConverter.SingleToUInt32Bits(value);
+            if (!float.IsFinite(value)) return bits == 0x7F800000U ? float.MaxValue : value;
+            if (bits == 0) return -float.Epsilon;
+            bits = (bits & 0x80000000U) != 0 ? bits + 1 : bits - 1;
+            return BitConverter.UInt32BitsToSingle(bits);
+        }
+
+        public static float BitIncrement(float value)
+        {
+            var bits = BitConverter.SingleToUInt32Bits(value);
+            if (!float.IsFinite(value)) return bits == 0xFF800000U ? float.MinValue : value;
+            if (bits == 0x80000000U) return float.Epsilon;
+            bits = (bits & 0x80000000U) != 0 ? bits - 1 : bits + 1;
+            return BitConverter.UInt32BitsToSingle(bits);
+        }
         public static float Cbrt(float value) => (float)Math.Cbrt(value);
         public static float CopySign(float value, float sign) =>
             BitConverter.UInt32BitsToSingle(

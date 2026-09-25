@@ -1,308 +1,93 @@
 using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Emit;
-using NetWasm.Compiler.Core;
-using NetWasm.TestInfrastructure;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
+using System.Reflection.PortableExecutable;
+using NetWasm.Compiler.Tests.Correctness;
 
 namespace NetWasm.Compiler.Tests;
 
-public sealed class RttiArrayOperationCompilationTests
+[Collection(CorrectnessTestGroup.Name)]
+public sealed class RttiArrayOperationCompilationTests(CorrectnessTestRunner runner) : EmittedAssemblyTestBase(runner)
 {
-    [Theory]
-    [InlineData(WasmTarget.Wasm32)]
-    [InlineData(WasmTarget.Wasm64)]
-    public void CompilerExecutesDistinctSzAndRankOneArraySemantics(WasmTarget target)
-    {
-        using var assets = TestAssets.Create();
-        var assembly = CreateRankOneArrayFixture(assets.Directory);
-        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly,
-            [assets.CoreLib],
-            "RttiRankOneArray.EntryPoint",
-            "Run",
-            [],
-            Target: target,
-            ReferenceAssemblyAliases: ImmutableDictionary<string, string>.Empty.Add(
-                "System.Private.CoreLib",
-                "NetWasm.CoreLib")));
+    public static TheoryData<string, string> ZeroBoundCells => CorpusCaseTestData.Cells(CorpusCaseTestData.ZeroBound);
 
-        CompilerTestSupport.ValidateWithNode(
-            compilation.ApplicationModule,
-            assets.Directory);
-        for (var input = 0; input < 5; input++)
+    public static TheoryData<string, string> NonZeroBoundCells => CorpusCaseTestData.Cells(CorpusCaseTestData.NonZeroBound);
+
+    public static TheoryData<int, string, string> RankOneCases => CorpusCaseTestData.ActiveInputCells(CorpusCaseTestData.RankOne);
+
+    [Fact]
+    public void EmittedFixturePreservesRankOneMetadataAndManagedCatchShape()
+    {
+        var builder = Assert.IsAssignableFrom<IEmittedAssemblyBuilder>(new RankOneArrayFixtureBuilder());
+        using var stream = new MemoryStream(builder.Build().ToArray());
+        using var pe = new PEReader(stream);
+        var metadata = pe.GetMetadataReader();
+        var signatures = Enumerable.Range(1, metadata.GetTableRowCount(TableIndex.TypeSpec))
+            .Select(row => metadata.GetBlobBytes(metadata.GetTypeSpecification(
+                MetadataTokens.TypeSpecificationHandle(row)).Signature))
+            .ToArray();
+
+        foreach (var elementType in new byte[] { 0x08, 0x0e, 0x1c })
         {
-            Assert.Equal(
-                42,
-                CompilerTestSupport.ExecuteWithStandardWasiNode(
-                    compilation.ApplicationModule,
-                    assets.Directory,
-                    input,
-                    target,
-                    compilation.StaticDataEnd));
+            // ARRAY, element type, rank 1, one size (1), one lower bound (0).
+            byte[] expected = [0x14, elementType, 0x01, 0x01, 0x01, 0x01, 0x00];
+            Assert.Contains(signatures, signature => signature.AsSpan().SequenceEqual(expected));
         }
+        Assert.Contains(signatures, signature => signature.AsSpan().SequenceEqual<byte>([0x1d, 0x08]));
+        Assert.DoesNotContain(signatures, signature => signature.Length > 2 && signature[0] == 0x14 && signature[2] != 1);
+
+        var method = Assert.Single(metadata.MethodDefinitions.Select(metadata.GetMethodDefinition),
+            definition => metadata.GetString(definition.Name) == "RejectedMutableAddress");
+        var body = pe.GetMethodBody(method.RelativeVirtualAddress);
+        Assert.False(body.LocalSignature.IsNil);
+        var handler = Assert.Single(body.ExceptionRegions);
+        Assert.Equal(ExceptionRegionKind.Catch, handler.Kind);
+        Assert.Equal(HandleKind.TypeReference, handler.CatchType.Kind);
+        var exceptionType = metadata.GetTypeReference((TypeReferenceHandle)handler.CatchType);
+        Assert.Equal("System", metadata.GetString(exceptionType.Namespace));
+        Assert.Equal("ArrayTypeMismatchException", metadata.GetString(exceptionType.Name));
     }
 
     [Theory]
-    [InlineData(false, WasmTarget.Wasm32)]
-    [InlineData(true, WasmTarget.Wasm32)]
-    [InlineData(false, WasmTarget.Wasm64)]
-    [InlineData(true, WasmTarget.Wasm64)]
-    public void CompilerPreservesChecksAfterArrayConversions(
-        bool optimized,
-        WasmTarget target)
+    [MemberData(nameof(RankOneCases))]
+    public void CompilerExecutesDistinctSzAndRankOneArraySemantics(int input, string caseId, string cell)
     {
-        using var assets = TestAssets.Create();
-        var assembly = optimized
-            ? assets.CompileOptimizedSource("RttiArrayOperations", Source)
-            : assets.CompileSource("RttiArrayOperations", Source);
-        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
-            assembly,
-            [assets.CoreLib],
-            "RttiArrayOperations.EntryPoint",
-            "Run",
-            [],
-            Target: target));
-
-        CompilerTestSupport.ValidateWithNode(
-            compilation.ApplicationModule,
-            assets.Directory);
-        for (var input = 0; input < 15; input++)
-        {
-            Assert.Equal(
-                42,
-                CompilerTestSupport.ExecuteWithStandardWasiNode(
-                    compilation.ApplicationModule,
-                    assets.Directory,
-                    input,
-                    target,
-                    compilation.StaticDataEnd));
-        }
+        // Input 2 addresses a normalized SZARRAY through an ARRAY token.
+        // CoreCLR's mutable Address stub requires exact array identity.
+        Run(CorpusCaseTestData.Get(caseId), cell, new RankOneArrayFixtureBuilder(), input);
     }
 
-    private const string Source = """
-        using System;
-        using System.Collections.Generic;
+    [Fact(Skip = KnownNonBugSkipReasons.ZeroBoundRankOneArrayIdentity)]
+    public void CoreClrZeroBoundRankOneNormalizationIsNotRequired() =>
+        throw new InvalidOperationException("The known non-bug partition must remain skipped.");
 
-        namespace RttiArrayOperations;
+    [Theory(Skip = KnownNonBugSkipReasons.ZeroBoundRankOneArrayIdentity)]
+    [MemberData(nameof(ZeroBoundCells))]
+    public void CompilerPreservesZeroBasedRankOneArrayIdentity(string caseId, string cell)
+    {
+        // CoreCLR AllocateArrayEx normalizes rank-one, zero-lower-bound
+        // construction to SZARRAY, even when the constructor token is ARRAY.
+        // Keep this minimal witness separate from the broader shape/access
+        // regression. Both must fail normally if normalization is missing.
+        Run(CorpusCaseTestData.Get(caseId), cell, new RankOneArrayFixtureBuilder());
+    }
 
-        public sealed class Item { }
-        public interface ILeft { }
-        public interface IRight { }
-        public sealed class Both : ILeft, IRight { }
-        public sealed class LeftOnly : ILeft { }
+    [Theory]
+    [MemberData(nameof(NonZeroBoundCells))]
+    public void CompilerPreservesMutableAddressForNonZeroBoundRankOneArray(string caseId, string cell)
+    {
+        Run(CorpusCaseTestData.Get(caseId), cell, new RankOneArrayFixtureBuilder(nonZeroBoundOnly: true));
+    }
 
-        public static class EntryPoint
-        {
-            public static int Run(int input) => input switch
-            {
-                0 => CopyReducedValueArray(),
-                1 => CopyReferenceDowncast(),
-                2 => RejectUnrelatedZeroLengthCopy(),
-                3 => CopyThroughCovariantInterface(),
-                4 => StoreThroughCovariantInterface(),
-                5 => RejectStoreThroughCovariantInterface(),
-                6 => GenericStoreIntoCovariantArray(),
-                7 => RejectMutableCovariantAddress(),
-                8 => CopyOverlappingRanges(),
-                9 => CopyBetweenInterfaceArrays(),
-                10 => PartiallyCopyBetweenInterfaceArrays(),
-                11 => CopyZeroElementsBetweenInterfaceArrays(),
-                12 => GenericCopyUsesCopyExceptionContract(),
-                13 => RejectRankMismatchBeforeRangeValidation(),
-                14 => RejectNullBeforeRankAndRangeValidation(),
-                _ => -1,
-            };
 
-            private static int CopyReducedValueArray()
-            {
-                var source = new[] { -1 };
-                var destination = new uint[1];
-                Array.Copy(source, destination, 1);
-                return destination[0] == uint.MaxValue ? 42 : -2;
-            }
+    private sealed class RankOneArrayFixtureBuilder(bool nonZeroBoundOnly = false) : IEmittedAssemblyBuilder
+    {
+        public ImmutableArray<byte> Build() => CreateRankOneArrayFixture(nonZeroBoundOnly);
+    }
 
-            private static int CopyReferenceDowncast()
-            {
-                var source = new object[] { "ok", new object() };
-                var destination = new string[2];
-                try
-                {
-                    Array.Copy(source, destination, source.Length);
-                    return -3;
-                }
-                catch (InvalidCastException)
-                {
-                    return destination[0] == "ok" && destination[1] is null ? 42 : -4;
-                }
-            }
-
-            private static int RejectUnrelatedZeroLengthCopy()
-            {
-                try
-                {
-                    Array.Copy(Array.Empty<string>(), Array.Empty<Item>(), 0);
-                    return -5;
-                }
-                catch (ArrayTypeMismatchException)
-                {
-                    return 42;
-                }
-            }
-
-            private static int CopyThroughCovariantInterface()
-            {
-                ICollection<object> source = new string[] { "ok" };
-                var destination = new object[1];
-                source.CopyTo(destination, 0);
-                return (string)destination[0] == "ok" ? 42 : -6;
-            }
-
-            private static int StoreThroughCovariantInterface()
-            {
-                IList<object> values = new string[1];
-                values[0] = "ok";
-                return (string)values[0] == "ok" ? 42 : -7;
-            }
-
-            private static int RejectStoreThroughCovariantInterface()
-            {
-                IList<object> values = new string[1];
-                try
-                {
-                    values[0] = new object();
-                    return -8;
-                }
-                catch (ArrayTypeMismatchException)
-                {
-                    return 42;
-                }
-            }
-
-            private static int GenericStoreIntoCovariantArray()
-            {
-                object[] values = new string[1];
-                Set(values, "ok");
-                try
-                {
-                    Set(values, new object());
-                    return -9;
-                }
-                catch (ArrayTypeMismatchException)
-                {
-                    return (string)values[0] == "ok" ? 42 : -10;
-                }
-            }
-
-            private static void Set<T>(T[] values, T value) => values[0] = value;
-
-            private static int RejectMutableCovariantAddress()
-            {
-                object[] values = new string[1];
-                try
-                {
-                    ref var value = ref Address(values);
-                    value = "ok";
-                    return -11;
-                }
-                catch (ArrayTypeMismatchException)
-                {
-                    return 42;
-                }
-            }
-
-            private static ref object Address(object[] values) => ref values[0];
-
-            private static int CopyOverlappingRanges()
-            {
-                Array references = new object[] { "a", "b", "c" };
-                Array.Copy(references, 0, references, 1, 2);
-                var values = (object[])references;
-                if ((string)values[0] != "a" || (string)values[1] != "a" ||
-                    (string)values[2] != "b") return -12;
-                Array.Copy(references, 1, references, 0, 2);
-                if ((string)values[0] != "a" || (string)values[1] != "b") return -13;
-                Array.Copy(references, 0, references, 0, 3);
-
-                Array numbers = new[] { 1, 2, 3 };
-                Array.Copy(numbers, 0, numbers, 1, 2);
-                var copied = (int[])numbers;
-                return copied[0] == 1 && copied[1] == 1 && copied[2] == 2 ? 42 : -14;
-            }
-
-            private static int CopyBetweenInterfaceArrays()
-            {
-                ILeft[] source = [new Both()];
-                IRight[] destination = new IRight[1];
-                Array.Copy((Array)source, 0, destination, 0, 1);
-                return ReferenceEquals(source[0], destination[0]) ? 42 : -15;
-            }
-
-            private static int PartiallyCopyBetweenInterfaceArrays()
-            {
-                ILeft[] source = [new Both(), new LeftOnly()];
-                IRight[] destination = new IRight[2];
-                try
-                {
-                    Array.Copy((Array)source, 0, destination, 0, 2);
-                    return -16;
-                }
-                catch (InvalidCastException)
-                {
-                    return ReferenceEquals(source[0], destination[0]) &&
-                        destination[1] is null ? 42 : -17;
-                }
-            }
-
-            private static int CopyZeroElementsBetweenInterfaceArrays()
-            {
-                Array.Copy((Array)Array.Empty<ILeft>(), 0, Array.Empty<IRight>(), 0, 0);
-                return 42;
-            }
-
-            private static int GenericCopyUsesCopyExceptionContract()
-            {
-                object[] source = ["ok", new object()];
-                string[] destination = new string[2];
-                try
-                {
-                    Array.Copy(source, 0, destination, 0, 2);
-                    return -18;
-                }
-                catch (InvalidCastException)
-                {
-                    return destination[0] == "ok" && destination[1] is null ? 42 : -19;
-                }
-            }
-
-            private static int RejectRankMismatchBeforeRangeValidation()
-            {
-                try
-                {
-                    Array.Copy(new int[1], -1, new int[1, 1], -1, -1);
-                    return -20;
-                }
-                catch (RankException)
-                {
-                    return 42;
-                }
-            }
-
-            private static int RejectNullBeforeRankAndRangeValidation()
-            {
-                try
-                {
-                    Array.Copy(null!, -1, new int[1, 1], -1, -1);
-                    return -21;
-                }
-                catch (ArgumentNullException)
-                {
-                    return 42;
-                }
-            }
-        }
-        """;
-
-    private static string CreateRankOneArrayFixture(string directory)
+    private static ImmutableArray<byte> CreateRankOneArrayFixture(bool nonZeroBoundOnly)
     {
         var assembly = new PersistedAssemblyBuilder(
             new AssemblyName("RttiRankOneArray"),
@@ -311,21 +96,34 @@ public sealed class RttiArrayOperationCompilationTests
         var entryPoint = module.DefineType(
             "RttiRankOneArray.EntryPoint",
             TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed);
-        var cases = new[]
-        {
+        // Keep the new constructor shape in its own PE: a compilation rejection
+        // in that control must not prevent execution of the original witnesses.
+        MethodBuilder[] cases = nonZeroBoundOnly
+            ? [DefineExactMutableAddress(module, entryPoint, nonZeroBound: true)]
+            :
+        [
             DefineRankOneGetSet(module, entryPoint),
             DefineArrayShapeCasts(module, entryPoint),
-            DefineExactMutableAddress(module, entryPoint),
+            DefineExactMutableAddress(module, entryPoint, nonZeroBound: false),
             DefineRejectedMutableAddress(module, entryPoint),
             DefineReadonlyCovariantAddress(module, entryPoint),
-        };
+            DefineZeroBasedArrayIdentity(module, entryPoint),
+        ];
         DefineDispatcher(entryPoint, cases);
         entryPoint.CreateType();
 
-        var path = Path.Combine(directory, "RttiRankOneArray.dll");
-        assembly.Save(path);
-        RewriteRankTwoArraySignaturesAsRankOne(path);
-        return path;
+        using var stream = new MemoryStream();
+        assembly.Save(stream);
+        var image = stream.ToArray();
+        if (nonZeroBoundOnly)
+        {
+            RewriteArraySignature(image, 0x0e);
+        }
+        else
+        {
+            RewriteRankTwoArraySignaturesAsRankOne(image);
+        }
+        return [.. image];
     }
 
     private static MethodBuilder DefineRankOneGetSet(ModuleBuilder module, TypeBuilder type)
@@ -365,6 +163,24 @@ public sealed class RttiArrayOperationCompilationTests
         return method;
     }
 
+    private static MethodBuilder DefineZeroBasedArrayIdentity(ModuleBuilder module, TypeBuilder type)
+    {
+        var method = DefineCase(type, "ZeroBasedArrayIdentity");
+        var code = method.GetILGenerator();
+        var failed = code.DefineLabel();
+        code.Emit(OpCodes.Ldc_I4_1);
+        code.Emit(OpCodes.Newobj, DefineArrayMethod(
+            module, typeof(int).MakeArrayType(2), ".ctor", typeof(void), typeof(int)));
+        code.Emit(OpCodes.Isinst, typeof(int[]));
+        code.Emit(OpCodes.Brfalse, failed);
+        code.Emit(OpCodes.Ldc_I4, 42);
+        code.Emit(OpCodes.Ret);
+        code.MarkLabel(failed);
+        code.Emit(OpCodes.Ldc_I4_M1);
+        code.Emit(OpCodes.Ret);
+        return method;
+    }
+
     private static MethodBuilder DefineArrayShapeCasts(ModuleBuilder module, TypeBuilder type)
     {
         var method = DefineCase(type, "ArrayShapeCasts");
@@ -388,7 +204,9 @@ public sealed class RttiArrayOperationCompilationTests
         code.Emit(OpCodes.Brfalse, failed);
         code.Emit(OpCodes.Ldloc, rankOne);
         code.Emit(OpCodes.Isinst, szType);
-        code.Emit(OpCodes.Brtrue, failed);
+        // A rank-one ARRAY constructor with an implicit zero lower bound
+        // produces SZARRAY on CoreCLR. Metadata shape is not object identity.
+        code.Emit(OpCodes.Brfalse, failed);
 
         code.Emit(OpCodes.Ldc_I4_1);
         code.Emit(OpCodes.Newarr, typeof(int));
@@ -408,41 +226,61 @@ public sealed class RttiArrayOperationCompilationTests
         return method;
     }
 
-    private static MethodBuilder DefineExactMutableAddress(ModuleBuilder module, TypeBuilder type)
+    private static MethodBuilder DefineExactMutableAddress(ModuleBuilder module, TypeBuilder type, bool nonZeroBound)
     {
-        var method = DefineCase(type, "ExactMutableAddress");
+        var method = DefineCase(type, nonZeroBound ? "NonZeroBoundExactMutableAddress" : "ExactMutableAddress");
         var code = method.GetILGenerator();
         var arrayType = typeof(string).MakeArrayType(2);
         var array = code.DeclareLocal(arrayType);
         var succeeded = code.DefineLabel();
 
+        if (nonZeroBound)
+        {
+            code.Emit(OpCodes.Ldc_I4_1); // lower bound, followed by length
+        }
         code.Emit(OpCodes.Ldc_I4_1);
         code.Emit(OpCodes.Newobj, DefineArrayMethod(
             module,
             arrayType,
             ".ctor",
             typeof(void),
-            typeof(int)));
+            nonZeroBound ? [typeof(int), typeof(int)] : [typeof(int)]));
         code.Emit(OpCodes.Stloc, array);
         code.Emit(OpCodes.Ldloc, array);
-        code.Emit(OpCodes.Ldc_I4_0);
+        code.Emit(nonZeroBound ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
         code.Emit(OpCodes.Call, DefineArrayMethod(
             module,
             arrayType,
             "Address",
             typeof(string).MakeByRefType(),
             typeof(int)));
-        code.Emit(OpCodes.Ldnull);
+        if (nonZeroBound)
+        {
+            code.Emit(OpCodes.Ldstr, "stored-through-address");
+        }
+        else
+        {
+            code.Emit(OpCodes.Ldnull);
+        }
         code.Emit(OpCodes.Stind_Ref);
         code.Emit(OpCodes.Ldloc, array);
-        code.Emit(OpCodes.Ldc_I4_0);
+        code.Emit(nonZeroBound ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
         code.Emit(OpCodes.Call, DefineArrayMethod(
             module,
             arrayType,
             "Get",
             typeof(string),
             typeof(int)));
-        code.Emit(OpCodes.Brfalse, succeeded);
+        if (nonZeroBound)
+        {
+            code.Emit(OpCodes.Ldstr, "stored-through-address");
+            code.Emit(OpCodes.Call, typeof(string).GetMethod("op_Equality", [typeof(string), typeof(string)])!);
+            code.Emit(OpCodes.Brtrue, succeeded);
+        }
+        else
+        {
+            code.Emit(OpCodes.Brfalse, succeeded);
+        }
         code.Emit(OpCodes.Ldc_I4_M1);
         code.Emit(OpCodes.Ret);
         code.MarkLabel(succeeded);
@@ -572,13 +410,11 @@ public sealed class RttiArrayOperationCompilationTests
         returnType,
         parameterTypes);
 
-    private static void RewriteRankTwoArraySignaturesAsRankOne(string path)
+    private static void RewriteRankTwoArraySignaturesAsRankOne(byte[] image)
     {
-        var image = File.ReadAllBytes(path);
         RewriteArraySignature(image, 0x08);
         RewriteArraySignature(image, 0x0e);
         RewriteArraySignature(image, 0x1c);
-        File.WriteAllBytes(path, image);
     }
 
     private static void RewriteArraySignature(byte[] image, byte elementType)

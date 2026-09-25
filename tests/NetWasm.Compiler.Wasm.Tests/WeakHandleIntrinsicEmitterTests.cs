@@ -7,6 +7,39 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 public sealed class WeakHandleIntrinsicEmitterTests
 {
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(false, 2)]
+    [InlineData(true, 0)]
+    [InlineData(true, 2)]
+    public void CreatePreservesTargetAndRequestedLifetimeAtEveryArgumentBase(bool memory64, int argumentBase)
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var emitter = new WeakHandleCreateIntrinsicEmitter(imports);
+        var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
+            RuntimeIntrinsic.WeakHandleCreate,
+            [.. Enumerable.Repeat(CliValueKind.I4, argumentBase), CliValueKind.ManagedReference, CliValueKind.I4]);
+        request = request with
+        {
+            Target = memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32,
+            Call = request.Call with { ArgumentBase = argumentBase, Consumed = 2 },
+        };
+        var locals = request.Instruction.Context.StackLocals;
+        var writer = new RecordingWriter();
+
+        Emit(emitter, request, writer);
+
+        Assert.Equal(
+            [WasmOpcodes.LocalGet, WasmOpcodes.LocalGet, WasmOpcodes.Call, WasmOpcodes.LocalSet],
+            writer.Instructions.Select(instruction => instruction.Opcode));
+        Assert.Equal(
+            (uint)((memory64 ? locals.ReferenceBase : locals.I4Base) + argumentBase),
+            writer.Instructions[0].Operand.UnsignedValue);
+        Assert.Equal((uint)(locals.I4Base + argumentBase + 1), writer.Instructions[1].Operand.UnsignedValue);
+        Assert.Equal((uint)imports.Resolve(RuntimeImportSymbol.WeakHandleCreate), writer.Instructions[2].Operand.UnsignedValue);
+        Assert.Equal((uint)(locals.I4Base + argumentBase), writer.Instructions[3].Operand.UnsignedValue);
+    }
+
     public static TheoryData<RuntimeIntrinsic, CliValueKind[], byte[]> Cases() => new()
     {
         {
@@ -73,11 +106,17 @@ public sealed class WeakHandleIntrinsicEmitterTests
         }
     }
 
+    private static void Emit<TEmitter>(
+        TEmitter emitter,
+        RuntimeIntrinsicEmissionRequest request,
+        RecordingWriter writer)
+        where TEmitter : IRuntimeIntrinsicEmitter => emitter.Emit(request, writer);
+
     private sealed class RecordingWriter : IWasmInstructionWriter
     {
         private readonly List<WasmInstruction> _instructions = [];
 
-        public IReadOnlyList<WasmInstruction> Instructions => _instructions;
+        public List<WasmInstruction> Instructions => _instructions;
 
         public void Write(WasmInstruction instruction) => _instructions.Add(instruction);
     }

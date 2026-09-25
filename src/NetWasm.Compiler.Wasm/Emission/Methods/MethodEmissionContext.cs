@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 
@@ -35,6 +36,11 @@ internal sealed record MethodEmissionContext(
     RuntimeImportSelection RuntimeImportSelection = default,
     ManagedMethodIdentity CallerIdentity = default)
 {
+    public IReadOnlyDictionary<StructuredExceptionGroupId, int> ExceptionRootSlots { get; init; } =
+        ImmutableDictionary<StructuredExceptionGroupId, int>.Empty;
+    public int? ActiveCatchRootSlot { get; init; }
+    public int RootSlotCount => checked(RootMap.SlotCount + ExceptionRootSlots.Count);
+
     public int NumericTemporaryI4Second => checked(DispatcherProgramCounter + 1);
     public int NumericTemporaryI4Third => checked(DispatcherProgramCounter + 2);
     public int NumericTemporaryI4Fourth => checked(DispatcherProgramCounter + 3);

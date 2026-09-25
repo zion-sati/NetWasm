@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "caseId": "flow.async-lifetime",
+  "featureIds": [
+    "S16",
+    "S19",
+    "S21"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "flow-async-lifetime/Program.cs.txt"
+  ],
+  "name": "AsyncLifetime",
+  "namespace": "NetWasm.Correctness.AsyncLifetime",
+  "entryMethod": "Run",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 1,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 2,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 3,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 4,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 5,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 6,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 7,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Threading": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "executionBackend": "Linked",
+  "requiredRuntimeCapabilities": "GarbageCollection",
+  "requiresReactor": true,
+  "supportsBatchedOracle": false,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.AsyncLifetimeTests.ExplicitSuspensionPreservesRealRootsResultsFailuresCancellationAndCleanup"
+}

@@ -41,8 +41,9 @@ internal sealed class ArrayMethodResolver(
         var signature = request.Signature;
         var rank = request.DeclaringType.ArrayRank;
         var indexCount = request.Name == "Set" ? rank : signature.ParameterSignatureTypes.Length;
-        if (indexCount != rank ||
-            signature.ParameterSignatureTypes.Take(rank).Any(type =>
+        if ((indexCount != rank &&
+             (request.Name != ".ctor" || indexCount != checked(rank * 2))) ||
+            signature.ParameterSignatureTypes.Take(indexCount).Any(type =>
                 !_signatureTypes.Compare(type, CliTypeIdentity.Primitive("i4", CliValueKind.I4))))
         {
             return false;

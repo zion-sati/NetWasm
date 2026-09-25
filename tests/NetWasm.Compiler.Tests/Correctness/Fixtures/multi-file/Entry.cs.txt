@@ -1,0 +1,13 @@
+namespace NetWasm.Correctness.MultiFile;
+
+public static partial class EntryPoint
+{
+    public static int Run(int input) => Left(input) + Right(input);
+
+    private static int Left(int input) => new LocalValue().Read(input);
+}
+
+file sealed class LocalValue
+{
+    public int Read(int input) => input + 23;
+}

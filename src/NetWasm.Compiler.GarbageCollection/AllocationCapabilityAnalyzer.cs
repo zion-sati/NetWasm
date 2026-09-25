@@ -52,11 +52,11 @@ public sealed class AllocationCapabilityAnalyzer(
                 pair => pair.Key,
                 StringComparer.Ordinal);
         var allocating = bodies
-            .Where(pair => Instructions(pair.Value).Any(instruction =>
-                instruction.Operation is CilOperation.NewObject or CilOperation.NewArray or
-                    CilOperation.Box or CilOperation.DelegateCombine or
-                    CilOperation.DelegateRemove or CilOperation.MaterializeType or
-                    CilOperation.GetObjectType or CilOperation.CallIndirect))
+            // Cached-failure dispatch can run allocating exception filters even
+            // when the initializer's managed body is allocation-free.
+            .Where(pair => pair.Value.Method.Definition.Name == ".cctor" ||
+                Instructions(pair.Value).Any(instruction =>
+                CilSafepointClassifier.RequiresUnconditionalRootDecision(instruction)))
             .Select(pair => pair.Key)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -157,15 +157,34 @@ public sealed class AllocationCapabilityAnalyzer(
         if (instruction.Operand is CilOperand.Entity target)
         {
             var directMethod = _methods.GetMethod(target.Key);
-            return _runtimeSafepoints.Classify(directMethod, _types) ||
+            return HasAllocatingInitializer(directMethod, null, allocating,
+                       directInitializers, constructedInitializers) ||
+                   _runtimeSafepoints.Classify(directMethod, _types) ||
                    directMethod.JSImport is not null ||
                    directIdentities.TryGetValue(target.Key, out var identity) &&
                    allocating.Contains(identity);
         }
 
         var method = ((CilOperand.MethodInstance)instruction.Operand).Value;
-        return _runtimeSafepoints.Classify(method) ||
+        return HasAllocatingInitializer(method.Definition, method.DeclaringType, allocating,
+                   directInitializers, constructedInitializers) ||
+               _runtimeSafepoints.Classify(method) ||
                method.Definition.JSImport is not null ||
                allocating.Contains(method.CanonicalName);
+    }
+
+    private static bool HasAllocatingInitializer(
+        MethodDefinitionModel method,
+        CliTypeIdentity? declaringType,
+        HashSet<string> allocating,
+        Dictionary<EntityKey, string> directInitializers,
+        Dictionary<string, string> constructedInitializers)
+    {
+        if (!method.IsStatic || method.Name == ".cctor")
+            return false;
+        var initializer = declaringType is { Shape: CliTypeShape.GenericInstantiation }
+            ? constructedInitializers.GetValueOrDefault(declaringType.CanonicalName)
+            : directInitializers.GetValueOrDefault(method.DeclaringType);
+        return initializer is not null && allocating.Contains(initializer);
     }
 }

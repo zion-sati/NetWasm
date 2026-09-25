@@ -1,0 +1,83 @@
+using System;
+
+namespace NetWasm.Correctness.DateRangeBoundaries;
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0: TickLimits(); break;
+            case 1: CenturyLeapYears(); break;
+            case 2: OffsetLimits(); break;
+            case 3: WrappedDays(); break;
+            case 4: DurationLimits(); break;
+            default: throw new ArgumentOutOfRangeException(nameof(input));
+        }
+        return 42;
+    }
+
+    private static void Require(bool condition)
+    {
+        if (!condition) throw new InvalidOperationException("Date range contract mismatch.");
+    }
+
+    private static void TickLimits()
+    {
+        Require(DateTime.MinValue.AddTicks(1).Ticks == 1);
+        Require(DateTime.MaxValue.AddTicks(-1).Ticks == DateTime.MaxValue.Ticks - 1);
+        var failures = 0;
+        try { DateTime.MinValue.AddTicks(-1); } catch (ArgumentOutOfRangeException) { failures++; }
+        try { DateTime.MaxValue.AddTicks(1); } catch (ArgumentOutOfRangeException) { failures++; }
+        try { DateOnly.MinValue.AddDays(-1); } catch (ArgumentOutOfRangeException) { failures++; }
+        try { DateOnly.MaxValue.AddDays(1); } catch (ArgumentOutOfRangeException) { failures++; }
+        Require(failures == 4);
+    }
+
+    private static void CenturyLeapYears()
+    {
+        Require(!DateTime.IsLeapYear(1900) && DateTime.IsLeapYear(2000) && !DateTime.IsLeapYear(2100));
+        Require(new DateOnly(1900, 2, 28).AddDays(1) == new DateOnly(1900, 3, 1));
+        Require(new DateOnly(2000, 2, 28).AddDays(1) == new DateOnly(2000, 2, 29));
+        Require(new DateOnly(2000, 2, 29).AddYears(100) == new DateOnly(2100, 2, 28));
+        Require(new DateOnly(2000, 3, 31).AddMonths(-1) == new DateOnly(2000, 2, 29));
+        Require(new DateOnly(2001, 3, 31).AddMonths(-1) == new DateOnly(2001, 2, 28));
+    }
+
+    private static void OffsetLimits()
+    {
+        var positive = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.FromHours(14));
+        var negative = positive.ToOffset(TimeSpan.FromHours(-14));
+        Require(positive == negative && positive.UtcTicks == negative.UtcTicks && positive.Offset != negative.Offset);
+        var failures = 0;
+        try { positive.ToOffset(TimeSpan.FromMinutes(841)); } catch (ArgumentException) { failures++; }
+        try { positive.ToOffset(TimeSpan.FromSeconds(1)); } catch (ArgumentException) { failures++; }
+        Require(failures == 2);
+        Require(DateTimeOffset.FromUnixTimeMilliseconds(-1).UtcTicks == DateTime.UnixEpoch.Ticks - 10000);
+        Require(DateTimeOffset.MinValue.ToUnixTimeSeconds() == -62135596800L);
+        Require(DateTimeOffset.MaxValue.ToUnixTimeSeconds() == 253402300799L);
+    }
+
+    private static void WrappedDays()
+    {
+        var previous = TimeOnly.MinValue.Add(TimeSpan.FromTicks(-1), out var days);
+        Require(previous == TimeOnly.MaxValue && days == -1);
+        var next = TimeOnly.MaxValue.Add(TimeSpan.FromTicks(1), out days);
+        Require(next == TimeOnly.MinValue && days == 1);
+        var earlier = TimeOnly.MinValue.Add(TimeSpan.FromDays(-2) + TimeSpan.FromTicks(1), out days);
+        Require(earlier.Ticks == 1 && days == -2);
+    }
+
+    private static void DurationLimits()
+    {
+        var failures = 0;
+        try { TimeSpan.MinValue.Negate(); } catch (OverflowException) { failures++; }
+        try { TimeSpan.MinValue.Duration(); } catch (OverflowException) { failures++; }
+        try { _ = TimeSpan.MinValue - TimeSpan.FromTicks(1); } catch (OverflowException) { failures++; }
+        Require(failures == 3);
+        var value = new TimeSpan(-1, -2, -3, -4, -5);
+        Require(value.Days == -1 && value.Hours == -2 && value.Minutes == -3 && value.Seconds == -4 && value.Milliseconds == -5);
+    }
+
+}

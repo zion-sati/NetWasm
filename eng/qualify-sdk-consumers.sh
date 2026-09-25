@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "$#" -lt 2 ]]; then
-  echo "usage: eng/qualify-sdk-consumers.sh <package-directory> <version> [--host-tools-version VERSION] [--sdk-evaluation-output PATH --producer-manifest PATH --asset-receipt-output PATH] [--skip-test-consumers]" >&2
+  echo "usage: eng/qualify-sdk-consumers.sh <package-directory> <version> [--host-tools-version VERSION] [--sdk-evaluation-output PATH --producer-manifest PATH --asset-receipt-output PATH] [--artifact-directory ABSOLUTE_NEW_DIRECTORY] [--skip-test-consumers]" >&2
   exit 2
 fi
 
@@ -15,8 +15,15 @@ skip_test_consumers=false
 sdk_evaluation_output=""
 producer_manifest=""
 asset_receipt_output=""
+artifact_directory=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --artifact-directory)
+      [[ "$#" -ge 2 && -n "$2" ]] || { echo "--artifact-directory requires a path" >&2; exit 2; }
+      [[ -z "$artifact_directory" ]] || { echo "--artifact-directory may only be specified once" >&2; exit 2; }
+      artifact_directory="$2"
+      shift 2
+      ;;
     --host-tools-version)
       [[ "$#" -ge 2 ]] || { echo "--host-tools-version requires a version" >&2; exit 2; }
       host_tools_version="$2"
@@ -47,6 +54,13 @@ while [[ "$#" -gt 0 ]]; do
       ;;
   esac
 done
+if [[ -n "$artifact_directory" ]]; then
+  [[ "$artifact_directory" = /* ]] || { echo "Artifact directory must be absolute." >&2; exit 2; }
+  [[ ! -e "$artifact_directory" && ! -L "$artifact_directory" ]] || {
+    echo "Refusing to reuse an existing artifact directory." >&2
+    exit 2
+  }
+fi
 if [[ -n "$sdk_evaluation_output" ]]; then
   mkdir -p "$(dirname "$sdk_evaluation_output")"
   sdk_evaluation_output="$(cd "$(dirname "$sdk_evaluation_output")" && pwd -P)/$(basename "$sdk_evaluation_output")"
@@ -61,8 +75,22 @@ if [[ -n "$producer_manifest" || -n "$asset_receipt_output" ]]; then
   mkdir -p "$(dirname "$asset_receipt_output")"
   asset_receipt_output="$(cd "$(dirname "$asset_receipt_output")" && pwd -P)/$(basename "$asset_receipt_output")"
 fi
-work_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/netwasm-runtime-host.XXXXXX")"
-trap 'rm -rf "$work_root"' EXIT
+if [[ -n "$artifact_directory" ]]; then
+  mkdir "$artifact_directory"
+  work_root="$(cd "$artifact_directory" && pwd -P)"
+else
+  work_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/netwasm-runtime-host.XXXXXX")"
+fi
+finish_qualification() {
+  local result=$?
+  if [[ "$result" != 0 || -n "$artifact_directory" ]]; then
+    printf 'Qualification artifacts retained: %s\n' "$work_root" >&2
+  else
+    rm -rf "$work_root"
+  fi
+  return "$result"
+}
+trap finish_qualification EXIT
 consumer_root="$work_root/consumer with spaces"
 app_root="$consumer_root/app"
 app_project="$app_root/RuntimeHost.csproj"
@@ -545,7 +573,7 @@ cat > "$test_root/RuntimeHostTests.csproj" <<'EOF'
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="NetWasm.TUnit" Version="0.2.2" />
+    <PackageReference Include="NetWasm.TUnit" Version="0.4.1" />
   </ItemGroup>
 </Project>
 EOF

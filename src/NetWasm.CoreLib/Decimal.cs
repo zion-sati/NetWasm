@@ -2,6 +2,10 @@
 // The arithmetic is a NetWasm-specific managed implementation. It deliberately
 // favors small, reviewable code over the architecture-specific optimizations in
 // dotnet/runtime's MIT-licensed Decimal implementation.
+// Binary/decimal conversion portions adapted from dotnet/runtime, commit
+// 811225a482702af7ecc35d817966bc70b88a3a23, Decimal.DecCalc.cs.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses those portions under the MIT license.
 namespace System
 {
     public enum MidpointRounding
@@ -324,7 +328,7 @@ namespace System
         public static int ToInt32(decimal value) => DecimalMath.ToInt32(value);
         public static long ToInt64(decimal value) => DecimalMath.ToInt64(value);
         public static sbyte ToSByte(decimal value) => checked((sbyte)DecimalMath.ToInt32(value));
-        public static float ToSingle(decimal value) => (float)DecimalMath.ToDouble(value);
+        public static float ToSingle(decimal value) => DecimalMath.ToSingle(value);
         public static ushort ToUInt16(decimal value) => checked((ushort)DecimalMath.ToUInt32(value));
         public static uint ToUInt32(decimal value) => DecimalMath.ToUInt32(value);
         public static ulong ToUInt64(decimal value) => DecimalMath.ToUInt64(value);
@@ -352,7 +356,7 @@ namespace System
         public static explicit operator short(decimal value) => checked((short)(int)value);
         public static explicit operator ushort(decimal value) => checked((ushort)(uint)value);
         public static explicit operator char(decimal value) => checked((char)(uint)value);
-        public static explicit operator float(decimal value) => (float)DecimalMath.ToDouble(value);
+        public static explicit operator float(decimal value) => DecimalMath.ToSingle(value);
         public static explicit operator double(decimal value) => DecimalMath.ToDouble(value);
 
         public static decimal operator +(decimal left, decimal right) => Add(left, right);
@@ -620,48 +624,175 @@ namespace System
 
             internal static double ToDouble(decimal value)
             {
-                var result = (double)value._high * 18_446_744_073_709_551_616.0 +
-                    (double)value._middle * 4_294_967_296.0 + value._low;
-                for (var index = 0; index < value.Scale; index++)
-                {
-                    result /= 10.0;
-                }
+                var result = DecimalToFloatingPointExact(
+                    ((ulong)value._middle << 32) | value._low, value._high, value.Scale, 53);
                 return value.IsNegativeValue ? -result : result;
+            }
+
+            internal static float ToSingle(decimal value)
+            {
+                // The result already has at most 24 significand bits, so the
+                // narrowing is exact; rounding through a 53-bit value is not.
+                var result = (float)DecimalToFloatingPointExact(
+                    ((ulong)value._middle << 32) | value._low, value._high, value.Scale, 24);
+                return value.IsNegativeValue ? -result : result;
+            }
+
+            private static double DecimalToFloatingPointExact(ulong low64, uint high, int scale, int significandBits)
+            {
+                var mantissa = new UInt128(high, low64);
+                if (mantissa == UInt128.Zero)
+                {
+                    return 0.0;
+                }
+                var divisor = PowerOfFive(scale);
+                var mantissaBits = 128 - (int)UInt128.LeadingZeroCount(mantissa);
+                var divisorBits = 128 - (int)UInt128.LeadingZeroCount(divisor);
+
+                // Port of Decimal.DecCalc's .NET 11 exact path. Divide by 5^scale
+                // with one guard bit and at most one extra bit. Both shifted
+                // operands fit UInt128 for the full 96-bit/28-scale domain.
+                var shift = (significandBits + 1) - (mantissaBits - divisorBits);
+                UInt128 numerator, denominator;
+                if (shift >= 0)
+                {
+                    numerator = mantissa << shift;
+                    denominator = divisor;
+                }
+                else
+                {
+                    numerator = mantissa;
+                    denominator = divisor << -shift;
+                }
+                var (quotient, remainder) = UInt128.DivRem(numerator, denominator);
+                var quotientBits = 128 - (int)UInt128.LeadingZeroCount(quotient);
+                var drop = quotientBits - significandBits;
+                var keep = (ulong)(quotient >> drop);
+                var roundBits = (ulong)(quotient & ((UInt128.One << drop) - 1));
+                var half = 1UL << (drop - 1);
+                var sticky = remainder != UInt128.Zero || (roundBits & (half - 1)) != 0;
+
+                bool roundUp;
+                if (roundBits > half)
+                {
+                    roundUp = true;
+                }
+                else if (roundBits < half)
+                {
+                    roundUp = false;
+                }
+                else
+                {
+                    roundUp = sticky || (keep & 1) != 0;
+                }
+                if (roundUp && ++keep == (1UL << significandBits))
+                {
+                    keep >>= 1;
+                    drop++;
+                }
+                // Decimal's range is normal and finite in both formats. Scaling
+                // the already-rounded significand by this power of two is exact.
+                return Math.ScaleB((double)keep, drop - shift - scale);
             }
 
             internal static decimal FromDouble(double value)
             {
-                if (!(value <= 79_228_162_514_264_337_593_543_950_335.0 &&
-                      value >= -79_228_162_514_264_337_593_543_950_335.0))
+                // .NET 11 exact conversion profile. A float widens to double
+                // without changing its exact value before entering this method.
+                if (value == 0.0)
+                {
+                    return default;
+                }
+                if (!double.IsFinite(value))
                 {
                     throw new OverflowException();
                 }
-                var negative = value < 0.0;
-                if (negative)
+                var bits = BitConverter.DoubleToUInt64Bits(value);
+                var negative = (bits >> 63) != 0;
+                var significand = bits & 0x000fffffffffffffUL;
+                var biasedExponent = (int)((bits >> 52) & 0x7ff);
+                var exponent = 1 - 1023 - 52;
+                if (biasedExponent != 0)
                 {
-                    value = -value;
+                    significand |= 1UL << 52;
+                    exponent = biasedExponent - 1023 - 52;
                 }
-                if (value == 0.0)
+
+                // An odd significand makes -exponent the exact fractional scale.
+                var trailingZeros = Numerics.BitOperations.TrailingZeroCount(significand);
+                significand >>= trailingZeros;
+                exponent += trailingZeros;
+                UInt128 mantissa;
+                int scale;
+                if (exponent >= 0)
                 {
-                    return new decimal(0U, 0U, 0U, negative, 0);
-                }
-                var scale = 0;
-                for (var index = 0; index < MaximumScale; index++)
-                {
-                    if (value > 18_446_744_073_709_551_615.0)
+                    var significandBits = 64 - Numerics.BitOperations.LeadingZeroCount(significand);
+                    if (significandBits + exponent > 96)
                     {
-                        value /= 10.0;
+                        throw new OverflowException();
+                    }
+                    mantissa = (UInt128)significand << exponent;
+                    scale = 0;
+                }
+                else
+                {
+                    var fractionalDigits = -exponent;
+                    scale = Math.Min(fractionalDigits, MaximumScale);
+                    while (true)
+                    {
+                        // The product is below 2^119. Always round the exact
+                        // numerator again when reducing scale, never a rounded value.
+                        var numerator = (UInt128)significand * PowerOfFive(scale);
+                        mantissa = RoundShiftRightEven(numerator, fractionalDigits - scale);
+                        if ((mantissa >> 96) == UInt128.Zero)
+                        {
+                            break;
+                        }
                         scale--;
                     }
                 }
-                while (scale < MaximumScale && value < 1_000_000_000_000_000.0)
+
+                if (mantissa == UInt128.Zero)
                 {
-                    value *= 10.0;
-                    scale++;
+                    return default;
                 }
-                var rounded = RoundDoubleToUInt64(value);
-                var coefficient = FromUInt64(rounded);
-                return Create(coefficient, scale, negative, trim: true);
+                return new decimal((uint)mantissa, (uint)(mantissa >> 32),
+                    (uint)(mantissa >> 64), negative, scale);
+            }
+
+            private static UInt128 PowerOfFive(int exponent)
+            {
+                ReadOnlySpan<ulong> powers =
+                [
+                    1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125,
+                    9765625, 48828125, 244140625, 1220703125, 6103515625, 30517578125,
+                    152587890625, 762939453125, 3814697265625, 19073486328125,
+                    95367431640625, 476837158203125, 2384185791015625, 11920928955078125,
+                    59604644775390625, 298023223876953125, 1490116119384765625,
+                    7450580596923828125, 359414837200037393
+                ];
+                return new UInt128(exponent == MaximumScale ? 2U : 0U, powers[exponent]);
+            }
+
+            private static UInt128 RoundShiftRightEven(UInt128 value, int shift)
+            {
+                if (shift <= 0)
+                {
+                    return value;
+                }
+                if (shift >= 128)
+                {
+                    return shift == 128 && value > (UInt128.One << 127)
+                        ? UInt128.One : UInt128.Zero;
+                }
+                var quotient = value >> shift;
+                var remainder = value & ((UInt128.One << shift) - UInt128.One);
+                var half = UInt128.One << (shift - 1);
+                if (remainder > half || (remainder == half && (quotient & UInt128.One) != UInt128.Zero))
+                {
+                    quotient++;
+                }
+                return quotient;
             }
 
             internal static bool TryParse(
@@ -1001,17 +1132,6 @@ namespace System
                 {
                     AddWordInPlace(ref quotient, 1);
                 }
-            }
-
-            private static ulong RoundDoubleToUInt64(double value)
-            {
-                var truncated = (ulong)value;
-                var fraction = value - truncated;
-                if (fraction > 0.5 || fraction == 0.5 && (truncated & 1) != 0)
-                {
-                    truncated++;
-                }
-                return truncated;
             }
 
             internal static char[] ToDigits(WideInteger value)

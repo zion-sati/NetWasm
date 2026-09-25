@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "caseId": "numeric.checked-nonfinite",
+  "featureIds": [
+    "S06",
+    "S07"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "numeric-checked-floating/Program.cs.txt"
+  ],
+  "name": "CheckedFloatingConversions",
+  "namespace": "NetWasm.Correctness.CheckedFloating",
+  "entryMethod": "Run",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 1,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 2,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 3,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 4,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 5,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 6,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 7,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 8,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 9,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 10,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 11,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 12,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 13,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 14,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 15,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 16,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 17,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 18,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 19,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 20,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 21,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 22,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    },
+    {
+      "input": 23,
+      "returnValue": null,
+      "exceptionType": "System.OverflowException"
+    }
+  ],
+  "referencePaths": [],
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "exposesLegacyTrace": false,
+  "usesTypedTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.NumericConversionEdgeTests.CheckedNonFiniteConversionsThrowManagedOverflow"
+}

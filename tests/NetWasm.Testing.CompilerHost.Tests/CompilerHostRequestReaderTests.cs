@@ -37,10 +37,44 @@ public sealed class CompilerHostRequestReaderTests
             Assert.Equal("Application", request.EntryTypeName);
             Assert.Empty(request.ReferencePaths);
             Assert.Equal(ImmutableDictionary<string, string>.Empty, request.ReferenceAssemblyAliases);
+            Assert.Null(request.RuntimeLayoutPath);
+            Assert.Null(request.InteropManifestPath);
         }
         finally
         {
             File.Delete(path);
         }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void DeserializesOptionalLinkedArtifactPathsWithoutChangingAssemblyIdentity(int target)
+    {
+        var deserializer = new CompilerHostRequestDeserializer(
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var json = $$"""
+            {
+              "entryAssemblyPath": "same-il.dll",
+              "referencePaths": ["corelib.dll"],
+              "entryTypeName": "Application",
+              "entryMethodName": "Run",
+              "exports": [],
+              "target": {{target}},
+              "sourcePaths": [],
+              "referenceAssemblyAliases": {"System.Runtime": "NetWasm.CoreLib"},
+              "modulePath": "module.wasm",
+              "runtimeLayoutPath": "layout.json",
+              "interopManifestPath": "interop.json"
+            }
+            """;
+
+        var request = ((ICompilerHostRequestDeserializer)deserializer).Deserialize(json);
+
+        Assert.Equal("same-il.dll", request.EntryAssemblyPath);
+        Assert.Equal(target, (int)request.Target);
+        Assert.Equal("layout.json", request.RuntimeLayoutPath);
+        Assert.Equal("interop.json", request.InteropManifestPath);
+        Assert.Equal("NetWasm.CoreLib", request.ReferenceAssemblyAliases["System.Runtime"]);
     }
 }

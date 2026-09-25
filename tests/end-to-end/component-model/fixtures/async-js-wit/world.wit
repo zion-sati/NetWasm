@@ -1,0 +1,7 @@
+package netwasm:async-js@1.0.0;
+
+world async-js {
+    import wasi:clocks/monotonic-clock@0.2.11;
+    import netwasm:runtime/reactor-host@1.0.0;
+    export netwasm:runtime/reactor-guest@1.0.0;
+}

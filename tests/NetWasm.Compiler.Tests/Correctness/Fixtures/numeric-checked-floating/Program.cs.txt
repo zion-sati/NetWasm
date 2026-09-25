@@ -1,0 +1,40 @@
+using System;
+
+namespace NetWasm.Correctness.CheckedFloating;
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        // Each operand is selected at runtime. Casts are outside the selection,
+        // so Roslyn must emit the conversion rather than fold a literal.
+        var operation = input / 3;
+        var value = input % 3;
+        if (operation < 4)
+        {
+            var bits = value switch { 0 => 0x7fc00001, 1 => 0x7f800000, _ => unchecked((int)0xff800000) };
+            var source = BitConverter.Int32BitsToSingle(bits);
+            return operation switch
+            {
+                0 => checked((int)source),
+                1 => unchecked((int)checked((uint)source)),
+                2 => unchecked((int)checked((long)source)),
+                3 => unchecked((int)checked((ulong)source)),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+        }
+        else
+        {
+            var bits = value switch { 0 => 0x7ff8000000000001L, 1 => 0x7ff0000000000000L, _ => unchecked((long)0xfff0000000000000) };
+            var source = BitConverter.Int64BitsToDouble(bits);
+            return operation switch
+            {
+                4 => checked((int)source),
+                5 => unchecked((int)checked((uint)source)),
+                6 => unchecked((int)checked((long)source)),
+                7 => unchecked((int)checked((ulong)source)),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+        }
+    }
+}
