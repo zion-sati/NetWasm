@@ -12,6 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="../../contracts/Generator.Contracts.csproj" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="[10.0.0]" />
-    <Analyzer Include="$(PortedPackageRoot)/netwasm.microsoft.extensions.configuration.binder/0.4.2-preview.1/analyzers/dotnet/cs/NetWasm.Microsoft.Extensions.Configuration.Binder.Generator.dll" />
+    <Analyzer Include="$(PortedPackageRoot)/netwasm.microsoft.extensions.configuration.binder/0.4.2/analyzers/dotnet/cs/NetWasm.Microsoft.Extensions.Configuration.Binder.Generator.dll" />
   </ItemGroup>
 </Project>

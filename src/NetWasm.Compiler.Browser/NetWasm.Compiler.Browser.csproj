@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>NetWasm.Compiler.Browser</PackageId>
-    <Version>0.4.2-preview.1</Version>
+    <Version>0.4.2</Version>
     <Description>Virtual-input NetWasm compiler adapter for isolated browser and WebAssembly hosts.</Description>
     <PackageTags>netwasm;compiler;browser;wasm</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>

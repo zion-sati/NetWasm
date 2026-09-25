@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <NetWasmCompilerTasksPackageVersion Condition="'$(NetWasmCompilerTasksPackageVersion)' == ''">0.4.2-preview.1</NetWasmCompilerTasksPackageVersion>
-    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmHostToolsPackageVersion)' == ''">0.4.2-preview.1</NetWasmHostToolsPackageVersion>
+    <NetWasmCompilerTasksPackageVersion Condition="'$(NetWasmCompilerTasksPackageVersion)' == ''">0.4.2</NetWasmCompilerTasksPackageVersion>
+    <NetWasmHostToolsPackageVersion Condition="'$(NetWasmHostToolsPackageVersion)' == ''">0.4.2</NetWasmHostToolsPackageVersion>
   </PropertyGroup>
 </Project>
