@@ -183,6 +183,13 @@ internal sealed class DelegateInvokeFunctionEmitter(
             {
                 WriteLocalGet(code, receiverParameter);
                 EmitReferenceLoad(code, objects.DelegateTargetOffset);
+                if (target.DeclaringType.IsValueType)
+                {
+                    var value = values.GetValueLayout(target.DeclaringType);
+                    EmitAddressConstant(code, WasmTargetLayout.Align(
+                        layouts.Target.ObjectHeaderSize, value.Alignment));
+                    EmitAddressAdd(code);
+                }
             }
             var firstArgument = receiverParameter + 1;
             for (var index = 0; index < invoke.Signature.ParameterTypes.Length; index++)

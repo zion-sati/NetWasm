@@ -46,7 +46,9 @@ try
     });
     var application = new CompilerHostApplication(
         services.GetRequiredService<INetWasmCompiler>(),
-        services.GetRequiredService<IMetadataCompilationLoader>());
+        services.GetRequiredService<IMetadataCompilationLoader>(),
+        new CompilerHostArtifactFormatter(),
+        new CompilerHostArtifactWriter());
     if (!sequenceMode)
     {
         var request = new CompilerHostRequestReader(

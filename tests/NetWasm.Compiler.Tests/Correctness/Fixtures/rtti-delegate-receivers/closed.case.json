@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "caseId": "rtti.delegate-closed-receiver",
+  "featureIds": [
+    "S09",
+    "S12",
+    "S13"
+  ],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "DelegateReceivers",
+  "namespace": "DelegateReceivers",
+  "entryMethod": "RunClosed",
+  "inputs": [
+    -2147483648,
+    -1,
+    0,
+    41,
+    2147483647
+  ],
+  "expectations": [
+    {
+      "input": -2147483648,
+      "returnValue": -2147483648,
+      "exceptionType": null
+    },
+    {
+      "input": -1,
+      "returnValue": -1,
+      "exceptionType": null
+    },
+    {
+      "input": 0,
+      "returnValue": 0,
+      "exceptionType": null
+    },
+    {
+      "input": 41,
+      "returnValue": 41,
+      "exceptionType": null
+    },
+    {
+      "input": 2147483647,
+      "returnValue": 2147483647,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Private.CoreLib": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.EmittedDelegateReceiverTests.ClosedInstanceDelegateKeepsItsCapturedReceiver"
+}

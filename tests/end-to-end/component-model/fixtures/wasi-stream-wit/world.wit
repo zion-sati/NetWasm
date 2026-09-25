@@ -1,0 +1,11 @@
+package netwasm:test-stream@1.0.0;
+
+interface acceptance {
+  write: func() -> u32;
+}
+
+world test-stream {
+  import wasi:io/streams@0.2.11;
+  import wasi:cli/stdout@0.2.11;
+  export acceptance;
+}

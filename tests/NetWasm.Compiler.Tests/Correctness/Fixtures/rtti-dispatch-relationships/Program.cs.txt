@@ -1,0 +1,268 @@
+using System;
+
+namespace NetWasm.Correctness.DispatchRelationships;
+
+public interface IRead<out T> { T Read(); }
+public interface IAccept<in T> { int Accept(T value); }
+
+public sealed class MultipleSlots : IRead<object>, IRead<string>, IAccept<object>, IAccept<string>
+{
+    object IRead<object>.Read() => "object";
+    string IRead<string>.Read() => "string";
+    int IAccept<object>.Accept(object value) => 11;
+    int IAccept<string>.Accept(string value) => 22;
+}
+
+public interface ICounter
+{
+    void Increment();
+    int Count { get; }
+}
+
+public struct Counter : ICounter
+{
+    public int Count { get; private set; }
+    public void Increment() => Count++;
+    public int Next() => ++Count;
+}
+
+public sealed class CounterReference : ICounter
+{
+    public int Count { get; private set; }
+    public void Increment() => Count++;
+}
+
+public interface INext<out T> { T Next(); }
+
+public struct InterfaceCounter : INext<int>
+{
+    public int Count;
+    public int Next() => ++Count;
+}
+
+public struct GenericInterfaceCounter<T> : INext<long>
+{
+    public T Marker;
+    public long Count;
+    public long Next() => Marker is null ? -1 : ++Count;
+}
+
+public sealed class InterfaceCounterReference : INext<int>
+{
+    public int Count;
+    public int Next() => ++Count;
+}
+
+public interface IFactory<TSelf> where TSelf : IFactory<TSelf>
+{
+    static abstract TSelf Create(int value);
+    int Read();
+}
+
+public readonly struct ValueFactory(int value) : IFactory<ValueFactory>
+{
+    public static ValueFactory Create(int value) => new(value);
+    public int Read() => value;
+}
+
+public sealed class ReferenceFactory(int value) : IFactory<ReferenceFactory>
+{
+    public static ReferenceFactory Create(int value) => new(value);
+    public int Read() => value;
+}
+
+public abstract class GenericBase<T> { public abstract T Pass(T value); }
+public sealed class StringDerived : GenericBase<string>
+{
+    public override string Pass(string value) => value + "!";
+}
+
+public sealed class Publisher
+{
+    public event Action? Changed;
+    public void Raise() => Changed?.Invoke();
+}
+
+public static class EntryPoint
+{
+    private static int _order;
+    private static readonly Exception Failure = new InvalidOperationException();
+
+    public static unsafe int Run(int input)
+    {
+        _order = 0;
+        switch (input)
+        {
+            case 0:
+            {
+                object receiver = new MultipleSlots();
+                return (string)((IRead<object>)receiver).Read() == "object" &&
+                    ((IRead<string>)receiver).Read() == "string" ? 42 : -1;
+            }
+            case 1:
+            {
+                IRead<string> source = new MultipleSlots();
+                IRead<object> widened = source;
+                return (string)Read(widened) == "object" && Read(source) == "string" ? 42 : -2;
+            }
+            case 2:
+            {
+                object receiver = new MultipleSlots();
+                return ((IAccept<object>)receiver).Accept("text") == 11 &&
+                    ((IAccept<string>)receiver).Accept("text") == 22 ? 42 : -3;
+            }
+            case 3:
+            {
+                IAccept<object> source = new MultipleSlots();
+                IAccept<string> narrowed = source;
+                return Accept(narrowed, "text") == 22 && Accept(source, (object)"text") == 11 ? 42 : -4;
+            }
+            case 4:
+            {
+                GenericBase<string> receiver = new StringDerived();
+                return Pass(receiver, "closed") == "closed!" ? 42 : -5;
+            }
+            case 5:
+            {
+                var value = new Counter();
+                Increment(ref value);
+                Increment(ref value);
+                return value.Count == 2 ? 42 : -6;
+            }
+            case 6:
+            {
+                var value = new Counter();
+                var observed = IncrementCopy(value);
+                return observed == 1 && value.Count == 0 ? 42 : -7;
+            }
+            case 7:
+            {
+                ICounter boxed = new Counter();
+                boxed.Increment();
+                var copy = (Counter)boxed;
+                Increment(ref copy);
+                return boxed.Count == 1 && copy.Count == 2 ? 42 : -8;
+            }
+            case 8:
+                return CreateAndRead<ValueFactory>(42) == 42 ? 42 : -9;
+            case 9:
+                return CreateAndRead<ReferenceFactory>(42) == 42 ? 42 : -10;
+            case 10:
+            {
+                CounterReference? receiver = null;
+                try
+                {
+                    _ = IncrementCopy(receiver!);
+                    return -11;
+                }
+                catch (NullReferenceException)
+                {
+                    return 42;
+                }
+            }
+            case 11:
+            {
+                var value = new Counter();
+                Func<int> next = value.Next;
+                var first = next();
+                var second = next();
+                return first == 1 && second == 2 && value.Count == 0 ? 42 : -12;
+            }
+            case 12:
+            {
+                Func<int> first = First;
+                Func<int> second = Second;
+                var combined = first + second + first;
+                var shortened = combined - first;
+                var last = shortened!();
+                if (_order != 12 || last != 22 || shortened != first + second) return -13;
+                _order = 0;
+                return combined() == 11 && _order == 121 ? 42 : -14;
+            }
+            case 13:
+            {
+                Func<int> callbacks = First;
+                callbacks += Throw;
+                callbacks += Second;
+                try
+                {
+                    _ = callbacks();
+                    return -15;
+                }
+                catch (InvalidOperationException error)
+                {
+                    return ReferenceEquals(error, Failure) && _order == 13 ? 42 : -16;
+                }
+            }
+            case 14:
+            {
+                var state = 1;
+                var publisher = new Publisher();
+                Action callback = () => state += 2;
+                publisher.Changed += callback;
+                publisher.Raise();
+                if (state != 3) return -17;
+                state = 10;
+                publisher.Raise();
+                if (state != 12) return -18;
+                publisher.Changed -= callback;
+                publisher.Raise();
+                return state == 12 ? 42 : -19;
+            }
+            case 15:
+            {
+                delegate* managed<int, int> pointer = &AddOne;
+                return pointer(41) == 42 ? 42 : -20;
+            }
+            case 16:
+            {
+                var value = new InterfaceCounter { Count = 40 };
+                Func<int> next = value.Next;
+                return next() == 41 && next() == 42 && value.Count == 40 ? 42 : -21;
+            }
+            case 17:
+            {
+                var value = new GenericInterfaceCounter<string> { Marker = "alive", Count = 40 };
+                Func<long> next = value.Next;
+                return next() == 41 && next() == 42 && value.Count == 40 ? 42 : -22;
+            }
+            case 18:
+            {
+                INext<int> value = new InterfaceCounter { Count = 40 };
+                Func<int> next = value.Next;
+                return next() == 41 && next() == 42 && value.Next() == 43 ? 42 : -23;
+            }
+            case 19:
+            {
+                var value = new InterfaceCounter();
+                Func<int> first = value.Next;
+                Func<int> second = value.Next;
+                var combined = first + second + first;
+                return combined() == 2 && first() == 3 && second() == 2 && value.Count == 0 ? 42 : -24;
+            }
+            case 20:
+            {
+                var value = new InterfaceCounterReference { Count = 40 };
+                Func<int> next = value.Next;
+                return next() == 41 && next() == 42 && value.Count == 42 ? 42 : -25;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    private static T Read<T>(IRead<T> value) => value.Read();
+    private static int Accept<T>(IAccept<T> receiver, T value) => receiver.Accept(value);
+    private static T Pass<T>(GenericBase<T> receiver, T value) => receiver.Pass(value);
+    private static void Increment<T>(ref T value) where T : ICounter => value.Increment();
+    private static int IncrementCopy<T>(T value) where T : ICounter
+    {
+        value.Increment();
+        return value.Count;
+    }
+    private static int CreateAndRead<T>(int value) where T : IFactory<T> => T.Create(value).Read();
+    private static int First() { _order = _order * 10 + 1; return 11; }
+    private static int Second() { _order = _order * 10 + 2; return 22; }
+    private static int Throw() { _order = _order * 10 + 3; throw Failure; }
+    private static int AddOne(int value) => value + 1;
+}

@@ -30,7 +30,7 @@ internal sealed class MethodFrameExitEmitter(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave))));
         }
-        if (context.RootMap.SlotCount != 0)
+        if (context.RootSlotCount != 0)
         {
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,

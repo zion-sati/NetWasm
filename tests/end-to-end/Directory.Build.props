@@ -1,0 +1,6 @@
+<Project>
+  <Import Project="../../Directory.Build.props" />
+  <PropertyGroup>
+    <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">None</NetWasmOptimization>
+  </PropertyGroup>
+</Project>

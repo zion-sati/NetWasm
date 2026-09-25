@@ -25,6 +25,7 @@ public sealed class NumericInstructionEmitterTests
             new ExceptionalNumericInstructionEmitter(
                 layouts,
                 new CheckedBinaryEmitter(layouts.Target, exceptions),
+                new FloatingRemainderEmitter(),
                 exceptions));
         var commands = emitter.Commands;
 

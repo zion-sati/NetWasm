@@ -87,6 +87,8 @@ jobs:
 
       - name: Build and test
         shell: bash
+        env:
+          NETWASM_CORPUS_PROFILE: Fast
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           npm ci --ignore-scripts --no-audit --no-fund
@@ -95,6 +97,9 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s eng/tests -p 'test_*.py'
           dotnet restore NetWasm.slnx --disable-build-servers --nologo
           dotnet build NetWasm.slnx -c Release --no-restore --disable-build-servers --nologo
+          export NETWASM_TIMEZONE_ASSET_PATH="$(
+            bash eng/prepare-timezone-test-asset.sh "$RUNNER_TEMP/timezone-assets"
+          )"
           dotnet test NetWasm.slnx -c Release --no-build --no-restore --disable-build-servers --nologo
 
   package:

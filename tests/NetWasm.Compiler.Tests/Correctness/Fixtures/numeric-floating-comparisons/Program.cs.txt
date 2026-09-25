@@ -1,0 +1,183 @@
+using System;
+
+namespace NetWasm.Correctness.FloatingComparisons;
+
+public static class EntryPoint
+{
+    // NaNs of either sign, then ordered -infinity, negative finite values,
+    // negative/positive zero, positive finite values and +infinity.
+    private static readonly int[] Singles =
+    [
+        unchecked((int)0xffc00001U), 0x7fc00001, unchecked((int)0xff800000U), unchecked((int)0xff7fffffU), unchecked((int)0xbf800000U), unchecked((int)0x80800000U), unchecked((int)0x80000001U), unchecked((int)0x80000000U),
+        0x0, 0x1, 0x800000, 0x3f800000, 0x7f7fffff, 0x7f800000
+    ];
+    private static readonly long[] Doubles =
+    [
+        unchecked((long)0xfff8000000000001UL), 0x7ff8000000000001L, unchecked((long)0xfff0000000000000UL), unchecked((long)0xffefffffffffffffUL), unchecked((long)0xbff0000000000000UL), unchecked((long)0x8010000000000000UL), unchecked((long)0x8000000000000001UL), unchecked((long)0x8000000000000000UL),
+        0x0L, 0x1L, 0x10000000000000L, 0x3ff0000000000000L, 0x7fefffffffffffffL, 0x7ff0000000000000L
+    ];
+
+    // Independent relation table from the declared ordering, with zero signs
+    // equivalent. NaN makes operators unordered but Equals/CompareTo follow
+    // their separate .NET contracts. Table index = left * 14 + right.
+    private static readonly int[] ExpectedOperators =
+    [
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 49, 22,
+        22, 22, 22, 22, 22, 22, 22, 22,
+        22, 22, 2, 2, 42, 49, 22, 22,
+        22, 22, 22, 22, 22, 22, 22, 22,
+        2, 2, 42, 42, 49, 22, 22, 22,
+        22, 22, 22, 22, 22, 22, 2, 2,
+        42, 42, 42, 49, 22, 22, 22, 22,
+        22, 22, 22, 22, 2, 2, 42, 42,
+        42, 42, 49, 22, 22, 22, 22, 22,
+        22, 22, 2, 2, 42, 42, 42, 42,
+        42, 49, 49, 22, 22, 22, 22, 22,
+        2, 2, 42, 42, 42, 42, 42, 49,
+        49, 22, 22, 22, 22, 22, 2, 2,
+        42, 42, 42, 42, 42, 42, 42, 49,
+        22, 22, 22, 22, 2, 2, 42, 42,
+        42, 42, 42, 42, 42, 42, 49, 22,
+        22, 22, 2, 2, 42, 42, 42, 42,
+        42, 42, 42, 42, 42, 49, 22, 22,
+        2, 2, 42, 42, 42, 42, 42, 42,
+        42, 42, 42, 42, 49, 22, 2, 2,
+        42, 42, 42, 42, 42, 42, 42, 42,
+        42, 42, 42, 49
+    ];
+    private static readonly int[] ExpectedEquals =
+    [
+        1, 1, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 1, 1, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1
+    ];
+    private static readonly int[] ExpectedOrder =
+    [
+        0, 0, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, 0, 0,
+        -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, 1, 1, 0, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, 1, 1, 1, 0, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1,
+        1, 1, 1, 1, 0, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, 1, 1,
+        1, 1, 1, 0, -1, -1, -1, -1,
+        -1, -1, -1, -1, 1, 1, 1, 1,
+        1, 1, 0, -1, -1, -1, -1, -1,
+        -1, -1, 1, 1, 1, 1, 1, 1,
+        1, 0, 0, -1, -1, -1, -1, -1,
+        1, 1, 1, 1, 1, 1, 1, 0,
+        0, -1, -1, -1, -1, -1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 0,
+        -1, -1, -1, -1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, -1,
+        -1, -1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, -1, -1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 0, -1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 0
+    ];
+
+    private static long _left;
+    private static long _right;
+    private static int _operators;
+    private static int _branches;
+    private static int _equals;
+    private static int _order;
+    private static int _kind;
+
+    public static int Run(int input)
+    {
+        var single = input < 196;
+        var pair = input % 196;
+        var left = pair / 14;
+        var right = pair % 14;
+        _kind = single ? 4 : 5;
+        if (single)
+        {
+            _left = Singles[left];
+            _right = Singles[right];
+            Observe(BitConverter.Int32BitsToSingle(Singles[left]), BitConverter.Int32BitsToSingle(Singles[right]));
+        }
+        else
+        {
+            _left = Doubles[left];
+            _right = Doubles[right];
+            Observe(BitConverter.Int64BitsToDouble(Doubles[left]), BitConverter.Int64BitsToDouble(Doubles[right]));
+        }
+        if (_operators != ExpectedOperators[pair]) return -1;
+        if (_branches != (ExpectedOperators[pair] ^ 63)) return -2;
+        if (_equals != ExpectedEquals[pair]) return -3;
+        if (_order != ExpectedOrder[pair]) return -4;
+        return 42;
+    }
+
+    private static void Observe(float left, float right)
+    {
+        _operators = (left == right ? 1 : 0) | (left != right ? 2 : 0)
+            | (left < right ? 4 : 0) | (left > right ? 8 : 0)
+            | (left <= right ? 16 : 0) | (left >= right ? 32 : 0);
+        _branches = 0;
+        if (!(left == right)) _branches |= 1;
+        if (!(left != right)) _branches |= 2;
+        if (!(left < right)) _branches |= 4;
+        if (!(left > right)) _branches |= 8;
+        if (!(left <= right)) _branches |= 16;
+        if (!(left >= right)) _branches |= 32;
+        _equals = left.Equals(right) ? 1 : 0;
+        var order = left.CompareTo(right);
+        _order = order < 0 ? -1 : order > 0 ? 1 : 0;
+    }
+
+    private static void Observe(double left, double right)
+    {
+        _operators = (left == right ? 1 : 0) | (left != right ? 2 : 0)
+            | (left < right ? 4 : 0) | (left > right ? 8 : 0)
+            | (left <= right ? 16 : 0) | (left >= right ? 32 : 0);
+        _branches = 0;
+        if (!(left == right)) _branches |= 1;
+        if (!(left != right)) _branches |= 2;
+        if (!(left < right)) _branches |= 4;
+        if (!(left > right)) _branches |= 8;
+        if (!(left <= right)) _branches |= 16;
+        if (!(left >= right)) _branches |= 32;
+        _equals = left.Equals(right) ? 1 : 0;
+        var order = left.CompareTo(right);
+        _order = order < 0 ? -1 : order > 0 ? 1 : 0;
+    }
+
+    public static int Trace() => 6;
+    public static int TraceCount() => 6;
+    public static int TraceKind(int index) => index < 2 ? _kind : 2;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index switch { 0 => _left, 1 => _right, 2 => _operators, 3 => _branches, 4 => _equals, 5 => _order, _ => throw new ArgumentOutOfRangeException(nameof(index)) };
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

@@ -80,8 +80,10 @@ namespace System
         public static void Clear(Array array, int index, int length)
         {
             ArgumentNullException.ThrowIfNull(array);
-            ValidateRange(array.Length, index, length);
-            InternalClear(array, index, length);
+            var offset = (long)index - array.GetLowerBound(0);
+            if (offset < 0 || offset > array.Length || length < 0 || length > array.Length - offset)
+                throw new IndexOutOfRangeException();
+            InternalClear(array, (int)offset, length);
         }
 
         public static void Copy<T>(
@@ -89,7 +91,7 @@ namespace System
             int sourceIndex,
             T[] destinationArray,
             int destinationIndex,
-            int length) => Copy(
+            int length) => CopyPhysical(
                 (Array)sourceArray,
                 sourceIndex,
                 destinationArray,
@@ -98,7 +100,9 @@ namespace System
 
         public static void Copy(Array sourceArray, Array destinationArray, int length)
         {
-            Copy(sourceArray, 0, destinationArray, 0, length);
+            // The first element is always at physical offset zero, including
+            // ARRAY instances whose public indices start at a non-zero bound.
+            CopyPhysical(sourceArray, 0, destinationArray, 0, length);
         }
 
         public static void Copy(Array sourceArray, Array destinationArray, long length)
@@ -119,13 +123,40 @@ namespace System
             {
                 throw new RankException();
             }
-            ValidateRange(sourceArray.Length, sourceIndex, length);
-            ValidateRange(destinationArray.Length, destinationIndex, length);
+            if (length < 0) throw new ArgumentOutOfRangeException();
+            var sourceOffset = (long)sourceIndex - sourceArray.GetLowerBound(0);
+            var destinationOffset = (long)destinationIndex - destinationArray.GetLowerBound(0);
+            if (sourceOffset < 0 || destinationOffset < 0)
+            {
+                throw new ArgumentOutOfRangeException();
+            }
+            if (sourceOffset > int.MaxValue || destinationOffset > int.MaxValue)
+            {
+                throw new ArgumentException();
+            }
+            CopyPhysical(sourceArray, (int)sourceOffset, destinationArray, (int)destinationOffset, length);
+        }
+
+        private static void CopyPhysical(
+            Array sourceArray,
+            int sourceOffset,
+            Array destinationArray,
+            int destinationOffset,
+            int length)
+        {
+            ArgumentNullException.ThrowIfNull(sourceArray);
+            ArgumentNullException.ThrowIfNull(destinationArray);
+            if (sourceArray.Rank != destinationArray.Rank)
+            {
+                throw new RankException();
+            }
+            ValidateRange(sourceArray.Length, sourceOffset, length);
+            ValidateRange(destinationArray.Length, destinationOffset, length);
             var status = InternalCopy(
                 sourceArray,
-                sourceIndex,
+                sourceOffset,
                 destinationArray,
-                destinationIndex,
+                destinationOffset,
                 length);
             if (status == ArrayCopyStatus.TypeMismatch)
             {
@@ -656,13 +687,15 @@ namespace System
         }
         public int GetUpperBound(int dimension)
         {
-            return GetLength(dimension) - 1;
+            return unchecked(GetLowerBound(dimension) + GetLength(dimension) - 1);
         }
 
         public object? GetValue(int index)
         {
-            if (this is object[] values) return values[index];
-            throw new PlatformNotSupportedException();
+            if (Rank != 1) throw new ArgumentException();
+            var offset = (long)index - GetLowerBound(0);
+            if (offset < 0 || offset >= Length) throw new IndexOutOfRangeException();
+            return InternalGetValue(this, (int)offset);
         }
 
         public object? GetValue(params int[] indices)
@@ -725,7 +758,33 @@ namespace System
         public Collections.IEnumerator GetEnumerator()
         {
             if (this is object[] values) return new SZArrayEnumerator<object>(values);
+            return new ArrayEnumerator(this);
+        }
+
+        private static object? InternalGetValue(Array array, int offset) =>
             throw new PlatformNotSupportedException();
+
+        private sealed class ArrayEnumerator(Array array) : Collections.IEnumerator
+        {
+            private int _index = -1;
+
+            public object Current => _index >= 0 && _index < array.Length
+                ? InternalGetValue(array, _index)!
+                : throw new InvalidOperationException();
+
+            public bool MoveNext()
+            {
+                var next = _index + 1;
+                if (next < array.Length)
+                {
+                    _index = next;
+                    return true;
+                }
+                _index = array.Length;
+                return false;
+            }
+
+            public void Reset() => _index = -1;
         }
 
         public void Initialize()

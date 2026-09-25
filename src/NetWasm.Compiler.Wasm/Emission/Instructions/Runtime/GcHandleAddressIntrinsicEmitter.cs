@@ -17,6 +17,6 @@ internal sealed class GcHandleAddressIntrinsicEmitter(IRuntimeImportResolver run
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.GcHandleAddress))));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
-            WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.ManagedAddress))));
+            WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.NativeInt))));
     }
 }

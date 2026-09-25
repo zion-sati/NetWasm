@@ -38,8 +38,10 @@ internal static class MethodEmissionContextFactory
         var exceptionTemporary = checked(rootFrame + 1);
         var exceptionFrameLocals = new Dictionary<StructuredExceptionGroupId, int>();
         var exceptionContinuationLocals = new Dictionary<StructuredExceptionGroupId, int>();
+        var exceptionRootSlots = new Dictionary<StructuredExceptionGroupId, int>();
         for (var index = 0; index < exceptionGroups.Count; index++)
         {
+            exceptionRootSlots.Add(exceptionGroups[index], checked(rootMap.SlotCount + index));
             exceptionFrameLocals.Add(
                 exceptionGroups[index],
                 checked(exceptionTemporary + 1 + index));
@@ -81,7 +83,10 @@ internal static class MethodEmissionContextFactory
             numericTemporaryI4,
             numericTemporaryI8,
             dispatcherProgramCounter,
-            CallerIdentity: callerIdentity);
+            CallerIdentity: callerIdentity)
+        {
+            ExceptionRootSlots = exceptionRootSlots.ToImmutableDictionary(),
+        };
         return new MethodEmissionLayout(context, localTypes);
     }
 }

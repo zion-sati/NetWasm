@@ -171,10 +171,10 @@ internal static class CompilerTestSupport
             $"const memory=new WebAssembly.Memory({memoryDescriptorText});" +
             "let heap=16;let initialized=false;let environmentReads=0;" +
             "let lastException=0;" +
-            "let targetFrame=0;let targetClause=0;" +
+            "let departedExceptionFrame=null;" +
             "let filterSearchFloor=0;let application=null;" +
             "let nextPollable=1;const watchedTokens=[];const weakHandles=[0];const gcHandles=[null];const canceledTokens=new Set();" +
-            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
+            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map(),valueTypePayloadOffsets=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
             "const z=()=>0;" +
             "const raw=size=>{const p=heap;heap=(heap+size+3)&~3;" +
             "const pages=Math.ceil(heap/65536);const current=memory.buffer.byteLength/65536;" +
@@ -226,17 +226,18 @@ internal static class CompilerTestSupport
             "const p=allocate(16,type);const v=new DataView(memory.buffer);" +
             "v.setInt32(p+4,length,true);v.setInt32(p+8,data,true);" +
             "v.setInt32(p+12,elementType,true);return p;};" +
-            "const rectangularArray=(rank,dims,type,element,size,refs)=>{" +
+            "const rectangularArray=(rank,dims,type,element,size,refs,bounded=false)=>{" +
             "if(rank<=0||rank>32)return 0;" +
             "const v=new DataView(memory.buffer),lengths=[];let total=1,stride=1;" +
             "for(let d=rank-1;d>=0;d--){const n=v.getInt32(dims+d*4,true);lengths[d]=n;" +
             "if(n<0||n>1073741823||n&&total>1073741823/n)return 0;total*=n;}" +
-            "const shape=raw(rank*8),data=total?raw(total*(refs?4:size)):0;" +
+            "const shape=raw(rank*(bounded?12:8)),data=total?raw(total*(refs?4:size)):0;" +
             "const result=allocate(24,type),out=new DataView(memory.buffer);" +
             "for(let d=rank-1;d>=0;d--){const n=lengths[d];out.setInt32(shape+d*8,n,true);" +
-            "out.setInt32(shape+d*8+4,stride,true);stride*=n;}" +
+            "out.setInt32(shape+d*8+4,stride,true);stride*=n;" +
+            "if(bounded)out.setInt32(shape+rank*8+d*4,out.getInt32(dims+(rank+d)*4,true),true);}" +
             "out.setInt32(result+4,total,true);out.setInt32(result+8,data,true);" +
-            "out.setInt32(result+12,element,true);out.setInt32(result+16,rank,true);" +
+            "out.setInt32(result+12,element,true);out.setInt32(result+16,bounded?rank|0x80000000:rank,true);" +
             "out.setInt32(result+20,shape,true);return result;};" +
             "const isTypeAssignable=(type,target)=>{" +
             "while(type){if(type===target||typeAssignable.get(type)?.has(target))return 1;type=typeBases.get(type)||0;}return 0;};" +
@@ -263,25 +264,34 @@ internal static class CompilerTestSupport
             "const arrayClone=source=>{const v=new DataView(memory.buffer),type=v.getInt32(source,true)," +
             "length=v.getInt32(source+4,true),element=v.getInt32(source+12,true)," +
             "size=valueTypeSizes.get(element);let clone;if(typeSizes.get(type)===24){" +
-            "const rank=v.getInt32(source+16,true),shape=v.getInt32(source+20,true),dims=raw(rank*4);" +
-            "for(let d=0;d<rank;d++)v.setInt32(dims+d*4,v.getInt32(shape+d*8,true),true);" +
-            "clone=rectangularArray(rank,dims,type,element,size||0,size===undefined?1:0);}" +
+            "const flags=v.getInt32(source+16,true),rank=flags&0x7fffffff,bounded=flags<0," +
+            "shape=v.getInt32(source+20,true),dims=raw(rank*(bounded?8:4));" +
+            "for(let d=0;d<rank;d++){v.setInt32(dims+d*4,v.getInt32(shape+d*8,true),true);" +
+            "if(bounded)v.setInt32(dims+(rank+d)*4,v.getInt32(shape+rank*8+d*4,true),true);}" +
+            "clone=rectangularArray(rank,dims,type,element,size||0,size===undefined?1:0,bounded);}" +
             "else clone=array(length,type,element,size||4);" +
             "return arrayCopy(source,0,clone,0,length)===0?clone:0;};" +
-            "const beginThrow=exception=>{lastException=exception;targetFrame=0;targetClause=0;" +
+            "const arrayGetValue=(array,index)=>{const v=new DataView(memory.buffer)," +
+            "length=v.getInt32(array+4,true);if(index<0||index>=length)throw Error('array index out of range');" +
+            "const data=v.getInt32(array+8,true),element=v.getInt32(array+12,true),size=valueTypeSizes.get(element);" +
+            "if(size===undefined)return v.getUint32(data+index*4,true);" +
+            "const boxed=allocate(typeSizes.get(element),element),payload=valueTypePayloadOffsets.get(element);" +
+            "new Uint8Array(memory.buffer,boxed+payload,size).set(new Uint8Array(memory.buffer,data+index*size,size));" +
+            "return boxed;};" +
+            "const beginThrow=exception=>{lastException=exception;" +
             "const v=new DataView(memory.buffer);" +
             "for(let frame=exceptionFrames.length;frame>filterSearchFloor;frame--){" +
-            "const f=exceptionFrames[frame-1];const raw=f.count>>>0;" +
+            "const f=exceptionFrames[frame-1];f.targetClause=0;const raw=f.count>>>0;" +
             "const filtered=(raw>>>31)!==0;const count=raw&0x7fffffff;" +
             "for(let clause=0;clause<count;clause++){let accepted=0;" +
             "if(filtered){const entry=f.metadata+clause*12;const kind=v.getInt32(entry,true);" +
             "if(kind===0)accepted=isAssignable(exception,v.getInt32(entry+4,true));" +
-            "else{const saved=[lastException,targetFrame,targetClause,filterSearchFloor];" +
+            "else{const saved=[lastException,filterSearchFloor];" +
             "filterSearchFloor=frame;accepted=application.exports['netwasm.filter'](" +
             "v.getInt32(entry+4,true),exception,f.environment);" +
-            "[lastException,targetFrame,targetClause,filterSearchFloor]=saved;}}" +
+            "[lastException,filterSearchFloor]=saved;}}" +
             "else accepted=isAssignable(exception,v.getInt32(f.metadata+clause*4,true));" +
-            "if(accepted){targetFrame=frame;targetClause=clause+1;return;}}}};" +
+            "if(accepted){f.targetClause=clause+1;return;}}}};" +
             "const runtime={memory,initialize:staticEnd=>{" +
             "if(!initialized){heap=(Number(staticEnd)+3)&~3;initialized=true;}},allocate," +
             "component_realloc:componentReallocate,component_free:z," +
@@ -291,20 +301,25 @@ internal static class CompilerTestSupport
             "register_type:(type,base,size,bitmap,bits,assignables,count,finalizer,isInterface)=>{" +
             "typeBases.set(type,base);typeSizes.set(type,size);const ids=new Set(),v=new DataView(memory.buffer);" +
             "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);if(isInterface)typeInterfaces.add(type);}," +
-            "register_value_type:(type,size)=>valueTypeSizes.set(type,size)," +
+            "register_value_type:(type,size,boxedPayloadOffset)=>{valueTypeSizes.set(type,size);valueTypePayloadOffsets.set(type,boxedPayloadOffset);}," +
             "register_static_root:z,root_frame_enter:rootEnter,root_frame_leave:rootLeave," +
             "value_frame_enter:valueEnter,value_frame_leave:valueLeave," +
             "handle_new:()=>0,handle_get:()=>0,handle_release:z," +
             "begin_throw:beginThrow,begin_rethrow:beginThrow," +
             "allocate_reference_array:array,allocate_value_array:array," +
             "allocate_rectangular_array:rectangularArray," +
+            "allocate_bounded_rectangular_array:(...args)=>rectangularArray(...args,true)," +
             "array_rank:array=>typeSizes.get(new DataView(memory.buffer).getInt32(array,true))===24" +
-            "?new DataView(memory.buffer).getInt32(array+16,true):1," +
+            "?(new DataView(memory.buffer).getInt32(array+16,true)&0x7fffffff):1," +
             "array_get_length:(array,dimension)=>{const v=new DataView(memory.buffer)," +
             "rect=typeSizes.get(v.getInt32(array,true))===24;if(!rect)return dimension===0" +
-            "?v.getInt32(array+4,true):-1;const rank=v.getInt32(array+16,true);" +
+            "?v.getInt32(array+4,true):-1;const rank=v.getInt32(array+16,true)&0x7fffffff;" +
             "return dimension<0||dimension>=rank?-1:" +
             "v.getInt32(v.getInt32(array+20,true)+dimension*8,true);}," +
+            "array_get_lower_bound:(array,dimension)=>{const v=new DataView(memory.buffer);" +
+            "if(typeSizes.get(v.getInt32(array,true))!==24)return 0;const flags=v.getInt32(array+16,true);" +
+            "return flags>=0?0:v.getInt32(v.getInt32(array+20,true)+(flags&0x7fffffff)*8+dimension*4,true);}," +
+            "array_get_value:arrayGetValue," +
             "array_copy:arrayCopy,array_clear:arrayClear,array_clone:arrayClone," +
             "allocate_string:allocateString,get_type_object:getTypeObject," +
             "suppress_finalize:z,weak_handle_new:(target,trackResurrection)=>{weakHandles.push(target);return weakHandles.length-1;},weak_handle_get:handle=>weakHandles[handle]??0,weak_handle_set:(handle,target)=>{weakHandles[handle]=target;},weak_handle_release:handle=>{weakHandles[handle]=0;},gc_handle_new:(target,kind)=>{gcHandles.push({target,kind});return((gcHandles.length-1)<<2)|kind;},gc_handle_get:handle=>gcHandles[handle>>2]?.target??0,gc_handle_set:(handle,target)=>{const entry=gcHandles[handle>>2];if(entry)entry.target=target;},gc_handle_release:handle=>{gcHandles[handle>>2]=null;},gc_handle_address:handle=>gcHandles[handle>>2]?.target??0,reregister_for_finalize:z," +
@@ -315,12 +330,12 @@ internal static class CompilerTestSupport
             "report_unobserved_task_exception:z," +
             "is_assignable:isAssignable,end_catch:()=>{lastException=0;}," +
             "exception_frame_enter:(metadata,count)=>{" +
-            "exceptionFrames.push({metadata,count,environment:0});return exceptionFrames.length;}," +
+            "exceptionFrames.push({metadata,count,environment:0,targetClause:0});return exceptionFrames.length;}," +
             "exception_frame_set_environment:(token,environment)=>{" +
             "exceptionFrames[token-1].environment=environment;}," +
             "exception_frame_leave:token=>{if(token!==exceptionFrames.length)throw Error('EH frame');" +
-            "exceptionFrames.pop();}," +
-            "exception_frame_target_clause:token=>token===targetFrame?targetClause:0," +
+            "departedExceptionFrame=exceptionFrames.pop();}," +
+            "exception_frame_target_clause:token=>{if(token!==exceptionFrames.length+1)throw Error('EH query');return departedExceptionFrame.targetClause;}," +
             "finalizer_safepoint:z,collect:z};" +
             "const wasiWallClock={now:result=>{const view=new DataView(memory.buffer);" +
             "view.setBigUint64(result,0n,true);view.setUint32(result+8,123000000,true);}," +

@@ -16,12 +16,18 @@ internal interface ICompilerHostRequestRunner
 
 internal sealed class CompilerHostApplication(
     INetWasmCompiler compiler,
-    IMetadataCompilationLoader metadataLoader) : ICompilerHostRequestRunner
+    IMetadataCompilationLoader metadataLoader,
+    ICompilerHostArtifactFormatter artifactFormatter,
+    ICompilerHostArtifactWriter artifactWriter) : ICompilerHostRequestRunner
 {
     private readonly INetWasmCompiler _compiler =
         compiler ?? throw new ArgumentNullException(nameof(compiler));
     private readonly IMetadataCompilationLoader _metadataLoader =
         metadataLoader ?? throw new ArgumentNullException(nameof(metadataLoader));
+    private readonly ICompilerHostArtifactFormatter _artifactFormatter =
+        artifactFormatter ?? throw new ArgumentNullException(nameof(artifactFormatter));
+    private readonly ICompilerHostArtifactWriter _artifactWriter =
+        artifactWriter ?? throw new ArgumentNullException(nameof(artifactWriter));
 
     public int Run(CompilationRequest request, string responsePath)
     {
@@ -48,16 +54,7 @@ internal sealed class CompilerHostApplication(
                 MetricsObserver: request.CollectCompilerMetrics ? metrics : null,
                 EnableFrontendCache: request.EnableFrontendCache,
                 IntermediateOutputPath: request.IntermediateOutputPath));
-            File.WriteAllBytes(request.ModulePath, result.ApplicationModule);
-            if (request.EmitStackTrace)
-            {
-                ArgumentException.ThrowIfNullOrWhiteSpace(
-                    request.StackTraceSymbolsPath);
-                File.WriteAllBytes(
-                    request.StackTraceSymbolsPath,
-                    result.StackTraceSymbols?.Bytes ?? throw new InvalidOperationException(
-                        "instrumented compilation produced no stack-trace sidecar"));
-            }
+            _artifactWriter.Write(_artifactFormatter.Format(request, result));
 
             using var metadata = request.ReferenceAssemblyAliases.Count == 0
                 ? _metadataLoader.Load(request.EntryAssemblyPath, request.ReferencePaths)

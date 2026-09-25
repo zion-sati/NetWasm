@@ -80,3 +80,30 @@ WASI description files
 wit/wasi-0.2.11 is copied with its upstream LICENSE.md and provenance files.
 Its upstream terms control those files and the WASI dependencies below the
 NetWasm WIT worlds.
+
+Sun fdlibm: managed transcendental math
+--------------------------------------
+Source: https://github.com/biosbits/fdlibm
+Commit: dfd9eaed985332a1c3af98c2bab4004eea217d3d
+Files: s_sin.c, s_cos.c, s_tan.c, k_sin.c, k_cos.c, k_tan.c,
+e_rem_pio2.c, k_rem_pio2.c, e_sinh.c, s_tanh.c, e_acosh.c,
+s_expm1.c, s_log1p.c, e_exp.c, e_log.c.
+
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunSoft, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+
+Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+
+Copyright 2004 Sun Microsystems, Inc. All Rights Reserved.
+
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.

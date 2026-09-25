@@ -103,7 +103,7 @@ public sealed class ExceptionAndReturnEmitterTests
         var request = CreateRequest(CilOperation.Rethrow, [CliValueKind.I4]);
         var actual = request with
         {
-            Context = request.Context with { LeaveFrameOnRethrow = leaveFrame },
+            Context = request.Context with { LeaveFrameOnRethrow = leaveFrame, ActiveCatchRootSlot = 0 },
         };
         RegisterInstructionWriter(actual,
             new EmitterTestSupport.RecordingInstructionWriter());
@@ -122,6 +122,35 @@ public sealed class ExceptionAndReturnEmitterTests
         Emit(CreateEmitter(), request);
 
         Assert.Empty(GetCodeBytes(request));
+    }
+
+    [Fact]
+    public void RethrowRejectsMissingLexicalCatchBeforeWritingInstructions()
+    {
+        var request = CreateRequest(CilOperation.Rethrow, []);
+        Assert.Throws<InvalidOperationException>(() => Emit(CreateEmitter(), request));
+        Assert.Empty(GetCodeBytes(request));
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void RethrowReloadsTheLexicalCatchRootBeforeDispatch(WasmTarget target)
+    {
+        var layout = WasmTargetLayout.For(target);
+        var request = CreateRequest(CilOperation.Rethrow, []);
+        var actual = request with { Context = request.Context with { ActiveCatchRootSlot = 3 } };
+        var code = new RecordingInstructionWriter();
+        RegisterInstructionWriter(actual, code);
+        Emit(CreateEmitter(target: layout), actual);
+        var instructions = code.ToInstructions();
+        Assert.Equal(WasmOpcodes.LocalGet, instructions[0].Opcode);
+        Assert.Equal((uint)actual.Context.RootFrame, instructions[0].Operand.UnsignedValue);
+        Assert.Equal(target == WasmTarget.Wasm64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load,
+            instructions[1].Opcode);
+        Assert.Equal((uint)(3 * layout.ObjectReferenceSize), instructions[1].Operand.Offset);
+        Assert.Equal(WasmOpcodes.LocalSet, instructions[2].Opcode);
+        Assert.Equal((uint)actual.Context.ExceptionTemporary, instructions[2].Operand.UnsignedValue);
     }
 
     [Fact]

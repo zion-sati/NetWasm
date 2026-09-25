@@ -15,7 +15,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 3;
+    private const ushort SchemaVersion = 4;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -154,6 +154,11 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 if (value.Definition.LiteralValue is ulong literal)
                 {
                     writer.Write(literal);
+                }
+                writer.Write(value.Definition.ExplicitOffset.HasValue);
+                if (value.Definition.ExplicitOffset is int offset)
+                {
+                    writer.Write(offset);
                 }
                 writer.Write(Type(value.Definition.SignatureType));
                 writer.Write(Type(value.DeclaringType));

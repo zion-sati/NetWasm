@@ -111,7 +111,7 @@ public sealed class StaticFieldInstructionEmitterTests
             {
                 StaticInitializerGuards = ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add(
                     guardKey,
-                    new(240, program.InitializerKey, null)),
+                    new(240, program.InitializerKey, null) { FunctionIndex = OptionalFunctionIndex.At(41) }),
             },
         };
         var indices = new FunctionIndexMap(
@@ -149,7 +149,7 @@ public sealed class StaticFieldInstructionEmitterTests
             {
                 StaticInitializerGuards = ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add(
                     guardKey,
-                    new(244, null, guardKey)),
+                    new(244, null, guardKey) { FunctionIndex = OptionalFunctionIndex.At(42) }),
             },
         };
         var indices = new FunctionIndexMap(
@@ -208,8 +208,9 @@ public sealed class StaticFieldInstructionEmitterTests
     {
         var layouts = new RecordingLayoutProvider();
         var actualProgram = program ?? StaticProgram.For(CliValueKind.I4);
-        return new(actualProgram, actualProgram, actualProgram, layouts, layouts, layouts,
-            new AddressInstructionEmitter(layouts));
+        return new(actualProgram, layouts, layouts, layouts,
+            new AddressInstructionEmitter(layouts),
+            new StaticInitializationEmitter(actualProgram, actualProgram, new AddressInstructionEmitter(layouts)));
     }
 
     private static InstructionEmissionRequest CreateRequest(

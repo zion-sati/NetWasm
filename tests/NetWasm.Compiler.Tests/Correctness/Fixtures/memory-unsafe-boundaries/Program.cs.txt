@@ -1,0 +1,313 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NetWasm.Correctness.UnsafeBoundaries;
+
+public struct ReferencePair { public object? Reference; public int Number; }
+
+public static class EntryPoint
+{
+    public static unsafe int Run(int input)
+    {
+        switch (input)
+        {
+            case 0:
+            {
+                byte[] bytes = [99, 0x78, 0x56, 0x34, 0x12, 88];
+                return Unsafe.ReadUnaligned<int>(ref bytes[1]) == 0x12345678 &&
+                    bytes[0] == 99 && bytes[5] == 88 ? 42 : -1;
+            }
+            case 1:
+            {
+                byte[] bytes = [99, 0, 0, 0, 0, 0, 0, 0, 0, 88];
+                Unsafe.WriteUnaligned(ref bytes[1], 0x0102030405060708L);
+                for (var index = 1; index <= 8; index++)
+                    if (bytes[index] != 9 - index) return -2;
+                return bytes[0] == 99 && bytes[9] == 88 ? 42 : -3;
+            }
+            case 2:
+            {
+                var values = new[] { 11 };
+                Span<int>.Empty.CopyTo(values);
+                return values[0] == 11 && Span<int>.Empty.TryCopyTo(Span<int>.Empty) ? 42 : -4;
+            }
+            case 3:
+            {
+                int[] values = [1, 2, 3, 4, 5];
+                values.AsSpan(0, 4).CopyTo(values.AsSpan(1));
+                return values[0] == 1 && values[1] == 1 && values[2] == 2 &&
+                    values[3] == 3 && values[4] == 4 ? 42 : -5;
+            }
+            case 4:
+            {
+                int[] values = [1, 2, 3, 4, 5];
+                values.AsSpan(1).CopyTo(values.AsSpan(0, 4));
+                return values[0] == 2 && values[1] == 3 && values[2] == 4 &&
+                    values[3] == 5 && values[4] == 5 ? 42 : -6;
+            }
+            case 5:
+            {
+                int[] source = [1, 2];
+                int[] destination = [99];
+                return !source.AsSpan().TryCopyTo(destination) && destination[0] == 99 ? 42 : -7;
+            }
+            case 6:
+            {
+                Span<int> span = new int[1];
+                return span.Slice(1, 0).Length == 0 && span.Slice(1).IsEmpty ? 42 : -8;
+            }
+            case 7:
+            {
+                Span<int> span = new int[1];
+                try { _ = span.Slice(-1); return -9; }
+                catch (ArgumentOutOfRangeException) { return 42; }
+            }
+            case 8:
+            {
+                Span<int> span = new int[1];
+                try { _ = span[1]; return -10; }
+                catch (IndexOutOfRangeException) { return 42; }
+            }
+            case 9:
+            {
+                var bytes = new byte[12];
+                bytes[0] = 99;
+                bytes[11] = 88;
+                var integers = MemoryMarshal.Cast<byte, uint>(bytes.AsSpan());
+                integers[1] = 0x44332211;
+                return integers.Length == 3 && bytes[4] == 0x11 && bytes[5] == 0x22 &&
+                    bytes[6] == 0x33 && bytes[7] == 0x44 && bytes[0] == 99 && bytes[11] == 88 ? 42 : -11;
+            }
+            case 10:
+            {
+                byte[] bytes = [1, 2, 3];
+                return !MemoryMarshal.TryRead<int>(bytes, out var value) && value == 0 ? 42 : -12;
+            }
+            case 11:
+            {
+                byte[] bytes = [1, 2, 3];
+                try { _ = MemoryMarshal.Read<int>(bytes); return -13; }
+                catch (ArgumentOutOfRangeException) { return 42; }
+            }
+            case 12:
+            {
+                var values = new ReferencePair[1];
+                try { _ = MemoryMarshal.AsBytes(values.AsSpan()); return -14; }
+                catch (ArgumentException) { return 42; }
+            }
+            case 13:
+            {
+                int[] values = [11, 22];
+                ref var first = ref MemoryMarshal.GetArrayDataReference(values);
+                var writable = MemoryMarshal.CreateSpan(ref first, 2);
+                var readable = MemoryMarshal.CreateReadOnlySpan(in first, 2);
+                writable[1] = 42;
+                return values[0] == 11 && values[1] == 42 && readable[1] == 42 &&
+                    Unsafe.AreSame(ref Unsafe.Add(ref first, 1), ref values[1]) ? 42 : -15;
+            }
+            case 14:
+            {
+                var bytes = new byte[8];
+                ref var first = ref bytes[0];
+                ref var selected = ref Unsafe.AddByteOffset(ref first, (nint)5);
+                selected = 42;
+                return bytes[5] == 42 && Unsafe.ByteOffset(ref first, ref selected) == 5 &&
+                    Unsafe.ByteOffset(ref selected, ref first) == -5 ? 42 : -16;
+            }
+            case 15:
+            {
+                Span<int> empty = default;
+                fixed (int* pointer = empty) return pointer == null ? 42 : -17;
+            }
+            case 16:
+            {
+                int[] values = [11, 22];
+                fixed (int* pointer = values.AsSpan()) pointer[1] = 42;
+                return values[0] == 11 && values[1] == 42 ? 42 : -18;
+            }
+            case 17:
+            {
+                Span<int> values = stackalloc int[4];
+                values.Fill(7);
+                values[0] = 11;
+                values[3] = 42;
+                return values[0] == 11 && values[1] == 7 && values[2] == 7 && values[3] == 42 ? 42 : -19;
+            }
+            case 18:
+            {
+                Span<int> empty = default;
+                return Unsafe.IsNullRef(ref MemoryMarshal.GetReference(empty)) ? 42 : -20;
+            }
+            case 19:
+            {
+                byte[] bytes = [1, 2, 3, 4, 99, 98, 97, 96, 0, 0, 0, 0];
+                Unsafe.CopyBlockUnaligned(ref bytes[8], ref bytes[0], 4);
+                return bytes[8] == 1 && bytes[9] == 2 && bytes[10] == 3 && bytes[11] == 4 &&
+                    bytes[4] == 99 && bytes[7] == 96 ? 42 : -21;
+            }
+            case 20:
+            {
+                byte[] bytes = [99, 0, 0, 0, 88];
+                Unsafe.InitBlockUnaligned(ref bytes[1], 42, 3);
+                return bytes[0] == 99 && bytes[1] == 42 && bytes[2] == 42 &&
+                    bytes[3] == 42 && bytes[4] == 88 ? 42 : -22;
+            }
+            case 21:
+            {
+                byte[] bytes = [1, 2, 3, 4, 5];
+                Buffer.BlockCopy(bytes, 0, bytes, 1, 4);
+                return bytes[0] == 1 && bytes[1] == 1 && bytes[2] == 2 &&
+                    bytes[3] == 3 && bytes[4] == 4 ? 42 : -23;
+            }
+            case 22:
+            {
+                var marker = new object();
+                var values = new ReferencePair[2];
+                values.AsSpan().Fill(new ReferencePair { Reference = marker, Number = 42 });
+                values.AsSpan(1).Clear();
+                return ReferenceEquals(values[0].Reference, marker) && values[0].Number == 42 &&
+                    values[1].Reference is null && values[1].Number == 0 ? 42 : -24;
+            }
+            case 23:
+            {
+                byte[] bytes = [11, 22, 33];
+                var value = 42;
+                return !MemoryMarshal.TryWrite(bytes.AsSpan(), in value) && bytes[0] == 11 &&
+                    bytes[1] == 22 && bytes[2] == 33 ? 42 : -25;
+            }
+            case 24:
+            case 25:
+            case 26:
+            case 27:
+                return ShortMemoryMarshalBuffer(input - 24);
+            case 28:
+            {
+                byte[] bytes = [99, 0, 0, 0, 0, 88];
+                var span = bytes.AsSpan(1, sizeof(int));
+                var value = 0x12345678;
+                MemoryMarshal.Write(span, in value);
+                if (MemoryMarshal.Read<int>(span) != value ||
+                    MemoryMarshal.AsRef<int>((ReadOnlySpan<byte>)span) != value) return -26;
+                MemoryMarshal.AsRef<int>(span) = 42;
+                if (!MemoryMarshal.TryRead<int>(span, out var read) || read != 42) return -27;
+                return MemoryMarshal.TryWrite(span, in value) &&
+                    MemoryMarshal.Read<int>(span) == value &&
+                    bytes[0] == 99 && bytes[5] == 88 ? 42 : -28;
+            }
+            case 29:
+                return ReadReferenceContainingType();
+            case 30:
+                return WriteReferenceContainingType();
+            case 31:
+                return AsWritableReferenceContainingType();
+            case 32:
+                return AsReadOnlyReferenceContainingType();
+            case 33:
+                return TryReadReferenceContainingType();
+            case 34:
+                return TryWriteReferenceContainingType();
+            case >= 35 and <= 46:
+                return ShortMemoryMarshalBuffer(input - 31);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    private static int ShortMemoryMarshalBuffer(int selector)
+    {
+        // Empty through one-byte-short buffers must reject before reading/writing.
+        var operation = selector % 4;
+        var length = selector / 4;
+        byte[] bytes = [11, 22, 33, 44];
+        var span = bytes.AsSpan(0, length);
+        try
+        {
+            switch (operation)
+            {
+                case 0: _ = MemoryMarshal.Read<int>(span); break;
+                case 1:
+                    var value = 42;
+                    MemoryMarshal.Write(span, in value);
+                    break;
+                case 2: _ = MemoryMarshal.AsRef<int>(span); break;
+                case 3: _ = MemoryMarshal.AsRef<int>((ReadOnlySpan<byte>)span); break;
+                default: throw new InvalidOperationException();
+            }
+            return -29;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return bytes[0] == 11 && bytes[1] == 22 && bytes[2] == 33 && bytes[3] == 44 ? 42 : -30;
+        }
+    }
+
+    // Each API must reject reference-containing types before checking length.
+    private static int ReadReferenceContainingType()
+    {
+        try
+        {
+            _ = MemoryMarshal.Read<ReferencePair>(ReadOnlySpan<byte>.Empty);
+            return -31;
+        }
+        catch (ArgumentOutOfRangeException) { return -32; }
+        catch (ArgumentException) { return 42; }
+    }
+
+    private static int WriteReferenceContainingType()
+    {
+        var value = new ReferencePair { Reference = new object(), Number = 42 };
+        try
+        {
+            MemoryMarshal.Write(Span<byte>.Empty, in value);
+            return -31;
+        }
+        catch (ArgumentOutOfRangeException) { return -32; }
+        catch (ArgumentException) { return 42; }
+    }
+
+    private static int AsWritableReferenceContainingType()
+    {
+        try
+        {
+            _ = MemoryMarshal.AsRef<ReferencePair>(Span<byte>.Empty);
+            return -31;
+        }
+        catch (ArgumentOutOfRangeException) { return -32; }
+        catch (ArgumentException) { return 42; }
+    }
+
+    private static int AsReadOnlyReferenceContainingType()
+    {
+        try
+        {
+            _ = MemoryMarshal.AsRef<ReferencePair>(ReadOnlySpan<byte>.Empty);
+            return -31;
+        }
+        catch (ArgumentOutOfRangeException) { return -32; }
+        catch (ArgumentException) { return 42; }
+    }
+
+    private static int TryReadReferenceContainingType()
+    {
+        try
+        {
+            _ = MemoryMarshal.TryRead<ReferencePair>(ReadOnlySpan<byte>.Empty, out _);
+            return -31;
+        }
+        catch (ArgumentOutOfRangeException) { return -32; }
+        catch (ArgumentException) { return 42; }
+    }
+
+    private static int TryWriteReferenceContainingType()
+    {
+        var value = new ReferencePair { Reference = new object(), Number = 42 };
+        try
+        {
+            _ = MemoryMarshal.TryWrite(Span<byte>.Empty, in value);
+            return -31;
+        }
+        catch (ArgumentOutOfRangeException) { return -32; }
+        catch (ArgumentException) { return 42; }
+    }
+}

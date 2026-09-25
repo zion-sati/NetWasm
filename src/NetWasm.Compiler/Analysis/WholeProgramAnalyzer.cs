@@ -503,6 +503,11 @@ internal sealed class ReachabilityClosureBuilder(
         void VisitMethod(CilOperation operation, MethodInstanceModel target)
         {
             EnqueueInstance(target);
+            if (target.Definition.IsStatic && target.Definition.Name != ".cctor" &&
+                !_typeRepository.GetTypeDefinition(target.Definition.DeclaringType).IsBeforeFieldInit)
+            {
+                EnsureTypeInitialized(target.Definition.DeclaringType, target.DeclaringType);
+            }
             types.Add(target.Definition.DeclaringType);
             AddConstructedType(target.DeclaringType);
             foreach (var argument in target.MethodArguments)
@@ -556,9 +561,13 @@ internal sealed class ReachabilityClosureBuilder(
             }
 
             EnsureModuleInitialized(field.Definition.Key.Assembly);
+            EnsureTypeInitialized(field.Definition.DeclaringType, field.DeclaringType);
+        }
 
+        void EnsureTypeInitialized(EntityKey definition, CliTypeIdentity declaringType)
+        {
             var initializer = _typeRepository
-                .GetTypeDefinition(field.Definition.DeclaringType)
+                .GetTypeDefinition(definition)
                 .Methods
                 .Select(_methodRepository.GetMethod)
                 .SingleOrDefault(candidate => candidate.Name == ".cctor");
@@ -566,11 +575,11 @@ internal sealed class ReachabilityClosureBuilder(
             {
                 return;
             }
-            if (field.DeclaringType.Shape == CliTypeShape.GenericInstantiation)
+            if (declaringType.Shape == CliTypeShape.GenericInstantiation)
             {
                 var constructedInitializer = ConstructedInstance(
                     initializer,
-                    field.DeclaringType.TypeArguments);
+                    declaringType.TypeArguments);
                 constructedStaticInitializers.Add(constructedInitializer.CanonicalName);
                 EnqueueInstance(constructedInitializer);
             }

@@ -1,0 +1,220 @@
+using System;
+using System.Collections.Generic;
+
+namespace RttiArrayOperations;
+
+public sealed class Item { }
+public interface ILeft { }
+public interface IRight { }
+public sealed class Both : ILeft, IRight { }
+public sealed class LeftOnly : ILeft { }
+
+public static class EntryPoint
+{
+    public static int Run(int input) => input switch
+    {
+        0 => CopyReducedValueArray(),
+        1 => CopyReferenceDowncast(),
+        2 => RejectUnrelatedZeroLengthCopy(),
+        3 => CopyThroughCovariantInterface(),
+        4 => StoreThroughCovariantInterface(),
+        5 => RejectStoreThroughCovariantInterface(),
+        6 => GenericStoreIntoCovariantArray(),
+        7 => RejectMutableCovariantAddress(),
+        8 => CopyOverlappingRanges(),
+        9 => CopyBetweenInterfaceArrays(),
+        10 => PartiallyCopyBetweenInterfaceArrays(),
+        11 => CopyZeroElementsBetweenInterfaceArrays(),
+        12 => GenericCopyUsesCopyExceptionContract(),
+        13 => RejectRankMismatchBeforeRangeValidation(),
+        14 => RejectNullBeforeRankAndRangeValidation(),
+        _ => -1,
+    };
+
+    private static int CopyReducedValueArray()
+    {
+        var source = new[] { -1 };
+        var destination = new uint[1];
+        Array.Copy(source, destination, 1);
+        return destination[0] == uint.MaxValue ? 42 : -2;
+    }
+
+    private static int CopyReferenceDowncast()
+    {
+        var source = new object[] { "ok", new object() };
+        var destination = new string[2];
+        try
+        {
+            Array.Copy(source, destination, source.Length);
+            return -3;
+        }
+        catch (InvalidCastException)
+        {
+            return destination[0] == "ok" && destination[1] is null ? 42 : -4;
+        }
+    }
+
+    private static int RejectUnrelatedZeroLengthCopy()
+    {
+        try
+        {
+            Array.Copy(Array.Empty<string>(), Array.Empty<Item>(), 0);
+            return -5;
+        }
+        catch (ArrayTypeMismatchException)
+        {
+            return 42;
+        }
+    }
+
+    private static int CopyThroughCovariantInterface()
+    {
+        ICollection<object> source = new string[] { "ok" };
+        var destination = new object[1];
+        source.CopyTo(destination, 0);
+        return (string)destination[0] == "ok" ? 42 : -6;
+    }
+
+    private static int StoreThroughCovariantInterface()
+    {
+        IList<object> values = new string[1];
+        values[0] = "ok";
+        return (string)values[0] == "ok" ? 42 : -7;
+    }
+
+    private static int RejectStoreThroughCovariantInterface()
+    {
+        IList<object> values = new string[1];
+        try
+        {
+            values[0] = new object();
+            return -8;
+        }
+        catch (ArrayTypeMismatchException)
+        {
+            return 42;
+        }
+    }
+
+    private static int GenericStoreIntoCovariantArray()
+    {
+        object[] values = new string[1];
+        Set(values, "ok");
+        try
+        {
+            Set(values, new object());
+            return -9;
+        }
+        catch (ArrayTypeMismatchException)
+        {
+            return (string)values[0] == "ok" ? 42 : -10;
+        }
+    }
+
+    private static void Set<T>(T[] values, T value) => values[0] = value;
+
+    private static int RejectMutableCovariantAddress()
+    {
+        object[] values = new string[1];
+        try
+        {
+            ref var value = ref Address(values);
+            value = "ok";
+            return -11;
+        }
+        catch (ArrayTypeMismatchException)
+        {
+            return 42;
+        }
+    }
+
+    private static ref object Address(object[] values) => ref values[0];
+
+    private static int CopyOverlappingRanges()
+    {
+        Array references = new object[] { "a", "b", "c" };
+        Array.Copy(references, 0, references, 1, 2);
+        var values = (object[])references;
+        if ((string)values[0] != "a" || (string)values[1] != "a" ||
+            (string)values[2] != "b") return -12;
+        Array.Copy(references, 1, references, 0, 2);
+        if ((string)values[0] != "a" || (string)values[1] != "b") return -13;
+        Array.Copy(references, 0, references, 0, 3);
+
+        Array numbers = new[] { 1, 2, 3 };
+        Array.Copy(numbers, 0, numbers, 1, 2);
+        var copied = (int[])numbers;
+        return copied[0] == 1 && copied[1] == 1 && copied[2] == 2 ? 42 : -14;
+    }
+
+    private static int CopyBetweenInterfaceArrays()
+    {
+        ILeft[] source = [new Both()];
+        IRight[] destination = new IRight[1];
+        Array.Copy((Array)source, 0, destination, 0, 1);
+        return ReferenceEquals(source[0], destination[0]) ? 42 : -15;
+    }
+
+    private static int PartiallyCopyBetweenInterfaceArrays()
+    {
+        ILeft[] source = [new Both(), new LeftOnly()];
+        IRight[] destination = new IRight[2];
+        try
+        {
+            Array.Copy((Array)source, 0, destination, 0, 2);
+            return -16;
+        }
+        catch (InvalidCastException)
+        {
+            return ReferenceEquals(source[0], destination[0]) &&
+                destination[1] is null ? 42 : -17;
+        }
+    }
+
+    private static int CopyZeroElementsBetweenInterfaceArrays()
+    {
+        Array.Copy((Array)Array.Empty<ILeft>(), 0, Array.Empty<IRight>(), 0, 0);
+        return 42;
+    }
+
+    private static int GenericCopyUsesCopyExceptionContract()
+    {
+        object[] source = ["ok", new object()];
+        string[] destination = new string[2];
+        try
+        {
+            Array.Copy(source, 0, destination, 0, 2);
+            return -18;
+        }
+        catch (InvalidCastException)
+        {
+            return destination[0] == "ok" && destination[1] is null ? 42 : -19;
+        }
+    }
+
+    private static int RejectRankMismatchBeforeRangeValidation()
+    {
+        try
+        {
+            Array.Copy(new int[1], -1, new int[1, 1], -1, -1);
+            return -20;
+        }
+        catch (RankException)
+        {
+            return 42;
+        }
+    }
+
+    private static int RejectNullBeforeRankAndRangeValidation()
+    {
+        try
+        {
+            Array.Copy(null!, -1, new int[1, 1], -1, -1);
+            return -21;
+        }
+        catch (ArgumentNullException)
+        {
+            return 42;
+        }
+    }
+}

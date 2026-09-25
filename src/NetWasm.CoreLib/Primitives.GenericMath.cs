@@ -609,8 +609,21 @@ public partial struct UInt64
     ];
 
     public static ulong CreateTruncating<TOther>(TOther value)
-        where TOther : Numerics.INumberBase<TOther> =>
-        TryConvert(value, out var result) ? result : throw new NotSupportedException();
+        where TOther : Numerics.INumberBase<TOther>
+    {
+        ulong result;
+
+        if (typeof(TOther) == typeof(ulong))
+        {
+            result = (ulong)(object)value;
+        }
+        else if (!TryConvertFromTruncating(value, out result) && !TOther.TryConvertToTruncating(value, out result))
+        {
+            throw new NotSupportedException();
+        }
+
+        return result;
+    }
 
     public string ToString(IFormatProvider? provider) => ToString();
 
@@ -718,6 +731,8 @@ public partial struct Single
     public static float CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
     {
         if (typeof(TOther) == typeof(float)) return (float)(object)value;
+        // Upstream Single.TryConvertFrom uses the direct Int128 cast for every policy.
+        if (typeof(TOther) == typeof(Int128)) return (float)(Int128)(object)value;
         if (TryCreate(value, out var result, saturating: false)) return result;
         if (TOther.TryConvertToChecked(value, out result)) return result;
         throw new NotSupportedException();
@@ -726,6 +741,7 @@ public partial struct Single
     public static float CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
     {
         if (typeof(TOther) == typeof(float)) return (float)(object)value;
+        if (typeof(TOther) == typeof(Int128)) return (float)(Int128)(object)value;
         if (TryCreate(value, out var result, saturating: true)) return result;
         if (TOther.TryConvertToSaturating(value, out result)) return result;
         throw new NotSupportedException();
@@ -734,6 +750,7 @@ public partial struct Single
     public static float CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
     {
         if (typeof(TOther) == typeof(float)) return (float)(object)value;
+        if (typeof(TOther) == typeof(Int128)) return (float)(Int128)(object)value;
         if (TryCreate(value, out var result, saturating: true)) return result;
         if (TOther.TryConvertToTruncating(value, out result)) return result;
         throw new NotSupportedException();
@@ -899,6 +916,8 @@ public partial struct Double
     public static double CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
     {
         if (typeof(TOther) == typeof(double)) return (double)(object)value;
+        // Upstream Double.TryConvertFrom uses the direct Int128 cast for every policy.
+        if (typeof(TOther) == typeof(Int128)) return (double)(Int128)(object)value;
         try { return Convert.ToDouble((object?)value); }
         catch { if (TOther.TryConvertToChecked<double>(value, out var result)) return result; throw new NotSupportedException(); }
     }
@@ -906,6 +925,7 @@ public partial struct Double
     public static double CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
     {
         if (typeof(TOther) == typeof(double)) return (double)(object)value;
+        if (typeof(TOther) == typeof(Int128)) return (double)(Int128)(object)value;
         try { return Convert.ToDouble((object?)value); }
         catch { if (TOther.TryConvertToSaturating<double>(value, out var result)) return result; throw new NotSupportedException(); }
     }
@@ -913,6 +933,7 @@ public partial struct Double
     public static double CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
     {
         if (typeof(TOther) == typeof(double)) return (double)(object)value;
+        if (typeof(TOther) == typeof(Int128)) return (double)(Int128)(object)value;
         try { return Convert.ToDouble((object?)value); }
         catch { if (TOther.TryConvertToTruncating<double>(value, out var result)) return result; throw new NotSupportedException(); }
     }
@@ -1051,8 +1072,8 @@ public partial struct Double
     internal const int SignificandLength = TrailingSignificandLength + 1;
 
     internal static double CreateDouble(bool sign, ushort exponent, ulong significand) =>
-        BitConverter.UInt64BitsToDouble((sign ? SignMask : 0UL) |
-            ((ulong)exponent << BiasedExponentShift) | (significand & TrailingSignificandMask));
+        BitConverter.UInt64BitsToDouble((sign ? SignMask : 0UL) +
+            ((ulong)exponent << BiasedExponentShift) + significand);
 
     public static double ExpM1(double value) => Math.Exp(value) - 1D;
     public static double Exp2M1(double value) => Math.Pow(2D, value) - 1D;

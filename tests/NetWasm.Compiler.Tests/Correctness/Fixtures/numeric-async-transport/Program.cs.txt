@@ -1,0 +1,107 @@
+using System;
+using NetWasm.Correctness.AsyncNumericFixtures;
+
+namespace NetWasm.Correctness.AsyncNumericTransport;
+
+public static class EntryPoint
+{
+    // Representation transport only: NaN payloads and decimal scale/sign are
+    // exact. Gates prove two real suspensions without threads or host timing.
+    private static readonly uint[] Singles =
+    [
+        0U, 0x80000000U, 1U, 0x80000001U, 0x007fffffU, 0x00800000U,
+        0x3f800000U, 0xbf800000U, 0x7f7fffffU, 0xff7fffffU,
+        0x7f800000U, 0xff800000U, 0x7fc00011U, 0xffc00011U, 0x7f800001U, 0xff800001U,
+    ];
+    private static readonly ulong[] Doubles =
+    [
+        0UL, 0x8000000000000000UL, 1UL, 0x8000000000000001UL,
+        0x000fffffffffffffUL, 0x0010000000000000UL,
+        0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7fefffffffffffffUL, 0xffefffffffffffffUL,
+        0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+    ];
+    private static readonly ushort[] Halves =
+    [
+        0, 0x8000, 1, 0x8001, 0x03ff, 0x0400, 0x3c00, 0xbc00,
+        0x7bff, 0xfbff, 0x7c00, 0xfc00, 0x7e11, 0xfe11, 0x7c01, 0xfc01,
+    ];
+    private static readonly ulong[] Integers =
+    [
+        0UL, 1UL, 0x7fffffffUL, 0x80000000UL, 0xffffffffUL,
+        0x7fffffffffffffffUL, 0x8000000000000000UL, 0xffffffffffffffffUL,
+    ];
+    private static readonly ulong[] High =
+    [
+        0UL, 0UL, 1UL, 0x7fffffffffffffffUL, 0x8000000000000000UL,
+        0xffffffffffffffffUL, 0x123456789abcdef0UL, 0xfedcba9876543210UL,
+    ];
+    private static readonly ulong[] Low =
+    [
+        0UL, 1UL, 0UL, 0xffffffffffffffffUL, 0UL,
+        0xffffffffffffffffUL, 0xfedcba9876543210UL, 0x123456789abcdef0UL,
+    ];
+    private static readonly int[] DecimalLow = [0, 0, 0, 0, 1, 10, -1, -1];
+    private static readonly int[] DecimalMid = [0, 0, 0, 0, 0, 0, -1, -1];
+    private static readonly int[] DecimalHigh = [0, 0, 0, 0, 0, 0, -1, -1];
+    private static readonly bool[] DecimalNegative = [false, true, false, true, false, true, false, true];
+    private static readonly byte[] DecimalScale = [0, 0, 28, 28, 28, 1, 0, 28];
+
+    public static unsafe int Run(int input)
+    {
+        var route = input % 4;
+        var index = input / 4;
+        if (index < 16)
+            return BitConverter.SingleToUInt32Bits(ControlledAwaitTransport.Run(BitConverter.UInt32BitsToSingle(Singles[index]), route)) == Singles[index] ? 42 : -1;
+        index -= 16;
+        if (index < 16)
+            return BitConverter.DoubleToUInt64Bits(ControlledAwaitTransport.Run(BitConverter.UInt64BitsToDouble(Doubles[index]), route)) == Doubles[index] ? 42 : -1;
+        index -= 16;
+        if (index < 16)
+            return BitConverter.HalfToUInt16Bits(ControlledAwaitTransport.Run(BitConverter.UInt16BitsToHalf(Halves[index]), route)) == Halves[index] ? 42 : -1;
+        index -= 16;
+        if (index < 8)
+        {
+            var value = new decimal(DecimalLow[index], DecimalMid[index], DecimalHigh[index], DecimalNegative[index], DecimalScale[index]);
+            var bits = decimal.GetBits(ControlledAwaitTransport.Run(value, route));
+            var flags = (DecimalNegative[index] ? int.MinValue : 0) | (DecimalScale[index] << 16);
+            return bits[0] == DecimalLow[index] && bits[1] == DecimalMid[index] &&
+                bits[2] == DecimalHigh[index] && bits[3] == flags ? 42 : -2;
+        }
+        index -= 8;
+        if (index < 8)
+            return ControlledAwaitTransport.Run(unchecked((long)Integers[index]), route) == unchecked((long)Integers[index]) ? 42 : -3;
+        index -= 8;
+        if (index < 8)
+            return ControlledAwaitTransport.Run(Integers[index], route) == Integers[index] ? 42 : -3;
+        index -= 8;
+        if (index < 8)
+        {
+            var value = new Int128(High[index], Low[index]);
+            return ControlledAwaitTransport.Run(value, route) == value ? 42 : -3;
+        }
+        index -= 8;
+        if (index < 8)
+        {
+            var value = new UInt128(High[index], Low[index]);
+            return ControlledAwaitTransport.Run(value, route) == value ? 42 : -3;
+        }
+        index -= 8;
+        if (index < 8)
+        {
+            var value = sizeof(nint) == 4 ? (nint)unchecked((int)Integers[index]) : (nint)unchecked((long)Integers[index]);
+            var result = ControlledAwaitTransport.Run(value, route);
+            var expected = sizeof(nint) == 4 ? unchecked((ulong)(long)(int)Integers[index]) : Integers[index];
+            return unchecked((ulong)(long)result) == expected ? 42 : -4;
+        }
+        index -= 8;
+        if (index < 8)
+        {
+            var value = sizeof(nuint) == 4 ? (nuint)unchecked((uint)Integers[index]) : (nuint)Integers[index];
+            var expected = sizeof(nuint) == 4 ? unchecked((uint)Integers[index]) : Integers[index];
+            return (ulong)ControlledAwaitTransport.Run(value, route) == expected ? 42 : -4;
+        }
+        throw new ArgumentOutOfRangeException(nameof(input));
+    }
+
+}

@@ -420,6 +420,11 @@ public sealed class TypedStackValidator(
                 stack.Add(CliValueKind.ManagedReference);
                 return;
             case CilOperation.NewRectangularArray:
+            case CilOperation.NewBoundedRectangularArray:
+                if (instruction.Operation == CilOperation.NewBoundedRectangularArray)
+                {
+                    PopRectangularIndices(body, instruction, stack);
+                }
                 PopRectangularIndices(body, instruction, stack);
                 stack.Add(CliValueKind.ManagedReference);
                 return;

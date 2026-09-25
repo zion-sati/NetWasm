@@ -98,6 +98,7 @@ internal static class InstructionFamilyCatalogFactory
                     CilOperation.StoreStaticField,
                     CilOperation.NewArray,
                     CilOperation.NewRectangularArray,
+                    CilOperation.NewBoundedRectangularArray,
                     CilOperation.LoadArrayLength,
                     CilOperation.LoadArrayElementReference,
                     CilOperation.StoreArrayElementReference,

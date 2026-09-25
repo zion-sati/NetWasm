@@ -1,0 +1,75 @@
+using System;
+
+namespace NetWasm.Correctness.GenericRecursion;
+
+public enum Marker : long { Edge = long.MinValue }
+public sealed class Node(int value) { public readonly int Value = value; }
+public readonly record struct Pair<TLeft, TRight>(TLeft Left, TRight Right);
+
+public interface IGenericReader { T Read<T>(T value); }
+public class GenericBase : IGenericReader
+{
+    public virtual T Read<T>(T value) => value;
+}
+public sealed class GenericDerived : GenericBase
+{
+    public int Calls;
+    public override T Read<T>(T value)
+    {
+        Calls++;
+        return base.Read(value);
+    }
+}
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        var receiver = new GenericDerived();
+        IGenericReader throughInterface = receiver;
+        GenericBase throughBase = receiver;
+        switch (input)
+        {
+            case 0:
+            {
+                var node = new Node(42);
+                var result = Echo(node, input + 1);
+                return ReferenceEquals(node, result) && result.Value == 42 ? 42 : -1;
+            }
+            case 1:
+                return Echo(Marker.Edge, input + 1) == Marker.Edge ? 42 : -2;
+            case 2:
+                return Echo<int?>(42, input + 1) == 42 ? 42 : -3;
+            case 3:
+                return Echo<int?>(null, input + 1) is null ? 42 : -4;
+            case 4:
+                return throughBase.Read(int.MinValue) == int.MinValue && receiver.Calls == 1 ? 42 : -5;
+            case 5:
+            {
+                var text = new string('q', 2);
+                return ReferenceEquals(throughInterface.Read(text), text) && receiver.Calls == 1 ? 42 : -6;
+            }
+            case 6:
+                return throughInterface.Read<Marker?>(Marker.Edge) == Marker.Edge && receiver.Calls == 1 ? 42 : -7;
+            case 7:
+                return throughBase.Read<Marker?>(null) is null && receiver.Calls == 1 ? 42 : -8;
+            case 8:
+            {
+                var node = new Node(42);
+                var pair = Flip(41, node, input - 5);
+                return pair.Left == 41 && ReferenceEquals(pair.Right, node) && pair.Right.Value == 42 ? 42 : -9;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    private static T Echo<T>(T value, int depth) => depth == 0 ? value : Echo(value, depth - 1);
+
+    private static Pair<TLeft, TRight> Flip<TLeft, TRight>(TLeft left, TRight right, int depth)
+    {
+        if (depth == 0) return new(left, right);
+        var swapped = Flip(right, left, depth - 1);
+        return new(swapped.Right, swapped.Left);
+    }
+}

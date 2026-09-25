@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "caseId": "collections.state-boundaries",
+  "featureIds": [
+    "S24"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "collections-state-boundaries/Program.cs.txt"
+  ],
+  "name": "CollectionStateBoundaries",
+  "namespace": "NetWasm.Correctness.CollectionStateBoundaries",
+  "entryMethod": "Run",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 1,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 2,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 3,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 4,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Collections": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.CollectionStateBoundaryTests.CollisionsMutationComparerFailuresAndViewsPreserveExactState"
+}

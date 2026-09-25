@@ -37,6 +37,7 @@ internal static class InstructionEmissionServiceCollectionExtensions
         services.AddSingleton<IInstructionCommandFactory,
             InstructionCommandFactory>();
         services.AddSingleton<ICheckedBinaryEmitter, CheckedBinaryEmitter>();
+        services.AddSingleton<IFloatingRemainderEmitter, FloatingRemainderEmitter>();
         services.AddSingleton<ConstantsStackEmitter>();
         services.AddSingleton<LocalsArgumentsEmitter>();
         services.AddSingleton<ExceptionAndReturnEmitter>();

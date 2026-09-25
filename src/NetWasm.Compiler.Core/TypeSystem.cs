@@ -403,6 +403,7 @@ public sealed record TypeDefinitionModel(
     public bool IsInterface { get; init; }
     public bool IsAbstract { get; init; }
     public bool IsSealed { get; init; }
+    public bool IsBeforeFieldInit { get; init; }
     public bool IsEnum { get; init; }
     public CliTypeIdentity EnumUnderlyingType { get; init; } =
         CliTypeIdentity.FromStackKind(CliValueKind.ValueType);
@@ -424,6 +425,7 @@ public sealed record FieldDefinitionModel(
 {
     public ImmutableArray<byte> InitialData { get; init; } = [];
     public ulong? LiteralValue { get; init; }
+    public int? ExplicitOffset { get; init; }
     public CliTypeIdentity SignatureType { get; init; } =
         CliTypeIdentity.FromStackKind(FieldType);
 
@@ -596,6 +598,8 @@ public enum RuntimeIntrinsic
     ArrayLength,
     ArrayRank,
     ArrayGetLength,
+    ArrayGetLowerBound,
+    ArrayGetValue,
     ArrayCopy,
     ArrayClear,
     ArrayClone,

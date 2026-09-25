@@ -410,7 +410,8 @@ public sealed class WasmModulePlannerTests
                 new StructuredExceptionGroupKeyFactory()),
             new TestStructuredMethodEmissionPlanner(
                 new ManagedMethodIdentityFactory(),
-                new TestCilTypeIdentityResolver()));
+                new TestCilTypeIdentityResolver()),
+            new StaticInitializerFunctionPlanner(layouts, program));
 
         var target = targetFactory.Create(request);
 

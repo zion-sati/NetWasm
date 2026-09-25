@@ -42,6 +42,7 @@ typedef struct {
     u32 has_finalizer;
     u32 is_interface;
     netwasm_address_t value_size;
+    netwasm_address_t boxed_payload_offset;
     int value_contains_references;
     int value_registered;
     int registered;
@@ -52,6 +53,9 @@ typedef struct {
     u32 clause_count;
     netwasm_address_t environment;
     u32 has_filters;
+    /* Search selects before unwind. Inner handled throws must not overwrite
+       the clause already selected on an enclosing frame. */
+    u32 target_clause;
 } ExceptionFrame;
 
 typedef struct {
@@ -108,8 +112,6 @@ static u32 stack_trace_initialized;
 static ExceptionFrame *exception_frames;
 static u32 exception_frame_capacity;
 static u32 exception_frame_top;
-static u32 dispatch_target_frame;
-static u32 dispatch_target_clause;
 static u32 filter_search_floor;
 static uintptr_t *tracked_allocations;
 static u32 tracked_capacity;
@@ -624,6 +626,7 @@ u32 exception_frame_enter(netwasm_address_t metadata_address, u32 clause_count)
     frame->has_filters = clause_count >> 31;
     frame->clause_count = clause_count & 0x7fffffffu;
     frame->environment = 0;
+    frame->target_clause = 0;
     return exception_frame_top;
 }
 
@@ -654,23 +657,24 @@ void exception_frame_leave(u32 token)
 __attribute__((export_name("exception_frame_target_clause")))
 u32 exception_frame_target_clause(u32 token)
 {
-    return token == dispatch_target_frame ? dispatch_target_clause : 0;
+    if (token == 0 || token != exception_frame_top + 1) {
+        __builtin_trap();
+    }
+    return exception_frames[token - 1].target_clause;
 }
 
 static void dispatch_exception(netwasm_reference_t exception)
 {
     dispatch_root = exception;
-    dispatch_target_frame = 0;
-    dispatch_target_clause = 0;
     for (u32 token = exception_frame_top; token > filter_search_floor; token--) {
         ExceptionFrame *frame = &exception_frames[token - 1];
+        frame->target_clause = 0;
         if (!frame->has_filters) {
             const u32 *catch_types =
                 (const u32 *)(uintptr_t)frame->metadata_address;
             for (u32 clause = 0; clause < frame->clause_count; clause++) {
                 if (is_assignable(exception, catch_types[clause])) {
-                    dispatch_target_frame = token;
-                    dispatch_target_clause = clause + 1;
+                    frame->target_clause = clause + 1;
                     return;
                 }
             }
@@ -685,8 +689,6 @@ static void dispatch_exception(netwasm_reference_t exception)
                 }
             } else {
                 netwasm_reference_t saved_root = dispatch_root;
-                u32 saved_frame = dispatch_target_frame;
-                u32 saved_clause = dispatch_target_clause;
                 u32 saved_floor = filter_search_floor;
                 filter_search_floor = token;
                 u32 accepted = netwasm_evaluate_filter(
@@ -695,15 +697,13 @@ static void dispatch_exception(netwasm_reference_t exception)
                     frame->environment);
                 filter_search_floor = saved_floor;
                 dispatch_root = saved_root;
-                dispatch_target_frame = saved_frame;
-                dispatch_target_clause = saved_clause;
+                frame = &exception_frames[token - 1];
                 if (!accepted) {
                     continue;
                 }
             }
             {
-                dispatch_target_frame = token;
-                dispatch_target_clause = clause + 1;
+                frame->target_clause = clause + 1;
                 return;
             }
         }
@@ -727,8 +727,6 @@ __attribute__((export_name("end_catch")))
 void end_catch(void)
 {
     dispatch_root = 0;
-    dispatch_target_frame = 0;
-    dispatch_target_clause = 0;
 }
 
 __attribute__((export_name("exception_get_active")))
@@ -812,6 +810,7 @@ __attribute__((export_name("register_value_type")))
 void register_value_type(
     u32 type_id,
     netwasm_address_t size,
+    netwasm_address_t boxed_payload_offset,
     netwasm_address_t bitmap_address,
     u32 bitmap_bits)
 {
@@ -830,6 +829,7 @@ void register_value_type(
         (const NetWasmCollectorDescriptorWord *)(uintptr_t)bitmap_address,
         bitmap_bits);
     entry->value_size = size;
+    entry->boxed_payload_offset = boxed_payload_offset;
     entry->value_contains_references = 0;
     for (u32 bit = 0; bitmap_address != 0 && bit < bitmap_bits; bit++) {
         const NetWasmCollectorDescriptorWord *bitmap = (const NetWasmCollectorDescriptorWord *)(uintptr_t)bitmap_address;
@@ -1432,7 +1432,7 @@ u32 array_rank(netwasm_reference_t array)
         __builtin_trap();
     }
     return type_descriptors[type_id].size == NETWASM_RECTANGULAR_ARRAY_OBJECT_SIZE
-        ? *(u32 *)(uintptr_t)(array + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET)
+        ? *(u32 *)(uintptr_t)(array + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET) & 0x7fffffffu
         : 1;
 }
 
@@ -1454,13 +1454,132 @@ int32_t array_get_length(netwasm_reference_t array, int32_t dimension)
             ? (int32_t)*(u32 *)(uintptr_t)(array + NETWASM_ARRAY_LENGTH_OFFSET)
             : -1;
     }
-    rank = *(u32 *)(uintptr_t)(array + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET);
+    rank = *(u32 *)(uintptr_t)(array + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET) & 0x7fffffffu;
     if (dimension < 0 || (u32)dimension >= rank) {
         return -1;
     }
     shape = (u32 *)(uintptr_t)*(netwasm_reference_t *)(uintptr_t)(
         array + NETWASM_RECTANGULAR_ARRAY_SHAPE_POINTER_OFFSET);
     return (int32_t)shape[(u32)dimension * 2];
+}
+
+/* Bounds extend only the shape owned by an explicitly bounded ARRAY. The
+   existing vector/object headers and zero-bound shape records are unchanged. */
+__attribute__((export_name("allocate_bounded_rectangular_array")))
+netwasm_reference_t allocate_bounded_rectangular_array(
+    u32 rank,
+    netwasm_address_t dimensions_address,
+    u32 type_id,
+    u32 element_type_id,
+    u32 element_size,
+    u32 elements_are_references)
+{
+    netwasm_reference_t array = allocate_rectangular_array(
+        rank, dimensions_address, type_id, element_type_id,
+        element_size, elements_are_references);
+    if (array == 0) {
+        return 0;
+    }
+    allocation_root = array;
+    u32 *shape = (u32 *)collector_allocate_atomic((size_t)rank * 3 * sizeof(u32));
+    if (shape == NULL) {
+        allocation_root = 0;
+        return 0;
+    }
+    u32 *old_shape = (u32 *)(uintptr_t)*(netwasm_reference_t *)(uintptr_t)(
+        array + NETWASM_RECTANGULAR_ARRAY_SHAPE_POINTER_OFFSET);
+    memcpy(shape, old_shape, (size_t)rank * 2 * sizeof(u32));
+    memcpy(shape + rank * 2, (u32 *)(uintptr_t)dimensions_address + rank,
+        (size_t)rank * sizeof(u32));
+    *(netwasm_reference_t *)(uintptr_t)(
+        array + NETWASM_RECTANGULAR_ARRAY_SHAPE_POINTER_OFFSET) =
+        (netwasm_reference_t)(uintptr_t)shape;
+    *(u32 *)(uintptr_t)(array + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET) =
+        rank | 0x80000000u;
+    allocation_count++;
+    track(shape);
+    allocation_root = 0;
+    return array;
+}
+
+__attribute__((export_name("array_get_lower_bound")))
+int32_t array_get_lower_bound(netwasm_reference_t array, u32 dimension)
+{
+    u32 rank = array_rank(array);
+    if (dimension >= rank) {
+        __builtin_trap();
+    }
+    u32 type_id = *(u32 *)(uintptr_t)array;
+    if (type_descriptors[type_id].size != NETWASM_RECTANGULAR_ARRAY_OBJECT_SIZE ||
+        (*(u32 *)(uintptr_t)(array + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET) &
+            0x80000000u) == 0) {
+        return 0;
+    }
+    u32 *shape = (u32 *)(uintptr_t)*(netwasm_reference_t *)(uintptr_t)(
+        array + NETWASM_RECTANGULAR_ARRAY_SHAPE_POINTER_OFFSET);
+    return (int32_t)shape[rank * 2 + dimension];
+}
+
+/* Returns address 1 when boxing cannot allocate. Zero remains a valid null
+   reference array element, so the managed emitter translates only the
+   reserved sentinel into OutOfMemoryException. */
+__attribute__((export_name("array_get_value")))
+netwasm_reference_t array_get_value(netwasm_reference_t array, u32 index)
+{
+    u32 array_type_id;
+    u32 element_type_id;
+    u32 length;
+    TypeDescriptor *element;
+    netwasm_reference_t data;
+    netwasm_reference_t boxed;
+
+    if (array == 0) {
+        __builtin_trap();
+    }
+    array_type_id = *(u32 *)(uintptr_t)array;
+    if (array_type_id >= type_capacity ||
+        type_data_kinds[array_type_id] != NETWASM_OBJECT_DATA_ARRAY) {
+        __builtin_trap();
+    }
+    length = *(u32 *)(uintptr_t)(array + NETWASM_ARRAY_LENGTH_OFFSET);
+    if (index >= length) {
+        __builtin_trap();
+    }
+    element_type_id = *(u32 *)(uintptr_t)(
+        array + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET);
+    if (element_type_id >= type_capacity ||
+        !type_descriptors[element_type_id].registered) {
+        __builtin_trap();
+    }
+    element = &type_descriptors[element_type_id];
+    data = *(netwasm_reference_t *)(uintptr_t)(
+        array + NETWASM_ARRAY_DATA_POINTER_OFFSET);
+    if (!element->value_registered) {
+        return ((netwasm_reference_t *)(uintptr_t)data)[index];
+    }
+
+    collect_for_allocation_test();
+    boxed = (netwasm_reference_t)(uintptr_t)collector_allocate_exact(
+        element->size,
+        element->descriptor);
+    if (boxed == 0) {
+        return (netwasm_reference_t)1;
+    }
+    *(u32 *)(uintptr_t)boxed = element_type_id;
+    allocation_root = boxed;
+    collector_move_value_range(
+        boxed,
+        (void *)(uintptr_t)(boxed + element->boxed_payload_offset),
+        (const void *)(uintptr_t)(data +
+            (netwasm_address_t)index * element->value_size),
+        1,
+        element->value_size,
+        element->value_descriptor);
+    allocation_count++;
+    track((void *)(uintptr_t)boxed);
+    type_data_kinds[element_type_id] = NETWASM_OBJECT_DATA_FIELDS;
+    allocation_root = 0;
+    return boxed;
 }
 
 __attribute__((export_name("array_copy")))
@@ -1604,8 +1723,9 @@ netwasm_reference_t array_clone(netwasm_reference_t source)
     length = *(u32 *)(uintptr_t)(source + NETWASM_ARRAY_LENGTH_OFFSET);
 
     if (type_descriptors[type_id].size == NETWASM_RECTANGULAR_ARRAY_OBJECT_SIZE) {
-        u32 rank = *(u32 *)(uintptr_t)(
+        u32 rank_flags = *(u32 *)(uintptr_t)(
             source + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET);
+        u32 rank = rank_flags & 0x7fffffffu;
         u32 *shape = (u32 *)(uintptr_t)*(netwasm_reference_t *)(uintptr_t)(
             source + NETWASM_RECTANGULAR_ARRAY_SHAPE_POINTER_OFFSET);
         u32 dimensions[NETWASM_MAX_ARRAY_RANK];
@@ -1619,6 +1739,13 @@ netwasm_reference_t array_clone(netwasm_reference_t source)
             element_type_id,
             element->value_registered ? element->value_size : 0,
             element->value_registered ? 0 : 1);
+        if (clone != 0 && (rank_flags & 0x80000000u) != 0) {
+            /* Shape metadata is immutable and may be shared by a shallow clone. */
+            *(netwasm_reference_t *)(uintptr_t)(
+                clone + NETWASM_RECTANGULAR_ARRAY_SHAPE_POINTER_OFFSET) =
+                (netwasm_reference_t)(uintptr_t)shape;
+            *(u32 *)(uintptr_t)(clone + NETWASM_RECTANGULAR_ARRAY_RANK_OFFSET) = rank_flags;
+        }
     } else if (type_descriptors[type_id].size == NETWASM_ARRAY_OBJECT_SIZE) {
         clone = element->value_registered
             ? allocate_value_array(

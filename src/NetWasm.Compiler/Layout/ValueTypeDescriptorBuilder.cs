@@ -61,6 +61,9 @@ internal sealed class ValueTypeDescriptorBuilder(
             type,
             boxed.TypeId,
             value.Size,
+            ManagedTypeLayoutCompiler.Align(
+                _target.ObjectHeaderSize,
+                value.Alignment),
             _state.Cursor,
             bitCount));
         _state.Segments.Add(new DataSegment(_state.Cursor, [.. bitmap]));

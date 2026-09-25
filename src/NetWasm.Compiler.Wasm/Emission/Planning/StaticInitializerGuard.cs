@@ -7,6 +7,8 @@ internal sealed record StaticInitializerGuard(
     EntityKey? Direct,
     string? Constructed)
 {
+    public OptionalFunctionIndex FunctionIndex { get; init; }
+
     public static string KeyFor(EntityKey initializer) =>
         $"{initializer.Assembly.Name}:0x{initializer.MetadataToken:x8}";
 }

@@ -29,6 +29,40 @@ public sealed class RootMapTests
     private static readonly CliTypeIdentity PairType =
         CliTypeIdentity.Named(Assembly, "Roots", "Pair", isValueType: true);
 
+    [Theory]
+    [InlineData(CilOperation.NewRectangularArray)]
+    [InlineData(CilOperation.NewBoundedRectangularArray)]
+    public void RectangularAllocationCapabilityPropagatesToCallers(CilOperation operation)
+    {
+        var program = new FakeProgram();
+        var array = CliTypeIdentity.Array(CliTypeIdentity.FromStackKind(CliValueKind.I4), 1);
+        var instructions = new List<CilInstruction>();
+        if (operation == CilOperation.NewBoundedRectangularArray)
+            instructions.Add(I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(-2)));
+        instructions.AddRange([
+            I(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
+            I(2, operation, new CilOperand.TypeIdentity(array)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.Return),
+        ]);
+        var allocator = StructuredWithLocals(program, Method(AllocatorKey), [], 2,
+            instructions[0], [.. instructions.Skip(1)]);
+        var caller = Structured(program, Method(EntryKey),
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(2, CilOperation.Return));
+
+        var capabilities = CreateAllocationAnalyzer(program).Analyze(new(
+            new Dictionary<EntityKey, StructuredMethod> { [AllocatorKey] = allocator, [EntryKey] = caller },
+            ImmutableDictionary<string, StructuredMethod>.Empty,
+            ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
+
+        Assert.Contains(AllocatorKey, capabilities.Methods);
+        Assert.Contains(EntryKey, capabilities.Methods);
+        var roots = CreateAnalyzer(program).Analyze(new(allocator, capabilities.Methods.ToHashSet(), new HashSet<string>()));
+        Assert.True(roots.Safepoints.ContainsKey(2));
+    }
+
     [Fact]
     public void AllocationCapabilityPropagatesTransitivelyButNotToLeafMethods()
     {
@@ -229,6 +263,94 @@ public sealed class RootMapTests
         Assert.Contains(
             new RootSource(RootSourceKind.Local, 0),
             map.Safepoints[2].Roots);
+    }
+
+    [Theory]
+    [InlineData(0, false, false)]
+    [InlineData(0, true, false)]
+    [InlineData(1, false, false)]
+    [InlineData(1, true, false)]
+    [InlineData(2, false, false)]
+    [InlineData(2, true, false)]
+    [InlineData(2, true, true)]
+    public void StaticLeafCallsRootLiveLocalsAndArgumentsForTheirExactInitializer(
+        int operandShape, bool allocates, bool differentClosedOwner)
+    {
+        var program = new FakeProgram(leafHasInitializer: true);
+        var owner = CliTypeIdentity.Named(Assembly, "Roots", "Cache`1", false);
+        if (operandShape == 2)
+            owner = CliTypeIdentity.GenericInstantiation(owner,
+                [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var initializerOwner = differentClosedOwner
+            ? CliTypeIdentity.GenericInstantiation(owner.ElementType!,
+                [CliTypeIdentity.Primitive("i8", CliValueKind.I8)])
+            : owner;
+        var leaf = Instance(program.GetMethod(LeafKey), owner);
+        var initializer = Instance(program.GetMethod(StaticInitializerKey), initializerOwner);
+        var initializerBody = allocates
+            ? StructuredInstance(program, initializer,
+                I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+                I(1, CilOperation.NewObject, new CilOperand.Entity(ConstructorKey)),
+                I(2, CilOperation.Pop), I(3, CilOperation.Return))
+            : StructuredInstance(program, initializer, I(0, CilOperation.Return));
+        var caller = StructuredWithLocals(program, program.GetMethod(EntryKey),
+            [CliValueKind.ManagedReference], 1,
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(3, CilOperation.Call, operandShape == 0
+                ? new CilOperand.Entity(LeafKey) : new CilOperand.MethodInstance(leaf)),
+            I(4, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(5, CilOperation.Pop), I(6, CilOperation.Return));
+        var direct = new Dictionary<EntityKey, StructuredMethod> { [EntryKey] = caller };
+        var constructed = new Dictionary<string, StructuredMethod>();
+        if (operandShape == 2)
+            constructed.Add(initializer.CanonicalName, initializerBody);
+        else
+            direct.Add(StaticInitializerKey, initializerBody);
+
+        var capabilities = CreateAllocationAnalyzer(program).Analyze(new(
+            direct, constructed, ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
+        var map = CreateAnalyzer(program).Analyze(new(
+            caller, capabilities.Methods, capabilities.ConstructedMethods));
+
+        var expected = !differentClosedOwner;
+        Assert.Equal(expected, capabilities.Methods.Contains(EntryKey));
+        Assert.Equal(expected, map.Safepoints.ContainsKey(3));
+        if (expected)
+        {
+            Assert.Contains(new RootSource(RootSourceKind.Local, 0), map.Safepoints[3].Roots);
+            Assert.Contains(new RootSource(RootSourceKind.EvaluationStack, 0), map.Safepoints[3].Roots);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InstanceCallsDoNotAcquireTheirOwnersInitializerDependency(bool methodInstance)
+    {
+        var program = new FakeProgram(leafHasInitializer: true, leafIsStatic: false);
+        var owner = CliTypeIdentity.Named(Assembly, "Roots", "Cache`1", false);
+        var leaf = Instance(program.GetMethod(LeafKey), owner);
+        var initializer = Structured(program, program.GetMethod(StaticInitializerKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(1, CilOperation.NewObject, new CilOperand.Entity(ConstructorKey)),
+            I(2, CilOperation.Pop), I(3, CilOperation.Return));
+        var caller = Structured(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Call, methodInstance
+                ? new CilOperand.MethodInstance(leaf) : new CilOperand.Entity(LeafKey)),
+            I(2, CilOperation.Return));
+        var capabilities = CreateAllocationAnalyzer(program).Analyze(new(
+            new Dictionary<EntityKey, StructuredMethod>
+            {
+                [EntryKey] = caller, [StaticInitializerKey] = initializer,
+            }, ImmutableDictionary<string, StructuredMethod>.Empty,
+            ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
+
+        Assert.DoesNotContain(EntryKey, capabilities.Methods);
+        Assert.Empty(CreateAnalyzer(program).Analyze(new(
+            caller, capabilities.Methods, capabilities.ConstructedMethods)).Safepoints);
     }
 
     [Fact]
@@ -439,6 +561,46 @@ public sealed class RootMapTests
             new RootDecisionClassifier(program, null!, program));
         Assert.Throws<ArgumentNullException>(() =>
             new RootDecisionClassifier(program, program, null!));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RootDecisionsPreserveDispatchAndDirectStaticFieldAllocationContracts(
+        bool constructed, bool allocates)
+    {
+        var program = new FakeProgram();
+        var caller = Structured(program, Method(EntryKey), I(0, CilOperation.Return));
+        var owner = CliTypeIdentity.Named(Assembly, "Roots", "Object", false);
+        if (constructed)
+            owner = CliTypeIdentity.GenericInstantiation(owner,
+                [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var target = Instance(program.GetMethod(LeafKey), owner);
+        var key = caller.Method.CanonicalName + "@00000000";
+        var dispatch = new Dictionary<string, DispatchCallSiteModel>
+        {
+            [key] = new(caller.Method.CanonicalName, 0, target,
+                [new DispatchTargetModel(owner, target)]),
+        };
+        var classifier = Assert.IsAssignableFrom<IRootDecisionClassifier>(
+            new RootDecisionClassifier(program, program, program, dispatch));
+        var methods = new HashSet<EntityKey>();
+        var instances = new HashSet<string>();
+        if (allocates)
+        {
+            if (constructed) instances.Add(target.CanonicalName);
+            else methods.Add(LeafKey);
+            methods.Add(StaticInitializerKey);
+        }
+
+        Assert.Equal(allocates, classifier.Decide(new(caller, 0,
+            I(0, CilOperation.Call, new CilOperand.MethodInstance(target)), methods, instances)));
+        Assert.Equal(allocates, classifier.Decide(new(caller, 0,
+            I(1, CilOperation.LoadStaticField, new CilOperand.Entity(StaticFieldKey)), methods, instances)));
+        Assert.False(classifier.Decide(new(caller, 0,
+            I(1, CilOperation.LoadStaticField, new CilOperand.Entity(UninitializedStaticFieldKey)), methods, instances)));
     }
 
     [Fact]
@@ -1431,7 +1593,7 @@ public sealed class RootMapTests
         }
     }
 
-    private sealed class FakeProgram :
+    private sealed class FakeProgram(bool leafHasInitializer = false, bool leafIsStatic = true) :
         ITypeRepository,
         IFieldRepository,
         IMethodRepository,
@@ -1452,7 +1614,11 @@ public sealed class RootMapTests
                     isStatic: false,
                     name: ".ctor",
                     parameters: [CliValueKind.I4]),
-                [LeafKey] = Method(LeafKey),
+                [LeafKey] = Method(LeafKey, isStatic: leafIsStatic,
+                    parameters: leafHasInitializer && leafIsStatic ? [CliValueKind.ManagedReference] : []) with
+                {
+                    DeclaringType = leafHasInitializer ? GenericTypeKey : TypeKey,
+                },
                 [ExternalKey] = Method(ExternalKey, rva: 0),
                 [JSImportKey] = Method(JSImportKey) with
                 {
@@ -1488,7 +1654,8 @@ public sealed class RootMapTests
                 [StaticInitializerKey])
             : key == ValueTypeKey
                 ? new(key, "Roots", "Pair", true, [], [PairVirtualKey])
-                : new(key, "Roots", "Object", false, [], [.. _methods.Keys]);
+                : new(key, "Roots", "Object", false, [],
+                    [.. _methods.Values.Where(method => method.DeclaringType == key).Select(method => method.Key)]);
 
         public FieldDefinitionModel GetField(EntityKey key) => key == StaticFieldKey
             ? new(

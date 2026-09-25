@@ -1,0 +1,270 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NetWasm.Correctness.CollectorLifetime;
+
+public sealed class Payload(int number)
+{
+    public int Number = number;
+    public object? Other;
+}
+
+public struct ReferencePair
+{
+    public Payload? First;
+    public long Number;
+    public Payload? Second;
+}
+
+public sealed class Finalizable
+{
+    public static int Count;
+    public static Finalizable? Resurrected;
+    public bool Resurrect;
+    public int Number = 42;
+
+    ~Finalizable()
+    {
+        Count++;
+        if (Resurrect) Resurrected = this;
+    }
+}
+
+public static class EntryPoint
+{
+    private static Payload? _root;
+
+    public static unsafe int Retention(int input)
+    {
+        switch (input)
+        {
+            case 0:
+            {
+                var value = new Payload(42);
+                Collect();
+                return value.Number;
+            }
+            case 1:
+            {
+                var value = new ReferencePair { First = new Payload(11), Number = long.MinValue, Second = new Payload(31) };
+                Collect();
+                return value.Number == long.MinValue ? value.First.Number + value.Second.Number : -1;
+            }
+            case 2:
+            {
+                var values = new[] { new Payload(11), new Payload(31) };
+                Collect();
+                return values[0].Number + values[1].Number;
+            }
+            case 3:
+            {
+                var values = new ReferencePair[2];
+                values[0] = new ReferencePair { First = new Payload(11), Number = 7 };
+                values[1] = new ReferencePair { Second = new Payload(31), Number = 9 };
+                Collect();
+                return values[0].Number == 7 && values[1].Number == 9 ? values[0].First!.Number + values[1].Second!.Number : -2;
+            }
+            case 4:
+                SetRoot();
+                Collect();
+                var result = _root!.Number;
+                _root = null;
+                return result;
+            case 5:
+            {
+                ref var interior = ref ArrayInterior();
+                Collect();
+                interior++;
+                return interior;
+            }
+            case 6:
+            {
+                ref var interior = ref ObjectInterior();
+                Collect();
+                interior++;
+                return interior;
+            }
+            case 7:
+            {
+                object box = new ReferencePair { First = new Payload(11), Number = 7, Second = new Payload(31) };
+                Collect();
+                var value = (ReferencePair)box;
+                return value.Number == 7 ? value.First!.Number + value.Second!.Number : -3;
+            }
+            case 8:
+            {
+                var read = Capture();
+                Collect();
+                return read();
+            }
+            case 9:
+            {
+                var handle = CreateStrongHandle();
+                try
+                {
+                    Collect();
+                    if (((Payload)handle.Target!).Number != 11) return -4;
+                    Retarget(handle);
+                    Collect();
+                    return ((Payload)handle.Target!).Number;
+                }
+                finally
+                {
+                    handle.Free();
+                }
+            }
+            case 10:
+            {
+                var handle = CreatePinnedHandle();
+                try
+                {
+                    var address = handle.AddrOfPinnedObject();
+                    Collect();
+                    if (address != handle.AddrOfPinnedObject()) return -5;
+                    ((int*)address)[1]++;
+                    var values = (int[])handle.Target!;
+                    return values[0] == 7 && values[2] == 9 ? values[1] : -6;
+                }
+                finally
+                {
+                    handle.Free();
+                }
+            }
+            case 11:
+            {
+                var value = new Payload(42) { Other = new Payload(7) };
+                var weak = new WeakReference<Payload>(value);
+                Collect();
+                var alive = weak.TryGetTarget(out var observed) && ReferenceEquals(observed, value) && observed.Number == 42;
+                GC.KeepAlive(value);
+                return alive ? 42 : -7;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    public static int Lifecycle(int input)
+    {
+        Finalizable.Count = 0;
+        Finalizable.Resurrected = null;
+        switch (input)
+        {
+            case 0:
+            {
+                var weak = CreateDeadWeak();
+                Collect();
+                return weak.TryGetTarget(out _) ? -1 : 42;
+            }
+            case 1:
+            {
+                var weak = CreateFinalizable(suppress: false, reregister: false, resurrect: false, trackResurrection: false);
+                Collect();
+                return Finalizable.Count == 1 && !weak.TryGetTarget(out _) ? 42 : -2;
+            }
+            case 2:
+            {
+                var weak = CreateFinalizable(suppress: true, reregister: false, resurrect: false, trackResurrection: false);
+                Collect();
+                return Finalizable.Count == 0 && !weak.TryGetTarget(out _) ? 42 : -3;
+            }
+            case 3:
+            {
+                var weak = CreateFinalizable(suppress: true, reregister: true, resurrect: false, trackResurrection: false);
+                Collect();
+                return Finalizable.Count == 1 && !weak.TryGetTarget(out _) ? 42 : -4;
+            }
+            case 4:
+            {
+                var weak = CreateFinalizable(suppress: false, reregister: false, resurrect: true, trackResurrection: false);
+                Collect();
+                var valid = Finalizable.Count == 1 && Finalizable.Resurrected?.Number == 42 && !weak.TryGetTarget(out _);
+                ReleaseResurrected();
+                Collect();
+                return valid && Finalizable.Count == 1 ? 42 : -5;
+            }
+            case 5:
+            {
+                var weak = CreateFinalizable(suppress: false, reregister: false, resurrect: true, trackResurrection: true);
+                Collect();
+                if (!ResurrectionMatches(weak) || Finalizable.Count != 1) return -6;
+                ReleaseResurrected();
+                Collect();
+                return Finalizable.Count == 1 && !weak.TryGetTarget(out _) ? 42 : -7;
+            }
+            case 6:
+            {
+                var weak = CreateReleasedHandle();
+                Collect();
+                return weak.TryGetTarget(out _) ? -8 : 42;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void Collect()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void SetRoot() => _root = new Payload(42);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ref int ArrayInterior() => ref new[] { 7, 41, 9 }[1];
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ref int ObjectInterior() => ref new Payload(41).Number;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Func<int> Capture()
+    {
+        var value = new Payload(42);
+        return () => value.Number;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static GCHandle CreateStrongHandle() => GCHandle.Alloc(new Payload(11));
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void Retarget(GCHandle handle) => handle.Target = new Payload(42);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static GCHandle CreatePinnedHandle() => GCHandle.Alloc(new[] { 7, 41, 9 }, GCHandleType.Pinned);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference<Payload> CreateDeadWeak() => new(new Payload(42));
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference<Finalizable> CreateFinalizable(bool suppress, bool reregister, bool resurrect, bool trackResurrection)
+    {
+        var value = new Finalizable { Resurrect = resurrect };
+        if (suppress) GC.SuppressFinalize(value);
+        if (reregister) GC.ReRegisterForFinalize(value);
+        return new(value, trackResurrection);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool ResurrectionMatches(WeakReference<Finalizable> weak) =>
+        weak.TryGetTarget(out var value) && ReferenceEquals(value, Finalizable.Resurrected) && value.Number == 42;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ReleaseResurrected() => Finalizable.Resurrected = null;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference<Payload> CreateReleasedHandle()
+    {
+        var value = new Payload(42);
+        var weak = new WeakReference<Payload>(value);
+        var handle = GCHandle.Alloc(value);
+        handle.Free();
+        GC.KeepAlive(value);
+        return weak;
+    }
+}

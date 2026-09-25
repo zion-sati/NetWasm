@@ -1,0 +1,235 @@
+using System;
+
+namespace NetWasm.Correctness.FloatingArithmetic;
+
+public static partial class EntryPoint
+{
+    // Hand-derived cases. Operation 0:add, 1:subtract, 2:multiply,
+    // 3:divide, 4:remainder, 5:negate. First 80 inputs use Single.
+    // Expected NaNs are classification contracts, not payload contracts.
+    private static readonly int[] Operations =
+    [
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 1,
+        1, 1, 1, 1,
+        1, 1, 1, 2,
+        2, 2, 2, 2,
+        2, 2, 2, 2,
+        2, 2, 3, 3,
+        3, 3, 3, 3,
+        3, 3, 3, 3,
+        3, 3, 3, 3,
+        4, 4, 4, 4,
+        4, 4, 4, 4,
+        4, 4, 4, 4,
+        4, 5, 5, 5,
+        5, 5, 5, 5,
+        5, 0, 0, 0,
+        1, 1, 1, 2,
+        2, 2, 3, 3,
+        3, 4, 4, 4,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 1,
+        1, 1, 1, 1,
+        1, 1, 1, 2,
+        2, 2, 2, 2,
+        2, 2, 2, 2,
+        2, 2, 3, 3,
+        3, 3, 3, 3,
+        3, 3, 3, 3,
+        3, 3, 3, 3,
+        4, 4, 4, 4,
+        4, 4, 4, 4,
+        4, 4, 4, 4,
+        4, 5, 5, 5,
+        5, 5, 5, 5,
+        5, 0, 0, 0,
+        1, 1, 1, 2,
+        2, 2, 3, 3,
+        3, 4, 4, 4
+    ];
+    private static readonly ulong[] LeftBits =
+    [
+        0x0UL, 0x0UL, 0x80000000UL, 0x3f800000UL,
+        0x1UL, 0x7fffffUL, 0x7f7fffffUL, 0x7f800000UL,
+        0x7f800000UL, 0x3f800000UL, 0x3f800000UL, 0x80000000UL,
+        0x0UL, 0x3f800000UL, 0x800000UL, 0x1UL,
+        0x80000001UL, 0x7f7fffffUL, 0x7f800000UL, 0x0UL,
+        0x80000000UL, 0x1UL, 0x1UL, 0x1UL,
+        0x7fffffUL, 0x800000UL, 0x7f7fffffUL, 0x0UL,
+        0xbf800000UL, 0x80000000UL, 0x3f800000UL, 0x3f800000UL,
+        0xbf800000UL, 0x0UL, 0x7f800000UL, 0x3f800000UL,
+        0x3f800000UL, 0xbf800000UL, 0x1UL, 0x3UL,
+        0x7f7fffffUL, 0x800000UL, 0x3f800000UL, 0x3f800000UL,
+        0x40b00000UL, 0xc0b00000UL, 0x40b00000UL, 0xc0b00000UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0x7f800000UL,
+        0x3f800000UL, 0xc0800000UL, 0x800000UL, 0x1UL,
+        0x7f7fffffUL, 0x0UL, 0x80000000UL, 0x1UL,
+        0x80000001UL, 0x7f800000UL, 0xff800000UL, 0x7f7fffffUL,
+        0x7fc00001UL, 0x7fc00001UL, 0x3f800000UL, 0x7fc00001UL,
+        0x7fc00001UL, 0x3f800000UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x3f800000UL, 0x7fc00001UL, 0x7fc00001UL, 0x3f800000UL,
+        0x7fc00001UL, 0x7fc00001UL, 0x3f800000UL, 0x7fc00001UL,
+        0x0UL, 0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL,
+        0x1UL, 0xfffffffffffffUL, 0x7fefffffffffffffUL, 0x7ff0000000000000UL,
+        0x7ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL, 0x8000000000000000UL,
+        0x0UL, 0x3ff0000000000000UL, 0x10000000000000UL, 0x1UL,
+        0x8000000000000001UL, 0x7fefffffffffffffUL, 0x7ff0000000000000UL, 0x0UL,
+        0x8000000000000000UL, 0x1UL, 0x1UL, 0x1UL,
+        0xfffffffffffffUL, 0x10000000000000UL, 0x7fefffffffffffffUL, 0x0UL,
+        0xbff0000000000000UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0xbff0000000000000UL, 0x0UL, 0x7ff0000000000000UL, 0x3ff0000000000000UL,
+        0x3ff0000000000000UL, 0xbff0000000000000UL, 0x1UL, 0x3UL,
+        0x7fefffffffffffffUL, 0x10000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000000UL,
+        0x4016000000000000UL, 0xc016000000000000UL, 0x4016000000000000UL, 0xc016000000000000UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0x7ff0000000000000UL,
+        0x3ff0000000000000UL, 0xc010000000000000UL, 0x10000000000000UL, 0x1UL,
+        0x7fefffffffffffffUL, 0x0UL, 0x8000000000000000UL, 0x1UL,
+        0x8000000000000001UL, 0x7ff0000000000000UL, 0xfff0000000000000UL, 0x7fefffffffffffffUL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL,
+        0x7ff8000000000001UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL,
+        0x3ff0000000000000UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x3ff0000000000000UL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL
+    ];
+    private static readonly ulong[] RightBits =
+    [
+        0x0UL, 0x80000000UL, 0x80000000UL, 0xbf800000UL,
+        0x1UL, 0x1UL, 0x7f7fffffUL, 0xff800000UL,
+        0x3f800000UL, 0x33800000UL, 0x34400000UL, 0x0UL,
+        0x80000000UL, 0x3f800000UL, 0x1UL, 0x1UL,
+        0x1UL, 0xff7fffffUL, 0x7f800000UL, 0xbf800000UL,
+        0xbf800000UL, 0x40000000UL, 0x3f000000UL, 0xbf000000UL,
+        0x40000000UL, 0x3f000000UL, 0x40000000UL, 0x7f800000UL,
+        0x7f800000UL, 0x7f800000UL, 0x0UL, 0x80000000UL,
+        0x0UL, 0x0UL, 0x7f800000UL, 0x7f800000UL,
+        0xff800000UL, 0x7f800000UL, 0x40000000UL, 0x40000000UL,
+        0x40000000UL, 0x40000000UL, 0x40400000UL, 0x41200000UL,
+        0x40000000UL, 0x40000000UL, 0xc0000000UL, 0xc0000000UL,
+        0xbf800000UL, 0x3f800000UL, 0x7f800000UL, 0x3f800000UL,
+        0x0UL, 0x40000000UL, 0x1UL, 0x800000UL,
+        0x1UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x3f800000UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x3f800000UL, 0x7fc00001UL, 0x7fc00001UL, 0x3f800000UL,
+        0x7fc00001UL, 0x7fc00001UL, 0x3f800000UL, 0x7fc00001UL,
+        0x7fc00001UL, 0x3f800000UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x0UL, 0x8000000000000000UL, 0x8000000000000000UL, 0xbff0000000000000UL,
+        0x1UL, 0x1UL, 0x7fefffffffffffffUL, 0xfff0000000000000UL,
+        0x3ff0000000000000UL, 0x3ca0000000000000UL, 0x3cb8000000000000UL, 0x0UL,
+        0x8000000000000000UL, 0x3ff0000000000000UL, 0x1UL, 0x1UL,
+        0x1UL, 0xffefffffffffffffUL, 0x7ff0000000000000UL, 0xbff0000000000000UL,
+        0xbff0000000000000UL, 0x4000000000000000UL, 0x3fe0000000000000UL, 0xbfe0000000000000UL,
+        0x4000000000000000UL, 0x3fe0000000000000UL, 0x4000000000000000UL, 0x7ff0000000000000UL,
+        0x7ff0000000000000UL, 0x7ff0000000000000UL, 0x0UL, 0x8000000000000000UL,
+        0x0UL, 0x0UL, 0x7ff0000000000000UL, 0x7ff0000000000000UL,
+        0xfff0000000000000UL, 0x7ff0000000000000UL, 0x4000000000000000UL, 0x4000000000000000UL,
+        0x4000000000000000UL, 0x4000000000000000UL, 0x4008000000000000UL, 0x4024000000000000UL,
+        0x4000000000000000UL, 0x4000000000000000UL, 0xc000000000000000UL, 0xc000000000000000UL,
+        0xbff0000000000000UL, 0x3ff0000000000000UL, 0x7ff0000000000000UL, 0x3ff0000000000000UL,
+        0x0UL, 0x4000000000000000UL, 0x1UL, 0x10000000000000UL,
+        0x1UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x0UL, 0x0UL, 0x0UL,
+        0x0UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL,
+        0x3ff0000000000000UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x3ff0000000000000UL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL,
+        0x7ff8000000000001UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL
+    ];
+    private static readonly ulong[] ExpectedBits =
+    [
+        0x0UL, 0x0UL, 0x80000000UL, 0x0UL,
+        0x2UL, 0x800000UL, 0x7f800000UL, 0x7fc00001UL,
+        0x7f800000UL, 0x3f800000UL, 0x3f800002UL, 0x80000000UL,
+        0x0UL, 0x0UL, 0x7fffffUL, 0x0UL,
+        0x80000002UL, 0x7f800000UL, 0x7fc00001UL, 0x80000000UL,
+        0x0UL, 0x2UL, 0x0UL, 0x80000000UL,
+        0xfffffeUL, 0x400000UL, 0x7f800000UL, 0x7fc00001UL,
+        0xff800000UL, 0x7fc00001UL, 0x7f800000UL, 0xff800000UL,
+        0xff800000UL, 0x7fc00001UL, 0x7fc00001UL, 0x0UL,
+        0x80000000UL, 0x80000000UL, 0x0UL, 0x2UL,
+        0x7effffffUL, 0x400000UL, 0x3eaaaaabUL, 0x3dcccccdUL,
+        0x3fc00000UL, 0xbfc00000UL, 0x3fc00000UL, 0xbfc00000UL,
+        0x0UL, 0x80000000UL, 0x3f800000UL, 0x7fc00001UL,
+        0x7fc00001UL, 0x80000000UL, 0x0UL, 0x1UL,
+        0x0UL, 0x80000000UL, 0x0UL, 0x80000001UL,
+        0x1UL, 0xff800000UL, 0x7f800000UL, 0xff7fffffUL,
+        0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL, 0x7fc00001UL,
+        0x0UL, 0x0UL, 0x8000000000000000UL, 0x0UL,
+        0x2UL, 0x10000000000000UL, 0x7ff0000000000000UL, 0x7ff8000000000001UL,
+        0x7ff0000000000000UL, 0x3ff0000000000000UL, 0x3ff0000000000002UL, 0x8000000000000000UL,
+        0x0UL, 0x0UL, 0xfffffffffffffUL, 0x0UL,
+        0x8000000000000002UL, 0x7ff0000000000000UL, 0x7ff8000000000001UL, 0x8000000000000000UL,
+        0x0UL, 0x2UL, 0x0UL, 0x8000000000000000UL,
+        0x1ffffffffffffeUL, 0x8000000000000UL, 0x7ff0000000000000UL, 0x7ff8000000000001UL,
+        0xfff0000000000000UL, 0x7ff8000000000001UL, 0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0xfff0000000000000UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x0UL,
+        0x8000000000000000UL, 0x8000000000000000UL, 0x0UL, 0x2UL,
+        0x7fdfffffffffffffUL, 0x8000000000000UL, 0x3fd5555555555555UL, 0x3fb999999999999aUL,
+        0x3ff8000000000000UL, 0xbff8000000000000UL, 0x3ff8000000000000UL, 0xbff8000000000000UL,
+        0x0UL, 0x8000000000000000UL, 0x3ff0000000000000UL, 0x7ff8000000000001UL,
+        0x7ff8000000000001UL, 0x8000000000000000UL, 0x0UL, 0x1UL,
+        0x0UL, 0x8000000000000000UL, 0x0UL, 0x8000000000000001UL,
+        0x1UL, 0xfff0000000000000UL, 0x7ff0000000000000UL, 0xffefffffffffffffUL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL,
+        0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL, 0x7ff8000000000001UL
+    ];
+    private static long _left;
+    private static long _right;
+    private static long _result;
+    private static int _operation;
+    private static int _kind;
+    private static bool _nan;
+
+    public static int Run(int input)
+    {
+        if (input >= 160) return RunRemainder(input - 160);
+        var single = input < 80;
+        _operation = Operations[input];
+        _kind = single ? 4 : 5;
+        _left = single ? unchecked((int)LeftBits[input]) : unchecked((long)LeftBits[input]);
+        _right = single ? unchecked((int)RightBits[input]) : unchecked((long)RightBits[input]);
+        if (single)
+        {
+            var left = BitConverter.Int32BitsToSingle(unchecked((int)_left));
+            var right = BitConverter.Int32BitsToSingle(unchecked((int)_right));
+            var result = _operation switch
+            {
+                0 => left + right, 1 => left - right, 2 => left * right,
+                3 => left / right, 4 => left % right, 5 => -left,
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+            _nan = (ExpectedBits[input] & 0x7fffffffUL) > 0x7f800000UL;
+            _result = _nan ? (float.IsNaN(result) ? 1 : 0) : BitConverter.SingleToInt32Bits(result);
+            if (_nan ? _result != 1 : _result != unchecked((int)ExpectedBits[input])) return -1;
+        }
+        else
+        {
+            var left = BitConverter.Int64BitsToDouble(_left);
+            var right = BitConverter.Int64BitsToDouble(_right);
+            var result = _operation switch
+            {
+                0 => left + right, 1 => left - right, 2 => left * right,
+                3 => left / right, 4 => left % right, 5 => -left,
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+            _nan = (ExpectedBits[input] & 0x7fffffffffffffffUL) > 0x7ff0000000000000UL;
+            _result = _nan ? (double.IsNaN(result) ? 1 : 0) : BitConverter.DoubleToInt64Bits(result);
+            if (_nan ? _result != 1 : _result != unchecked((long)ExpectedBits[input])) return -1;
+        }
+        return 42;
+    }
+
+    public static int Trace() => 4;
+    public static int TraceCount() => 4;
+    public static int TraceKind(int index) => index == 3 ? 2 : index == 2 && _nan ? 1 : _kind;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index switch { 0 => _left, 1 => _right, 2 => _result, 3 => _operation, _ => throw new ArgumentOutOfRangeException(nameof(index)) };
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

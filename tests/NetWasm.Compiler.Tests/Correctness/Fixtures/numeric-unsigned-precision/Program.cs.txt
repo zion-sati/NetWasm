@@ -1,0 +1,118 @@
+using System;
+
+namespace NetWasm.Correctness.UnsignedPrecision;
+
+public static class EntryPoint
+{
+    // UInt32→Single, UInt32→Double, UInt64→Single, UInt64→Double.
+    // Last UInt64 operands straddle Single midpoints by one integer; a Double
+    // intermediate can erase that distinction and produce double rounding.
+    private static readonly ulong[] Sources =
+    [
+        0UL, 1UL, 16777215UL, 16777216UL,
+        16777217UL, 16777219UL, 2147483647UL, 2147483648UL,
+        2147483649UL, 4294967295UL, 0UL, 1UL,
+        16777215UL, 16777216UL, 16777217UL, 16777219UL,
+        2147483647UL, 2147483648UL, 2147483649UL, 4294967295UL,
+        0UL, 1UL, 16777215UL, 16777216UL,
+        16777217UL, 16777219UL, 2147483647UL, 2147483648UL,
+        2147483649UL, 4294967295UL, 9007199254740991UL, 9007199254740992UL,
+        9007199254740993UL, 9007199254740995UL, 9223372036854775807UL, 9223372036854775808UL,
+        9223372036854775809UL, 18446744073709551615UL, 9223372586610589695UL, 9223372586610589696UL,
+        9223372586610589697UL, 9223373686122217471UL, 9223373686122217472UL, 9223373686122217473UL,
+        0UL, 1UL, 16777215UL, 16777216UL,
+        16777217UL, 16777219UL, 2147483647UL, 2147483648UL,
+        2147483649UL, 4294967295UL, 9007199254740991UL, 9007199254740992UL,
+        9007199254740993UL, 9007199254740995UL, 9223372036854775807UL, 9223372036854775808UL,
+        9223372036854775809UL, 18446744073709551615UL, 9223372586610589695UL, 9223372586610589696UL,
+        9223372586610589697UL, 9223373686122217471UL, 9223373686122217472UL, 9223373686122217473UL
+    ];
+    private static readonly long[] FloatingBits =
+    [
+        0x0L, 0x3f800000L, 0x4b7fffffL, 0x4b800000L,
+        0x4b800000L, 0x4b800002L, 0x4f000000L, 0x4f000000L,
+        0x4f000000L, 0x4f800000L, 0x0L, 0x3ff0000000000000L,
+        0x416fffffe0000000L, 0x4170000000000000L, 0x4170000010000000L, 0x4170000030000000L,
+        0x41dfffffffc00000L, 0x41e0000000000000L, 0x41e0000000200000L, 0x41efffffffe00000L,
+        0x0L, 0x3f800000L, 0x4b7fffffL, 0x4b800000L,
+        0x4b800000L, 0x4b800002L, 0x4f000000L, 0x4f000000L,
+        0x4f000000L, 0x4f800000L, 0x5a000000L, 0x5a000000L,
+        0x5a000000L, 0x5a000000L, 0x5f000000L, 0x5f000000L,
+        0x5f000000L, 0x5f800000L, 0x5f000000L, 0x5f000000L,
+        0x5f000001L, 0x5f000001L, 0x5f000002L, 0x5f000002L,
+        0x0L, 0x3ff0000000000000L, 0x416fffffe0000000L, 0x4170000000000000L,
+        0x4170000010000000L, 0x4170000030000000L, 0x41dfffffffc00000L, 0x41e0000000000000L,
+        0x41e0000000200000L, 0x41efffffffe00000L, 0x433fffffffffffffL, 0x4340000000000000L,
+        0x4340000000000000L, 0x4340000000000002L, 0x43e0000000000000L, 0x43e0000000000000L,
+        0x43e0000000000000L, 0x43f0000000000000L, 0x43e0000010000000L, 0x43e0000010000000L,
+        0x43e0000010000000L, 0x43e0000030000000L, 0x43e0000030000000L, 0x43e0000030000000L
+    ];
+    private static readonly ulong[] ReturnedIntegers =
+    [
+        0UL, 1UL, 16777215UL, 16777216UL,
+        16777216UL, 16777220UL, 2147483648UL, 2147483648UL,
+        2147483648UL, 0UL, 0UL, 1UL,
+        16777215UL, 16777216UL, 16777217UL, 16777219UL,
+        2147483647UL, 2147483648UL, 2147483649UL, 4294967295UL,
+        0UL, 1UL, 16777215UL, 16777216UL,
+        16777216UL, 16777220UL, 2147483648UL, 2147483648UL,
+        2147483648UL, 4294967296UL, 9007199254740992UL, 9007199254740992UL,
+        9007199254740992UL, 9007199254740992UL, 9223372036854775808UL, 9223372036854775808UL,
+        9223372036854775808UL, 0UL, 9223372036854775808UL, 9223372036854775808UL,
+        9223373136366403584UL, 9223373136366403584UL, 9223374235878031360UL, 9223374235878031360UL,
+        0UL, 1UL, 16777215UL, 16777216UL,
+        16777217UL, 16777219UL, 2147483647UL, 2147483648UL,
+        2147483649UL, 4294967295UL, 9007199254740991UL, 9007199254740992UL,
+        9007199254740992UL, 9007199254740996UL, 9223372036854775808UL, 9223372036854775808UL,
+        9223372036854775808UL, 0UL, 9223372586610589696UL, 9223372586610589696UL,
+        9223372586610589696UL, 9223373686122217472UL, 9223373686122217472UL, 9223373686122217472UL
+    ];
+    private static long _source;
+    private static long _floating;
+    private static long _returned;
+    private static int _kind;
+    private static int _count;
+
+    public static int Run(int input)
+    {
+        var single = input < 10 || (input >= 20 && input < 44);
+        var wide = input >= 20;
+        var source = Sources[input];
+        _source = unchecked((long)source);
+        _floating = _returned = 0;
+        _kind = single ? 4 : 5;
+        _count = 1;
+        if (single)
+        {
+            // Keep distinct UInt32 and UInt64 conversions in the emitted CIL.
+            var converted = wide ? (float)source : (float)(uint)source;
+            _floating = BitConverter.SingleToInt32Bits(converted);
+            _count = 2;
+            if (_floating != FloatingBits[input]) return -1;
+            var returned = wide ? checked((ulong)converted) : checked((uint)converted);
+            _returned = unchecked((long)returned);
+            _count = 3;
+            if (returned != ReturnedIntegers[input]) return -2;
+        }
+        else
+        {
+            var converted = wide ? (double)source : (double)(uint)source;
+            _floating = BitConverter.DoubleToInt64Bits(converted);
+            _count = 2;
+            if (_floating != FloatingBits[input]) return -1;
+            var returned = wide ? checked((ulong)converted) : checked((uint)converted);
+            _returned = unchecked((long)returned);
+            _count = 3;
+            if (returned != ReturnedIntegers[input]) return -2;
+        }
+        return 42;
+    }
+
+    public static int Trace() => _count;
+    public static int TraceCount() => _count;
+    public static int TraceKind(int index) => index == 1 ? _kind : 3;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index switch { 0 => _source, 1 => _floating, 2 => _returned, _ => throw new ArgumentOutOfRangeException(nameof(index)) };
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

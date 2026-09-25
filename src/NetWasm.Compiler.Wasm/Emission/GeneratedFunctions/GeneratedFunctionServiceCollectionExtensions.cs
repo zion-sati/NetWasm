@@ -9,6 +9,9 @@ internal static class GeneratedFunctionServiceCollectionExtensions
         this IServiceCollection services)
     {
         services.AddLocalTimeGeneratedFunctionEmission();
+        services.AddSingleton<IStaticInitializerFunctionEmitter, StaticInitializerFunctionEmitter>();
+        services.AddSingleton<IStaticInitializationFailureEmitter, StaticInitializationFailureEmitter>();
+        services.AddSingleton<IStaticInitializerFunctionAppender, StaticInitializerFunctionAppender>();
         services.AddSingleton<IGeneratedFunctionWriterFactory,
             GeneratedFunctionWriterFactory>();
         services.AddSingleton<IReferenceComparisonEmitter,

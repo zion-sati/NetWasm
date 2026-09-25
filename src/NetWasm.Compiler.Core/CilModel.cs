@@ -113,6 +113,7 @@ public enum CilOperation
     Break,
     NewArray,
     NewRectangularArray,
+    NewBoundedRectangularArray,
     LoadArrayLength,
     LoadArrayElementReference,
     StoreArrayElementReference,

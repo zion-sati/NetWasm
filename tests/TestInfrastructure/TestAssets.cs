@@ -80,6 +80,20 @@ public sealed class TestAssets : IDisposable
         bool allowUnsafe = false,
         bool warningsAsErrors = false,
         params string[] references)
+        => CompileSourceWithCompiler(
+            assemblyName, source, sdkVersion, languageVersion, optimize: false,
+            features, allowUnsafe, warningsAsErrors, references);
+
+    public string CompileSourceWithCompiler(
+        string assemblyName,
+        string source,
+        string sdkVersion,
+        string languageVersion,
+        bool optimize,
+        IReadOnlyList<string>? features = null,
+        bool allowUnsafe = false,
+        bool warningsAsErrors = false,
+        params string[] references)
     {
         var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
         var output = Path.Combine(Directory, assemblyName + ".dll");
@@ -90,7 +104,7 @@ public sealed class TestAssets : IDisposable
             output,
             [sourcePath],
             allowUnsafe,
-            optimize: false,
+            optimize,
             references,
             sdkVersion,
             languageVersion,

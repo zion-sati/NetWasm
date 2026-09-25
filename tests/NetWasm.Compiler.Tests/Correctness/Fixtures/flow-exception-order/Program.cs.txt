@@ -1,0 +1,335 @@
+using System;
+using System.Runtime.CompilerServices;
+
+namespace NetWasm.Correctness.ExceptionOrder;
+
+public sealed class OriginalException : Exception
+{
+    public int Code = 42;
+}
+public sealed class ReplacementException : Exception;
+
+public sealed class Resource(ReplacementException? failure) : IDisposable
+{
+    public void Dispose()
+    {
+        EntryPoint.Mark(3);
+        if (failure is not null) throw failure;
+    }
+}
+
+public static class EntryPoint
+{
+    private static int[] _events = [];
+    private static int _count;
+
+    public static int Run(int input)
+    {
+        // At most five events in each declared scenario; the extra slot makes
+        // an unexpected event an observable mismatch, not a hash collision.
+        _events = new int[6];
+        _count = 0;
+        var original = new OriginalException();
+        var replacement = new ReplacementException();
+        switch (input)
+        {
+            case 0:
+            case 1:
+            case 2:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    finally { Mark(2); }
+                }
+                catch (OriginalException observed) when (Filter(input))
+                {
+                    if (!ReferenceEquals(observed, original) || input != 0) return -1;
+                    Mark(4);
+                }
+                catch (OriginalException observed)
+                {
+                    if (!ReferenceEquals(observed, original) || input == 0) return -2;
+                    Mark(4);
+                }
+                return Matches([1, 3, 2, 4]);
+            case 3:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    catch (OriginalException) when (LogFilter(2, false)) { Mark(9); }
+                    finally { Mark(4); }
+                }
+                catch (OriginalException observed) when (LogFilter(3, true))
+                {
+                    if (!ReferenceEquals(observed, original)) return -3;
+                    Mark(5);
+                }
+                return Matches([1, 2, 3, 4, 5]);
+            case 4:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    catch (OriginalException observed)
+                    {
+                        if (!ReferenceEquals(observed, original)) return -4;
+                        Mark(2);
+                        throw;
+                    }
+                    finally { Mark(3); }
+                }
+                catch (OriginalException observed)
+                {
+                    if (!ReferenceEquals(observed, original)) return -5;
+                    Mark(4);
+                }
+                finally { Mark(5); }
+                return Matches([1, 2, 3, 4, 5]);
+            case 5:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    finally { Mark(2); throw replacement; }
+                }
+                catch (ReplacementException observed)
+                {
+                    if (!ReferenceEquals(observed, replacement)) return -6;
+                    Mark(3);
+                }
+                return Matches([1, 2, 3]);
+            case 6:
+                if (ReturnBeforeFinally(41) != 41) return -7;
+                Mark(3);
+                return Matches([1, 2, 3]);
+            case 7:
+                try
+                {
+                    try { Mark(1); goto Complete; }
+                    finally { Mark(2); }
+                }
+                finally { Mark(3); }
+            Complete:
+                Mark(4);
+                return Matches([1, 2, 3, 4]);
+            case 8:
+                for (var index = 0; index < 3; index++)
+                {
+                    try
+                    {
+                        Mark(10 + index);
+                        if (index == 0) continue;
+                        if (index == 1) break;
+                    }
+                    finally { Mark(20 + index); }
+                }
+                Mark(30);
+                return Matches([10, 20, 11, 21, 30]);
+            case 9:
+                try
+                {
+                    Mark(1);
+                    using var resource = new Resource(null);
+                    Mark(2);
+                    throw original;
+                }
+                catch (OriginalException observed)
+                {
+                    if (!ReferenceEquals(observed, original)) return -8;
+                    Mark(4);
+                }
+                return Matches([1, 2, 3, 4]);
+            case 10:
+                try
+                {
+                    Mark(1);
+                    using var resource = new Resource(replacement);
+                    Mark(2);
+                    throw original;
+                }
+                catch (ReplacementException observed)
+                {
+                    if (!ReferenceEquals(observed, replacement)) return -9;
+                    Mark(4);
+                }
+                return Matches([1, 2, 3, 4]);
+            case 11:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    finally
+                    {
+                        Mark(2);
+                        try { throw replacement; }
+                        catch (ReplacementException observed)
+                        {
+                            if (!ReferenceEquals(observed, replacement)) throw;
+                            Mark(3);
+                        }
+                    }
+                }
+                catch (OriginalException observed)
+                {
+                    if (!ReferenceEquals(observed, original)) return -10;
+                    Mark(4);
+                }
+                return Matches([1, 2, 3, 4]);
+            case 12:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    finally
+                    {
+                        try { Mark(2); }
+                        finally { Mark(3); }
+                    }
+                }
+                catch (OriginalException observed)
+                {
+                    if (!ReferenceEquals(observed, original)) return -13;
+                    Mark(4);
+                }
+                return Matches([1, 2, 3, 4]);
+            case 13:
+                try { Mark(1); }
+                finally
+                {
+                    try { throw replacement; }
+                    catch (ReplacementException observed)
+                    {
+                        if (!ReferenceEquals(observed, replacement)) throw;
+                        Mark(2);
+                    }
+                }
+                Mark(3);
+                return Matches([1, 2, 3]);
+            case 14:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    catch (OriginalException)
+                    {
+                        try { throw replacement; }
+                        catch (ReplacementException) { Mark(2); }
+                        throw;
+                    }
+                }
+                catch (OriginalException observed)
+                {
+                    if (!ReferenceEquals(observed, original)) return -14;
+                    Mark(3);
+                }
+                return Matches([1, 2, 3]);
+            case 15:
+                try
+                {
+                    try { Mark(1); throw original; }
+                    finally
+                    {
+                        Mark(3);
+                        try { throw replacement; }
+                        catch (ReplacementException) { Mark(4); }
+                    }
+                }
+                catch (OriginalException observed) when (LogFilter(2, true))
+                {
+                    if (!ReferenceEquals(observed, original)) return -15;
+                    Mark(5);
+                }
+                return Matches([1, 2, 3, 4, 5]);
+            case 16:
+                try
+                {
+                    try { Mark(1); ThrowUnaliasedOriginal(); }
+                    finally
+                    {
+                        try { throw replacement; }
+                        catch (ReplacementException) { Mark(2); }
+                        GC.Collect();
+                        GC.Collect();
+                        Mark(3);
+                    }
+                }
+                catch (OriginalException observed)
+                {
+                    if (observed.Code != 42) return -16;
+                    Mark(4);
+                }
+                return Matches([1, 2, 3, 4]);
+            case 17:
+            case 18:
+                if (NormalLeaveThroughNestedCatch(input == 17, replacement) != 42) return -17;
+                return input == 17 ? Matches([1, 2, 3, 4]) : Matches([1, 2, 3, 4, 5]);
+            case 19:
+                try { Mark(1); }
+                finally
+                {
+                    Mark(2);
+                    try { Mark(3); }
+                    finally { Mark(4); }
+                    Mark(5);
+                }
+                return Matches([1, 2, 3, 4, 5]);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    public static void Mark(int value) => _events[_count++] = value;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowUnaliasedOriginal() => throw new OriginalException();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int NormalLeaveThroughNestedCatch(bool returnFromTry, ReplacementException replacement)
+    {
+        try
+        {
+            Mark(1);
+            if (returnFromTry) return 42;
+            goto Complete;
+        }
+        finally
+        {
+            Mark(2);
+            try { throw replacement; }
+            catch (ReplacementException observed)
+            {
+                if (!ReferenceEquals(observed, replacement)) throw;
+                Mark(3);
+            }
+            Mark(4);
+        }
+    Complete:
+        Mark(5);
+        return 42;
+    }
+
+    private static int Matches(int[] expected)
+    {
+        if (_count != expected.Length) return -11;
+        for (var index = 0; index < _count; index++)
+            if (_events[index] != expected[index]) return -12;
+        return 42;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool Filter(int mode)
+    {
+        Mark(3);
+        if (mode == 2) throw new ReplacementException();
+        return mode == 0;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool LogFilter(int value, bool accept)
+    {
+        Mark(value);
+        return accept;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int ReturnBeforeFinally(int value)
+    {
+        try { Mark(1); return value; }
+        finally { Mark(2); value = 99; }
+    }
+}

@@ -96,6 +96,7 @@ internal static class WasmOpcodes
     internal const byte F32Subtract = 0x93;
     internal const byte F32Multiply = 0x94;
     internal const byte F32Divide = 0x95;
+    internal const byte F32CopySign = 0x98;
     internal const byte F64Absolute = 0x99;
     internal const byte F64Negate = 0x9a;
     internal const byte F64Ceiling = 0x9b;
@@ -107,6 +108,7 @@ internal static class WasmOpcodes
     internal const byte F64Subtract = 0xa1;
     internal const byte F64Multiply = 0xa2;
     internal const byte F64Divide = 0xa3;
+    internal const byte F64CopySign = 0xa6;
     internal const byte I32WrapI64 = 0xa7;
     internal const byte I64ExtendI32Signed = 0xac;
     internal const byte I64ExtendI32Unsigned = 0xad;

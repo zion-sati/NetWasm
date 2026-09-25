@@ -1,0 +1,27 @@
+package netwasm:http-spike@1.0.0;
+
+interface acceptance {
+    qualification-start: func(endpoint: string) -> bool;
+    qualification-is-completed: func() -> bool;
+    qualification-result: func() -> u64;
+    qualification-cancel: func() -> bool;
+    qualification-dispose: func() -> bool;
+    qualification-counters: func() -> u64;
+}
+
+world test-http-spike {
+    import wasi:http/types@0.2.11;
+    import wasi:http/outgoing-handler@0.2.11;
+    import wasi:clocks/monotonic-clock@0.2.11;
+    import wasi:io/error@0.2.11;
+    import wasi:io/poll@0.2.11;
+    import wasi:io/streams@0.2.11;
+    import netwasm:runtime/reactor-host@1.0.0;
+    export netwasm:runtime/reactor-guest@1.0.0;
+    export acceptance;
+}
+
+world outgoing-http-spike {
+    import wasi:http/types@0.2.11;
+    import wasi:http/outgoing-handler@0.2.11;
+}

@@ -30,7 +30,8 @@ public sealed class RectangularArrayEmitterTests
                 CreateAddressInstructions(layouts),
                 layouts,
                 layouts,
-                exceptions));
+                exceptions,
+                WasmRuntimeImports.CreateCatalog()));
         var arrayType = CliTypeIdentity.Array(
             CliTypeIdentity.Primitive("i4", CliValueKind.I4),
             2);
@@ -45,8 +46,6 @@ public sealed class RectangularArrayEmitterTests
         Assert.Equal(
             [
                 ManagedExceptionKind.NullReference,
-                ManagedExceptionKind.IndexOutOfRange,
-                ManagedExceptionKind.IndexOutOfRange,
                 ManagedExceptionKind.IndexOutOfRange,
                 ManagedExceptionKind.IndexOutOfRange,
             ],
@@ -68,7 +67,8 @@ public sealed class RectangularArrayEmitterTests
                 CreateAddressInstructions(layouts),
                 layouts,
                 layouts,
-                new RecordingExceptionEmitter()));
+                new RecordingExceptionEmitter(),
+                WasmRuntimeImports.CreateCatalog()));
         var request = CreateInstructionRequest(
             CilOperation.LoadRectangularArrayElement,
             [CliValueKind.ManagedReference, CliValueKind.I4]);
@@ -91,7 +91,8 @@ public sealed class RectangularArrayEmitterTests
                 CreateAddressInstructions(layouts),
                 layouts,
                 layouts,
-                new RecordingExceptionEmitter()));
+                new RecordingExceptionEmitter(),
+                WasmRuntimeImports.CreateCatalog()));
         var arrayType = CliTypeIdentity.Array(
             CliTypeIdentity.Named(Assembly, "Test", "Reference", false),
             2);
@@ -126,7 +127,8 @@ public sealed class RectangularArrayEmitterTests
                 CreateAddressInstructions(layouts),
                 layouts,
                 layouts,
-                exceptions));
+                exceptions,
+                WasmRuntimeImports.CreateCatalog()));
         var arrayType = CliTypeIdentity.Array(
             CliTypeIdentity.Named(Assembly, "Test", "Reference", false),
             1);
@@ -163,12 +165,10 @@ public sealed class RectangularArrayEmitterTests
                 ? [
                     ManagedExceptionKind.NullReference,
                     ManagedExceptionKind.IndexOutOfRange,
-                    ManagedExceptionKind.IndexOutOfRange,
                 ]
                 : [
                     ManagedExceptionKind.NullReference,
                     ManagedExceptionKind.ArrayTypeMismatch,
-                    ManagedExceptionKind.IndexOutOfRange,
                     ManagedExceptionKind.IndexOutOfRange,
                 ],
             exceptions.Kinds);
@@ -315,10 +315,13 @@ public sealed class RectangularArrayEmitterTests
     }
 
     [Theory]
-    [InlineData(CliValueKind.I4)]
-    [InlineData(CliValueKind.ManagedReference)]
+    [InlineData(CliValueKind.I4, false)]
+    [InlineData(CliValueKind.ManagedReference, false)]
+    [InlineData(CliValueKind.I4, true)]
+    [InlineData(CliValueKind.ManagedReference, true)]
     public void AllocationValidatesDimensionsPublishesRootAndCallsRuntime(
-        CliValueKind elementKind)
+        CliValueKind elementKind,
+        bool bounded)
     {
         var layouts = new RecordingLayoutProvider();
         var roots = new List<int>();
@@ -326,21 +329,23 @@ public sealed class RectangularArrayEmitterTests
             ? CliTypeIdentity.Named(Assembly, "Test", "Reference", false)
             : CliTypeIdentity.Primitive("i4", CliValueKind.I4);
         var arrayType = CliTypeIdentity.Array(elementType, 2);
-        var context = CreateMethodEmissionContext(2) with
+        var argumentCount = bounded ? 4 : 2;
+        var context = CreateMethodEmissionContext(argumentCount) with
         {
             ValueLayout = new ValueFrameLayout(
-                8,
+                argumentCount * sizeof(int),
                 [],
                 [],
                 ImmutableDictionary<int, int>.Empty.Add(0, 0),
                 []),
         };
         var request = CreateInstructionRequest(
-            CilOperation.NewRectangularArray,
-            [CliValueKind.I4, CliValueKind.I4],
+            bounded ? CilOperation.NewBoundedRectangularArray : CilOperation.NewRectangularArray,
+            [.. Enumerable.Repeat(CliValueKind.I4, argumentCount)],
             new CilOperand.TypeIdentity(arrayType),
             context,
-            2);
+            argumentCount);
+        var exceptions = new RecordingExceptionEmitter();
         IInstructionCommandProvider emitter = new RectangularArrayAllocationEmitter(
             layouts,
             CreateAddressInstructions(layouts),
@@ -348,13 +353,15 @@ public sealed class RectangularArrayEmitterTests
             layouts,
             CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
-            new RecordingExceptionEmitter(),
+            exceptions,
             new RecordingRootPublicationEmitter(value => roots.Add(value.Instruction.Offset)));
 
         Emit(emitter, request);
 
         Assert.Equal([0], roots);
         Assert.Equal([CliValueKind.ManagedReference], request.Stack);
+        Assert.Equal(bounded ? 2 : 0,
+            exceptions.Kinds.Count(kind => kind == ManagedExceptionKind.ArgumentOutOfRange));
         Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
     }
 

@@ -1,0 +1,84 @@
+package netwasm:binding-shapes@1.0.0;
+
+interface nested-shapes {
+  resource item;
+
+  type bytes = list<u8>;
+  type byte-lists = list<bytes>;
+
+  variant inner-i4 {
+    none,
+    number(s32),
+  }
+
+  variant outer-i4 {
+    none,
+    nested(inner-i4),
+  }
+
+  variant inner-i8 {
+    none,
+    number(s64),
+  }
+
+  variant outer-i8 {
+    none,
+    nested(inner-i8),
+  }
+
+  variant inner-f4 {
+    none,
+    number(f32),
+  }
+
+  variant outer-f4 {
+    none,
+    nested(inner-f4),
+  }
+
+  variant inner-f8 {
+    none,
+    number(f64),
+  }
+
+  variant outer-f8 {
+    none,
+    nested(inner-f8),
+  }
+
+  variant inner-address {
+    none,
+    data(bytes),
+  }
+
+  variant outer-address {
+    none,
+    nested(inner-address),
+  }
+
+  variant inner-resource {
+    none,
+    value(item),
+  }
+
+  variant outer-resource {
+    none,
+    nested(inner-resource),
+  }
+
+  record payload {
+    i4: outer-i4,
+    i8: outer-i8,
+    f4: outer-f4,
+    f8: outer-f8,
+    address: outer-address,
+    handle: outer-resource,
+    lists: byte-lists,
+  }
+
+  inspect: func(value: payload) -> payload;
+}
+
+world imports {
+  import nested-shapes;
+}

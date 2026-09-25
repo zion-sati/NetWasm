@@ -11,6 +11,25 @@ using static EmitterTestSupport;
 public sealed class ArrayDimensionIntrinsicEmitterTests
 {
     [Fact]
+    public void GetLowerBoundValidatesDimensionWithoutTreatingNegativeBoundsAsErrors()
+    {
+        var receivers = new RecordingReceiverValidator();
+        var exceptions = new RecordingExceptionEmitter();
+        var emitter = ThroughIntrinsicContract(new ArrayGetLowerBoundIntrinsicEmitter(
+            receivers, WasmRuntimeImports.CreateCatalog(), exceptions));
+        var request = CreateRuntimeIntrinsicRequest(
+            RuntimeIntrinsic.ArrayGetLowerBound,
+            [CliValueKind.ManagedReference, CliValueKind.I4]);
+
+        emitter.Emit(request, GetCodeWriter(request.Instruction));
+
+        Assert.NotNull(receivers.Local);
+        Assert.Equal([ManagedExceptionKind.IndexOutOfRange], exceptions.Kinds);
+        Assert.Contains(WasmOpcodes.I32GreaterThanOrEqualUnsigned, GetCodeBytes(request.Instruction));
+        Assert.DoesNotContain(WasmOpcodes.I32LessThanSigned, GetCodeBytes(request.Instruction));
+    }
+
+    [Fact]
     public void ReceiverValidatorChecksForNullThroughItsCapability()
     {
         var addresses = new RecordingAddressEmitter();

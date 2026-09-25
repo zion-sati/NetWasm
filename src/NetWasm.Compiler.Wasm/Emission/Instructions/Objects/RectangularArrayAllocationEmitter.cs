@@ -24,6 +24,10 @@ internal sealed class RectangularArrayAllocationEmitter(
             CilOperation.NewRectangularArray,
             InstructionFamily.ArraysFieldsStatics,
             Emit),
+        new(
+            CilOperation.NewBoundedRectangularArray,
+            InstructionFamily.ArraysFieldsStatics,
+            Emit),
     ];
 
     private void Emit(InstructionEmissionRequest request, IWasmInstructionWriter code)
@@ -31,19 +35,43 @@ internal sealed class RectangularArrayAllocationEmitter(
         roots.Emit(request, code);
         var arrayType = types.Resolve(request.Instruction, request.Header.MethodInstance);
         var elementType = arrayType.ElementType!;
-        var firstLengthSlot = request.Stack.Count - arrayType.ArrayRank;
+        var bounded = request.Instruction.Operation == CilOperation.NewBoundedRectangularArray;
+        var argumentCount = arrayType.ArrayRank * (bounded ? 2 : 1);
+        var firstLengthSlot = request.Stack.Count - argumentCount;
         var scratchOffset = request.Context.ValueLayout.TemporaryOffsets[
             request.Instruction.Offset];
         for (var dimension = 0; dimension < arrayType.ArrayRank; dimension++)
         {
             var lengthLocal = GetStackLocal(
                 request.Context,
-                firstLengthSlot + dimension,
+                firstLengthSlot + (bounded ? dimension * 2 + 1 : dimension),
                 CliValueKind.I4);
             Get(code, lengthLocal);
             WriteI32(code, 0);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanSigned));
             ThrowIf(code, ManagedExceptionKind.Overflow);
+
+            if (bounded)
+            {
+                var lowerLocal = GetStackLocal(
+                    request.Context, firstLengthSlot + dimension * 2, CliValueKind.I4);
+                Get(code, lowerLocal);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Signed));
+                Get(code, lengthLocal);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Signed));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Add));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64((long)int.MaxValue + 1)));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64GreaterThanSigned));
+                ThrowIf(code, ManagedExceptionKind.ArgumentOutOfRange);
+
+                Get(code, request.Context.ValueFrame);
+                addresses.Emit(code, checked(scratchOffset + (arrayType.ArrayRank + dimension) * sizeof(int)));
+                addresses.Emit(code, AddressOperation.Add);
+                Get(code, lowerLocal);
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.I32Store, WasmInstructionOperand.Memory(2, 0)));
+            }
 
             Get(code, request.Context.ValueFrame);
             addresses.Emit(code, checked(scratchOffset + dimension * sizeof(int)));
@@ -66,7 +94,9 @@ internal sealed class RectangularArrayAllocationEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                RuntimeImportSymbol.AllocateRectangularArray))));
+                bounded
+                    ? RuntimeImportSymbol.AllocateBoundedRectangularArray
+                    : RuntimeImportSymbol.AllocateRectangularArray))));
         var arrayLocal = GetStackLocal(
             request.Context,
             firstLengthSlot,
@@ -78,7 +108,7 @@ internal sealed class RectangularArrayAllocationEmitter(
 
         request.Stack.RemoveRange(
             firstLengthSlot + 1,
-            arrayType.ArrayRank - 1);
+            argumentCount - 1);
         request.Stack[firstLengthSlot] = CliValueKind.ManagedReference;
     }
 

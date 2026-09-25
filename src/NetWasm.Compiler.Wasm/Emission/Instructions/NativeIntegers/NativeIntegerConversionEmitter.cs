@@ -16,6 +16,19 @@ internal sealed class NativeIntegerConversionEmitter(
         {
             return;
         }
+        if (source is CliValueKind.F4 or CliValueKind.F8)
+        {
+            var opcode = _layouts.Target.UsesMemory64
+                ? source == CliValueKind.F4
+                    ? unsigned ? WasmOpcodes.I64TruncateSaturateF32Unsigned : WasmOpcodes.I64TruncateSaturateF32Signed
+                    : unsigned ? WasmOpcodes.I64TruncateSaturateF64Unsigned : WasmOpcodes.I64TruncateSaturateF64Signed
+                : source == CliValueKind.F4
+                    ? unsigned ? WasmOpcodes.I32TruncateSaturateF32Unsigned : WasmOpcodes.I32TruncateSaturateF32Signed
+                    : unsigned ? WasmOpcodes.I32TruncateSaturateF64Unsigned : WasmOpcodes.I32TruncateSaturateF64Signed;
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Prefixed, WasmInstructionOperand.Prefixed(opcode)));
+            return;
+        }
         if (_layouts.Target.UsesMemory64 && source == CliValueKind.I4)
         {
             code.Write(WasmInstruction.NoOperand(unsigned

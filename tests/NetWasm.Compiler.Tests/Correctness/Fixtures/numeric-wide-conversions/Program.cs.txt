@@ -1,0 +1,338 @@
+using System;
+using System.Numerics;
+
+namespace NetWasm.Correctness.WideConversions;
+
+public static class EntryPoint
+{
+    // Explicit casts and generic checked/saturating/truncating conversions are
+    // independent inputs. Frozen expected values use integer range/modulo rules.
+    private static ulong _low;
+    private static ulong _high;
+    private static readonly long[] Valueslong = [long.MinValue, -9223372036854775807L, -1L, 0L, 1L, 4294967295L, 4294967296L, 4294967297L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly long[] Expectedlong_long = [long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -1L, -1L, -1L, -1L, -1L, 0L, 0L, 0L, 0L, 0L, 1L, 1L, 1L, 1L, 1L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L];
+    private static readonly ulong[] Expectedlong_ulong = [9223372036854775808UL, 0UL, 0UL, 0UL, 9223372036854775808UL, 9223372036854775809UL, 0UL, 0UL, 0UL, 9223372036854775809UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 1UL, 1UL, 1UL, 1UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL];
+    private static readonly Int128[] Expectedlong_Int128 = [new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL)];
+    private static readonly UInt128[] Expectedlong_UInt128 = [new UInt128(0xffffffffffffffffUL, 0x8000000000000000UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x8000000000000000UL), new UInt128(0xffffffffffffffffUL, 0x8000000000000001UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x8000000000000001UL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL)];
+    private static readonly ulong[] Valuesulong = [0UL, 1UL, 4294967295UL, 4294967296UL, 4294967297UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly long[] Expectedulong_long = [0L, 0L, 0L, 0L, 0L, 1L, 1L, 1L, 1L, 1L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, long.MinValue, 0L, 0L, 9223372036854775807L, long.MinValue, -2L, 0L, 0L, 9223372036854775807L, -2L, -1L, 0L, 0L, 9223372036854775807L, -1L];
+    private static readonly ulong[] Expectedulong_ulong = [0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 1UL, 1UL, 1UL, 1UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL];
+    private static readonly Int128[] Expectedulong_Int128 = [new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL)];
+    private static readonly UInt128[] Expectedulong_UInt128 = [new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL)];
+    private static readonly Int128[] ValuesInt128 = [new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x8000000000000000UL, 0x1UL), new Int128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x0UL), new Int128(0xffffffffffffffffUL, 0x1UL), new Int128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x1UL, 0x0UL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL)];
+    private static readonly long[] ExpectedInt128_long = [0L, 0L, 0L, long.MinValue, 0L, 1L, 0L, 0L, long.MinValue, 1L, -1L, 0L, 0L, long.MinValue, -1L, 0L, 0L, 0L, long.MinValue, 0L, 1L, 0L, 0L, long.MinValue, 1L, 9223372036854775807L, 0L, 0L, long.MinValue, 9223372036854775807L, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -1L, -1L, -1L, -1L, -1L, 0L, 0L, 0L, 0L, 0L, 1L, 1L, 1L, 1L, 1L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, long.MinValue, 0L, 0L, 9223372036854775807L, long.MinValue, -2L, 0L, 0L, 9223372036854775807L, -2L, -1L, 0L, 0L, 9223372036854775807L, -1L, 0L, 0L, 0L, 9223372036854775807L, 0L, -2L, 0L, 0L, 9223372036854775807L, -2L, -1L, 0L, 0L, 9223372036854775807L, -1L];
+    private static readonly ulong[] ExpectedInt128_ulong = [0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 0UL, 0UL, 0UL, 1UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 0UL, 0UL, 0UL, 1UL, 9223372036854775807UL, 0UL, 0UL, 0UL, 9223372036854775807UL, 9223372036854775808UL, 0UL, 0UL, 0UL, 9223372036854775808UL, 9223372036854775809UL, 0UL, 0UL, 0UL, 9223372036854775809UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 1UL, 1UL, 1UL, 1UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 18446744073709551615UL, 0UL, 18446744073709551614UL, 0UL, 0UL, 18446744073709551615UL, 18446744073709551614UL, 18446744073709551615UL, 0UL, 0UL, 18446744073709551615UL, 18446744073709551615UL];
+    private static readonly Int128[] ExpectedInt128_Int128 = [new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x8000000000000000UL, 0x1UL), new Int128(0x8000000000000000UL, 0x1UL), new Int128(0x8000000000000000UL, 0x1UL), new Int128(0x8000000000000000UL, 0x1UL), new Int128(0x8000000000000000UL, 0x1UL), new Int128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new Int128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new Int128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new Int128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new Int128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x0UL), new Int128(0xffffffffffffffffUL, 0x0UL), new Int128(0xffffffffffffffffUL, 0x0UL), new Int128(0xffffffffffffffffUL, 0x0UL), new Int128(0xffffffffffffffffUL, 0x0UL), new Int128(0xffffffffffffffffUL, 0x1UL), new Int128(0xffffffffffffffffUL, 0x1UL), new Int128(0xffffffffffffffffUL, 0x1UL), new Int128(0xffffffffffffffffUL, 0x1UL), new Int128(0xffffffffffffffffUL, 0x1UL), new Int128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000000UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0x8000000000000001UL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL)];
+    private static readonly UInt128[] ExpectedInt128_UInt128 = [new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x1UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x1UL), new UInt128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xfffffffffffffffeUL, 0xffffffffffffffffUL), new UInt128(0xffffffffffffffffUL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x1UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x1UL), new UInt128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x7fffffffffffffffUL), new UInt128(0xffffffffffffffffUL, 0x8000000000000000UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x8000000000000000UL), new UInt128(0xffffffffffffffffUL, 0x8000000000000001UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0x8000000000000001UL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL)];
+    private static readonly UInt128[] ValuesUInt128 = [new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x1UL, 0x0UL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL)];
+    private static readonly long[] ExpectedUInt128_long = [0L, 0L, 0L, 0L, 0L, 1L, 1L, 1L, 1L, 1L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967295L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967296L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 4294967297L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, long.MinValue, 0L, 0L, 9223372036854775807L, long.MinValue, -2L, 0L, 0L, 9223372036854775807L, -2L, -1L, 0L, 0L, 9223372036854775807L, -1L, 0L, 0L, 0L, 9223372036854775807L, 0L, -2L, 0L, 0L, 9223372036854775807L, -2L, -1L, 0L, 0L, 9223372036854775807L, -1L, 0L, 0L, 0L, 9223372036854775807L, 0L, -2L, 0L, 0L, 9223372036854775807L, -2L, -1L, 0L, 0L, 9223372036854775807L, -1L];
+    private static readonly ulong[] ExpectedUInt128_ulong = [0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 1UL, 1UL, 1UL, 1UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967295UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967296UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 4294967297UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775807UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 18446744073709551615UL, 0UL, 18446744073709551614UL, 0UL, 0UL, 18446744073709551615UL, 18446744073709551614UL, 18446744073709551615UL, 0UL, 0UL, 18446744073709551615UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 18446744073709551615UL, 0UL, 18446744073709551614UL, 0UL, 0UL, 18446744073709551615UL, 18446744073709551614UL, 18446744073709551615UL, 0UL, 0UL, 18446744073709551615UL, 18446744073709551615UL];
+    private static readonly Int128[] ExpectedUInt128_Int128 = [new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0x1UL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0xffffffffUL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000000UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x100000001UL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7ffffffffffffffeUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x7fffffffffffffffUL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0x8000000000000000UL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x0UL, 0xffffffffffffffffUL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x1UL, 0x0UL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x8000000000000000UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x8000000000000000UL, 0x0UL), new Int128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0x0UL, 0x0UL), new Int128(0x0UL, 0x0UL), new Int128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new Int128(0xffffffffffffffffUL, 0xffffffffffffffffUL)];
+    private static readonly UInt128[] ExpectedUInt128_UInt128 = [new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x0UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0x1UL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0xffffffffUL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000000UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x100000001UL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7ffffffffffffffeUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x7fffffffffffffffUL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0x8000000000000000UL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xfffffffffffffffeUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x0UL, 0xffffffffffffffffUL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x1UL, 0x0UL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x7fffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0x8000000000000000UL, 0x0UL), new UInt128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0xffffffffffffffffUL, 0xfffffffffffffffeUL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL), new UInt128(0xffffffffffffffffUL, 0xffffffffffffffffUL)];
+
+    public static int Run(int input)
+    {
+        _low = 0;
+        _high = 0;
+        if (input < 50) return Castlong_long(input - 0);
+        if (input < 100) return Castlong_ulong(input - 50);
+        if (input < 150) return Castlong_Int128(input - 100);
+        if (input < 200) return Castlong_UInt128(input - 150);
+        if (input < 250) return Castulong_long(input - 200);
+        if (input < 300) return Castulong_ulong(input - 250);
+        if (input < 350) return Castulong_Int128(input - 300);
+        if (input < 400) return Castulong_UInt128(input - 350);
+        if (input < 510) return CastInt128_long(input - 400);
+        if (input < 620) return CastInt128_ulong(input - 510);
+        if (input < 730) return CastInt128_Int128(input - 620);
+        if (input < 840) return CastInt128_UInt128(input - 730);
+        if (input < 920) return CastUInt128_long(input - 840);
+        if (input < 1000) return CastUInt128_ulong(input - 920);
+        if (input < 1080) return CastUInt128_Int128(input - 1000);
+        if (input < 1160) return CastUInt128_UInt128(input - 1080);
+        throw new ArgumentOutOfRangeException(nameof(input));
+    }
+
+    private static int Castlong_long(int input)
+    {
+        var value = Valueslong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((long)value),
+            1 => checked((long)value),
+            2 => Checked<long, long>(value),
+            3 => Saturating<long, long>(value),
+            _ => Truncating<long, long>(value),
+        };
+        Observe(result);
+        return result == Expectedlong_long[input] ? 42 : -1;
+    }
+
+    private static int Castlong_ulong(int input)
+    {
+        var value = Valueslong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((ulong)value),
+            1 => checked((ulong)value),
+            2 => Checked<long, ulong>(value),
+            3 => Saturating<long, ulong>(value),
+            _ => Truncating<long, ulong>(value),
+        };
+        Observe(result);
+        return result == Expectedlong_ulong[input] ? 42 : -1;
+    }
+
+    private static int Castlong_Int128(int input)
+    {
+        var value = Valueslong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((Int128)value),
+            1 => checked((Int128)value),
+            2 => Checked<long, Int128>(value),
+            3 => Saturating<long, Int128>(value),
+            _ => Truncating<long, Int128>(value),
+        };
+        Observe(result);
+        return result == Expectedlong_Int128[input] ? 42 : -1;
+    }
+
+    private static int Castlong_UInt128(int input)
+    {
+        var value = Valueslong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((UInt128)value),
+            1 => checked((UInt128)value),
+            2 => Checked<long, UInt128>(value),
+            3 => Saturating<long, UInt128>(value),
+            _ => Truncating<long, UInt128>(value),
+        };
+        Observe(result);
+        return result == Expectedlong_UInt128[input] ? 42 : -1;
+    }
+
+    private static int Castulong_long(int input)
+    {
+        var value = Valuesulong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((long)value),
+            1 => checked((long)value),
+            2 => Checked<ulong, long>(value),
+            3 => Saturating<ulong, long>(value),
+            _ => Truncating<ulong, long>(value),
+        };
+        Observe(result);
+        return result == Expectedulong_long[input] ? 42 : -1;
+    }
+
+    private static int Castulong_ulong(int input)
+    {
+        var value = Valuesulong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((ulong)value),
+            1 => checked((ulong)value),
+            2 => Checked<ulong, ulong>(value),
+            3 => Saturating<ulong, ulong>(value),
+            _ => Truncating<ulong, ulong>(value),
+        };
+        Observe(result);
+        return result == Expectedulong_ulong[input] ? 42 : -1;
+    }
+
+    private static int Castulong_Int128(int input)
+    {
+        var value = Valuesulong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((Int128)value),
+            1 => checked((Int128)value),
+            2 => Checked<ulong, Int128>(value),
+            3 => Saturating<ulong, Int128>(value),
+            _ => Truncating<ulong, Int128>(value),
+        };
+        Observe(result);
+        return result == Expectedulong_Int128[input] ? 42 : -1;
+    }
+
+    private static int Castulong_UInt128(int input)
+    {
+        var value = Valuesulong[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((UInt128)value),
+            1 => checked((UInt128)value),
+            2 => Checked<ulong, UInt128>(value),
+            3 => Saturating<ulong, UInt128>(value),
+            _ => Truncating<ulong, UInt128>(value),
+        };
+        Observe(result);
+        return result == Expectedulong_UInt128[input] ? 42 : -1;
+    }
+
+    private static int CastInt128_long(int input)
+    {
+        var value = ValuesInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((long)value),
+            1 => checked((long)value),
+            2 => Checked<Int128, long>(value),
+            3 => Saturating<Int128, long>(value),
+            _ => Truncating<Int128, long>(value),
+        };
+        Observe(result);
+        return result == ExpectedInt128_long[input] ? 42 : -1;
+    }
+
+    private static int CastInt128_ulong(int input)
+    {
+        var value = ValuesInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((ulong)value),
+            1 => checked((ulong)value),
+            2 => Checked<Int128, ulong>(value),
+            3 => Saturating<Int128, ulong>(value),
+            _ => Truncating<Int128, ulong>(value),
+        };
+        Observe(result);
+        return result == ExpectedInt128_ulong[input] ? 42 : -1;
+    }
+
+    private static int CastInt128_Int128(int input)
+    {
+        var value = ValuesInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((Int128)value),
+            1 => checked((Int128)value),
+            2 => Checked<Int128, Int128>(value),
+            3 => Saturating<Int128, Int128>(value),
+            _ => Truncating<Int128, Int128>(value),
+        };
+        Observe(result);
+        return result == ExpectedInt128_Int128[input] ? 42 : -1;
+    }
+
+    private static int CastInt128_UInt128(int input)
+    {
+        var value = ValuesInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((UInt128)value),
+            1 => checked((UInt128)value),
+            2 => Checked<Int128, UInt128>(value),
+            3 => Saturating<Int128, UInt128>(value),
+            _ => Truncating<Int128, UInt128>(value),
+        };
+        Observe(result);
+        return result == ExpectedInt128_UInt128[input] ? 42 : -1;
+    }
+
+    private static int CastUInt128_long(int input)
+    {
+        var value = ValuesUInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((long)value),
+            1 => checked((long)value),
+            2 => Checked<UInt128, long>(value),
+            3 => Saturating<UInt128, long>(value),
+            _ => Truncating<UInt128, long>(value),
+        };
+        Observe(result);
+        return result == ExpectedUInt128_long[input] ? 42 : -1;
+    }
+
+    private static int CastUInt128_ulong(int input)
+    {
+        var value = ValuesUInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((ulong)value),
+            1 => checked((ulong)value),
+            2 => Checked<UInt128, ulong>(value),
+            3 => Saturating<UInt128, ulong>(value),
+            _ => Truncating<UInt128, ulong>(value),
+        };
+        Observe(result);
+        return result == ExpectedUInt128_ulong[input] ? 42 : -1;
+    }
+
+    private static int CastUInt128_Int128(int input)
+    {
+        var value = ValuesUInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((Int128)value),
+            1 => checked((Int128)value),
+            2 => Checked<UInt128, Int128>(value),
+            3 => Saturating<UInt128, Int128>(value),
+            _ => Truncating<UInt128, Int128>(value),
+        };
+        Observe(result);
+        return result == ExpectedUInt128_Int128[input] ? 42 : -1;
+    }
+
+    private static int CastUInt128_UInt128(int input)
+    {
+        var value = ValuesUInt128[input / 5];
+        var result = (input % 5) switch
+        {
+            0 => unchecked((UInt128)value),
+            1 => checked((UInt128)value),
+            2 => Checked<UInt128, UInt128>(value),
+            3 => Saturating<UInt128, UInt128>(value),
+            _ => Truncating<UInt128, UInt128>(value),
+        };
+        Observe(result);
+        return result == ExpectedUInt128_UInt128[input] ? 42 : -1;
+    }
+
+    private static TTarget Checked<TSource, TTarget>(TSource value)
+        where TSource : INumberBase<TSource>
+        where TTarget : INumberBase<TTarget> => TTarget.CreateChecked(value);
+
+    private static TTarget Saturating<TSource, TTarget>(TSource value)
+        where TSource : INumberBase<TSource>
+        where TTarget : INumberBase<TTarget> => TTarget.CreateSaturating(value);
+
+    private static TTarget Truncating<TSource, TTarget>(TSource value)
+        where TSource : INumberBase<TSource>
+        where TTarget : INumberBase<TTarget> => TTarget.CreateTruncating(value);
+
+    private static void Observe(long value)
+    {
+        _low = unchecked((ulong)value);
+        _high = value < 0 ? ulong.MaxValue : 0;
+    }
+
+    private static void Observe(ulong value)
+    {
+        _low = value;
+        _high = 0;
+    }
+
+    private static void Observe(Int128 value)
+    {
+        _low = unchecked((ulong)value);
+        _high = unchecked((ulong)(value >> 64));
+    }
+
+    private static void Observe(UInt128 value)
+    {
+        _low = unchecked((ulong)value);
+        _high = unchecked((ulong)(value >> 64));
+    }
+
+    public static int Trace() => 2;
+    public static int TraceCount() => 2;
+    public static int TraceKind(int index) => 3;
+    public static int TraceEventId(int index) => index;
+    public static int TracePayloadLow(int index) => unchecked((int)(index == 0 ? _low : _high));
+    public static int TracePayloadHigh(int index) => unchecked((int)((index == 0 ? _low : _high) >> 32));
+}

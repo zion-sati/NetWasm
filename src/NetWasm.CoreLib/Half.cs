@@ -1099,7 +1099,7 @@ namespace System
 
         private static (int Exp, uint Sig) NormSubnormalF16Sig(uint sig)
         {
-            int shiftDist = LeadingZeroCount((ushort)sig) - 16 - 5;
+            var shiftDist = LeadingZeroCount((ushort)sig) - 5;
             return (1 - shiftDist, sig << shiftDist);
         }
 

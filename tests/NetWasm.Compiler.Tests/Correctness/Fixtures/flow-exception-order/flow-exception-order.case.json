@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "caseId": "flow.exception-order",
+  "featureIds": [
+    "S18",
+    "S19"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "flow-exception-order/Program.cs.txt"
+  ],
+  "name": "ExceptionOrder",
+  "namespace": "NetWasm.Correctness.ExceptionOrder",
+  "entryMethod": "Run",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 1,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 2,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 3,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 4,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 5,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 6,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 7,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 8,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 9,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 10,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 11,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 12,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 13,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 14,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 15,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 16,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 17,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 18,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 19,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.ExceptionSequenceTests.FilterSearchUnwindAndCleanupPreserveExactEventsAndExceptionIdentity"
+}

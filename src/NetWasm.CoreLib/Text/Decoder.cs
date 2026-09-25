@@ -141,7 +141,9 @@ public abstract class Decoder
         {
             var start = bytes.Length;
             while (start > 0 && (bytes[start - 1] & 0xC0) == 0x80) start--;
-            if (start == bytes.Length && bytes.Length != 0) start--;
+            // Include the lead byte before the final continuation run. A tail
+            // containing only continuation bytes is invalid, not incomplete.
+            if (start > 0) start--;
             if (start >= 0)
             {
                 var status = Rune.DecodeFromUtf8(new ReadOnlySpan<byte>(bytes, start, bytes.Length - start), out _, out _);

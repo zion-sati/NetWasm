@@ -4,4 +4,5 @@ internal enum AddressOperation
 {
     Add,
     EqualZero,
+    Equal,
 }

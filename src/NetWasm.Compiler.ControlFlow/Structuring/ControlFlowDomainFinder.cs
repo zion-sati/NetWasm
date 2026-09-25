@@ -1,8 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
-using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.ControlFlow.Structuring;
 
@@ -13,35 +10,27 @@ internal sealed class ControlFlowDomainFinder(IReachableBlockFinder reachableBlo
         ControlFlowGraph graph)
     {
         var domains = ImmutableArray.CreateBuilder<ControlFlowDomain>();
-        AddDomain(graph.Entry.Index, graph.ReachableBlocks);
+        var unclaimed = graph.ReachableBlocks;
+        AddDomain(graph.Entry.Index);
         foreach (var region in graph.MethodBody.ExceptionRegions)
         {
-            AddRange(region.HandlerOffset, region.HandlerLength);
+            AddDomain(graph.GetBlockAtOffset(region.HandlerOffset).Index);
             if (region.FilterOffset is int filterOffset)
             {
-                AddRange(filterOffset, region.HandlerOffset - filterOffset);
+                AddDomain(graph.GetBlockAtOffset(filterOffset).Index);
             }
         }
         return domains.ToImmutable();
 
-        void AddRange(int offset, int length)
+        void AddDomain(int entry)
         {
-            var end = checked(offset + length);
-            var blocks = graph.Blocks
-                .Where(block => block.StartOffset >= offset && block.StartOffset < end)
-                .Select(block => block.Index)
-                .ToImmutableHashSet();
-            if (!blocks.IsEmpty)
-            {
-                AddDomain(graph.GetBlockAtOffset(offset).Index, blocks);
-            }
-        }
-
-        void AddDomain(int entry, ImmutableHashSet<int> allowed)
-        {
-            var reachable = _reachableBlocks.Find(graph, entry, allowed);
-            // Valid exception clauses have disjoint handler/filter ranges, so
-            // each range contributes a distinct control-flow domain.
+            // A handler can be the only normal predecessor of a continuation
+            // outside its lexical range. Follow those leave edges as well, so
+            // every reachable cycle belongs to a loop-analysis domain. Exclude
+            // previously claimed paths to keep shared continuations single-owned;
+            // normal reachability always claims a whole SCC, never part of one.
+            var reachable = _reachableBlocks.Find(graph, entry, unclaimed);
+            unclaimed = unclaimed.Except(reachable);
             domains.Add(new ControlFlowDomain(entry, reachable));
         }
     }

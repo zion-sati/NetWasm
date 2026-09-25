@@ -58,6 +58,24 @@ public sealed class MethodEmissionContextFactoryTests
         Assert.Equal(37, context.NumericTemporaryI4Fourth);
         Assert.Equal(38, context.NumericTemporaryI4Fifth);
         Assert.Equal(37, result.LocalTypes.Length);
+        Assert.Equal(0, context.ExceptionRootSlots[group]);
+        Assert.Equal(1, context.RootSlotCount);
+    }
+
+    [Fact]
+    public void ExceptionRootsFollowOrdinarySafepointRootsWithoutAliasing()
+    {
+        var roots = new MethodRootMap(EntryKey,
+            ImmutableDictionary<RootSource, int>.Empty.Add(new(RootSourceKind.Local, 0), 0), []);
+        var first = new StructuredExceptionGroupId(3);
+        var second = new StructuredExceptionGroupId(19);
+        var context = MethodEmissionContextFactory.Create(Header(CreateBody()), roots, 0, 0,
+            [first, second], new(0, [], [], [], []), FilterEnvironmentLayout.Empty,
+            new ManagedMethodIdentity("Tests.Caller")).Context;
+        Assert.Equal(1, context.ExceptionRootSlots[first]);
+        Assert.Equal(2, context.ExceptionRootSlots[second]);
+        Assert.Equal(3, context.RootSlotCount);
+        Assert.Null(context.ActiveCatchRootSlot);
     }
 
     private static CilMethodBody CreateBody()

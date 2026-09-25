@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "caseId": "math.boundaries",
+  "featureIds": ["S05", "S07"],
+  "inputKind": "CSharp",
+  "sourceFiles": ["math-boundary/Program.cs.txt"],
+  "name": "MathBoundaryDifferential",
+  "namespace": "NetWasm.Correctness.MathBoundary",
+  "entryMethod": "Run",
+  "inputs": [1, 2, 3, 4, 5, 6, 7, 8],
+  "expectations": [
+    { "input": 1, "returnValue": 100, "exceptionType": null },
+    { "input": 2, "returnValue": 100, "exceptionType": null },
+    { "input": 3, "returnValue": 100, "exceptionType": null },
+    { "input": 4, "returnValue": 100, "exceptionType": null },
+    { "input": 5, "returnValue": 100, "exceptionType": null },
+    { "input": 6, "returnValue": 100, "exceptionType": null },
+    { "input": 7, "returnValue": 100, "exceptionType": null },
+    { "input": 8, "returnValue": 100, "exceptionType": null }
+  ],
+  "referencePaths": [],
+  "oracleMode": "SameSource",
+  "sameSourceReason": "The fixture compares portable managed Math and MathF behavior across targets.",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.MathDifferentialTests.MathAndMathFMatchTheDesktopOracleAtBoundaryAndRepresentativeInputs"
+}

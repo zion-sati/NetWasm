@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
@@ -12,6 +13,29 @@ using static EmitterTestSupport;
 
 public sealed class RootPublicationEmitterTests
 {
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void SafepointPublicationDoesNotClearPendingExceptionRoots(WasmTarget target)
+    {
+        var source = new RootSource(RootSourceKind.Argument, 0);
+        var context = CreateMethodEmissionContext() with
+        {
+            RootMap = new MethodRootMap(EntryKey,
+                ImmutableDictionary<RootSource, int>.Empty.Add(source, 0),
+                ImmutableDictionary<int, SafepointRootMap>.Empty.Add(0, new(0, [source], []))),
+            ExceptionRootSlots = ImmutableDictionary<StructuredExceptionGroupId, int>.Empty.Add(new(0), 1),
+        };
+        var request = CreateInstructionRequest(CilOperation.Call, context: context);
+        var code = new RecordingInstructionWriter();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var emitter = CreateEmitter(layouts);
+        emitter.Emit(request, code);
+        var instructions = code.ToInstructions();
+        Assert.Equal(2, instructions.Count(instruction => instruction.Opcode is WasmOpcodes.I32Store or WasmOpcodes.I64Store));
+        Assert.DoesNotContain(instructions, instruction => instruction.Opcode is WasmOpcodes.I32Add or WasmOpcodes.I64Add);
+    }
+
     [Fact]
     public void PublishesNormalAndConstructorRootSets()
     {

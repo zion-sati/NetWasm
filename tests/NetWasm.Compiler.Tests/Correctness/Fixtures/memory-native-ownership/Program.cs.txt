@@ -1,0 +1,143 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace NetWasm.Correctness.NativeOwnership;
+
+public static unsafe class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0:
+            {
+                // Zero-size allocation has no dereferenceable elements and may
+                // return either null or a distinct freeable address.
+                var block = NativeMemory.Alloc(0);
+                NativeMemory.Free(block);
+                NativeMemory.Free(null);
+                NativeMemory.AlignedFree(null);
+                return 42;
+            }
+            case 1:
+            {
+                var block = (byte*)NativeMemory.AllocZeroed(1);
+                try
+                {
+                    if (block[0] != 0) return -1;
+                    block[0] = 42;
+                    NativeMemory.Clear(block, 0);
+                    return block[0];
+                }
+                finally { NativeMemory.Free(block); }
+            }
+            case 2:
+            {
+                var block = (byte*)NativeMemory.AllocZeroed(7, 3);
+                try
+                {
+                    for (var index = 0; index < 21; index++)
+                        if (block[index] != 0) return -2;
+                    block[0] = 7;
+                    block[20] = 9;
+                    NativeMemory.Fill(block + 1, 19, 42);
+                    for (var index = 1; index < 20; index++)
+                        if (block[index] != 42) return -3;
+                    NativeMemory.Clear(block + 1, 19);
+                    for (var index = 1; index < 20; index++)
+                        if (block[index] != 0) return -4;
+                    return block[0] == 7 && block[20] == 9 ? 42 : -5;
+                }
+                finally { NativeMemory.Free(block); }
+            }
+            case 3:
+            case 4:
+            {
+                var block = (byte*)NativeMemory.Alloc(16);
+                try
+                {
+                    for (var index = 0; index < 16; index++) block[index] = (byte)(index + 1);
+                    var length = input == 3 ? 32 : 8;
+                    block = (byte*)NativeMemory.Realloc(block, (nuint)length);
+                    var retained = input == 3 ? 16 : 8;
+                    for (var index = 0; index < retained; index++)
+                        if (block[index] != index + 1) return -6;
+                    block[length - 1] = 42;
+                    return block[0] == 1 ? block[length - 1] : -7;
+                }
+                finally { NativeMemory.Free(block); }
+            }
+            case 5:
+            case 6:
+            {
+                var block = (byte*)NativeMemory.AlignedAlloc(16, 16);
+                try
+                {
+                    if ((nuint)block % 16 != 0) return -8;
+                    for (var index = 0; index < 16; index++) block[index] = (byte)(index + 1);
+                    if (input == 6)
+                    {
+                        block = (byte*)NativeMemory.AlignedRealloc(block, 32, 16);
+                        if ((nuint)block % 16 != 0) return -9;
+                    }
+                    for (var index = 0; index < 16; index++)
+                        if (block[index] != index + 1) return -10;
+                    return 42;
+                }
+                finally { NativeMemory.AlignedFree(block); }
+            }
+            case 7:
+            case 8:
+                try
+                {
+                    // Multiplication overflow must fail before any allocation;
+                    // this is not a host-memory-exhaustion test.
+                    var block = input == 7
+                        ? NativeMemory.Alloc(nuint.MaxValue, 2)
+                        : NativeMemory.AllocZeroed(nuint.MaxValue, 2);
+                    NativeMemory.Free(block);
+                    return -11;
+                }
+                catch (OutOfMemoryException) { return 42; }
+            case 9:
+                try
+                {
+                    var block = NativeMemory.AlignedAlloc(16, 3);
+                    NativeMemory.AlignedFree(block);
+                    return -12;
+                }
+                catch (ArgumentException) { return 42; }
+            case 10:
+            {
+                var source = (byte*)NativeMemory.Alloc(17);
+                try
+                {
+                    var destination = (byte*)NativeMemory.Alloc(19);
+                    try
+                    {
+                        for (var index = 0; index < 17; index++) source[index] = (byte)(index + 1);
+                        NativeMemory.Fill(destination, 19, 99);
+                        NativeMemory.Copy(source, destination + 1, 17);
+                        for (var index = 0; index < 17; index++)
+                            if (destination[index + 1] != index + 1 || source[index] != index + 1) return -13;
+                        return destination[0] == 99 && destination[18] == 99 ? 42 : -14;
+                    }
+                    finally { NativeMemory.Free(destination); }
+                }
+                finally { NativeMemory.Free(source); }
+            }
+            case 11:
+            {
+                var block = (byte*)NativeMemory.Realloc(null, 1);
+                try
+                {
+                    block[0] = 42;
+                    return block[0];
+                }
+                finally { NativeMemory.Free(block); }
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+}

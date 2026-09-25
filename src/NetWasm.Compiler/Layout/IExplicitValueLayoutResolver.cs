@@ -5,8 +5,17 @@ namespace NetWasm.Compiler.Layout;
 
 internal interface IExplicitValueLayoutResolver
 {
-    ValueLayout Resolve(
+    ExplicitValueLayoutPlan Resolve(
         CliTypeIdentity type,
         TypeDefinitionModel definition,
-        ImmutableArray<FieldDefinitionModel> instanceFields);
+        ImmutableArray<ExplicitFieldStorage> instanceFields,
+        WasmTargetLayout target);
 }
+
+internal readonly record struct ExplicitFieldStorage(
+    FieldDefinitionModel Definition,
+    ValueLayout Layout);
+
+internal sealed record ExplicitValueLayoutPlan(
+    ValueLayout Value,
+    ImmutableArray<FieldLayout> Fields);

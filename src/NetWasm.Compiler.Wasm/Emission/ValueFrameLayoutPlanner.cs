@@ -94,18 +94,23 @@ internal sealed class ValueFrameLayoutPlanner(
         foreach (var instruction in header.Instructions.Where(
                      instruction => instruction.Operation is CilOperation.NewObject or
                          CilOperation.NewRectangularArray or
+                         CilOperation.NewBoundedRectangularArray or
                          CilOperation.UnboxAny or CilOperation.Call or
                          CilOperation.CallVirtual or CilOperation.LoadObject or
                          CilOperation.LoadArgument or CilOperation.LoadLocal or
                          CilOperation.LoadField or CilOperation.LoadStaticField or
-                         CilOperation.LoadArrayElement or CilOperation.DefaultValue))
+                         CilOperation.LoadArrayElement or
+                         CilOperation.LoadRectangularArrayElement or CilOperation.DefaultValue))
         {
-            if (instruction.Operation == CilOperation.NewRectangularArray)
+            if (instruction.Operation is CilOperation.NewRectangularArray or
+                CilOperation.NewBoundedRectangularArray)
             {
                 var arrayType = _typeOperands.Resolve(instruction, header.MethodInstance);
                 size = Align(size, sizeof(int));
                 temporaries.Add(instruction.Offset, size);
-                size = checked(size + arrayType.ArrayRank * sizeof(int));
+                var dimensionsPerRank = instruction.Operation == CilOperation.NewBoundedRectangularArray
+                    ? 2 : 1;
+                size = checked(size + arrayType.ArrayRank * dimensionsPerRank * sizeof(int));
                 continue;
             }
             if (instruction.Operation == CilOperation.LoadArgument)
@@ -137,9 +142,13 @@ internal sealed class ValueFrameLayoutPlanner(
                 }
                 continue;
             }
-            if (instruction.Operation == CilOperation.LoadArrayElement)
+            if (instruction.Operation is CilOperation.LoadArrayElement or
+                CilOperation.LoadRectangularArrayElement)
             {
-                var elementType = _typeOperands.Resolve(instruction, header.MethodInstance);
+                var operandType = _typeOperands.Resolve(instruction, header.MethodInstance);
+                var elementType = instruction.Operation == CilOperation.LoadRectangularArrayElement
+                    ? operandType.ElementType!
+                    : operandType;
                 if (elementType.StackKind == CliValueKind.ValueType)
                 {
                     Reserve(elementType, instruction.Offset);

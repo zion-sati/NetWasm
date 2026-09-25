@@ -1,0 +1,249 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace NetWasm.Correctness.IteratorOrder;
+
+public sealed class Failure : Exception;
+
+public sealed class Sequence(int mode) : IEnumerable<int>
+{
+    public IEnumerator<int> GetEnumerator()
+    {
+        EntryPoint.Mark(1);
+        if (mode == 0) throw EntryPoint.BodyFailure;
+        return new Enumerator(mode);
+    }
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+public sealed class Enumerator(int mode) : IEnumerator<int>
+{
+    private int _index;
+    public bool MoveNext()
+    {
+        EntryPoint.Mark(2);
+        if (mode == 1) throw EntryPoint.BodyFailure;
+        return ++_index <= 2;
+    }
+    public int Current
+    {
+        get
+        {
+            EntryPoint.Mark(3);
+            if (mode == 2) throw EntryPoint.BodyFailure;
+            return _index;
+        }
+    }
+    object IEnumerator.Current => Current;
+    public void Reset() => throw new NotSupportedException();
+    public void Dispose()
+    {
+        EntryPoint.Mark(5);
+        if (mode is 4 or 5) throw EntryPoint.CleanupFailure;
+    }
+}
+
+public struct PatternEnumerator : IDisposable
+{
+    private int _index;
+    public bool MoveNext() { EntryPoint.Mark(2); return ++_index <= 1; }
+    public int Current { get { EntryPoint.Mark(3); return 42; } }
+    public void Dispose() => EntryPoint.Mark(5);
+}
+
+public sealed class PatternSequence
+{
+    public PatternEnumerator GetEnumerator() { EntryPoint.Mark(1); return default; }
+}
+
+public struct NonDisposableEnumerator
+{
+    private int _index;
+    public bool MoveNext() { EntryPoint.Mark(2); return ++_index <= 1; }
+    public int Current { get { EntryPoint.Mark(3); return 42; } }
+    // Ordinary non-ref structs do not acquire IDisposable semantics merely
+    // because they declare a method with this spelling.
+    public void Dispose() => EntryPoint.Mark(9);
+}
+
+public sealed class NonDisposableSequence
+{
+    public NonDisposableEnumerator GetEnumerator() { EntryPoint.Mark(1); return default; }
+}
+
+public static class EntryPoint
+{
+    private static int[] _events = [];
+    private static int _count;
+    public static Failure BodyFailure = new();
+    public static Failure CleanupFailure = new();
+
+    public static int Run(int input)
+    {
+        _events = new int[12];
+        _count = 0;
+        BodyFailure = new Failure();
+        CleanupFailure = new Failure();
+        if (input is >= 0 and <= 7)
+        {
+            var caught = false;
+            try
+            {
+                foreach (var value in new Sequence(input))
+                {
+                    Mark(4);
+                    if (value is < 1 or > 2) return -1;
+                    if (input is 3 or 5) throw BodyFailure;
+                    if (input == 7) continue;
+                    break;
+                }
+            }
+            catch (Failure observed)
+            {
+                caught = true;
+                if (!ReferenceEquals(observed, input is 4 or 5 ? CleanupFailure : BodyFailure)) return -2;
+                Mark(8);
+            }
+            if (caught != (input <= 5)) return -3;
+            return input switch
+            {
+                0 => Matches([1, 8]),
+                1 => Matches([1, 2, 5, 8]),
+                2 => Matches([1, 2, 3, 5, 8]),
+                3 or 4 or 5 => Matches([1, 2, 3, 4, 5, 8]),
+                6 => Matches([1, 2, 3, 4, 5]),
+                7 => Matches([1, 2, 3, 4, 2, 3, 4, 2, 5]),
+                _ => -4,
+            };
+        }
+        switch (input)
+        {
+            case 8:
+            {
+                var sequence = Values();
+                foreach (var value in sequence) Mark(10 + value);
+                foreach (var value in sequence) Mark(10 + value);
+                return Matches([1, 11, 2, 12, 3, 1, 11, 2, 12, 3]);
+            }
+            case 9:
+                foreach (var value in Outer())
+                {
+                    if (value != 42) return -5;
+                    Mark(4);
+                    break;
+                }
+                return Matches([1, 4, 2, 3]);
+            case 10:
+            {
+                var enumerator = Values().GetEnumerator();
+                enumerator.Dispose();
+                return Matches([]);
+            }
+            case 11:
+            {
+                var enumerator = Values().GetEnumerator();
+                if (!enumerator.MoveNext() || enumerator.Current != 1) return -6;
+                enumerator.Dispose();
+                enumerator.Dispose();
+                if (enumerator.MoveNext()) return -7;
+                return Matches([1, 3]);
+            }
+            case 12:
+                return EarlyReturn() == 1 ? Matches([1, 3]) : -8;
+            case 13:
+                try
+                {
+                    foreach (var value in ThrowingValues())
+                    {
+                        if (value != 42) return -9;
+                        Mark(4);
+                    }
+                    return -10;
+                }
+                catch (Failure observed)
+                {
+                    if (!ReferenceEquals(observed, CleanupFailure)) return -11;
+                    Mark(8);
+                }
+                return Matches([1, 4, 2, 3, 8]);
+            case 14:
+                foreach (var value in (IEnumerable)new Sequence(14))
+                {
+                    if ((int)value is < 1 or > 2) return -12;
+                    Mark(4);
+                }
+                return Matches([1, 2, 3, 4, 2, 3, 4, 2, 5]);
+            case 15:
+                foreach (var value in new PatternSequence())
+                {
+                    if (value != 42) return -13;
+                    Mark(4);
+                    break;
+                }
+                return Matches([1, 2, 3, 4, 5]);
+            case 16:
+                foreach (var value in new NonDisposableSequence())
+                {
+                    if (value != 42) return -16;
+                    Mark(4);
+                    break;
+                }
+                return Matches([1, 2, 3, 4]);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(input));
+        }
+    }
+
+    public static void Mark(int value) => _events[_count++] = value;
+
+    private static int Matches(int[] expected)
+    {
+        if (_count != expected.Length) return -14;
+        for (var index = 0; index < _count; index++)
+            if (_events[index] != expected[index]) return -15;
+        return 42;
+    }
+
+    private static IEnumerable<int> Values()
+    {
+        try
+        {
+            Mark(1);
+            yield return 1;
+            Mark(2);
+            yield return 2;
+        }
+        finally { Mark(3); }
+    }
+
+    private static IEnumerable<int> Inner()
+    {
+        try { Mark(1); yield return 42; }
+        finally { Mark(2); }
+    }
+
+    private static IEnumerable<int> Outer()
+    {
+        try { foreach (var value in Inner()) yield return value; }
+        finally { Mark(3); }
+    }
+
+    private static int EarlyReturn()
+    {
+        foreach (var value in Values()) return value;
+        return -1;
+    }
+
+    private static IEnumerable<int> ThrowingValues()
+    {
+        try
+        {
+            Mark(1);
+            yield return 42;
+            Mark(2);
+            throw BodyFailure;
+        }
+        finally { Mark(3); throw CleanupFailure; }
+    }
+}

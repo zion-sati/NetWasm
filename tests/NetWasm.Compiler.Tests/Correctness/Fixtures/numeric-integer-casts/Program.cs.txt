@@ -1,0 +1,1008 @@
+using System;
+
+namespace NetWasm.Correctness.IntegerCasts;
+
+public static class EntryPoint
+{
+    // Fixed-width integer boundary corpus. Expectations are independently computed
+    // by range checks and modulo-2^N arithmetic, not by executing CLR conversions.
+    // Each pair receives runtime-loaded values; checked and unchecked paths have
+    // separate manifest inputs, including managed-overflow expectations.
+    private static ulong _source;
+    private static ulong _result;
+    private static readonly sbyte[] Valuessbyte = [-128, -127, -1, 0, 1, 126, 127];
+    private static readonly sbyte[] Expectedsbyte_sbyte = [-128, -127, -1, 0, 1, 126, 127];
+    private static readonly byte[] Expectedsbyte_byte = [128, 129, 255, 0, 1, 126, 127];
+    private static readonly short[] Expectedsbyte_short = [-128, -127, -1, 0, 1, 126, 127];
+    private static readonly ushort[] Expectedsbyte_ushort = [65408, 65409, 65535, 0, 1, 126, 127];
+    private static readonly char[] Expectedsbyte_char = [(char)65408, (char)65409, (char)65535, (char)0, (char)1, (char)126, (char)127];
+    private static readonly int[] Expectedsbyte_int = [-128, -127, -1, 0, 1, 126, 127];
+    private static readonly uint[] Expectedsbyte_uint = [4294967168U, 4294967169U, 4294967295U, 0U, 1U, 126U, 127U];
+    private static readonly long[] Expectedsbyte_long = [-128L, -127L, -1L, 0L, 1L, 126L, 127L];
+    private static readonly ulong[] Expectedsbyte_ulong = [18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL];
+    private static readonly byte[] Valuesbyte = [0, 1, 126, 127, 128, 254, 255];
+    private static readonly sbyte[] Expectedbyte_sbyte = [0, 1, 126, 127, -128, -2, -1];
+    private static readonly byte[] Expectedbyte_byte = [0, 1, 126, 127, 128, 254, 255];
+    private static readonly short[] Expectedbyte_short = [0, 1, 126, 127, 128, 254, 255];
+    private static readonly ushort[] Expectedbyte_ushort = [0, 1, 126, 127, 128, 254, 255];
+    private static readonly char[] Expectedbyte_char = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255];
+    private static readonly int[] Expectedbyte_int = [0, 1, 126, 127, 128, 254, 255];
+    private static readonly uint[] Expectedbyte_uint = [0U, 1U, 126U, 127U, 128U, 254U, 255U];
+    private static readonly long[] Expectedbyte_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L];
+    private static readonly ulong[] Expectedbyte_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL];
+    private static readonly short[] Valuesshort = [-32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767];
+    private static readonly sbyte[] Expectedshort_sbyte = [0, 1, 127, -128, -127, -1, 0, 1, 126, 127, -128, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expectedshort_byte = [0, 1, 127, 128, 129, 255, 0, 1, 126, 127, 128, 254, 255, 0, 254, 255];
+    private static readonly short[] Expectedshort_short = [-32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767];
+    private static readonly ushort[] Expectedshort_ushort = [32768, 32769, 65407, 65408, 65409, 65535, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767];
+    private static readonly char[] Expectedshort_char = [(char)32768, (char)32769, (char)65407, (char)65408, (char)65409, (char)65535, (char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767];
+    private static readonly int[] Expectedshort_int = [-32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767];
+    private static readonly uint[] Expectedshort_uint = [4294934528U, 4294934529U, 4294967167U, 4294967168U, 4294967169U, 4294967295U, 0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U];
+    private static readonly long[] Expectedshort_long = [-32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L];
+    private static readonly ulong[] Expectedshort_ulong = [18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL];
+    private static readonly ushort[] Valuesushort = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535];
+    private static readonly sbyte[] Expectedushort_sbyte = [0, 1, 126, 127, -128, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expectedushort_byte = [0, 1, 126, 127, 128, 254, 255, 0, 254, 255, 0, 254, 255];
+    private static readonly short[] Expectedushort_short = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, -32768, -2, -1];
+    private static readonly ushort[] Expectedushort_ushort = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535];
+    private static readonly char[] Expectedushort_char = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535];
+    private static readonly int[] Expectedushort_int = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535];
+    private static readonly uint[] Expectedushort_uint = [0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U];
+    private static readonly long[] Expectedushort_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L];
+    private static readonly ulong[] Expectedushort_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL];
+    private static readonly char[] Valueschar = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535];
+    private static readonly sbyte[] Expectedchar_sbyte = [0, 1, 126, 127, -128, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expectedchar_byte = [0, 1, 126, 127, 128, 254, 255, 0, 254, 255, 0, 254, 255];
+    private static readonly short[] Expectedchar_short = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, -32768, -2, -1];
+    private static readonly ushort[] Expectedchar_ushort = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535];
+    private static readonly char[] Expectedchar_char = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535];
+    private static readonly int[] Expectedchar_int = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535];
+    private static readonly uint[] Expectedchar_uint = [0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U];
+    private static readonly long[] Expectedchar_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L];
+    private static readonly ulong[] Expectedchar_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL];
+    private static readonly int[] Valuesint = [-2147483648, -2147483647, -32769, -32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 65536, 2147483646, 2147483647];
+    private static readonly sbyte[] Expectedint_sbyte = [0, 1, -1, 0, 1, 127, -128, -127, -1, 0, 1, 126, 127, -128, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expectedint_byte = [0, 1, 255, 0, 1, 127, 128, 129, 255, 0, 1, 126, 127, 128, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255];
+    private static readonly short[] Expectedint_short = [0, 1, 32767, -32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, -32768, -2, -1, 0, -2, -1];
+    private static readonly ushort[] Expectedint_ushort = [0, 1, 32767, 32768, 32769, 65407, 65408, 65409, 65535, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 0, 65534, 65535];
+    private static readonly char[] Expectedint_char = [(char)0, (char)1, (char)32767, (char)32768, (char)32769, (char)65407, (char)65408, (char)65409, (char)65535, (char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535, (char)0, (char)65534, (char)65535];
+    private static readonly int[] Expectedint_int = [-2147483648, -2147483647, -32769, -32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 65536, 2147483646, 2147483647];
+    private static readonly uint[] Expectedint_uint = [2147483648U, 2147483649U, 4294934527U, 4294934528U, 4294934529U, 4294967167U, 4294967168U, 4294967169U, 4294967295U, 0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U, 65536U, 2147483646U, 2147483647U];
+    private static readonly long[] Expectedint_long = [-2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L];
+    private static readonly ulong[] Expectedint_ulong = [18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL];
+    private static readonly uint[] Valuesuint = [0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U, 65536U, 2147483646U, 2147483647U, 2147483648U, 4294967294U, 4294967295U];
+    private static readonly sbyte[] Expecteduint_sbyte = [0, 1, 126, 127, -128, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expecteduint_byte = [0, 1, 126, 127, 128, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255];
+    private static readonly short[] Expecteduint_short = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, -32768, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly ushort[] Expecteduint_ushort = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 0, 65534, 65535, 0, 65534, 65535];
+    private static readonly char[] Expecteduint_char = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535, (char)0, (char)65534, (char)65535, (char)0, (char)65534, (char)65535];
+    private static readonly int[] Expecteduint_int = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 65536, 2147483646, 2147483647, -2147483648, -2, -1];
+    private static readonly uint[] Expecteduint_uint = [0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U, 65536U, 2147483646U, 2147483647U, 2147483648U, 4294967294U, 4294967295U];
+    private static readonly long[] Expecteduint_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L];
+    private static readonly ulong[] Expecteduint_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL];
+    private static readonly long[] Valueslong = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly sbyte[] Expectedlong_sbyte = [0, 1, -1, 0, 1, -1, 0, 1, 127, -128, -127, -1, 0, 1, 126, 127, -128, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expectedlong_byte = [0, 1, 255, 0, 1, 255, 0, 1, 127, 128, 129, 255, 0, 1, 126, 127, 128, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255];
+    private static readonly short[] Expectedlong_short = [0, 1, -1, 0, 1, 32767, -32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, -32768, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly ushort[] Expectedlong_ushort = [0, 1, 65535, 0, 1, 32767, 32768, 32769, 65407, 65408, 65409, 65535, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 0, 65534, 65535, 0, 65534, 65535, 0, 65534, 65535];
+    private static readonly char[] Expectedlong_char = [(char)0, (char)1, (char)65535, (char)0, (char)1, (char)32767, (char)32768, (char)32769, (char)65407, (char)65408, (char)65409, (char)65535, (char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535, (char)0, (char)65534, (char)65535, (char)0, (char)65534, (char)65535, (char)0, (char)65534, (char)65535];
+    private static readonly int[] Expectedlong_int = [0, 1, 2147483647, -2147483648, -2147483647, -32769, -32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 65536, 2147483646, 2147483647, -2147483648, -2, -1, 0, -2, -1];
+    private static readonly uint[] Expectedlong_uint = [0U, 1U, 2147483647U, 2147483648U, 2147483649U, 4294934527U, 4294934528U, 4294934529U, 4294967167U, 4294967168U, 4294967169U, 4294967295U, 0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U, 65536U, 2147483646U, 2147483647U, 2147483648U, 4294967294U, 4294967295U, 0U, 4294967294U, 4294967295U];
+    private static readonly long[] Expectedlong_long = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly ulong[] Expectedlong_ulong = [9223372036854775808UL, 9223372036854775809UL, 18446744071562067967UL, 18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL];
+    private static readonly ulong[] Valuesulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly sbyte[] Expectedulong_sbyte = [0, 1, 126, 127, -128, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly byte[] Expectedulong_byte = [0, 1, 126, 127, 128, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255, 0, 254, 255];
+    private static readonly short[] Expectedulong_short = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, -32768, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly ushort[] Expectedulong_ushort = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 0, 65534, 65535, 0, 65534, 65535, 0, 65534, 65535, 0, 65534, 65535];
+    private static readonly char[] Expectedulong_char = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535, (char)0, (char)65534, (char)65535, (char)0, (char)65534, (char)65535, (char)0, (char)65534, (char)65535, (char)0, (char)65534, (char)65535];
+    private static readonly int[] Expectedulong_int = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 65536, 2147483646, 2147483647, -2147483648, -2, -1, 0, -2, -1, 0, -2, -1];
+    private static readonly uint[] Expectedulong_uint = [0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U, 65536U, 2147483646U, 2147483647U, 2147483648U, 4294967294U, 4294967295U, 0U, 4294967294U, 4294967295U, 0U, 4294967294U, 4294967295U];
+    private static readonly long[] Expectedulong_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L, long.MinValue, -2L, -1L];
+    private static readonly ulong[] Expectedulong_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+
+    public static int Run(int input)
+    {
+        _source = 0;
+        _result = 0;
+        if (input < 14) return Castsbyte_sbyte(input - 0);
+        if (input < 28) return Castsbyte_byte(input - 14);
+        if (input < 42) return Castsbyte_short(input - 28);
+        if (input < 56) return Castsbyte_ushort(input - 42);
+        if (input < 70) return Castsbyte_char(input - 56);
+        if (input < 84) return Castsbyte_int(input - 70);
+        if (input < 98) return Castsbyte_uint(input - 84);
+        if (input < 112) return Castsbyte_long(input - 98);
+        if (input < 126) return Castsbyte_ulong(input - 112);
+        if (input < 140) return Castbyte_sbyte(input - 126);
+        if (input < 154) return Castbyte_byte(input - 140);
+        if (input < 168) return Castbyte_short(input - 154);
+        if (input < 182) return Castbyte_ushort(input - 168);
+        if (input < 196) return Castbyte_char(input - 182);
+        if (input < 210) return Castbyte_int(input - 196);
+        if (input < 224) return Castbyte_uint(input - 210);
+        if (input < 238) return Castbyte_long(input - 224);
+        if (input < 252) return Castbyte_ulong(input - 238);
+        if (input < 284) return Castshort_sbyte(input - 252);
+        if (input < 316) return Castshort_byte(input - 284);
+        if (input < 348) return Castshort_short(input - 316);
+        if (input < 380) return Castshort_ushort(input - 348);
+        if (input < 412) return Castshort_char(input - 380);
+        if (input < 444) return Castshort_int(input - 412);
+        if (input < 476) return Castshort_uint(input - 444);
+        if (input < 508) return Castshort_long(input - 476);
+        if (input < 540) return Castshort_ulong(input - 508);
+        if (input < 566) return Castushort_sbyte(input - 540);
+        if (input < 592) return Castushort_byte(input - 566);
+        if (input < 618) return Castushort_short(input - 592);
+        if (input < 644) return Castushort_ushort(input - 618);
+        if (input < 670) return Castushort_char(input - 644);
+        if (input < 696) return Castushort_int(input - 670);
+        if (input < 722) return Castushort_uint(input - 696);
+        if (input < 748) return Castushort_long(input - 722);
+        if (input < 774) return Castushort_ulong(input - 748);
+        if (input < 800) return Castchar_sbyte(input - 774);
+        if (input < 826) return Castchar_byte(input - 800);
+        if (input < 852) return Castchar_short(input - 826);
+        if (input < 878) return Castchar_ushort(input - 852);
+        if (input < 904) return Castchar_char(input - 878);
+        if (input < 930) return Castchar_int(input - 904);
+        if (input < 956) return Castchar_uint(input - 930);
+        if (input < 982) return Castchar_long(input - 956);
+        if (input < 1008) return Castchar_ulong(input - 982);
+        if (input < 1058) return Castint_sbyte(input - 1008);
+        if (input < 1108) return Castint_byte(input - 1058);
+        if (input < 1158) return Castint_short(input - 1108);
+        if (input < 1208) return Castint_ushort(input - 1158);
+        if (input < 1258) return Castint_char(input - 1208);
+        if (input < 1308) return Castint_int(input - 1258);
+        if (input < 1358) return Castint_uint(input - 1308);
+        if (input < 1408) return Castint_long(input - 1358);
+        if (input < 1458) return Castint_ulong(input - 1408);
+        if (input < 1496) return Castuint_sbyte(input - 1458);
+        if (input < 1534) return Castuint_byte(input - 1496);
+        if (input < 1572) return Castuint_short(input - 1534);
+        if (input < 1610) return Castuint_ushort(input - 1572);
+        if (input < 1648) return Castuint_char(input - 1610);
+        if (input < 1686) return Castuint_int(input - 1648);
+        if (input < 1724) return Castuint_uint(input - 1686);
+        if (input < 1762) return Castuint_long(input - 1724);
+        if (input < 1800) return Castuint_ulong(input - 1762);
+        if (input < 1868) return Castlong_sbyte(input - 1800);
+        if (input < 1936) return Castlong_byte(input - 1868);
+        if (input < 2004) return Castlong_short(input - 1936);
+        if (input < 2072) return Castlong_ushort(input - 2004);
+        if (input < 2140) return Castlong_char(input - 2072);
+        if (input < 2208) return Castlong_int(input - 2140);
+        if (input < 2276) return Castlong_uint(input - 2208);
+        if (input < 2344) return Castlong_long(input - 2276);
+        if (input < 2412) return Castlong_ulong(input - 2344);
+        if (input < 2462) return Castulong_sbyte(input - 2412);
+        if (input < 2512) return Castulong_byte(input - 2462);
+        if (input < 2562) return Castulong_short(input - 2512);
+        if (input < 2612) return Castulong_ushort(input - 2562);
+        if (input < 2662) return Castulong_char(input - 2612);
+        if (input < 2712) return Castulong_int(input - 2662);
+        if (input < 2762) return Castulong_uint(input - 2712);
+        if (input < 2812) return Castulong_long(input - 2762);
+        if (input < 2862) return Castulong_ulong(input - 2812);
+        throw new ArgumentOutOfRangeException(nameof(input));
+    }
+
+    private static int Castsbyte_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_byte[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_short[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_char[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_int[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_uint[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_long[index] ? 42 : -1;
+    }
+
+    private static int Castsbyte_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedsbyte_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_byte[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_short[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_char[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_int[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_uint[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_long[index] ? 42 : -1;
+    }
+
+    private static int Castbyte_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedbyte_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castshort_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castshort_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_byte[index] ? 42 : -1;
+    }
+
+    private static int Castshort_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_short[index] ? 42 : -1;
+    }
+
+    private static int Castshort_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castshort_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_char[index] ? 42 : -1;
+    }
+
+    private static int Castshort_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_int[index] ? 42 : -1;
+    }
+
+    private static int Castshort_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_uint[index] ? 42 : -1;
+    }
+
+    private static int Castshort_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_long[index] ? 42 : -1;
+    }
+
+    private static int Castshort_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedshort_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castushort_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castushort_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_byte[index] ? 42 : -1;
+    }
+
+    private static int Castushort_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_short[index] ? 42 : -1;
+    }
+
+    private static int Castushort_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castushort_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_char[index] ? 42 : -1;
+    }
+
+    private static int Castushort_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_int[index] ? 42 : -1;
+    }
+
+    private static int Castushort_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_uint[index] ? 42 : -1;
+    }
+
+    private static int Castushort_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_long[index] ? 42 : -1;
+    }
+
+    private static int Castushort_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedushort_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castchar_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castchar_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_byte[index] ? 42 : -1;
+    }
+
+    private static int Castchar_short(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_short[index] ? 42 : -1;
+    }
+
+    private static int Castchar_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castchar_char(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_char[index] ? 42 : -1;
+    }
+
+    private static int Castchar_int(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_int[index] ? 42 : -1;
+    }
+
+    private static int Castchar_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_uint[index] ? 42 : -1;
+    }
+
+    private static int Castchar_long(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_long[index] ? 42 : -1;
+    }
+
+    private static int Castchar_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedchar_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castint_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castint_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_byte[index] ? 42 : -1;
+    }
+
+    private static int Castint_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_short[index] ? 42 : -1;
+    }
+
+    private static int Castint_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castint_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_char[index] ? 42 : -1;
+    }
+
+    private static int Castint_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_int[index] ? 42 : -1;
+    }
+
+    private static int Castint_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_uint[index] ? 42 : -1;
+    }
+
+    private static int Castint_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_long[index] ? 42 : -1;
+    }
+
+    private static int Castint_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedint_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castuint_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castuint_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_byte[index] ? 42 : -1;
+    }
+
+    private static int Castuint_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_short[index] ? 42 : -1;
+    }
+
+    private static int Castuint_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castuint_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_char[index] ? 42 : -1;
+    }
+
+    private static int Castuint_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_int[index] ? 42 : -1;
+    }
+
+    private static int Castuint_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_uint[index] ? 42 : -1;
+    }
+
+    private static int Castuint_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_long[index] ? 42 : -1;
+    }
+
+    private static int Castuint_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expecteduint_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castlong_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castlong_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_byte[index] ? 42 : -1;
+    }
+
+    private static int Castlong_short(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_short[index] ? 42 : -1;
+    }
+
+    private static int Castlong_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castlong_char(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_char[index] ? 42 : -1;
+    }
+
+    private static int Castlong_int(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_int[index] ? 42 : -1;
+    }
+
+    private static int Castlong_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_uint[index] ? 42 : -1;
+    }
+
+    private static int Castlong_long(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_long[index] ? 42 : -1;
+    }
+
+    private static int Castlong_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedlong_ulong[index] ? 42 : -1;
+    }
+
+    private static int Castulong_sbyte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_sbyte[index] ? 42 : -1;
+    }
+
+    private static int Castulong_byte(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_byte[index] ? 42 : -1;
+    }
+
+    private static int Castulong_short(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_short[index] ? 42 : -1;
+    }
+
+    private static int Castulong_ushort(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_ushort[index] ? 42 : -1;
+    }
+
+    private static int Castulong_char(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_char[index] ? 42 : -1;
+    }
+
+    private static int Castulong_int(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_int[index] ? 42 : -1;
+    }
+
+    private static int Castulong_uint(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_uint[index] ? 42 : -1;
+    }
+
+    private static int Castulong_long(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_long[index] ? 42 : -1;
+    }
+
+    private static int Castulong_ulong(int input)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        _source = unchecked((ulong)value);
+        var result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        _result = unchecked((ulong)result);
+        return result == Expectedulong_ulong[index] ? 42 : -1;
+    }
+
+    public static int Trace() => 2;
+    public static int TraceCount() => 2;
+    public static int TraceKind(int index) => 3;
+    public static int TraceEventId(int index) => index;
+    public static int TracePayloadLow(int index) => unchecked((int)(index == 0 ? _source : _result));
+    public static int TracePayloadHigh(int index) => unchecked((int)((index == 0 ? _source : _result) >> 32));
+}

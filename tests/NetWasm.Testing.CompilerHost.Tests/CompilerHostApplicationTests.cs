@@ -33,7 +33,7 @@ public sealed class CompilerHostApplicationTests
             EmitStackTrace = emitStackTrace,
             StackTraceSymbolsPath = files.StackTracePath,
         };
-        var application = new CompilerHostApplication(new SuccessfulCompiler(), loader);
+        var application = CreateApplication(new SuccessfulCompiler(), loader);
 
         var exitCode = application.Run(request, files.ResponsePath);
 
@@ -43,6 +43,7 @@ public sealed class CompilerHostApplicationTests
         Assert.NotNull(response);
         Assert.Equal(7, response.StaticDataEnd);
         Assert.Equal(64, response.ModuleSha256.Length);
+        Assert.Equal("Fixture.Example", response.TypeNames[17]);
         Assert.Equal(collectMetrics, response.CompilerMetrics is not null);
         Assert.Equal(collectMetrics, response.CompilerTiming is not null);
         Assert.Equal(aliases, loader.ReceivedAliases is not null);
@@ -55,7 +56,7 @@ public sealed class CompilerHostApplicationTests
     public void CapturedDiagnosticsRetainMetricsAndExitPolicy(bool capture, int expectedExitCode)
     {
         using var files = new HostTestFiles();
-        var application = new CompilerHostApplication(
+        var application = CreateApplication(
             new DiagnosticCompiler(),
             new RecordingMetadataLoader());
         var request = Request(files.ModulePath) with { CaptureDiagnostic = capture };
@@ -88,7 +89,7 @@ public sealed class CompilerHostApplicationTests
         CompilerMetricsOutcome expectedOutcome)
     {
         using var files = new HostTestFiles();
-        var application = new CompilerHostApplication(
+        var application = CreateApplication(
             new FailingCompiler(cancel),
             new RecordingMetadataLoader());
 
@@ -111,15 +112,92 @@ public sealed class CompilerHostApplicationTests
     public void GuardsDependenciesAndRequestArguments()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new CompilerHostApplication(null!, new RecordingMetadataLoader()));
+            CreateApplication(null!, new RecordingMetadataLoader()));
         Assert.Throws<ArgumentNullException>(() =>
-            new CompilerHostApplication(new SuccessfulCompiler(), null!));
-        var application = new CompilerHostApplication(
+            CreateApplication(new SuccessfulCompiler(), null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CompilerHostApplication(new SuccessfulCompiler(), new RecordingMetadataLoader(), null!, new CompilerHostArtifactWriter()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CompilerHostApplication(new SuccessfulCompiler(), new RecordingMetadataLoader(), new CompilerHostArtifactFormatter(), null!));
+        var application = CreateApplication(
             new SuccessfulCompiler(),
             new RecordingMetadataLoader());
         Assert.Throws<ArgumentNullException>(() => application.Run(null!, "response.json"));
         Assert.Throws<ArgumentException>(() => application.Run(Request("module.wasm"), ""));
     }
+
+    [Fact]
+    public void DelegatesTheExactRequestAndFormattedArtifacts()
+    {
+        using var files = new HostTestFiles();
+        var formatter = new RecordingFormatter();
+        var writer = new RecordingWriter();
+        var application = new CompilerHostApplication(new SuccessfulCompiler(), new RecordingMetadataLoader(), formatter, writer);
+        var request = Request(files.ModulePath) with { RuntimeLayoutPath = "layout.json", InteropManifestPath = "interop.json" };
+
+        Assert.Equal(0, application.Run(request, files.ResponsePath));
+
+        Assert.Same(request, formatter.Request);
+        Assert.Equal(7, formatter.Result!.StaticDataEnd);
+        Assert.Equal(formatter.Artifacts, writer.Artifacts);
+        Assert.Equal(1, writer.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ArtifactFailureProducesFailedResponseBeforeMetadataLoading(bool formattingFails)
+    {
+        using var files = new HostTestFiles();
+        var formatter = new RecordingFormatter { Fail = formattingFails };
+        var writer = new RecordingWriter { Fail = !formattingFails };
+        var loader = new RecordingMetadataLoader();
+        var application = new CompilerHostApplication(new SuccessfulCompiler(), loader, formatter, writer);
+
+        Assert.Equal(1, application.Run(Request(files.ModulePath), files.ResponsePath));
+
+        Assert.Equal(formattingFails ? 0 : 1, writer.Calls);
+        Assert.Equal(0, loader.Calls);
+        Assert.Equal(CompilerMetricsOutcome.Failed,
+            JsonSerializer.Deserialize<FailedCompilationResponse>(File.ReadAllText(files.ResponsePath))!.Outcome);
+    }
+
+    private sealed class RecordingFormatter : ICompilerHostArtifactFormatter
+    {
+        public CompilationRequest? Request { get; private set; }
+        public CompilationResult? Result { get; private set; }
+        public bool Fail { get; init; }
+        public ImmutableArray<CompilerHostArtifact> Artifacts { get; } = [new("artifact.bin", [1, 2])];
+
+        public ImmutableArray<CompilerHostArtifact> Format(CompilationRequest request, CompilationResult result)
+        {
+            Request = request;
+            Result = result;
+            if (Fail)
+                throw new InvalidOperationException("format failure");
+            return Artifacts;
+        }
+    }
+
+    private sealed class RecordingWriter : ICompilerHostArtifactWriter
+    {
+        public int Calls { get; private set; }
+        public bool Fail { get; init; }
+        public ImmutableArray<CompilerHostArtifact> Artifacts { get; private set; }
+
+        public void Write(ImmutableArray<CompilerHostArtifact> artifacts)
+        {
+            Calls++;
+            if (Fail)
+                throw new IOException("write failure");
+            Artifacts = artifacts;
+        }
+    }
+
+    private static CompilerHostApplication CreateApplication(
+        INetWasmCompiler compiler,
+        IMetadataCompilationLoader loader) =>
+        new(compiler, loader, new CompilerHostArtifactFormatter(), new CompilerHostArtifactWriter());
 
     private static CompilationRequest Request(string modulePath) => new(
         "entry.dll", [], "Application", "Run", [], WasmTarget.Wasm32, null, [],
@@ -146,7 +224,8 @@ public sealed class CompilerHostApplicationTests
             staticDataType.GetField(
                 "<TypeDescriptors>k__BackingField",
                 BindingFlags.Instance | BindingFlags.NonPublic)!
-                .SetValue(staticData, ImmutableArray<TypeDescriptorLayout>.Empty);
+                .SetValue(staticData, ImmutableArray.Create(
+                    new TypeDescriptorLayout(new(new("Fixture"), 1), 17, 0, 16, 0, 0, null)));
             typeof(ManagedLayoutSnapshot).GetField(
                 "<StaticData>k__BackingField",
                 BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -184,6 +263,7 @@ public sealed class CompilerHostApplicationTests
 
     private sealed class RecordingMetadataLoader : IMetadataCompilationLoader
     {
+        public int Calls { get; private set; }
         public ImmutableDictionary<string, string>? ReceivedAliases { get; private set; }
 
         public IMetadataCompilationLease Load(
@@ -191,14 +271,19 @@ public sealed class CompilerHostApplicationTests
             IEnumerable<string> referencePaths,
             ImmutableDictionary<string, string>? aliases = null)
         {
+            Calls++;
             ReceivedAliases = aliases;
-            return new EmptyMetadataLease();
+            return new FixtureMetadataLease();
         }
     }
 
-    private sealed class EmptyMetadataLease : IMetadataCompilationLease
+    private sealed class FixtureMetadataLease : IMetadataCompilationLease
     {
-        public MetadataCompilationSnapshot Snapshot => throw new InvalidOperationException();
+        public MetadataCompilationSnapshot Snapshot { get; } = new(
+            [], new("Fixture"),
+            [new(new(new("Fixture"), 2), "Fixture", "Unrelated", false, [], []),
+             new(new(new("Fixture"), 1), "Fixture", "Example", false, [], [])],
+            [], []);
         public void Dispose()
         {
         }

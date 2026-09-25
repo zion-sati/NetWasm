@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "caseId": "memory.exact-root-slots",
+  "featureIds": [
+    "S16"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "memory-exact-root-slots/Program.cs.txt"
+  ],
+  "name": "ExactRootSlots",
+  "namespace": "NetWasm.Correctness.ExactRootSlots",
+  "entryMethod": "Run",
+  "inputs": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 1,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 2,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 3,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Runtime.InteropServices": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "executionBackend": "Linked",
+  "requiredRuntimeCapabilities": "GarbageCollection, WeakReferenceClearing",
+  "supportsBatchedOracle": false,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.MemoryBoundaryTests.RealCollectionDistinguishesManagedReferenceSlotsFromOpaqueAddressBits"
+}

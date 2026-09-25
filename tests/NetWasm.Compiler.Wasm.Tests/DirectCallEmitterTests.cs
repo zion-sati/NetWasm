@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -10,6 +11,41 @@ using static EmitterTestSupport;
 
 public sealed class DirectCallEmitterTests
 {
+    [Theory]
+    [InlineData(true, "Method", true)]
+    [InlineData(true, ".cctor", false)]
+    [InlineData(false, "Method", false)]
+    public void StaticMethodCallsTriggerInitializationButConstructorsAndInstanceCallsDoNot(
+        bool isStatic, string name, bool expected)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider();
+        var definition = program.GetMethod(EntryKey) with
+        {
+            IsStatic = isStatic, Name = name, Signature = MethodSignatureModel.Create(CliValueKind.Void),
+        };
+        var method = new MethodInstanceModel(definition,
+            CliTypeIdentity.Named(Assembly, "Test", "Type", false), [], definition.Signature);
+        var instruction = CreateInstructionRequest(CilOperation.Call,
+            isStatic ? [] : [CliValueKind.ManagedReference], new CilOperand.Entity(EntryKey));
+        var initialization = new RecordingInitialization();
+        var emitter = Assert.IsAssignableFrom<ICallEmitter>(new DirectCallEmitter(layouts, layouts,
+            new ImplicitExceptionEmitter(layouts, layouts, 7), initialization));
+
+        emitter.Emit(new(instruction, method, 0, isStatic ? 0 : 1),
+            GetCodeWriter(instruction), CreateIndices(program));
+
+        Assert.Equal(expected, initialization.Request is not null);
+        if (expected)
+        {
+            Assert.Equal(definition.DeclaringType, initialization.Request!.TypeDefinition);
+            Assert.True(initialization.Request.IsStaticMethodCall);
+            Assert.Equal(method.DeclaringType, initialization.Request.DeclaringType);
+            Assert.Same(instruction.Target.ModuleData, initialization.Request.ModuleData);
+            Assert.Equal(0, initialization.PrecedingInstructions);
+        }
+    }
+
     [Fact]
     public void StaticCallConsumesArgumentsAndProducesResult()
     {
@@ -349,8 +385,23 @@ public sealed class DirectCallEmitterTests
             new DirectCallEmitter(
                 layouts,
                 layouts,
-                new ImplicitExceptionEmitter(layouts, layouts, 7)),
+                new ImplicitExceptionEmitter(layouts, layouts, 7),
+                new RecordingInitialization()),
         }.Cast<ICallEmitter>().Single();
+
+    private sealed class RecordingInitialization : IStaticInitializationEmitter
+    {
+        public StaticInitializationEmissionRequest? Request { get; private set; }
+        public int PrecedingInstructions { get; private set; }
+
+        public void Emit(StaticInitializationEmissionRequest request,
+            NetWasm.Compiler.Wasm.Encoding.IWasmInstructionWriter code,
+            IFunctionIndexResolver functionIndices)
+        {
+            Request = request;
+            PrecedingInstructions = ((RecordingInstructionWriter)code).ToInstructions().Length;
+        }
+    }
 
     private static FunctionIndexResolver CreateIndices(FakeProgram program) => new(
         program,

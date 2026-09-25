@@ -1,0 +1,212 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+
+namespace NetWasm.Correctness.ImplicitExceptionLifetime;
+
+public sealed class Holder
+{
+    public Exception? Value;
+}
+
+public sealed class Gate(bool completed) : INotifyCompletion
+{
+    private Action? _continuation;
+
+    public bool IsCompleted { get; private set; } = completed;
+    public int Registrations { get; private set; }
+    public Gate GetAwaiter() => this;
+
+    public void GetResult()
+    {
+        if (!IsCompleted) throw new InvalidOperationException();
+    }
+
+    public void OnCompleted(Action continuation)
+    {
+        if (IsCompleted || _continuation is not null) throw new InvalidOperationException();
+        _continuation = continuation;
+        Registrations++;
+    }
+
+    public void Complete()
+    {
+        if (IsCompleted || _continuation is null) throw new InvalidOperationException();
+        IsCompleted = true;
+        var continuation = _continuation;
+        _continuation = null;
+        continuation();
+    }
+}
+
+public static class EntryPoint
+{
+    public static int Run(int input) => input switch
+    {
+        0 => HeapRoundTrip(construct: true),
+        1 => HeapRoundTrip(construct: false),
+        2 => LocalRoundTrip(construct: true),
+        3 => LocalRoundTrip(construct: false),
+        4 => CompleteTask(construct: true, suspended: false, handleInside: false),
+        5 => CompleteTask(construct: true, suspended: true, handleInside: false),
+        6 => CompleteTask(construct: false, suspended: false, handleInside: false),
+        7 => CompleteTask(construct: false, suspended: true, handleInside: false),
+        8 => CompleteTask(construct: false, suspended: false, handleInside: true),
+        9 => CompleteTask(construct: false, suspended: true, handleInside: true),
+        10 => CompleteValueTask(construct: true, suspended: false, handleInside: false),
+        11 => CompleteValueTask(construct: true, suspended: true, handleInside: false),
+        12 => CompleteValueTask(construct: false, suspended: false, handleInside: false),
+        13 => CompleteValueTask(construct: false, suspended: true, handleInside: false),
+        14 => CompleteValueTask(construct: false, suspended: false, handleInside: true),
+        15 => CompleteValueTask(construct: false, suspended: true, handleInside: true),
+        16 => EscapeTask(construct: true, suspended: false),
+        17 => EscapeTask(construct: true, suspended: true),
+        18 => EscapeTask(construct: false, suspended: false),
+        19 => EscapeTask(construct: false, suspended: true),
+        20 => EscapeValueTask(construct: true, suspended: false),
+        21 => EscapeValueTask(construct: true, suspended: true),
+        22 => EscapeValueTask(construct: false, suspended: false),
+        23 => EscapeValueTask(construct: false, suspended: true),
+        24 => throw new OverflowException(),
+        25 => CheckedOverflow(),
+        26 => throw Capture(construct: true),
+        27 => throw Capture(construct: false),
+        28 => Task.FromException<int>(new OverflowException()).GetAwaiter().GetResult(),
+        29 => Task.FromException<int>(Capture(construct: false)).GetAwaiter().GetResult(),
+        _ => throw new ArgumentOutOfRangeException(nameof(input)),
+    };
+
+    private static int HeapRoundTrip(bool construct)
+    {
+        var holder = new Holder { Value = Capture(construct) };
+        GC.Collect();
+        return holder.Value is OverflowException ? 42 : -1;
+    }
+
+    private static int LocalRoundTrip(bool construct)
+    {
+        var exception = Capture(construct);
+        GC.Collect();
+        var result = exception is OverflowException ? 42 : -2;
+        GC.KeepAlive(exception);
+        return result;
+    }
+
+    private static Exception Capture(bool construct)
+    {
+        try
+        {
+            if (construct) throw new OverflowException();
+            _ = CheckedOverflow();
+        }
+        catch (OverflowException exception)
+        {
+            return exception;
+        }
+        throw new InvalidOperationException();
+    }
+
+    private static int CompleteTask(bool construct, bool suspended, bool handleInside)
+    {
+        var gate = new Gate(!suspended);
+        var task = handleInside ? HandleTask(gate) : ThrowTask(gate, construct);
+        return Complete(task, gate, suspended, handleInside);
+    }
+
+    private static int CompleteValueTask(bool construct, bool suspended, bool handleInside)
+    {
+        var gate = new Gate(!suspended);
+        var task = (handleInside ? HandleValueTask(gate) : ThrowValueTask(gate, construct)).AsTask();
+        return Complete(task, gate, suspended, handleInside);
+    }
+
+    private static int EscapeTask(bool construct, bool suspended)
+    {
+        var gate = new Gate(!suspended);
+        return Escape(ThrowTask(gate, construct), gate, suspended);
+    }
+
+    private static int EscapeValueTask(bool construct, bool suspended)
+    {
+        var gate = new Gate(!suspended);
+        return Escape(ThrowValueTask(gate, construct).AsTask(), gate, suspended);
+    }
+
+    private static int Escape(Task<int> task, Gate gate, bool suspended)
+    {
+        if (suspended)
+        {
+            if (task.IsCompleted || gate.Registrations != 1) return -9;
+            gate.Complete();
+        }
+        else if (!task.IsCompleted || gate.Registrations != 0)
+        {
+            return -10;
+        }
+
+        if (!task.IsCompleted || !task.IsFaulted) return -11;
+        return task.GetAwaiter().GetResult();
+    }
+
+    private static int Complete(Task<int> task, Gate gate, bool suspended, bool handleInside)
+    {
+        if (suspended)
+        {
+            if (task.IsCompleted || gate.Registrations != 1) return -3;
+            gate.Complete();
+        }
+        else if (!task.IsCompleted || gate.Registrations != 0)
+        {
+            return -4;
+        }
+
+        if (!task.IsCompleted) return -5;
+        if (handleInside)
+            return task.GetAwaiter().GetResult() == 42 && task.IsCompletedSuccessfully ? 42 : -6;
+
+        try
+        {
+            _ = task.GetAwaiter().GetResult();
+            return -7;
+        }
+        catch (OverflowException)
+        {
+            return task.IsFaulted ? 42 : -8;
+        }
+    }
+
+    private static async Task<int> ThrowTask(Gate gate, bool construct)
+    {
+        await gate;
+        if (construct) throw new OverflowException();
+        return CheckedOverflow();
+    }
+
+    private static async ValueTask<int> ThrowValueTask(Gate gate, bool construct)
+    {
+        await gate;
+        if (construct) throw new OverflowException();
+        return CheckedOverflow();
+    }
+
+    private static async Task<int> HandleTask(Gate gate)
+    {
+        await gate;
+        try { return CheckedOverflow(); }
+        catch (OverflowException) { return 42; }
+    }
+
+    private static async ValueTask<int> HandleValueTask(Gate gate)
+    {
+        await gate;
+        try { return CheckedOverflow(); }
+        catch (OverflowException) { return 42; }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int CheckedOverflow()
+    {
+        var value = double.PositiveInfinity;
+        return checked((int)value);
+    }
+}

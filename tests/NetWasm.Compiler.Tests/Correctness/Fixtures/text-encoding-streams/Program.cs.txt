@@ -1,0 +1,145 @@
+using System;
+using System.IO;
+using System.Text;
+
+namespace NetWasm.Correctness.EncodingStreams;
+
+public static class EntryPoint
+{
+    public static int Run(int input)
+    {
+        switch (input)
+        {
+            case 0: case 1: case 2: SplitScalar(input + 1); break;
+            case 3: ResetDecoder(); break;
+            case 4: StrictFlush(); break;
+            case 5: SplitSurrogates(); break;
+            case 6: BoundedConversion(); break;
+            case 7: ShortTextReader(); break;
+            case 8: ExactRead(); break;
+            case 9: WriterOwnership(); break;
+            default: throw new ArgumentOutOfRangeException(nameof(input));
+        }
+        return 42;
+    }
+
+    private static void Require(bool value)
+    {
+        if (!value) throw new InvalidOperationException("Encoding/stream contract mismatch.");
+    }
+
+    private static void SplitScalar(int split)
+    {
+        byte[] bytes = [0xF0, 0x9F, 0x98, 0x80];
+        var chars = new char[2];
+        var decoder = new UTF8Encoding(false, true).GetDecoder();
+        Require(decoder.GetChars(bytes, 0, split, chars, 0, false) == 0);
+        Require(decoder.GetChars(bytes, split, 4 - split, chars, 0, true) == 2);
+        Require(chars[0] == '\uD83D' && chars[1] == '\uDE00');
+        Require(decoder.GetChars([], 0, 0, chars, 0, true) == 0);
+    }
+
+    private static void ResetDecoder()
+    {
+        var decoder = Encoding.UTF8.GetDecoder();
+        var chars = new char[3];
+        Require(decoder.GetChars([0xF0, 0x9F], 0, 2, chars, 0, false) == 0);
+        decoder.Reset();
+        Require(decoder.GetChars([65], 0, 1, chars, 0, true) == 1 && chars[0] == 'A');
+        Require(decoder.GetChars([0xE2, 0x82], 0, 2, chars, 0, true) == 1 && chars[0] == '\uFFFD');
+    }
+
+    private static void StrictFlush()
+    {
+        var decoder = new UTF8Encoding(false, true).GetDecoder();
+        var chars = new char[2];
+        Require(decoder.GetChars([0xF0], 0, 1, chars, 0, false) == 0);
+        var threw = false;
+        try { decoder.GetChars([], 0, 0, chars, 0, true); }
+        catch (DecoderFallbackException) { threw = true; }
+        Require(threw);
+        decoder.Reset();
+        Require(decoder.GetChars([66], 0, 1, chars, 0, true) == 1 && chars[0] == 'B');
+    }
+
+    private static void SplitSurrogates()
+    {
+        var encoder = new UTF8Encoding(false, true).GetEncoder();
+        var bytes = new byte[4];
+        Require(encoder.GetBytes(['\uD83D'], 0, 1, bytes, 0, false) == 0);
+        Require(encoder.GetBytes(['\uDE00'], 0, 1, bytes, 0, true) == 4);
+        Require(bytes[0] == 0xF0 && bytes[1] == 0x9F && bytes[2] == 0x98 && bytes[3] == 0x80);
+        Require(encoder.GetBytes(['\uD83D'], 0, 1, bytes, 0, false) == 0);
+        encoder.Reset();
+        Require(encoder.GetBytes(['A'], 0, 1, bytes, 0, true) == 1 && bytes[0] == 65);
+    }
+
+    private static void BoundedConversion()
+    {
+        var encoder = Encoding.UTF8.GetEncoder();
+        char[] chars = ['A', '\u03A9', 'B'];
+        var bytes = new byte[2];
+        encoder.Convert(chars, 0, 3, bytes, 0, 2, true, out var used, out var written, out var done);
+        Require(used == 1 && written == 1 && !done && bytes[0] == 65);
+        encoder.Convert(chars, 1, 2, bytes, 0, 2, true, out used, out written, out done);
+        Require(used == 1 && written == 2 && !done && bytes[0] == 0xCE && bytes[1] == 0xA9);
+        encoder.Convert(chars, 2, 1, bytes, 0, 2, true, out used, out written, out done);
+        Require(used == 1 && written == 1 && done && bytes[0] == 66);
+    }
+
+    private static void ShortTextReader()
+    {
+        using var stream = new ShortStream([0xEF, 0xBB, 0xBF, 65, 0xCE, 0xA9, 0xF0, 0x9F, 0x98, 0x80, 0, 90]);
+        using (var reader = new StreamReader(stream, Encoding.UTF8, true, 128, true))
+        {
+            Require(reader.ReadToEnd() == "AΩ😀\0Z");
+            Require(reader.Read() == -1 && reader.Peek() == -1);
+        }
+        Require(stream.CanRead && stream.Position == stream.Length && stream.Reads >= 12);
+    }
+
+    private static void ExactRead()
+    {
+        using var stream = new ShortStream([7, 8, 9]);
+        var bytes = new byte[4];
+        stream.ReadExactly(bytes.AsSpan(0, 3));
+        Require(bytes[0] == 7 && bytes[1] == 8 && bytes[2] == 9 && bytes[3] == 0);
+        stream.ReadExactly(Span<byte>.Empty);
+        var threw = false;
+        try { stream.ReadExactly(bytes.AsSpan(0, 1)); }
+        catch (EndOfStreamException) { threw = true; }
+        Require(threw && stream.CanRead);
+    }
+
+    private static void WriterOwnership()
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new StreamWriter(stream, new UTF8Encoding(false, true), 128, true))
+        {
+            writer.Write('\uD83D');
+            writer.Write('\uDE00');
+            writer.Flush();
+        }
+        Require(stream.CanWrite && stream.Length == 4);
+        var bytes = stream.ToArray();
+        Require(bytes[0] == 0xF0 && bytes[1] == 0x9F && bytes[2] == 0x98 && bytes[3] == 0x80);
+        var owned = new MemoryStream();
+        using (var writer = new StreamWriter(owned, new UTF8Encoding(false), 128, false)) writer.Write('A');
+        Require(!owned.CanWrite);
+    }
+
+    private sealed class ShortStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public int Reads;
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            Reads++;
+            return base.Read(buffer, offset, Math.Min(count, 1));
+        }
+        public override int Read(Span<byte> buffer)
+        {
+            Reads++;
+            return base.Read(buffer[..Math.Min(buffer.Length, 1)]);
+        }
+    }
+}

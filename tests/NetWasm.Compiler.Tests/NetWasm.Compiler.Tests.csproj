@@ -1,11 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
+    <ProjectReference Include="../../tools/NetWasm.Wit.Bindings/NetWasm.Wit.Bindings.csproj" />
     <ProjectReference Include="../NetWasm.Testing.OracleHost/NetWasm.Testing.OracleHost.csproj"
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="../NetWasm.Testing.CompilerHost/NetWasm.Testing.CompilerHost.csproj"
@@ -15,13 +18,19 @@
              Link="WasmModuleInspection.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Correctness/netwasm-oracle.mjs"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Correctness/exception-metadata.mjs"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Correctness/reactor-oracle-imports.mjs"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="Correctness/refreshable-data-view.mjs"
-          CopyToOutputDirectory="PreserveNewest" />
+    <Compile Remove="Correctness/Fixtures/**/*.cs" />
+    <EmbeddedResource Include="Correctness/HostFixtures/**/*.cs.txt" WithCulture="false">
+      <LogicalName>$([System.String]::Copy('%(Identity)').Replace('\', '/'))</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Correctness/Fixtures/**/*.cs;Correctness/Fixtures/**/*.cs.txt;Correctness/Fixtures/**/*.case.json"
+                      WithCulture="false">
+      <LogicalName>$([System.String]::Copy('%(Identity)').Replace('\', '/'))</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="../../compiler-qualification/cil-coverage-inventory.json"
+                      LogicalName="Correctness/cil-coverage-inventory.json" WithCulture="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Correctness/*.mjs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

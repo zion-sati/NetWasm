@@ -132,6 +132,31 @@ public sealed class ManagedMethodEmitterTests
         Assert.NotEmpty(result.Body);
     }
 
+    [Fact]
+    public void ExceptionPayloadRootsRequireAnExceptionalMethodExitBoundary()
+    {
+        var program = new FakeProgram();
+        var method = program.GetMethod(EntryKey);
+        var group = new StructuredExceptionGroup(new(0), null, 0, 1, [], [], [], null, null);
+        var structured = Structure(program, method,
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)), I(1, CilOperation.Return)) with
+        {
+            TopLevelExceptionGroups = [group.Id],
+            ExceptionGroups = ImmutableDictionary<StructuredExceptionGroupId, StructuredExceptionGroup>.Empty.Add(group.Id, group),
+        };
+        var calls = 0;
+        EmitThroughContract(CreateEmitter(program), method, structured,
+            new MethodRootMap(EntryKey, [], []), null, (code, _, context) =>
+            {
+                calls++;
+                Assert.Equal(0, context.RootMap.SlotCount);
+                Assert.Equal(1, context.RootSlotCount);
+                Assert.False(context.LeaveFrameOnExceptionalExit);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+            });
+        Assert.Equal(1, calls);
+    }
+
     private static ManagedMethodEmitter CreateEmitter(FakeProgram program)
     {
         var layouts = new RecordingLayoutProvider();

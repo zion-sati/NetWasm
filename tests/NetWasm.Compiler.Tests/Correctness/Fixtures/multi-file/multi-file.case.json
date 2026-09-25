@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "caseId": "harness.multi-file",
+  "featureIds": ["S01"],
+  "inputKind": "CSharp",
+  "sourceFiles": ["multi-file/Entry.cs.txt", "multi-file/Support.cs"],
+  "name": "MultiFileCorpus",
+  "namespace": "NetWasm.Correctness.MultiFile",
+  "entryMethod": "Run",
+  "inputs": [0, 7, -3],
+  "expectations": [
+    { "input": 0, "returnValue": 42, "exceptionType": null },
+    { "input": 7, "returnValue": 42, "exceptionType": null },
+    { "input": -3, "returnValue": 42, "exceptionType": null }
+  ],
+  "referencePaths": [],
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.MultiFileCorpusTests.SeparateSourceFilesPreserveTheirFileLocalTypesAndScopes"
+}

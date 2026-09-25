@@ -1,0 +1,223 @@
+using System;
+
+namespace NetWasm.Correctness.DecimalConversions;
+
+public static class EntryPoint
+{
+    // Frozen expectations use rational integer arithmetic, never binary floats.
+    // Input modes distinguish checked/unchecked casts, Convert rounding, and
+    // Decimal.ToX truncation. Manifest rows independently require exact overflow.
+    private static readonly decimal[] Sourcesbyte = [-79228162514264337593543950335m, -129.25m, -129m, -128.75m, -128.5m, -128.25m, -128m, -127.75m, -127.5m, -127.25m, -127m, -126.75m, -2.5m, -1.5m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1.5m, 2.5m, 125.75m, 126m, 126.25m, 126.5m, 126.75m, 127m, 127.25m, 127.5m, 127.75m, 128m, 128.25m, 79228162514264337593543950335m];
+    private static readonly sbyte[] Expectedsbyte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -128, -128, 0, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -127, -127, -128, -127, -127, -127, -128, -127, -127, -127, -127, -127, -127, -127, -127, -127, -126, -126, -127, -126, -2, -2, -2, -2, -1, -1, -2, -1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 2, 1, 2, 2, 2, 2, 125, 125, 126, 125, 126, 126, 126, 126, 126, 126, 126, 126, 126, 126, 126, 126, 126, 126, 127, 126, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 0, 127, 127, 127, 0, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly decimal[] Sourcebyte = [-79228162514264337593543950335m, -2.5m, -1.5m, -1.25m, -1m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1m, 1.25m, 1.5m, 2.5m, 253.75m, 254m, 254.25m, 254.5m, 254.75m, 255m, 255.25m, 255.5m, 255.75m, 256m, 256.25m, 79228162514264337593543950335m];
+    private static readonly byte[] Expectedbyte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 2, 2, 2, 253, 253, 254, 253, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 255, 254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly decimal[] Sourceshort = [-79228162514264337593543950335m, -32769.25m, -32769m, -32768.75m, -32768.5m, -32768.25m, -32768m, -32767.75m, -32767.5m, -32767.25m, -32767m, -32766.75m, -2.5m, -1.5m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1.5m, 2.5m, 32765.75m, 32766m, 32766.25m, 32766.5m, 32766.75m, 32767m, 32767.25m, 32767.5m, 32767.75m, 32768m, 32768.25m, 79228162514264337593543950335m];
+    private static readonly short[] Expectedshort = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -32768, -32768, 0, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32768, -32767, -32767, -32768, -32767, -32767, -32767, -32768, -32767, -32767, -32767, -32767, -32767, -32767, -32767, -32767, -32767, -32766, -32766, -32767, -32766, -2, -2, -2, -2, -1, -1, -2, -1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 2, 1, 2, 2, 2, 2, 32765, 32765, 32766, 32765, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32766, 32767, 32766, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 32767, 0, 32767, 32767, 32767, 0, 32767, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly decimal[] Sourceushort = [-79228162514264337593543950335m, -2.5m, -1.5m, -1.25m, -1m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1m, 1.25m, 1.5m, 2.5m, 65533.75m, 65534m, 65534.25m, 65534.5m, 65534.75m, 65535m, 65535.25m, 65535.5m, 65535.75m, 65536m, 65536.25m, 79228162514264337593543950335m];
+    private static readonly ushort[] Expectedushort = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 2, 2, 2, 65533, 65533, 65534, 65533, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65534, 65535, 65534, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 0, 65535, 65535, 65535, 0, 65535, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly decimal[] Sourceint = [-79228162514264337593543950335m, -2147483649.25m, -2147483649m, -2147483648.75m, -2147483648.5m, -2147483648.25m, -2147483648m, -2147483647.75m, -2147483647.5m, -2147483647.25m, -2147483647m, -2147483646.75m, -2.5m, -1.5m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1.5m, 2.5m, 2147483645.75m, 2147483646m, 2147483646.25m, 2147483646.5m, 2147483646.75m, 2147483647m, 2147483647.25m, 2147483647.5m, 2147483647.75m, 2147483648m, 2147483648.25m, 79228162514264337593543950335m];
+    private static readonly int[] Expectedint = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -2147483648, -2147483648, 0, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483648, -2147483647, -2147483647, -2147483648, -2147483647, -2147483647, -2147483647, -2147483648, -2147483647, -2147483647, -2147483647, -2147483647, -2147483647, -2147483647, -2147483647, -2147483647, -2147483647, -2147483646, -2147483646, -2147483647, -2147483646, -2, -2, -2, -2, -1, -1, -2, -1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 2, 1, 2, 2, 2, 2, 2147483645, 2147483645, 2147483646, 2147483645, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483646, 2147483647, 2147483646, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 2147483647, 0, 2147483647, 2147483647, 2147483647, 0, 2147483647, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    private static readonly decimal[] Sourceuint = [-79228162514264337593543950335m, -2.5m, -1.5m, -1.25m, -1m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1m, 1.25m, 1.5m, 2.5m, 4294967293.75m, 4294967294m, 4294967294.25m, 4294967294.5m, 4294967294.75m, 4294967295m, 4294967295.25m, 4294967295.5m, 4294967295.75m, 4294967296m, 4294967296.25m, 79228162514264337593543950335m];
+    private static readonly uint[] Expecteduint = [0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 1U, 0U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 2U, 1U, 2U, 2U, 2U, 2U, 4294967293U, 4294967293U, 4294967294U, 4294967293U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967294U, 4294967295U, 4294967294U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 4294967295U, 0U, 4294967295U, 4294967295U, 4294967295U, 0U, 4294967295U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U];
+    private static readonly decimal[] Sourcelong = [-79228162514264337593543950335m, -9223372036854775809.25m, -9223372036854775809m, -9223372036854775808.75m, -9223372036854775808.5m, -9223372036854775808.25m, -9223372036854775808m, -9223372036854775807.75m, -9223372036854775807.5m, -9223372036854775807.25m, -9223372036854775807m, -9223372036854775806.75m, -2.5m, -1.5m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1.5m, 2.5m, 9223372036854775805.75m, 9223372036854775806m, 9223372036854775806.25m, 9223372036854775806.5m, 9223372036854775806.75m, 9223372036854775807m, 9223372036854775807.25m, 9223372036854775807.5m, 9223372036854775807.75m, 9223372036854775808m, 9223372036854775808.25m, 79228162514264337593543950335m];
+    private static readonly long[] Expectedlong = [0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, long.MinValue, long.MinValue, 0L, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, long.MinValue, -9223372036854775807L, -9223372036854775807L, long.MinValue, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, long.MinValue, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775807L, -9223372036854775806L, -9223372036854775806L, -9223372036854775807L, -9223372036854775806L, -2L, -2L, -2L, -2L, -1L, -1L, -2L, -1L, 0L, 0L, -1L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 1L, 0L, 1L, 1L, 2L, 1L, 2L, 2L, 2L, 2L, 9223372036854775805L, 9223372036854775805L, 9223372036854775806L, 9223372036854775805L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775806L, 9223372036854775807L, 9223372036854775806L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 0L, 9223372036854775807L, 9223372036854775807L, 9223372036854775807L, 0L, 9223372036854775807L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L];
+    private static readonly decimal[] Sourceulong = [-79228162514264337593543950335m, -2.5m, -1.5m, -1.25m, -1m, -0.75m, -0.5m, -0.25m, 0m, 0.25m, 0.5m, 0.75m, 1m, 1.25m, 1.5m, 2.5m, 18446744073709551613.75m, 18446744073709551614m, 18446744073709551614.25m, 18446744073709551614.5m, 18446744073709551614.75m, 18446744073709551615m, 18446744073709551615.25m, 18446744073709551615.5m, 18446744073709551615.75m, 18446744073709551616m, 18446744073709551616.25m, 79228162514264337593543950335m];
+    private static readonly ulong[] Expectedulong = [0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 1UL, 0UL, 1UL, 1UL, 1UL, 1UL, 1UL, 1UL, 1UL, 1UL, 1UL, 1UL, 2UL, 1UL, 2UL, 2UL, 2UL, 2UL, 18446744073709551613UL, 18446744073709551613UL, 18446744073709551614UL, 18446744073709551613UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551614UL, 18446744073709551615UL, 18446744073709551614UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 0UL, 18446744073709551615UL, 18446744073709551615UL, 18446744073709551615UL, 0UL, 18446744073709551615UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL, 0UL];
+    private static readonly sbyte[] Integersbyte = [-128, -127, 0, 1, 126, 127];
+    private static readonly decimal[] Decimalsbyte = [-128m, -127m, 0m, 1m, 126m, 127m];
+    private static readonly byte[] Integerbyte = [0, 1, 254, 255];
+    private static readonly decimal[] Decimalbyte = [0m, 1m, 254m, 255m];
+    private static readonly short[] Integershort = [-32768, -32767, 0, 1, 32766, 32767];
+    private static readonly decimal[] Decimalshort = [-32768m, -32767m, 0m, 1m, 32766m, 32767m];
+    private static readonly ushort[] Integerushort = [0, 1, 65534, 65535];
+    private static readonly decimal[] Decimalushort = [0m, 1m, 65534m, 65535m];
+    private static readonly int[] Integerint = [-2147483648, -2147483647, 0, 1, 2147483646, 2147483647];
+    private static readonly decimal[] Decimalint = [-2147483648m, -2147483647m, 0m, 1m, 2147483646m, 2147483647m];
+    private static readonly uint[] Integeruint = [0U, 1U, 4294967294U, 4294967295U];
+    private static readonly decimal[] Decimaluint = [0m, 1m, 4294967294m, 4294967295m];
+    private static readonly long[] Integerlong = [long.MinValue, -9223372036854775807L, 0L, 1L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly decimal[] Decimallong = [-9223372036854775808m, -9223372036854775807m, 0m, 1m, 9223372036854775806m, 9223372036854775807m];
+    private static readonly ulong[] Integerulong = [0UL, 1UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly decimal[] Decimalulong = [0m, 1m, 18446744073709551614m, 18446744073709551615m];
+
+    public static int Run(int input)
+    {
+        if (input < 140) return Tosbyte(input - 0);
+        if (input < 252) return Tobyte(input - 140);
+        if (input < 392) return Toshort(input - 252);
+        if (input < 504) return Toushort(input - 392);
+        if (input < 644) return Toint(input - 504);
+        if (input < 756) return Touint(input - 644);
+        if (input < 896) return Tolong(input - 756);
+        if (input < 1008) return Toulong(input - 896);
+        if (input < 1020) return Fromsbyte(input - 1008);
+        if (input < 1028) return Frombyte(input - 1020);
+        if (input < 1040) return Fromshort(input - 1028);
+        if (input < 1048) return Fromushort(input - 1040);
+        if (input < 1060) return Fromint(input - 1048);
+        if (input < 1068) return Fromuint(input - 1060);
+        if (input < 1080) return Fromlong(input - 1068);
+        if (input < 1088) return Fromulong(input - 1080);
+        throw new ArgumentOutOfRangeException(nameof(input));
+    }
+
+    private static int Tosbyte(int input)
+    {
+        var value = Sourcesbyte[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((sbyte)value),
+            1 => unchecked((sbyte)value),
+            2 => Convert.ToSByte(value),
+            _ => decimal.ToSByte(value),
+        };
+        return result == Expectedsbyte[input] ? 42 : -1;
+    }
+
+    private static int Tobyte(int input)
+    {
+        var value = Sourcebyte[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((byte)value),
+            1 => unchecked((byte)value),
+            2 => Convert.ToByte(value),
+            _ => decimal.ToByte(value),
+        };
+        return result == Expectedbyte[input] ? 42 : -1;
+    }
+
+    private static int Toshort(int input)
+    {
+        var value = Sourceshort[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((short)value),
+            1 => unchecked((short)value),
+            2 => Convert.ToInt16(value),
+            _ => decimal.ToInt16(value),
+        };
+        return result == Expectedshort[input] ? 42 : -1;
+    }
+
+    private static int Toushort(int input)
+    {
+        var value = Sourceushort[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((ushort)value),
+            1 => unchecked((ushort)value),
+            2 => Convert.ToUInt16(value),
+            _ => decimal.ToUInt16(value),
+        };
+        return result == Expectedushort[input] ? 42 : -1;
+    }
+
+    private static int Toint(int input)
+    {
+        var value = Sourceint[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((int)value),
+            1 => unchecked((int)value),
+            2 => Convert.ToInt32(value),
+            _ => decimal.ToInt32(value),
+        };
+        return result == Expectedint[input] ? 42 : -1;
+    }
+
+    private static int Touint(int input)
+    {
+        var value = Sourceuint[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((uint)value),
+            1 => unchecked((uint)value),
+            2 => Convert.ToUInt32(value),
+            _ => decimal.ToUInt32(value),
+        };
+        return result == Expecteduint[input] ? 42 : -1;
+    }
+
+    private static int Tolong(int input)
+    {
+        var value = Sourcelong[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((long)value),
+            1 => unchecked((long)value),
+            2 => Convert.ToInt64(value),
+            _ => decimal.ToInt64(value),
+        };
+        return result == Expectedlong[input] ? 42 : -1;
+    }
+
+    private static int Toulong(int input)
+    {
+        var value = Sourceulong[input / 4];
+        var result = (input % 4) switch
+        {
+            0 => checked((ulong)value),
+            1 => unchecked((ulong)value),
+            2 => Convert.ToUInt64(value),
+            _ => decimal.ToUInt64(value),
+        };
+        return result == Expectedulong[input] ? 42 : -1;
+    }
+
+    private static int Fromsbyte(int input)
+    {
+        var value = Integersbyte[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimalsbyte[input / 2] ? 42 : -2;
+    }
+
+    private static int Frombyte(int input)
+    {
+        var value = Integerbyte[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimalbyte[input / 2] ? 42 : -2;
+    }
+
+    private static int Fromshort(int input)
+    {
+        var value = Integershort[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimalshort[input / 2] ? 42 : -2;
+    }
+
+    private static int Fromushort(int input)
+    {
+        var value = Integerushort[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimalushort[input / 2] ? 42 : -2;
+    }
+
+    private static int Fromint(int input)
+    {
+        var value = Integerint[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimalint[input / 2] ? 42 : -2;
+    }
+
+    private static int Fromuint(int input)
+    {
+        var value = Integeruint[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimaluint[input / 2] ? 42 : -2;
+    }
+
+    private static int Fromlong(int input)
+    {
+        var value = Integerlong[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimallong[input / 2] ? 42 : -2;
+    }
+
+    private static int Fromulong(int input)
+    {
+        var value = Integerulong[input / 2];
+        decimal result = (input & 1) == 0 ? (decimal)value : Convert.ToDecimal(value);
+        return result == Decimalulong[input / 2] ? 42 : -2;
+    }
+}

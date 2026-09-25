@@ -25,7 +25,10 @@ internal sealed class RectangularArrayCallRewriter : IMethodRewriteRule
 
         var operation = (instruction.Operation, method.Definition.Name) switch
         {
-            (CilOperation.NewObject, ".ctor") => CilOperation.NewRectangularArray,
+            (CilOperation.NewObject, ".ctor") =>
+                method.Signature.ParameterTypes.Length == method.DeclaringType.ArrayRank
+                    ? CilOperation.NewRectangularArray
+                    : CilOperation.NewBoundedRectangularArray,
             (CilOperation.Call, "Get") => CilOperation.LoadRectangularArrayElement,
             (CilOperation.Call, "Set") => CilOperation.StoreRectangularArrayElement,
             (CilOperation.Call, "Address") =>

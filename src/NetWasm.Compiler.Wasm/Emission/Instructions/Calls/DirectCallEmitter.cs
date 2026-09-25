@@ -9,7 +9,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 internal sealed class DirectCallEmitter(
     ITargetLayout layouts,
     IValueLayoutProvider values,
-    IImplicitExceptionEmitter exceptions) : ICallEmitter
+    IImplicitExceptionEmitter exceptions,
+    IStaticInitializationEmitter initialization) : ICallEmitter
 {
     public void Emit(
         CallEmissionRequest request, IWasmInstructionWriter code,
@@ -18,6 +19,11 @@ internal sealed class DirectCallEmitter(
         var instruction = request.Instruction;
         var target = request.Method.Definition;
         var signature = request.Method.Signature;
+        if (target.IsStatic && target.Name != ".cctor")
+        {
+            initialization.Emit(new(target.DeclaringType, request.Method.DeclaringType,
+                instruction.Target.ModuleData, IsStaticMethodCall: true), code, functionIndices);
+        }
         var constrainedReferenceReceiver = !target.IsStatic &&
             request.ConstrainedType is { IsValueType: false };
         if (constrainedReferenceReceiver)

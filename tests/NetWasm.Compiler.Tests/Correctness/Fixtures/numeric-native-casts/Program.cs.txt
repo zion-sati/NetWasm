@@ -1,0 +1,1015 @@
+using System;
+
+namespace NetWasm.Correctness.NativeCasts;
+
+public static unsafe class EntryPoint
+{
+    // Independent range/modulo tables for 32-bit and 64-bit native widths.
+    // Expected overflow is asserted locally because desktop and wasm32 can have
+    // different correct outcomes for the same seed. No exception is ignored.
+    // Native source loading is separately checked before the destination cast.
+    private static readonly sbyte[] Valuessbyte = [-128, -127, -1, 0, 1, 126, 127];
+    private static readonly long[] Expected32sbyte_nint = [-128L, -127L, -1L, 0L, 1L, 126L, 127L];
+    private static readonly bool[] Overflow32sbyte_nint = [false, false, false, false, false, false, false];
+    private static readonly long[] Expected64sbyte_nint = [-128L, -127L, -1L, 0L, 1L, 126L, 127L];
+    private static readonly bool[] Overflow64sbyte_nint = [false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32sbyte_nuint = [4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL];
+    private static readonly bool[] Overflow32sbyte_nuint = [true, true, true, false, false, false, false];
+    private static readonly ulong[] Expected64sbyte_nuint = [18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL];
+    private static readonly bool[] Overflow64sbyte_nuint = [true, true, true, false, false, false, false];
+    private static readonly byte[] Valuesbyte = [0, 1, 126, 127, 128, 254, 255];
+    private static readonly long[] Expected32byte_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L];
+    private static readonly bool[] Overflow32byte_nint = [false, false, false, false, false, false, false];
+    private static readonly long[] Expected64byte_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L];
+    private static readonly bool[] Overflow64byte_nint = [false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32byte_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL];
+    private static readonly bool[] Overflow32byte_nuint = [false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64byte_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL];
+    private static readonly bool[] Overflow64byte_nuint = [false, false, false, false, false, false, false];
+    private static readonly short[] Valuesshort = [-32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767];
+    private static readonly long[] Expected32short_nint = [-32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L];
+    private static readonly bool[] Overflow32short_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64short_nint = [-32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L];
+    private static readonly bool[] Overflow64short_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32short_nuint = [4294934528UL, 4294934529UL, 4294967167UL, 4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL];
+    private static readonly bool[] Overflow32short_nuint = [true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64short_nuint = [18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL];
+    private static readonly bool[] Overflow64short_nuint = [true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ushort[] Valuesushort = [0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535];
+    private static readonly long[] Expected32ushort_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L];
+    private static readonly bool[] Overflow32ushort_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64ushort_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L];
+    private static readonly bool[] Overflow64ushort_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32ushort_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow32ushort_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64ushort_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow64ushort_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly char[] Valueschar = [(char)0, (char)1, (char)126, (char)127, (char)128, (char)254, (char)255, (char)256, (char)32766, (char)32767, (char)32768, (char)65534, (char)65535];
+    private static readonly long[] Expected32char_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L];
+    private static readonly bool[] Overflow32char_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64char_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L];
+    private static readonly bool[] Overflow64char_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32char_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow32char_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64char_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow64char_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly int[] Valuesint = [-2147483648, -2147483647, -32769, -32768, -32767, -129, -128, -127, -1, 0, 1, 126, 127, 128, 254, 255, 256, 32766, 32767, 32768, 65534, 65535, 65536, 2147483646, 2147483647];
+    private static readonly long[] Expected32int_nint = [-2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L];
+    private static readonly bool[] Overflow32int_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64int_nint = [-2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L];
+    private static readonly bool[] Overflow64int_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32int_nuint = [2147483648UL, 2147483649UL, 4294934527UL, 4294934528UL, 4294934529UL, 4294967167UL, 4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL];
+    private static readonly bool[] Overflow32int_nuint = [true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64int_nuint = [18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL];
+    private static readonly bool[] Overflow64int_nuint = [true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly uint[] Valuesuint = [0U, 1U, 126U, 127U, 128U, 254U, 255U, 256U, 32766U, 32767U, 32768U, 65534U, 65535U, 65536U, 2147483646U, 2147483647U, 2147483648U, 4294967294U, 4294967295U];
+    private static readonly long[] Expected32uint_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L];
+    private static readonly bool[] Overflow32uint_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true];
+    private static readonly long[] Expected64uint_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L];
+    private static readonly bool[] Overflow64uint_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32uint_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32uint_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64uint_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow64uint_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Valueslong = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly long[] Expected32long_nint = [0L, 1L, 2147483647L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32long_nint = [true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true];
+    private static readonly long[] Expected64long_nint = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly bool[] Overflow64long_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32long_nuint = [0UL, 1UL, 2147483647UL, 2147483648UL, 2147483649UL, 4294934527UL, 4294934528UL, 4294934529UL, 4294967167UL, 4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32long_nuint = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true];
+    private static readonly ulong[] Expected64long_nuint = [9223372036854775808UL, 9223372036854775809UL, 18446744071562067967UL, 18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL];
+    private static readonly bool[] Overflow64long_nuint = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Valuesulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly long[] Expected32ulong_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32ulong_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true];
+    private static readonly long[] Expected64ulong_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L, long.MinValue, -2L, -1L];
+    private static readonly bool[] Overflow64ulong_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true];
+    private static readonly ulong[] Expected32ulong_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32ulong_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true];
+    private static readonly ulong[] Expected64ulong_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly bool[] Overflow64ulong_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Valuesnint = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly long[] Sources32nint = [0L, 1L, 2147483647L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly long[] Expected32nint_sbyte = [0L, 1L, -1L, 0L, 1L, -1L, 0L, 1L, 127L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, -128L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nint_sbyte = [false, false, true, true, true, true, true, true, true, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false];
+    private static readonly long[] Expected64nint_sbyte = [0L, 1L, -1L, 0L, 1L, -1L, 0L, 1L, 127L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, -128L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow64nint_sbyte = [true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nint_byte = [0UL, 1UL, 255UL, 0UL, 1UL, 255UL, 0UL, 1UL, 127UL, 128UL, 129UL, 255UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL];
+    private static readonly bool[] Overflow32nint_byte = [false, false, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true];
+    private static readonly ulong[] Expected64nint_byte = [0UL, 1UL, 255UL, 0UL, 1UL, 255UL, 0UL, 1UL, 127UL, 128UL, 129UL, 255UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL];
+    private static readonly bool[] Overflow64nint_byte = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly long[] Expected32nint_short = [0L, 1L, -1L, 0L, 1L, 32767L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, -32768L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nint_short = [false, false, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, false, false, false, false, false];
+    private static readonly long[] Expected64nint_short = [0L, 1L, -1L, 0L, 1L, 32767L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, -32768L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow64nint_short = [true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nint_ushort = [0UL, 1UL, 65535UL, 0UL, 1UL, 32767UL, 32768UL, 32769UL, 65407UL, 65408UL, 65409UL, 65535UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow32nint_ushort = [false, false, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, true, true];
+    private static readonly ulong[] Expected64nint_ushort = [0UL, 1UL, 65535UL, 0UL, 1UL, 32767UL, 32768UL, 32769UL, 65407UL, 65408UL, 65409UL, 65535UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow64nint_ushort = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nint_char = [0UL, 1UL, 65535UL, 0UL, 1UL, 32767UL, 32768UL, 32769UL, 65407UL, 65408UL, 65409UL, 65535UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow32nint_char = [false, false, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, true, true];
+    private static readonly ulong[] Expected64nint_char = [0UL, 1UL, 65535UL, 0UL, 1UL, 32767UL, 32768UL, 32769UL, 65407UL, 65408UL, 65409UL, 65535UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow64nint_char = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true];
+    private static readonly long[] Expected32nint_int = [0L, 1L, 2147483647L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nint_int = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64nint_int = [0L, 1L, 2147483647L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow64nint_int = [true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nint_uint = [0UL, 1UL, 2147483647UL, 2147483648UL, 2147483649UL, 4294934527UL, 4294934528UL, 4294934529UL, 4294967167UL, 4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32nint_uint = [false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true];
+    private static readonly ulong[] Expected64nint_uint = [0UL, 1UL, 2147483647UL, 2147483648UL, 2147483649UL, 4294934527UL, 4294934528UL, 4294934529UL, 4294967167UL, 4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow64nint_uint = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true];
+    private static readonly long[] Expected32nint_long = [0L, 1L, 2147483647L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nint_long = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64nint_long = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly bool[] Overflow64nint_long = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32nint_ulong = [0UL, 1UL, 2147483647UL, 18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 18446744071562067968UL, 18446744073709551614UL, 18446744073709551615UL, 0UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly bool[] Overflow32nint_ulong = [false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true];
+    private static readonly ulong[] Expected64nint_ulong = [9223372036854775808UL, 9223372036854775809UL, 18446744071562067967UL, 18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL];
+    private static readonly bool[] Overflow64nint_ulong = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected32nint_nint = [0L, 1L, 2147483647L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nint_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64nint_nint = [long.MinValue, -9223372036854775807L, -2147483649L, -2147483648L, -2147483647L, -32769L, -32768L, -32767L, -129L, -128L, -127L, -1L, 0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L];
+    private static readonly bool[] Overflow64nint_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected32nint_nuint = [0UL, 1UL, 2147483647UL, 2147483648UL, 2147483649UL, 4294934527UL, 4294934528UL, 4294934529UL, 4294967167UL, 4294967168UL, 4294967169UL, 4294967295UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32nint_nuint = [false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true];
+    private static readonly ulong[] Expected64nint_nuint = [9223372036854775808UL, 9223372036854775809UL, 18446744071562067967UL, 18446744071562067968UL, 18446744071562067969UL, 18446744073709518847UL, 18446744073709518848UL, 18446744073709518849UL, 18446744073709551487UL, 18446744073709551488UL, 18446744073709551489UL, 18446744073709551615UL, 0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL];
+    private static readonly bool[] Overflow64nint_nuint = [true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Valuesnuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly ulong[] Sources32nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly long[] Expected32nuint_sbyte = [0L, 1L, 126L, 127L, -128L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nuint_sbyte = [false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, false, true, true];
+    private static readonly long[] Expected64nuint_sbyte = [0L, 1L, 126L, 127L, -128L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow64nuint_sbyte = [false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nuint_byte = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL];
+    private static readonly bool[] Overflow32nuint_byte = [false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, false, true, true];
+    private static readonly ulong[] Expected64nuint_byte = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL, 0UL, 254UL, 255UL];
+    private static readonly bool[] Overflow64nuint_byte = [false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly long[] Expected32nuint_short = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, -32768L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nuint_short = [false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, false, true, true, false, true, true];
+    private static readonly long[] Expected64nuint_short = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, -32768L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow64nuint_short = [false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nuint_ushort = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow32nuint_ushort = [false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, true, true, false, true, true];
+    private static readonly ulong[] Expected64nuint_ushort = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow64nuint_ushort = [false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nuint_char = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow32nuint_char = [false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, true, true, false, true, true];
+    private static readonly ulong[] Expected64nuint_char = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL, 0UL, 65534UL, 65535UL];
+    private static readonly bool[] Overflow64nuint_char = [false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true];
+    private static readonly long[] Expected32nuint_int = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nuint_int = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true, false, true, true];
+    private static readonly long[] Expected64nuint_int = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow64nuint_int = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true];
+    private static readonly ulong[] Expected32nuint_uint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32nuint_uint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64nuint_uint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow64nuint_uint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true];
+    private static readonly long[] Expected32nuint_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 0L, 4294967294L, 4294967295L, 0L, 4294967294L, 4294967295L];
+    private static readonly bool[] Overflow32nuint_long = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected64nuint_long = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L, long.MinValue, -2L, -1L];
+    private static readonly bool[] Overflow64nuint_long = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true];
+    private static readonly ulong[] Expected32nuint_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32nuint_ulong = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64nuint_ulong = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly bool[] Overflow64nuint_ulong = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly long[] Expected32nuint_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, -2147483648L, -2L, -1L, 0L, -2L, -1L, 0L, -2L, -1L];
+    private static readonly bool[] Overflow32nuint_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true, false, true, true];
+    private static readonly long[] Expected64nuint_nint = [0L, 1L, 126L, 127L, 128L, 254L, 255L, 256L, 32766L, 32767L, 32768L, 65534L, 65535L, 65536L, 2147483646L, 2147483647L, 2147483648L, 4294967294L, 4294967295L, 4294967296L, 9223372036854775806L, 9223372036854775807L, long.MinValue, -2L, -1L];
+    private static readonly bool[] Overflow64nuint_nint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true];
+    private static readonly ulong[] Expected32nuint_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL, 0UL, 4294967294UL, 4294967295UL];
+    private static readonly bool[] Overflow32nuint_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    private static readonly ulong[] Expected64nuint_nuint = [0UL, 1UL, 126UL, 127UL, 128UL, 254UL, 255UL, 256UL, 32766UL, 32767UL, 32768UL, 65534UL, 65535UL, 65536UL, 2147483646UL, 2147483647UL, 2147483648UL, 4294967294UL, 4294967295UL, 4294967296UL, 9223372036854775806UL, 9223372036854775807UL, 9223372036854775808UL, 18446744073709551614UL, 18446744073709551615UL];
+    private static readonly bool[] Overflow64nuint_nuint = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+
+    public static int Run(int input)
+    {
+        var size = sizeof(nint);
+        if (size != 4 && size != 8) return -5;
+        if (IntPtr.Size != size || UIntPtr.Size != size) return -6;
+        var wide = size == 8;
+        if (input < 14) return Castsbyte_nint(input - 0, wide);
+        if (input < 28) return Castsbyte_nuint(input - 14, wide);
+        if (input < 42) return Castbyte_nint(input - 28, wide);
+        if (input < 56) return Castbyte_nuint(input - 42, wide);
+        if (input < 88) return Castshort_nint(input - 56, wide);
+        if (input < 120) return Castshort_nuint(input - 88, wide);
+        if (input < 146) return Castushort_nint(input - 120, wide);
+        if (input < 172) return Castushort_nuint(input - 146, wide);
+        if (input < 198) return Castchar_nint(input - 172, wide);
+        if (input < 224) return Castchar_nuint(input - 198, wide);
+        if (input < 274) return Castint_nint(input - 224, wide);
+        if (input < 324) return Castint_nuint(input - 274, wide);
+        if (input < 362) return Castuint_nint(input - 324, wide);
+        if (input < 400) return Castuint_nuint(input - 362, wide);
+        if (input < 468) return Castlong_nint(input - 400, wide);
+        if (input < 536) return Castlong_nuint(input - 468, wide);
+        if (input < 586) return Castulong_nint(input - 536, wide);
+        if (input < 636) return Castulong_nuint(input - 586, wide);
+        if (input < 704) return Castnint_sbyte(input - 636, wide);
+        if (input < 772) return Castnint_byte(input - 704, wide);
+        if (input < 840) return Castnint_short(input - 772, wide);
+        if (input < 908) return Castnint_ushort(input - 840, wide);
+        if (input < 976) return Castnint_char(input - 908, wide);
+        if (input < 1044) return Castnint_int(input - 976, wide);
+        if (input < 1112) return Castnint_uint(input - 1044, wide);
+        if (input < 1180) return Castnint_long(input - 1112, wide);
+        if (input < 1248) return Castnint_ulong(input - 1180, wide);
+        if (input < 1316) return Castnint_nint(input - 1248, wide);
+        if (input < 1384) return Castnint_nuint(input - 1316, wide);
+        if (input < 1434) return Castnuint_sbyte(input - 1384, wide);
+        if (input < 1484) return Castnuint_byte(input - 1434, wide);
+        if (input < 1534) return Castnuint_short(input - 1484, wide);
+        if (input < 1584) return Castnuint_ushort(input - 1534, wide);
+        if (input < 1634) return Castnuint_char(input - 1584, wide);
+        if (input < 1684) return Castnuint_int(input - 1634, wide);
+        if (input < 1734) return Castnuint_uint(input - 1684, wide);
+        if (input < 1784) return Castnuint_long(input - 1734, wide);
+        if (input < 1834) return Castnuint_ulong(input - 1784, wide);
+        if (input < 1884) return Castnuint_nint(input - 1834, wide);
+        if (input < 1934) return Castnuint_nuint(input - 1884, wide);
+        throw new ArgumentOutOfRangeException(nameof(input));
+    }
+
+    private static int Castsbyte_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        var expected = wide ? Expected64sbyte_nint[index] : Expected32sbyte_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64sbyte_nint[index] : Overflow32sbyte_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castsbyte_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuessbyte[index];
+        var expected = wide ? Expected64sbyte_nuint[index] : Expected32sbyte_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64sbyte_nuint[index] : Overflow32sbyte_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castbyte_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        var expected = wide ? Expected64byte_nint[index] : Expected32byte_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64byte_nint[index] : Overflow32byte_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castbyte_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesbyte[index];
+        var expected = wide ? Expected64byte_nuint[index] : Expected32byte_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64byte_nuint[index] : Overflow32byte_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castshort_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        var expected = wide ? Expected64short_nint[index] : Expected32short_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64short_nint[index] : Overflow32short_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castshort_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesshort[index];
+        var expected = wide ? Expected64short_nuint[index] : Expected32short_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64short_nuint[index] : Overflow32short_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castushort_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        var expected = wide ? Expected64ushort_nint[index] : Expected32ushort_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64ushort_nint[index] : Overflow32ushort_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castushort_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesushort[index];
+        var expected = wide ? Expected64ushort_nuint[index] : Expected32ushort_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64ushort_nuint[index] : Overflow32ushort_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castchar_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        var expected = wide ? Expected64char_nint[index] : Expected32char_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64char_nint[index] : Overflow32char_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castchar_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valueschar[index];
+        var expected = wide ? Expected64char_nuint[index] : Expected32char_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64char_nuint[index] : Overflow32char_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castint_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        var expected = wide ? Expected64int_nint[index] : Expected32int_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64int_nint[index] : Overflow32int_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castint_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesint[index];
+        var expected = wide ? Expected64int_nuint[index] : Expected32int_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64int_nuint[index] : Overflow32int_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castuint_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        var expected = wide ? Expected64uint_nint[index] : Expected32uint_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64uint_nint[index] : Overflow32uint_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castuint_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesuint[index];
+        var expected = wide ? Expected64uint_nuint[index] : Expected32uint_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64uint_nuint[index] : Overflow32uint_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castlong_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        var expected = wide ? Expected64long_nint[index] : Expected32long_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64long_nint[index] : Overflow32long_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castlong_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valueslong[index];
+        var expected = wide ? Expected64long_nuint[index] : Expected32long_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64long_nuint[index] : Overflow32long_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castulong_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        var expected = wide ? Expected64ulong_nint[index] : Expected32ulong_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64ulong_nint[index] : Overflow32ulong_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castulong_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = Valuesulong[index];
+        var expected = wide ? Expected64ulong_nuint[index] : Expected32ulong_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64ulong_nuint[index] : Overflow32ulong_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_sbyte(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_sbyte[index] : Expected32nint_sbyte[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_sbyte[index] : Overflow32nint_sbyte[index]);
+        sbyte result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_byte(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_byte[index] : Expected32nint_byte[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_byte[index] : Overflow32nint_byte[index]);
+        byte result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_short(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_short[index] : Expected32nint_short[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_short[index] : Overflow32nint_short[index]);
+        short result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_ushort(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_ushort[index] : Expected32nint_ushort[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_ushort[index] : Overflow32nint_ushort[index]);
+        ushort result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_char(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_char[index] : Expected32nint_char[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_char[index] : Overflow32nint_char[index]);
+        char result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_int(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_int[index] : Expected32nint_int[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_int[index] : Overflow32nint_int[index]);
+        int result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_uint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_uint[index] : Expected32nint_uint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_uint[index] : Overflow32nint_uint[index]);
+        uint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_long(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_long[index] : Expected32nint_long[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_long[index] : Overflow32nint_long[index]);
+        long result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_ulong(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_ulong[index] : Expected32nint_ulong[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_ulong[index] : Overflow32nint_ulong[index]);
+        ulong result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_nint[index] : Expected32nint_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_nint[index] : Overflow32nint_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnint_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nint)Valuesnint[index]);
+        if ((long)value != (wide ? Valuesnint[index] : Sources32nint[index])) return -1;
+        var expected = wide ? Expected64nint_nuint[index] : Expected32nint_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nint_nuint[index] : Overflow32nint_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_sbyte(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_sbyte[index] : Expected32nuint_sbyte[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_sbyte[index] : Overflow32nuint_sbyte[index]);
+        sbyte result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((sbyte)value) : unchecked((sbyte)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_byte(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_byte[index] : Expected32nuint_byte[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_byte[index] : Overflow32nuint_byte[index]);
+        byte result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((byte)value) : unchecked((byte)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_short(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_short[index] : Expected32nuint_short[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_short[index] : Overflow32nuint_short[index]);
+        short result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((short)value) : unchecked((short)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_ushort(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_ushort[index] : Expected32nuint_ushort[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_ushort[index] : Overflow32nuint_ushort[index]);
+        ushort result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((ushort)value) : unchecked((ushort)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_char(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_char[index] : Expected32nuint_char[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_char[index] : Overflow32nuint_char[index]);
+        char result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((char)value) : unchecked((char)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_int(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_int[index] : Expected32nuint_int[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_int[index] : Overflow32nuint_int[index]);
+        int result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((int)value) : unchecked((int)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_uint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_uint[index] : Expected32nuint_uint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_uint[index] : Overflow32nuint_uint[index]);
+        uint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((uint)value) : unchecked((uint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_long(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_long[index] : Expected32nuint_long[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_long[index] : Overflow32nuint_long[index]);
+        long result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((long)value) : unchecked((long)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_ulong(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_ulong[index] : Expected32nuint_ulong[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_ulong[index] : Overflow32nuint_ulong[index]);
+        ulong result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((ulong)value) : unchecked((ulong)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_nint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_nint[index] : Expected32nuint_nint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_nint[index] : Overflow32nuint_nint[index]);
+        nint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nint)value) : unchecked((nint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (long)result == expected ? 42 : -4;
+    }
+
+    private static int Castnuint_nuint(int input, bool wide)
+    {
+        var index = input / 2;
+        var value = unchecked((nuint)Valuesnuint[index]);
+        if ((ulong)value != (wide ? Valuesnuint[index] : Sources32nuint[index])) return -1;
+        var expected = wide ? Expected64nuint_nuint[index] : Expected32nuint_nuint[index];
+        var shouldOverflow = (input & 1) != 0 && (wide ? Overflow64nuint_nuint[index] : Overflow32nuint_nuint[index]);
+        nuint result;
+        try
+        {
+            result = (input & 1) != 0 ? checked((nuint)value) : unchecked((nuint)value);
+        }
+        catch (OverflowException)
+        {
+            return shouldOverflow ? 42 : -2;
+        }
+        if (shouldOverflow) return -3;
+        return (ulong)result == expected ? 42 : -4;
+    }
+}

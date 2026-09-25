@@ -86,7 +86,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 allocatedTypes.Add(arrayType);
                 constructedTypes.Add(arrayType);
             }
-            if (instruction.Operation == CilOperation.NewRectangularArray)
+            if (instruction.Operation is CilOperation.NewRectangularArray or
+                CilOperation.NewBoundedRectangularArray)
             {
                 var arrayType = typeOperands.Resolve(instruction, request.Method);
                 runtimeTypes.Add(arrayType.ElementType!);
@@ -131,7 +132,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
             if (instruction.Operation is CilOperation.CallVirtual or CilOperation.LoadVirtualFunction &&
                 calledMethod is not null &&
                 calledMethod.Definition.IsVirtual &&
-                !calledMethod.DeclaringType.IsValueType &&
+                (!calledMethod.DeclaringType.IsValueType ||
+                    instruction.Operation == CilOperation.LoadVirtualFunction) &&
                 precedingConstraintType?.IsValueType is not true)
             {
                 var declaration = new DispatchDeclaration(

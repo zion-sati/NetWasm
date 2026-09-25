@@ -37,6 +37,7 @@ public sealed class InstructionEmissionServiceCollectionExtensionsTests
             typeof(IManagedTerminalExceptionBoundaryEmitter),
             typeof(IInstructionCommandFactory),
             typeof(ICheckedBinaryEmitter),
+            typeof(IFloatingRemainderEmitter),
             typeof(ConstantsStackEmitter),
             typeof(LocalsArgumentsEmitter),
             typeof(ExceptionAndReturnEmitter),

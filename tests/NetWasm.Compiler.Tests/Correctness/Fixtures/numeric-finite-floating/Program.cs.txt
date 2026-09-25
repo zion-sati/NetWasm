@@ -1,0 +1,181 @@
+using System;
+
+namespace NetWasm.Correctness.FiniteFloating;
+
+public static class EntryPoint
+{
+    // Exact encodings, not rounded decimal boundary literals. Each block of 22
+    // selects one destination: Int32, UInt32, Int64, UInt64. First four blocks
+    // use Single, next four use Double; the last three probe Int32.MinValue - 1.
+    private static readonly ulong[] OperandBits =
+    [
+        0x0UL, 0x80000000UL, 0x1UL, 0x80000001UL,
+        0x3f400000UL, 0xbf400000UL, 0x3fe00000UL, 0xbfe00000UL,
+        0x3f800000UL, 0xbf800000UL, 0x7f7fffffUL, 0xff7fffffUL,
+        0x800000UL, 0x80800000UL, 0x7fffffUL, 0x807fffffUL,
+        0x4effffffUL, 0x4f000000UL, 0x4f000001UL, 0xceffffffUL,
+        0xcf000000UL, 0xcf000001UL, 0x0UL, 0x80000000UL,
+        0x1UL, 0x80000001UL, 0x3f400000UL, 0xbf400000UL,
+        0x3fe00000UL, 0xbfe00000UL, 0x3f800000UL, 0xbf800000UL,
+        0x7f7fffffUL, 0xff7fffffUL, 0x800000UL, 0x80800000UL,
+        0x7fffffUL, 0x807fffffUL, 0x4f7fffffUL, 0x4f800000UL,
+        0x4f800001UL, 0xbf7fffffUL, 0xbf800000UL, 0xbf800001UL,
+        0x0UL, 0x80000000UL, 0x1UL, 0x80000001UL,
+        0x3f400000UL, 0xbf400000UL, 0x3fe00000UL, 0xbfe00000UL,
+        0x3f800000UL, 0xbf800000UL, 0x7f7fffffUL, 0xff7fffffUL,
+        0x800000UL, 0x80800000UL, 0x7fffffUL, 0x807fffffUL,
+        0x5effffffUL, 0x5f000000UL, 0x5f000001UL, 0xdeffffffUL,
+        0xdf000000UL, 0xdf000001UL, 0x0UL, 0x80000000UL,
+        0x1UL, 0x80000001UL, 0x3f400000UL, 0xbf400000UL,
+        0x3fe00000UL, 0xbfe00000UL, 0x3f800000UL, 0xbf800000UL,
+        0x7f7fffffUL, 0xff7fffffUL, 0x800000UL, 0x80800000UL,
+        0x7fffffUL, 0x807fffffUL, 0x5f7fffffUL, 0x5f800000UL,
+        0x5f800001UL, 0xbf7fffffUL, 0xbf800000UL, 0xbf800001UL,
+        0x0UL, 0x8000000000000000UL, 0x1UL, 0x8000000000000001UL,
+        0x3fe8000000000000UL, 0xbfe8000000000000UL, 0x3ffc000000000000UL, 0xbffc000000000000UL,
+        0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7fefffffffffffffUL, 0xffefffffffffffffUL,
+        0x10000000000000UL, 0x8010000000000000UL, 0xfffffffffffffUL, 0x800fffffffffffffUL,
+        0x41dfffffffffffffUL, 0x41e0000000000000UL, 0x41e0000000000001UL, 0xc1dfffffffffffffUL,
+        0xc1e0000000000000UL, 0xc1e0000000000001UL, 0x0UL, 0x8000000000000000UL,
+        0x1UL, 0x8000000000000001UL, 0x3fe8000000000000UL, 0xbfe8000000000000UL,
+        0x3ffc000000000000UL, 0xbffc000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x7fefffffffffffffUL, 0xffefffffffffffffUL, 0x10000000000000UL, 0x8010000000000000UL,
+        0xfffffffffffffUL, 0x800fffffffffffffUL, 0x41efffffffffffffUL, 0x41f0000000000000UL,
+        0x41f0000000000001UL, 0xbfefffffffffffffUL, 0xbff0000000000000UL, 0xbff0000000000001UL,
+        0x0UL, 0x8000000000000000UL, 0x1UL, 0x8000000000000001UL,
+        0x3fe8000000000000UL, 0xbfe8000000000000UL, 0x3ffc000000000000UL, 0xbffc000000000000UL,
+        0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7fefffffffffffffUL, 0xffefffffffffffffUL,
+        0x10000000000000UL, 0x8010000000000000UL, 0xfffffffffffffUL, 0x800fffffffffffffUL,
+        0x43dfffffffffffffUL, 0x43e0000000000000UL, 0x43e0000000000001UL, 0xc3dfffffffffffffUL,
+        0xc3e0000000000000UL, 0xc3e0000000000001UL, 0x0UL, 0x8000000000000000UL,
+        0x1UL, 0x8000000000000001UL, 0x3fe8000000000000UL, 0xbfe8000000000000UL,
+        0x3ffc000000000000UL, 0xbffc000000000000UL, 0x3ff0000000000000UL, 0xbff0000000000000UL,
+        0x7fefffffffffffffUL, 0xffefffffffffffffUL, 0x10000000000000UL, 0x8010000000000000UL,
+        0xfffffffffffffUL, 0x800fffffffffffffUL, 0x43efffffffffffffUL, 0x43f0000000000000UL,
+        0x43f0000000000001UL, 0xbfefffffffffffffUL, 0xbff0000000000000UL, 0xbff0000000000001UL,
+        0xc1e00000001fffffUL, 0xc1e0000000200000UL, 0xc1e0000000200001UL
+    ];
+
+    // Independently derived by decoding the significand/exponent, truncating
+    // toward zero, and applying integer range bounds. Overflow rows use zero
+    // only as an unused placeholder: their manifest requires an exception.
+    private static readonly long[] ExpectedBits =
+    [
+        0L, 0L, 0L, 0L,
+        0L, 0L, 1L, -1L,
+        1L, -1L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        2147483520L, 0L, 0L, -2147483520L,
+        -2147483648L, 0L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        1L, 0L, 1L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 4294967040L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 1L, -1L,
+        1L, -1L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        9223371487098961920L, 0L, 0L, -9223371487098961920L,
+        long.MinValue, 0L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        1L, 0L, 1L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, unchecked((long)0xffffff0000000000UL), 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 1L, -1L,
+        1L, -1L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        2147483647L, 0L, 0L, -2147483647L,
+        -2147483648L, -2147483648L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        1L, 0L, 1L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 4294967295L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, 1L, -1L,
+        1L, -1L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        9223372036854774784L, 0L, 0L, -9223372036854774784L,
+        long.MinValue, 0L, 0L, 0L,
+        0L, 0L, 0L, 0L,
+        1L, 0L, 1L, 0L,
+        0L, 0L, 0L, 0L,
+        0L, 0L, unchecked((long)0xfffffffffffff800UL), 0L,
+        0L, 0L, 0L, 0L,
+        -2147483648L, 0L, 0L
+    ];
+
+    private static long _operand;
+    private static long _checked;
+    private static long _unchecked;
+    private static int _count;
+    private static int _floatingKind;
+
+    public static int Run(int input)
+    {
+        var single = input < 88;
+        var destination = input < 176 ? (input / 22) % 4 : 0;
+        var bits = OperandBits[input];
+        _operand = single ? unchecked((int)bits) : unchecked((long)bits);
+        _floatingKind = single ? 4 : 5;
+        _checked = _unchecked = 0;
+        _count = 1;
+        if (single)
+        {
+            var source = BitConverter.Int32BitsToSingle(unchecked((int)bits));
+            _checked = destination switch
+            {
+                0 => checked((int)source),
+                1 => checked((uint)source),
+                2 => checked((long)source),
+                3 => unchecked((long)checked((ulong)source)),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+            _count = 2;
+            _unchecked = destination switch
+            {
+                0 => unchecked((int)source),
+                1 => unchecked((uint)source),
+                2 => unchecked((long)source),
+                3 => unchecked((long)(ulong)source),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+        }
+        else
+        {
+            var source = BitConverter.Int64BitsToDouble(unchecked((long)bits));
+            _checked = destination switch
+            {
+                0 => checked((int)source),
+                1 => checked((uint)source),
+                2 => checked((long)source),
+                3 => unchecked((long)checked((ulong)source)),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+            _count = 2;
+            _unchecked = destination switch
+            {
+                0 => unchecked((int)source),
+                1 => unchecked((uint)source),
+                2 => unchecked((long)source),
+                3 => unchecked((long)(ulong)source),
+                _ => throw new ArgumentOutOfRangeException(nameof(input)),
+            };
+        }
+        _count = 3;
+        if (_checked != ExpectedBits[input]) return -1;
+        if (_unchecked != ExpectedBits[input]) return -2;
+        return 42;
+    }
+
+    public static int Trace() => _count;
+    public static int TraceCount() => _count;
+    public static int TraceKind(int index) => index == 0 ? _floatingKind : 3;
+    public static int TraceEventId(int index) => index;
+    private static long Payload(int index) => index switch { 0 => _operand, 1 => _checked, 2 => _unchecked, _ => throw new ArgumentOutOfRangeException(nameof(index)) };
+    public static int TracePayloadLow(int index) => unchecked((int)Payload(index));
+    public static int TracePayloadHigh(int index) => unchecked((int)(Payload(index) >> 32));
+}

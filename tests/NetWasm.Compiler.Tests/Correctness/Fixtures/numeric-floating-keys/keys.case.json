@@ -1,0 +1,797 @@
+{
+  "schemaVersion": 1,
+  "caseId": "numeric.floating-keys",
+  "featureIds": [
+    "S07",
+    "S24"
+  ],
+  "inputKind": "CSharp",
+  "sourceFiles": [
+    "numeric-floating-keys/Program.cs.txt"
+  ],
+  "name": "FloatingKeys",
+  "namespace": "NetWasm.Correctness.FloatingKeys",
+  "entryMethod": "Run",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127
+  ],
+  "expectations": [
+    {
+      "input": 0,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 1,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 2,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 3,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 4,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 5,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 6,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 7,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 8,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 9,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 10,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 11,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 12,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 13,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 14,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 15,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 16,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 17,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 18,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 19,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 20,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 21,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 22,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 23,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 24,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 25,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 26,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 27,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 28,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 29,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 30,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 31,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 32,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 33,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 34,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 35,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 36,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 37,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 38,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 39,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 40,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 41,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 42,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 43,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 44,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 45,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 46,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 47,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 48,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 49,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 50,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 51,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 52,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 53,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 54,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 55,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 56,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 57,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 58,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 59,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 60,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 61,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 62,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 63,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 64,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 65,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 66,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 67,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 68,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 69,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 70,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 71,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 72,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 73,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 74,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 75,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 76,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 77,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 78,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 79,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 80,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 81,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 82,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 83,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 84,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 85,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 86,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 87,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 88,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 89,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 90,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 91,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 92,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 93,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 94,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 95,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 96,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 97,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 98,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 99,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 100,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 101,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 102,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 103,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 104,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 105,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 106,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 107,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 108,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 109,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 110,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 111,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 112,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 113,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 114,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 115,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 116,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 117,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 118,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 119,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 120,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 121,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 122,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 123,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 124,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 125,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 126,
+      "returnValue": 42,
+      "exceptionType": null
+    },
+    {
+      "input": 127,
+      "returnValue": 42,
+      "exceptionType": null
+    }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Collections": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "usesTypedTrace": true,
+  "reportAllMismatches": true,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.FloatingKeyEdgeTests.ComparersAndCollectionsRespectFloatingKeyEquivalence"
+}

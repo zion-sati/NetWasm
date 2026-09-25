@@ -1,0 +1,173 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace NetWasm.Correctness.AsyncLifetime;
+
+public sealed class Payload(int value)
+{
+    public int Value = value;
+}
+
+public sealed class Failure : Exception;
+
+public sealed class Gate(bool completed, Exception? failure, int offset = 0) : INotifyCompletion
+{
+    private Action? _continuation;
+    public bool IsCompleted { get; private set; } = completed;
+    public int Registrations { get; private set; }
+    public Gate GetAwaiter() => this;
+
+    public int GetResult()
+    {
+        if (!IsCompleted) throw new InvalidOperationException();
+        EntryPoint.Mark(offset + 4);
+        if (failure is not null) throw failure;
+        return 2;
+    }
+
+    public void OnCompleted(Action continuation)
+    {
+        if (IsCompleted || _continuation is not null) throw new InvalidOperationException();
+        _continuation = continuation;
+        Registrations++;
+        EntryPoint.Mark(offset + 2);
+    }
+
+    public void Release()
+    {
+        if (IsCompleted) throw new InvalidOperationException();
+        IsCompleted = true;
+        var continuation = _continuation;
+        _continuation = null;
+        EntryPoint.Mark(offset + 3);
+        continuation?.Invoke();
+    }
+}
+
+public static class EntryPoint
+{
+    private static int[] _events = [];
+    private static int _count;
+
+    public static int Run(int input)
+    {
+        if ((uint)input >= 8) throw new ArgumentOutOfRangeException(nameof(input));
+        _events = new int[12];
+        _count = 0;
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var failure = input is 2 or 7 ? new Failure() : null;
+        Exception? pending = input == 3 ? new OperationCanceledException(cancellation.Token) : failure;
+        var first = new Gate(input == 0, pending);
+        var second = new Gate(false, null, 10);
+        if (input == 4) first.Release();
+        var task = input == 5 ? StartDouble(first, second)
+            : input is 6 or 7 ? StartValueTask(first)
+            : StartTask(first);
+
+        if (input is 0 or 4)
+        {
+            if (!task.IsCompleted || first.Registrations != 0) return -1;
+        }
+        else
+        {
+            if (task.IsCompleted || first.Registrations != 1 || second.Registrations != 0) return -2;
+            // Payloads belong to suspended state machines, not caller locals.
+            GC.Collect();
+            if (task.IsCompleted) return -3;
+            first.Release();
+            if (input == 5)
+            {
+                if (task.IsCompleted || second.Registrations != 1) return -4;
+                GC.Collect();
+                if (task.IsCompleted) return -5;
+                second.Release();
+            }
+            if (!task.IsCompleted) return -6;
+        }
+
+        try
+        {
+            if (task.GetAwaiter().GetResult() != 42 || input is 2 or 3 or 7) return -7;
+        }
+        catch (Failure observed)
+        {
+            if (input is not (2 or 7) || !ReferenceEquals(observed, failure) || !task.IsFaulted) return -8;
+            Mark(7);
+        }
+        catch (OperationCanceledException observed)
+        {
+            if (input != 3 || observed.CancellationToken != cancellation.Token || !task.IsCanceled) return -9;
+            Mark(7);
+        }
+
+        return input switch
+        {
+            0 => Matches([1, 4, 5, 6]),
+            1 or 6 => Matches([1, 2, 3, 4, 5, 6]),
+            2 or 3 or 7 => Matches([1, 2, 3, 4, 6, 7]),
+            4 => Matches([3, 1, 4, 5, 6]),
+            5 => Matches([1, 2, 3, 4, 5, 12, 13, 14, 15, 6]),
+            _ => -10,
+        };
+    }
+
+    public static void Mark(int value) => _events[_count++] = value;
+
+    private static int Matches(int[] expected)
+    {
+        if (_count != expected.Length) return -11;
+        for (var index = 0; index < _count; index++)
+            if (_events[index] != expected[index]) return -12;
+        return 42;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task<int> StartTask(Gate gate) => Single(new Payload(40), gate);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task<int> StartValueTask(Gate gate) => ValueSingle(new Payload(40), gate).AsTask();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task<int> StartDouble(Gate first, Gate second) => Double(new Payload(38), first, second);
+
+    private static async Task<int> Single(Payload value, Gate gate)
+    {
+        Mark(1);
+        try
+        {
+            var result = await gate;
+            Mark(5);
+            return value.Value + result;
+        }
+        finally { Mark(6); GC.KeepAlive(value); }
+    }
+
+    private static async ValueTask<int> ValueSingle(Payload value, Gate gate)
+    {
+        Mark(1);
+        try
+        {
+            var result = await gate;
+            Mark(5);
+            return value.Value + result;
+        }
+        finally { Mark(6); GC.KeepAlive(value); }
+    }
+
+    private static async Task<int> Double(Payload value, Gate first, Gate second)
+    {
+        Mark(1);
+        try
+        {
+            var left = await first;
+            Mark(5);
+            var right = await second;
+            Mark(15);
+            return value.Value + left + right;
+        }
+        finally { Mark(6); GC.KeepAlive(value); }
+    }
+}

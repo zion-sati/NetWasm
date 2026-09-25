@@ -23,6 +23,13 @@ in the project's `global.json` and allow prerelease SDKs while .NET 11 is a
 prerelease. An isolated .NET 11 SDK installation is sufficient; NetWasm does
 not also require the .NET 10 SDK. The target framework remains `netwasm0.1`.
 
+SDK selection does not change NetWasm's `float`/`double` to `decimal`
+rounding rule. Even with the .NET 10 SDK and C# 14 or earlier, NetWasm selects
+the [newer exact-binary-input conversion](corelib-runtime.md#binary-floating-point-to-decimal-policy),
+not desktop .NET 10's seven/fifteen-significant-digit rule. The linked
+compatibility note describes the qualified source-branch behavior; check the
+release containing this change before relying on it in a published SDK.
+
 For an ordinary application or test project, no separate Emscripten, Node.js,
 LLVM/LLD, Binaryen, Git or Python installation is needed. `dotnet restore`
 selects one host-tools NuGet package for the machine doing the build. That

@@ -1,0 +1,158 @@
+using System;
+using System.Runtime.CompilerServices;
+
+namespace NetWasm.Correctness.NumericTransport;
+
+public static class EntryPoint
+{
+    // Transport, not arithmetic: NaN payload/sign and decimal scale/sign must
+    // survive exactly. Every representation traverses every route independently.
+    private static readonly uint[] Singles =
+    [
+        0U, 0x80000000U, 1U, 0x80000001U, 0x007fffffU, 0x00800000U,
+        0x3f800000U, 0xbf800000U, 0x7f7fffffU, 0xff7fffffU,
+        0x7f800000U, 0xff800000U, 0x7fc00011U, 0xffc00011U, 0x7f800001U, 0xff800001U,
+    ];
+    private static readonly ulong[] Doubles =
+    [
+        0UL, 0x8000000000000000UL, 1UL, 0x8000000000000001UL,
+        0x000fffffffffffffUL, 0x0010000000000000UL,
+        0x3ff0000000000000UL, 0xbff0000000000000UL, 0x7fefffffffffffffUL, 0xffefffffffffffffUL,
+        0x7ff0000000000000UL, 0xfff0000000000000UL,
+        0x7ff8000000000011UL, 0xfff8000000000011UL, 0x7ff0000000000001UL, 0xfff0000000000001UL,
+    ];
+    private static readonly ushort[] Halves =
+    [
+        0, 0x8000, 1, 0x8001, 0x03ff, 0x0400, 0x3c00, 0xbc00,
+        0x7bff, 0xfbff, 0x7c00, 0xfc00, 0x7e11, 0xfe11, 0x7c01, 0xfc01,
+    ];
+    private static readonly ulong[] Integers =
+    [
+        0UL, 1UL, 0x7fffffffUL, 0x80000000UL, 0xffffffffUL,
+        0x7fffffffffffffffUL, 0x8000000000000000UL, 0xffffffffffffffffUL,
+    ];
+    private static readonly ulong[] High =
+    [
+        0UL, 0UL, 1UL, 0x7fffffffffffffffUL, 0x8000000000000000UL,
+        0xffffffffffffffffUL, 0x123456789abcdef0UL, 0xfedcba9876543210UL,
+    ];
+    private static readonly ulong[] Low =
+    [
+        0UL, 1UL, 0UL, 0xffffffffffffffffUL, 0UL,
+        0xffffffffffffffffUL, 0xfedcba9876543210UL, 0x123456789abcdef0UL,
+    ];
+    private static readonly int[] DecimalLow = [0, 0, 0, 0, 1, 10, -1, -1];
+    private static readonly int[] DecimalMid = [0, 0, 0, 0, 0, 0, -1, -1];
+    private static readonly int[] DecimalHigh = [0, 0, 0, 0, 0, 0, -1, -1];
+    private static readonly bool[] DecimalNegative = [false, true, false, true, false, true, false, true];
+    private static readonly byte[] DecimalScale = [0, 0, 28, 28, 28, 1, 0, 28];
+
+    public static int Run(int input)
+    {
+        var route = input % 12;
+        var index = input / 12;
+        if (index < 16)
+            return BitConverter.SingleToUInt32Bits(Transport(BitConverter.UInt32BitsToSingle(Singles[index]), route)) == Singles[index] ? 42 : -1;
+        index -= 16;
+        if (index < 16)
+            return BitConverter.DoubleToUInt64Bits(Transport(BitConverter.UInt64BitsToDouble(Doubles[index]), route)) == Doubles[index] ? 42 : -1;
+        index -= 16;
+        if (index < 16)
+            return BitConverter.HalfToUInt16Bits(Transport(BitConverter.UInt16BitsToHalf(Halves[index]), route)) == Halves[index] ? 42 : -1;
+        index -= 16;
+        if (index < 8)
+        {
+            var value = new decimal(DecimalLow[index], DecimalMid[index], DecimalHigh[index], DecimalNegative[index], DecimalScale[index]);
+            var bits = decimal.GetBits(Transport(value, route));
+            var flags = (DecimalNegative[index] ? int.MinValue : 0) | (DecimalScale[index] << 16);
+            return bits[0] == DecimalLow[index] && bits[1] == DecimalMid[index] &&
+                bits[2] == DecimalHigh[index] && bits[3] == flags ? 42 : -2;
+        }
+        index -= 8;
+        if (index < 8)
+            return Transport(unchecked((long)Integers[index]), route) == unchecked((long)Integers[index]) ? 42 : -3;
+        index -= 8;
+        if (index < 8)
+            return Transport(Integers[index], route) == Integers[index] ? 42 : -3;
+        index -= 8;
+        if (index < 8)
+        {
+            var value = new Int128(High[index], Low[index]);
+            return Transport(value, route) == value ? 42 : -3;
+        }
+        index -= 8;
+        if (index < 8)
+        {
+            var value = new UInt128(High[index], Low[index]);
+            return Transport(value, route) == value ? 42 : -3;
+        }
+        throw new ArgumentOutOfRangeException(nameof(input));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Transport<T>(T value, int route)
+    {
+        switch (route)
+        {
+            case 0: return Identity(value);
+            case 1:
+                var array = new T[2];
+                array[1] = value;
+                return array[1];
+            case 2: return new ReferenceCell<T> { Value = value }.Value;
+            case 3: return new ValueCell<T> { Value = value }.Value;
+            case 4:
+                object boxed = value!;
+                return (T)boxed;
+            case 5:
+                IValue<T> reference = new ReferenceCell<T> { Value = value };
+                return ReadInterface(reference);
+            case 6: return ReadConstrained<ValueCell<T>, T>(new ValueCell<T> { Value = value });
+            case 7:
+                Func<T, T> callback = Identity;
+                return callback(value);
+            case 8:
+                Func<T> closure = () => value;
+                return closure();
+            case 9: return Select(false, default!, value);
+            case 10: return Select(true, value, default!);
+            case 11:
+                var destination = default(T)!;
+                Assign(ref destination, value);
+                return destination;
+            default: throw new ArgumentOutOfRangeException(nameof(route));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Identity<T>(T value) => value;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T ReadInterface<T>(IValue<T> value) => value.Read();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T ReadConstrained<TCell, T>(TCell value) where TCell : IValue<T> => value.Read();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T Select<T>(bool first, T left, T right) => first ? left : right;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void Assign<T>(ref T destination, T value) => destination = value;
+
+    private interface IValue<T>
+    {
+        T Read();
+    }
+
+    private sealed class ReferenceCell<T> : IValue<T>
+    {
+        public T Value = default!;
+        public T Read() => Value;
+    }
+
+    private struct ValueCell<T> : IValue<T>
+    {
+        public T Value;
+        public T Read() => Value;
+    }
+}

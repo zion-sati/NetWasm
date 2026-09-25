@@ -382,8 +382,7 @@ namespace System
         public static long ToInt64(float value) => ToInt64((double)value);
         public static long ToInt64(double value)
         {
-            var rounded = Math.Round(value);
-            return double.IsNaN(value) || rounded < long.MinValue || rounded > long.MaxValue ? throw new OverflowException() : (long)rounded;
+            return checked((long)Math.Round(value));
         }
         public static long ToInt64(decimal value) => checked((long)decimal.Round(value));
         public static long ToInt64(DateTime value) => throw new InvalidCastException();
@@ -425,8 +424,7 @@ namespace System
         public static ulong ToUInt64(float value) => ToUInt64((double)value);
         public static ulong ToUInt64(double value)
         {
-            var rounded = Math.Round(value);
-            return double.IsNaN(value) || rounded < 0 || rounded > ulong.MaxValue ? throw new OverflowException() : (ulong)rounded;
+            return checked((ulong)Math.Round(value));
         }
         public static ulong ToUInt64(decimal value) => checked((ulong)decimal.Round(value));
         public static ulong ToUInt64(DateTime value) => throw new InvalidCastException();

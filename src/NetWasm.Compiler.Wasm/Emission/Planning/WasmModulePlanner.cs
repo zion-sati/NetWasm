@@ -20,7 +20,10 @@ internal sealed record WasmModulePlan(
     OptionalFunctionIndex DelegateCountHelperIndex,
     OptionalFunctionIndex DelegateLeafHelperIndex,
     OptionalFunctionIndex DelegateEqualityHelperIndex,
-    OptionalFunctionIndex DelegateRemoveHelperIndex);
+    OptionalFunctionIndex DelegateRemoveHelperIndex)
+{
+    public int StaticInitializerFunctionBase { get; init; }
+}
 
 internal sealed class WasmModulePlanner(
     ITypeRepository types,
@@ -156,7 +159,10 @@ internal sealed class WasmModulePlanner(
             Optional(hasDelegates, helperBase),
             Optional(hasDelegates, helperBase + 1),
             Optional(hasDelegates, helperBase + 2),
-            Optional(hasDelegates, helperBase + 3));
+            Optional(hasDelegates, helperBase + 3))
+        {
+            StaticInitializerFunctionBase = helperBase + (hasDelegates ? 4 : 0),
+        };
         invariants.Validate(request, methodEmissions, plan);
         return plan;
     }

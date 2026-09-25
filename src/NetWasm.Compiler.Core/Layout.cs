@@ -13,6 +13,7 @@ public readonly record struct ValueLayout(
     int Alignment,
     ImmutableArray<int> ReferenceOffsets)
 {
+    public ImmutableArray<int> ByReferenceOffsets { get; init; } = [];
     public bool ContainsReferences => !ReferenceOffsets.IsEmpty;
     public bool IsFlattenedAbiEligible => !ContainsReferences && Size is > 0 and <= 8;
 }
@@ -68,6 +69,7 @@ public readonly record struct ValueTypeDescriptorLayout(
     CliTypeIdentity Type,
     int TypeId,
     int Size,
+    int BoxedPayloadOffset,
     int BitmapAddress,
     int BitmapBitCount);
 
@@ -212,8 +214,11 @@ public static class RuntimeAbi
     public const string RuntimeAllocateReferenceArray = "allocate_reference_array";
     public const string RuntimeAllocateValueArray = "allocate_value_array";
     public const string RuntimeAllocateRectangularArray = "allocate_rectangular_array";
+    public const string RuntimeAllocateBoundedRectangularArray = "allocate_bounded_rectangular_array";
     public const string RuntimeArrayRank = "array_rank";
     public const string RuntimeArrayGetLength = "array_get_length";
+    public const string RuntimeArrayGetLowerBound = "array_get_lower_bound";
+    public const string RuntimeArrayGetValue = "array_get_value";
     public const string RuntimeArrayCopy = "array_copy";
     public const string RuntimeArrayClear = "array_clear";
     public const string RuntimeArrayClone = "array_clone";

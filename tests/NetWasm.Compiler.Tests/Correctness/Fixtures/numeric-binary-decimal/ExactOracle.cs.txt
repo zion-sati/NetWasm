@@ -1,0 +1,61 @@
+using System;
+using System.Numerics;
+
+namespace NetWasm.Correctness.BinaryDecimalConversions;
+
+public static partial class EntryPoint
+{
+    // Desktop net10.0 is deliberately NOT the conversion authority for this
+    // owner-selected .NET 11 profile. This independent rational oracle uses
+    // unbounded division/remainder, not the product's UInt128/Pow5/shift algorithm.
+    // Only the desktop entry calls it; Run still executes ordinary C# conversions.
+    public static int RunExactOracle(int input)
+    {
+        var row = input / 4;
+        return MatchesExpected(row, ExactRationalDecimal(Bits[row], Single[row])) ? 42 : -2;
+    }
+
+    private static decimal ExactRationalDecimal(ulong bits, bool single)
+    {
+        var fractionBits = single ? 23 : 52;
+        var exponentBits = single ? 8 : 11;
+        var bias = single ? 127 : 1023;
+        var exponentMask = (1UL << exponentBits) - 1;
+        var encodedExponent = (int)((bits >> fractionBits) & exponentMask);
+        if ((ulong)encodedExponent == exponentMask) throw new OverflowException();
+
+        var numerator = new BigInteger(bits & ((1UL << fractionBits) - 1));
+        if (encodedExponent != 0) numerator += BigInteger.One << fractionBits;
+        var exponent = (encodedExponent == 0 ? 1 - bias : encodedExponent - bias) - fractionBits;
+        var denominator = BigInteger.One;
+        if (exponent >= 0) numerator <<= exponent;
+        else denominator <<= -exponent;
+
+        var maximum = (BigInteger.One << 96) - 1;
+        if (numerator > maximum * denominator) throw new OverflowException();
+        var commonFactor = BigInteger.GreatestCommonDivisor(numerator, denominator);
+        numerator /= commonFactor;
+        denominator /= commonFactor;
+        var exactFractionalDigits = (int)denominator.GetBitLength() - 1;
+
+        var coefficient = BigInteger.Zero;
+        var scale = 0;
+        var powerOfTen = BigInteger.One;
+        for (var candidate = 0; candidate <= Math.Min(28, exactFractionalDigits); candidate++)
+        {
+            var quotient = BigInteger.DivRem(numerator * powerOfTen, denominator, out var remainder);
+            var comparison = (remainder * 2).CompareTo(denominator);
+            if (comparison > 0 || (comparison == 0 && !quotient.IsEven)) quotient++;
+            if (quotient > maximum) break;
+            coefficient = quotient;
+            scale = candidate;
+            powerOfTen *= 10;
+        }
+        if (coefficient.IsZero) return decimal.Zero;
+        var negative = bits >> (fractionBits + exponentBits) != 0;
+        return new decimal(
+            unchecked((int)(uint)(coefficient & uint.MaxValue)),
+            unchecked((int)(uint)((coefficient >> 32) & uint.MaxValue)),
+            unchecked((int)(uint)(coefficient >> 64)), negative, (byte)scale);
+    }
+}

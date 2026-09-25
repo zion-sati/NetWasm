@@ -15,11 +15,14 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Runtime.InteropServices.NativeMemory", "AlignedAllocCore"),
             ("System.Runtime.InteropServices.NativeMemory", "AlignedReallocCore"),
             ("System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "Reallocate"),
-        ("System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "CreateResourceHandle"),
-        ("System.WeakReferenceRuntime", "Create"),
+            ("System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "CreateResourceHandle"),
+            ("System.WeakReferenceRuntime", "Create"),
             ("System.WeakReferenceRuntime", "Set"),
             ("System.GCHandleRuntime", "Create"),
-        ("System.GCHandleRuntime", "Set")
+            ("System.GCHandleRuntime", "Set"),
+            ("System.GCCollectionRuntime", "Collect"),
+            ("System.GCFinalizerRuntime", "WaitForPending"),
+            ("System.Array", "InternalGetValue"),
         }.ToFrozenSet();
 
     public bool Classify(MethodDefinitionModel method, ITypeRepository types)

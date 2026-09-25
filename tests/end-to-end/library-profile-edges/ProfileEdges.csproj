@@ -1,0 +1,18 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <NetWasmComponentContract>async-command</NetWasmComponentContract>
+    <NetWasmOptimization>None</NetWasmOptimization>
+  </PropertyGroup>
+  <ItemGroup>
+    <NetWasmClockGrant Include="wall" />
+    <NetWasmClockGrant Include="monotonic" />
+    <PackageReference Include="NetWasm.Microsoft.Extensions.Http" Version="[$(LibraryProfileVersion)]" />
+    <PackageReference Include="NetWasm.Microsoft.Extensions.DependencyInjection" Version="[$(LibraryProfileVersion)]" />
+    <PackageReference Include="NetWasm.Microsoft.Extensions.Options" Version="[$(LibraryProfileVersion)]" />
+    <PackageReference Include="NetWasm.Microsoft.Extensions.Primitives" Version="[$(LibraryProfileVersion)]" />
+    <PackageReference Include="NetWasm.Microsoft.Extensions.Caching.Memory" Version="[$(LibraryProfileVersion)]" />
+    <PackageReference Include="NetWasm.System.Net.Http.Json" Version="[$(LibraryProfileVersion)]" />
+    <PackageReference Include="NetWasm.System.IO.Pipelines" Version="[$(LibraryProfileVersion)]" />
+  </ItemGroup>
+</Project>
