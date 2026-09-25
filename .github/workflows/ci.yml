@@ -95,6 +95,7 @@ jobs:
           NETWASM_CORPUS_PROFILE: Fast
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
           NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
+          NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
           NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
