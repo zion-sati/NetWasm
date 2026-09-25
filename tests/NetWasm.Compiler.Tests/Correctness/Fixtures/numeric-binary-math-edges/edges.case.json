@@ -5062,5 +5062,6 @@
   "usesTypedTrace": false,
   "exposesLegacyTrace": false,
   "reportAllMismatches": true,
-  "testMethod": "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.BinaryFunctionsRespectSpecialValuePrecedenceAndQuadrants"
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests.BinaryFunctionsRespectSpecialValuePrecedenceAndQuadrants",
+  "desktopEntryMethod": "RunExactOracle"
 }

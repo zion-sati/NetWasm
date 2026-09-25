@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -85,12 +85,22 @@ jobs:
             --strip-components=1
           echo "$RUNNER_TEMP/wasm-tools" >> "$GITHUB_PATH"
 
+      - name: Prepare compiler qualification inputs
+        shell: bash
+        run: bash eng/prepare-compiler-qualification-inputs.sh "$RUNNER_TEMP/compiler-qualification"
+
       - name: Build and test
         shell: bash
         env:
           NETWASM_CORPUS_PROFILE: Fast
+          NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
+          NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
+          NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
+          NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          export PATH="$RUNNER_TEMP/emsdk/upstream/bin:$PATH"
+          export NETWASM_NODE_PATH="$(command -v node)"
           npm ci --ignore-scripts --no-audit --no-fund
           bash eng/verify-toolchain.sh
           bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh --allow-emscripten

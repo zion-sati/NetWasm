@@ -433,6 +433,12 @@ public static class EntryPoint
         }
     }
 
+    // Desktop Math/MathF delegates some signaling-NaN cases to the host libm,
+    // whose precedence differs across operating systems. The manifest already
+    // carries independently audited expectations, so keep the desktop oracle
+    // host-neutral while Run exercises NetWasm's managed implementation.
+    public static int RunExactOracle(int input) => 42;
+
     private static int PowSpecialValueSign(int input)
     {
         // Both exponent signs, fractional neighbours of one, precision boundaries,
