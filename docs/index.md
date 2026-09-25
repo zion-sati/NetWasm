@@ -7,7 +7,7 @@ There is no production-support or compatibility commitment.
 ## Start here
 
 - [Size measurements and methodology](size-and-methodology.md) — reproduce the
-  89,550-byte C# component and read the Rust comparison and JSON scenario limits.
+  91,294-byte C# component and read the Rust comparison and JSON scenario limits.
 - [Support status and roadmap](support-status.md)
 - [Quickstart](../QUICKSTART.md) — create and run an application with tools
   restored through NuGet.
