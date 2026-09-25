@@ -1,13 +1,12 @@
 # Size measurements and methodology
 
-## The 89,550-byte C# result
+## The 91,294-byte C# result
 
-The reference result was updated on 2026-09-25 from clean source commit
-`87c9e44ee` with .NET SDK 10.0.302 and the pinned Emscripten 6.0.7 toolchain.
-The source-bound canary validated the component, ran it under Wasmtime, printed
+The reference result was reproduced on 2026-09-25 from the public NetWasm 0.4.2
+packages on NuGet.org, using .NET SDK 10.0.302 on macOS arm64. Two clean Release
+publishes produced the same component. It validated, ran under Wasmtime, printed
 `42`, and produced SHA-256
-`a15b7e95c04b6533907f67c5e1e4a60e80e4ffdd5a69c79c0cc50ad78fd65ed8`.
-This current-source result has not yet been published as a package release.
+`2a9e1b568620791eef5035a3399294d2dda2c4fa0c823af145e97c6fa948890d`.
 
 The generated console application's source is:
 
@@ -31,7 +30,7 @@ dotnet run -c Release
 wc -c publish/local/Hello42.wasm
 ```
 
-The reference final WASI Preview 2 Component is **89,550 bytes**,
+The reference final WASI Preview 2 Component is **91,294 bytes**,
 uncompressed. Runtime support, allocation and precise BDWGC/BoehmGC garbage
 collection are linked into the program; there is no separate desktop .NET
 runtime to download.
@@ -70,7 +69,7 @@ fn main() {
 
 | Toolchain and build | Final component |
 | --- | ---: |
-| NetWasm, ordinary Release | 89,550 bytes |
+| NetWasm, ordinary Release | 91,294 bytes |
 | Rust 1.90.0, ordinary Cargo release | 86,248 bytes |
 | Rust 1.95.0, ordinary Cargo release | 81,997 bytes |
 | Rust 1.95.0, size-oriented profile below | 53,635 bytes |
@@ -148,7 +147,7 @@ settings**:
 
 | Build | Artifact | Bytes | Collector boundary |
 | --- | --- | ---: | --- |
-| NetWasm Release | WASI Preview 2 Component | 89,550 | Precise BDWGC/BoehmGC included in the artifact |
+| NetWasm Release | WASI Preview 2 Component | 91,294 | Precise BDWGC/BoehmGC included in the artifact |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 Hello World* | WASI Preview 1 core module | 110,084 | Precise GC configured |
 
@@ -210,7 +209,7 @@ System.Text.Json workloads produced:
 These are historical scenario measurements, not current component sizes,
 not incremental package costs, and not minimum sizes for arbitrary JSON
 programs. Do not compare their 54,230-byte baseline directly with the current
-89,550-byte component. `JsonDocument` is also not the mutable `JsonNode` API.
+91,294-byte component. `JsonDocument` is also not the mutable `JsonNode` API.
 
 The useful result is granularity: choosing a different JSON workload retains
 a different closure. Adding a package reference alone is not the same thing
