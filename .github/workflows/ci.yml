@@ -204,6 +204,8 @@ jobs:
           sudo apt-get install -y patchelf=0.18.0-1.1build1
       - name: Build and verify native host package
         shell: bash
+        env:
+          NETWASM_GITHUB_TOKEN: ${{ github.token }}
         run: |
           version="0.4.0-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           python eng/build-host-tools-package.py \

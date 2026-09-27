@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -180,6 +181,52 @@ class HostToolsPackageTests(unittest.TestCase):
         cached.write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "Cached host-tool archive digest mismatch"):
             stage.acquire(source, cache)
+
+    def test_download_retries_transient_http_failure_and_authenticates_github(self):
+        payload = b"pinned input"
+        source = {
+            "url": "https://raw.githubusercontent.com/example/project/commit/LICENSE",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        cache = Path(self.temporary.name) / "retry-cache"
+        throttled = urllib.error.HTTPError(
+            source["url"], 429, "rate limited", {"Retry-After": "0"}, None
+        )
+        self.addCleanup(throttled.close)
+        requests = []
+
+        def download(request, timeout):
+            requests.append((request, timeout))
+            if len(requests) == 1:
+                raise throttled
+            return io.BytesIO(payload)
+
+        with (
+            patch.dict(stage.os.environ, {"NETWASM_GITHUB_TOKEN": "test-token"}),
+            patch.object(stage.urllib.request, "urlopen", side_effect=download),
+            patch.object(stage.time, "sleep") as sleep,
+        ):
+            cached = stage.acquire(source, cache)
+
+        self.assertEqual(payload, cached.read_bytes())
+        self.assertEqual(2, len(requests))
+        self.assertEqual("Bearer test-token", requests[0][0].get_header("Authorization"))
+        sleep.assert_called_once_with(0.0)
+
+    def test_download_failure_removes_closed_partial_file(self):
+        source = {
+            "url": "https://example.invalid/missing.zip",
+            "sha256": "0" * 64,
+        }
+        cache = Path(self.temporary.name) / "failure-cache"
+        missing = urllib.error.HTTPError(source["url"], 404, "missing", {}, None)
+        self.addCleanup(missing.close)
+
+        with patch.object(stage.urllib.request, "urlopen", side_effect=missing):
+            with self.assertRaises(urllib.error.HTTPError):
+                stage.acquire(source, cache)
+
+        self.assertEqual([], list(cache.iterdir()))
 
     def test_windows_arm64_release_binds_native_output_source_and_license(self):
         pins = copy.deepcopy(self.pins)

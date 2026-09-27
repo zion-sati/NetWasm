@@ -177,6 +177,8 @@ jobs:
           sudo apt-get install -y patchelf=0.18.0-1.1build1
       - name: Build pinned native package
         shell: bash
+        env:
+          NETWASM_GITHUB_TOKEN: ${{ github.token }}
         run: |
           python source/eng/build-host-tools-package.py \
             --rid "${{ matrix.rid }}" \
