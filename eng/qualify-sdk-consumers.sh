@@ -93,7 +93,7 @@ finish_qualification() {
 trap finish_qualification EXIT
 consumer_root="$work_root/consumer with spaces"
 app_root="$consumer_root/app"
-app_project="$app_root/RuntimeHost.csproj"
+app_project="$app_root/NetWasmApp.csproj"
 package_cache_root="$consumer_root/packages"
 mkdir -p "$package_cache_root"
 
@@ -208,7 +208,7 @@ run_log "$work_root/template-install.log" \
   dotnet new install "$dotnet_package_root/NetWasm.Templates.$version.nupkg" \
     --nuget-source "$dotnet_package_root" --force
 run_log "$work_root/app-create.log" \
-  dotnet new netwasm-app -n RuntimeHost -o "$app_root"
+  dotnet new netwasm-app -n NetWasmApp -o "$app_root"
 if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
   if ! grep -Fq '"rollForward": "latestFeature"' "$app_root/global.json"; then
     echo "The template SDK selection has changed; minimum-SDK qualification needs review" >&2
@@ -384,8 +384,9 @@ for target in wasm32 wasm64; do
       echo "Browser publish is missing its entry module" >&2
       exit 1
     }
-    if [[ "${NETWASM_QUALIFY_SDK_VERSION:-}" == 10.* ]]; then
-      published_component="$consumer_root/publish/local/RuntimeHost.wasm"
+    if [[ "${NETWASM_QUALIFY_SDK_VERSION:-}" == 10.* ||
+          "${NETWASM_QUALIFY_SDK_VERSION:-}" == 11.* ]]; then
+      published_component="$consumer_root/publish/local/NetWasmApp.wasm"
       expected_component_bytes="$(tr -d '[:space:]' < \
         "$source_root/eng/size-canary/expected-component-bytes.txt")"
       actual_component_bytes="$(wc -c < "$published_component" | tr -d ' ')"

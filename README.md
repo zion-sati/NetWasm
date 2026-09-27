@@ -2,7 +2,7 @@
 
 Write C#. Deploy like C++. Target WASI.
 
-A clean Release build of `Console.WriteLine(42)` produces an **84,515-byte
+A clean Release build of `Console.WriteLine(42)` produces an **84,513-byte
 final Wasm artifact—runtime and precise garbage collection included.**
 
 [![Star NetWasm on GitHub](https://img.shields.io/github/stars/zion-sati/NetWasm?style=for-the-badge&logo=github&label=Star%20NetWasm)](https://github.com/zion-sati/NetWasm)
@@ -110,7 +110,7 @@ possible.
 - **Debugging is a build choice.** Debug enables managed stack traces;
   Release omits their instrumentation and symbol sidecar unless requested.
 
-The 84,515-byte figure is the uncompressed final component, not a compressed
+The 84,513-byte figure is the uncompressed final component, not a compressed
 download or the size of a complete JavaScript-host deployment. A WASI host is
 still required. [The measurement notes](docs/size-and-methodology.md) make that
 boundary explicit.

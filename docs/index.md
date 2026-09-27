@@ -10,10 +10,10 @@ repository.
 ## Start here
 
 - [Size measurements and methodology](size-and-methodology.md) — reproduce the
-  84,515-byte C# component and read the Rust comparison and JSON scenario limits.
-- [NetWasm SDK quickstart](sdk-quickstart.md) — install the pinned Emscripten
-  SDK that supplies Node.js 24+ and LLD 24+, create an app or dual-target
-  library, then build, run and publish with ordinary `dotnet` commands.
+  84,513-byte C# component and read the Rust comparison and JSON scenario limits.
+- [NetWasm SDK quickstart](sdk-quickstart.md) — create an app or dual-target
+  library, restore the pinned host tools through NuGet, then build, run and
+  publish with ordinary `dotnet` commands.
 - [Support status and roadmap](support-status.md) — the canonical inventory of
   implemented, conditional, partially qualified, in-progress, deferred,
   externally blocked, and intentionally unsupported capabilities.

@@ -57,12 +57,12 @@ run_logged harness dotnet build eng/size-canary/SizeCanary.csproj \
 sdk_version="$(dotnet --version)"
 csc="$(dirname "$(command -v dotnet)")/sdk/$sdk_version/Roslyn/bincore/csc.dll"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-assembly="$evidence_root/Hello42.dll"
+assembly="$evidence_root/NetWasmApp.dll"
 application="$evidence_root/application.wasm"
 runtime="$evidence_root/runtime.wasm"
 layout="$evidence_root/runtime-layout.json"
 command_wit="$evidence_root/command.wit.wasm"
-component="$evidence_root/Hello42.wasm"
+component="$evidence_root/NetWasmApp.wasm"
 harness="$repo_root/eng/size-canary/bin/Release/net10.0/SizeCanary.dll"
 
 run_logged csc dotnet "$csc" -nologo -noconfig -nostdlib \
