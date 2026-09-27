@@ -30,6 +30,7 @@ public sealed class ComponentPackageWorkspaceFactory(IDirectoryCreator directori
             temporaryDirectory,
             Path.Combine(temporaryDirectory, "linked.wasm"),
             Path.Combine(temporaryDirectory, "embedded.wasm"),
+            Path.Combine(temporaryDirectory, "component-unstripped.wasm"),
             Path.Combine(temporaryDirectory, "component.wasm"));
     }
 }

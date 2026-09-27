@@ -23,13 +23,9 @@ for target in wasm32 wasm64; do
     'require(process.argv[1]).targets[process.argv[2]].systemLibraries.join("\n")' \
     "$policy" "$target")
 
-  arguments=()
+  arguments=(--lto)
   if [[ "$target" = wasm64 ]]; then
-    arguments+=(--wasm64 --lto)
+    arguments=(--wasm64 --lto)
   fi
-  if [[ "${#arguments[@]}" -eq 0 ]]; then
-    "$embuilder" build "${libraries[@]}"
-  else
-    "$embuilder" "${arguments[@]}" build "${libraries[@]}"
-  fi
+  "$embuilder" "${arguments[@]}" build "${libraries[@]}"
 done

@@ -1,12 +1,11 @@
 # Size measurements and methodology
 
-## The 91,294-byte C# result
+## The 84,515-byte C# result
 
-The reference result was reproduced on 2026-09-25 from the public NetWasm 0.4.2
-packages on NuGet.org, using .NET SDK 10.0.302 on macOS arm64. Two clean Release
-publishes produced the same component. It validated, ran under Wasmtime, printed
-`42`, and produced SHA-256
-`2a9e1b568620791eef5035a3399294d2dda2c4fa0c823af145e97c6fa948890d`.
+The reference result was reproduced on 2026-09-27 with .NET SDK 10.0.401 on
+macOS arm64. A clean source canary and a clean SDK package consumer both
+produced an 84,515-byte Release component. Each artifact validated, ran under
+Wasmtime, printed `42`, and exported the expected WASI Preview 2 command world.
 
 The generated console application's source is:
 
@@ -30,7 +29,7 @@ dotnet run -c Release
 wc -c publish/local/Hello42.wasm
 ```
 
-The reference final WASI Preview 2 Component is **91,294 bytes**,
+The reference final WASI Preview 2 Component is **84,515 bytes**,
 uncompressed. Runtime support, allocation and precise BDWGC/BoehmGC garbage
 collection are linked into the program; there is no separate desktop .NET
 runtime to download.
@@ -41,8 +40,10 @@ The component also runs directly with Wasmtime 47.0.3 and prints `42`:
 wasmtime run publish/local/Hello42.wasm
 ```
 
-Exact size can vary with the SDK, host and pinned native-tool package. Record
-those inputs and the artifact hash when comparing exact bytes.
+The repository pins 84,515 bytes as a regression canary for this exact source
+and toolchain. A compiler, runtime, SDK or native-tool change can intentionally
+change it, but the new value must be reproduced through both the source canary
+and a clean SDK package consumer before the pin is updated.
 
 The figure excludes the host engine, JavaScript hosting/transpilation files,
 deployment manifests and optional sidecars. Those files are part of a
@@ -69,7 +70,7 @@ fn main() {
 
 | Toolchain and build | Final component |
 | --- | ---: |
-| NetWasm, ordinary Release | 91,294 bytes |
+| NetWasm, ordinary Release | 84,515 bytes |
 | Rust 1.90.0, ordinary Cargo release | 86,248 bytes |
 | Rust 1.95.0, ordinary Cargo release | 81,997 bytes |
 | Rust 1.95.0, size-oriented profile below | 53,635 bytes |
@@ -147,7 +148,7 @@ settings**:
 
 | Build | Artifact | Bytes | Collector boundary |
 | --- | --- | ---: | --- |
-| NetWasm Release | WASI Preview 2 Component | 91,294 | Precise BDWGC/BoehmGC included in the artifact |
+| NetWasm Release | WASI Preview 2 Component | 84,515 | Precise BDWGC/BoehmGC included in the artifact |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 Hello World* | WASI Preview 1 core module | 110,084 | Precise GC configured |
 
@@ -209,7 +210,7 @@ System.Text.Json workloads produced:
 These are historical scenario measurements, not current component sizes,
 not incremental package costs, and not minimum sizes for arbitrary JSON
 programs. Do not compare their 54,230-byte baseline directly with the current
-91,294-byte component. `JsonDocument` is also not the mutable `JsonNode` API.
+84,515-byte component. `JsonDocument` is also not the mutable `JsonNode` API.
 
 The useful result is granularity: choosing a different JSON workload retains
 a different closure. Adding a package reference alone is not the same thing

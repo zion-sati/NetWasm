@@ -40,6 +40,7 @@ public sealed class ComponentCoreModuleOptimizerTests
         Assert.Null(validator.Path);
         Assert.Equal(BinaryenToolIds.WasmOpt, tools.ToolId);
         Assert.Contains("-Oz", tools.Arguments);
+        Assert.Contains("--converge", tools.Arguments);
         Assert.Contains("--remove-unused-module-elements", tools.Arguments);
         Assert.Equal(memory64, tools.Arguments.Contains("--enable-memory64"));
         Assert.Equal(["--output", output], tools.Arguments[^2..]);

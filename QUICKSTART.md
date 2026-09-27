@@ -1,6 +1,6 @@
 # NetWasm quickstart
 
-Install .NET SDK 10.0.300 or newer. The application SDK restores its pinned
+Install .NET SDK 10.0.303 or newer. The application SDK restores its pinned
 native build tools from NuGet for Linux x64/ARM64, macOS ARM64 and Windows
 x64/ARM64. No Emscripten, Git or Python setup is needed to use it.
 

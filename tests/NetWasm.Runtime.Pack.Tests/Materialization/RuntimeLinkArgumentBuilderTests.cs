@@ -25,9 +25,16 @@ public sealed class RuntimeLinkArgumentBuilderTests
         Assert.Equal(machine, arguments[0]);
         Assert.Contains("--whole-archive", arguments);
         Assert.Contains(Path.GetFullPath(directory.PathTo(selected.RuntimeArchive.Path)), arguments);
+        Assert.Contains(Path.GetFullPath(directory.PathTo(selected.CollectorArchive.Path)), arguments);
         Assert.Contains(Path.GetFullPath(systemLibrary), arguments);
         Assert.DoesNotContain("--undefined=__emscripten_environ_constructor", arguments);
         Assert.Contains("--no-stack-first", arguments);
+        Assert.Contains("--strip-debug", arguments);
+        Assert.Contains("--export=emscripten_stack_get_current", arguments);
+        Assert.Contains("--export=_emscripten_stack_restore", arguments);
+        Assert.Contains("-combiner-global-alias-analysis=false", arguments);
+        Assert.Contains($"--allow-undefined-file={Path.GetFullPath(
+            directory.PathTo(selected.AllowedUndefinedSymbols.Path))}", arguments);
         Assert.Contains($"--global-base={RuntimePackTestData.Layout(target).RuntimeGlobalBase}", arguments);
         Assert.Contains("stack-size=65536", arguments);
         Assert.Contains($"--initial-memory={RuntimePackTestData.Layout(target).InitialMemorySizeBytes}", arguments);
@@ -35,7 +42,7 @@ public sealed class RuntimeLinkArgumentBuilderTests
         Assert.Contains("--export=initialize", arguments);
         Assert.Contains("--export=allocate", arguments);
         Assert.Equal(Path.GetFullPath(directory.PathTo("output/runtime.wasm")), arguments[^1]);
-        Assert.DoesNotContain("--allow-undefined", arguments);
+        Assert.DoesNotContain("--allow-multiple-definition", arguments);
     }
 
     [Fact]

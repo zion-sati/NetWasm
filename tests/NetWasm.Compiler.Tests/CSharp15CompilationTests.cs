@@ -305,7 +305,7 @@ public sealed class CSharp15CompilationTests
                 PinnedSdk10(),
                 "14.0",
                 references: [library]));
-        Assert.Contains("CS9041", exception.DiagnosticCodes);
+        Assert.Contains("CS9382", exception.DiagnosticCodes);
     }
 
     [Fact]

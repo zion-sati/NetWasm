@@ -69,7 +69,7 @@ public sealed class TemplateContractTests
             "global.json")));
 
         var sdk = document.RootElement.GetProperty("sdk");
-        Assert.Equal("10.0.300", sdk.GetProperty("version").GetString());
+        Assert.Equal("10.0.303", sdk.GetProperty("version").GetString());
         Assert.Equal("latestFeature", sdk.GetProperty("rollForward").GetString());
         Assert.False(sdk.GetProperty("allowPrerelease").GetBoolean());
 

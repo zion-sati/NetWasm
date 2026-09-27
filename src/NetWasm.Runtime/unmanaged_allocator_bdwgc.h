@@ -8,8 +8,8 @@
 #include "gc.h"
 #include "runtime_libc_initializer.h"
 
-/* Canonical lowering can allocate before GC_INIT reads the environment.
- * Retain the owner because those buffers may be freed after GC_INIT. */
+/* Canonical lowering can allocate before collector initialization. Retain
+ * the owner because those buffers may be freed after GC_INIT. */
 typedef union {
     struct {
         void *allocation;

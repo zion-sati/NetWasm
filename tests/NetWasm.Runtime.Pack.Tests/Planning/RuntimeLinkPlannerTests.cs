@@ -25,16 +25,24 @@ public sealed class RuntimeLinkPlannerTests
 
         var actual = RuntimeLinkPlanner.Plan(request);
 
-        native[2] = actual.Inputs[0].Path;
-        for (var index = 1; index < actual.Inputs.Length; index++) native[3 + index] = actual.Inputs[index].Path;
-        native[^1] = request.OutputPath;
-        Assert.Equal(native, actual.Arguments);
+        Assert.Equal(native.Length, actual.Arguments.Length);
+        Assert.Contains(actual.Inputs[0].Path, actual.Arguments);
+        Assert.Contains(actual.Inputs[1].Path, actual.Arguments);
+        Assert.Contains(
+            $"--allow-undefined-file={actual.Inputs[2].Path}",
+            actual.Arguments);
+        Assert.Equal(request.OutputPath, actual.Arguments[^1]);
+        Assert.Equal(2,
+            actual.OptimizationArguments.Count(argument => argument == request.OutputPath));
+        Assert.Contains("--post-emscripten", actual.OptimizationArguments);
         Assert.Equal(layout.RuntimeGlobalBase, actual.RuntimeGlobalBase);
         Assert.Equal(layout.InitialMemorySizeBytes, actual.InitialMemorySizeBytes);
         Assert.Equal(layout.MaximumMemorySizeBytes, actual.MaximumMemorySizeBytes);
         Assert.Equal(manifest.RuntimeAbi, actual.RuntimeAbi);
         Assert.Equal(manifest.Provenance.ToolchainFingerprint, actual.ToolchainFingerprint);
         Assert.Equal(target.RuntimeArchive.Sha256, actual.Inputs[0].Sha256);
+        Assert.Equal(target.CollectorArchive.Sha256, actual.Inputs[1].Sha256);
+        Assert.Equal(target.AllowedUndefinedSymbols.Sha256, actual.Inputs[2].Sha256);
         Assert.All(actual.Inputs, asset => Assert.StartsWith("/", asset.Path));
     }
 

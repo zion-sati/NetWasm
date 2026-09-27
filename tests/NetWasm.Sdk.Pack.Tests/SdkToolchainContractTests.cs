@@ -459,29 +459,38 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
-    public void RuntimePackRegenerationUsesTheEffectiveEmscriptenCache()
+    public void RuntimePackRegenerationBuildsAndStagesTheEffectiveLtoSystemLibraries()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var script = File.ReadAllText(Path.Combine(
+        var regenerationScript = File.ReadAllText(Path.Combine(
             repositoryRoot,
             "src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh"));
+        var preparationScript = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "eng/prepare-emscripten-system-libraries.sh"));
 
-        Assert.Contains("em-config", script, StringComparison.Ordinal);
-        Assert.Contains("emscripten_cache_root=\"$(\"$em_config\" CACHE)\"", script,
+        Assert.Contains("arguments=(--lto)", preparationScript, StringComparison.Ordinal);
+        Assert.Contains("arguments=(--wasm64 --lto)", preparationScript,
             StringComparison.Ordinal);
+        Assert.Contains("\"$embuilder\" \"${arguments[@]}\" build \"${libraries[@]}\"",
+            preparationScript, StringComparison.Ordinal);
+        Assert.Contains("em-config", regenerationScript, StringComparison.Ordinal);
+        Assert.Contains("emscripten_cache_root=\"$(\"$em_config\" CACHE)\"",
+            regenerationScript, StringComparison.Ordinal);
         Assert.Contains(
-            "system_source=\"$emscripten_cache_root/sysroot/lib/wasm32-emscripten\"",
-            script,
+            "system_source=\"$emscripten_cache_root/sysroot/lib/wasm32-emscripten/lto\"",
+            regenerationScript,
             StringComparison.Ordinal);
         Assert.Contains(
             "system_source=\"$emscripten_cache_root/sysroot/lib/wasm64-emscripten/lto\"",
-            script,
+            regenerationScript,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
             "$EMSDK/upstream/emscripten/cache/sysroot/lib",
-            script,
+            regenerationScript,
             StringComparison.Ordinal);
-        Assert.Contains("cp \"$system_source/$library\"", script, StringComparison.Ordinal);
+        Assert.Contains("cp \"$system_source/$library\"", regenerationScript,
+            StringComparison.Ordinal);
     }
 
     [Fact]

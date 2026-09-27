@@ -50,8 +50,12 @@ public sealed class ComponentPackageExecution(
         _operations.Run(embedArguments, "embed component metadata");
         _operations.Run(
             ["component", "new", workspace.EmbeddedComponentPath,
-                "--output", workspace.ComponentPath],
+                "--output", workspace.UnstrippedComponentPath],
             "create component");
+        _operations.Run(
+            ["strip", "--all", workspace.UnstrippedComponentPath,
+                "--output", workspace.ComponentPath],
+            "strip component metadata");
         _operations.Run(["validate", workspace.ComponentPath, "--features", "all"],
             "validate component");
         _files.Move(workspace.ComponentPath, request.OutputPath);

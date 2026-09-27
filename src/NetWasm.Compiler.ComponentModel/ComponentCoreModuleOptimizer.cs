@@ -50,6 +50,7 @@ public sealed class ComponentCoreModuleOptimizer(
         var arguments = new List<string>
         {
             inputPath,
+            "--converge",
             "--remove-unused-module-elements",
             "--strip-debug",
             "--enable-multimemory",

@@ -33,6 +33,8 @@ public sealed class RuntimeMaterializationTask : Task
     [Required]
     public string WasmLdPath { get; set; } = string.Empty;
 
+    public string WasmOptPath { get; set; } = string.Empty;
+
     [Required]
     public string WasmToolsNodePath { get; set; } = string.Empty;
 
@@ -51,6 +53,8 @@ public sealed class RuntimeMaterializationTask : Task
     [Required]
     public string Target { get; set; } = string.Empty;
 
+    public string Optimization { get; set; } = "Size";
+
     public string InitialHeapSizeBytes { get; set; } = string.Empty;
 
     public string MaximumMemorySizeBytes { get; set; } = string.Empty;
@@ -68,12 +72,14 @@ public sealed class RuntimeMaterializationTask : Task
                 RuntimeLayoutPath,
                 AssetRoot,
                 WasmLdPath,
+                WasmOptPath,
                 WasmToolsNodePath,
                 WasmToolsCommandPath,
                 WasmToolsModulePath,
                 OutputPath,
                 LogDirectory,
                 Target,
+                ParseOptimization(Optimization),
                 ParseOptionalSize(InitialHeapSizeBytes),
                 ParseOptionalSize(MaximumMemorySizeBytes)));
             RuntimeModules = [CreateRuntimeModule(materialization)];
@@ -85,6 +91,13 @@ public sealed class RuntimeMaterializationTask : Task
             return false;
         }
     }
+
+    private static RuntimePackOptimization ParseOptimization(string value) => value switch
+    {
+        "None" => RuntimePackOptimization.None,
+        "Size" => RuntimePackOptimization.Size,
+        _ => throw new InvalidOperationException("The NetWasm optimization property is invalid."),
+    };
 
     private static long? ParseOptionalSize(string value)
     {

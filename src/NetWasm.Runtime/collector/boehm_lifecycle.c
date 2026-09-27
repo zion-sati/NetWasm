@@ -1,9 +1,18 @@
 #include "collector_lifecycle.h"
 
 #include <gc.h>
+#ifdef NETWASM_GC_DIAGNOSTICS
+#include <stdlib.h>
+#endif
 
 void collector_initialize(void)
 {
+#ifdef NETWASM_GC_DIAGNOSTICS
+    /* Keep the no-collection diagnostic out of size-optimized releases. */
+    if (getenv("GC_DONT_GC") != NULL) {
+        GC_disable();
+    }
+#endif
     GC_INIT();
 }
 

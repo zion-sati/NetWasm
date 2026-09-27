@@ -40,7 +40,7 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
 
     private static void Validate(RuntimePackManifest? manifest)
     {
-        if (manifest is null || manifest.SchemaVersion != 3 || manifest.WasmPageSize != 65_536)
+        if (manifest is null || manifest.SchemaVersion != 4 || manifest.WasmPageSize != 65_536)
         {
             throw new InvalidOperationException("The NetWasm runtime pack manifest schema is unsupported.");
         }
@@ -103,6 +103,17 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         }
 
         ValidateAsset(target.RuntimeArchive);
+        ValidateAsset(target.CollectorArchive);
+        ValidateAsset(target.AllowedUndefinedSymbols);
+        if (!string.Equals(target.RuntimeArchive.Path,
+                $"{target.Target}/libnetwasm-runtime.a", StringComparison.Ordinal) ||
+            !string.Equals(target.CollectorArchive.Path,
+                $"{target.Target}/libgc.a", StringComparison.Ordinal) ||
+            !string.Equals(target.AllowedUndefinedSymbols.Path,
+                $"{target.Target}/allowed-undefined-symbols.txt", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The NetWasm runtime target asset path is invalid.");
+        }
         if (target.SystemLibraries is null ||
             target.SystemLibraries.Names.IsDefaultOrEmpty ||
             target.SystemLibraries.Names.Any(name => string.IsNullOrWhiteSpace(name) || Path.GetFileName(name) != name) ||

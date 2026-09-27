@@ -39,11 +39,11 @@ test('missing metrics and unknown stages cannot pass', () => {
 });
 
 test('compiler selection uses the exact repository SDK pin', () => {
-  assert.equal(resolveCompilerPath('unrelated\n10.0.300 [/other]\n10.0.302 [/sdk root]\r\n', '10.0.302'),
-    resolve('/sdk root/10.0.302/Roslyn/bincore/csc.dll'));
+  assert.equal(resolveCompilerPath('unrelated\n10.0.300 [/other]\n10.0.401 [/sdk root]\r\n', '10.0.401'),
+    resolve('/sdk root/10.0.401/Roslyn/bincore/csc.dll'));
 });
 
 test('absent or ambiguous SDK installations fail rather than choosing a fallback', () => {
-  assert.throws(() => resolveCompilerPath('', '10.0.302'), /pinned-sdk-not-unique/);
-  assert.throws(() => resolveCompilerPath('10.0.302 [/one]\n10.0.302 [/two]', '10.0.302'), /pinned-sdk-not-unique/);
+  assert.throws(() => resolveCompilerPath('', '10.0.401'), /pinned-sdk-not-unique/);
+  assert.throws(() => resolveCompilerPath('10.0.401 [/one]\n10.0.401 [/two]', '10.0.401'), /pinned-sdk-not-unique/);
 });

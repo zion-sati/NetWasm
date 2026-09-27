@@ -75,7 +75,7 @@ public sealed class RawModuleLinkerTests
         {
             Enter("create");
             OutputPath = outputPath;
-            return Workspace = new(this, "temporary", "linked", "embedded", "component");
+            return Workspace = new(this, "temporary", "linked", "embedded", "unstripped", "component");
         }
 
         public void Run(RawModuleLinkRequest request, ComponentPackageWorkspace workspace)

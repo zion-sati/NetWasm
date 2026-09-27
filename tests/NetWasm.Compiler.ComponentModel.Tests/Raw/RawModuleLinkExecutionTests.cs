@@ -69,7 +69,7 @@ public sealed class RawModuleLinkExecutionTests
         Assert.IsAssignableFrom<IRawModuleLinkExecution>(new RawModuleLinkExecution(stages, stages, stages, stages));
 
     private static ComponentPackageWorkspace CreateWorkspace(RecordingStages stages) =>
-        new(stages, "temporary", "linked", "embedded", "component");
+        new(stages, "temporary", "linked", "embedded", "unstripped", "component");
 
     private sealed class RecordingStages : IEmscriptenEnvironmentShimWriter,
         IComponentCoreModuleMergeRunner, IComponentCoreModuleOptimizer, IFileMover, IDirectoryDeleter

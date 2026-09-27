@@ -16,6 +16,7 @@ public sealed record RuntimeLinkPlanAsset(string Path, string Sha256);
 
 public sealed record RuntimeLinkPlan(
     ImmutableArray<string> Arguments,
+    ImmutableArray<string> OptimizationArguments,
     ImmutableArray<RuntimeLinkPlanAsset> Inputs,
     string RuntimeAbi,
     string ToolchainFingerprint,

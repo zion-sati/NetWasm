@@ -2,8 +2,10 @@
 
 Write C#. Deploy like C++. Target WASI.
 
-A clean Release build of `Console.WriteLine(42)` produces a **91,294-byte
+A clean Release build of `Console.WriteLine(42)` produces an **84,515-byte
 final Wasm artifact—runtime and precise garbage collection included.**
+
+[![Star NetWasm on GitHub](https://img.shields.io/github/stars/zion-sati/NetWasm?style=for-the-badge&logo=github&label=Star%20NetWasm)](https://github.com/zion-sati/NetWasm)
 
 [![Publication](https://img.shields.io/github/actions/workflow/status/zion-sati/NetWasm/release.yml?label=publish&event=release)](https://github.com/zion-sati/NetWasm/actions/workflows/release.yml)
 [![License: Community + MIT](https://img.shields.io/badge/license-Community%20%2B%20MIT-blue)](docs/licensing.md)
@@ -19,8 +21,9 @@ memory. Deploy the compiled program to a compatible WASI host.
 
 ## Try it
 
-Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
-then follow the [host and restore notes](docs/sdk-quickstart.md#1-install-net).
+Install [.NET SDK 10.0.303 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
+then follow the [host and restore notes](docs/sdk-quickstart.md#1-install-net). Earlier
+.NET 10 SDK patches carry an ARM64 runtime race that can crash parallel compilation.
 Projects using C# 15 select the .NET 11 SDK; projects using earlier language
 versions can stay on .NET 10, and neither path requires both SDKs.
 The SDK restores its pinned Node, LLD and Binaryen tools for your development
@@ -58,7 +61,7 @@ For Windows host support, browser publishing and dual-target libraries, follow t
 
 ## More than Hello World
 
-The 89.6 KB program is the baseline, not the boundary. NetWasm already covers a practical .NET development loop:
+The 82.5 KiB program is the baseline, not the boundary. NetWasm already covers a practical .NET development loop:
 
 - C# 15 when the project selects the .NET 11 SDK, while the default template remains on .NET 10;
 - `dotnet build`, `dotnet run`, `dotnet publish` and `dotnet test`;
@@ -107,7 +110,7 @@ possible.
 - **Debugging is a build choice.** Debug enables managed stack traces;
   Release omits their instrumentation and symbol sidecar unless requested.
 
-The 91,294-byte figure is the uncompressed final component, not a compressed
+The 84,515-byte figure is the uncompressed final component, not a compressed
 download or the size of a complete JavaScript-host deployment. A WASI host is
 still required. [The measurement notes](docs/size-and-methodology.md) make that
 boundary explicit.
