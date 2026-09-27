@@ -459,6 +459,22 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
+    public void PackageBuildProjectsTheVersionBeforeGeneratingRuntimeArtifacts()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var script = File.ReadAllText(Path.Combine(repositoryRoot, "eng/build-packages.sh"));
+        var versionProjectionIndex = script.IndexOf(
+            "project-release-version.py",
+            StringComparison.Ordinal);
+        var runtimeRegenerationIndex = script.IndexOf(
+            "regenerate-runtime-pack.sh",
+            StringComparison.Ordinal);
+
+        Assert.True(versionProjectionIndex >= 0);
+        Assert.True(runtimeRegenerationIndex > versionProjectionIndex);
+    }
+
+    [Fact]
     public void RuntimePackRegenerationBuildsAndStagesTheEffectiveLtoSystemLibraries()
     {
         var repositoryRoot = FindRepositoryRoot();
