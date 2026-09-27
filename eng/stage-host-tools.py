@@ -15,6 +15,8 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -24,11 +26,47 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent.parent
 PIN_PATH = ROOT / "eng/toolchain.json"
 CHUNK = 1024 * 1024
+DOWNLOAD_ATTEMPTS = 4
+MAX_RETRY_DELAY_SECONDS = 30
+TRANSIENT_HTTP_STATUSES = frozenset((408, 429, 500, 502, 503, 504))
 
 
 def digest(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def download_request(url: str) -> urllib.request.Request:
+    headers = {"User-Agent": "NetWasm-host-tools"}
+    token = os.environ.get("NETWASM_GITHUB_TOKEN")
+    host = urlparse(url).hostname
+    if token and host in {
+        "github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com",
+        "objects.githubusercontent.com",
+    }:
+        headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.Request(url, headers=headers)
+
+
+def retry_delay(error: BaseException, attempt: int) -> float:
+    delay = float(2**attempt)
+    if isinstance(error, urllib.error.HTTPError):
+        retry_after = error.headers.get("Retry-After") if error.headers else None
+        if retry_after:
+            try:
+                delay = float(retry_after)
+            except ValueError:
+                pass
+    return min(max(delay, 0), MAX_RETRY_DELAY_SECONDS)
+
+
+def is_transient_download_error(error: BaseException) -> bool:
+    return isinstance(error, urllib.error.URLError) and (
+        not isinstance(error, urllib.error.HTTPError)
+        or error.code in TRANSIENT_HTTP_STATUSES
+    )
 
 
 def acquire(source: dict[str, str], cache: Path) -> Path:
@@ -39,19 +77,25 @@ def acquire(source: dict[str, str], cache: Path) -> Path:
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / f"{expected[:16]}-{filename}"
     if not target.exists():
-        with tempfile.NamedTemporaryFile(dir=cache, delete=False) as temporary:
-            partial = Path(temporary.name)
-            try:
-                with urllib.request.urlopen(
-                    urllib.request.Request(
-                        source["url"], headers={"User-Agent": "NetWasm-host-tools"}
-                    ),
-                    timeout=60,
-                ) as response:
-                    shutil.copyfileobj(response, temporary, CHUNK)
-            except BaseException:
-                partial.unlink(missing_ok=True)
-                raise
+        descriptor, partial_name = tempfile.mkstemp(dir=cache)
+        os.close(descriptor)
+        partial = Path(partial_name)
+        try:
+            for attempt in range(DOWNLOAD_ATTEMPTS):
+                try:
+                    with partial.open("wb") as temporary:
+                        with urllib.request.urlopen(
+                            download_request(source["url"]), timeout=60
+                        ) as response:
+                            shutil.copyfileobj(response, temporary, CHUNK)
+                    break
+                except BaseException as error:
+                    if attempt + 1 == DOWNLOAD_ATTEMPTS or not is_transient_download_error(error):
+                        raise
+                    time.sleep(retry_delay(error, attempt))
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
         if digest(partial) != expected:
             partial.unlink()
             raise ValueError(f"Host-tool archive digest mismatch: {filename}")
