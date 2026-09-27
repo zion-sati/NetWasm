@@ -150,8 +150,12 @@ jobs:
           bash eng/verify-toolchain.sh
           bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh --allow-emscripten
           project=tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj
+          timezone_project=tools/NetWasm.TimeZones/NetWasm.TimeZones.csproj
           dotnet restore "$project" --disable-build-servers --nologo
+          dotnet restore "$timezone_project" --disable-build-servers --nologo
           dotnet build "$project" -c Release --no-restore \
+            --disable-build-servers --nologo
+          dotnet build "$timezone_project" -c Release --no-restore \
             --disable-build-servers --nologo
           NETWASM_TIMEZONE_ASSET_PATH="$(
             bash eng/prepare-timezone-test-asset.sh "$RUNNER_TEMP/timezone-assets"
