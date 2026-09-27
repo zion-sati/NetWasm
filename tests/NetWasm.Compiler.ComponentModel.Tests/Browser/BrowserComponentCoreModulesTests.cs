@@ -34,7 +34,7 @@ public sealed class BrowserComponentCoreModulesTests
         };
         var expectedOptimization = new List<string>
         {
-            "v/sanitized.wasm", "-Oz", "--remove-unused-module-elements", "--strip-debug",
+            "v/sanitized.wasm", "-Oz", "--converge", "--remove-unused-module-elements", "--strip-debug",
             "--enable-multimemory", "--enable-exception-handling", "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
         };

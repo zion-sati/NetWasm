@@ -76,7 +76,11 @@ NODE
     --target "$target" \
     --configuration release \
     --relocatable \
-    --output "$target_root/libnetwasm-runtime.a"
+    --output "$target_root/libnetwasm-runtime.a" \
+    --collector-output "$target_root/libgc.a"
+
+  printf '%s\n' emscripten_notify_memory_growth \
+    > "$target_root/allowed-undefined-symbols.txt"
 
   gc_work="$gc_source"
   if [[ "$target" = wasm64 ]]; then
@@ -87,7 +91,7 @@ NODE
 
   if [[ "$target" = wasm32 ]]; then
     machine=-mwasm32
-    system_source="$emscripten_cache_root/sysroot/lib/wasm32-emscripten"
+    system_source="$emscripten_cache_root/sysroot/lib/wasm32-emscripten/lto"
   else
     machine=-mwasm64
     system_source="$emscripten_cache_root/sysroot/lib/wasm64-emscripten/lto"
@@ -127,6 +131,7 @@ NODE
     --prefix "$build_root"
     --prefix "$system_source"
     --archive "$target_root/libnetwasm-runtime.a"
+    --archive "$target_root/libgc.a"
   )
   if [[ -n "${HOME:-}" ]]; then
     normalization_arguments+=(--prefix "$HOME")
@@ -153,13 +158,22 @@ NODE
     }
     initial_memory=$(( (base + 262144 + wasm_page_size - 1) / wasm_page_size * wasm_page_size ))
     proof="$temporary_root/$target-$base.wasm"
-    "$wasm_ld" "$machine" \
+    "$wasm_ld" "$machine" -Bstatic --strip-debug --table-base=1 \
       --whole-archive "$target_root/libnetwasm-runtime.a" --no-whole-archive \
+      "$target_root/libgc.a" \
       "${system_paths[@]}" \
-      --allow-multiple-definition --no-entry --gc-sections --no-stack-first \
+      --allow-undefined-file="$target_root/allowed-undefined-symbols.txt" \
+      --no-entry --gc-sections --no-stack-first \
       --global-base="$base" -z stack-size="$native_stack_size" \
       --initial-memory="$initial_memory" --max-memory="$maximum_memory" \
-      --export-memory --export-table --export=__heap_base --export=__data_end \
+      --export-memory --export-table \
+      --export=emscripten_stack_get_current --export=_emscripten_stack_restore \
+      --export-if-defined=__start_em_asm --export-if-defined=__stop_em_asm \
+      --export-if-defined=__start_em_lib_deps --export-if-defined=__stop_em_lib_deps \
+      --export-if-defined=__start_em_js --export-if-defined=__stop_em_js \
+      --export=__heap_base --export=__data_end \
+      -mllvm -combiner-global-alias-analysis=false \
+      -mllvm -enable-emscripten-sjlj -mllvm -disable-lsr \
       "${export_args[@]}" -o "$proof"
     wasm-tools validate "$proof" --features all
     wat="$temporary_root/$target-$base.wat"

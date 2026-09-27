@@ -49,7 +49,11 @@ public static class RuntimeLinkPlanner
         var runtimeInput = new RuntimeLinkPlanAsset(
             request.AssetRoot.TrimEnd('/') + "/" + target.RuntimeArchive.Path.Replace('\\', '/'),
             target.RuntimeArchive.Sha256);
-        var inputs = ImmutableArray.Create(runtimeInput).AddRange(request.SystemLibraries);
+        var collectorInput = ResolveInput(request.AssetRoot, target.CollectorArchive);
+        var allowedUndefinedInput = ResolveInput(
+            request.AssetRoot, target.AllowedUndefinedSymbols);
+        var inputs = ImmutableArray.Create(runtimeInput, collectorInput, allowedUndefinedInput)
+            .AddRange(request.SystemLibraries);
         if (inputs.Any(asset => asset.Path == request.OutputPath))
         {
             throw new ArgumentException("The runtime output cannot overwrite a runtime input.", nameof(request));
@@ -59,15 +63,51 @@ public static class RuntimeLinkPlanner
         // Map only those path values back to MEMFS names; every flag/order is unchanged.
         var paths = new Dictionary<string, string>(StringComparer.Ordinal);
         paths[Path.GetFullPath(Path.Combine(Path.GetFullPath(request.AssetRoot), target.RuntimeArchive.Path))] = runtimeInput.Path;
+        paths[Path.GetFullPath(Path.Combine(
+            Path.GetFullPath(request.AssetRoot), target.CollectorArchive.Path))] =
+            collectorInput.Path;
+        paths[Path.GetFullPath(Path.Combine(
+            Path.GetFullPath(request.AssetRoot), target.AllowedUndefinedSymbols.Path))] =
+            allowedUndefinedInput.Path;
         foreach (var systemLibrary in request.SystemLibraries)
         {
             paths[Path.GetFullPath(systemLibrary.Path)] = systemLibrary.Path;
         }
         paths[Path.GetFullPath(request.OutputPath)] = request.OutputPath;
-        var virtualArguments = arguments.Select(argument => paths.TryGetValue(argument, out var path) ? path : argument)
+        var virtualArguments = arguments.Select(argument => MapPathArgument(argument, paths))
             .ToImmutableArray();
-        return new(virtualArguments, inputs, manifest.RuntimeAbi, manifest.Provenance.ToolchainFingerprint,
+        var optimizationArguments = new RuntimeOptimizationArgumentBuilder()
+            .Build(new(target, request.OutputPath))
+            .Select(argument => MapPathArgument(argument, paths))
+            .ToImmutableArray();
+        return new(virtualArguments, optimizationArguments, inputs, manifest.RuntimeAbi,
+            manifest.Provenance.ToolchainFingerprint,
             layout.RuntimeGlobalBase, layout.HeapBase, layout.InitialMemorySizeBytes, layout.MaximumMemorySizeBytes);
+    }
+
+    private static RuntimeLinkPlanAsset ResolveInput(
+        string assetRoot,
+        RuntimePackAsset asset) => new(
+            assetRoot.TrimEnd('/') + "/" + asset.Path.Replace('\\', '/'),
+            asset.Sha256);
+
+    private static string MapPathArgument(
+        string argument,
+        Dictionary<string, string> paths)
+    {
+        if (paths.TryGetValue(argument, out var path))
+        {
+            return path;
+        }
+
+        const string allowedUndefinedPrefix = "--allow-undefined-file=";
+        if (argument.StartsWith(allowedUndefinedPrefix, StringComparison.Ordinal) &&
+            paths.TryGetValue(argument[allowedUndefinedPrefix.Length..], out path))
+        {
+            return allowedUndefinedPrefix + path;
+        }
+
+        return argument;
     }
 
     private static void ValidateVirtualPath(string path)

@@ -12,15 +12,20 @@ internal sealed class RuntimeLinkArgumentBuilder : IRuntimeLinkArgumentBuilder
         ArgumentNullException.ThrowIfNull(request);
         var arguments = ImmutableArray.CreateBuilder<string>();
         arguments.Add(request.Target.Target == "wasm64" ? "-mwasm64" : "-mwasm32");
+        arguments.Add("-Bstatic");
+        arguments.Add("--strip-debug");
+        arguments.Add("--table-base=1");
         arguments.Add("--whole-archive");
         arguments.Add(ResolveAsset(request.AssetRoot, request.Target.RuntimeArchive.Path));
         arguments.Add("--no-whole-archive");
+        arguments.Add(ResolveAsset(request.AssetRoot, request.Target.CollectorArchive.Path));
         foreach (var input in request.SystemLibraryPaths)
         {
             arguments.Add(Path.GetFullPath(input));
         }
 
-        arguments.Add("--allow-multiple-definition");
+        arguments.Add($"--allow-undefined-file={ResolveAsset(
+            request.AssetRoot, request.Target.AllowedUndefinedSymbols.Path)}");
         arguments.Add("--no-entry");
         arguments.Add("--gc-sections");
         arguments.Add("--no-stack-first");
@@ -31,10 +36,25 @@ internal sealed class RuntimeLinkArgumentBuilder : IRuntimeLinkArgumentBuilder
         arguments.Add($"--max-memory={Format(request.Layout.MaximumMemorySizeBytes)}");
         arguments.Add("--export-memory");
         arguments.Add("--export-table");
+        arguments.Add("--export=emscripten_stack_get_current");
+        arguments.Add("--export=_emscripten_stack_restore");
+        arguments.Add("--export-if-defined=__start_em_asm");
+        arguments.Add("--export-if-defined=__stop_em_asm");
+        arguments.Add("--export-if-defined=__start_em_lib_deps");
+        arguments.Add("--export-if-defined=__stop_em_lib_deps");
+        arguments.Add("--export-if-defined=__start_em_js");
+        arguments.Add("--export-if-defined=__stop_em_js");
         foreach (var export in request.Manifest.Exports)
         {
             arguments.Add($"--export={export}");
         }
+
+        arguments.Add("-mllvm");
+        arguments.Add("-combiner-global-alias-analysis=false");
+        arguments.Add("-mllvm");
+        arguments.Add("-enable-emscripten-sjlj");
+        arguments.Add("-mllvm");
+        arguments.Add("-disable-lsr");
 
         arguments.Add("-o");
         arguments.Add(Path.GetFullPath(request.OutputPath));

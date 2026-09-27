@@ -29,6 +29,8 @@ internal sealed record RuntimePackTarget(
     long DefaultMaximumMemorySizeBytes,
     long MaximumMemorySizeBytes,
     RuntimePackAsset RuntimeArchive,
+    RuntimePackAsset CollectorArchive,
+    RuntimePackAsset AllowedUndefinedSymbols,
     RuntimePackSystemLibraries SystemLibraries);
 
 internal sealed record RuntimePackSystemLibraries(
@@ -65,6 +67,16 @@ internal sealed record RuntimeLinkRequest(
     ImmutableArray<string> SystemLibraryPaths,
     string OutputPath);
 
+internal sealed record RuntimeOptimizationRequest(
+    RuntimePackTarget Target,
+    string OutputPath);
+
+internal enum RuntimePackOptimization
+{
+    None,
+    Size,
+}
+
 internal sealed record RuntimeCommand(
     string ExecutablePath,
     ImmutableArray<string> Arguments,
@@ -75,12 +87,14 @@ internal sealed record RuntimeMaterializationRequest(
     string RuntimeLayoutPath,
     string AssetRoot,
     string WasmLdPath,
+    string WasmOptPath,
     string WasmToolsNodePath,
     string WasmToolsCommandPath,
     string WasmToolsModulePath,
     string OutputPath,
     string LogDirectory,
     string Target,
+    RuntimePackOptimization Optimization,
     long? InitialHeapSizeBytes,
     long? MaximumMemorySizeBytes);
 

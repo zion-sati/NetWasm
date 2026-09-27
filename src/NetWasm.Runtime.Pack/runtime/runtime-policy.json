@@ -10,10 +10,10 @@
       "defaultMaximumMemorySizeBytes": 2147483648,
       "maximumMemorySizeBytes": 2147483648,
       "systemLibraries": [
-        "libemmalloc.a",
-        "libc.a",
+        "libc_optz.a",
         "libstandalonewasm-nocatch-memgrow.a",
-        "libnoexit.a",
+        "libc.a",
+        "libemmalloc.a",
         "libclang_rt.builtins.a"
       ]
     },
@@ -22,10 +22,10 @@
       "defaultMaximumMemorySizeBytes": 8589934592,
       "maximumMemorySizeBytes": 8589934592,
       "systemLibraries": [
-        "libemmalloc.a",
-        "libc.a",
+        "libc_optz.a",
         "libstandalonewasm-nocatch-memgrow.a",
-        "libnoexit.a",
+        "libc.a",
+        "libemmalloc.a",
         "libclang_rt.builtins.a"
       ]
     }

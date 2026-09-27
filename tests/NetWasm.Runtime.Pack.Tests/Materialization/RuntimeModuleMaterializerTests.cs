@@ -20,6 +20,7 @@ public sealed class RuntimeModuleMaterializerTests
         var calculator = new RecordingLayoutCalculator(calculatedLayout);
         var assets = new RecordingAssetVerifier();
         var arguments = new RecordingArgumentBuilder(["link"]);
+        var optimization = new RecordingOptimizationArgumentBuilder(["optimize"]);
         var commands = new RecordingCommandInvoker();
         var materializer = new RuntimeModuleMaterializer(
             manifests,
@@ -27,6 +28,7 @@ public sealed class RuntimeModuleMaterializerTests
             calculator,
             assets,
             arguments,
+            optimization,
             commands,
             new ConstantDigestCalculator("output-digest"));
         var request = Request(directory, target) with
@@ -52,16 +54,20 @@ public sealed class RuntimeModuleMaterializerTests
         Assert.Equal(request.RuntimeLayoutPath, layouts.Path);
         Assert.Equal(request.InitialHeapSizeBytes, calculator.Request?.InitialHeapSizeBytes);
         Assert.Equal(request.MaximumMemorySizeBytes, calculator.Request?.MaximumMemorySizeBytes);
-        Assert.Equal(2, assets.Verifications.Count);
-        Assert.EndsWith($"{target}/system-libraries/libc.a", assets.Verifications[1].Path,
+        Assert.Equal(4, assets.Verifications.Count);
+        Assert.EndsWith($"{target}/system-libraries/libc.a", assets.Verifications[3].Path,
             StringComparison.Ordinal);
         Assert.Equal(request.OutputPath, arguments.Request?.OutputPath);
-        Assert.Equal(2, commands.Commands.Count);
+        Assert.Equal(3, commands.Commands.Count);
         var link = commands.Commands[0];
         Assert.Equal(request.WasmLdPath, link.ExecutablePath);
         Assert.Equal(["link"], link.Arguments.ToArray());
         Assert.EndsWith("runtime-link.log", link.LogPath, StringComparison.Ordinal);
-        var validation = commands.Commands[1];
+        var optimize = commands.Commands[1];
+        Assert.Equal(request.WasmOptPath, optimize.ExecutablePath);
+        Assert.Equal(["optimize"], optimize.Arguments.ToArray());
+        Assert.EndsWith("runtime-optimize.log", optimize.LogPath, StringComparison.Ordinal);
+        var validation = commands.Commands[2];
         Assert.Equal(request.WasmToolsNodePath, validation.ExecutablePath);
         Assert.Equal("--disable-warning=ExperimentalWarning", validation.Arguments[0]);
         Assert.Equal(request.WasmToolsCommandPath, validation.Arguments[1]);
@@ -69,6 +75,32 @@ public sealed class RuntimeModuleMaterializerTests
         Assert.Equal("validate", validation.Arguments[3]);
         Assert.Equal(Path.GetFullPath(request.OutputPath), validation.Arguments[4]);
         Assert.EndsWith("runtime-validate.log", validation.LogPath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NoneSkipsRuntimeOptimization()
+    {
+        using var directory = new TemporaryDirectory();
+        var commands = new RecordingCommandInvoker();
+        var materializer = new RuntimeModuleMaterializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 0)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new ConstantDigestCalculator("digest"));
+
+        materializer.Materialize(Request(directory, "wasm32") with
+        {
+            Optimization = RuntimePackOptimization.None,
+            WasmOptPath = string.Empty,
+        });
+
+        Assert.Equal(2, commands.Commands.Count);
+        Assert.DoesNotContain(commands.Commands,
+            command => command.LogPath.EndsWith("runtime-optimize.log", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -107,6 +139,7 @@ public sealed class RuntimeModuleMaterializerTests
         new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
         new RecordingAssetVerifier(),
         new RecordingArgumentBuilder(["link"]),
+        new RecordingOptimizationArgumentBuilder(["optimize"]),
         new RecordingCommandInvoker(),
         new ConstantDigestCalculator("digest"));
 
@@ -117,14 +150,28 @@ public sealed class RuntimeModuleMaterializerTests
             directory.PathTo("runtime-layout.json"),
             directory.Path,
             directory.PathTo("wasm-ld"),
+            directory.PathTo("wasm-opt"),
             directory.PathTo("node"),
             directory.PathTo("run-wasm-tools.mjs"),
             directory.PathTo("wasm-tools.wasm"),
             directory.PathTo("output/runtime.wasm"),
             directory.PathTo("logs"),
             target,
+            RuntimePackOptimization.Size,
             null,
             null);
+    }
+
+    private sealed class RecordingOptimizationArgumentBuilder(ImmutableArray<string> result) :
+        IRuntimeOptimizationArgumentBuilder
+    {
+        public RuntimeOptimizationRequest? Request { get; private set; }
+
+        public ImmutableArray<string> Build(RuntimeOptimizationRequest request)
+        {
+            Request = request;
+            return result;
+        }
     }
 
     private sealed class RecordingManifestReader(RuntimePackManifest result) : IRuntimePackManifestReader

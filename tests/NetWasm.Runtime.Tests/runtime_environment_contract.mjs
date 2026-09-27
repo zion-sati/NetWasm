@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const [modulePath, target, collectionMode = 'normal'] = process.argv.slice(2);
+const [modulePath, target, collectionMode = 'normal', configuration = 'debug'] =
+  process.argv.slice(2);
 assert.ok(modulePath);
 assert.ok(target === 'wasm32' || target === 'wasm64');
 assert.ok(collectionMode === 'normal' || collectionMode === 'forced');
+assert.ok(configuration === 'debug' || configuration === 'release');
+const supportsCollectionDiagnostic = configuration === 'debug';
 const addressSize = target === 'wasm64' ? 8 : 4;
 const address = value => addressSize === 8 ? BigInt(value) : Number(value);
 const prefix = addressSize === 8 ? 'cm64p2' : 'cm32p2';
@@ -25,7 +28,8 @@ const startupCases = cases.flatMap(entry => [
   { ...entry, earlyAllocation: false },
   { ...entry, earlyAllocation: true },
 ]);
-for (const { environment, disabled, earlyAllocation } of startupCases) {
+for (const { environment, disabled: requestedDisabled, earlyAllocation } of startupCases) {
+  const disabled = requestedDisabled && supportsCollectionDiagnostic;
   const encoded = Object.entries(environment).map(([key, value]) =>
     [new TextEncoder().encode(key), new TextEncoder().encode(value)]);
   let instance;

@@ -108,13 +108,13 @@ class VerifyToolchainTests(unittest.TestCase):
             self.bin / "dotnet",
             """
 if [[ "${1:-}" == "--version" ]]; then
-    printf '10.0.302\\n'
+    printf '10.0.401\\n'
 else
-    printf '5.6.0-2.26329.109\\n'
+    printf '5.9.0-1.26423.113\\n'
 fi
 """,
         )
-        csc = self.bin / "sdk" / "10.0.302" / "Roslyn" / "bincore" / "csc.dll"
+        csc = self.bin / "sdk" / "10.0.401" / "Roslyn" / "bincore" / "csc.dll"
         csc.parent.mkdir(parents=True)
         csc.touch()
         self._write_executable(

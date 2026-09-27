@@ -33,6 +33,12 @@
     <None Include="runtime/*/libnetwasm-runtime.a"
           Pack="true"
           PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="runtime/*/libgc.a"
+          Pack="true"
+          PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="runtime/*/allowed-undefined-symbols.txt"
+          Pack="true"
+          PackagePath="runtime/%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="runtime/wasm32/system-libraries/*.a"
           Pack="true"
           PackagePath="runtime/wasm32/system-libraries/" />

@@ -39,6 +39,9 @@ const targets = [];
 for (const [target, targetPolicy] of Object.entries(policy.targets)) {
   const measured = JSON.parse(await readFile(join(runtimeRoot, target, "layout.json"), "utf8"));
   const runtimeArchive = await describeAsset(`${target}/libnetwasm-runtime.a`);
+  const collectorArchive = await describeAsset(`${target}/libgc.a`);
+  const allowedUndefinedSymbols = await describeAsset(
+    `${target}/allowed-undefined-symbols.txt`);
   targets.push({
     target,
     pointerSizeBytes: targetPolicy.pointerSizeBytes,
@@ -49,6 +52,8 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     defaultMaximumMemorySizeBytes: targetPolicy.defaultMaximumMemorySizeBytes,
     maximumMemorySizeBytes: targetPolicy.maximumMemorySizeBytes,
     runtimeArchive,
+    collectorArchive,
+    allowedUndefinedSymbols,
     systemLibraries: {
       names: targetPolicy.systemLibraries,
       assets: await Promise.all(targetPolicy.systemLibraries.map((name) =>
@@ -58,7 +63,7 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
 }
 
 const manifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   runtimeAbi: toolchain.runtimeAbi,
   emscriptenVersion: toolchain.emscripten,
   wasmPageSize: policy.wasmPageSize,

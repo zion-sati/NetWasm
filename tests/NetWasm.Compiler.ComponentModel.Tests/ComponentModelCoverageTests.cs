@@ -377,15 +377,17 @@ public sealed class ComponentModelCoverageTests
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleWorkspace(
             new SystemFileDeleter(), "environment", "host", "adapter", "merged", null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageWorkspace(
-            null!, "temporary", "linked", "embedded", "component"));
+            null!, "temporary", "linked", "embedded", "unstripped", "component"));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageWorkspace(
-            new SystemDirectoryDeleter(), null!, "linked", "embedded", "component"));
+            new SystemDirectoryDeleter(), null!, "linked", "embedded", "unstripped", "component"));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageWorkspace(
-            new SystemDirectoryDeleter(), "temporary", null!, "embedded", "component"));
+            new SystemDirectoryDeleter(), "temporary", null!, "embedded", "unstripped", "component"));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageWorkspace(
-            new SystemDirectoryDeleter(), "temporary", "linked", null!, "component"));
+            new SystemDirectoryDeleter(), "temporary", "linked", null!, "unstripped", "component"));
         Assert.Throws<ArgumentNullException>(() => new ComponentPackageWorkspace(
-            new SystemDirectoryDeleter(), "temporary", "linked", "embedded", null!));
+            new SystemDirectoryDeleter(), "temporary", "linked", "embedded", null!, "component"));
+        Assert.Throws<ArgumentNullException>(() => new ComponentPackageWorkspace(
+            new SystemDirectoryDeleter(), "temporary", "linked", "embedded", "unstripped", null!));
     }
 
     [Fact]

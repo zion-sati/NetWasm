@@ -9,7 +9,12 @@ mount are deliberately narrower capabilities.
 
 ## 1. Install .NET
 
-Install [.NET SDK 10.0.300 or newer](https://dotnet.microsoft.com/download/dotnet/10.0).
+Install [.NET SDK 10.0.303 or newer](https://dotnet.microsoft.com/download/dotnet/10.0).
+The repository pins SDK 10.0.401, which carries runtime 10.0.12. SDK 10.0.302
+and earlier carry a [CoreCLR ARM64 thread-static publication race](https://github.com/dotnet/runtime/issues/127776)
+that can terminate parallel compilation with `SIGSEGV`; Microsoft shipped the
+[fix](https://github.com/dotnet/runtime/pull/127843) in runtime 10.0.11.
+
 The supported development hosts are Linux x64/ARM64, macOS ARM64 and Windows
 x64/ARM64. On Windows ARM64, use the native ARM64 .NET SDK; the x64 SDK under
 emulation cannot select the ARM64 host-tools package.

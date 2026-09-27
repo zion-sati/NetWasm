@@ -47,7 +47,31 @@ public sealed class RuntimeMaterializationTaskTests
         Assert.Equal("fingerprint", module.GetMetadata("ToolchainFingerprint"));
         Assert.Equal(131_072, actor.Request?.InitialHeapSizeBytes);
         Assert.Equal(8_589_934_592, actor.Request?.MaximumMemorySizeBytes);
+        Assert.Equal(RuntimePackOptimization.Size, actor.Request?.Optimization);
         Assert.Empty(build.Errors);
+    }
+
+    [Fact]
+    public void PassesNoneOptimizationToMaterializer()
+    {
+        var actor = new RecordingMaterializer(Materialization());
+        var task = Create(actor, new RecordingBuildEngine());
+        task.Optimization = "None";
+
+        Assert.True(task.Execute());
+        Assert.Equal(RuntimePackOptimization.None, actor.Request?.Optimization);
+    }
+
+    [Fact]
+    public void ReportsInvalidOptimization()
+    {
+        var build = new RecordingBuildEngine();
+        var task = Create(new RecordingMaterializer(Materialization()), build);
+        task.Optimization = "Fast";
+
+        Assert.False(task.Execute());
+        Assert.Equal("NWPACK001: The NetWasm optimization property is invalid.",
+            Assert.Single(build.Errors).Message);
     }
 
     [Fact]
@@ -99,6 +123,7 @@ public sealed class RuntimeMaterializationTaskTests
             RuntimeLayoutPath = "/output/runtime-layout.json",
             AssetRoot = "/runtime",
             WasmLdPath = "/tools/wasm-ld",
+            WasmOptPath = "/tools/wasm-opt",
             WasmToolsNodePath = "/tools/node",
             WasmToolsCommandPath = "/tools/run-wasm-tools.mjs",
             WasmToolsModulePath = "/tools/wasm-tools.wasm",

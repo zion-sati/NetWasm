@@ -26,7 +26,7 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
         if len(names) != len(set(names)):
             raise ValueError("Runtime-pack archive has duplicate entries.")
         manifest = json.loads(archive.read("runtime/runtime-pack.json"))
-        if manifest.get("schemaVersion") != 3 or manifest.get("emscriptenVersion") != pins["emscripten"]:
+        if manifest.get("schemaVersion") != 4 or manifest.get("emscriptenVersion") != pins["emscripten"]:
             raise ValueError("Runtime-pack manifest uses an unexpected source version.")
         targets = manifest.get("targets", [])
         if [target.get("target") for target in targets] != ["wasm32", "wasm64"]:
@@ -45,11 +45,17 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
             closure = target["systemLibraries"]
             if closure.get("names") != required or len(closure.get("assets", [])) != len(required):
                 raise ValueError(f"Runtime-pack {name} system-library inventory is incomplete.")
-            assets = [target["runtimeArchive"], *closure["assets"]]
-            expected_paths = [f"{name}/libnetwasm-runtime.a", *(
+            assets = [target["runtimeArchive"], target["collectorArchive"],
+                      target["allowedUndefinedSymbols"], *closure["assets"]]
+            expected_paths = [f"{name}/libnetwasm-runtime.a", f"{name}/libgc.a",
+                              f"{name}/allowed-undefined-symbols.txt", *(
                 f"{name}/system-libraries/{library}" for library in required)]
             if [asset.get("path") for asset in assets] != expected_paths:
                 raise ValueError(f"Runtime-pack {name} archive paths are unexpected.")
+            allowed_symbols = archive.read(
+                f"runtime/{name}/allowed-undefined-symbols.txt")
+            if allowed_symbols != b"emscripten_notify_memory_growth\n":
+                raise ValueError(f"Runtime-pack {name} allowed import policy is unexpected.")
             for asset in assets:
                 entry = "runtime/" + asset["path"]
                 data = archive.read(entry)
@@ -59,7 +65,8 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
                 path_clean = path_clean.replace(b"/tmp/tmpfile_XXXXXX\x00", b"")
                 if any(pattern in path_clean for pattern in forbidden):
                     raise ValueError(f"Runtime-pack archive contains a machine path: {entry}")
-                expected_archives.add(entry)
+                if entry.endswith(".a"):
+                    expected_archives.add(entry)
         if {name for name in names if name.endswith(".a")} != expected_archives:
             raise ValueError("Runtime-pack package has an extra or missing static archive.")
         license_text = archive.read("LICENSE.txt").decode("utf-8")

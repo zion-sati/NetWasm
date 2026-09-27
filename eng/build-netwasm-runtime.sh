@@ -8,6 +8,7 @@ target="wasm32"
 configuration="release"
 force_component_collection=0
 output_kind="module"
+collector_output=""
 link_map=""
 additional_sources=()
 
@@ -19,6 +20,7 @@ while [[ $# -gt 0 ]]; do
         --configuration) configuration="$2"; shift 2 ;;
         --force-component-collection) force_component_collection=1; shift ;;
         --relocatable) output_kind="relocatable"; shift ;;
+        --collector-output) collector_output="$2"; shift 2 ;;
         --link-map) link_map="$2"; shift 2 ;;
         --additional-source) additional_sources+=("$2"); shift 2 ;;
         *) echo "unknown runtime-build option '$1'" >&2; exit 2 ;;
@@ -29,7 +31,10 @@ done
     echo "--link-map requires a final runtime module" >&2
     exit 2
 }
-
+[[ -z "$collector_output" || "$output_kind" = relocatable ]] || {
+    echo "--collector-output requires a relocatable runtime archive" >&2
+    exit 2
+}
 [[ -f "$layout" ]] || { echo "missing --runtime-layout file '$layout'" >&2; exit 2; }
 [[ -n "$output" ]] || { echo "missing required option '--output'" >&2; exit 2; }
 [[ "$target" = wasm32 || "$target" = wasm64 ]] || {
@@ -46,6 +51,10 @@ for source in "${additional_sources[@]}"; do
 done
 [[ ${#additional_sources[@]} = 0 || "$output_kind" = module ]] || {
     echo "additional sources require a final runtime module" >&2
+    exit 2
+}
+[[ "$output_kind" != relocatable || -n "$collector_output" ]] || {
+    echo "--relocatable requires --collector-output" >&2
     exit 2
 }
 
@@ -162,7 +171,8 @@ fi
 
 build_root="$dependency_root/build-bdwgc-$gc_version-$emscripten_version-$target"
 defines=(-DSTACK_NOT_SCANNED -DSMALL_CONFIG -DGC_NO_DLOPEN
-    -DGC_DONT_REGISTER_MAIN_STATIC_DATA -DNO_CLOCK -DGC_DISABLE_INCREMENTAL)
+    -DGC_DONT_REGISTER_MAIN_STATIC_DATA -DNO_CLOCK -DNO_GETENV
+    -DGC_DISABLE_INCREMENTAL)
 if [[ "$force_component_collection" = 1 ]]; then
     defines+=(-DNETWASM_FORCE_COMPONENT_COLLECTION)
 fi
@@ -186,7 +196,11 @@ node "$repo_root/src/NetWasm.Runtime.Pack/tools/relativize-ninja-source-root.mjs
 cmake --build "$build_root" --target gc -j 8 >/dev/null
 
 optimization=(-Oz -flto)
-if [[ "$configuration" = debug ]]; then optimization=(-O0); fi
+configuration_defines=()
+if [[ "$configuration" = debug ]]; then
+    optimization=(-O0)
+    configuration_defines=(-DNETWASM_GC_DIAGNOSTICS)
+fi
 # NetWasm does not currently publish DWARF. Keep this explicit because recent
 # Emscripten builds can otherwise retain native-runtime DWARF in -O0 output.
 debug_information=(-g0)
@@ -245,7 +259,6 @@ libc_internal_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/src/inter
 libc_arch_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/arch/emscripten"
 libc_source_include="$EMSDK/upstream/emscripten/system/lib/libc"
 if [[ "$output_kind" = relocatable ]]; then
-    runtime_sources+=("$repo_root/src/NetWasm.Runtime/runtime_system_support.c")
     archive_work="$runtime_work/archive"
     mkdir "$archive_work"
     runtime_objects=("$metadata_object")
@@ -260,18 +273,15 @@ if [[ "$output_kind" = relocatable ]]; then
             cd "$repo_root"
             emcc "$relative_source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" \
                 -I"$libc_internal_include" -I"$libc_arch_include" -I"$libc_source_include" \
-                "${defines[@]}" "${target_args[@]}" "${optimization[@]}" \
+                "${defines[@]}" "${configuration_defines[@]}" \
+                "${target_args[@]}" "${optimization[@]}" \
                 "${debug_information[@]}" -o "$object"
         )
         runtime_objects+=("$object")
     done
-    mkdir "$archive_work/gc"
-    (
-        cd "$archive_work/gc"
-        emar x "$build_root/libgc.a"
-    )
-    gc_objects=("$archive_work"/gc/*.o)
-    emar rcs "$output" "${runtime_objects[@]}" "${gc_objects[@]}"
+    emar rcs "$output" "${runtime_objects[@]}"
+    mkdir -p "$(dirname "$collector_output")"
+    cp "$build_root/libgc.a" "$collector_output"
 else
     initial_memory="$(( (runtime_global_base + 4194304 + 65535) / 65536 * 65536 ))"
     emcc_args=(
@@ -279,7 +289,7 @@ else
       "${runtime_sources[@]}"
       "$build_root/libgc.a"
       -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" -I"$libc_internal_include" -I"$libc_arch_include"
-      -I"$libc_source_include" "${defines[@]}"
+      -I"$libc_source_include" "${defines[@]}" "${configuration_defines[@]}"
     )
     if [[ "$target" = wasm64 ]]; then
         emcc_args+=(-sMEMORY64=1 -sWASM_BIGINT=1)

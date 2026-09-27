@@ -8,7 +8,7 @@ internal static class RuntimePackTestData
     public const string Digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     public static RuntimePackManifest Manifest() => new(
-        3,
+        4,
         "netwasm.runtime.v1",
         "6.0.7",
         65_536,
@@ -33,6 +33,8 @@ internal static class RuntimePackTestData
             8_589_934_592,
             8_589_934_592,
             Asset("wasm64/libnetwasm-runtime.a"),
+            Asset("wasm64/libgc.a"),
+            Asset("wasm64/allowed-undefined-symbols.txt"),
             new(["libc.a"], [Asset("wasm64/system-libraries/libc.a")]))
         : new(
             target,
@@ -44,6 +46,8 @@ internal static class RuntimePackTestData
             2_147_483_648,
             2_147_483_648,
             Asset("wasm32/libnetwasm-runtime.a"),
+            Asset("wasm32/libgc.a"),
+            Asset("wasm32/allowed-undefined-symbols.txt"),
             new(["libc.a"], [Asset("wasm32/system-libraries/libc.a")]));
 
     public static RuntimePackAsset Asset(string path) => new(path, Digest);

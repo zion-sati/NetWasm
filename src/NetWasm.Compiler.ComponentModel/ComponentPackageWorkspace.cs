@@ -9,6 +9,7 @@ public sealed class ComponentPackageWorkspace : IDisposable
         string temporaryDirectory,
         string linkedModulePath,
         string embeddedComponentPath,
+        string unstrippedComponentPath,
         string componentPath)
     {
         _deletions = deletions ?? throw new ArgumentNullException(nameof(deletions));
@@ -18,6 +19,8 @@ public sealed class ComponentPackageWorkspace : IDisposable
             throw new ArgumentNullException(nameof(linkedModulePath));
         EmbeddedComponentPath = embeddedComponentPath ??
             throw new ArgumentNullException(nameof(embeddedComponentPath));
+        UnstrippedComponentPath = unstrippedComponentPath ??
+            throw new ArgumentNullException(nameof(unstrippedComponentPath));
         ComponentPath = componentPath ??
             throw new ArgumentNullException(nameof(componentPath));
     }
@@ -27,6 +30,8 @@ public sealed class ComponentPackageWorkspace : IDisposable
     public string LinkedModulePath { get; }
 
     public string EmbeddedComponentPath { get; }
+
+    public string UnstrippedComponentPath { get; }
 
     public string ComponentPath { get; }
 

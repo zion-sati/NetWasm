@@ -100,16 +100,18 @@ jobs:
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           export PATH="$RUNNER_TEMP/emsdk/upstream/bin:$PATH"
-          export NETWASM_NODE_PATH="$(command -v node)"
+          NETWASM_NODE_PATH="$(command -v node)"
+          export NETWASM_NODE_PATH
           npm ci --ignore-scripts --no-audit --no-fund
           bash eng/verify-toolchain.sh
           bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh --allow-emscripten
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s eng/tests -p 'test_*.py'
           dotnet restore NetWasm.slnx --disable-build-servers --nologo
           dotnet build NetWasm.slnx -c Release --no-restore --disable-build-servers --nologo
-          export NETWASM_TIMEZONE_ASSET_PATH="$(
+          NETWASM_TIMEZONE_ASSET_PATH="$(
             bash eng/prepare-timezone-test-asset.sh "$RUNNER_TEMP/timezone-assets"
           )"
+          export NETWASM_TIMEZONE_ASSET_PATH
           dotnet test NetWasm.slnx -c Release --no-build --no-restore --disable-build-servers --nologo
 
   package:
@@ -154,7 +156,8 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="0.4.0-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          base_version="$(tr -d '[:space:]' < eng/NetWasm.ReleaseVersion.txt)"
+          version="${base_version}-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           echo "value=$version" >> "$GITHUB_OUTPUT"
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           bash eng/build-packages.sh --version "$version" --output "$RUNNER_TEMP/packages"
@@ -207,7 +210,8 @@ jobs:
         env:
           NETWASM_GITHUB_TOKEN: ${{ github.token }}
         run: |
-          version="0.4.0-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          base_version="$(tr -d '[:space:]' < eng/NetWasm.ReleaseVersion.txt)"
+          version="${base_version}-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           python eng/build-host-tools-package.py \
             --rid "${{ matrix.rid }}" \
             --version "$version" \
@@ -229,6 +233,8 @@ jobs:
     needs: [package, host-tools]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      version: ${{ needs.package.outputs.version }}
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -251,6 +257,8 @@ jobs:
           path: ${{ runner.temp }}/packages
       - name: Verify complete candidate set
         shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ needs.package.outputs.version }}
         run: |
           python - <<'PY'
           import json
@@ -259,7 +267,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path('eng/release-manifest.json').read_text())
-          manifest['releaseVersion'] = '0.4.0-ci.' + os.environ['GITHUB_RUN_ID'] + '.' + os.environ['GITHUB_RUN_ATTEMPT']
+          manifest['releaseVersion'] = os.environ['CANDIDATE_VERSION']
           manifest['sourceCommit'] = subprocess.check_output(
               ['git', 'rev-parse', 'HEAD'], text=True).strip()
           manifest['releaseTag'] = 'ci-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
@@ -272,6 +280,8 @@ jobs:
             --pins-root .
       - name: Record immutable candidate provenance
         shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ needs.package.outputs.version }}
         run: |
           python3 - <<'PY'
           import hashlib, json, os, subprocess
@@ -295,8 +305,8 @@ jobs:
               'checkedOutTree': subprocess.check_output(['git', 'rev-parse', f'{head}^{{tree}}'], text=True).strip(),
               'workflowRunId': os.environ['GITHUB_RUN_ID'],
               'workflowRunAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'candidateVersion': '0.4.0-ci.' + os.environ['GITHUB_RUN_ID'] + '.' + os.environ['GITHUB_RUN_ATTEMPT'],
-              'sdk10Version': '10.0.300',
+              'candidateVersion': os.environ['CANDIDATE_VERSION'],
+              'sdk10Version': json.loads(Path('eng/csharp15-toolchain.json').read_text())['sdk10MinimumVersion'],
               'csharp15Toolchain': json.loads(Path('eng/csharp15-toolchain.json').read_text()),
               'nativeToolchain': json.loads(Path('eng/toolchain.json').read_text()),
               'packages': packages,
@@ -312,7 +322,7 @@ jobs:
           retention-days: 14
 
   runtime-pack-hosts:
-    needs: [package, host-tools, verify-packages]
+    needs: verify-packages
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -352,7 +362,7 @@ jobs:
           SDK_MAJOR: ${{ matrix.sdk-major }}
         run: |
           if [[ "$SDK_MAJOR" == 10 ]]; then
-            sdk_version=10.0.300
+            sdk_version=$(python3 -c 'import json; print(json.load(open("eng/csharp15-toolchain.json"))["sdk10MinimumVersion"])')
           else
             sdk_version=$(python3 -c 'import json; print(json.load(open("eng/csharp15-toolchain.json"))["sdk11Version"])')
           fi
@@ -415,7 +425,7 @@ jobs:
           from pathlib import Path
 
           receipt = json.loads(Path(os.environ['RUNNER_TEMP'], 'candidate-receipt.json').read_text())
-          expected_version = '${{ needs.package.outputs.version }}'
+          expected_version = '${{ needs.verify-packages.outputs.version }}'
           if receipt['candidateVersion'] != expected_version:
               raise SystemExit('Candidate receipt version does not match the package job output.')
           local = sorted(Path(os.environ['RUNNER_TEMP'], 'packages').glob('*.nupkg'))
@@ -433,5 +443,5 @@ jobs:
           NETWASM_QUALIFY_SDK_VERSION: ${{ steps.isolated-dotnet.outputs.sdk-version }}
         run: |
           bash eng/qualify-sdk-consumers.sh \
-            "$RUNNER_TEMP/packages" "${{ needs.package.outputs.version }}" \
+            "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}" \
             --skip-test-consumers

@@ -1,6 +1,6 @@
 {
-  "dotnetSdk": "10.0.302",
-  "roslynCompiler": "5.6.0-2.26329.109",
+  "dotnetSdk": "10.0.401",
+  "roslynCompiler": "5.9.0-1.26423.113",
   "binaryen": "132",
   "wabt": "1.0.41",
   "node": "26.7.0",

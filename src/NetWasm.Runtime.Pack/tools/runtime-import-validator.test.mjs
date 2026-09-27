@@ -7,6 +7,7 @@ function importsFor(target) {
   return [
     ['netwasm.application.v1', 'netwasm.filter'],
     ['netwasm.application.v1', 'netwasm.finalize'],
+    ['env', 'emscripten_notify_memory_growth'],
     [`${prefix}|wasi:cli/environment@0.2`, 'get-environment'],
     [`${prefix}|wasi:cli/stdout@0.2`, 'get-stdout'],
     [`${prefix}|wasi:cli/stderr@0.2`, 'get-stderr'],
@@ -23,7 +24,7 @@ for (const target of ['wasm32', 'wasm64']) {
     assert.doesNotThrow(() => validateRuntimeImports(allowed, target));
   });
   test(`${target}: accepts required imports without optional output or termination`, () => {
-    assert.doesNotThrow(() => validateRuntimeImports(allowed.slice(0, 3), target));
+    assert.doesNotThrow(() => validateRuntimeImports(allowed.slice(0, 4), target));
   });
   for (const module of ['unsupported', 'wasi_snapshot_preview1', 'wasi_unstable']) {
     test(`${target}: rejects forbidden host module ${module}`, () => {
@@ -34,8 +35,8 @@ for (const target of ['wasm32', 'wasm64']) {
   }
   test(`${target}: rejects an unsupported function in a supported module`, () => {
     assert.throws(() => validateRuntimeImports([
-      ...allowed, { ...allowed[2], name: 'unsupported' },
-    ], target), { message: `Unexpected runtime import: ${allowed[2].module}.unsupported (function)` });
+      ...allowed, { ...allowed[3], name: 'unsupported' },
+    ], target), { message: `Unexpected runtime import: ${allowed[3].module}.unsupported (function)` });
   });
   test(`${target}: rejects a nonfunction import`, () => {
     assert.throws(() => validateRuntimeImports([
@@ -49,7 +50,7 @@ for (const target of ['wasm32', 'wasm64']) {
   test(`${target}: rejects an empty import surface`, () => {
     assert.throws(() => validateRuntimeImports([], target), /Missing runtime import/);
   });
-  for (const missing of allowed.slice(0, 3)) {
+  for (const missing of allowed.slice(0, 4)) {
     test(`${target}: rejects a missing required import ${missing.name}`, () => {
       assert.throws(() => validateRuntimeImports(
         allowed.filter(entry => entry !== missing), target),

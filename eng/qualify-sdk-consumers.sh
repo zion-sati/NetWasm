@@ -384,6 +384,17 @@ for target in wasm32 wasm64; do
       echo "Browser publish is missing its entry module" >&2
       exit 1
     }
+    if [[ "${NETWASM_QUALIFY_SDK_VERSION:-}" == 10.* ]]; then
+      published_component="$consumer_root/publish/local/RuntimeHost.wasm"
+      expected_component_bytes="$(tr -d '[:space:]' < \
+        "$source_root/eng/size-canary/expected-component-bytes.txt")"
+      actual_component_bytes="$(wc -c < "$published_component" | tr -d ' ')"
+      if [[ "$actual_component_bytes" != "$expected_component_bytes" ]]; then
+        printf 'Console42 package component size mismatch: expected %s bytes, found %s bytes\n' \
+          "$expected_component_bytes" "$actual_component_bytes" >&2
+        exit 1
+      fi
+    fi
     if find "$consumer_root/publish" -type f \( \
         -name node -o -name node.exe -o \
         -name wasm-ld -o -name wasm-ld.exe -o \

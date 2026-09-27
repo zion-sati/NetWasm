@@ -12,7 +12,7 @@ public sealed class RuntimePackManifestReaderTests
         var manifest = RuntimePackManifestReader.ReadJson(
             JsonSerializer.Serialize(RuntimePackTestData.Manifest()));
 
-        Assert.Equal(3, manifest.SchemaVersion);
+        Assert.Equal(4, manifest.SchemaVersion);
         Assert.Equal("netwasm.runtime.v1", manifest.RuntimeAbi);
         Assert.Equal("6.0.7", manifest.EmscriptenVersion);
         Assert.Equal(65_536, manifest.WasmPageSize);
@@ -23,6 +23,9 @@ public sealed class RuntimePackManifestReaderTests
         foreach (var target in manifest.Targets)
         {
             Assert.Contains("libc.a", target.SystemLibraries.Names);
+            Assert.Equal($"{target.Target}/libgc.a", target.CollectorArchive.Path);
+            Assert.Equal($"{target.Target}/allowed-undefined-symbols.txt",
+                target.AllowedUndefinedSymbols.Path);
             Assert.Equal($"{target.Target}/system-libraries/libc.a",
                 Assert.Single(target.SystemLibraries.Assets).Path);
         }
@@ -172,6 +175,28 @@ public sealed class RuntimePackManifestReaderTests
         };
 
         Assert.Equal("The NetWasm runtime system-library path is invalid.",
+            ReadInvalid(manifest).Message);
+    }
+
+    [Theory]
+    [InlineData("runtime", "wasm32/renamed-runtime.a")]
+    [InlineData("collector", "wasm32/renamed-collector.a")]
+    [InlineData("allowed", "wasm32/renamed-symbols.txt")]
+    public void RejectsRenamedTargetAsset(string asset, string path)
+    {
+        var target = RuntimePackTestData.Target("wasm32");
+        target = asset switch
+        {
+            "runtime" => target with { RuntimeArchive = RuntimePackTestData.Asset(path) },
+            "collector" => target with { CollectorArchive = RuntimePackTestData.Asset(path) },
+            _ => target with { AllowedUndefinedSymbols = RuntimePackTestData.Asset(path) },
+        };
+        var manifest = RuntimePackTestData.Manifest() with
+        {
+            Targets = [target, RuntimePackTestData.Target("wasm64")],
+        };
+
+        Assert.Equal("The NetWasm runtime target asset path is invalid.",
             ReadInvalid(manifest).Message);
     }
 

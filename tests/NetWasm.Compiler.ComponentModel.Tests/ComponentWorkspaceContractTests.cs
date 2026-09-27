@@ -14,6 +14,8 @@ public sealed class ComponentWorkspaceContractTests
         Assert.True(Directory.Exists(temporary));
         Assert.EndsWith("linked.wasm", workspace.LinkedModulePath,
             StringComparison.Ordinal);
+        Assert.EndsWith("component-unstripped.wasm", workspace.UnstrippedComponentPath,
+            StringComparison.Ordinal);
         workspace.Dispose();
 
         Assert.False(Directory.Exists(temporary));

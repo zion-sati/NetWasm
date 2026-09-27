@@ -11,6 +11,7 @@ internal static class RuntimeMaterializationComposition
             new RuntimeMemoryLayoutCalculator(),
             new RuntimeAssetDigestVerifier(),
             new RuntimeLinkArgumentBuilder(),
+            new RuntimeOptimizationArgumentBuilder(),
             new CommandInvoker(),
             new Sha256ArtifactDigestCalculator());
 }

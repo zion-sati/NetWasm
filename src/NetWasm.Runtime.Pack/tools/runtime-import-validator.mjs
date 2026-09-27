@@ -5,6 +5,7 @@ export function validateRuntimeImports(imports, target) {
   const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
   const requiredImports = new Map([
     ['netwasm.application.v1', new Set(['netwasm.filter', 'netwasm.finalize'])],
+    ['env', new Set(['emscripten_notify_memory_growth'])],
     [`${prefix}|wasi:cli/environment@0.2`, new Set(['get-environment'])],
   ]);
   const allowedImports = new Map([

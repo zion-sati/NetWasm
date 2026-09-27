@@ -146,7 +146,7 @@ public sealed class ComponentWorkflowContractTests
         Assert.True(File.Exists(output));
         Assert.Equal(ComponentTarget.Wasm32Wasi02, capability.Target);
         Assert.Equal(
-            ["component embed", "component new", "validate"],
+            ["component embed", "component new", "strip", "validate"],
             tools.Operations);
         Assert.Equal(0, linker.Calls);
     }
@@ -232,6 +232,7 @@ public sealed class ComponentWorkflowContractTests
             {
                 "component" when values[1] == "embed" => "component embed",
                 "component" when values[1] == "new" => "component new",
+                "strip" => "strip",
                 "validate" => "validate",
                 _ => string.Join(' ', values),
             });

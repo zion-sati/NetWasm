@@ -11,6 +11,7 @@ internal sealed class RuntimeModuleMaterializer(
     IRuntimeMemoryLayoutCalculator memoryLayouts,
     IRuntimeAssetDigestVerifier assetDigests,
     IRuntimeLinkArgumentBuilder linkArguments,
+    IRuntimeOptimizationArgumentBuilder optimizationArguments,
     ICommandInvoker commands,
     IArtifactDigestCalculator artifactDigests) : IRuntimeModuleMaterializer
 {
@@ -54,6 +55,13 @@ internal sealed class RuntimeModuleMaterializer(
             request.WasmLdPath,
             arguments,
             Path.Combine(request.LogDirectory, "runtime-link.log")));
+        if (request.Optimization == RuntimePackOptimization.Size)
+        {
+            commands.Invoke(new(
+                request.WasmOptPath,
+                optimizationArguments.Build(new(target, request.OutputPath)),
+                Path.Combine(request.LogDirectory, "runtime-optimize.log")));
+        }
         commands.Invoke(new(
             request.WasmToolsNodePath,
             ImmutableArray.Create(
@@ -85,6 +93,10 @@ internal sealed class RuntimeModuleMaterializer(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.RuntimeLayoutPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.AssetRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmLdPath);
+        if (request.Optimization == RuntimePackOptimization.Size)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmOptPath);
+        }
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmToolsNodePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmToolsCommandPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmToolsModulePath);
@@ -96,6 +108,10 @@ internal sealed class RuntimeModuleMaterializer(
     private void VerifyAssets(string assetRoot, RuntimePackTarget target)
     {
         assetDigests.Verify(ResolveAsset(assetRoot, target.RuntimeArchive.Path), target.RuntimeArchive.Sha256);
+        assetDigests.Verify(ResolveAsset(assetRoot, target.CollectorArchive.Path), target.CollectorArchive.Sha256);
+        assetDigests.Verify(
+            ResolveAsset(assetRoot, target.AllowedUndefinedSymbols.Path),
+            target.AllowedUndefinedSymbols.Sha256);
         if (target.SystemLibraries.Assets.Length != target.SystemLibraries.Names.Length)
         {
             throw new InvalidOperationException("The packaged Emscripten system-library closure is incomplete.");

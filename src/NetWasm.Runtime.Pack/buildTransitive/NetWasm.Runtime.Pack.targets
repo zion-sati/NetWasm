@@ -39,7 +39,7 @@
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'">
     <WriteLinesToFile File="$(NetWasmRuntimePackMaterializationIdentityPath)"
-                      Lines="target=$(NetWasmTarget);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath)"
+                      Lines="target=$(NetWasmTarget);optimization=$(NetWasmOptimization);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);wasmOpt=$(NetWasmNativeBinaryenWasmOptPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath)"
                       Overwrite="true"
                       WriteOnlyWhenDifferent="true" />
   </Target>
@@ -61,12 +61,14 @@
                                 RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
                                 AssetRoot="$(NetWasmRuntimePackRoot)"
                                 WasmLdPath="$(NetWasmWasmLdPath)"
+                                WasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
                                 WasmToolsNodePath="$(NetWasmNodePath)"
                                 WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                                 WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
                                 OutputPath="$(NetWasmRuntimePackMaterializedPath)"
                                 LogDirectory="$(NetWasmRuntimePackLogDirectory)"
                                 Target="$(NetWasmTarget)"
+                                Optimization="$(NetWasmOptimization)"
                                 InitialHeapSizeBytes="$(NetWasmInitialHeapSizeBytes)"
                                 MaximumMemorySizeBytes="$(NetWasmMaximumMemorySizeBytes)">
       <Output TaskParameter="RuntimeModules" ItemName="_NetWasmRuntimePackMaterialization" />

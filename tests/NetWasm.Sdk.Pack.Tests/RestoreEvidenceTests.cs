@@ -20,7 +20,7 @@ public sealed class RestoreEvidenceTests
             Hash(lockFile),
             ["NetWasm,Version=v0.1"],
             "7.6.0",
-            "10.0.302")
+            "10.0.401")
         {
             Required = true
         };
@@ -157,7 +157,7 @@ public sealed class RestoreEvidenceTests
             Hash(lockFile),
             ["NetWasm,Version=v0.1"],
             "7.6.0",
-            "10.0.302")
+            "10.0.401")
         {
             Required = true
         };
