@@ -14,8 +14,23 @@ concurrency:
 
 jobs:
   test:
+    name: Test / ${{ matrix.lane }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: remaining projects
+            compiler-shard: -1
+          - lane: compiler 1 of 4
+            compiler-shard: 0
+          - lane: compiler 2 of 4
+            compiler-shard: 1
+          - lane: compiler 3 of 4
+            compiler-shard: 2
+          - lane: compiler 4 of 4
+            compiler-shard: 3
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -89,7 +104,8 @@ jobs:
         shell: bash
         run: bash eng/prepare-compiler-qualification-inputs.sh "$RUNNER_TEMP/compiler-qualification"
 
-      - name: Build and test
+      - name: Build and test remaining projects
+        if: matrix.compiler-shard == -1
         shell: bash
         env:
           NETWASM_CORPUS_PROFILE: Fast
@@ -112,7 +128,53 @@ jobs:
             bash eng/prepare-timezone-test-asset.sh "$RUNNER_TEMP/timezone-assets"
           )"
           export NETWASM_TIMEZONE_ASSET_PATH
-          dotnet test NetWasm.slnx -c Release --no-build --no-restore --disable-build-servers --nologo
+          dotnet test NetWasm.slnx -c Release --no-build --no-restore \
+            --disable-build-servers --nologo \
+            --filter 'FullyQualifiedName!~NetWasm.Compiler.Tests.'
+
+      - name: Build and test compiler shard
+        if: matrix.compiler-shard != -1
+        shell: bash
+        env:
+          NETWASM_CORPUS_PROFILE: Fast
+          NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
+          NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
+          NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
+          NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          export PATH="$RUNNER_TEMP/emsdk/upstream/bin:$PATH"
+          NETWASM_NODE_PATH="$(command -v node)"
+          export NETWASM_NODE_PATH
+          npm ci --ignore-scripts --no-audit --no-fund
+          bash eng/verify-toolchain.sh
+          bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh --allow-emscripten
+          project=tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj
+          corelib_project=src/NetWasm.CoreLib/NetWasm.CoreLib.csproj
+          timezone_project=tools/NetWasm.TimeZones/NetWasm.TimeZones.csproj
+          dotnet restore "$project" --disable-build-servers --nologo
+          dotnet restore "$corelib_project" --disable-build-servers --nologo
+          dotnet restore "$timezone_project" --disable-build-servers --nologo
+          dotnet build "$project" -c Release --no-restore \
+            --disable-build-servers --nologo
+          dotnet build "$corelib_project" -c Release --no-restore \
+            --disable-build-servers --nologo
+          dotnet build "$timezone_project" -c Release --no-restore \
+            --disable-build-servers --nologo
+          NETWASM_TIMEZONE_ASSET_PATH="$(
+            bash eng/prepare-timezone-test-asset.sh "$RUNNER_TEMP/timezone-assets"
+          )"
+          export NETWASM_TIMEZONE_ASSET_PATH
+          listing="$RUNNER_TEMP/compiler-tests.list"
+          dotnet test "$project" -c Release --no-build --no-restore \
+            --disable-build-servers --nologo --list-tests > "$listing"
+          filter="$(
+            python3 eng/create-compiler-test-shard-filter.py "$listing" \
+              --shard-count 4 \
+              --shard-index '${{ matrix.compiler-shard }}'
+          )"
+          dotnet test "$project" -c Release --no-build --no-restore \
+            --disable-build-servers --nologo --filter "$filter"
 
   package:
     needs: test
