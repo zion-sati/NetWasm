@@ -257,6 +257,9 @@ jobs:
           NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          export PATH="$RUNNER_TEMP/emsdk/upstream/bin:$PATH"
+          NETWASM_NODE_PATH="$(command -v node)"
+          export NETWASM_NODE_PATH
           project=tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj
           listing="$RUNNER_TEMP/compiler-tests.list"
           dotnet test "$project" -c Release --no-build --no-restore \
