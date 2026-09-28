@@ -61,6 +61,14 @@ class CiImpactTests(unittest.TestCase):
 
         self.assertEqual("ci", IMPACT.classify(changes))
 
+    def test_reviewed_release_infrastructure_additions_use_ci_scope(self):
+        changes = [
+            IMPACT.Change(path, None, b"reviewed")
+            for path in sorted(IMPACT.CI_INFRASTRUCTURE_ADDITIONS)
+        ]
+
+        self.assertEqual("ci", IMPACT.classify(changes))
+
     def test_code_unknown_ci_file_add_delete_and_symlink_changes_are_full(self):
         changes = [
             IMPACT.Change("src/Compiler.cs", b"old", b"new"),
