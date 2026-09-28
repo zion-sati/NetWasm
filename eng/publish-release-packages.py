@@ -255,7 +255,6 @@ def push_or_reconcile(
             result = subprocess.run(
                 [
                     "dotnet", "nuget", "push", str(path),
-                    "--api-key", os.environ["NUGET_API_KEY"],
                     "--source", PUSH_SOURCE,
                     "--skip-duplicate",
                 ],
