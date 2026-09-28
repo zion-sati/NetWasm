@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: nuget-release-${{ github.event.release.tag_name || inputs.tag }}
@@ -26,6 +27,13 @@ jobs:
       source_commit: ${{ steps.release.outputs.source_commit }}
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
+      mode: ${{ steps.release.outputs.mode }}
+      preview_version: ${{ steps.release.outputs.preview_version }}
+      preview_tag: ${{ steps.release.outputs.preview_tag }}
+      stable_version: ${{ steps.release.outputs.stable_version }}
+      stable_tag: ${{ steps.release.outputs.stable_tag }}
+      artifact_name: ${{ steps.release.outputs.artifact_name }}
+      ci_run_id: ${{ steps.release-ci.outputs.ci_run_id }}
     steps:
       - name: Check out release infrastructure
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -70,9 +78,25 @@ jobs:
             --tag "${RELEASE_TAG}" \
             --source-commit "${source_commit}" \
             --output artifacts/release-manifest.json \
+            --train-directory artifacts/train-manifests \
             --github-output "${GITHUB_OUTPUT}"
           infrastructure_commit="$(git -C infrastructure rev-parse HEAD)"
           printf 'infrastructure_commit=%s\n' "${infrastructure_commit}" >> "${GITHUB_OUTPUT}"
+
+      - name: Require exact-source main CI
+        id: release-ci
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.source_commit }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          python3 infrastructure/eng/verify-release-ci.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow .github/workflows/ci.yml \
+            --source-commit "$SOURCE_COMMIT" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Install .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -117,20 +141,43 @@ jobs:
 
       - name: Build release packages
         shell: bash
+        env:
+          MODE: ${{ steps.release.outputs.mode }}
+          PREVIEW_VERSION: ${{ steps.release.outputs.preview_version }}
+          STABLE_VERSION: ${{ steps.release.outputs.stable_version }}
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          bash source/eng/build-packages.sh \
-            --version "${{ steps.release.outputs.version }}" \
-            --output "$GITHUB_WORKSPACE/artifacts/packages"
+          export NETWASM_TOOLCHAIN_CACHE="$RUNNER_TEMP/toolchain-cache"
+          if [[ "$MODE" == "build" ]]; then
+            versions=("preview:$PREVIEW_VERSION" "stable:$STABLE_VERSION")
+          else
+            versions=("stable:$STABLE_VERSION")
+          fi
+          for item in "${versions[@]}"; do
+            channel="${item%%:*}"
+            version="${item#*:}"
+            candidate="$GITHUB_WORKSPACE/artifacts/candidates/$channel"
+            mkdir -p "$candidate/packages"
+            if [[ "$MODE" == "build" ]]; then
+              cp "artifacts/train-manifests/$channel-manifest.json" \
+                "$candidate/release-manifest.json"
+            else
+              cp artifacts/release-manifest.json "$candidate/release-manifest.json"
+            fi
+            bash source/eng/build-packages.sh \
+              --version "$version" \
+              --output "$candidate/packages"
+          done
 
       - name: Retain neutral release packages
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: netwasm-neutral-${{ steps.release.outputs.version }}
+          name: netwasm-neutral-${{ steps.release.outputs.stable_version }}
           path: artifacts/
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
+          overwrite: true
 
   host-tools:
     needs: build
@@ -179,10 +226,17 @@ jobs:
         shell: bash
         env:
           NETWASM_GITHUB_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.build.outputs.mode }}
+          PREVIEW_VERSION: ${{ needs.build.outputs.preview_version }}
+          STABLE_VERSION: ${{ needs.build.outputs.stable_version }}
         run: |
+          versions=(--version "$STABLE_VERSION")
+          if [[ "$MODE" == "build" ]]; then
+            versions=(--version "$PREVIEW_VERSION" --version "$STABLE_VERSION")
+          fi
           python source/eng/build-host-tools-package.py \
             --rid "${{ matrix.rid }}" \
-            --version "${{ needs.build.outputs.version }}" \
+            "${versions[@]}" \
             --output "$RUNNER_TEMP/host-packages" \
             --cache "$RUNNER_TEMP/host-tools-inputs"
       - name: Retain host package
@@ -192,12 +246,16 @@ jobs:
           path: ${{ runner.temp }}/host-packages/*.nupkg
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
+          overwrite: true
 
   aggregate:
     needs: [build, host-tools]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Check out release infrastructure
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -213,32 +271,107 @@ jobs:
       - name: Download neutral release packages
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: netwasm-neutral-${{ needs.build.outputs.version }}
+          name: netwasm-neutral-${{ needs.build.outputs.stable_version }}
           path: artifacts
       - name: Download all native packages
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: host-tools-*
           merge-multiple: true
-          path: artifacts/packages
+          path: artifacts/host-packages
       - name: Verify complete release set and source
         shell: bash
+        env:
+          MODE: ${{ needs.build.outputs.mode }}
+          PREVIEW_VERSION: ${{ needs.build.outputs.preview_version }}
+          PREVIEW_TAG: ${{ needs.build.outputs.preview_tag }}
+          STABLE_VERSION: ${{ needs.build.outputs.stable_version }}
+          STABLE_TAG: ${{ needs.build.outputs.stable_tag }}
+          ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
         run: |
-          python3 infrastructure/eng/verify-release-packages.py \
-            --manifest artifacts/release-manifest.json \
-            --packages artifacts/packages \
-            --source-root source \
-            --allowed-signers infrastructure/eng/release-signers \
-            --receipt artifacts/release-package-receipt.json
-          (cd artifacts && sha256sum packages/*.nupkg > SHA256SUMS)
-      - name: Retain verified release artifacts
+          if [[ "$MODE" == "build" ]]; then
+            channels=("preview:$PREVIEW_VERSION" "stable:$STABLE_VERSION")
+          else
+            channels=("stable:$STABLE_VERSION")
+          fi
+          mkdir -p artifacts/train
+          for item in "${channels[@]}"; do
+            channel="${item%%:*}"
+            version="${item#*:}"
+            candidate="artifacts/candidates/$channel"
+            find artifacts/host-packages -maxdepth 1 -type f \
+              -name "NetWasm.HostTools.*.$version.nupkg" \
+              -exec cp {} "$candidate/packages/" \;
+            python3 infrastructure/eng/verify-release-packages.py \
+              --manifest "$candidate/release-manifest.json" \
+              --packages "$candidate/packages" \
+              --source-root source \
+              --allowed-signers infrastructure/eng/release-signers \
+              --receipt "$candidate/release-package-receipt.json"
+            if [[ "$MODE" == "build" ]]; then
+              python3 infrastructure/eng/release-train.py bundle \
+                --manifest "$candidate/release-manifest.json" \
+                --receipt "$candidate/release-package-receipt.json" \
+                --packages "$candidate/packages" \
+                --output "artifacts/train/netwasm-$channel-$version.zip"
+            else
+              (cd "$candidate" && sha256sum packages/*.nupkg > SHA256SUMS)
+            fi
+          done
+          if [[ "$MODE" == "build" ]]; then
+            python3 infrastructure/eng/release-train.py create \
+              --repository "$GITHUB_REPOSITORY" \
+              --source-commit "${{ needs.build.outputs.source_commit }}" \
+              --producing-tag "$PREVIEW_TAG" \
+              --preview-tag "$PREVIEW_TAG" \
+              --stable-tag "$STABLE_TAG" \
+              --run-id "$GITHUB_RUN_ID" \
+              --artifact-name "$ARTIFACT_NAME" \
+              --preview-bundle "artifacts/train/netwasm-preview-$PREVIEW_VERSION.zip" \
+              --stable-bundle "artifacts/train/netwasm-stable-$STABLE_VERSION.zip" \
+              --toolchain source/eng/toolchain.json \
+              --output "artifacts/train/$ARTIFACT_NAME.json"
+          fi
+      - name: Retain verified preview and stable train
+        if: needs.build.outputs.mode == 'build'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: netwasm-${{ needs.build.outputs.version }}
-          path: artifacts/
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: artifacts/train/
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
+          overwrite: true
+      - name: Bind retained train manifest to preview GitHub Release
+        if: needs.build.outputs.mode == 'build'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.preview_tag }}
+          ASSET_NAME: ${{ needs.build.outputs.artifact_name }}.json
+        run: |
+          existing="$RUNNER_TEMP/existing-release-assets"
+          mkdir -p "$existing"
+          asset="artifacts/train/$ASSET_NAME"
+          if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$ASSET_NAME" --dir "$existing" >/dev/null 2>&1; then
+            cmp --silent "$asset" "$existing/$ASSET_NAME" || {
+              echo "Published release-train manifest differs from this run." >&2
+              exit 1
+            }
+          else
+            gh release upload "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+          fi
+      - name: Retain legacy stable release artifacts
+        if: needs.build.outputs.mode == 'promote'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: netwasm-${{ needs.build.outputs.stable_version }}
+          path: artifacts/candidates/stable/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
 
   publish:
     needs: [build, aggregate]
@@ -246,6 +379,7 @@ jobs:
     timeout-minutes: 150
     environment: nuget-release
     permissions:
+      actions: read
       contents: read
       id-token: write
     steps:
@@ -267,11 +401,36 @@ jobs:
         with:
           global-json-file: source/global.json
 
-      - name: Download release artifacts
+      - name: Download preview/stable release train
+        if: needs.build.outputs.mode == 'build'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: netwasm-${{ needs.build.outputs.version }}
-          path: artifacts
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: artifacts/train
+
+      - name: Download legacy stable release artifacts
+        if: needs.build.outputs.mode == 'promote'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: netwasm-${{ needs.build.outputs.stable_version }}
+          path: artifacts/publish
+
+      - name: Select preview candidate from release train
+        if: needs.build.outputs.mode == 'build'
+        shell: bash
+        run: |
+          train="artifacts/train/${{ needs.build.outputs.artifact_name }}.json"
+          bundle="artifacts/train/netwasm-preview-${{ needs.build.outputs.preview_version }}.zip"
+          python3 infrastructure/eng/release-train.py verify \
+            --train "$train" \
+            --bundle "$bundle" \
+            --channel preview \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-commit "${{ needs.build.outputs.source_commit }}" \
+            --release-tag "${{ needs.build.outputs.preview_tag }}"
+          python3 infrastructure/eng/release-train.py extract \
+            --bundle "$bundle" \
+            --output artifacts/publish
 
       - name: Verify release identity
         shell: bash
@@ -285,7 +444,7 @@ jobs:
           import os
           from pathlib import Path
 
-          manifest = json.loads(Path("artifacts/release-manifest.json").read_text())
+          manifest = json.loads(Path("artifacts/publish/release-manifest.json").read_text())
           expected = {
               "releaseTag": os.environ["RELEASE_TAG"],
               "releaseVersion": os.environ["VERSION"],
@@ -299,13 +458,12 @@ jobs:
       - name: Revalidate release artifacts
         shell: bash
         run: |
-          (cd artifacts && sha256sum --check SHA256SUMS)
           python3 infrastructure/eng/verify-release-packages.py \
-            --manifest artifacts/release-manifest.json \
-            --packages artifacts/packages \
+            --manifest artifacts/publish/release-manifest.json \
+            --packages artifacts/publish/packages \
             --source-root source \
             --allowed-signers infrastructure/eng/release-signers \
-            --receipt artifacts/publish-package-receipt.json
+            --receipt artifacts/publish/publish-package-receipt.json
 
       - name: Request credential for prerequisites
         id: login_prerequisites
@@ -320,8 +478,8 @@ jobs:
         run: |
           cd source
           python3 ../infrastructure/eng/publish-release-packages.py \
-            --manifest ../artifacts/release-manifest.json \
-            --packages ../artifacts/packages \
+            --manifest ../artifacts/publish/release-manifest.json \
+            --packages ../artifacts/publish/packages \
             --stage prerequisites
 
       - name: Request credential for SDK
@@ -337,8 +495,8 @@ jobs:
         run: |
           cd source
           python3 ../infrastructure/eng/publish-release-packages.py \
-            --manifest ../artifacts/release-manifest.json \
-            --packages ../artifacts/packages \
+            --manifest ../artifacts/publish/release-manifest.json \
+            --packages ../artifacts/publish/packages \
             --stage SDK
 
       - name: Request credential for templates
@@ -354,6 +512,6 @@ jobs:
         run: |
           cd source
           python3 ../infrastructure/eng/publish-release-packages.py \
-            --manifest ../artifacts/release-manifest.json \
-            --packages ../artifacts/packages \
+            --manifest ../artifacts/publish/release-manifest.json \
+            --packages ../artifacts/publish/packages \
             --stage templates
