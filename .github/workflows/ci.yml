@@ -56,7 +56,7 @@ jobs:
             scope="$(python3 eng/classify-ci-impact.py --base "$base" --head "$head")"
           fi
           case "$scope" in
-            docs|full|reuse) ;;
+            docs|ci|full|reuse) ;;
             *) echo "Unsupported CI impact scope: $scope" >&2; exit 1 ;;
           esac
           {
@@ -87,6 +87,32 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest eng/tests/test_classify_ci_impact.py
           python3 eng/classify-ci-impact.py \
             --base "$BASE_SHA" --head "$HEAD_SHA" --verify-docs
+
+  ci-infrastructure:
+    name: CI infrastructure
+    needs: impact
+    if: needs.impact.outputs.scope == 'ci'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Verify CI infrastructure change
+        shell: bash
+        env:
+          BASE_SHA: ${{ needs.impact.outputs.base }}
+          HEAD_SHA: ${{ needs.impact.outputs.head }}
+        run: |
+          git diff --check "$BASE_SHA" "$HEAD_SHA"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+            eng/tests/test_ci_qualification.py \
+            eng/tests/test_classify_ci_impact.py \
+            eng/tests/test_create_compiler_test_shard_filter.py \
+            eng/tests/test_merge_compiler_test_timings.py \
+            eng/tests/test_verify_ci_results.py
+          python3 -m json.tool eng/compiler-test-durations.json >/dev/null
 
   test:
     name: Test / ${{ matrix.lane }}
@@ -656,7 +682,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [impact, docs, test, timings, package, host-tools, verify-packages, runtime-pack-hosts]
+    needs: [impact, docs, ci-infrastructure, test, timings, package, host-tools, verify-packages, runtime-pack-hosts]
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -667,6 +693,7 @@ jobs:
           SCOPE: ${{ needs.impact.outputs.scope }}
           IMPACT_RESULT: ${{ needs.impact.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
+          CI_INFRASTRUCTURE_RESULT: ${{ needs.ci-infrastructure.result }}
           TEST_RESULT: ${{ needs.test.result }}
           TIMINGS_RESULT: ${{ needs.timings.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
@@ -678,6 +705,7 @@ jobs:
             --scope "$SCOPE" \
             --impact "$IMPACT_RESULT" \
             --docs "$DOCS_RESULT" \
+            --ci-infrastructure "$CI_INFRASTRUCTURE_RESULT" \
             --test "$TEST_RESULT" \
             --timings "$TIMINGS_RESULT" \
             --package "$PACKAGE_RESULT" \

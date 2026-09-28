@@ -14,6 +14,20 @@ from urllib.parse import unquote
 
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]+\]\(([^)]+)\)")
 REGULAR_FILE_MODES = {"100644", "100755"}
+CI_INFRASTRUCTURE_FILES = frozenset({
+    ".github/workflows/ci.yml",
+    "eng/ci-qualification.py",
+    "eng/classify-ci-impact.py",
+    "eng/compiler-test-durations.json",
+    "eng/create-compiler-test-shard-filter.py",
+    "eng/merge-compiler-test-timings.py",
+    "eng/tests/test_ci_qualification.py",
+    "eng/tests/test_classify_ci_impact.py",
+    "eng/tests/test_create_compiler_test_shard_filter.py",
+    "eng/tests/test_merge_compiler_test_timings.py",
+    "eng/tests/test_verify_ci_results.py",
+    "eng/verify-ci-results.py",
+})
 
 
 @dataclass(frozen=True)
@@ -53,6 +67,7 @@ def classify(changes: list[Change]) -> str:
     if not changes:
         return "full"
 
+    ci_infrastructure_changed = False
     for change in changes:
         for mode in (change.previous_mode, change.current_mode):
             if mode is not None and mode not in REGULAR_FILE_MODES:
@@ -61,8 +76,15 @@ def classify(changes: list[Change]) -> str:
             continue
         if _is_description_only(change):
             continue
+        if (
+            change.path in CI_INFRASTRUCTURE_FILES
+            and change.previous is not None
+            and change.current is not None
+        ):
+            ci_infrastructure_changed = True
+            continue
         return "full"
-    return "docs"
+    return "ci" if ci_infrastructure_changed else "docs"
 
 
 def _git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[bytes]:
