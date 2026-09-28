@@ -1,6 +1,6 @@
 # NetWasm.Sdk
 
-`NetWasm.Sdk` contains the project-SDK implementation for the experimental
+`NetWasm.Sdk` contains the project-SDK implementation for the current
 `netwasm0.1` profile. It composes `Microsoft.NET.Sdk` and maps the user-facing
 alias to the tested NetWasm identity.
 

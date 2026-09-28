@@ -1,10 +1,10 @@
 # Support status and roadmap
 
-NetWasm is an experimental, closed-world .NET-to-WebAssembly toolchain. This
-page is the canonical public status inventory: it separates implemented
-contracts from work that is only partly qualified, planned, blocked by tools,
-or deliberately outside the platform profile. It does not promise a release
-date or imply that an unlisted desktop API is available.
+NetWasm is a pre-1.0, closed-world .NET-to-WebAssembly toolchain. This page is
+the canonical public status inventory: it separates implemented contracts from
+work that is only partly qualified, planned, blocked by tools, or deliberately
+outside the platform profile. It does not promise a release date or imply that
+an unlisted desktop API is available.
 
 Read this with the [targets and output formats](targets-and-outputs.md),
 [CoreLib/runtime compatibility](corelib-runtime.md), and [compiler
@@ -16,7 +16,7 @@ contracts.
 
 | Status | Meaning |
 | --- | --- |
-| Complete / supported | Implemented within the stated NetWasm profile and covered by the retained target/host acceptance appropriate to that contract. It is still experimental, not a desktop-API or ABI stability guarantee. |
+| Complete / supported | Implemented within the stated NetWasm profile and covered by the retained target/host acceptance appropriate to that contract. This status is a feature-support statement, not a desktop-API or 1.x ABI stability guarantee. |
 | Conditional | Implemented only when the selected target and host provide the documented capability or deployment input. The capability is never implicit; absence fails clearly or leaves the API outside the selected application profile. |
 | Partially qualified | The implementation and focused evidence exist, but a required public qualification cell, final-link step, or distribution hand-off remains incomplete. Do not treat it as a published framework package. |
 | In progress | Some groundwork or implementation exists, but NetWasm makes no public support claim for the feature. |
@@ -149,9 +149,8 @@ dual-target library builds, `dotnet build`, `dotnet run`, portable publish,
 pinned `jco` browser translation, and clean. The generic VSTest bridge and
 TUnit package also pass `dotnet test -f netwasm0.1` integration.
 
-The SDK, runtime packs and templates are released for the experimental
-`netwasm0.1` profile. The separate library and test packages below are also
-published.
+The SDK, runtime packs and templates are released for the current `netwasm0.1`
+profile. The separate library and test packages below are also published.
 
 | Package profile | Supported boundary |
 | --- | --- |

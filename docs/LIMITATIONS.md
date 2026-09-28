@@ -1,9 +1,9 @@
 # Current limitations
 
-NetWasm is experimental. The supported API surface is intentionally smaller
-than desktop .NET and must not be inferred from a namespace or type name alone.
-Treat successful compilation and the focused tests in this repository as the
-current evidence of support.
+NetWasm is pre-1.0. The supported API surface is intentionally smaller than
+desktop .NET and must not be inferred from a namespace or type name alone. Treat
+successful compilation and the focused tests in this repository as the current
+evidence of support.
 
 ## Platform and language boundary
 
@@ -62,12 +62,13 @@ current evidence of support.
 
 ## Compatibility and release status
 
-- Released SDK/template packages support the experimental `netwasm0.1`
-  profile. A release version is not a production-support or future-compatibility
-  guarantee.
+- Released SDK/template packages support the current `netwasm0.1` profile. A
+  0.x release does not carry the 1.x compatibility commitment described in the
+  root roadmap.
 - Changes to CIL support, CoreLib APIs, runtime ABI, generated manifests, and
   build output remain possible.
-- The repository is not a production deployment recommendation.
+- There is no service-level agreement or independent security audit; deployments
+  must validate the exact supported surface and host capabilities they use.
 
 When evaluating a library, inspect its CIL and API dependencies and validate it
 against the desired target. Do not assume that a desktop NuGet package works

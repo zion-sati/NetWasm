@@ -1,8 +1,8 @@
 # Support
 
-NetWasm is an experimental project. Community support is best-effort and there
-is no service-level agreement, commercial support channel, or production
-compatibility commitment published for this repository.
+NetWasm is pre-1.0. Community support is best-effort and there is no service-level
+agreement, commercial support channel, or 1.x compatibility commitment published
+for this repository yet.
 
 For a public bug report, include the smallest managed input, target (`wasm32`
 or `wasm64`), compiler command, host/runtime command, expected result, actual

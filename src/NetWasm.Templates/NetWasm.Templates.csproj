@@ -5,7 +5,7 @@
     <RootNamespace>NetWasm.Templates</RootNamespace>
     <PackageId>NetWasm.Templates</PackageId>
     <Version>0.4.2</Version>
-    <Description>Project templates for the experimental NetWasm profile.</Description>
+    <Description>Project templates for the NetWasm profile.</Description>
     <PackageTags>netwasm;templates;wasm;dotnet-new</PackageTags>
     <PackageType>Template</PackageType>
     <PackageReadmeFile>README.md</PackageReadmeFile>

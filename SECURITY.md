@@ -1,8 +1,9 @@
 # Security policy
 
-NetWasm is experimental and is not presented as suitable for security-sensitive
-production deployment. In particular, its compiler, runtime ABI, CoreLib
-profile, generated host adapters, and supported capability set may change.
+NetWasm is pre-1.0 and has not undergone an independent security audit. Its
+compiler, runtime ABI, CoreLib profile, generated host adapters, and supported
+capability set may change between minor releases. Security-sensitive deployments
+need their own review of the exact pinned toolchain, host and granted capabilities.
 
 ## Reporting
 
