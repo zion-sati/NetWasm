@@ -293,6 +293,7 @@ def verify_train_identity(
     producing_tag: str,
     preview_tag: str,
     stable_tag: str,
+    expected_artifact_name: str,
 ) -> tuple[str, str]:
     required = {
         "schemaVersion", "repository", "sourceCommit", "producingReleaseTag",
@@ -319,7 +320,7 @@ def verify_train_identity(
         not isinstance(run_id, str)
         or not run_id.isdigit()
         or not isinstance(artifact_name, str)
-        or not artifact_name
+        or artifact_name != expected_artifact_name
     ):
         raise ValueError("Release-train producer coordinates are invalid.")
     return run_id, artifact_name
@@ -359,6 +360,7 @@ def main() -> int:
     identity.add_argument("--producing-tag", required=True)
     identity.add_argument("--preview-tag", required=True)
     identity.add_argument("--stable-tag", required=True)
+    identity.add_argument("--artifact-name", required=True)
     identity.add_argument("--github-output", type=Path)
     extract = subparsers.add_parser("extract")
     extract.add_argument("--bundle", type=Path, required=True)
@@ -400,6 +402,7 @@ def main() -> int:
             arguments.producing_tag,
             arguments.preview_tag,
             arguments.stable_tag,
+            arguments.artifact_name,
         )
         if arguments.github_output is not None:
             with arguments.github_output.open("a", encoding="utf-8") as stream:

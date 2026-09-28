@@ -111,6 +111,11 @@ jobs:
             eng/tests/test_classify_ci_impact.py \
             eng/tests/test_create_compiler_test_shard_filter.py \
             eng/tests/test_merge_compiler_test_timings.py \
+            eng/tests/test_publish_release_packages.py \
+            eng/tests/test_release_train.py \
+            eng/tests/test_resolve_release.py \
+            eng/tests/test_verify_release_ci.py \
+            eng/tests/test_verify_release_packages.py \
             eng/tests/test_verify_ci_results.py
           python3 -m json.tool eng/compiler-test-durations.json >/dev/null
 

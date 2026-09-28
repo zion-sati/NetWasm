@@ -6,6 +6,8 @@ import json
 import stat
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 import urllib.error
 import warnings
@@ -46,19 +48,41 @@ class PublishReleasePackagesTests(unittest.TestCase):
             ],
         }
         for package_id in self.manifest["packages"]:
-            (self.root / f"{package_id}.0.3.0-preview.1.nupkg").touch()
+            self.create_package(package_id)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def test_publishes_prerequisites_before_sdk_and_templates(self) -> None:
+    def create_package(
+        self, package_id: str, dependencies: tuple[str, ...] = ()
+    ) -> Path:
+        path = self.root / f"{package_id}.0.3.0-preview.1.nupkg"
+        rows = "".join(
+            f'<dependency id="{dependency}" version="[0.3.0-preview.1]" />'
+            for dependency in dependencies
+        )
+        nuspec = f"""<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>{package_id}</id>
+    <version>0.3.0-preview.1</version>
+    <authors>Zion Sati</authors>
+    <description>Test package.</description>
+    <dependencies><group targetFramework="net10.0">{rows}</group></dependencies>
+  </metadata>
+</package>
+"""
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(f"{package_id}.nuspec", nuspec)
+        return path
+
+    def test_publishes_prerequisites_then_sdk_and_templates_together(self) -> None:
         stages = MODULE.publication_stages(self.manifest, self.root)
 
         self.assertEqual(
             [
                 ["NetWasm.HostTools.linux-x64", "NetWasm.Toolchain"],
-                ["NetWasm.Sdk"],
-                ["NetWasm.Templates"],
+                ["NetWasm.Sdk", "NetWasm.Templates"],
             ],
             [[package_id for package_id, _ in stage] for stage in stages],
         )
@@ -68,8 +92,8 @@ class PublishReleasePackagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "do not match"):
             MODULE.publication_stages(self.manifest, self.root)
 
-        (self.root / "NetWasm.Toolchain.0.3.0-preview.1.nupkg").touch()
-        (self.root / "NetWasm.Unexpected.0.3.0-preview.1.nupkg").touch()
+        self.create_package("NetWasm.Toolchain")
+        self.create_package("NetWasm.Unexpected")
         with self.assertRaisesRegex(ValueError, "do not match"):
             MODULE.publication_stages(self.manifest, self.root)
 
@@ -77,6 +101,12 @@ class PublishReleasePackagesTests(unittest.TestCase):
         manifest = dict(self.manifest, packages=["NetWasm.Toolchain"])
         with self.assertRaisesRegex(ValueError, "SDK and templates"):
             MODULE.publication_stages(manifest, self.root)
+
+    def test_rejects_templates_sdk_dependency_before_publishing(self) -> None:
+        self.create_package("NetWasm.Templates", ("NetWasm.Sdk",))
+
+        with self.assertRaisesRegex(ValueError, "cannot share"):
+            MODULE.publication_stages(self.manifest, self.root)
 
     def test_discovers_package_content_endpoint(self) -> None:
         payload = json.dumps({"resources": [
@@ -217,7 +247,7 @@ class PublishReleasePackagesTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate"):
                 MODULE.payload_digests(archive)
 
-    def test_partial_release_resumes_in_stage_order(self) -> None:
+    def test_partial_release_resumes_in_two_dependency_ordered_waves(self) -> None:
         events = []
         available = {"NetWasm.HostTools.linux-x64"}
 
@@ -246,21 +276,56 @@ class PublishReleasePackagesTests(unittest.TestCase):
             for stage in MODULE.STAGE_NAMES:
                 MODULE.publish_stage(self.manifest, self.root, stage)
 
-        self.assertEqual(
-            [
-                ("verify", "NetWasm.HostTools.linux-x64"),
-                ("push", "NetWasm.Toolchain"),
-                ("wait", ("NetWasm.HostTools.linux-x64", "NetWasm.Toolchain")),
-                ("verify", "NetWasm.Toolchain"),
-                ("push", "NetWasm.Sdk"),
-                ("wait", ("NetWasm.Sdk",)),
-                ("verify", "NetWasm.Sdk"),
-                ("push", "NetWasm.Templates"),
-                ("wait", ("NetWasm.Templates",)),
-                ("verify", "NetWasm.Templates"),
-            ],
-            events,
+        first_wait = events.index(
+            ("wait", ("NetWasm.HostTools.linux-x64", "NetWasm.Toolchain"))
         )
+        second_wait = events.index(("wait", ("NetWasm.Sdk", "NetWasm.Templates")))
+        self.assertLess(first_wait, second_wait)
+        self.assertEqual(
+            {"NetWasm.Toolchain", "NetWasm.Sdk", "NetWasm.Templates"},
+            {value for operation, value in events if operation == "push"},
+        )
+        self.assertLess(first_wait, events.index(("push", "NetWasm.Sdk")))
+        self.assertLess(first_wait, events.index(("push", "NetWasm.Templates")))
+        self.assertIn(("verify", "NetWasm.HostTools.linux-x64"), events[:first_wait])
+
+    def test_prerequisites_use_bounded_parallel_pushes(self) -> None:
+        for index in range(8):
+            package_id = f"NetWasm.Independent{index}"
+            self.manifest["packages"].append(package_id)
+            self.create_package(package_id)
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def push(*args) -> bool:
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            time.sleep(0.02)
+            with lock:
+                active -= 1
+            return False
+
+        with mock.patch.object(MODULE, "package_base_address", return_value="https://example.invalid/"), \
+             mock.patch.object(MODULE, "push_or_reconcile", side_effect=push), \
+             mock.patch.object(MODULE, "wait_for_feed"), \
+             mock.patch.object(MODULE, "verify_feed_payload"):
+            MODULE.publish_stage(self.manifest, self.root, "prerequisites")
+
+        self.assertGreater(maximum, 1)
+        self.assertLessEqual(maximum, MODULE.MAX_PARALLEL_PUSHES)
+
+    def test_preflight_reconciles_existing_payloads_without_a_credential(self) -> None:
+        with mock.patch.object(MODULE, "package_base_address", return_value="https://example.invalid/"), \
+             mock.patch.object(MODULE, "available_on_feed", side_effect=lambda package_id, *args: package_id == "NetWasm.Sdk"), \
+             mock.patch.object(MODULE, "verify_feed_payload") as verify:
+            result = MODULE.preflight_release(self.manifest, self.root)
+
+        self.assertEqual(["NetWasm.Sdk"], result["existing"])
+        self.assertEqual(3, len(result["absent"]))
+        verify.assert_called_once()
 
     def test_completed_release_retry_skips_every_push(self) -> None:
         verified = []
@@ -311,18 +376,17 @@ class PublishReleasePackagesTests(unittest.TestCase):
     def test_failed_push_reconciles_after_bounded_retries(self) -> None:
         run = mock.Mock(return_value=mock.Mock(returncode=1))
         with mock.patch.object(MODULE, "available_on_feed", return_value=False), \
-             mock.patch.object(MODULE, "wait_for_feed") as wait, \
              mock.patch.object(MODULE, "verify_feed_payload") as verify, \
              mock.patch.object(MODULE.subprocess, "run", run):
-            self.assertTrue(MODULE.push_or_reconcile(
-                "NetWasm.Toolchain", "0.3.0-preview.1",
-                self.root / "NetWasm.Toolchain.0.3.0-preview.1.nupkg",
-                "https://example.invalid/", deadline=100,
-                clock=lambda: 0, sleep=lambda seconds: None,
-            ))
+            with self.assertRaisesRegex(RuntimeError, "Publishing failed"):
+                MODULE.push_or_reconcile(
+                    "NetWasm.Toolchain", "0.3.0-preview.1",
+                    self.root / "NetWasm.Toolchain.0.3.0-preview.1.nupkg",
+                    "https://example.invalid/", deadline=100,
+                    clock=lambda: 0, sleep=lambda seconds: None,
+                )
         self.assertEqual(3, run.call_count)
-        wait.assert_called_once()
-        verify.assert_called_once()
+        verify.assert_not_called()
 
 
 if __name__ == "__main__":

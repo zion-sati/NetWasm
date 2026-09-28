@@ -105,6 +105,17 @@ class VerifyReleasePackagesTests(unittest.TestCase):
         self.assertEqual(1, receipt["packageCount"])
         self.assertEqual(64, len(receipt["packages"][0]["sha256"]))
 
+    def test_writes_local_verification_timing(self) -> None:
+        path = self.root / "timings" / "verification.json"
+
+        MODULE.write_timing(path, self.manifest, 3, 1.23456)
+
+        timing = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual("local-verification", timing["operation"])
+        self.assertEqual("0.1.0-rc.1", timing["version"])
+        self.assertEqual(3, timing["packageCount"])
+        self.assertEqual(1.235, timing["durationSeconds"])
+
     def test_host_package_requires_release_source_and_records_provenance(self) -> None:
         package_id = "NetWasm.HostTools.osx-arm64"
         host_manifest = {

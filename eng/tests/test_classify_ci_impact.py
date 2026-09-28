@@ -51,6 +51,16 @@ class CiImpactTests(unittest.TestCase):
 
         self.assertEqual("ci", IMPACT.classify(changes))
 
+    def test_reviewed_release_infrastructure_uses_ci_scope(self):
+        changes = [
+            IMPACT.Change(".github/workflows/release.yml", b"old", b"new"),
+            IMPACT.Change("eng/release-train.py", b"old", b"new"),
+            IMPACT.Change("eng/publish-release-packages.py", b"old", b"new"),
+            IMPACT.Change("eng/tests/test_release_train.py", b"old", b"new"),
+        ]
+
+        self.assertEqual("ci", IMPACT.classify(changes))
+
     def test_code_unknown_ci_file_add_delete_and_symlink_changes_are_full(self):
         changes = [
             IMPACT.Change("src/Compiler.cs", b"old", b"new"),

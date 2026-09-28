@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Callable
+from xml.etree import ElementTree
 
 
 SOURCE_INDEX = "https://api.nuget.org/v3/index.json"
@@ -26,8 +28,28 @@ POLL_SECONDS = 15
 STAGE_DEADLINE_SECONDS = 45 * 60
 PUSH_TIMEOUT_SECONDS = 10 * 60
 PUSH_ATTEMPTS = 3
-DEPENDENT_IDS = ("NetWasm.Sdk", "NetWasm.Templates")
-STAGE_NAMES = ("prerequisites", "SDK", "templates")
+MAX_PARALLEL_PUSHES = 4
+FINAL_IDS = ("NetWasm.Sdk", "NetWasm.Templates")
+STAGE_NAMES = ("prerequisites", "final")
+
+
+def package_dependencies(path: Path) -> set[str]:
+    with zipfile.ZipFile(path) as archive:
+        nuspecs = [name for name in archive.namelist() if name.endswith(".nuspec")]
+        if len(nuspecs) != 1:
+            raise ValueError(f"Package must contain exactly one nuspec: {path.name}.")
+        root = ElementTree.fromstring(archive.read(nuspecs[0]))
+    metadata = root.find("{*}metadata")
+    if metadata is None:
+        raise ValueError(f"Package metadata is missing: {path.name}.")
+    dependencies = metadata.find("{*}dependencies")
+    if dependencies is None:
+        return set()
+    return {
+        value
+        for dependency in dependencies.findall(".//{*}dependency")
+        if (value := dependency.get("id"))
+    }
 
 
 def publication_stages(
@@ -41,26 +63,35 @@ def publication_stages(
         raise ValueError("Release manifest has invalid package IDs.")
     if len(package_ids) != len(set(package_ids)):
         raise ValueError("Release manifest has duplicate package IDs.")
-    if any(package_id not in package_ids for package_id in DEPENDENT_IDS):
+    if any(package_id not in package_ids for package_id in FINAL_IDS):
         raise ValueError("Release manifest must contain the SDK and templates.")
 
     expected = {
-        packages_root / f"{package_id}.{version}.nupkg": package_id
+        package_id: packages_root / f"{package_id}.{version}.nupkg"
         for package_id in package_ids
     }
     actual = set(packages_root.glob("*.nupkg"))
-    if set(expected) != actual or any(not path.is_file() for path in expected):
+    if set(expected.values()) != actual or any(
+        not path.is_file() for path in expected.values()
+    ):
         raise ValueError("Release package files do not match the manifest exactly.")
+    template_dependencies = package_dependencies(expected["NetWasm.Templates"])
+    if "NetWasm.Sdk" in template_dependencies:
+        raise ValueError(
+            "NetWasm.Templates depends on NetWasm.Sdk and cannot share its publication wave."
+        )
 
     prerequisites = tuple(
-        (package_id, packages_root / f"{package_id}.{version}.nupkg")
+        (package_id, expected[package_id])
         for package_id in sorted(package_ids)
-        if package_id not in DEPENDENT_IDS
+        if package_id not in FINAL_IDS
     )
     return (
         prerequisites,
-        (("NetWasm.Sdk", packages_root / f"NetWasm.Sdk.{version}.nupkg"),),
-        (("NetWasm.Templates", packages_root / f"NetWasm.Templates.{version}.nupkg"),),
+        tuple(
+            (package_id, expected[package_id])
+            for package_id in FINAL_IDS
+        ),
     )
 
 
@@ -214,6 +245,7 @@ def push_or_reconcile(
         verify_feed_payload(package_id, version, path, base_address)
         print(f"Reusing identical {package_id} {version} on NuGet.org.", flush=True)
         return True
+    ambiguous = False
     for attempt in range(1, PUSH_ATTEMPTS + 1):
         remaining = deadline - clock()
         if remaining <= 0:
@@ -232,23 +264,51 @@ def push_or_reconcile(
             if result.returncode == 0:
                 return False
         except subprocess.TimeoutExpired:
+            ambiguous = True
             print(f"Push timed out for {package_id}; reconciling feed state.", flush=True)
         if available_on_feed(package_id, version, base_address):
             verify_feed_payload(package_id, version, path, base_address)
             return True
         if attempt < PUSH_ATTEMPTS:
             sleep(min(POLL_SECONDS, max(0, deadline - clock())))
-    remaining = deadline - clock()
-    if remaining > 0:
-        wait_for_feed((package_id,), version, base_address, timeout_seconds=remaining)
-        verify_feed_payload(package_id, version, path, base_address)
-        return True
-    raise TimeoutError(f"Publishing deadline expired for {package_id} {version}.")
+    if ambiguous and deadline - clock() > 0:
+        print(
+            f"Deferring ambiguous {package_id} upload to the shared feed barrier.",
+            flush=True,
+        )
+        return False
+    raise RuntimeError(f"Publishing failed for {package_id} {version}.")
+
+
+def preflight_release(
+    manifest: dict[str, object], packages_root: Path
+) -> dict[str, object]:
+    started = time.monotonic()
+    stages = publication_stages(manifest, packages_root)
+    version = manifest["releaseVersion"]
+    assert isinstance(version, str)
+    base_address = package_base_address()
+    existing: list[str] = []
+    absent: list[str] = []
+    for package_id, path in (item for stage in stages for item in stage):
+        if available_on_feed(package_id, version, base_address):
+            verify_feed_payload(package_id, version, path, base_address)
+            existing.append(package_id)
+        else:
+            absent.append(package_id)
+    return {
+        "schemaVersion": 1,
+        "operation": "preflight",
+        "version": version,
+        "existing": sorted(existing),
+        "absent": sorted(absent),
+        "durationSeconds": round(time.monotonic() - started, 3),
+    }
 
 
 def publish_stage(
     manifest: dict[str, object], packages_root: Path, stage_name: str
-) -> None:
+) -> dict[str, object]:
     stages = publication_stages(manifest, packages_root)
     if stage_name not in STAGE_NAMES:
         raise ValueError(f"Unknown release publication stage: {stage_name}.")
@@ -256,13 +316,28 @@ def publish_stage(
     version = manifest["releaseVersion"]
     assert isinstance(version, str)
     base_address = package_base_address()
-    deadline = time.monotonic() + STAGE_DEADLINE_SECONDS
+    started = time.monotonic()
+    deadline = started + STAGE_DEADLINE_SECONDS
     count = len(stage)
     print(f"Publishing {stage_name} ({count} package{'s' if count != 1 else ''}).", flush=True)
-    verified = set()
-    for package_id, path in stage:
-        if push_or_reconcile(package_id, version, path, base_address, deadline):
-            verified.add(package_id)
+    verified: set[str] = set()
+    workers = min(MAX_PARALLEL_PUSHES, count)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                push_or_reconcile,
+                package_id,
+                version,
+                path,
+                base_address,
+                deadline,
+            ): package_id
+            for package_id, path in stage
+        }
+        for future in as_completed(futures):
+            if future.result():
+                verified.add(futures[future])
+    push_finished = time.monotonic()
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise TimeoutError(f"Publishing deadline expired for the {stage_name} stage.")
@@ -270,22 +345,51 @@ def publish_stage(
         tuple(package_id for package_id, _ in stage), version, base_address,
         timeout_seconds=remaining,
     )
+    indexing_finished = time.monotonic()
     for package_id, path in stage:
         if package_id not in verified:
             verify_feed_payload(package_id, version, path, base_address)
+    finished = time.monotonic()
     print(f"NuGet.org serves the verified {stage_name} packages.", flush=True)
+    return {
+        "schemaVersion": 1,
+        "operation": "publish",
+        "stage": stage_name,
+        "version": version,
+        "packageCount": count,
+        "reusedCount": len(verified),
+        "pushSeconds": round(push_finished - started, 3),
+        "indexingSeconds": round(indexing_finished - push_finished, 3),
+        "verificationSeconds": round(finished - indexing_finished, 3),
+        "totalSeconds": round(finished - started, 3),
+    }
+
+
+def write_timing(path: Path | None, timing: dict[str, object]) -> None:
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(timing, indent=2) + "\n", encoding="utf-8")
+    print("NETWASM_RELEASE_TIMING " + json.dumps(timing, sort_keys=True), flush=True)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--packages", required=True, type=Path)
-    parser.add_argument("--stage", required=True, choices=STAGE_NAMES)
+    operation = parser.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--stage", choices=STAGE_NAMES)
+    operation.add_argument("--preflight", action="store_true")
+    parser.add_argument("--timing-output", type=Path)
     arguments = parser.parse_args()
-    if not os.environ.get("NUGET_API_KEY"):
+    if arguments.stage is not None and not os.environ.get("NUGET_API_KEY"):
         parser.error("NUGET_API_KEY is required.")
     manifest = json.loads(arguments.manifest.read_text(encoding="utf-8"))
-    publish_stage(manifest, arguments.packages, arguments.stage)
+    timing = (
+        preflight_release(manifest, arguments.packages)
+        if arguments.preflight
+        else publish_stage(manifest, arguments.packages, arguments.stage)
+    )
+    write_timing(arguments.timing_output, timing)
     return 0
 
 

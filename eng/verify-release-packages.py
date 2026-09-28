@@ -9,6 +9,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -258,6 +259,26 @@ def write_receipt(
     path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
 
 
+def write_timing(
+    path: Path, manifest: dict[str, object], package_count: int, seconds: float
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "operation": "local-verification",
+                "version": manifest["releaseVersion"],
+                "packageCount": package_count,
+                "durationSeconds": round(seconds, 3),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -267,7 +288,9 @@ def main() -> int:
                         help="Unreleased CI source checkout used only for pinned host-artifact validation")
     parser.add_argument("--allowed-signers", type=Path)
     parser.add_argument("--receipt", type=Path)
+    parser.add_argument("--timing-output", type=Path)
     arguments = parser.parse_args()
+    started = time.monotonic()
 
     manifest = read_manifest(arguments.manifest)
     if arguments.allowed_signers is not None and arguments.source_root is None:
@@ -283,6 +306,13 @@ def main() -> int:
     )
     if arguments.receipt is not None:
         write_receipt(arguments.receipt, manifest, packages)
+    if arguments.timing_output is not None:
+        write_timing(
+            arguments.timing_output,
+            manifest,
+            len(packages),
+            time.monotonic() - started,
+        )
     print(
         f"Validated {len(packages)} packages for "
         f"{manifest['repository']} {manifest['releaseVersion']}."
