@@ -10,6 +10,7 @@ GATES = (
     "impact",
     "docs",
     "test",
+    "timings",
     "package",
     "host-tools",
     "verify-packages",
@@ -24,6 +25,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
         expected = {
             "docs": "success",
             "test": "skipped",
+            "timings": "skipped",
             "package": "skipped",
             "host-tools": "skipped",
             "verify-packages": "skipped",
@@ -33,10 +35,21 @@ def verify(scope: str, results: dict[str, str]) -> None:
         expected = {
             "docs": "skipped",
             "test": "success",
+            "timings": "success",
             "package": "success",
             "host-tools": "success",
             "verify-packages": "success",
             "runtime-pack-hosts": "success",
+        }
+    elif scope == "reuse":
+        expected = {
+            "docs": "skipped",
+            "test": "skipped",
+            "timings": "skipped",
+            "package": "skipped",
+            "host-tools": "skipped",
+            "verify-packages": "skipped",
+            "runtime-pack-hosts": "skipped",
         }
     else:
         raise ValueError(f"unsupported CI impact scope: {scope!r}")

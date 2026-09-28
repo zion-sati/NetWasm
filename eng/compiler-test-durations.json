@@ -1,0 +1,749 @@
+{
+  "schemaVersion": 1,
+  "classes": {
+    "NetWasm.Compiler.Tests.Analysis.ReachableMethodBatchAnalyzerTests": {
+      "cases": 18,
+      "durationSeconds": 0.07797
+    },
+    "NetWasm.Compiler.Tests.ArrayNonGenericCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 18.441893
+    },
+    "NetWasm.Compiler.Tests.AsyncCompilationTests": {
+      "cases": 34,
+      "durationSeconds": 82.5058942
+    },
+    "NetWasm.Compiler.Tests.BoxedValueCallCompilationTests": {
+      "cases": 8,
+      "durationSeconds": 33.5930705
+    },
+    "NetWasm.Compiler.Tests.BufferAndMemoryCompatibilityCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 19.5909713
+    },
+    "NetWasm.Compiler.Tests.CSharp15CompilationTests": {
+      "cases": 138,
+      "durationSeconds": 279.5322679
+    },
+    "NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactCacheActorTests": {
+      "cases": 59,
+      "durationSeconds": 4.2720368
+    },
+    "NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactCodecTests": {
+      "cases": 28,
+      "durationSeconds": 0.1233339
+    },
+    "NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactEligibilityClassifierTests": {
+      "cases": 17,
+      "durationSeconds": 0.0508463
+    },
+    "NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactSnapshotTests": {
+      "cases": 5,
+      "durationSeconds": 0.0614149
+    },
+    "NetWasm.Compiler.Tests.ConstructedGenericCastCompilationTests": {
+      "cases": 20,
+      "durationSeconds": 65.9040424
+    },
+    "NetWasm.Compiler.Tests.ControlTransferCompilationTests": {
+      "cases": 9,
+      "durationSeconds": 46.7095381
+    },
+    "NetWasm.Compiler.Tests.Correctness.AsyncLifetimeTests": {
+      "cases": 4,
+      "durationSeconds": 45.8269064
+    },
+    "NetWasm.Compiler.Tests.Correctness.BoxingRepresentationTests": {
+      "cases": 1,
+      "durationSeconds": 3.8734658
+    },
+    "NetWasm.Compiler.Tests.Correctness.CfgPropertyTests": {
+      "cases": 1,
+      "durationSeconds": 41.4899469
+    },
+    "NetWasm.Compiler.Tests.Correctness.CleanupOutcomeDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 19.1929069
+    },
+    "NetWasm.Compiler.Tests.Correctness.CollectionCompatibilityCorpusTests": {
+      "cases": 1,
+      "durationSeconds": 23.6427519
+    },
+    "NetWasm.Compiler.Tests.Correctness.CollectionStateBoundaryTests": {
+      "cases": 1,
+      "durationSeconds": 3.9881236
+    },
+    "NetWasm.Compiler.Tests.Correctness.CompiledCorpusBoundaryTests": {
+      "cases": 14,
+      "durationSeconds": 0.0564252
+    },
+    "NetWasm.Compiler.Tests.Correctness.CompilerFailureArtifactWriterTests": {
+      "cases": 5,
+      "durationSeconds": 0.124084
+    },
+    "NetWasm.Compiler.Tests.Correctness.CompilerRejectionFailureWriterTests": {
+      "cases": 12,
+      "durationSeconds": 0.1017169
+    },
+    "NetWasm.Compiler.Tests.Correctness.CompilerRejectionRunnerTests": {
+      "cases": 13,
+      "durationSeconds": 0.0281341
+    },
+    "NetWasm.Compiler.Tests.Correctness.CompilerRejectionVerifierTests": {
+      "cases": 18,
+      "durationSeconds": 0.0046366
+    },
+    "NetWasm.Compiler.Tests.Correctness.ComplexMutableCollectionCompatibilityTests": {
+      "cases": 1,
+      "durationSeconds": 30.1197224
+    },
+    "NetWasm.Compiler.Tests.Correctness.ControlFlowDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 18.601514
+    },
+    "NetWasm.Compiler.Tests.Correctness.CoreLibScalarCorpusTests": {
+      "cases": 2,
+      "durationSeconds": 31.4690521
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusApplicationCompilerTests": {
+      "cases": 8,
+      "durationSeconds": 0.0728569
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusArtifactFingerprintTests": {
+      "cases": 3,
+      "durationSeconds": 0.0044043
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusAssemblyWriterTests": {
+      "cases": 4,
+      "durationSeconds": 0.0272119
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCaseCatalogBuilderTests": {
+      "cases": 27,
+      "durationSeconds": 0.0943562
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCaseCatalogCompositionTests": {
+      "cases": 88,
+      "durationSeconds": 0.0753941
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCaseFixtureFactoryTests": {
+      "cases": 15,
+      "durationSeconds": 0.0187585
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCaseManifestParserTests": {
+      "cases": 70,
+      "durationSeconds": 0.0416608
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCaseManifestVerifierTests": {
+      "cases": 64,
+      "durationSeconds": 0.0357578
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCaseProfileSelectorTests": {
+      "cases": 10,
+      "durationSeconds": 0.0388223
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusComparisonCollectionTests": {
+      "cases": 13,
+      "durationSeconds": 0.046007
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilationCellsSelectorTests": {
+      "cases": 7,
+      "durationSeconds": 0.0115872
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerFailureWriterTests": {
+      "cases": 14,
+      "durationSeconds": 0.1186009
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerProcessVerifierTests": {
+      "cases": 12,
+      "durationSeconds": 0.0128934
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerRequestFactoryTests": {
+      "cases": 9,
+      "durationSeconds": 0.041981
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerRequestWriterTests": {
+      "cases": 3,
+      "durationSeconds": 0.0050493
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerResponseParserTests": {
+      "cases": 19,
+      "durationSeconds": 0.0199641
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusCompilerResponseReaderTests": {
+      "cases": 9,
+      "durationSeconds": 0.0193502
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusExecutionVerifierTests": {
+      "cases": 19,
+      "durationSeconds": 0.0035237
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusExpectationVerifierTests": {
+      "cases": 35,
+      "durationSeconds": 0.021981
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusExportFactoryTests": {
+      "cases": 5,
+      "durationSeconds": 0.0110762
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusLiveCommandTests": {
+      "cases": 10,
+      "durationSeconds": 0.0524806
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusMatrixExpanderTests": {
+      "cases": 28,
+      "durationSeconds": 0.0392264
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusMatrixRunnerTests": {
+      "cases": 18,
+      "durationSeconds": 0.0953497
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusProfileOverrideParserTests": {
+      "cases": 17,
+      "durationSeconds": 0.0094046
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusReplayCommandFormatterTests": {
+      "cases": 34,
+      "durationSeconds": 0.0095481
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusRunDirectoryCleanerTests": {
+      "cases": 10,
+      "durationSeconds": 0.0257047
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusRunDirectoryFactoryTests": {
+      "cases": 1,
+      "durationSeconds": 0.0040012
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusRunLifetimeTests": {
+      "cases": 4,
+      "durationSeconds": 0.0270822
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusSourceArtifactWriterTests": {
+      "cases": 12,
+      "durationSeconds": 0.0476943
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusSourceFingerprintTests": {
+      "cases": 3,
+      "durationSeconds": 0.0061606
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorpusSourceNamesVerifierTests": {
+      "cases": 23,
+      "durationSeconds": 0.0026785
+    },
+    "NetWasm.Compiler.Tests.Correctness.CorrectnessServiceCollectionExtensionsTests": {
+      "cases": 1,
+      "durationSeconds": 0.0197517
+    },
+    "NetWasm.Compiler.Tests.Correctness.DateRangeBoundaryTests": {
+      "cases": 24,
+      "durationSeconds": 52.9559062
+    },
+    "NetWasm.Compiler.Tests.Correctness.DecimalEdgeTests": {
+      "cases": 5,
+      "durationSeconds": 535.4697864
+    },
+    "NetWasm.Compiler.Tests.Correctness.DesktopOracleRunnerTests": {
+      "cases": 3,
+      "durationSeconds": 3.584512
+    },
+    "NetWasm.Compiler.Tests.Correctness.DesktopOracleTimeoutTests": {
+      "cases": 1,
+      "durationSeconds": 0.9765525
+    },
+    "NetWasm.Compiler.Tests.Correctness.DeterministicAsyncContractDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 23.6901242
+    },
+    "NetWasm.Compiler.Tests.Correctness.DifferentialCorpusIsolationTests": {
+      "cases": 6,
+      "durationSeconds": 0.0105471
+    },
+    "NetWasm.Compiler.Tests.Correctness.DifferentialCorpusRunnerTests": {
+      "cases": 12,
+      "durationSeconds": 0.0208009
+    },
+    "NetWasm.Compiler.Tests.Correctness.DifferentialHarnessSmokeTests": {
+      "cases": 1,
+      "durationSeconds": 12.5302939
+    },
+    "NetWasm.Compiler.Tests.Correctness.DispatchRelationshipTests": {
+      "cases": 2,
+      "durationSeconds": 5.5372775
+    },
+    "NetWasm.Compiler.Tests.Correctness.EmbeddedCorpusCaseAssetsReaderTests": {
+      "cases": 4,
+      "durationSeconds": 0.0126093
+    },
+    "NetWasm.Compiler.Tests.Correctness.EmbeddedCorpusSourceReaderTests": {
+      "cases": 9,
+      "durationSeconds": 0.0075554
+    },
+    "NetWasm.Compiler.Tests.Correctness.EmittedCorpusRunnerTests": {
+      "cases": 18,
+      "durationSeconds": 0.0265242
+    },
+    "NetWasm.Compiler.Tests.Correctness.EmittedDelegateReceiverTests": {
+      "cases": 4,
+      "durationSeconds": 2.579147
+    },
+    "NetWasm.Compiler.Tests.Correctness.EmittedFloatingComparisonTests": {
+      "cases": 2,
+      "durationSeconds": 15.2392589
+    },
+    "NetWasm.Compiler.Tests.Correctness.EncodingStreamBoundaryTests": {
+      "cases": 1,
+      "durationSeconds": 3.9834722
+    },
+    "NetWasm.Compiler.Tests.Correctness.EnumerableIteratorContractDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 14.5347888
+    },
+    "NetWasm.Compiler.Tests.Correctness.ExceptionControlFlowDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 18.884154
+    },
+    "NetWasm.Compiler.Tests.Correctness.ExceptionSequenceTests": {
+      "cases": 3,
+      "durationSeconds": 16.5829535
+    },
+    "NetWasm.Compiler.Tests.Correctness.FileCorpusRunnerTests": {
+      "cases": 17,
+      "durationSeconds": 0.011612
+    },
+    "NetWasm.Compiler.Tests.Correctness.FloatingArithmeticEdgeTests": {
+      "cases": 1,
+      "durationSeconds": 10.748134
+    },
+    "NetWasm.Compiler.Tests.Correctness.FloatingComparisonEdgeTests": {
+      "cases": 1,
+      "durationSeconds": 4.9696974
+    },
+    "NetWasm.Compiler.Tests.Correctness.FloatingKeyEdgeTests": {
+      "cases": 1,
+      "durationSeconds": 3.6726455
+    },
+    "NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests": {
+      "cases": 12,
+      "durationSeconds": 131.3933081
+    },
+    "NetWasm.Compiler.Tests.Correctness.FrozenOracleEvidenceReaderTests": {
+      "cases": 11,
+      "durationSeconds": 0.3438401
+    },
+    "NetWasm.Compiler.Tests.Correctness.FrozenOrdinalStringCompatibilityCorpusTests": {
+      "cases": 1,
+      "durationSeconds": 44.382478
+    },
+    "NetWasm.Compiler.Tests.Correctness.GeneratedCilRegressionPromoterTests": {
+      "cases": 2,
+      "durationSeconds": 0.2126127
+    },
+    "NetWasm.Compiler.Tests.Correctness.GeneratedCilRegressionRunnerTests": {
+      "cases": 1,
+      "durationSeconds": 11.5871925
+    },
+    "NetWasm.Compiler.Tests.Correctness.GeneratedCorpusRunnerTests": {
+      "cases": 3,
+      "durationSeconds": 0.2132044
+    },
+    "NetWasm.Compiler.Tests.Correctness.HalfEdgeTests": {
+      "cases": 4,
+      "durationSeconds": 34.8714739
+    },
+    "NetWasm.Compiler.Tests.Correctness.ImmutableListCompatibilityCorpusTests": {
+      "cases": 1,
+      "durationSeconds": 23.7165896
+    },
+    "NetWasm.Compiler.Tests.Correctness.IntegerArithmeticEdgeTests": {
+      "cases": 6,
+      "durationSeconds": 123.769144
+    },
+    "NetWasm.Compiler.Tests.Correctness.IteratorSequenceTests": {
+      "cases": 1,
+      "durationSeconds": 2.8331719
+    },
+    "NetWasm.Compiler.Tests.Correctness.KnownNonBugCorpusPartitionerTests": {
+      "cases": 5,
+      "durationSeconds": 0.1342604
+    },
+    "NetWasm.Compiler.Tests.Correctness.LambdaIteratorDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 17.9766181
+    },
+    "NetWasm.Compiler.Tests.Correctness.LanguageCorpusGeneratorTests": {
+      "cases": 4,
+      "durationSeconds": 0.4150344
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusBuildExecutorTests": {
+      "cases": 12,
+      "durationSeconds": 0.0210049
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusBuildPlanFactoryTests": {
+      "cases": 6,
+      "durationSeconds": 0.0207885
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusObservationProcessTests": {
+      "cases": 9,
+      "durationSeconds": 0.0096974
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusObservationRequestFactoryTests": {
+      "cases": 12,
+      "durationSeconds": 0.0068591
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusObservationRequestWriterTests": {
+      "cases": 2,
+      "durationSeconds": 0.0104548
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusObservationResponseParserTests": {
+      "cases": 26,
+      "durationSeconds": 0.0372518
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusObservationResponseReaderTests": {
+      "cases": 2,
+      "durationSeconds": 0.010531
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusOracleRunnerTests": {
+      "cases": 21,
+      "durationSeconds": 0.0536699
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusQualificationReceiptWriterTests": {
+      "cases": 28,
+      "durationSeconds": 0.3668638
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusReceiptDestinationValidatorTests": {
+      "cases": 18,
+      "durationSeconds": 0.0185911
+    },
+    "NetWasm.Compiler.Tests.Correctness.LinkedCorpusToolPathsProviderTests": {
+      "cases": 8,
+      "durationSeconds": 0.0026767
+    },
+    "NetWasm.Compiler.Tests.Correctness.MalformedCompilationRunnerTests": {
+      "cases": 11,
+      "durationSeconds": 0.1085752
+    },
+    "NetWasm.Compiler.Tests.Correctness.ManagedIoCompatibilityCorpusTests": {
+      "cases": 1,
+      "durationSeconds": 26.6095035
+    },
+    "NetWasm.Compiler.Tests.Correctness.MathDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 4.2887303
+    },
+    "NetWasm.Compiler.Tests.Correctness.MemoryBoundaryTests": {
+      "cases": 7,
+      "durationSeconds": 68.4151096
+    },
+    "NetWasm.Compiler.Tests.Correctness.MultiFileCorpusTests": {
+      "cases": 1,
+      "durationSeconds": 2.6144718
+    },
+    "NetWasm.Compiler.Tests.Correctness.NetWasmOracleRunnerTests": {
+      "cases": 29,
+      "durationSeconds": 19.2438149
+    },
+    "NetWasm.Compiler.Tests.Correctness.NumericConversionEdgeTests": {
+      "cases": 13,
+      "durationSeconds": 96.2899532
+    },
+    "NetWasm.Compiler.Tests.Correctness.NumericTransportEdgeTests": {
+      "cases": 5,
+      "durationSeconds": 30.3627484
+    },
+    "NetWasm.Compiler.Tests.Correctness.OracleComparerTests": {
+      "cases": 16,
+      "durationSeconds": 0.0124941
+    },
+    "NetWasm.Compiler.Tests.Correctness.OracleRuntimeCapabilityVerifierTests": {
+      "cases": 16,
+      "durationSeconds": 0.0029055
+    },
+    "NetWasm.Compiler.Tests.Correctness.PatchedCorpusCompilationBuilderTests": {
+      "cases": 6,
+      "durationSeconds": 0.0043271
+    },
+    "NetWasm.Compiler.Tests.Correctness.PrimitiveArithmeticDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 17.6771368
+    },
+    "NetWasm.Compiler.Tests.Correctness.PropertyRunnerIsolationTests": {
+      "cases": 16,
+      "durationSeconds": 0.1026569
+    },
+    "NetWasm.Compiler.Tests.Correctness.RandomCilCampaignOwnershipTests": {
+      "cases": 3,
+      "durationSeconds": 0.10455
+    },
+    "NetWasm.Compiler.Tests.Correctness.RandomCilGeneratorTests": {
+      "cases": 13,
+      "durationSeconds": 5.4467073
+    },
+    "NetWasm.Compiler.Tests.Correctness.RandomCilRunDirectoryFactoryTests": {
+      "cases": 9,
+      "durationSeconds": 0.0032301
+    },
+    "NetWasm.Compiler.Tests.Correctness.RegexSourceGenerationAcceptanceTests": {
+      "cases": 10,
+      "durationSeconds": 62.0491781
+    },
+    "NetWasm.Compiler.Tests.Correctness.RegisteredCorpusRunnerTests": {
+      "cases": 11,
+      "durationSeconds": 0.0170824
+    },
+    "NetWasm.Compiler.Tests.Correctness.RoslynCorpusCompilerBoundaryTests": {
+      "cases": 10,
+      "durationSeconds": 0.0711582
+    },
+    "NetWasm.Compiler.Tests.Correctness.RoslynCorpusCompilerTests": {
+      "cases": 4,
+      "durationSeconds": 2.5296389
+    },
+    "NetWasm.Compiler.Tests.Correctness.RttiArraySemanticTests": {
+      "cases": 2,
+      "durationSeconds": 7.1070068
+    },
+    "NetWasm.Compiler.Tests.Correctness.SameIlDifferentialTests": {
+      "cases": 5,
+      "durationSeconds": 67.7445454
+    },
+    "NetWasm.Compiler.Tests.Correctness.SortedCollectionsCompatibilityCorpusTests": {
+      "cases": 1,
+      "durationSeconds": 29.6739481
+    },
+    "NetWasm.Compiler.Tests.Correctness.StaticInitializationTests": {
+      "cases": 3,
+      "durationSeconds": 102.9402789
+    },
+    "NetWasm.Compiler.Tests.Correctness.StaticProviderCatalogCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 17.9889968
+    },
+    "NetWasm.Compiler.Tests.Correctness.StjSourceGenerationAcceptanceTests": {
+      "cases": 7,
+      "durationSeconds": 73.1025119
+    },
+    "NetWasm.Compiler.Tests.Correctness.TimeZoneInfoFacadeQualification.TimeZoneInfoFacadeAcceptanceTests": {
+      "cases": 12,
+      "durationSeconds": 264.2948546
+    },
+    "NetWasm.Compiler.Tests.Correctness.TypedTraceDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 20.2080251
+    },
+    "NetWasm.Compiler.Tests.Correctness.UnsafeByReferenceDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 17.4417861
+    },
+    "NetWasm.Compiler.Tests.Correctness.UnsupportedCilBoundaryTests": {
+      "cases": 6,
+      "durationSeconds": 24.9239064
+    },
+    "NetWasm.Compiler.Tests.Correctness.ValueAndCallDifferentialTests": {
+      "cases": 1,
+      "durationSeconds": 13.9912474
+    },
+    "NetWasm.Compiler.Tests.Correctness.WideIntegerEdgeTests": {
+      "cases": 6,
+      "durationSeconds": 96.076603
+    },
+    "NetWasm.Compiler.Tests.DateTimeCompilationTests": {
+      "cases": 18,
+      "durationSeconds": 97.5431492
+    },
+    "NetWasm.Compiler.Tests.DecimalCompilationTests": {
+      "cases": 7,
+      "durationSeconds": 33.2004391
+    },
+    "NetWasm.Compiler.Tests.DelegateBindingConversionCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 21.4755812
+    },
+    "NetWasm.Compiler.Tests.DispatchAndDelegateCompilationTests": {
+      "cases": 7,
+      "durationSeconds": 41.6579889
+    },
+    "NetWasm.Compiler.Tests.EncodingContractCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 4.6025181
+    },
+    "NetWasm.Compiler.Tests.EnumBoxingCompatibilityCompilationTests": {
+      "cases": 2,
+      "durationSeconds": 13.7743509
+    },
+    "NetWasm.Compiler.Tests.EnumLayoutInteractionCompilationTests": {
+      "cases": 40,
+      "durationSeconds": 136.1906992
+    },
+    "NetWasm.Compiler.Tests.EnvironmentCompilationTests": {
+      "cases": 12,
+      "durationSeconds": 60.505668
+    },
+    "NetWasm.Compiler.Tests.EqualityComparerCompilationTests": {
+      "cases": 5,
+      "durationSeconds": 30.8679311
+    },
+    "NetWasm.Compiler.Tests.ExportInitializationCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 15.9422302
+    },
+    "NetWasm.Compiler.Tests.FaultExceptionRegionCompilationTests": {
+      "cases": 5,
+      "durationSeconds": 21.6600044
+    },
+    "NetWasm.Compiler.Tests.FixedBufferCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 16.0701224
+    },
+    "NetWasm.Compiler.Tests.GCHandleCompatibilityCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 11.8933419
+    },
+    "NetWasm.Compiler.Tests.GcRuntimeTargetMatrixCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 17.2265099
+    },
+    "NetWasm.Compiler.Tests.GenericMetadataOperandCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 14.2136572
+    },
+    "NetWasm.Compiler.Tests.GenericMethodDispatchCompilationTests": {
+      "cases": 35,
+      "durationSeconds": 122.6923818
+    },
+    "NetWasm.Compiler.Tests.HostInteropCompilationTests": {
+      "cases": 14,
+      "durationSeconds": 53.8772009
+    },
+    "NetWasm.Compiler.Tests.IConvertibleTypeCodeCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 15.7574539
+    },
+    "NetWasm.Compiler.Tests.IteratorCompilationTests": {
+      "cases": 3,
+      "durationSeconds": 12.8330238
+    },
+    "NetWasm.Compiler.Tests.LambdaCompilationTests": {
+      "cases": 4,
+      "durationSeconds": 21.3293877
+    },
+    "NetWasm.Compiler.Tests.LanguageSurfaceCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 7.6284298
+    },
+    "NetWasm.Compiler.Tests.LockCompilationTests": {
+      "cases": 2,
+      "durationSeconds": 7.3162059
+    },
+    "NetWasm.Compiler.Tests.ManagedByReferenceCompilationTests": {
+      "cases": 3,
+      "durationSeconds": 21.7855818
+    },
+    "NetWasm.Compiler.Tests.MemoryHandleCriticalFinalizerCompatibilityCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 14.8444246
+    },
+    "NetWasm.Compiler.Tests.MetadataAssemblyIdentityTests": {
+      "cases": 1,
+      "durationSeconds": 7.5709268
+    },
+    "NetWasm.Compiler.Tests.MixedNativeArithmeticCompilationTests": {
+      "cases": 8,
+      "durationSeconds": 34.6323499
+    },
+    "NetWasm.Compiler.Tests.ModernLanguageCompilationTests": {
+      "cases": 9,
+      "durationSeconds": 56.1120231
+    },
+    "NetWasm.Compiler.Tests.ModuleInitializerCompilationTests": {
+      "cases": 8,
+      "durationSeconds": 32.1586465
+    },
+    "NetWasm.Compiler.Tests.NativeMemoryCompilationTests": {
+      "cases": 8,
+      "durationSeconds": 24.0190224
+    },
+    "NetWasm.Compiler.Tests.NestedScalarByReferenceCompilationTests": {
+      "cases": 20,
+      "durationSeconds": 94.3919891
+    },
+    "NetWasm.Compiler.Tests.NullableBoxingCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 2.1222816
+    },
+    "NetWasm.Compiler.Tests.NumericCompilationTests": {
+      "cases": 7,
+      "durationSeconds": 36.2893138
+    },
+    "NetWasm.Compiler.Tests.PatternCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 4.1612839
+    },
+    "NetWasm.Compiler.Tests.PrimitiveCompilationTests": {
+      "cases": 5,
+      "durationSeconds": 17.5663946
+    },
+    "NetWasm.Compiler.Tests.PrimitiveDifferentialCompilationTests": {
+      "cases": 2,
+      "durationSeconds": 9.7904578
+    },
+    "NetWasm.Compiler.Tests.RectangularArrayCompilationTests": {
+      "cases": 11,
+      "durationSeconds": 38.4293963
+    },
+    "NetWasm.Compiler.Tests.RootFramePreservationCompilationTests": {
+      "cases": 16,
+      "durationSeconds": 59.9239569
+    },
+    "NetWasm.Compiler.Tests.RttiArrayOperationCompilationTests": {
+      "cases": 7,
+      "durationSeconds": 10.946677
+    },
+    "NetWasm.Compiler.Tests.RttiCastCorrectnessCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 3.7128489
+    },
+    "NetWasm.Compiler.Tests.StackTraceCompilationTests": {
+      "cases": 11,
+      "durationSeconds": 35.3304038
+    },
+    "NetWasm.Compiler.Tests.StatementCompilationTests": {
+      "cases": 3,
+      "durationSeconds": 13.2269858
+    },
+    "NetWasm.Compiler.Tests.TextEncodingCompilationTests": {
+      "cases": 16,
+      "durationSeconds": 68.0460298
+    },
+    "NetWasm.Compiler.Tests.TypeRelationshipClassifierActorTests": {
+      "cases": 9,
+      "durationSeconds": 0.0309722
+    },
+    "NetWasm.Compiler.Tests.TypeTestPlannerTests": {
+      "cases": 7,
+      "durationSeconds": 0.0169093
+    },
+    "NetWasm.Compiler.Tests.UnsafeMemoryMarshalP11CompatibilityTests": {
+      "cases": 1,
+      "durationSeconds": 2.5608831
+    },
+    "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests": {
+      "cases": 10,
+      "durationSeconds": 44.5131845
+    },
+    "NetWasm.Compiler.Tests.ValueTaskCompilationTests": {
+      "cases": 2,
+      "durationSeconds": 8.4832219
+    },
+    "NetWasm.Compiler.Tests.WeakReferenceCompatibilityCompilationTests": {
+      "cases": 1,
+      "durationSeconds": 9.9615847
+    },
+    "NetWasm.Compiler.Tests.WideValueStackCompilationTests": {
+      "cases": 16,
+      "durationSeconds": 47.4581794
+    },
+    "NetWasm.Compiler.Tests.WitBindingTargetMatrixTests": {
+      "cases": 4,
+      "durationSeconds": 18.4991393
+    }
+  }
+}

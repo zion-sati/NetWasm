@@ -18,6 +18,7 @@ class CiResultTests(unittest.TestCase):
             "impact": "success",
             "docs": "success",
             "test": "skipped",
+            "timings": "skipped",
             "package": "skipped",
             "host-tools": "skipped",
             "verify-packages": "skipped",
@@ -29,10 +30,23 @@ class CiResultTests(unittest.TestCase):
             "impact": "success",
             "docs": "skipped",
             "test": "success",
+            "timings": "success",
             "package": "success",
             "host-tools": "success",
             "verify-packages": "success",
             "runtime-pack-hosts": "success",
+        })
+
+    def test_reuse_scope_accepts_only_the_qualification_gate(self):
+        RESULTS.verify("reuse", {
+            "impact": "success",
+            "docs": "skipped",
+            "test": "skipped",
+            "timings": "skipped",
+            "package": "skipped",
+            "host-tools": "skipped",
+            "verify-packages": "skipped",
+            "runtime-pack-hosts": "skipped",
         })
 
     def test_failed_impact_unknown_scope_and_missing_gate_fail(self):
@@ -45,6 +59,7 @@ class CiResultTests(unittest.TestCase):
                 "impact": "success",
                 "docs": "skipped",
                 "test": "success",
+                "timings": "success",
                 "package": "success",
                 "host-tools": "success",
                 "verify-packages": "success",
