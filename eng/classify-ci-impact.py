@@ -49,6 +49,18 @@ CI_INFRASTRUCTURE_FILES = frozenset({
     "eng/verify-release-packages.py",
     "eng/verify-ci-results.py",
 })
+CI_INFRASTRUCTURE_ADDITIONS = frozenset({
+    ".github/workflows/coordinated-release.yml",
+    ".github/workflows/prepare-release.yml",
+    "eng/release-coordinator.py",
+    "eng/release-orchestrator.py",
+    "eng/release-preparation.py",
+    "eng/release-receiver.py",
+    "eng/tests/test_release_coordinator.py",
+    "eng/tests/test_release_orchestrator.py",
+    "eng/tests/test_release_preparation.py",
+    "eng/tests/test_release_receiver.py",
+})
 
 
 @dataclass(frozen=True)
@@ -99,8 +111,11 @@ def classify(changes: list[Change]) -> str:
             continue
         if (
             change.path in CI_INFRASTRUCTURE_FILES
-            and change.previous is not None
             and change.current is not None
+            and (
+                change.previous is not None
+                or change.path in CI_INFRASTRUCTURE_ADDITIONS
+            )
         ):
             ci_infrastructure_changed = True
             continue
