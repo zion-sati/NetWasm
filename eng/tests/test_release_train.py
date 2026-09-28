@@ -382,6 +382,296 @@ class ReleasePreparationTests(unittest.TestCase):
             MODULE.preparation_stage(value, "tunit-preview")["ref"],
         )
 
+    def test_stage_state_anchor_is_derived_from_preparation(self) -> None:
+        self.assertEqual(
+            ("zion-sati/NetWasm.Playground", 107),
+            MODULE.stage_state_anchor(self.value, "playground"),
+        )
+        self.assertEqual(
+            ("zion-sati/NetWasm", 101),
+            MODULE.stage_state_anchor(self.value, "website"),
+        )
+
+    def delivery_envelope(self, kind: str) -> dict[str, object]:
+        preparation, digest = MODULE.read_preparation(self.path)
+        stage_name = MODULE.DELIVERY_KINDS[kind]
+        stage = MODULE.preparation_stage(preparation, stage_name)
+        anchor_repository, anchor_release_id = MODULE.stage_state_anchor(
+            preparation, stage_name
+        )
+        return {
+            "schemaVersion": 1,
+            "kind": kind,
+            "stage": stage_name,
+            "preparationSha256": digest,
+            "stageIdentity": MODULE.release_stage_identity(digest, stage_name),
+            "repository": stage["repository"],
+            "sourceCommit": stage["sourceCommit"],
+            "infrastructureCommit": stage["infrastructureCommit"],
+            "workflowCommit": stage["workflowCommit"],
+            "workflowRef": stage["workflowRef"],
+            "stateAnchor": {
+                "repository": anchor_repository,
+                "releaseId": anchor_release_id,
+            },
+            "upstreamReceipts": [
+                {"stage": name, "sha256": "6" * 64}
+                for name in stage["upstreamStages"]
+            ],
+            "producer": {
+                "runId": 700,
+                "runAttempt": 2,
+                "jobId": 900,
+                "workflowPath": stage["workflow"],
+                "actorId": 12345,
+                "dispatchAttemptIdentity": "7" * 64,
+            },
+        }
+
+    def artifact(self) -> dict[str, object]:
+        return {
+            "repository": "zion-sati/NetWasm.Playground",
+            "runId": 700,
+            "runAttempt": 2,
+            "artifactId": 800,
+            "artifactName": "playground-toolchain-payload-700-2",
+        }
+
+    def evidence(self, name: str, job_id: int) -> dict[str, object]:
+        artifact_id = {
+            "chromium": 950,
+            "firefox": 951,
+            "webkit": 952,
+            "website": 953,
+        }[name]
+        return {
+            "artifactId": artifact_id,
+            "artifactName": MODULE.delivery_evidence_artifact_name(
+                (
+                    "website-completion"
+                    if name == "website"
+                    else "playground-completion"
+                ),
+                700,
+                2,
+                job_id,
+                browser=None if name == "website" else name,
+            ),
+            "fileName": "delivery-evidence.json",
+            "sha256": "8" * 64,
+        }
+
+    def test_delivery_candidate_receipts_bind_original_payload_artifacts(self) -> None:
+        preparation, digest = MODULE.read_preparation(self.path)
+        archive = {
+            "fileName": "toolchain.tar.gz", "bytes": 123, "sha256": "9" * 64,
+        }
+        toolchain = {"id": "a" * 64, "manifestSha256": "b" * 64}
+        candidate = {
+            **self.delivery_envelope("playground-toolchain-candidate"),
+            "archive": archive,
+            "artifact": self.artifact(),
+            "toolchain": toolchain,
+        }
+        MODULE.validate_candidate_receipt(
+            candidate, preparation, digest, "playground-toolchain-candidate"
+        )
+
+        site = {
+            **self.delivery_envelope("playground-site-candidate"),
+            "archive": {
+                "fileName": "site.zip", "bytes": 456, "sha256": "c" * 64,
+            },
+            "artifact": {
+                **self.artifact(),
+                "artifactId": 801,
+                "artifactName": "playground-site-payload-700-2",
+            },
+            "toolchainCandidateSha256": "d" * 64,
+            "site": {"identitySha256": "e" * 64, "indexHtmlSha256": "f" * 64},
+            "toolchain": toolchain,
+        }
+        MODULE.validate_candidate_receipt(
+            site, preparation, digest, "playground-site-candidate"
+        )
+
+        website = {
+            **self.delivery_envelope("website-site-candidate"),
+            "archive": {
+                "fileName": "website.zip", "bytes": 789, "sha256": "1" * 64,
+            },
+            "artifact": {
+                "repository": "zion-sati/netwasm.com",
+                "runId": 700,
+                "runAttempt": 2,
+                "artifactId": 802,
+                "artifactName": "website-site-payload-700-2",
+            },
+            "site": {"identitySha256": "2" * 64, "indexHtmlSha256": "3" * 64},
+        }
+        MODULE.validate_candidate_receipt(
+            website, preparation, digest, "website-site-candidate"
+        )
+
+        changed = json.loads(json.dumps(candidate))
+        changed["artifact"]["runId"] = 701
+        with self.assertRaisesRegex(ValueError, "artifact descriptor identity"):
+            MODULE.validate_candidate_receipt(
+                changed, preparation, digest, "playground-toolchain-candidate"
+            )
+
+        changed = json.loads(json.dumps(website))
+        changed["stateAnchor"]["releaseId"] = 107
+        with self.assertRaisesRegex(ValueError, "state anchor"):
+            MODULE.validate_candidate_receipt(
+                changed, preparation, digest, "website-site-candidate"
+            )
+
+    def test_delivery_completion_requires_exact_live_lanes_and_deployment(self) -> None:
+        preparation, digest = MODULE.read_preparation(self.path)
+        completion = {
+            **self.delivery_envelope("playground-completion"),
+            "status": "PASS",
+            "toolchainCandidateSha256": "4" * 64,
+            "siteCandidateSha256": "5" * 64,
+            "deployment": {
+                "id": 1001,
+                "environment": "github-pages",
+                "url": "https://playground.netwasm.com/",
+                "runId": 700,
+                "runAttempt": 2,
+                "jobId": 901,
+            },
+            "liveChecks": [
+                {
+                    "browser": browser,
+                    "status": "PASS",
+                    "jobId": 910 + index,
+                    "siteIdentitySha256": "6" * 64,
+                    "toolchainId": "7" * 64,
+                    "toolchainManifestSha256": "8" * 64,
+                    "evidence": self.evidence(browser, 910 + index),
+                }
+                for index, browser in enumerate(("chromium", "firefox", "webkit"))
+            ],
+        }
+        MODULE.validate_completion_receipt(
+            completion, preparation, digest, "playground-completion"
+        )
+
+        website = {
+            **self.delivery_envelope("website-completion"),
+            "status": "PASS",
+            "siteCandidateSha256": "9" * 64,
+            "deployment": {
+                "id": 1002,
+                "environment": "github-pages",
+                "url": "https://www.netwasm.com/",
+                "runId": 700,
+                "runAttempt": 2,
+                "jobId": 920,
+            },
+            "liveCheck": {
+                "status": "PASS",
+                "jobId": 921,
+                "siteIdentitySha256": "a" * 64,
+                "playgroundCompletionSha256": "6" * 64,
+                "evidence": self.evidence("website", 921),
+            },
+        }
+        MODULE.validate_completion_receipt(
+            website, preparation, digest, "website-completion"
+        )
+
+        duplicate = json.loads(json.dumps(completion))
+        duplicate["liveChecks"][2]["browser"] = "firefox"
+        with self.assertRaisesRegex(ValueError, "browser set"):
+            MODULE.validate_completion_receipt(
+                duplicate, preparation, digest, "playground-completion"
+            )
+
+        boolean_id = json.loads(json.dumps(completion))
+        boolean_id["deployment"]["runId"] = True
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            MODULE.validate_completion_receipt(
+                boolean_id, preparation, digest, "playground-completion"
+            )
+
+        nonnumeric_deployment = json.loads(json.dumps(completion))
+        nonnumeric_deployment["deployment"]["id"] = "1000"
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            MODULE.validate_completion_receipt(
+                nonnumeric_deployment, preparation, digest, "playground-completion"
+            )
+
+        contradictory = json.loads(json.dumps(completion))
+        contradictory["liveChecks"][1]["toolchainId"] = "c" * 64
+        with self.assertRaisesRegex(ValueError, "contradictory identities"):
+            MODULE.validate_completion_receipt(
+                contradictory, preparation, digest, "playground-completion"
+            )
+
+        duplicate_job = json.loads(json.dumps(completion))
+        duplicate_job["liveChecks"][1]["jobId"] = duplicate_job["liveChecks"][0]["jobId"]
+        duplicate_job["liveChecks"][1]["evidence"]["artifactName"] = (
+            MODULE.delivery_evidence_artifact_name(
+                "playground-completion", 700, 2, 910, browser="firefox"
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "job identity is duplicated"):
+            MODULE.validate_completion_receipt(
+                duplicate_job, preparation, digest, "playground-completion"
+            )
+
+        website_mismatch = json.loads(json.dumps(website))
+        website_mismatch["liveCheck"]["playgroundCompletionSha256"] = "d" * 64
+        with self.assertRaisesRegex(ValueError, "does not match Playground"):
+            MODULE.validate_completion_receipt(
+                website_mismatch, preparation, digest, "website-completion"
+            )
+
+    def test_delivery_receipts_reject_unsafe_names_and_weak_numeric_types(self) -> None:
+        preparation, digest = MODULE.read_preparation(self.path)
+        candidate = {
+            **self.delivery_envelope("playground-toolchain-candidate"),
+            "archive": {
+                "fileName": "toolchain.tar.gz", "bytes": 123, "sha256": "9" * 64,
+            },
+            "artifact": self.artifact(),
+            "toolchain": {"id": "a" * 64, "manifestSha256": "b" * 64},
+        }
+        for unsafe in ("..", "bad\\name", "bad\nname"):
+            with self.subTest(unsafe=unsafe):
+                changed = json.loads(json.dumps(candidate))
+                changed["archive"]["fileName"] = unsafe
+                with self.assertRaisesRegex(ValueError, "safe leaf"):
+                    MODULE.validate_candidate_receipt(
+                        changed,
+                        preparation,
+                        digest,
+                        "playground-toolchain-candidate",
+                    )
+
+        floating_run = json.loads(json.dumps(candidate))
+        floating_run["artifact"]["runId"] = 700.0
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            MODULE.validate_candidate_receipt(
+                floating_run,
+                preparation,
+                digest,
+                "playground-toolchain-candidate",
+            )
+
+        boolean_schema = json.loads(json.dumps(candidate))
+        boolean_schema["schemaVersion"] = True
+        with self.assertRaisesRegex(ValueError, "schema version"):
+            MODULE.validate_candidate_receipt(
+                boolean_schema,
+                preparation,
+                digest,
+                "playground-toolchain-candidate",
+            )
+
     def test_rejects_wrong_repository_workflow_order_or_upstream_graph(self) -> None:
         mutations = (
             ("repository", "zion-sati/Other"),

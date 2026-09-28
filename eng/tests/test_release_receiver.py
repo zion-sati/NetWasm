@@ -5,6 +5,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -171,6 +172,221 @@ class ReleaseReceiverTests(unittest.TestCase):
                         self.preparation,
                         "12345",
                     )
+
+    def test_playground_receiver_accepts_exact_prepared_draft_anchor(self) -> None:
+        receipt_paths = {}
+        for name in ("core-stable", "tunit-stable", "libraries-stable"):
+            receipt_paths[name] = self.receipt_file(name)
+        request = COORDINATOR.create_dispatch(
+            preparation_path=self.preparation_path,
+            stage_name="playground",
+            coordinator_repository="zion-sati/NetWasm",
+            coordinator_run_id="700",
+            coordinator_run_attempt="1",
+            upstream_receipt_paths=receipt_paths,
+        )
+        inputs = self.root / "playground-inputs.json"
+        inputs.write_text(json.dumps(request["inputs"]))
+        stage = MODULE.TRAIN.preparation_stage(self.preparation, "playground")
+        release = self.root / "playground-release.json"
+        release.write_text(json.dumps({
+            "id": stage["releaseId"],
+            "tag_name": stage["ref"],
+            "target_commitish": stage["sourceCommit"],
+            "draft": True,
+            "prerelease": False,
+        }))
+        with patch.object(
+            MODULE, "validate_upstream_receipts", return_value=[]
+        ), patch.object(MODULE, "validate_upstream_runs"):
+            result = MODULE.verify_receiver(
+                inputs_path=inputs,
+                preparation_path=self.preparation_path,
+                release_path=release,
+                upstream_directory=self.upstream,
+                upstream_run_directory=self.upstream_runs,
+                repository="zion-sati/NetWasm.Playground",
+                event_name="workflow_dispatch",
+                workflow_identity=(
+                    "zion-sati/NetWasm.Playground/.github/workflows/"
+                    f"release.yml@refs/tags/{stage['workflowRef']}"
+                ),
+                workflow_sha=stage["workflowCommit"],
+                workflow_ref=stage["workflowRef"],
+                actor_id="12345",
+                approved_actor_id="12345",
+                tag_commit="",
+            )
+        self.assertEqual("delivery", result["channel"])
+        self.assertEqual(stage["releaseId"], result["stateAnchorReleaseId"])
+
+        published = json.loads(release.read_text())
+        published["draft"] = False
+        release.write_text(json.dumps(published))
+        with patch.object(
+            MODULE, "validate_upstream_receipts", return_value=[]
+        ), patch.object(MODULE, "validate_upstream_runs"), self.assertRaisesRegex(
+            ValueError, "Prepared Playground release"
+        ):
+            MODULE.verify_receiver(
+                inputs_path=inputs,
+                preparation_path=self.preparation_path,
+                release_path=release,
+                upstream_directory=self.upstream,
+                upstream_run_directory=self.upstream_runs,
+                repository="zion-sati/NetWasm.Playground",
+                event_name="workflow_dispatch",
+                workflow_identity=(
+                    "zion-sati/NetWasm.Playground/.github/workflows/"
+                    f"release.yml@refs/heads/{stage['workflowRef']}"
+                ),
+                workflow_sha=stage["workflowCommit"],
+                workflow_ref=stage["workflowRef"],
+                actor_id="12345",
+                approved_actor_id="12345",
+                tag_commit="",
+            )
+
+    def test_website_receiver_uses_core_preview_as_its_state_anchor(self) -> None:
+        playground = self.receipt_file("playground")
+        request = COORDINATOR.create_dispatch(
+            preparation_path=self.preparation_path,
+            stage_name="website",
+            coordinator_repository="zion-sati/NetWasm",
+            coordinator_run_id="700",
+            coordinator_run_attempt="1",
+            upstream_receipt_paths={"playground": playground},
+            retained_candidates=[{
+                "kind": "website-site-candidate",
+                "receiptSha256": "1" * 64,
+            }],
+        )
+        inputs = self.root / "website-inputs.json"
+        inputs.write_text(json.dumps(request["inputs"]))
+        stage = MODULE.TRAIN.preparation_stage(self.preparation, "website")
+        anchor = MODULE.TRAIN.preparation_stage(self.preparation, "core-preview")
+        release = self.root / "website-anchor.json"
+        release.write_text(json.dumps({
+            "id": anchor["releaseId"],
+            "tag_name": anchor["ref"],
+            "draft": False,
+            "prerelease": True,
+        }))
+        with patch.object(
+            MODULE, "validate_upstream_receipts", return_value=[]
+        ), patch.object(MODULE, "validate_upstream_runs"):
+            result = MODULE.verify_receiver(
+                inputs_path=inputs,
+                preparation_path=self.preparation_path,
+                release_path=release,
+                upstream_directory=self.upstream,
+                upstream_run_directory=self.upstream_runs,
+                repository="zion-sati/netwasm.com",
+                event_name="workflow_dispatch",
+                workflow_identity=(
+                    "zion-sati/netwasm.com/.github/workflows/"
+                    f"pages.yml@refs/heads/{stage['workflowRef']}"
+                ),
+                workflow_sha=stage["workflowCommit"],
+                workflow_ref=stage["workflowRef"],
+                actor_id="12345",
+                approved_actor_id="12345",
+                tag_commit=str(anchor["sourceCommit"]),
+            )
+        self.assertEqual("delivery", result["channel"])
+        self.assertEqual(anchor["releaseId"], result["stateAnchorReleaseId"])
+        self.assertEqual(
+            [{
+                "kind": "website-site-candidate",
+                "receiptSha256": "1" * 64,
+            }],
+            result["retainedCandidates"],
+        )
+
+        changed = json.loads(inputs.read_text())
+        changed["preparation_release_id"] = "999"
+        inputs.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError, "do not match preparation"):
+            MODULE.verify_receiver(
+                inputs_path=inputs,
+                preparation_path=self.preparation_path,
+                release_path=release,
+                upstream_directory=self.upstream,
+                upstream_run_directory=self.upstream_runs,
+                repository="zion-sati/netwasm.com",
+                event_name="workflow_dispatch",
+                workflow_identity=(
+                    "zion-sati/netwasm.com/.github/workflows/"
+                    f"pages.yml@refs/heads/{stage['workflowRef']}"
+                ),
+                workflow_sha=stage["workflowCommit"],
+                workflow_ref=stage["workflowRef"],
+                actor_id="12345",
+                approved_actor_id="12345",
+                tag_commit=str(anchor["sourceCommit"]),
+            )
+
+    def test_delivery_upstream_requires_successful_completion_job(self) -> None:
+        stage = MODULE.TRAIN.preparation_stage(self.preparation, "playground")
+        receipt = {
+            "stage": "playground",
+            "producer": {
+                "runId": 900, "runAttempt": 2, "jobId": 901, "actorId": 12345,
+            },
+        }
+        (self.upstream_runs / "playground.json").write_text(json.dumps({
+            "id": 900,
+            "run_attempt": 2,
+            "event": "workflow_dispatch",
+            "path": stage["workflow"],
+            "head_sha": stage["workflowCommit"],
+            "head_branch": stage["workflowRef"],
+            "status": "completed",
+            "conclusion": "success",
+            "repository": {"full_name": stage["repository"]},
+            "actor": {"id": 12345},
+        }))
+        jobs = {"jobs": [{
+            "id": 901,
+            "run_id": 900,
+            "run_attempt": 2,
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": stage["workflowCommit"],
+        }]}
+        jobs_path = self.upstream_runs / "playground-jobs.json"
+        jobs_path.write_text(json.dumps(jobs))
+        MODULE.validate_upstream_runs(
+            [(self.root / "playground.json", receipt)],
+            self.upstream_runs,
+            self.preparation,
+            "12345",
+        )
+
+        receipt["producer"]["actorId"] = 54321
+        with self.assertRaisesRegex(ValueError, "producer actor"):
+            MODULE.validate_upstream_runs(
+                [(self.root / "playground.json", receipt)],
+                self.upstream_runs,
+                self.preparation,
+                "12345",
+            )
+        receipt["producer"]["actorId"] = 12345
+
+        jobs["jobs"][0]["conclusion"] = "failure"
+        jobs_path.write_text(json.dumps(jobs))
+        with self.assertRaisesRegex(ValueError, "producer job did not succeed"):
+            MODULE.validate_upstream_runs(
+                [(self.root / "playground.json", receipt)],
+                self.upstream_runs,
+                self.preparation,
+                "12345",
+            )
+
+    def receipt_file(self, stage: str) -> Path:
+        path = self.root / f"{stage}.json"
+        path.write_text(json.dumps({"stage": stage}) + "\n")
+        return path
 
 
 if __name__ == "__main__":

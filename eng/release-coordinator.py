@@ -79,6 +79,41 @@ def upstream_coordinates(
     return result
 
 
+def validate_retained_candidates(
+    stage_name: str, value: object
+) -> list[dict[str, str]]:
+    allowed = {
+        "playground": [
+            "playground-toolchain-candidate", "playground-site-candidate",
+        ],
+        "website": ["website-site-candidate"],
+    }.get(stage_name)
+    if allowed is None:
+        if value not in (None, []):
+            raise ValueError("Package stages cannot retain delivery candidates.")
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Retained delivery candidates are invalid.")
+    result = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"kind", "receiptSha256"}:
+            raise ValueError("Retained delivery candidate fields are invalid.")
+        kind = item.get("kind")
+        digest = item.get("receiptSha256")
+        if (
+            kind not in allowed
+            or not isinstance(digest, str)
+            or SHA256.fullmatch(digest) is None
+        ):
+            raise ValueError("Retained delivery candidate identity is invalid.")
+        result.append({"kind": str(kind), "receiptSha256": digest})
+    kinds = [item["kind"] for item in result]
+    expected_prefix = allowed[:len(kinds)]
+    if kinds != expected_prefix:
+        raise ValueError("Retained delivery candidate dependency order is invalid.")
+    return result
+
+
 def create_dispatch(
     *,
     preparation_path: Path,
@@ -87,6 +122,7 @@ def create_dispatch(
     coordinator_run_id: str,
     coordinator_run_attempt: str,
     upstream_receipt_paths: dict[str, Path],
+    retained_candidates: list[dict[str, str]] | None = None,
 ) -> dict[str, object]:
     preparation, digest = TRAIN.read_preparation(preparation_path)
     stage = TRAIN.preparation_stage(preparation, stage_name)
@@ -101,27 +137,42 @@ def create_dispatch(
     attempt_identity = dispatch_attempt_identity(
         digest, stage_name, coordinator_run_id, coordinator_run_attempt
     )
+    inputs = {
+        "coordinated_stage": stage_name,
+        "preparation_sha256": digest,
+        "release_id": str(stage["releaseId"] or ""),
+        "release_ref": str(stage["ref"]),
+        "source_commit": str(stage["sourceCommit"]),
+        "infrastructure_commit": str(stage["infrastructureCommit"]),
+        "coordinator_repository": coordinator_repository,
+        "coordinator_run_id": coordinator_run_id,
+        "coordinator_run_attempt": coordinator_run_attempt,
+        "stage_identity": stable_identity,
+        "dispatch_attempt_identity": attempt_identity,
+        "upstream_receipts": json.dumps(
+            upstream, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+        ),
+    }
+    if stage_name == "website":
+        _, preparation_release_id = TRAIN.stage_state_anchor(
+            preparation, stage_name
+        )
+        inputs["preparation_release_id"] = str(preparation_release_id)
+    if stage_name in {"playground", "website"}:
+        retained = validate_retained_candidates(
+            stage_name, retained_candidates if retained_candidates is not None else []
+        )
+        inputs["retained_candidates"] = json.dumps(
+            retained, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+        )
+    elif retained_candidates is not None:
+        validate_retained_candidates(stage_name, retained_candidates)
     return {
         "repository": stage["repository"],
         "workflow": stage["workflow"],
         "ref": stage["workflowRef"],
         "expectedWorkflowSha": stage["workflowCommit"],
-        "inputs": {
-            "coordinated_stage": stage_name,
-            "preparation_sha256": digest,
-            "release_id": str(stage["releaseId"] or ""),
-            "release_ref": str(stage["ref"]),
-            "source_commit": str(stage["sourceCommit"]),
-            "infrastructure_commit": str(stage["infrastructureCommit"]),
-            "coordinator_repository": coordinator_repository,
-            "coordinator_run_id": coordinator_run_id,
-            "coordinator_run_attempt": coordinator_run_attempt,
-            "stage_identity": stable_identity,
-            "dispatch_attempt_identity": attempt_identity,
-            "upstream_receipts": json.dumps(
-                upstream, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-            ),
-        },
+        "inputs": inputs,
         "return_run_details": True,
     }
 
@@ -156,12 +207,18 @@ def validate_dispatch_request(
         "coordinator_run_id", "coordinator_run_attempt", "stage_identity",
         "dispatch_attempt_identity", "upstream_receipts",
     }
-    if not isinstance(inputs, dict) or set(inputs) != input_fields:
+    if not isinstance(inputs, dict):
         raise ValueError("Dispatch request inputs are invalid.")
     stage_name = inputs.get("coordinated_stage")
     if not isinstance(stage_name, str):
         raise ValueError("Dispatch request stage is invalid.")
     stage = TRAIN.preparation_stage(preparation, stage_name)
+    if stage_name == "website":
+        input_fields.add("preparation_release_id")
+    if stage_name in {"playground", "website"}:
+        input_fields.add("retained_candidates")
+    if set(inputs) != input_fields:
+        raise ValueError("Dispatch request inputs are invalid.")
     expected = {
         "repository": stage["repository"],
         "workflow": stage["workflow"],
@@ -180,6 +237,11 @@ def validate_dispatch_request(
         "infrastructure_commit": str(stage["infrastructureCommit"]),
         "stage_identity": stage_identity(digest, stage_name),
     }
+    if stage_name == "website":
+        _, preparation_release_id = TRAIN.stage_state_anchor(
+            preparation, stage_name
+        )
+        expected_inputs["preparation_release_id"] = str(preparation_release_id)
     if any(inputs.get(name) != value for name, value in expected_inputs.items()):
         raise ValueError("Dispatch request identity does not match preparation.")
     run_id = inputs.get("coordinator_run_id")
@@ -211,6 +273,12 @@ def validate_dispatch_request(
             or Path(file_name).name != file_name
         ):
             raise ValueError("Dispatch upstream receipt coordinates are invalid.")
+    if stage_name in {"playground", "website"}:
+        try:
+            retained = json.loads(str(inputs.get("retained_candidates")))
+        except json.JSONDecodeError as error:
+            raise ValueError("Dispatch retained candidates are invalid.") from error
+        validate_retained_candidates(stage_name, retained)
 
 
 def dispatch_workflow(
