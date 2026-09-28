@@ -100,18 +100,22 @@ jobs:
         include:
           - lane: remaining projects
             compiler-shard: -1
-          - lane: compiler 1 of 6
+          - lane: compiler 1 of 8
             compiler-shard: 0
-          - lane: compiler 2 of 6
+          - lane: compiler 2 of 8
             compiler-shard: 1
-          - lane: compiler 3 of 6
+          - lane: compiler 3 of 8
             compiler-shard: 2
-          - lane: compiler 4 of 6
+          - lane: compiler 4 of 8
             compiler-shard: 3
-          - lane: compiler 5 of 6
+          - lane: compiler 5 of 8
             compiler-shard: 4
-          - lane: compiler 6 of 6
+          - lane: compiler 6 of 8
             compiler-shard: 5
+          - lane: compiler 7 of 8
+            compiler-shard: 6
+          - lane: compiler 8 of 8
+            compiler-shard: 7
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -266,7 +270,7 @@ jobs:
             --disable-build-servers --nologo --list-tests > "$listing"
           filter="$(
             python3 eng/create-compiler-test-shard-filter.py "$listing" \
-              --shard-count 6 \
+              --shard-count 8 \
               --shard-index '${{ matrix.compiler-shard }}' \
               --timings eng/compiler-test-durations.json
           )"
