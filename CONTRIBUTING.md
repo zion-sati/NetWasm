@@ -50,6 +50,20 @@ change. Compiler changes should include a focused regression that demonstrates
 the input and expected behaviour. CoreLib ports must retain upstream headers
 and licence notices.
 
+## Pull request checks
+
+The aggregate `CI` check is the authoritative pull request result. Markdown and
+package-description-only changes use a focused documentation check. Changes to
+the reviewed CI workflow and its supporting classifiers, verifiers, timing data
+and tests use a focused CI-infrastructure check. Source, package, toolchain and
+mixed changes run the complete compiler, native-host and SDK qualification
+matrix.
+
+After a fully qualified pull request is merged without changing its tree, the
+main-branch workflow verifies and reuses that exact qualification receipt. A
+missing or mismatched receipt falls back to the normal checks for the merged
+change.
+
 ## Scope and review
 
 - Keep public behaviour, generated output, and tests in the same reviewable
