@@ -41,17 +41,40 @@ class CiImpactTests(unittest.TestCase):
             IMPACT.classify([IMPACT.Change("src/Example/Example.csproj", before, after)]),
         )
 
-    def test_code_workflow_non_xml_and_symlink_changes_are_full(self):
+    def test_ci_infrastructure_and_docs_use_ci_scope(self):
+        changes = [
+            IMPACT.Change(".github/workflows/ci.yml", b"old", b"new"),
+            IMPACT.Change("eng/classify-ci-impact.py", b"old", b"new"),
+            IMPACT.Change("eng/compiler-test-durations.json", b"{}", b'{"schemaVersion": 1}'),
+            IMPACT.Change("docs/maintenance.md", b"old", b"new"),
+        ]
+
+        self.assertEqual("ci", IMPACT.classify(changes))
+
+    def test_code_unknown_ci_file_add_delete_and_symlink_changes_are_full(self):
         changes = [
             IMPACT.Change("src/Compiler.cs", b"old", b"new"),
-            IMPACT.Change(".github/workflows/ci.yml", b"old", b"new"),
+            IMPACT.Change("eng/unreviewed-ci-helper.py", b"old", b"new"),
+            IMPACT.Change("eng/verify-ci-results.py", None, b"new"),
+            IMPACT.Change("eng/verify-ci-results.py", b"old", None),
             IMPACT.Change("src/Broken.csproj", b"not xml", b"still not xml"),
-            IMPACT.Change("docs/link.md", b"old", b"target", current_mode="120000"),
+            IMPACT.Change(
+                "eng/classify-ci-impact.py",
+                b"old",
+                b"target",
+                current_mode="120000",
+            ),
         ]
 
         for change in changes:
             with self.subTest(path=change.path):
                 self.assertEqual("full", IMPACT.classify([change]))
+
+    def test_ci_infrastructure_mixed_with_product_code_is_full(self):
+        self.assertEqual("full", IMPACT.classify([
+            IMPACT.Change("eng/classify-ci-impact.py", b"old", b"new"),
+            IMPACT.Change("src/Compiler.cs", b"old", b"new"),
+        ]))
 
     def test_empty_change_set_fails_closed(self):
         self.assertEqual("full", IMPACT.classify([]))

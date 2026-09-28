@@ -9,6 +9,7 @@ import argparse
 GATES = (
     "impact",
     "docs",
+    "ci-infrastructure",
     "test",
     "timings",
     "package",
@@ -24,6 +25,18 @@ def verify(scope: str, results: dict[str, str]) -> None:
     if scope == "docs":
         expected = {
             "docs": "success",
+            "ci-infrastructure": "skipped",
+            "test": "skipped",
+            "timings": "skipped",
+            "package": "skipped",
+            "host-tools": "skipped",
+            "verify-packages": "skipped",
+            "runtime-pack-hosts": "skipped",
+        }
+    elif scope == "ci":
+        expected = {
+            "docs": "skipped",
+            "ci-infrastructure": "success",
             "test": "skipped",
             "timings": "skipped",
             "package": "skipped",
@@ -34,6 +47,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
     elif scope == "full":
         expected = {
             "docs": "skipped",
+            "ci-infrastructure": "skipped",
             "test": "success",
             "timings": "success",
             "package": "success",
@@ -44,6 +58,7 @@ def verify(scope: str, results: dict[str, str]) -> None:
     elif scope == "reuse":
         expected = {
             "docs": "skipped",
+            "ci-infrastructure": "skipped",
             "test": "skipped",
             "timings": "skipped",
             "package": "skipped",

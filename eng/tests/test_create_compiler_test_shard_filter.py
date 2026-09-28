@@ -15,6 +15,16 @@ SPEC.loader.exec_module(SHARDS)
 
 
 class CompilerTestShardFilterTests(unittest.TestCase):
+    def test_checked_in_timing_history_is_valid(self):
+        path = SCRIPT_PATH.parent / "compiler-test-durations.json"
+        history = json.loads(path.read_text(encoding="utf-8"))
+        counts = SHARDS.Counter({name: 1 for name in history["classes"]})
+
+        weights, fallback = SHARDS.load_timing_weights(path, counts)
+
+        self.assertEqual(0, fallback)
+        self.assertEqual(set(counts), set(weights))
+
     def test_parses_fact_and_theory_rows_by_class(self):
         counts = SHARDS.parse_test_class_counts(
             [

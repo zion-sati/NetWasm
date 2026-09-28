@@ -17,6 +17,20 @@ class CiResultTests(unittest.TestCase):
         RESULTS.verify("docs", {
             "impact": "success",
             "docs": "success",
+            "ci-infrastructure": "skipped",
+            "test": "skipped",
+            "timings": "skipped",
+            "package": "skipped",
+            "host-tools": "skipped",
+            "verify-packages": "skipped",
+            "runtime-pack-hosts": "skipped",
+        })
+
+    def test_ci_scope_accepts_only_ci_infrastructure_gate(self):
+        RESULTS.verify("ci", {
+            "impact": "success",
+            "docs": "skipped",
+            "ci-infrastructure": "success",
             "test": "skipped",
             "timings": "skipped",
             "package": "skipped",
@@ -29,6 +43,7 @@ class CiResultTests(unittest.TestCase):
         RESULTS.verify("full", {
             "impact": "success",
             "docs": "skipped",
+            "ci-infrastructure": "skipped",
             "test": "success",
             "timings": "success",
             "package": "success",
@@ -41,6 +56,7 @@ class CiResultTests(unittest.TestCase):
         RESULTS.verify("reuse", {
             "impact": "success",
             "docs": "skipped",
+            "ci-infrastructure": "skipped",
             "test": "skipped",
             "timings": "skipped",
             "package": "skipped",
@@ -58,6 +74,7 @@ class CiResultTests(unittest.TestCase):
             RESULTS.verify("full", {
                 "impact": "success",
                 "docs": "skipped",
+                "ci-infrastructure": "skipped",
                 "test": "success",
                 "timings": "success",
                 "package": "success",
