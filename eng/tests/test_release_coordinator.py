@@ -141,6 +141,38 @@ class ReleaseCoordinatorTests(unittest.TestCase):
                     upstream_receipt_paths=receipts,
                 )
 
+    def test_dispatch_rejects_bad_upstream_coordinates_for_every_stage(self) -> None:
+        cases = (
+            ("tunit-preview", ("core-stable",)),
+            (
+                "playground",
+                ("core-stable", "tunit-stable", "libraries-stable"),
+            ),
+        )
+        for stage_name, upstream_names in cases:
+            receipt_paths = {
+                name: self.receipt(name) for name in upstream_names
+            }
+            request = MODULE.create_dispatch(
+                preparation_path=self.path,
+                stage_name=stage_name,
+                coordinator_repository="zion-sati/NetWasm",
+                coordinator_run_id="700",
+                coordinator_run_attempt="1",
+                upstream_receipt_paths=receipt_paths,
+            )
+            for field, value in (
+                ("sha256", "bad"),
+                ("fileName", "../outside.json"),
+            ):
+                with self.subTest(stage=stage_name, field=field):
+                    changed = json.loads(json.dumps(request))
+                    upstream = json.loads(changed["inputs"]["upstream_receipts"])
+                    upstream[0][field] = value
+                    changed["inputs"]["upstream_receipts"] = json.dumps(upstream)
+                    with self.assertRaisesRegex(ValueError, "coordinates"):
+                        MODULE.validate_dispatch_request(changed, self.path)
+
     def test_workflow_dispatch_requests_and_returns_exact_run(self) -> None:
         request = MODULE.create_dispatch(
             preparation_path=self.path,
@@ -277,6 +309,60 @@ class ReleaseCoordinatorTests(unittest.TestCase):
         self.assertEqual("f" * 40, request["expectedWorkflowSha"])
         self.assertEqual("e" * 40, request["inputs"]["source_commit"])
         self.assertEqual("", request["inputs"]["release_id"])
+        self.assertEqual("101", request["inputs"]["preparation_release_id"])
+        self.assertEqual([], json.loads(request["inputs"]["retained_candidates"]))
+
+        changed = json.loads(json.dumps(request))
+        changed["inputs"]["preparation_release_id"] = "999"
+        with self.assertRaisesRegex(ValueError, "identity"):
+            MODULE.validate_dispatch_request(changed, self.path)
+
+    def test_delivery_dispatch_binds_ordered_retained_candidates(self) -> None:
+        receipts = {
+            name: self.receipt(name)
+            for name in ("core-stable", "tunit-stable", "libraries-stable")
+        }
+        retained = [
+            {
+                "kind": "playground-toolchain-candidate",
+                "receiptSha256": "1" * 64,
+            },
+            {
+                "kind": "playground-site-candidate",
+                "receiptSha256": "2" * 64,
+            },
+        ]
+        request = MODULE.create_dispatch(
+            preparation_path=self.path,
+            stage_name="playground",
+            coordinator_repository="zion-sati/NetWasm",
+            coordinator_run_id="700",
+            coordinator_run_attempt="1",
+            upstream_receipt_paths=receipts,
+            retained_candidates=retained,
+        )
+        self.assertEqual(
+            retained, json.loads(request["inputs"]["retained_candidates"])
+        )
+        MODULE.validate_dispatch_request(request, self.path)
+
+        for invalid in (
+            [retained[1]],
+            [retained[0], retained[0]],
+            [{"kind": "website-site-candidate", "receiptSha256": "3" * 64}],
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ValueError, "candidate"
+            ):
+                MODULE.create_dispatch(
+                    preparation_path=self.path,
+                    stage_name="playground",
+                    coordinator_repository="zion-sati/NetWasm",
+                    coordinator_run_id="700",
+                    coordinator_run_attempt="1",
+                    upstream_receipt_paths=receipts,
+                    retained_candidates=invalid,
+                )
 
     def test_dispatch_rejects_tampered_target_or_identity(self) -> None:
         request = MODULE.create_dispatch(

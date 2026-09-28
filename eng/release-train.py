@@ -23,9 +23,11 @@ VERSION = re.compile(
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
 )
 WORKFLOW_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
+SAFE_LEAF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}")
 
 PREPARATION_SCHEMA_VERSION = 1
 PUBLICATION_RECEIPT_SCHEMA_VERSION = 1
+DELIVERY_RECEIPT_SCHEMA_VERSION = 1
 PREPARATION_STAGES = (
     (
         "core-preview", "zion-sati/NetWasm", ".github/workflows/release.yml",
@@ -206,6 +208,488 @@ def preparation_stage(
     if len(matches) != 1:
         raise ValueError(f"Release preparation does not contain one stage named {name}.")
     return matches[0]
+
+
+def stage_state_anchor(
+    preparation: dict[str, object], name: str
+) -> tuple[str, int]:
+    """Resolve the release that durably owns one stage's coordinator state."""
+    stage = preparation_stage(preparation, name)
+    release_id = stage.get("releaseId")
+    if isinstance(release_id, int) and not isinstance(release_id, bool):
+        return str(stage["repository"]), release_id
+    if name != "website":
+        raise ValueError(f"Release stage has no durable state anchor: {name}.")
+    core_preview = preparation_stage(preparation, "core-preview")
+    core_release_id = core_preview.get("releaseId")
+    if not isinstance(core_release_id, int) or isinstance(core_release_id, bool):
+        raise ValueError("Core preview release cannot anchor website state.")
+    return str(core_preview["repository"]), core_release_id
+
+
+DELIVERY_KINDS = {
+    "playground-toolchain-candidate": "playground",
+    "playground-site-candidate": "playground",
+    "playground-completion": "playground",
+    "website-site-candidate": "website",
+    "website-completion": "website",
+}
+
+
+def release_stage_identity(preparation_sha256: str, stage_name: str) -> str:
+    if SHA256.fullmatch(preparation_sha256) is None:
+        raise ValueError("Delivery preparation digest is invalid.")
+    if stage_name not in {item[0] for item in PREPARATION_STAGES}:
+        raise ValueError("Delivery stage is unknown.")
+    return hashlib.sha256(
+        f"{preparation_sha256}:{stage_name}".encode("utf-8")
+    ).hexdigest()
+
+
+def require_positive_integer(value: object, description: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError(f"{description} must be a positive integer.")
+    return value
+
+
+def require_safe_leaf(value: object, description: str) -> str:
+    if (
+        not isinstance(value, str)
+        or SAFE_LEAF.fullmatch(value) is None
+        or value in {".", ".."}
+        or value.endswith(".")
+    ):
+        raise ValueError(f"{description} is not a safe leaf name.")
+    return value
+
+
+def validate_archive_descriptor(value: object) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {
+        "fileName", "bytes", "sha256",
+    }:
+        raise ValueError("Delivery archive descriptor fields are invalid.")
+    file_name = value.get("fileName")
+    size = value.get("bytes")
+    digest = value.get("sha256")
+    if (
+        not isinstance(size, int)
+        or isinstance(size, bool)
+        or size < 1
+        or size > MAX_BUNDLE_CONTENT_BYTES
+        or not isinstance(digest, str)
+        or SHA256.fullmatch(digest) is None
+    ):
+        raise ValueError("Delivery archive descriptor is invalid.")
+    require_safe_leaf(file_name, "Delivery archive file name")
+    return value
+
+
+def validate_artifact_descriptor(
+    value: object,
+    *,
+    repository: str,
+    producer: dict[str, object],
+) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {
+        "repository", "runId", "runAttempt", "artifactId", "artifactName",
+    }:
+        raise ValueError("Delivery artifact descriptor fields are invalid.")
+    artifact_name = value.get("artifactName")
+    require_positive_integer(value.get("runId"), "Delivery artifact run ID")
+    require_positive_integer(
+        value.get("runAttempt"), "Delivery artifact run attempt"
+    )
+    if (
+        value.get("repository") != repository
+        or value.get("runId") != producer.get("runId")
+        or value.get("runAttempt") != producer.get("runAttempt")
+    ):
+        raise ValueError("Delivery artifact descriptor identity is invalid.")
+    require_positive_integer(value.get("artifactId"), "Delivery artifact ID")
+    require_safe_leaf(artifact_name, "Delivery artifact name")
+    return value
+
+
+def delivery_candidate_payload_artifact_name(
+    kind: str, run_id: int, run_attempt: int
+) -> str:
+    if kind not in {
+        "playground-toolchain-candidate",
+        "playground-site-candidate",
+        "website-site-candidate",
+    }:
+        raise ValueError("Delivery candidate kind is invalid.")
+    require_positive_integer(run_id, "Delivery candidate run ID")
+    require_positive_integer(run_attempt, "Delivery candidate run attempt")
+    return f"{kind.removesuffix('-candidate')}-payload-{run_id}-{run_attempt}"
+
+
+def validate_delivery_envelope(
+    receipt: dict[str, object],
+    preparation: dict[str, object],
+    preparation_sha256: str,
+    expected_kind: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    validate_preparation(preparation)
+    expected_stage = DELIVERY_KINDS.get(expected_kind)
+    if expected_stage is None or receipt.get("kind") != expected_kind:
+        raise ValueError("Delivery receipt kind is invalid.")
+    stage = preparation_stage(preparation, expected_stage)
+    anchor_repository, anchor_release_id = stage_state_anchor(
+        preparation, expected_stage
+    )
+    if (
+        not isinstance(receipt.get("schemaVersion"), int)
+        or isinstance(receipt.get("schemaVersion"), bool)
+        or receipt.get("schemaVersion") != DELIVERY_RECEIPT_SCHEMA_VERSION
+    ):
+        raise ValueError("Delivery receipt schema version is invalid.")
+    expected = {
+        "stage": expected_stage,
+        "preparationSha256": preparation_sha256,
+        "stageIdentity": release_stage_identity(
+            preparation_sha256, expected_stage
+        ),
+        "repository": stage["repository"],
+        "sourceCommit": stage["sourceCommit"],
+        "infrastructureCommit": stage["infrastructureCommit"],
+        "workflowCommit": stage["workflowCommit"],
+        "workflowRef": stage["workflowRef"],
+    }
+    if any(receipt.get(name) != value for name, value in expected.items()):
+        raise ValueError("Delivery receipt does not match its prepared stage.")
+    anchor = receipt.get("stateAnchor")
+    if not isinstance(anchor, dict) or anchor != {
+        "repository": anchor_repository,
+        "releaseId": anchor_release_id,
+    }:
+        raise ValueError("Delivery receipt state anchor is invalid.")
+    require_positive_integer(
+        anchor.get("releaseId") if isinstance(anchor, dict) else None,
+        "Delivery state-anchor release ID",
+    )
+    producer = receipt.get("producer")
+    if not isinstance(producer, dict) or set(producer) != {
+        "runId", "runAttempt", "jobId", "workflowPath", "actorId",
+        "dispatchAttemptIdentity",
+    }:
+        raise ValueError("Delivery receipt producer fields are invalid.")
+    for field in ("runId", "runAttempt", "jobId", "actorId"):
+        require_positive_integer(
+            producer.get(field), f"Delivery producer {field}"
+        )
+    dispatch_identity = producer.get("dispatchAttemptIdentity")
+    if (
+        producer.get("workflowPath") != stage.get("workflow")
+        or not isinstance(dispatch_identity, str)
+        or SHA256.fullmatch(dispatch_identity) is None
+    ):
+        raise ValueError("Delivery receipt producer identity is invalid.")
+    upstream = receipt.get("upstreamReceipts")
+    expected_upstream = stage.get("upstreamStages")
+    if not isinstance(upstream, list) or not isinstance(expected_upstream, list):
+        raise ValueError("Delivery upstream receipt chain is invalid.")
+    if [item.get("stage") for item in upstream if isinstance(item, dict)] != expected_upstream:
+        raise ValueError("Delivery upstream stages do not match preparation.")
+    for item in upstream:
+        if not isinstance(item, dict) or set(item) != {"stage", "sha256"}:
+            raise ValueError("Delivery upstream receipt fields are invalid.")
+        digest = item.get("sha256")
+        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+            raise ValueError("Delivery upstream receipt digest is invalid.")
+    return stage, producer
+
+
+def validate_toolchain_identity(value: object) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {"id", "manifestSha256"}:
+        raise ValueError("Delivery toolchain identity fields are invalid.")
+    if any(
+        not isinstance(value.get(field), str)
+        or SHA256.fullmatch(str(value[field])) is None
+        for field in ("id", "manifestSha256")
+    ):
+        raise ValueError("Delivery toolchain identity is invalid.")
+    return value
+
+
+def validate_site_identity(value: object) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {
+        "identitySha256", "indexHtmlSha256",
+    }:
+        raise ValueError("Delivery site identity fields are invalid.")
+    if any(
+        not isinstance(value.get(field), str)
+        or SHA256.fullmatch(str(value[field])) is None
+        for field in ("identitySha256", "indexHtmlSha256")
+    ):
+        raise ValueError("Delivery site identity is invalid.")
+    return value
+
+
+def validate_candidate_receipt(
+    receipt: dict[str, object],
+    preparation: dict[str, object],
+    preparation_sha256: str,
+    expected_kind: str,
+) -> None:
+    common = {
+        "schemaVersion", "kind", "stage", "preparationSha256",
+        "stageIdentity", "repository", "sourceCommit", "infrastructureCommit",
+        "workflowCommit", "workflowRef", "stateAnchor", "upstreamReceipts",
+        "producer", "archive", "artifact",
+    }
+    kind_fields = {
+        "playground-toolchain-candidate": {"toolchain"},
+        "playground-site-candidate": {
+            "toolchainCandidateSha256", "site", "toolchain",
+        },
+        "website-site-candidate": {"site"},
+    }
+    fields = kind_fields.get(expected_kind)
+    if fields is None or set(receipt) != common | fields:
+        raise ValueError("Delivery candidate receipt fields are invalid.")
+    _, producer = validate_delivery_envelope(
+        receipt, preparation, preparation_sha256, expected_kind
+    )
+    validate_archive_descriptor(receipt.get("archive"))
+    validate_artifact_descriptor(
+        receipt.get("artifact"),
+        repository=str(receipt["repository"]),
+        producer=producer,
+    )
+    artifact = receipt["artifact"]
+    assert isinstance(artifact, dict)
+    if artifact.get("artifactName") != delivery_candidate_payload_artifact_name(
+        expected_kind, int(producer["runId"]), int(producer["runAttempt"])
+    ):
+        raise ValueError("Delivery candidate payload artifact name is invalid.")
+    if expected_kind.startswith("playground-"):
+        validate_toolchain_identity(receipt.get("toolchain"))
+    if expected_kind.endswith("site-candidate"):
+        validate_site_identity(receipt.get("site"))
+    if expected_kind == "playground-site-candidate":
+        digest = receipt.get("toolchainCandidateSha256")
+        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+            raise ValueError("Playground toolchain candidate digest is invalid.")
+
+
+def validate_evidence_descriptor(value: object) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {
+        "artifactId", "artifactName", "fileName", "sha256",
+    }:
+        raise ValueError("Delivery evidence descriptor fields are invalid.")
+    require_positive_integer(value.get("artifactId"), "Delivery evidence artifact ID")
+    for field in ("artifactName", "fileName"):
+        require_safe_leaf(value.get(field), "Delivery evidence name")
+    digest = value.get("sha256")
+    if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+        raise ValueError("Delivery evidence digest is invalid.")
+    return value
+
+
+def delivery_evidence_artifact_name(
+    kind: str,
+    run_id: int,
+    run_attempt: int,
+    job_id: int,
+    *,
+    browser: str | None = None,
+) -> str:
+    for value, label in (
+        (run_id, "Delivery evidence run ID"),
+        (run_attempt, "Delivery evidence run attempt"),
+        (job_id, "Delivery evidence job ID"),
+    ):
+        require_positive_integer(value, label)
+    if kind == "playground-completion":
+        if browser not in {"chromium", "firefox", "webkit"}:
+            raise ValueError("Playground evidence browser is invalid.")
+        lane = f"playground-{browser}"
+    elif kind == "website-completion":
+        if browser is not None:
+            raise ValueError("Website evidence cannot identify a browser lane.")
+        lane = "website"
+    else:
+        raise ValueError("Delivery evidence kind is invalid.")
+    return f"delivery-evidence-{lane}-{run_id}-{run_attempt}-{job_id}"
+
+
+def validate_deployment(
+    value: object,
+    *,
+    producer: dict[str, object],
+    expected_url: str,
+) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != {
+        "id", "environment", "url", "runId", "runAttempt", "jobId",
+    }:
+        raise ValueError("Delivery deployment fields are invalid.")
+    for field in ("runId", "runAttempt", "jobId"):
+        require_positive_integer(value.get(field), f"Delivery deployment {field}")
+    require_positive_integer(value.get("id"), "Delivery deployment ID")
+    if (
+        value.get("environment") != "github-pages"
+        or value.get("url") != expected_url
+        or value.get("runId") != producer.get("runId")
+        or value.get("runAttempt") != producer.get("runAttempt")
+    ):
+        raise ValueError("Delivery deployment identity is invalid.")
+    return value
+
+
+def validate_completion_receipt(
+    receipt: dict[str, object],
+    preparation: dict[str, object],
+    preparation_sha256: str,
+    expected_kind: str,
+) -> None:
+    common = {
+        "schemaVersion", "kind", "stage", "preparationSha256",
+        "stageIdentity", "repository", "sourceCommit", "infrastructureCommit",
+        "workflowCommit", "workflowRef", "stateAnchor", "upstreamReceipts",
+        "producer", "status", "deployment",
+    }
+    fields = {
+        "playground-completion": {
+            "toolchainCandidateSha256", "siteCandidateSha256", "liveChecks",
+        },
+        "website-completion": {"siteCandidateSha256", "liveCheck"},
+    }.get(expected_kind)
+    if fields is None or set(receipt) != common | fields:
+        raise ValueError("Delivery completion receipt fields are invalid.")
+    _, producer = validate_delivery_envelope(
+        receipt, preparation, preparation_sha256, expected_kind
+    )
+    if receipt.get("status") != "PASS":
+        raise ValueError("Delivery completion status is not PASS.")
+    for field in (
+        ("toolchainCandidateSha256", "siteCandidateSha256")
+        if expected_kind == "playground-completion"
+        else ("siteCandidateSha256",)
+    ):
+        digest = receipt.get(field)
+        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+            raise ValueError("Delivery completion candidate digest is invalid.")
+    expected_url = (
+        "https://playground.netwasm.com/"
+        if expected_kind == "playground-completion"
+        else "https://www.netwasm.com/"
+    )
+    validate_deployment(
+        receipt.get("deployment"), producer=producer, expected_url=expected_url
+    )
+    if expected_kind == "playground-completion":
+        checks = receipt.get("liveChecks")
+        if not isinstance(checks, list) or len(checks) != 3:
+            raise ValueError("Playground completion requires three live checks.")
+        expected_browsers = ["chromium", "firefox", "webkit"]
+        if sorted(
+            item.get("browser") for item in checks if isinstance(item, dict)
+        ) != expected_browsers:
+            raise ValueError("Playground live browser set is invalid.")
+        for check in checks:
+            if not isinstance(check, dict) or set(check) != {
+                "browser", "status", "jobId", "siteIdentitySha256",
+                "toolchainId", "toolchainManifestSha256", "evidence",
+            }:
+                raise ValueError("Playground live-check fields are invalid.")
+            require_positive_integer(check.get("jobId"), "Playground live-check job ID")
+            if check.get("status") != "PASS":
+                raise ValueError("Playground live check did not pass.")
+            for field in (
+                "siteIdentitySha256", "toolchainId", "toolchainManifestSha256",
+            ):
+                digest = check.get(field)
+                if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+                    raise ValueError("Playground live-check identity is invalid.")
+            validate_evidence_descriptor(check.get("evidence"))
+            expected_artifact = delivery_evidence_artifact_name(
+                expected_kind,
+                int(producer["runId"]),
+                int(producer["runAttempt"]),
+                int(check["jobId"]),
+                browser=str(check["browser"]),
+            )
+            if (
+                check["evidence"]["artifactName"] != expected_artifact
+                or check["evidence"]["fileName"] != "delivery-evidence.json"
+            ):
+                raise ValueError("Playground live evidence name is invalid.")
+        job_ids = [check["jobId"] for check in checks]
+        artifact_ids = [check["evidence"]["artifactId"] for check in checks]
+        if (
+            len(set(job_ids)) != 3
+            or len(set(artifact_ids)) != 3
+            or producer["jobId"] in job_ids
+            or receipt["deployment"]["jobId"] in job_ids
+            or producer["jobId"] == receipt["deployment"]["jobId"]
+        ):
+            raise ValueError("Playground completion job identity is duplicated.")
+        identity_fields = (
+            "siteIdentitySha256", "toolchainId", "toolchainManifestSha256",
+        )
+        if any(
+            len({check[field] for check in checks}) != 1
+            for field in identity_fields
+        ):
+            raise ValueError("Playground live checks report contradictory identities.")
+        return
+    check = receipt.get("liveCheck")
+    if not isinstance(check, dict) or set(check) != {
+        "status", "jobId", "siteIdentitySha256", "playgroundCompletionSha256",
+        "evidence",
+    }:
+        raise ValueError("Website live-check fields are invalid.")
+    require_positive_integer(check.get("jobId"), "Website live-check job ID")
+    if check.get("status") != "PASS":
+        raise ValueError("Website live check did not pass.")
+    for field in ("siteIdentitySha256", "playgroundCompletionSha256"):
+        digest = check.get(field)
+        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+            raise ValueError("Website live-check identity is invalid.")
+    validate_evidence_descriptor(check.get("evidence"))
+    if (
+        check["evidence"]["artifactName"]
+        != delivery_evidence_artifact_name(
+            expected_kind,
+            int(producer["runId"]),
+            int(producer["runAttempt"]),
+            int(check["jobId"]),
+        )
+        or check["evidence"]["fileName"] != "delivery-evidence.json"
+    ):
+        raise ValueError("Website live evidence name is invalid.")
+    upstream = receipt["upstreamReceipts"]
+    if (
+        len(upstream) != 1
+        or upstream[0]["stage"] != "playground"
+        or check["playgroundCompletionSha256"] != upstream[0]["sha256"]
+    ):
+        raise ValueError("Website live check does not match Playground completion.")
+    if len({producer["jobId"], receipt["deployment"]["jobId"], check["jobId"]}) != 3:
+        raise ValueError("Website completion job identity is duplicated.")
+
+
+def validate_stage_receipt(
+    receipt: dict[str, object],
+    preparation: dict[str, object],
+    preparation_sha256: str,
+    expected_stage: str,
+) -> None:
+    if expected_stage in {item[0] for item in PREPARATION_STAGES[:6]}:
+        validate_publication_receipt(
+            receipt, preparation, preparation_sha256, expected_stage
+        )
+    elif expected_stage == "playground":
+        validate_completion_receipt(
+            receipt, preparation, preparation_sha256, "playground-completion"
+        )
+    elif expected_stage == "website":
+        validate_completion_receipt(
+            receipt, preparation, preparation_sha256, "website-completion"
+        )
+    else:
+        raise ValueError(f"Release receipt stage is invalid: {expected_stage}.")
 
 
 def validate_feed_receipt(

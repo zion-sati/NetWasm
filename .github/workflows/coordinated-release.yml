@@ -197,6 +197,55 @@ jobs:
             --approved-actor-id "$RELEASE_APP_ACTOR_ID" \
             --output artifacts/receipts/publication-receipt-libraries-stable.json
 
+      - name: Create Playground App token
+        id: playground-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: zion-sati
+          repositories: |
+            NetWasm
+            TUnit-NetWasm
+            NetWasm.Libraries
+            NetWasm.Playground
+
+      - name: Publish and deploy Playground
+        shell: bash
+        env:
+          GITHUB_APP_TOKEN: ${{ steps.playground-token.outputs.token }}
+          RELEASE_APP_ACTOR_ID: ${{ vars.RELEASE_APP_ACTOR_ID }}
+        run: |
+          python3 eng/release-orchestrator.py stage \
+            --preparation artifacts/release-preparation.json \
+            --stage playground \
+            --approved-actor-id "$RELEASE_APP_ACTOR_ID" \
+            --output artifacts/receipts/delivery-completion-playground.json
+
+      - name: Create website App token
+        id: website-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: zion-sati
+          repositories: |
+            NetWasm
+            NetWasm.Playground
+            netwasm.com
+
+      - name: Deploy website
+        shell: bash
+        env:
+          GITHUB_APP_TOKEN: ${{ steps.website-token.outputs.token }}
+          RELEASE_APP_ACTOR_ID: ${{ vars.RELEASE_APP_ACTOR_ID }}
+        run: |
+          python3 eng/release-orchestrator.py stage \
+            --preparation artifacts/release-preparation.json \
+            --stage website \
+            --approved-actor-id "$RELEASE_APP_ACTOR_ID" \
+            --output artifacts/receipts/delivery-completion-website.json
+
       - name: Retain coordinator evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

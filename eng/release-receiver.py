@@ -43,30 +43,43 @@ def validate_inputs(
     repository: str,
     workflow_sha: str,
     workflow_ref: str,
-) -> tuple[dict[str, object], list[dict[str, object]]]:
+) -> tuple[
+    dict[str, object], list[dict[str, object]], list[dict[str, str]]
+]:
     fields = {
         "coordinated_stage", "preparation_sha256", "release_id", "release_ref",
         "source_commit", "infrastructure_commit", "coordinator_repository",
         "coordinator_run_id", "coordinator_run_attempt", "stage_identity",
         "dispatch_attempt_identity", "upstream_receipts",
     }
+    stage_name = inputs.get("coordinated_stage")
+    if not isinstance(stage_name, str):
+        raise ValueError("Coordinated release inputs are invalid.")
+    if stage_name == "website":
+        fields.add("preparation_release_id")
+    if stage_name in {"playground", "website"}:
+        fields.add("retained_candidates")
     if set(inputs) != fields or any(not isinstance(value, str) for value in inputs.values()):
         raise ValueError("Coordinated release inputs are invalid.")
-    stage_name = str(inputs["coordinated_stage"])
-    if stage_name not in {item[0] for item in TRAIN.PREPARATION_STAGES[:6]}:
-        raise ValueError("Receiver accepts package publication stages only.")
+    if stage_name not in {item[0] for item in TRAIN.PREPARATION_STAGES}:
+        raise ValueError("Receiver stage is invalid.")
     stage = TRAIN.preparation_stage(preparation, stage_name)
     if stage.get("repository") != repository:
         raise ValueError("Coordinated stage targets a different repository.")
     expected = {
         "preparation_sha256": preparation_digest,
-        "release_id": str(stage["releaseId"]),
+        "release_id": str(stage["releaseId"] or ""),
         "release_ref": str(stage["ref"]),
         "source_commit": str(stage["sourceCommit"]),
         "infrastructure_commit": str(stage["infrastructureCommit"]),
         "coordinator_repository": COORDINATOR.COORDINATOR_REPOSITORY,
         "stage_identity": COORDINATOR.stage_identity(preparation_digest, stage_name),
     }
+    if stage_name == "website":
+        _, preparation_release_id = TRAIN.stage_state_anchor(
+            preparation, stage_name
+        )
+        expected["preparation_release_id"] = str(preparation_release_id)
     if any(inputs.get(name) != value for name, value in expected.items()):
         raise ValueError("Coordinated release inputs do not match preparation.")
     if workflow_sha != stage.get("workflowCommit") or workflow_ref != stage.get("workflowRef"):
@@ -100,7 +113,16 @@ def validate_inputs(
             or TRAIN.SHA256.fullmatch(digest) is None
         ):
             raise ValueError("Coordinated upstream receipt coordinates are invalid.")
-    return stage, upstream
+    retained: list[dict[str, str]] = []
+    if stage_name in {"playground", "website"}:
+        try:
+            retained_value = json.loads(str(inputs["retained_candidates"]))
+        except json.JSONDecodeError as error:
+            raise ValueError("Coordinated retained candidates are invalid.") from error
+        retained = COORDINATOR.validate_retained_candidates(
+            stage_name, retained_value
+        )
+    return stage, upstream, retained
 
 
 def validate_actions_context(
@@ -151,6 +173,36 @@ def validate_release(
         raise ValueError("Published GitHub Release does not match preparation.")
 
 
+def validate_delivery_anchor(
+    release: dict[str, object],
+    stage: dict[str, object],
+    preparation: dict[str, object],
+    tag_commit: str,
+) -> None:
+    stage_name = str(stage["name"])
+    if stage_name == "playground":
+        draft = release.get("draft")
+        expected_source = stage.get("sourceCommit")
+        if (
+            release.get("id") != stage.get("releaseId")
+            or release.get("tag_name") != stage.get("ref")
+            or release.get("target_commitish") != stage.get("sourceCommit")
+            or not isinstance(draft, bool)
+            or release.get("prerelease") is not False
+            or (
+                tag_commit not in {"", expected_source}
+                if draft
+                else tag_commit != expected_source
+            )
+        ):
+            raise ValueError("Prepared Playground release does not match preparation.")
+        return
+    if stage_name != "website":
+        raise ValueError("Delivery anchor stage is invalid.")
+    anchor_stage = TRAIN.preparation_stage(preparation, "core-preview")
+    validate_release(release, anchor_stage, tag_commit)
+
+
 def validate_upstream_receipts(
     upstream: list[dict[str, object]],
     directory: Path,
@@ -165,7 +217,7 @@ def validate_upstream_receipts(
                 f"Upstream receipt bytes do not match dispatch: {coordinate['stage']}."
             )
         value = TRAIN.read_json(path)
-        TRAIN.validate_publication_receipt(
+        TRAIN.validate_stage_receipt(
             value, preparation, preparation_digest, str(coordinate["stage"])
         )
         result.append((path, value))
@@ -181,9 +233,12 @@ def validate_upstream_runs(
     for _, receipt in receipts:
         stage_name = str(receipt["stage"])
         stage = TRAIN.preparation_stage(preparation, stage_name)
-        publication = receipt.get("publication")
+        package_stage = stage_name in {
+            item[0] for item in TRAIN.PREPARATION_STAGES[:6]
+        }
+        publication = receipt.get("publication" if package_stage else "producer")
         if not isinstance(publication, dict):
-            raise ValueError("Upstream publication coordinates are invalid.")
+            raise ValueError("Upstream release coordinates are invalid.")
         run_path = run_directory / f"{stage_name}.json"
         if not run_path.is_file():
             raise ValueError(f"Upstream workflow metadata is missing: {stage_name}.")
@@ -208,6 +263,38 @@ def validate_upstream_runs(
                 f"Upstream publication workflow did not complete successfully: "
                 f"{stage_name}."
             )
+        if not package_stage:
+            if publication.get("actorId") != int(approved_actor_id):
+                raise ValueError(
+                    f"Upstream delivery producer actor is invalid: {stage_name}."
+                )
+            jobs_path = run_directory / f"{stage_name}-jobs.json"
+            if not jobs_path.is_file():
+                raise ValueError(
+                    f"Upstream delivery job metadata is missing: {stage_name}."
+                )
+            jobs_document = TRAIN.read_json(jobs_path)
+            jobs = jobs_document.get("jobs")
+            if not isinstance(jobs, list):
+                raise ValueError("Upstream delivery job metadata is invalid.")
+            matches = [
+                job for job in jobs
+                if isinstance(job, dict)
+                and job.get("id") == publication.get("jobId")
+            ]
+            if len(matches) != 1 or any(
+                matches[0].get(field) != expected
+                for field, expected in {
+                    "run_id": int(str(publication["runId"])),
+                    "run_attempt": int(str(publication["runAttempt"])),
+                    "status": "completed",
+                    "conclusion": "success",
+                    "head_sha": stage.get("workflowCommit"),
+                }.items()
+            ):
+                raise ValueError(
+                    f"Upstream delivery producer job did not succeed: {stage_name}."
+                )
 
 
 def verify_receiver(
@@ -231,7 +318,7 @@ def verify_receiver(
     if not isinstance(expected_digest, str) or TRAIN.SHA256.fullmatch(expected_digest) is None:
         raise ValueError("Dispatch preparation digest is invalid.")
     preparation = read_preparation(preparation_path, expected_digest)
-    stage, upstream = validate_inputs(
+    stage, upstream, retained = validate_inputs(
         inputs,
         preparation,
         expected_digest,
@@ -249,7 +336,13 @@ def verify_receiver(
         approved_actor_id=approved_actor_id,
     )
     release = TRAIN.read_json(release_path)
-    validate_release(release, stage, tag_commit)
+    package_stage = str(stage["name"]) in {
+        item[0] for item in TRAIN.PREPARATION_STAGES[:6]
+    }
+    if package_stage:
+        validate_release(release, stage, tag_commit)
+    else:
+        validate_delivery_anchor(release, stage, preparation, tag_commit)
     receipts = validate_upstream_receipts(
         upstream, upstream_directory, preparation, expected_digest
     )
@@ -265,13 +358,20 @@ def verify_receiver(
         "status": "PASS",
         "stage": stage["name"],
         "version": version,
-        "channel": "preview" if str(stage["name"]).endswith("-preview") else "stable",
+        "channel": (
+            "preview" if str(stage["name"]).endswith("-preview")
+            else "stable" if package_stage else "delivery"
+        ),
         "preparationSha256": expected_digest,
         "sourceCommit": stage["sourceCommit"],
         "infrastructureCommit": stage["infrastructureCommit"],
         "releaseTag": stage["ref"],
-        "releaseId": stage["releaseId"],
+        "releaseId": stage["releaseId"] or "",
+        "stateAnchorReleaseId": TRAIN.stage_state_anchor(
+            preparation, str(stage["name"])
+        )[1],
         "upstreamReceiptPaths": [str(path) for path, _ in receipts],
+        "retainedCandidates": retained,
     }
 
 
@@ -315,6 +415,7 @@ def main() -> int:
             for field in (
                 "stage", "version", "channel", "preparationSha256", "sourceCommit",
                 "infrastructureCommit", "releaseTag", "releaseId",
+                "stateAnchorReleaseId",
             ):
                 output_name = "".join(
                     ("_" + character.lower()) if character.isupper() else character
