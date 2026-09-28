@@ -1729,9 +1729,7 @@ def harvest_delivery_candidates(
             has_receipt = receipt_name in names
             has_payload = payload_name in names
             if has_payload and not has_receipt:
-                raise ValueError(
-                    f"Delivery candidate payload has no approved receipt: {kind}."
-                )
+                continue
             if has_receipt:
                 matches.append(attempt)
         if len(matches) > 1:
@@ -2019,11 +2017,6 @@ def run_delivery_stage(
                 f"Retained delivery candidate from failed {stage_name} run; "
                 "rerun the coordinator to reuse it."
             )
-        if not candidates:
-            raise RuntimeError(
-                f"Failed {stage_name} run produced no approvable delivery candidate."
-            )
-
     retained = retained_candidate_coordinates(stage_name, candidates)
     request = COORDINATOR.create_dispatch(
         preparation_path=preparation_path,

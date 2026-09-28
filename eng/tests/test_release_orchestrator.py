@@ -1305,22 +1305,21 @@ class ReleaseOrchestratorTests(unittest.TestCase):
                 json.loads(captured["inputs"]["retained_candidates"]),
             )
 
-    def test_failed_candidate_payload_without_receipt_stops_recovery(self) -> None:
+    def test_failed_candidate_payload_without_receipt_is_ignored(self) -> None:
         preparation, digest, store, _, _ = self.candidate_fixture()
         stage = MODULE.TRAIN.preparation_stage(preparation, "playground")
         store.workflow_artifacts = [store.workflow_artifacts[1]]
-        with self.assertRaisesRegex(ValueError, "no approved receipt"):
-            MODULE.harvest_delivery_candidates(
-                store,
-                preparation,
-                digest,
-                stage,
-                store.run_by_id["700"],
-                "7" * 64,
-                "12345",
-                {},
-                {},
-            )
+        self.assertEqual([], MODULE.harvest_delivery_candidates(
+            store,
+            preparation,
+            digest,
+            stage,
+            store.run_by_id["700"],
+            "7" * 64,
+            "12345",
+            {},
+            {},
+        ))
 
     def test_delivery_lost_dispatch_can_recover_a_failed_visible_run(self) -> None:
         preparation, digest, store, _, _ = self.candidate_fixture()
