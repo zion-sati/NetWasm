@@ -11,8 +11,8 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Callable
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import urlencode, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 import zipfile
 from io import BytesIO
 
@@ -93,6 +93,21 @@ def validate_receipt(
         raise ValueError(f"qualification receipt does not match the merge: {mismatches}")
 
 
+class SafeAuthorizationRedirectHandler(HTTPRedirectHandler):
+    """Keep GitHub credentials off cross-origin artifact redirects."""
+
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        redirected = super().redirect_request(
+            request, fp, code, message, headers, new_url,
+        )
+        if (
+            redirected is not None
+            and urlsplit(request.full_url).netloc != urlsplit(new_url).netloc
+        ):
+            redirected.remove_header("Authorization")
+        return redirected
+
+
 class GitHubApi:
     def __init__(self, token: str) -> None:
         if not token:
@@ -103,9 +118,10 @@ class GitHubApi:
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "NetWasm-CI",
         }
+        self.opener = build_opener(SafeAuthorizationRedirectHandler())
 
     def bytes(self, url: str) -> bytes:
-        with urlopen(Request(url, headers=self.headers), timeout=30) as response:
+        with self.opener.open(Request(url, headers=self.headers), timeout=30) as response:
             return response.read()
 
     def json(self, url: str) -> dict[str, object]:

@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from urllib.request import Request
 import zipfile
 
 
@@ -25,6 +26,26 @@ def archive(receipt):
 
 
 class CiQualificationTests(unittest.TestCase):
+    def test_does_not_forward_authorization_to_artifact_storage(self):
+        handler = QUALIFICATION.SafeAuthorizationRedirectHandler()
+        request = Request(
+            "https://api.github.com/repos/zion-sati/NetWasm/actions/artifacts/42/zip",
+            headers={"Authorization": "Bearer secret", "Accept": "application/json"},
+        )
+
+        same_origin = handler.redirect_request(
+            request, None, 302, "Found", {},
+            "https://api.github.com/signed-artifact",
+        )
+        cross_origin = handler.redirect_request(
+            request, None, 302, "Found", {},
+            "https://objects.githubusercontent.com/signed-artifact",
+        )
+
+        self.assertEqual("Bearer secret", same_origin.get_header("Authorization"))
+        self.assertIsNone(cross_origin.get_header("Authorization"))
+        self.assertEqual("application/json", cross_origin.get_header("Accept"))
+
     def test_validates_exact_repository_head_tree_workflow_and_run(self):
         receipt = {
             "schemaVersion": 1,
