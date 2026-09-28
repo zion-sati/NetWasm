@@ -13,8 +13,74 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Classify change impact
+    runs-on: ubuntu-24.04
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      base: ${{ steps.classify.outputs.base }}
+      head: ${{ steps.classify.outputs.head }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Classify trusted diff
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PULL_REQUEST_BASE_SHA"
+          else
+            base="$BEFORE_SHA"
+          fi
+          scope=full
+          if [[ "$base" =~ ^[0-9a-f]{40}$ && ! "$base" =~ ^0+$ ]] &&
+             git cat-file -e "$base^{commit}"; then
+            scope="$(python3 eng/classify-ci-impact.py --base "$base" --head "$head")"
+          fi
+          case "$scope" in
+            docs|full) ;;
+            *) echo "Unsupported CI impact scope: $scope" >&2; exit 1 ;;
+          esac
+          {
+            echo "scope=$scope"
+            echo "base=$base"
+            echo "head=$head"
+          } >> "$GITHUB_OUTPUT"
+          echo "CI impact: $scope"
+
+  docs:
+    name: Documentation
+    needs: impact
+    if: needs.impact.outputs.scope == 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Verify documentation change
+        shell: bash
+        env:
+          BASE_SHA: ${{ needs.impact.outputs.base }}
+          HEAD_SHA: ${{ needs.impact.outputs.head }}
+        run: |
+          git diff --check "$BASE_SHA" "$HEAD_SHA"
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest eng/tests/test_classify_ci_impact.py
+          python3 eng/classify-ci-impact.py \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --verify-docs
+
   test:
     name: Test / ${{ matrix.lane }}
+    needs: impact
+    if: needs.impact.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -174,10 +240,21 @@ jobs:
               --shard-index '${{ matrix.compiler-shard }}'
           )"
           dotnet test "$project" -c Release --no-build --no-restore \
-            --disable-build-servers --nologo --filter "$filter"
+            --disable-build-servers --nologo --filter "$filter" \
+            --results-directory "$RUNNER_TEMP/compiler-test-results" \
+            --logger "trx;LogFileName=compiler-${{ matrix.compiler-shard }}.trx"
+      - name: Retain compiler test timings
+        if: ${{ always() && matrix.compiler-shard != -1 }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: compiler-test-timings-${{ matrix.compiler-shard }}
+          path: ${{ runner.temp }}/compiler-test-results/*.trx
+          if-no-files-found: warn
+          retention-days: 14
 
   package:
-    needs: test
+    needs: impact
+    if: needs.impact.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
@@ -232,6 +309,8 @@ jobs:
           retention-days: 14
 
   host-tools:
+    needs: impact
+    if: needs.impact.outputs.scope == 'full'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -292,7 +371,8 @@ jobs:
           retention-days: 14
 
   verify-packages:
-    needs: [package, host-tools]
+    needs: [impact, package, host-tools]
+    if: needs.impact.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -384,7 +464,8 @@ jobs:
           retention-days: 14
 
   runtime-pack-hosts:
-    needs: verify-packages
+    needs: [impact, verify-packages]
+    if: needs.impact.outputs.scope == 'full'
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -507,3 +588,31 @@ jobs:
           bash eng/qualify-sdk-consumers.sh \
             "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}" \
             --skip-test-consumers
+
+  ci:
+    name: CI
+    if: always()
+    needs: [impact, docs, test, package, host-tools, verify-packages, runtime-pack-hosts]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify required gates
+        shell: bash
+        env:
+          SCOPE: ${{ needs.impact.outputs.scope }}
+          IMPACT_RESULT: ${{ needs.impact.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          HOST_TOOLS_RESULT: ${{ needs.host-tools.result }}
+          VERIFY_PACKAGES_RESULT: ${{ needs.verify-packages.result }}
+          RUNTIME_PACK_HOSTS_RESULT: ${{ needs.runtime-pack-hosts.result }}
+        run: |
+          python3 eng/verify-ci-results.py \
+            --scope "$SCOPE" \
+            --impact "$IMPACT_RESULT" \
+            --docs "$DOCS_RESULT" \
+            --test "$TEST_RESULT" \
+            --package "$PACKAGE_RESULT" \
+            --host-tools "$HOST_TOOLS_RESULT" \
+            --verify-packages "$VERIFY_PACKAGES_RESULT" \
+            --runtime-pack-hosts "$RUNTIME_PACK_HOSTS_RESULT"
