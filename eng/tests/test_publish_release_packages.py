@@ -257,7 +257,7 @@ class PublishReleasePackagesTests(unittest.TestCase):
         def push(command: list[str], *, check: bool, timeout: float) -> object:
             self.assertFalse(check)
             self.assertEqual("dotnet", command[0])
-            self.assertNotIn("--api-key", command)
+            self.assertEqual("secret", command[command.index("--api-key") + 1])
             package_id = Path(command[3]).name.removesuffix(".0.3.0-preview.1.nupkg")
             available.add(package_id)
             events.append(("push", package_id))
@@ -273,8 +273,9 @@ class PublishReleasePackagesTests(unittest.TestCase):
              mock.patch.object(MODULE, "verify_feed_payload", side_effect=lambda package_id, *args: events.append(("verify", package_id))), \
              mock.patch.object(MODULE.subprocess, "run", side_effect=push), \
              mock.patch.object(MODULE, "wait_for_feed", side_effect=wait):
-            for stage in MODULE.STAGE_NAMES:
-                MODULE.publish_stage(self.manifest, self.root, stage)
+            with mock.patch.dict(MODULE.os.environ, {"NUGET_API_KEY": "secret"}):
+                for stage in MODULE.STAGE_NAMES:
+                    MODULE.publish_stage(self.manifest, self.root, stage)
 
         first_wait = events.index(
             ("wait", ("NetWasm.HostTools.linux-x64", "NetWasm.Toolchain"))
@@ -356,7 +357,8 @@ class PublishReleasePackagesTests(unittest.TestCase):
     def test_ambiguous_upload_reconciles_remote_package(self) -> None:
         with mock.patch.object(MODULE, "available_on_feed", side_effect=(False, True)), \
              mock.patch.object(MODULE, "verify_feed_payload") as verify, \
-             mock.patch.object(MODULE.subprocess, "run", side_effect=subprocess.TimeoutExpired("dotnet", 10)):
+             mock.patch.object(MODULE.subprocess, "run", side_effect=subprocess.TimeoutExpired("dotnet", 10)), \
+             mock.patch.dict(MODULE.os.environ, {"NUGET_API_KEY": "secret"}):
             reused = MODULE.push_or_reconcile(
                 "NetWasm.Toolchain", "0.3.0-preview.1",
                 self.root / "NetWasm.Toolchain.0.3.0-preview.1.nupkg",
@@ -377,7 +379,8 @@ class PublishReleasePackagesTests(unittest.TestCase):
         run = mock.Mock(return_value=mock.Mock(returncode=1))
         with mock.patch.object(MODULE, "available_on_feed", return_value=False), \
              mock.patch.object(MODULE, "verify_feed_payload") as verify, \
-             mock.patch.object(MODULE.subprocess, "run", run):
+             mock.patch.object(MODULE.subprocess, "run", run), \
+             mock.patch.dict(MODULE.os.environ, {"NUGET_API_KEY": "secret"}):
             with self.assertRaisesRegex(RuntimeError, "Publishing failed"):
                 MODULE.push_or_reconcile(
                     "NetWasm.Toolchain", "0.3.0-preview.1",
