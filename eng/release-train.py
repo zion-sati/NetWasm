@@ -18,6 +18,53 @@ SCHEMA_VERSION = 1
 MAX_ENTRY_BYTES = 512 * 1024 * 1024
 MAX_BUNDLE_CONTENT_BYTES = 2 * 1024 * 1024 * 1024
 COMMIT = re.compile(r"[0-9a-f]{40}")
+SHA256 = re.compile(r"[0-9a-f]{64}")
+VERSION = re.compile(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+)
+WORKFLOW_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
+
+PREPARATION_SCHEMA_VERSION = 1
+PUBLICATION_RECEIPT_SCHEMA_VERSION = 1
+PREPARATION_STAGES = (
+    (
+        "core-preview", "zion-sati/NetWasm", ".github/workflows/release.yml",
+        (), "core-preview",
+    ),
+    (
+        "core-stable", "zion-sati/NetWasm", ".github/workflows/release.yml",
+        ("core-preview",), "core-stable",
+    ),
+    (
+        "tunit-preview", "zion-sati/TUnit-NetWasm",
+        ".github/workflows/netwasm-release.yml", ("core-stable",),
+        "tunit-preview",
+    ),
+    (
+        "tunit-stable", "zion-sati/TUnit-NetWasm",
+        ".github/workflows/netwasm-release.yml", ("tunit-preview",),
+        "tunit-stable",
+    ),
+    (
+        "libraries-preview", "zion-sati/NetWasm.Libraries",
+        ".github/workflows/release.yml", ("core-stable", "tunit-stable"),
+        "libraries-preview",
+    ),
+    (
+        "libraries-stable", "zion-sati/NetWasm.Libraries",
+        ".github/workflows/release.yml", ("libraries-preview",),
+        "libraries-stable",
+    ),
+    (
+        "playground", "zion-sati/NetWasm.Playground",
+        ".github/workflows/release.yml",
+        ("core-stable", "tunit-stable", "libraries-stable"), "playground",
+    ),
+    (
+        "website", "zion-sati/netwasm.com", ".github/workflows/pages.yml",
+        ("playground",), "website",
+    ),
+)
 
 
 def sha256_stream(stream: BufferedReader) -> str:
@@ -37,6 +84,469 @@ def read_json(path: Path) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"JSON document is not an object: {path}")
     return value
+
+
+def expected_stage_ref(name: str, version: str) -> str | None:
+    preview = f"{version}-preview.1"
+    return {
+        "core-preview": f"v{preview}",
+        "core-stable": f"v{version}",
+        "tunit-preview": f"netwasm-v{preview}",
+        "tunit-stable": f"netwasm-v{version}",
+        "libraries-preview": f"v{preview}",
+        "libraries-stable": f"v{version}",
+        "playground": f"v{version}",
+        "website": None,
+    }[name]
+
+
+def validate_preparation(preparation: dict[str, object]) -> dict[str, object]:
+    required = {"schemaVersion", "version", "stages", "policy"}
+    if set(preparation) != required:
+        raise ValueError("Release preparation root fields do not match schema version 1.")
+    if preparation.get("schemaVersion") != PREPARATION_SCHEMA_VERSION:
+        raise ValueError("Release preparation schema version is unsupported.")
+    version = preparation.get("version")
+    if not isinstance(version, str) or VERSION.fullmatch(version) is None:
+        raise ValueError("Release preparation version is invalid.")
+    policy = preparation.get("policy")
+    if not isinstance(policy, dict) or policy != {
+        "publicationReceiptSchemaVersion": PUBLICATION_RECEIPT_SCHEMA_VERSION,
+        "completionStage": "website",
+    }:
+        raise ValueError("Release preparation policy is invalid.")
+    stages = preparation.get("stages")
+    if not isinstance(stages, list) or len(stages) != len(PREPARATION_STAGES):
+        raise ValueError("Release preparation must contain the complete ordered stage list.")
+    stage_fields = {
+        "name", "repository", "workflow", "sourceCommit",
+        "infrastructureCommit", "workflowCommit", "workflowRef", "ref",
+        "releaseId", "prerelease",
+        "upstreamStages",
+    }
+    identity_by_repository: dict[str, tuple[str, str, str]] = {}
+    for actual, expected in zip(stages, PREPARATION_STAGES, strict=True):
+        if not isinstance(actual, dict) or set(actual) != stage_fields:
+            raise ValueError("Release preparation stage fields are invalid.")
+        name, repository, workflow, upstream, _ = expected
+        if (
+            actual.get("name") != name
+            or actual.get("repository") != repository
+            or actual.get("workflow") != workflow
+            or actual.get("upstreamStages") != list(upstream)
+        ):
+            raise ValueError(f"Release preparation stage identity is invalid: {name}.")
+        for field in ("sourceCommit", "infrastructureCommit", "workflowCommit"):
+            value = actual.get(field)
+            if not isinstance(value, str) or COMMIT.fullmatch(value) is None:
+                raise ValueError(f"Release preparation {name} {field} is invalid.")
+        workflow_ref = actual.get("workflowRef")
+        if (
+            not isinstance(workflow_ref, str)
+            or WORKFLOW_REF.fullmatch(workflow_ref) is None
+            or ".." in workflow_ref
+            or "//" in workflow_ref
+            or "@{" in workflow_ref
+            or workflow_ref.endswith((".", "/", ".lock"))
+        ):
+            raise ValueError(f"Release preparation {name} workflowRef is invalid.")
+        identity = (
+            str(actual["sourceCommit"]),
+            str(actual["infrastructureCommit"]),
+            str(actual["workflowCommit"]),
+        )
+        previous = identity_by_repository.setdefault(repository, identity)
+        if previous != identity:
+            raise ValueError(
+                "Release preparation stages use different source or infrastructure "
+                f"commits: {repository}."
+            )
+        source_commit = identity[0]
+        expected_ref = expected_stage_ref(name, version)
+        if name == "website":
+            if (
+                actual.get("ref") != source_commit
+                or actual.get("releaseId") is not None
+                or actual.get("prerelease") is not False
+            ):
+                raise ValueError("Website preparation coordinates are invalid.")
+            continue
+        release_id = actual.get("releaseId")
+        if (
+            actual.get("ref") != expected_ref
+            or not isinstance(release_id, int)
+            or isinstance(release_id, bool)
+            or release_id <= 0
+        ):
+            raise ValueError(f"Release preparation release coordinates are invalid: {name}.")
+        expected_prerelease = name.endswith("-preview")
+        if actual.get("prerelease") is not expected_prerelease:
+            raise ValueError(f"Release preparation prerelease policy is invalid: {name}.")
+    return preparation
+
+
+def read_preparation(path: Path) -> tuple[dict[str, object], str]:
+    contents = path.read_bytes()
+    try:
+        value = json.loads(contents)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid release preparation JSON: {path}") from error
+    if not isinstance(value, dict):
+        raise ValueError("Release preparation must be a JSON object.")
+    return validate_preparation(value), hashlib.sha256(contents).hexdigest()
+
+
+def preparation_stage(
+    preparation: dict[str, object], name: str
+) -> dict[str, object]:
+    validate_preparation(preparation)
+    stages = preparation["stages"]
+    assert isinstance(stages, list)
+    matches = [stage for stage in stages if stage.get("name") == name]
+    if len(matches) != 1:
+        raise ValueError(f"Release preparation does not contain one stage named {name}.")
+    return matches[0]
+
+
+def validate_feed_receipt(
+    receipt: dict[str, object],
+    *,
+    repository: str,
+    source_commit: str,
+    release_tag: str,
+    candidate: dict[str, object],
+) -> list[dict[str, object]]:
+    required = {
+        "schemaVersion", "status", "repository", "releaseVersion",
+        "releaseTag", "sourceCommit", "feed", "packages",
+    }
+    if set(receipt) != required or receipt.get("schemaVersion") != 1:
+        raise ValueError("Feed publication receipt fields are invalid.")
+    expected = {
+        "status": "PASS",
+        "repository": repository,
+        "releaseVersion": candidate.get("version"),
+        "releaseTag": release_tag,
+        "sourceCommit": source_commit,
+        "feed": "https://api.nuget.org/v3/index.json",
+    }
+    for field, value in expected.items():
+        if receipt.get(field) != value:
+            raise ValueError(f"Feed publication receipt identity mismatch: {field}.")
+    packages = receipt.get("packages")
+    candidate_packages = candidate.get("packages")
+    if not isinstance(packages, list) or not isinstance(candidate_packages, list):
+        raise ValueError("Feed publication receipt has invalid packages.")
+    expected_packages: dict[str, dict[str, object]] = {}
+    for item in candidate_packages:
+        if not isinstance(item, dict):
+            raise ValueError("Candidate package inventory is invalid.")
+        package_id = item.get("id")
+        if not isinstance(package_id, str) or package_id in expected_packages:
+            raise ValueError("Candidate package inventory is duplicated or invalid.")
+        expected_packages[package_id] = item
+    result: list[dict[str, object]] = []
+    for package in packages:
+        if not isinstance(package, dict) or set(package) != {
+            "id", "version", "fileName", "candidateSha256",
+            "normalizedPayloadSha256",
+        }:
+            raise ValueError("Feed publication receipt package fields are invalid.")
+        package_id = package.get("id")
+        expected_package = expected_packages.get(package_id)
+        if (
+            not isinstance(package_id, str)
+            or not isinstance(expected_package, dict)
+            or package.get("version") != candidate.get("version")
+            or package.get("fileName") != expected_package.get("fileName")
+            or package.get("candidateSha256") != expected_package.get("sha256")
+            or not isinstance(package.get("normalizedPayloadSha256"), str)
+            or SHA256.fullmatch(str(package["normalizedPayloadSha256"])) is None
+        ):
+            raise ValueError("Feed publication receipt package identity is invalid.")
+        result.append(package)
+    if [item["id"] for item in result] != sorted(expected_packages):
+        raise ValueError("Feed publication receipt package set is incomplete or unsorted.")
+    return result
+
+
+def validate_publication_receipt(
+    receipt: dict[str, object],
+    preparation: dict[str, object],
+    preparation_sha256: str,
+    expected_stage: str,
+) -> None:
+    required = {
+        "schemaVersion", "status", "stage", "repository", "version",
+        "releaseTag", "sourceCommit", "preparationSha256", "candidate",
+        "publication", "feed", "packages", "upstreamReceipts",
+    }
+    if set(receipt) != required or receipt.get("schemaVersion") != 1:
+        raise ValueError("Publication receipt fields are invalid.")
+    stage = preparation_stage(preparation, expected_stage)
+    if (
+        receipt.get("status") != "PASS"
+        or receipt.get("stage") != expected_stage
+        or receipt.get("repository") != stage.get("repository")
+        or receipt.get("version") != (
+            f"{preparation['version']}-preview.1"
+            if expected_stage.endswith("-preview")
+            else preparation["version"]
+        )
+        or receipt.get("releaseTag") != stage.get("ref")
+        or receipt.get("sourceCommit") != stage.get("sourceCommit")
+        or receipt.get("preparationSha256") != preparation_sha256
+    ):
+        raise ValueError("Publication receipt does not match its approved stage.")
+    candidate = receipt.get("candidate")
+    publication = receipt.get("publication")
+    if not isinstance(candidate, dict) or set(candidate) != {
+        "trainManifestSha256", "bundleSha256", "packageReceiptSha256",
+        "producingRunId", "producingRunAttempt", "artifactName",
+    }:
+        raise ValueError("Publication receipt candidate coordinates are invalid.")
+    if any(
+        not isinstance(candidate.get(field), str)
+        or SHA256.fullmatch(str(candidate[field])) is None
+        for field in ("trainManifestSha256", "bundleSha256", "packageReceiptSha256")
+    ):
+        raise ValueError("Publication receipt candidate digests are invalid.")
+    if (
+        not isinstance(candidate.get("producingRunId"), str)
+        or not str(candidate["producingRunId"]).isdigit()
+        or not isinstance(candidate.get("producingRunAttempt"), str)
+        or not str(candidate["producingRunAttempt"]).isdigit()
+        or not isinstance(candidate.get("artifactName"), str)
+        or not candidate["artifactName"]
+    ):
+        raise ValueError("Publication receipt candidate producer is invalid.")
+    if not isinstance(publication, dict) or set(publication) != {
+        "workflow", "infrastructureCommit", "runId", "runAttempt",
+    }:
+        raise ValueError("Publication receipt workflow coordinates are invalid.")
+    if (
+        publication.get("workflow") != stage.get("workflow")
+        or publication.get("infrastructureCommit") != stage.get("infrastructureCommit")
+        or not isinstance(publication.get("runId"), str)
+        or not str(publication["runId"]).isdigit()
+        or not isinstance(publication.get("runAttempt"), str)
+        or not str(publication["runAttempt"]).isdigit()
+    ):
+        raise ValueError("Publication receipt workflow identity is invalid.")
+    if receipt.get("feed") != "https://api.nuget.org/v3/index.json":
+        raise ValueError("Publication receipt feed identity is invalid.")
+    packages = receipt.get("packages")
+    if not isinstance(packages, list) or not packages:
+        raise ValueError("Publication receipt has no packages.")
+    package_ids: list[str] = []
+    for package in packages:
+        if not isinstance(package, dict) or set(package) != {
+            "id", "version", "fileName", "candidateSha256",
+            "normalizedPayloadSha256",
+        }:
+            raise ValueError("Publication receipt package fields are invalid.")
+        package_id = package.get("id")
+        if (
+            not isinstance(package_id, str)
+            or not package_id
+            or package.get("version") != receipt.get("version")
+            or not isinstance(package.get("fileName"), str)
+            or not package["fileName"]
+            or not isinstance(package.get("candidateSha256"), str)
+            or SHA256.fullmatch(str(package["candidateSha256"])) is None
+            or not isinstance(package.get("normalizedPayloadSha256"), str)
+            or SHA256.fullmatch(str(package["normalizedPayloadSha256"])) is None
+        ):
+            raise ValueError("Publication receipt package identity is invalid.")
+        package_ids.append(package_id)
+    if package_ids != sorted(set(package_ids)):
+        raise ValueError("Publication receipt packages are duplicated or unsorted.")
+    upstream = receipt.get("upstreamReceipts")
+    expected_upstream = stage.get("upstreamStages")
+    if not isinstance(upstream, list) or not isinstance(expected_upstream, list):
+        raise ValueError("Publication receipt upstream chain is invalid.")
+    if [item.get("stage") for item in upstream if isinstance(item, dict)] != expected_upstream:
+        raise ValueError("Publication receipt upstream stages do not match preparation.")
+    for item, upstream_name in zip(upstream, expected_upstream, strict=True):
+        if not isinstance(item, dict) or set(item) != {
+            "stage", "repository", "version", "releaseTag", "sha256",
+        }:
+            raise ValueError("Publication receipt upstream coordinates are invalid.")
+        upstream_stage = preparation_stage(preparation, upstream_name)
+        upstream_version = (
+            f"{preparation['version']}-preview.1"
+            if upstream_name.endswith("-preview")
+            else preparation["version"]
+        )
+        if (
+            item.get("repository") != upstream_stage.get("repository")
+            or item.get("version") != upstream_version
+            or item.get("releaseTag") != upstream_stage.get("ref")
+            or not isinstance(item.get("sha256"), str)
+            or SHA256.fullmatch(str(item["sha256"])) is None
+        ):
+            raise ValueError("Publication receipt upstream coordinates are invalid.")
+
+
+def validate_publication_approval(
+    *,
+    preparation_path: Path,
+    stage_name: str,
+    train_path: Path,
+    upstream_receipt_paths: list[Path],
+    upstream_receipt_sha256: list[str],
+) -> tuple[
+    dict[str, object], str, dict[str, object], dict[str, object],
+    dict[str, object], list[dict[str, object]],
+]:
+    if stage_name not in {item[0] for item in PREPARATION_STAGES[:6]}:
+        raise ValueError("Only package stages produce NuGet publication receipts.")
+    preparation, preparation_digest = read_preparation(preparation_path)
+    stage = preparation_stage(preparation, stage_name)
+    train = read_json(train_path)
+    validate_train_structure(train)
+    if train.get("schemaVersion") != 2:
+        raise ValueError("Coordinated publication requires a schema-version-2 train.")
+    if (
+        train.get("repository") != stage.get("repository")
+        or train.get("sourceCommit") != stage.get("sourceCommit")
+        or train.get("preparationSha256") != preparation_digest
+        or train.get("infrastructureCommit") != stage.get("infrastructureCommit")
+    ):
+        raise ValueError("Candidate train does not match the approved preparation stage.")
+    repository_stages = [
+        item for item in PREPARATION_STAGES[:6]
+        if item[1] == stage.get("repository")
+    ]
+    if len(repository_stages) != 2:
+        raise ValueError("Approved package repository does not have two release channels.")
+    preview_stage = preparation_stage(preparation, repository_stages[0][0])
+    stable_stage = preparation_stage(preparation, repository_stages[1][0])
+    preview_candidate = train.get("preview")
+    stable_candidate = train.get("stable")
+    if (
+        train.get("producingReleaseTag") != preview_stage.get("ref")
+        or not isinstance(preview_candidate, dict)
+        or preview_candidate.get("releaseTag") != preview_stage.get("ref")
+        or not isinstance(stable_candidate, dict)
+        or stable_candidate.get("releaseTag") != stable_stage.get("ref")
+    ):
+        raise ValueError("Candidate train tags do not match the approved preparation.")
+    channel = "preview" if stage_name.endswith("-preview") else "stable"
+    candidate = train.get(channel)
+    if not isinstance(candidate, dict) or candidate.get("releaseTag") != stage.get("ref"):
+        raise ValueError("Candidate train does not target the approved release.")
+    expected_upstream = stage.get("upstreamStages")
+    assert isinstance(expected_upstream, list)
+    if (
+        len(upstream_receipt_paths) != len(expected_upstream)
+        or len(upstream_receipt_sha256) != len(expected_upstream)
+    ):
+        raise ValueError("Publication receipt upstream count does not match preparation.")
+    current_train_digest = sha256(train_path)
+    current_producer = {
+        "trainManifestSha256": current_train_digest,
+        "producingRunId": train["workflowRunId"],
+        "producingRunAttempt": train["workflowRunAttempt"],
+        "artifactName": train["artifactName"],
+    }
+    upstream: list[dict[str, object]] = []
+    for expected_name, path, expected_digest in zip(
+        expected_upstream, upstream_receipt_paths, upstream_receipt_sha256,
+        strict=True,
+    ):
+        if SHA256.fullmatch(expected_digest) is None or sha256(path) != expected_digest:
+            raise ValueError("Publication receipt upstream digest does not match dispatch.")
+        value = read_json(path)
+        validate_publication_receipt(
+            value, preparation, preparation_digest, expected_name
+        )
+        if stage_name.endswith("-stable") and expected_name.endswith("-preview"):
+            upstream_candidate = value.get("candidate")
+            if not isinstance(upstream_candidate, dict) or any(
+                upstream_candidate.get(field) != expected_value
+                for field, expected_value in current_producer.items()
+            ):
+                raise ValueError(
+                    "Stable publication does not match the retained preview train."
+                )
+        upstream.append({
+            "stage": expected_name,
+            "repository": value["repository"],
+            "version": value["version"],
+            "releaseTag": value["releaseTag"],
+            "sha256": sha256(path),
+        })
+    return preparation, preparation_digest, stage, train, candidate, upstream
+
+
+def create_publication_receipt(
+    *,
+    preparation_path: Path,
+    stage_name: str,
+    train_path: Path,
+    feed_receipt_path: Path,
+    publication_run_id: str,
+    publication_run_attempt: str,
+    upstream_receipt_paths: list[Path],
+    upstream_receipt_sha256: list[str],
+) -> dict[str, object]:
+    (
+        preparation,
+        preparation_digest,
+        stage,
+        train,
+        candidate,
+        upstream,
+    ) = validate_publication_approval(
+        preparation_path=preparation_path,
+        stage_name=stage_name,
+        train_path=train_path,
+        upstream_receipt_paths=upstream_receipt_paths,
+        upstream_receipt_sha256=upstream_receipt_sha256,
+    )
+    current_train_digest = sha256(train_path)
+    feed_receipt = read_json(feed_receipt_path)
+    packages = validate_feed_receipt(
+        feed_receipt,
+        repository=str(stage["repository"]),
+        source_commit=str(stage["sourceCommit"]),
+        release_tag=str(stage["ref"]),
+        candidate=candidate,
+    )
+    if not publication_run_id.isdigit() or not publication_run_attempt.isdigit():
+        raise ValueError("Publication workflow run coordinates are invalid.")
+    result = {
+        "schemaVersion": PUBLICATION_RECEIPT_SCHEMA_VERSION,
+        "status": "PASS",
+        "stage": stage_name,
+        "repository": stage["repository"],
+        "version": candidate["version"],
+        "releaseTag": stage["ref"],
+        "sourceCommit": stage["sourceCommit"],
+        "preparationSha256": preparation_digest,
+        "candidate": {
+            "trainManifestSha256": current_train_digest,
+            "bundleSha256": candidate["bundleSha256"],
+            "packageReceiptSha256": candidate["receiptSha256"],
+            "producingRunId": train["workflowRunId"],
+            "producingRunAttempt": train["workflowRunAttempt"],
+            "artifactName": train["artifactName"],
+        },
+        "publication": {
+            "workflow": stage["workflow"],
+            "infrastructureCommit": stage["infrastructureCommit"],
+            "runId": publication_run_id,
+            "runAttempt": publication_run_attempt,
+        },
+        "feed": feed_receipt["feed"],
+        "packages": packages,
+        "upstreamReceipts": upstream,
+    }
+    validate_publication_receipt(
+        result, preparation, preparation_digest, stage_name
+    )
+    return result
 
 
 def package_summary(
@@ -227,6 +737,9 @@ def create_train_manifest(
     preview_bundle: Path,
     stable_bundle: Path,
     toolchain: Path,
+    preparation_sha256: str | None = None,
+    infrastructure_commit: str | None = None,
+    run_attempt: str | None = None,
 ) -> dict[str, object]:
     if COMMIT.fullmatch(source_commit) is None:
         raise ValueError("Release-train source commit is invalid.")
@@ -240,8 +753,13 @@ def create_train_manifest(
     preview["releaseTag"] = preview_tag
     stable["releaseTag"] = stable_tag
     toolchain_value = read_json(toolchain)
-    return {
-        "schemaVersion": SCHEMA_VERSION,
+    optional = (preparation_sha256, infrastructure_commit, run_attempt)
+    if any(value is not None for value in optional) and any(
+        value is None for value in optional
+    ):
+        raise ValueError("Coordinated release-train identity must be supplied together.")
+    result: dict[str, object] = {
+        "schemaVersion": 2 if preparation_sha256 is not None else SCHEMA_VERSION,
         "repository": repository,
         "sourceCommit": source_commit,
         "producingReleaseTag": producing_tag,
@@ -252,6 +770,149 @@ def create_train_manifest(
         "preview": preview,
         "stable": stable,
     }
+    if preparation_sha256 is not None:
+        if SHA256.fullmatch(preparation_sha256) is None:
+            raise ValueError("Release-train preparation digest is invalid.")
+        if infrastructure_commit is None or COMMIT.fullmatch(infrastructure_commit) is None:
+            raise ValueError("Release-train infrastructure commit is invalid.")
+        if run_attempt is None or not run_attempt.isdigit() or int(run_attempt) < 1:
+            raise ValueError("Release-train producing run attempt is invalid.")
+        result.update({
+            "preparationSha256": preparation_sha256,
+            "infrastructureCommit": infrastructure_commit,
+            "workflowRunAttempt": run_attempt,
+        })
+    return result
+
+
+def train_required_fields(schema_version: object) -> set[str]:
+    fields = {
+        "schemaVersion", "repository", "sourceCommit", "producingReleaseTag",
+        "workflowRunId", "artifactName", "toolchainSha256",
+        "nativeToolchain", "preview", "stable",
+    }
+    if schema_version == 2:
+        fields.update({
+            "preparationSha256", "infrastructureCommit", "workflowRunAttempt",
+        })
+    elif schema_version != SCHEMA_VERSION:
+        raise ValueError("Release-train manifest schema version is unsupported.")
+    return fields
+
+
+def validate_train_structure(train: dict[str, object]) -> None:
+    if set(train) != train_required_fields(train.get("schemaVersion")):
+        raise ValueError("Release-train manifest fields do not match its schema version.")
+    repository = train.get("repository")
+    source_commit = train.get("sourceCommit")
+    producing_tag = train.get("producingReleaseTag")
+    workflow_run_id = train.get("workflowRunId")
+    artifact_name = train.get("artifactName")
+    toolchain_digest = train.get("toolchainSha256")
+    if (
+        not isinstance(repository, str)
+        or not repository
+        or not isinstance(source_commit, str)
+        or COMMIT.fullmatch(source_commit) is None
+        or not isinstance(producing_tag, str)
+        or not producing_tag
+        or not isinstance(workflow_run_id, str)
+        or not workflow_run_id.isdigit()
+        or int(workflow_run_id) < 1
+        or not isinstance(artifact_name, str)
+        or not artifact_name
+        or not isinstance(toolchain_digest, str)
+        or SHA256.fullmatch(toolchain_digest) is None
+        or not isinstance(train.get("nativeToolchain"), dict)
+    ):
+        raise ValueError("Release-train root identity is invalid.")
+
+    candidate_fields = {
+        "version", "sourceCommit", "producingReleaseTag", "bundleFile",
+        "bundleSize", "bundleSha256", "manifestSha256", "receiptSha256",
+        "packages", "releaseTag",
+    }
+    versions: dict[str, str] = {}
+    for channel in ("preview", "stable"):
+        candidate = train.get(channel)
+        if not isinstance(candidate, dict) or set(candidate) != candidate_fields:
+            raise ValueError(f"Release-train {channel} candidate fields are invalid.")
+        version = candidate.get("version")
+        bundle_file = candidate.get("bundleFile")
+        bundle_size = candidate.get("bundleSize")
+        if (
+            not isinstance(version, str)
+            or not version
+            or candidate.get("sourceCommit") != source_commit
+            or candidate.get("producingReleaseTag") != producing_tag
+            or not isinstance(candidate.get("releaseTag"), str)
+            or not candidate["releaseTag"]
+            or not isinstance(bundle_file, str)
+            or not bundle_file
+            or Path(bundle_file).name != bundle_file
+            or not isinstance(bundle_size, int)
+            or isinstance(bundle_size, bool)
+            or bundle_size < 0
+            or any(
+                not isinstance(candidate.get(field), str)
+                or SHA256.fullmatch(str(candidate[field])) is None
+                for field in ("bundleSha256", "manifestSha256", "receiptSha256")
+            )
+        ):
+            raise ValueError(f"Release-train {channel} candidate identity is invalid.")
+        packages = candidate.get("packages")
+        if not isinstance(packages, list) or not packages:
+            raise ValueError(f"Release-train {channel} candidate has no packages.")
+        package_ids: list[str] = []
+        for package in packages:
+            if not isinstance(package, dict) or set(package) != {
+                "id", "version", "fileName", "size", "sha256",
+            }:
+                raise ValueError(
+                    f"Release-train {channel} candidate package fields are invalid."
+                )
+            package_id = package.get("id")
+            file_name = package.get("fileName")
+            size = package.get("size")
+            digest = package.get("sha256")
+            if (
+                not isinstance(package_id, str)
+                or not package_id
+                or package.get("version") != version
+                or not isinstance(file_name, str)
+                or not file_name
+                or Path(file_name).name != file_name
+                or not isinstance(size, int)
+                or isinstance(size, bool)
+                or size < 0
+                or not isinstance(digest, str)
+                or SHA256.fullmatch(digest) is None
+            ):
+                raise ValueError(
+                    f"Release-train {channel} candidate package identity is invalid."
+                )
+            package_ids.append(package_id)
+        if package_ids != sorted(set(package_ids)):
+            raise ValueError(
+                f"Release-train {channel} candidate packages are duplicated or unsorted."
+            )
+        versions[channel] = version
+    if (
+        versions["preview"] != f"{versions['stable']}-preview.1"
+        or VERSION.fullmatch(versions["stable"]) is None
+    ):
+        raise ValueError("Release-train preview and stable versions are inconsistent.")
+    if train.get("schemaVersion") != 2:
+        return
+    preparation_digest = train.get("preparationSha256")
+    infrastructure_commit = train.get("infrastructureCommit")
+    run_attempt = train.get("workflowRunAttempt")
+    if not isinstance(preparation_digest, str) or SHA256.fullmatch(preparation_digest) is None:
+        raise ValueError("Release-train preparation digest is invalid.")
+    if not isinstance(infrastructure_commit, str) or COMMIT.fullmatch(infrastructure_commit) is None:
+        raise ValueError("Release-train infrastructure commit is invalid.")
+    if not isinstance(run_attempt, str) or not run_attempt.isdigit() or int(run_attempt) < 1:
+        raise ValueError("Release-train producing run attempt is invalid.")
 
 
 def verify_train(
@@ -262,13 +923,7 @@ def verify_train(
     source_commit: str,
     release_tag: str,
 ) -> dict[str, object]:
-    required = {
-        "schemaVersion", "repository", "sourceCommit", "producingReleaseTag",
-        "workflowRunId", "artifactName", "toolchainSha256",
-        "nativeToolchain", "preview", "stable",
-    }
-    if set(train) != required or train.get("schemaVersion") != SCHEMA_VERSION:
-        raise ValueError("Release-train manifest does not match schema version 1.")
+    validate_train_structure(train)
     if train.get("repository") != repository or train.get("sourceCommit") != source_commit:
         raise ValueError("Release train does not match the repository source release.")
     if channel not in {"preview", "stable"}:
@@ -295,13 +950,7 @@ def verify_train_identity(
     stable_tag: str,
     expected_artifact_name: str,
 ) -> tuple[str, str]:
-    required = {
-        "schemaVersion", "repository", "sourceCommit", "producingReleaseTag",
-        "workflowRunId", "artifactName", "toolchainSha256",
-        "nativeToolchain", "preview", "stable",
-    }
-    if set(train) != required or train.get("schemaVersion") != SCHEMA_VERSION:
-        raise ValueError("Release-train manifest does not match schema version 1.")
+    validate_train_structure(train)
     expected = {
         "repository": repository,
         "sourceCommit": source_commit,
@@ -358,6 +1007,9 @@ def main() -> int:
     create.add_argument("--preview-bundle", type=Path, required=True)
     create.add_argument("--stable-bundle", type=Path, required=True)
     create.add_argument("--toolchain", type=Path, required=True)
+    create.add_argument("--preparation-sha256")
+    create.add_argument("--infrastructure-commit")
+    create.add_argument("--run-attempt")
     create.add_argument("--output", type=Path, required=True)
     verify = subparsers.add_parser("verify")
     verify.add_argument("--train", type=Path, required=True)
@@ -379,6 +1031,34 @@ def main() -> int:
     state.add_argument("--resolved-mode", required=True)
     state.add_argument("--retained-manifest-count", required=True, type=int)
     state.add_argument("--github-output", required=True, type=Path)
+    preparation = subparsers.add_parser("preparation")
+    preparation.add_argument("--manifest", type=Path, required=True)
+    preparation.add_argument("--stage")
+    preparation.add_argument("--github-output", type=Path)
+    publication = subparsers.add_parser("publication")
+    publication.add_argument("--preparation", type=Path, required=True)
+    publication.add_argument("--stage", required=True)
+    publication.add_argument("--train", type=Path, required=True)
+    publication.add_argument("--feed-receipt", type=Path, required=True)
+    publication.add_argument("--publication-run-id", required=True)
+    publication.add_argument("--publication-run-attempt", required=True)
+    publication.add_argument(
+        "--upstream-receipt", type=Path, action="append", default=[]
+    )
+    publication.add_argument(
+        "--upstream-receipt-sha256", action="append", default=[]
+    )
+    publication.add_argument("--output", type=Path, required=True)
+    approval = subparsers.add_parser("approval")
+    approval.add_argument("--preparation", type=Path, required=True)
+    approval.add_argument("--stage", required=True)
+    approval.add_argument("--train", type=Path, required=True)
+    approval.add_argument(
+        "--upstream-receipt", type=Path, action="append", default=[]
+    )
+    approval.add_argument(
+        "--upstream-receipt-sha256", action="append", default=[]
+    )
     extract = subparsers.add_parser("extract")
     extract.add_argument("--bundle", type=Path, required=True)
     extract.add_argument("--output", type=Path, required=True)
@@ -402,6 +1082,9 @@ def main() -> int:
             preview_bundle=arguments.preview_bundle,
             stable_bundle=arguments.stable_bundle,
             toolchain=arguments.toolchain,
+            preparation_sha256=arguments.preparation_sha256,
+            infrastructure_commit=arguments.infrastructure_commit,
+            run_attempt=arguments.run_attempt,
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(json.dumps(train, indent=2) + "\n", encoding="utf-8")
@@ -416,6 +1099,60 @@ def main() -> int:
         )
         with arguments.github_output.open("a", encoding="utf-8") as output:
             output.write(f"mode={mode}\n")
+        return 0
+    if arguments.command == "preparation":
+        preparation_value, digest = read_preparation(arguments.manifest)
+        stage_value = None
+        if arguments.stage is not None:
+            stage_value = preparation_stage(preparation_value, arguments.stage)
+        if arguments.github_output is not None:
+            with arguments.github_output.open("a", encoding="utf-8") as stream:
+                stream.write(f"preparation_sha256={digest}\n")
+                stream.write(f"version={preparation_value['version']}\n")
+                if stage_value is not None:
+                    for field in (
+                        "repository", "workflow", "sourceCommit",
+                        "infrastructureCommit", "workflowCommit", "workflowRef",
+                        "ref", "releaseId",
+                    ):
+                        output_name = re.sub(r"(?<!^)(?=[A-Z])", "_", field).lower()
+                        stream.write(f"{output_name}={stage_value[field]}\n")
+        print(
+            f"Verified release preparation {digest} "
+            f"for version {preparation_value['version']}."
+        )
+        return 0
+    if arguments.command == "publication":
+        receipt = create_publication_receipt(
+            preparation_path=arguments.preparation,
+            stage_name=arguments.stage,
+            train_path=arguments.train,
+            feed_receipt_path=arguments.feed_receipt,
+            publication_run_id=arguments.publication_run_id,
+            publication_run_attempt=arguments.publication_run_attempt,
+            upstream_receipt_paths=arguments.upstream_receipt,
+            upstream_receipt_sha256=arguments.upstream_receipt_sha256,
+        )
+        if arguments.output.exists():
+            raise ValueError(f"Publication receipt already exists: {arguments.output}")
+        arguments.output.parent.mkdir(parents=True, exist_ok=True)
+        arguments.output.write_text(
+            json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
+        )
+        print(
+            f"Recorded publication receipt for {receipt['stage']} "
+            f"at {sha256(arguments.output)}."
+        )
+        return 0
+    if arguments.command == "approval":
+        validate_publication_approval(
+            preparation_path=arguments.preparation,
+            stage_name=arguments.stage,
+            train_path=arguments.train,
+            upstream_receipt_paths=arguments.upstream_receipt,
+            upstream_receipt_sha256=arguments.upstream_receipt_sha256,
+        )
+        print(f"Verified coordinated publication approval for {arguments.stage}.")
         return 0
     train = read_json(arguments.train)
     if arguments.command == "identity":
