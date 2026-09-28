@@ -31,9 +31,86 @@ def load(name: str, file: str):
 
 stage = load("netwasm_stage_host_tools", "stage-host-tools.py")
 verify = load("netwasm_verify_host_tools", "verify-host-tools-package.py")
+build_host_tools = load("netwasm_build_host_tools", "build-host-tools-package.py")
 
 
 class HostToolsPackageTests(unittest.TestCase):
+    def test_staged_manifest_version_can_be_repacked_without_restaging_payload(self):
+        stage = Path(self.temporary.name) / "staged"
+        manifest = stage / "tools/host-tools-manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({
+            "packageVersion": "0.5.0-preview.1",
+            "files": [{"path": "tools/bin/node", "sha256": "same"}],
+        }))
+
+        build_host_tools.set_staged_version(stage, "0.5.0")
+
+        updated = json.loads(manifest.read_text())
+        self.assertEqual("0.5.0", updated["packageVersion"])
+        self.assertEqual(
+            [{"path": "tools/bin/node", "sha256": "same"}], updated["files"]
+        )
+
+    def test_release_train_stages_and_probes_native_payload_once(self):
+        output = Path(self.temporary.name) / "output"
+        cache = Path(self.temporary.name) / "cache"
+        events = []
+
+        def run(command, **_kwargs):
+            command = [str(value) for value in command]
+            if command[1].endswith("stage-host-tools.py"):
+                events.append("stage")
+                stage_root = Path(command[command.index("--output") + 1])
+                version = command[command.index("--version") + 1]
+                (stage_root / "tools/bin").mkdir(parents=True)
+                (stage_root / "tools/bin/node.exe").write_bytes(b"node")
+                (stage_root / "tools/host-tools-manifest.json").write_text(
+                    json.dumps({
+                        "hostRid": "win-x64",
+                        "packageVersion": version,
+                        "files": [{"path": "tools/bin/node.exe"}],
+                    })
+                )
+            elif command[0] == "dotnet":
+                version = next(
+                    value.removeprefix("-p:PackageVersion=")
+                    for value in command if value.startswith("-p:PackageVersion=")
+                )
+                stage_root = Path(next(
+                    value.removeprefix("-p:NetWasmHostToolsStagingRoot=")
+                    for value in command
+                    if value.startswith("-p:NetWasmHostToolsStagingRoot=")
+                ))
+                destination = output / f"NetWasm.HostTools.win-x64.{version}.nupkg"
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(destination, "w") as archive:
+                    archive.write(
+                        stage_root / "tools/host-tools-manifest.json",
+                        "tools/host-tools-manifest.json",
+                    )
+                    archive.writestr("tools/bin/node.exe", b"node")
+                events.append(("pack", version))
+            else:
+                events.append(("verify", command[command.index("--version") + 1]))
+            return None
+
+        with patch.object(
+            build_host_tools.subprocess,
+            "check_output",
+            side_effect=("a" * 40 + "\n", "1\n"),
+        ), patch.object(build_host_tools.subprocess, "run", side_effect=run):
+            results = build_host_tools.build_many(
+                "win-x64", ["0.5.0-preview.1", "0.5.0"], output, cache
+            )
+
+        self.assertEqual(1, events.count("stage"))
+        self.assertEqual(
+            [("pack", "0.5.0-preview.1"), ("pack", "0.5.0")],
+            [event for event in events if isinstance(event, tuple) and event[0] == "pack"],
+        )
+        self.assertEqual(2, len(results))
+
     RID = "osx-arm64"
     VERSION = "0.1.0"
     PACKAGE_ID = "NetWasm.HostTools.osx-arm64"
