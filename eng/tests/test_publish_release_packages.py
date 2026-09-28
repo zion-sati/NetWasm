@@ -257,7 +257,7 @@ class PublishReleasePackagesTests(unittest.TestCase):
         def push(command: list[str], *, check: bool, timeout: float) -> object:
             self.assertFalse(check)
             self.assertEqual("dotnet", command[0])
-            self.assertEqual("secret", command[command.index("--api-key") + 1])
+            self.assertNotIn("--api-key", command)
             package_id = Path(command[3]).name.removesuffix(".0.3.0-preview.1.nupkg")
             available.add(package_id)
             events.append(("push", package_id))

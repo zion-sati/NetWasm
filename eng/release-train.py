@@ -326,6 +326,19 @@ def verify_train_identity(
     return run_id, artifact_name
 
 
+
+def effective_mode(resolved_mode: str, retained_manifest_count: int) -> str:
+    if resolved_mode not in {"build", "promote"}:
+        raise ValueError(f"Unsupported resolved release mode: {resolved_mode}")
+    if retained_manifest_count not in {0, 1}:
+        raise ValueError("Preview release has an ambiguous retained train manifest.")
+    if resolved_mode == "promote":
+        if retained_manifest_count != 1:
+            raise ValueError("Stable promotion requires the retained preview train manifest.")
+        return "promote"
+    return "resume" if retained_manifest_count == 1 else "build"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -362,6 +375,10 @@ def main() -> int:
     identity.add_argument("--stable-tag", required=True)
     identity.add_argument("--artifact-name", required=True)
     identity.add_argument("--github-output", type=Path)
+    state = subparsers.add_parser("state")
+    state.add_argument("--resolved-mode", required=True)
+    state.add_argument("--retained-manifest-count", required=True, type=int)
+    state.add_argument("--github-output", required=True, type=Path)
     extract = subparsers.add_parser("extract")
     extract.add_argument("--bundle", type=Path, required=True)
     extract.add_argument("--output", type=Path, required=True)
@@ -392,6 +409,13 @@ def main() -> int:
     if arguments.command == "extract":
         summary = extract_bundle(arguments.bundle, arguments.output)
         print(f"Extracted release train {summary['version']}.")
+        return 0
+    if arguments.command == "state":
+        mode = effective_mode(
+            arguments.resolved_mode, arguments.retained_manifest_count
+        )
+        with arguments.github_output.open("a", encoding="utf-8") as output:
+            output.write(f"mode={mode}\n")
         return 0
     train = read_json(arguments.train)
     if arguments.command == "identity":
