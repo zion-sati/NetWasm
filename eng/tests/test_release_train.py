@@ -1022,6 +1022,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "  host-tools:\n    needs: build\n    if: needs.build.outputs.mode == 'build'",
             self.document,
         )
+        self.assertIn(
+            "  publish:\n    needs: [build, aggregate]\n    if: >-\n"
+            "      ${{ always() && needs.build.result == 'success' &&\n"
+            "          needs.aggregate.result == 'success' }}",
+            self.document,
+        )
 
     def test_stable_candidate_is_bound_to_preview_release_and_producing_run(self) -> None:
         coordinates = workflow_step(

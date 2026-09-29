@@ -574,6 +574,9 @@ jobs:
 
   publish:
     needs: [build, aggregate]
+    if: >-
+      ${{ always() && needs.build.result == 'success' &&
+          needs.aggregate.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     environment: nuget-release
