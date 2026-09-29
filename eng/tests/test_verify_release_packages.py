@@ -186,6 +186,54 @@ class VerifyReleasePackagesTests(unittest.TestCase):
             self.manifest["sourceCommit"],
         )
 
+    def test_accepts_transparent_merge_with_signed_second_parent(self) -> None:
+        source = self.root / "source"
+        allowed_signers = self.root / "allowed-signers"
+        calls = {
+            ("rev-list", "--parents", "-n", "1", "merge"): "merge base signed-head",
+            ("rev-parse", "merge^{tree}"): "release-tree",
+            ("rev-parse", "signed-head^{tree}"): "release-tree",
+        }
+        direct_error = subprocess.CalledProcessError(1, ["git", "verify-commit"])
+        with mock.patch.object(
+            MODULE,
+            "verify_signature",
+            side_effect=[direct_error, None],
+        ) as verify_signature, mock.patch.object(
+            MODULE,
+            "git",
+            side_effect=lambda _root, *arguments: calls[arguments],
+        ):
+            MODULE.verify_commit_signature(source, allowed_signers, "merge")
+
+        self.assertEqual(
+            [
+                mock.call(source, allowed_signers, "verify-commit", "merge"),
+                mock.call(source, allowed_signers, "verify-commit", "signed-head"),
+            ],
+            verify_signature.call_args_list,
+        )
+
+    def test_rejects_merge_when_signed_parent_changes_the_tree(self) -> None:
+        source = self.root / "source"
+        allowed_signers = self.root / "allowed-signers"
+        calls = {
+            ("rev-list", "--parents", "-n", "1", "merge"): "merge base signed-head",
+            ("rev-parse", "merge^{tree}"): "merge-tree",
+            ("rev-parse", "signed-head^{tree}"): "signed-tree",
+        }
+        direct_error = subprocess.CalledProcessError(1, ["git", "verify-commit"])
+        with mock.patch.object(
+            MODULE,
+            "verify_signature",
+            side_effect=direct_error,
+        ), mock.patch.object(
+            MODULE,
+            "git",
+            side_effect=lambda _root, *arguments: calls[arguments],
+        ), self.assertRaises(subprocess.CalledProcessError):
+            MODULE.verify_commit_signature(source, allowed_signers, "merge")
+
 
 if __name__ == "__main__":
     unittest.main()
