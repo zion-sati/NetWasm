@@ -23,11 +23,7 @@ from xml.etree import ElementTree
 
 SOURCE_INDEX = "https://api.nuget.org/v3/index.json"
 PUSH_SOURCE = SOURCE_INDEX
-FEED_WAIT_SECONDS = 30 * 60
-POLL_SECONDS = 15
-STAGE_DEADLINE_SECONDS = 45 * 60
-PUSH_TIMEOUT_SECONDS = 10 * 60
-PUSH_ATTEMPTS = 3
+PUSH_TIMEOUT_SECONDS = 2 * 60
 MAX_PARALLEL_PUSHES = 4
 FINAL_IDS = ("NetWasm.Sdk", "NetWasm.Templates")
 STAGE_NAMES = ("prerequisites", "final")
@@ -204,80 +200,36 @@ def verify_feed_payload(
                 )
 
 
-def wait_for_feed(
-    package_ids: tuple[str, ...],
-    version: str,
-    base_address: str,
-    *,
-    timeout_seconds: int = FEED_WAIT_SECONDS,
-    clock: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-    probe: Callable[[str, str, str], bool] = available_on_feed,
-) -> None:
-    deadline = clock() + timeout_seconds
-    pending = set(package_ids)
-    while pending:
-        for package_id in sorted(pending):
-            if probe(package_id, version, base_address):
-                pending.remove(package_id)
-        if not pending:
-            return
-        if clock() >= deadline:
-            raise TimeoutError(
-                "NuGet.org did not make these packages available before the "
-                f"deadline: {', '.join(sorted(pending))}"
-            )
-        print(f"Waiting for NuGet.org: {', '.join(sorted(pending))}", flush=True)
-        sleep(min(POLL_SECONDS, max(0, deadline - clock())))
-
-
 def push_or_reconcile(
     package_id: str,
     version: str,
     path: Path,
     base_address: str,
-    deadline: float,
-    *,
-    clock: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
 ) -> bool:
     if available_on_feed(package_id, version, base_address):
         verify_feed_payload(package_id, version, path, base_address)
         print(f"Reusing identical {package_id} {version} on NuGet.org.", flush=True)
         return True
-    ambiguous = False
-    for attempt in range(1, PUSH_ATTEMPTS + 1):
-        remaining = deadline - clock()
-        if remaining <= 0:
-            break
-        print(f"Publishing {package_id} {version} (attempt {attempt}).", flush=True)
-        try:
-            result = subprocess.run(
-                [
-                    "dotnet", "nuget", "push", str(path),
-                    "--source", PUSH_SOURCE,
-                    "--skip-duplicate",
-                ],
-                timeout=min(PUSH_TIMEOUT_SECONDS, remaining),
-                check=False,
-            )
-            if result.returncode == 0:
-                return False
-        except subprocess.TimeoutExpired:
-            ambiguous = True
-            print(f"Push timed out for {package_id}; reconciling feed state.", flush=True)
-        if available_on_feed(package_id, version, base_address):
-            verify_feed_payload(package_id, version, path, base_address)
-            return True
-        if attempt < PUSH_ATTEMPTS:
-            sleep(min(POLL_SECONDS, max(0, deadline - clock())))
-    if ambiguous and deadline - clock() > 0:
-        print(
-            f"Deferring ambiguous {package_id} upload to the shared feed barrier.",
-            flush=True,
+    print(f"Publishing {package_id} {version}.", flush=True)
+    try:
+        result = subprocess.run(
+            [
+                "dotnet", "nuget", "push", str(path),
+                "--source", PUSH_SOURCE,
+                "--skip-duplicate",
+            ],
+            timeout=PUSH_TIMEOUT_SECONDS,
+            check=False,
         )
-        return False
-    raise RuntimeError(f"Publishing failed for {package_id} {version}.")
+    except subprocess.TimeoutExpired as error:
+        raise TimeoutError(
+            f"Publishing timed out for {package_id} {version}. Retry the release; "
+            "its preflight will reconcile any package accepted by NuGet.org."
+        ) from error
+    if result.returncode != 0:
+        raise RuntimeError(f"Publishing failed for {package_id} {version}.")
+    print(f"Submitted {package_id} {version} to NuGet.org.", flush=True)
+    return False
 
 
 def preflight_release(
@@ -317,7 +269,6 @@ def publish_stage(
     assert isinstance(version, str)
     base_address = package_base_address()
     started = time.monotonic()
-    deadline = started + STAGE_DEADLINE_SECONDS
     count = len(stage)
     print(f"Publishing {stage_name} ({count} package{'s' if count != 1 else ''}).", flush=True)
     verified: set[str] = set()
@@ -330,27 +281,14 @@ def publish_stage(
                 version,
                 path,
                 base_address,
-                deadline,
             ): package_id
             for package_id, path in stage
         }
         for future in as_completed(futures):
             if future.result():
                 verified.add(futures[future])
-    push_finished = time.monotonic()
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        raise TimeoutError(f"Publishing deadline expired for the {stage_name} stage.")
-    wait_for_feed(
-        tuple(package_id for package_id, _ in stage), version, base_address,
-        timeout_seconds=remaining,
-    )
-    indexing_finished = time.monotonic()
-    for package_id, path in stage:
-        if package_id not in verified:
-            verify_feed_payload(package_id, version, path, base_address)
     finished = time.monotonic()
-    print(f"NuGet.org serves the verified {stage_name} packages.", flush=True)
+    print(f"Submitted the {stage_name} packages to NuGet.org.", flush=True)
     return {
         "schemaVersion": 1,
         "operation": "publish",
@@ -358,9 +296,6 @@ def publish_stage(
         "version": version,
         "packageCount": count,
         "reusedCount": len(verified),
-        "pushSeconds": round(push_finished - started, 3),
-        "indexingSeconds": round(indexing_finished - push_finished, 3),
-        "verificationSeconds": round(finished - indexing_finished, 3),
         "totalSeconds": round(finished - started, 3),
     }
 

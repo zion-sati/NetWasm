@@ -578,7 +578,7 @@ jobs:
         with:
           user: ${{ vars.NUGET_USER }}
 
-      - name: Publish and verify prerequisites
+      - name: Publish prerequisites
         shell: bash
         env:
           NUGET_API_KEY: ${{ steps.login_prerequisites.outputs.NUGET_API_KEY }}
@@ -596,7 +596,7 @@ jobs:
         with:
           user: ${{ vars.NUGET_USER }}
 
-      - name: Publish and verify SDK and templates
+      - name: Publish SDK and templates
         shell: bash
         env:
           NUGET_API_KEY: ${{ steps.login_final.outputs.NUGET_API_KEY }}
