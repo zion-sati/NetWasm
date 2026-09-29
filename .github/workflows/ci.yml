@@ -394,6 +394,7 @@ jobs:
         shell: bash
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install playwright install --with-deps chromium firefox webkit
           bash eng/test-javascript.sh
 
   package:
