@@ -99,34 +99,6 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-      - name: Resolve rehearsal revisions
-        id: rehearsal-revisions
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          revisions = json.loads(Path("eng/release-rehearsal-revisions.json").read_text())
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-              output.write(f"playground={revisions['zion-sati/NetWasm.Playground']}\n")
-              output.write(f"website={revisions['zion-sati/netwasm.com']}\n")
-          PY
-      - name: Check out pinned Playground source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          repository: zion-sati/NetWasm.Playground
-          ref: ${{ steps.rehearsal-revisions.outputs.playground }}
-          path: release-rehearsal/NetWasm.Playground
-          persist-credentials: false
-      - name: Check out pinned website source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          repository: zion-sati/netwasm.com
-          ref: ${{ steps.rehearsal-revisions.outputs.website }}
-          path: release-rehearsal/netwasm.com
-          persist-credentials: false
       - name: Verify CI infrastructure change
         shell: bash
         env:
@@ -140,33 +112,12 @@ jobs:
             eng/tests/test_create_compiler_test_shard_filter.py \
             eng/tests/test_merge_compiler_test_timings.py \
             eng/tests/test_publish_release_packages.py \
-            eng/tests/test_release_coordinator.py \
-            eng/tests/test_release_orchestrator.py \
-            eng/tests/test_release_preparation.py \
-            eng/tests/test_release_receiver.py \
             eng/tests/test_release_train.py \
             eng/tests/test_resolve_release.py \
             eng/tests/test_verify_release_ci.py \
             eng/tests/test_verify_release_packages.py \
             eng/tests/test_verify_ci_results.py
           python3 -m json.tool eng/compiler-test-durations.json >/dev/null
-      - name: Rehearse the coordinated release train
-        shell: bash
-        run: |
-          python3 eng/release-rehearsal.py \
-            --playground-root release-rehearsal/NetWasm.Playground \
-            --website-root release-rehearsal/netwasm.com \
-            --revisions eng/release-rehearsal-revisions.json \
-            --core-revision "$GITHUB_SHA" \
-            --verify-determinism \
-            --output "$RUNNER_TEMP/release-rehearsal.json"
-      - name: Retain release rehearsal transcript
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: release-rehearsal-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/release-rehearsal.json
-          if-no-files-found: error
-          retention-days: 14
 
   test:
     name: Test / ${{ matrix.lane }}

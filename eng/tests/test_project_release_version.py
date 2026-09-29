@@ -31,7 +31,9 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         (self.root / "src/Example").mkdir(parents=True)
         (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("0.1.0-rc.1\n")
         (self.root / "src/Example/Example.csproj").write_text(
-            "Package=0.1.0-rc.1\nDependency=0.1.0-rc.1\n"
+            "<Project><PropertyGroup><Version>0.1.0-rc.1</Version></PropertyGroup>"
+            "<ItemGroup><PackageReference Include=\"Dependency\" "
+            "Version=\"0.1.0-rc.1\" /></ItemGroup></Project>\n"
         )
         (self.root / "binary.dat").write_bytes(b"\0" + b"0.1.0-rc.1")
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
@@ -40,16 +42,18 @@ class ProjectReleaseVersionTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def test_projects_all_tracked_text_and_records_receipt(self) -> None:
+    def test_projects_owned_fields_and_preserves_dependency_versions(self) -> None:
         receipt_path = self.root.parent / f"{self.root.name}-receipt.json"
         receipt = MODULE.project_version(self.root, "0.1.0-alpha.1", receipt_path)
 
         self.assertEqual("0.1.0-alpha.1\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
-        self.assertNotIn(
-            "0.1.0-rc.1", (self.root / "src/Example/Example.csproj").read_text()
+        project = (self.root / "src/Example/Example.csproj").read_text()
+        self.assertIn(
+            "<Version>0.1.0-alpha.1</Version>", project
         )
+        self.assertIn('Version="0.1.0-rc.1"', project)
         self.assertEqual(b"\0" + b"0.1.0-rc.1", (self.root / "binary.dat").read_bytes())
-        self.assertEqual(3, receipt["replacementCount"])
+        self.assertEqual(2, receipt["replacementCount"])
         self.assertEqual(receipt, json.loads(receipt_path.read_text()))
         receipt_path.unlink()
 
@@ -70,16 +74,20 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         self.assertEqual(original, measurement.read_bytes())
         self.assertEqual("0.1.0\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
         self.assertEqual(
-            "Package=0.1.0\nDependency=0.1.0\n",
+            "<Project><PropertyGroup><Version>0.1.0</Version></PropertyGroup>"
+            "<ItemGroup><PackageReference Include=\"Dependency\" "
+            "Version=\"0.1.0-rc.1\" /></ItemGroup></Project>\n",
             (self.root / "src/Example/Example.csproj").read_text(),
         )
-        self.assertEqual(3, receipt["replacementCount"])
+        self.assertEqual(2, receipt["replacementCount"])
         self.assertNotIn("docs/size-and-methodology.md", [item["path"] for item in receipt["changedFiles"]])
 
     def test_stable_projection_preserves_larger_numeric_tokens(self) -> None:
         (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("1.2.3\n")
         (self.root / "src/Example/Example.csproj").write_text(
-            "Package=1.2.3\nPosixRule=M11.2.3\nAssemblyVersion=1.2.3.4\n"
+            "<Project><PropertyGroup><Version>1.2.3</Version>"
+            "<PosixRule>M11.2.3</PosixRule>"
+            "<AssemblyVersion>1.2.3.4</AssemblyVersion></PropertyGroup></Project>\n"
         )
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         subprocess.run(
@@ -91,14 +99,18 @@ class ProjectReleaseVersionTests(unittest.TestCase):
 
         self.assertEqual("2.3.4\n", (self.root / "eng/NetWasm.ReleaseVersion.txt").read_text())
         self.assertEqual(
-            "Package=2.3.4\nPosixRule=M11.2.3\nAssemblyVersion=1.2.3.4\n",
+            "<Project><PropertyGroup><Version>2.3.4</Version>"
+            "<PosixRule>M11.2.3</PosixRule>"
+            "<AssemblyVersion>1.2.3.4</AssemblyVersion></PropertyGroup></Project>\n",
             (self.root / "src/Example/Example.csproj").read_text(),
         )
         self.assertEqual(2, receipt["replacementCount"])
 
     def test_prerelease_projection_does_not_rewrite_protocol_versions(self) -> None:
         (self.root / "eng/NetWasm.ReleaseVersion.txt").write_text("0.2.0\n")
-        (self.root / "src/Example/Example.csproj").write_text("Package=0.2.0\n")
+        (self.root / "src/Example/Example.csproj").write_text(
+            "<Project><PropertyGroup><Version>0.2.0</Version></PropertyGroup></Project>\n"
+        )
         protocol = self.root / "wit/protocol.wit"
         protocol.parent.mkdir()
         protocol.write_text("package wasi:io@0.2.0;\n", encoding="utf-8")
@@ -112,7 +124,10 @@ class ProjectReleaseVersionTests(unittest.TestCase):
             self.root, "0.2.0-preview.1", self.root / "receipt.json"
         )
 
-        self.assertEqual("Package=0.2.0-preview.1\n", (self.root / "src/Example/Example.csproj").read_text())
+        self.assertIn(
+            "<Version>0.2.0-preview.1</Version>",
+            (self.root / "src/Example/Example.csproj").read_text(),
+        )
         self.assertEqual("package wasi:io@0.2.0;\n", protocol.read_text(encoding="utf-8"))
         self.assertEqual(2, receipt["replacementCount"])
 
