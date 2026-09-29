@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
@@ -14,6 +17,10 @@
     <ProjectReference Include="../NetWasm.Testing.CompilerHost/NetWasm.Testing.CompilerHost.csproj"
                       ReferenceOutputAssembly="false" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
+    <Compile Include="../../src/NetWasm.CoreLib/EnumMetadataView.cs"
+             Link="CoreLib/EnumMetadataView.cs" />
+    <Compile Include="../../src/NetWasm.CoreLib/EnumAlgorithms.cs"
+             Link="CoreLib/EnumAlgorithms.cs" />
     <Compile Include="../TestInfrastructure/WasmModuleInspection.cs"
              Link="WasmModuleInspection.cs" />
   </ItemGroup>

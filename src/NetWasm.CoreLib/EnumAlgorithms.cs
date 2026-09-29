@@ -265,6 +265,7 @@ internal static class EnumAlgorithms
                 ? ulong.MaxValue
                 : (1UL << bits) - 1;
         ulong magnitude = 0;
+        var overflowed = false;
         for (; index < value.Length; index++)
         {
             var digit = (uint)(value[index] - '0');
@@ -274,14 +275,22 @@ internal static class EnumAlgorithms
                 overflow = false;
                 return false;
             }
+            if (overflowed)
+                continue;
             if (magnitude > limit / 10 ||
                 (magnitude == limit / 10 && digit > limit % 10))
             {
-                result = 0;
-                overflow = true;
-                return false;
+                overflowed = true;
+                continue;
             }
             magnitude = (magnitude * 10) + digit;
+        }
+
+        if (overflowed)
+        {
+            result = 0;
+            overflow = true;
+            return false;
         }
 
         result = Normalize(negative ? unchecked(0UL - magnitude) : magnitude, typeCode);
