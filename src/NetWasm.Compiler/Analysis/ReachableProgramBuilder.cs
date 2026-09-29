@@ -81,6 +81,7 @@ internal sealed class ReachableProgramBuilder(
             state.Finalizers,
             state.ImplicitExceptions)
         {
+            EnumMetadataRequirements = state.EnumMetadataRequirements,
             ModuleInitializers = [
                 .. state.ModuleInitializers
                     .OrderBy(key => key.Assembly.Name, StringComparer.Ordinal)

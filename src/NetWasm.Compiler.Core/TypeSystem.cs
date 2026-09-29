@@ -655,7 +655,7 @@ public enum RuntimeIntrinsic
     EnumGetName,
     EnumGetValues,
     EnumIsDefined,
-    EnumParse,
+    EnumGetMetadata,
     EnumGetUnderlyingType,
     EnumToString,
     EnumFormat,

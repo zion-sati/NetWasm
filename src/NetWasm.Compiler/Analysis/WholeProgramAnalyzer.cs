@@ -294,6 +294,7 @@ internal sealed class ReachabilityClosureBuilder(
 
         void ApplyImport(ReachabilityImportAnalysis analysis)
         {
+            state.EnumMetadataRequirements.UnionWith(analysis.EnumMetadataRequirements);
             foreach (var type in analysis.ConstructedTypes)
             {
                 AddConstructedType(type);

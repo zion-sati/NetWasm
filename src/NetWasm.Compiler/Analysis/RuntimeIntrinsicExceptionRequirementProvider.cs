@@ -71,25 +71,10 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.EnumIsDefined when method.GenericArity == 0 =>
                 [ArgumentNull, Argument],
 
-            RuntimeIntrinsic.EnumParse => ParseRequirements(method),
             RuntimeIntrinsic.EnumGetUnderlyingType or
             RuntimeIntrinsic.EnumFormat or
             RuntimeIntrinsic.EnumToObject => [ArgumentNull, Argument],
             RuntimeIntrinsic.EnumConvert => ConvertRequirements(method),
-            _ => [],
-        };
-    }
-
-    private static ImmutableArray<ReachabilityExceptionRequirement> ParseRequirements(
-        MethodDefinitionModel method)
-    {
-        var typeBased = method.GenericArity == 0;
-        var tryParse = method.Name == "InternalTryParse";
-        return (typeBased, tryParse) switch
-        {
-            (true, true) => [ArgumentNull, Argument],
-            (true, false) => [ArgumentNull, Argument, Overflow],
-            (false, false) => [Argument, Overflow],
             _ => [],
         };
     }

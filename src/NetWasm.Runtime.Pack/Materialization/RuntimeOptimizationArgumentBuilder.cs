@@ -1,20 +1,42 @@
 using System;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using NetWasm.Runtime.Pack.Planning;
 
 namespace NetWasm.Runtime.Pack.Materialization;
 
 internal sealed class RuntimeOptimizationArgumentBuilder :
     IRuntimeOptimizationArgumentBuilder
 {
+    private static readonly FrozenDictionary<RuntimeWasmOptimization, string>
+        OptimizationFlags = new Dictionary<RuntimeWasmOptimization, string>
+        {
+            [RuntimeWasmOptimization.O0] = "-O0",
+            [RuntimeWasmOptimization.O1] = "-O1",
+            [RuntimeWasmOptimization.O2] = "-O2",
+            [RuntimeWasmOptimization.O3] = "-O3",
+            [RuntimeWasmOptimization.Os] = "-Os",
+            [RuntimeWasmOptimization.Oz] = "-Oz",
+        }.ToFrozenDictionary();
+
     public ImmutableArray<string> Build(RuntimeOptimizationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!Enum.IsDefined(request.Optimization))
+        {
+            throw new ArgumentOutOfRangeException(nameof(request));
+        }
+        if (request.Optimization == RuntimeWasmOptimization.None)
+        {
+            return [];
+        }
         var outputPath = Path.GetFullPath(request.OutputPath);
         var arguments = ImmutableArray.CreateBuilder<string>();
         arguments.Add("--strip-target-features");
         arguments.Add("--post-emscripten");
-        arguments.Add("-Oz");
+        arguments.Add(OptimizationFlags[request.Optimization]);
         arguments.Add("--zero-filled-memory");
         arguments.Add("--pass-arg=directize-initial-contents-immutable");
         arguments.Add("--no-stack-ir");

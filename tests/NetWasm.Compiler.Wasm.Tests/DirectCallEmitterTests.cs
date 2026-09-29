@@ -22,7 +22,9 @@ public sealed class DirectCallEmitterTests
         var layouts = new RecordingLayoutProvider();
         var definition = program.GetMethod(EntryKey) with
         {
-            IsStatic = isStatic, Name = name, Signature = MethodSignatureModel.Create(CliValueKind.Void),
+            IsStatic = isStatic,
+            Name = name,
+            Signature = MethodSignatureModel.Create(CliValueKind.Void),
         };
         var method = new MethodInstanceModel(definition,
             CliTypeIdentity.Named(Assembly, "Test", "Type", false), [], definition.Signature);

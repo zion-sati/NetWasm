@@ -26,7 +26,7 @@ TRX = '''<?xml version="1.0" encoding="UTF-8"?>
 
 
 class CompilerTestTimingTests(unittest.TestCase):
-    def test_merges_class_case_counts_and_durations(self):
+    def test_merges_method_case_counts_and_durations(self):
         with tempfile.TemporaryDirectory() as temporary:
             first = Path(temporary, "first.trx")
             second = Path(temporary, "second.trx")
@@ -35,14 +35,22 @@ class CompilerTestTimingTests(unittest.TestCase):
 
             result = TIMINGS.merge([second, first])
 
-        self.assertEqual(1, result["schemaVersion"])
+        self.assertEqual(3, result["schemaVersion"])
         self.assertEqual(
-            {"cases": 2, "durationSeconds": 2.0},
-            result["classes"]["NetWasm.Compiler.Tests.AlphaTests"],
+            {"cases": 1, "durationSeconds": 1.25},
+            result["methods"]["NetWasm.Compiler.Tests.AlphaTests.Fact"],
         )
         self.assertEqual(
             {"cases": 2, "durationSeconds": 123.0},
-            result["classes"]["NetWasm.Compiler.Tests.Correctness.BetaTests"],
+            result["methods"][
+                "NetWasm.Compiler.Tests.Correctness.BetaTests.Run"
+            ],
+        )
+        self.assertEqual(
+            0.75,
+            result["cases"][
+                "NetWasm.Compiler.Tests.AlphaTests.Theory(value: 1)"
+            ],
         )
 
     def test_rejects_invalid_duration_and_empty_inputs(self):

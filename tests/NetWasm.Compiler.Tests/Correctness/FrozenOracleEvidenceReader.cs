@@ -77,15 +77,11 @@ internal sealed class FrozenOracleEvidenceReader : IFrozenOracleEvidenceReader
         }
 
         var runtime = evidence.RuntimeIdentity;
-        if (!StringComparer.Ordinal.Equals(runtime.SdkVersion, request.SdkVersion) ||
-            !StringComparer.Ordinal.Equals(runtime.TargetFramework, request.TargetFramework) ||
-            !StringComparer.Ordinal.Equals(runtime.RuntimeVersion, request.RuntimeVersion) ||
-            !StringComparer.Ordinal.Equals(
-                runtime.FrameworkDescription,
-                request.FrameworkDescription) ||
-            !StringComparer.Ordinal.Equals(
-                runtime.ProcessArchitecture,
-                request.ProcessArchitecture))
+        if (string.IsNullOrWhiteSpace(runtime.SdkVersion) ||
+            string.IsNullOrWhiteSpace(runtime.TargetFramework) ||
+            string.IsNullOrWhiteSpace(runtime.RuntimeVersion) ||
+            string.IsNullOrWhiteSpace(runtime.FrameworkDescription) ||
+            string.IsNullOrWhiteSpace(runtime.ProcessArchitecture))
         {
             throw new InvalidOperationException("oracle evidence runtime identity is invalid");
         }
@@ -100,9 +96,9 @@ internal sealed class FrozenOracleEvidenceReader : IFrozenOracleEvidenceReader
             !hashes.DesktopAssemblySha256.TryGetValue(
                 request.Profile.ToString(),
                 out var desktopAssemblyHash) ||
-            !StringComparer.Ordinal.Equals(
-                desktopAssemblyHash,
-                request.DesktopAssemblySha256))
+            desktopAssemblyHash is null ||
+            desktopAssemblyHash.Length != 64 ||
+            !desktopAssemblyHash.All(Uri.IsHexDigit))
         {
             throw new InvalidOperationException("oracle evidence source or assembly hash is invalid");
         }

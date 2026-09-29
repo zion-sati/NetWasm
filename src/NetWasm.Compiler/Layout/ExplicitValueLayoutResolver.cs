@@ -87,7 +87,8 @@ internal sealed class ExplicitValueLayoutResolver : IExplicitValueLayoutResolver
         return new ExplicitValueLayoutPlan(
             new ValueLayout(type,
                 roundSize ? ManagedTypeLayoutCompiler.Align(Math.Max(1, size), alignment) : size,
-                alignment, [.. references]) { ByReferenceOffsets = [.. byReferences] },
+                alignment, [.. references])
+            { ByReferenceOffsets = [.. byReferences] },
             fields.ToImmutable());
     }
 

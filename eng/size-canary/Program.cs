@@ -52,7 +52,7 @@ if (args is ["package", var appModule, var runtimeModule, var commandWit,
             ManagedExecutableEntryPoint: new ManagedExecutableEntryPointAbi(
                 ManagedExecutableParameterShape.None,
                 ManagedExecutableReturnShape.Void),
-            Optimization: FinalWasmOptimization.Size));
+            Optimization: FinalWasmOptimization.Oz));
     return;
 }
 

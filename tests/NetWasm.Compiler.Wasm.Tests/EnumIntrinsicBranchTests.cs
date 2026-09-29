@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
@@ -7,6 +8,7 @@ using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -16,6 +18,41 @@ using static EmitterTestSupport;
 
 public sealed class EnumIntrinsicBranchTests
 {
+    [Theory]
+    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Equal, WasmOpcodes.I32Store)]
+    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Equal, WasmOpcodes.I64Store)]
+    public void GenericOperationsResolveStorageFromEnumMetadata(
+        string underlyingName, CliValueKind storageKind, byte comparison, byte store)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive(underlyingName, storageKind));
+        // A referenced enum's nominal identity may not yet carry its primitive
+        // stack kind. The resolved metadata remains the storage authority.
+        var nominal = metadata.EnumType.WithStackKind(CliValueKind.ValueType);
+        var getName = Request("InternalGetName", RuntimeIntrinsic.EnumGetName,
+            CliValueKind.ManagedReference, [storageKind], [storageKind], [nominal]);
+        var isDefined = Request("InternalIsDefined", RuntimeIntrinsic.EnumIsDefined,
+            CliValueKind.I4, [storageKind], [storageKind], [nominal]);
+        var getValues = Request("InternalGetValues", RuntimeIntrinsic.EnumGetValues,
+            CliValueKind.ManagedReference, [], [], [nominal]);
+        var nameCode = new RecordingInstructionWriter();
+        var definedCode = new RecordingInstructionWriter();
+        var valuesCode = new RecordingInstructionWriter();
+        var names = As<IEnumGetNameEmitter>(CreateGetNameEmitter(metadata));
+        var values = As<IEnumGetValuesEmitter>(CreateGetValuesEmitter(metadata));
+        var defined = As<IEnumIsDefinedEmitter>(new EnumIsDefinedEmitter(
+            metadata, metadata, metadata.Layouts, metadata.Layouts, metadata));
+
+        names.EmitGetName(getName, nameCode);
+        defined.EmitIsDefined(isDefined, definedCode);
+        values.EmitGetValues(getValues, valuesCode);
+
+        Assert.Contains(comparison, nameCode.ToArray());
+        Assert.Contains(comparison, definedCode.ToArray());
+        Assert.Contains(store, valuesCode.ToArray());
+    }
+
+    private static TContract As<TContract>(TContract actor) => actor;
+
     [Theory]
     [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Equal)]
     [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Equal)]
@@ -437,273 +474,14 @@ public sealed class EnumIntrinsicBranchTests
         Assert.Contains("metadata is unavailable", exception.Message);
     }
 
+
     [Theory]
-    [InlineData("i1", CliValueKind.I4, WasmOpcodes.I32Constant)]
-    [InlineData("i2", CliValueKind.I4, WasmOpcodes.I32Constant)]
-    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Constant)]
-    [InlineData("u4", CliValueKind.I4, WasmOpcodes.I32Constant)]
-    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Constant)]
-    public void ParseEmitsWidthAppropriateEnumConstants(
+    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Load)]
+    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Load)]
+    public void ToStringLoadsTheUnderlyingWidthAndCallsManagedFormatting(
         string underlyingName,
         CliValueKind stackKind,
-        byte constant)
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive(underlyingName, stackKind));
-        var request = Request(
-            "InternalParse",
-            RuntimeIntrinsic.EnumParse,
-            stackKind,
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [metadata.EnumType]);
-        var code = new RecordingInstructionWriter();
-
-        new EnumParseEmitter(
-                metadata,
-                metadata,
-                metadata.Layouts,
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0),
-                new AddressInstructionEmitter(metadata.Layouts),
-                metadata.Layouts,
-                new EnumNumericParseEmitter(
-                    metadata.Layouts,
-                    new AddressInstructionEmitter(metadata.Layouts),
-                    metadata.Layouts),
-                metadata,
-                CreateEnumValueBoxEmitter(metadata))
-            .EmitParse(request, code);
-
-        Assert.Contains(constant, code.ToArray());
-    }
-
-    [Fact]
-    public void ParseRejectsAnUnclosedEnumMethodArgument()
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
-        var request = Request(
-            "InternalParse",
-            RuntimeIntrinsic.EnumParse,
-            CliValueKind.I4,
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [CliValueKind.ManagedReference, CliValueKind.I4]);
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            new EnumParseEmitter(
-                    metadata,
-                    metadata,
-                    metadata.Layouts,
-                    new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0),
-                    new AddressInstructionEmitter(metadata.Layouts),
-                    metadata.Layouts,
-                    new EnumNumericParseEmitter(
-                        metadata.Layouts,
-                        new AddressInstructionEmitter(metadata.Layouts),
-                        metadata.Layouts),
-                    metadata,
-                    CreateEnumValueBoxEmitter(metadata))
-                .EmitParse(request, new RecordingInstructionWriter()));
-
-        Assert.Contains("one enum type argument", exception.Message);
-    }
-
-    [Fact]
-    public void ParseRejectsMultipleEnumMethodArguments()
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
-        var request = Request(
-            "InternalParse",
-            RuntimeIntrinsic.EnumParse,
-            CliValueKind.I4,
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [metadata.EnumType, metadata.EnumType]);
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            CreateEnumParseEmitter(metadata).EmitParse(
-                request,
-                new RecordingInstructionWriter()));
-
-        Assert.Contains("one enum type argument", exception.Message);
-    }
-
-    [Theory]
-    [InlineData("i1", CliValueKind.I4, WasmOpcodes.I32Store8)]
-    [InlineData("u2", CliValueKind.I4, WasmOpcodes.I32Store16)]
-    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Store)]
-    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Store)]
-    public void TryParseStoresTheOutValueAndFailureResult(
-        string underlyingName,
-        CliValueKind stackKind,
-        byte expectedStore)
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive(underlyingName, stackKind),
-            flags: true);
-        var request = Request(
-            "InternalTryParse",
-            RuntimeIntrinsic.EnumParse,
-            CliValueKind.I4,
-            [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedAddress],
-            [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedAddress],
-            [metadata.EnumType]);
-        var code = new RecordingInstructionWriter();
-
-        new EnumParseEmitter(
-                metadata,
-                metadata,
-                metadata.Layouts,
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0),
-                new AddressInstructionEmitter(metadata.Layouts),
-                metadata.Layouts,
-                new EnumNumericParseEmitter(
-                    metadata.Layouts,
-                    new AddressInstructionEmitter(metadata.Layouts),
-                    metadata.Layouts),
-                metadata,
-                CreateEnumValueBoxEmitter(metadata))
-            .EmitParse(request, code);
-
-        Assert.Contains(expectedStore, code.ToArray());
-        Assert.Contains(WasmOpcodes.I32EqualZero, code.ToArray());
-    }
-
-    [Fact]
-    public void ParseRejectsMetadataThatIsUnavailable()
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
-        var unknown = CliTypeIdentity.Named(
-            TestAssembly,
-            "Tests",
-            "Missing",
-            true,
-            CliValueKind.I4);
-        var request = Request(
-            "InternalParse",
-            RuntimeIntrinsic.EnumParse,
-            CliValueKind.I4,
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [unknown]);
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            new EnumParseEmitter(
-                    metadata,
-                    metadata,
-                    metadata.Layouts,
-                    new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0),
-                    new AddressInstructionEmitter(metadata.Layouts),
-                    metadata.Layouts,
-                    new EnumNumericParseEmitter(
-                        metadata.Layouts,
-                        new AddressInstructionEmitter(metadata.Layouts),
-                        metadata.Layouts),
-                    metadata,
-                    CreateEnumValueBoxEmitter(metadata))
-                .EmitParse(request, new RecordingInstructionWriter()));
-
-        Assert.Contains("metadata is unavailable", exception.Message);
-    }
-
-    [Fact]
-    public void ParseUsesMemory64CharacterAddressing()
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4),
-            target: WasmTarget.Wasm64);
-        var request = Request(
-            "InternalParse",
-            RuntimeIntrinsic.EnumParse,
-            CliValueKind.I4,
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [metadata.EnumType],
-            target: WasmTarget.Wasm64);
-        var code = new RecordingInstructionWriter();
-
-        new EnumParseEmitter(
-                metadata,
-                metadata,
-                metadata.Layouts,
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0),
-                new AddressInstructionEmitter(metadata.Layouts),
-                metadata.Layouts,
-                new EnumNumericParseEmitter(
-                    metadata.Layouts,
-                    new AddressInstructionEmitter(metadata.Layouts),
-                    metadata.Layouts),
-                metadata,
-                CreateEnumValueBoxEmitter(metadata))
-            .EmitParse(request, code);
-
-        Assert.Contains(WasmOpcodes.I64ExtendI32Unsigned, code.ToArray());
-        Assert.Contains(WasmOpcodes.I64Add, code.ToArray());
-    }
-
-    [Theory]
-    [InlineData("InternalParse", 3)]
-    [InlineData("InternalTryParse", 4)]
-    public void TypeBasedParseDelegatesValidationParsingAndBoxing(
-        string methodName,
-        int parameterCount)
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
-        var parameterKinds = parameterCount == 3
-            ? new[] { CliValueKind.ManagedReference, CliValueKind.ManagedReference, CliValueKind.I4 }
-            : new[] { CliValueKind.ManagedReference, CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedAddress };
-        var parameterTypes = parameterKinds
-            .Select(CliTypeIdentity.FromStackKind)
-            .ToImmutableArray();
-        var request = Request(
-            methodName,
-            RuntimeIntrinsic.EnumParse,
-            methodName == "InternalParse" ? CliValueKind.ManagedReference : CliValueKind.I4,
-            parameterKinds,
-            parameterKinds,
-            parameterSignatureTypes: parameterTypes);
-        var code = new RecordingInstructionWriter();
-
-        CreateEnumParseEmitter(metadata).EmitParse(request, code);
-
-        Assert.Contains(WasmOpcodes.Call, code.ToArray());
-        Assert.Contains(WasmOpcodes.I32Store, code.ToArray());
-    }
-
-    [Fact]
-    public void ParseReadsNamesFromCharacterArrays()
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
-        var characterArray = CliTypeIdentity.SzArray(
-            CliTypeIdentity.Primitive("char", CliValueKind.I4));
-        var request = Request(
-            "InternalParse",
-            RuntimeIntrinsic.EnumParse,
-            CliValueKind.I4,
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [CliValueKind.ManagedReference, CliValueKind.I4],
-            [metadata.EnumType],
-            parameterSignatureTypes:
-            [characterArray, CliTypeIdentity.Primitive("bool", CliValueKind.I4)]);
-        var code = new RecordingInstructionWriter();
-
-        CreateEnumParseEmitter(metadata).EmitParse(request, code);
-
-        Assert.Contains(WasmOpcodes.I32Load, code.ToArray());
-        Assert.Contains(WasmOpcodes.I32Load16Unsigned, code.ToArray());
-    }
-
-    [Theory]
-    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Equal)]
-    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Equal)]
-    public void ToStringEmitsWidthAwareValueMatching(
-        string underlyingName,
-        CliValueKind stackKind,
-        byte comparison)
+        byte load)
     {
         var metadata = new EnumMetadataFixture(
             CliTypeIdentity.Primitive(underlyingName, stackKind));
@@ -714,17 +492,19 @@ public sealed class EnumIntrinsicBranchTests
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
                 CliValueKind.ManagedReference],
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
-                CliValueKind.ManagedReference]);
+                CliValueKind.ManagedReference],
+            functionIndices: new FixedFunctionIndexResolver());
         var code = new RecordingInstructionWriter();
 
         CreateToStringEmitter(metadata)
             .EmitToString(request, code);
 
-        Assert.Contains(comparison, code.ToArray());
+        Assert.Contains(load, code.ToArray());
+        Assert.Contains(WasmOpcodes.Call, code.ToArray());
     }
 
     [Fact]
-    public void ToStringSupportsFormatAndFlagsCandidates()
+    public void TypeBasedFormatCallsManagedFormatting()
     {
         var metadata = new EnumMetadataFixture(
             CliTypeIdentity.Primitive("u1", CliValueKind.I4),
@@ -736,44 +516,15 @@ public sealed class EnumIntrinsicBranchTests
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
                 CliValueKind.ManagedReference],
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
-                CliValueKind.ManagedReference]);
-        var code = new RecordingInstructionWriter();
-
-        CreateToStringEmitter(metadata)
-            .EmitToString(request, code);
-
-        Assert.Contains(WasmOpcodes.I32Load16Unsigned, code.ToArray());
-        Assert.Contains(WasmOpcodes.I32Or, code.ToArray());
-    }
-
-    [Theory]
-    [InlineData("i1")]
-    [InlineData("i2")]
-    [InlineData("u2")]
-    [InlineData("char")]
-    [InlineData("u4")]
-    [InlineData("u8")]
-    public void ToStringCoversNarrowDecimalAndHexWidths(string underlyingName)
-    {
-        var stackKind = underlyingName == "u8"
-            ? CliValueKind.I8
-            : CliValueKind.I4;
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive(underlyingName, stackKind));
-        var request = Request(
-            "InternalToString",
-            RuntimeIntrinsic.EnumToString,
-            CliValueKind.ManagedReference,
-            [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
                 CliValueKind.ManagedReference],
-            [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
-                CliValueKind.ManagedReference]);
+            functionIndices: new FixedFunctionIndexResolver());
         var code = new RecordingInstructionWriter();
 
         CreateToStringEmitter(metadata)
             .EmitToString(request, code);
 
-        Assert.Contains(WasmOpcodes.I32Equal, code.ToArray());
+        Assert.Contains(WasmOpcodes.I32Load8Unsigned, code.ToArray());
+        Assert.Contains(WasmOpcodes.Call, code.ToArray());
     }
 
     [Fact]
@@ -790,23 +541,24 @@ public sealed class EnumIntrinsicBranchTests
                 CliValueKind.ManagedReference],
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference,
                 CliValueKind.ManagedReference],
-            target: WasmTarget.Wasm64);
+            target: WasmTarget.Wasm64,
+            functionIndices: new FixedFunctionIndexResolver());
         var code = new RecordingInstructionWriter();
 
         CreateToStringEmitter(metadata)
             .EmitToString(request, code);
 
-        Assert.Contains(WasmOpcodes.I64Multiply, code.ToArray());
-        Assert.Contains(WasmOpcodes.I64Add, code.ToArray());
+        Assert.Contains(WasmOpcodes.I64Load, code.ToArray());
+        Assert.Contains(WasmOpcodes.Call, code.ToArray());
     }
 
     [Theory]
-    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Equal)]
-    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Equal)]
+    [InlineData("i4", CliValueKind.I4, WasmOpcodes.I32Load)]
+    [InlineData("i8", CliValueKind.I8, WasmOpcodes.I64Load)]
     public void ToStringSupportsConstrainedEnumReceivers(
         string underlyingName,
         CliValueKind stackKind,
-        byte equality)
+        byte load)
     {
         var metadata = new EnumMetadataFixture(
             CliTypeIdentity.Primitive(underlyingName, stackKind));
@@ -816,13 +568,15 @@ public sealed class EnumIntrinsicBranchTests
             CliValueKind.ManagedReference,
             [],
             [CliValueKind.ManagedAddress],
-            constrainedType: metadata.EnumType);
+            constrainedType: metadata.EnumType,
+            functionIndices: new FixedFunctionIndexResolver());
         var code = new RecordingInstructionWriter();
 
         CreateToStringEmitter(metadata)
             .EmitToString(request, code);
 
-        Assert.Contains(equality, code.ToArray());
+        Assert.Contains(load, code.ToArray());
+        Assert.Contains(WasmOpcodes.Call, code.ToArray());
     }
 
     [Fact]
@@ -889,13 +643,40 @@ public sealed class EnumIntrinsicBranchTests
             CliValueKind.ManagedReference,
             [CliValueKind.ManagedReference],
             [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
-            parameterSignatureTypes: [stringType]);
+            parameterSignatureTypes: [stringType],
+            functionIndices: new FixedFunctionIndexResolver());
         var code = new RecordingInstructionWriter();
 
         CreateToStringEmitter(metadata)
             .EmitToString(request, code);
 
-        Assert.Contains(WasmOpcodes.I32Load16Unsigned, code.ToArray());
+        Assert.Contains(WasmOpcodes.Call, code.ToArray());
+    }
+
+    [Fact]
+    public void ToStringIgnoresNonStringFormatParameters()
+    {
+        var metadata = new EnumMetadataFixture(
+            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
+        var request = Request(
+            "ToString",
+            RuntimeIntrinsic.EnumToString,
+            CliValueKind.ManagedReference,
+            [CliValueKind.ManagedReference],
+            [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
+            parameterSignatureTypes:
+            [CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference)],
+            functionIndices: new FixedFunctionIndexResolver());
+        var code = new RecordingInstructionWriter();
+
+        CreateToStringEmitter(metadata).EmitToString(request, code);
+
+        var instructions = code.ToInstructions();
+        var call = instructions.TakeWhile(instruction =>
+            instruction.Opcode != WasmOpcodes.Call).Count();
+        Assert.InRange(call, 1, instructions.Length - 1);
+        Assert.Equal(WasmOpcodes.I32Constant, instructions[call - 1].Opcode);
+        Assert.Equal(0, instructions[call - 1].Operand.SignedValue);
     }
 
     [Theory]
@@ -1670,21 +1451,11 @@ public sealed class EnumIntrinsicBranchTests
         EnumMetadataFixture metadata) => new(
             metadata,
             metadata,
+            metadata,
+            metadata,
             metadata.Layouts,
             metadata.Layouts,
             new AddressInstructionEmitter(metadata.Layouts),
-            new EnumValueFormatter(
-                metadata,
-                metadata,
-                metadata,
-                metadata.Layouts,
-                new AddressInstructionEmitter(metadata.Layouts),
-                new EnumNumericFormatter(
-                    metadata,
-                    metadata,
-                    metadata,
-                    metadata.Layouts,
-                    WasmRuntimeImports.CreateCatalog())),
             CreateTypeArgumentValidator(metadata));
 
     private static EnumTypeArgumentValidator CreateTypeArgumentValidator(
@@ -1704,21 +1475,6 @@ public sealed class EnumIntrinsicBranchTests
         new AddressInstructionEmitter(metadata.Layouts),
         metadata.Layouts);
 
-    private static EnumParseEmitter CreateEnumParseEmitter(
-        EnumMetadataFixture metadata) => new(
-        metadata,
-        metadata,
-        metadata.Layouts,
-        new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0),
-        new AddressInstructionEmitter(metadata.Layouts),
-        metadata.Layouts,
-        new EnumNumericParseEmitter(
-            metadata.Layouts,
-            new AddressInstructionEmitter(metadata.Layouts),
-            metadata.Layouts),
-        metadata,
-        CreateEnumValueBoxEmitter(metadata));
-
     private static RuntimeIntrinsicEmissionRequest Request(
         string name,
         RuntimeIntrinsic intrinsic,
@@ -1729,7 +1485,8 @@ public sealed class EnumIntrinsicBranchTests
         WasmTarget target = WasmTarget.Wasm32,
         CliTypeIdentity? constrainedType = null,
         ImmutableArray<CliTypeIdentity> parameterSignatureTypes = default,
-        int valueOffset = 0)
+        int valueOffset = 0,
+        IFunctionIndexResolver? functionIndices = null)
     {
         var context = returnType == CliValueKind.ValueType
             ? CreateMethodEmissionContext(Math.Max(8, stack.Length)) with
@@ -1769,7 +1526,7 @@ public sealed class EnumIntrinsicBranchTests
             intrinsic,
             constrainedType,
             WasmTargetLayout.For(target),
-            EmitterTestSupport.CreateFunctionIndexResolver(new FakeProgram()));
+            functionIndices ?? EmitterTestSupport.CreateFunctionIndexResolver(new FakeProgram()));
     }
 
     private static int _nextToken = 0x06000001;
@@ -1779,11 +1536,18 @@ public sealed class EnumIntrinsicBranchTests
     private static readonly EntityKey EnumDeclaringType = new(TestAssembly, 0x02000001);
     private static readonly EntityKey EnumTypeKey = new(TestAssembly, 0x02000002);
     private static readonly EntityKey BoxedTypeKey = new(TestAssembly, 0x02000003);
+    private static readonly EntityKey AlgorithmsTypeKey = new(TestAssembly, 0x02000004);
+    private static readonly EntityKey FormatMethodKey = new(TestAssembly, 0x06000001);
+    private static readonly EntityKey WrongNameMethodKey = new(TestAssembly, 0x06000002);
+    private static readonly EntityKey InstanceFormatMethodKey = new(TestAssembly, 0x06000003);
+    private static readonly EntityKey ShortFormatMethodKey = new(TestAssembly, 0x06000004);
+    private static readonly EntityKey WrongStorageMethodKey = new(TestAssembly, 0x06000005);
 
     private sealed class EnumMetadataFixture :
         IEnumMetadataSource,
         ITypeDescriptorSource,
         ITypeRepository,
+        IMethodRepository,
         IValueLayoutProvider,
         ITypeLayoutProvider,
         IStaticDataLayout,
@@ -1833,10 +1597,14 @@ public sealed class EnumIntrinsicBranchTests
         ];
 
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => _boxedType is null
-            ? [new(EnumTypeKey, 7, 0, 32, 0, 0, null)]
+            ? [
+                new(EnumTypeKey, 7, 0, 32, 0, 0, null),
+                new(AlgorithmsTypeKey, 23, 0, 32, 0, 0, null),
+            ]
             : [
                 new(EnumTypeKey, 7, 0, 32, 0, 0, null),
                 new(BoxedTypeKey, 19, 0, 32, 0, 0, null),
+                new(AlgorithmsTypeKey, 23, 0, 32, 0, 0, null),
             ];
 
         public void Validate(
@@ -1850,6 +1618,17 @@ public sealed class EnumIntrinsicBranchTests
 
         public TypeDefinitionModel GetTypeDefinition(EntityKey key)
         {
+            if (key == AlgorithmsTypeKey)
+            {
+                return new(
+                    AlgorithmsTypeKey,
+                    "System",
+                    "EnumAlgorithms",
+                    false,
+                    [],
+                    [WrongNameMethodKey, InstanceFormatMethodKey, ShortFormatMethodKey,
+                        WrongStorageMethodKey, FormatMethodKey]);
+            }
             if (key == BoxedTypeKey && _boxedType is not null)
             {
                 return new(
@@ -1873,6 +1652,37 @@ public sealed class EnumIntrinsicBranchTests
                 IsFlagsEnum = _flags,
             };
         }
+
+        public MethodDefinitionModel GetMethod(EntityKey key) => key switch
+        {
+            var method when method == WrongNameMethodKey => FormatMethod(
+                method, "Other", true, CliValueKind.NativeInt,
+                CliValueKind.I8, CliValueKind.ManagedReference),
+            var method when method == InstanceFormatMethodKey => FormatMethod(
+                method, "Format", false, CliValueKind.NativeInt,
+                CliValueKind.I8, CliValueKind.ManagedReference),
+            var method when method == ShortFormatMethodKey => FormatMethod(
+                method, "Format", true, CliValueKind.NativeInt, CliValueKind.I8),
+            var method when method == WrongStorageMethodKey => FormatMethod(
+                method, "Format", true, CliValueKind.I4,
+                CliValueKind.I8, CliValueKind.ManagedReference),
+            var method when method == FormatMethodKey => FormatMethod(
+                method, "Format", true, CliValueKind.NativeInt,
+                CliValueKind.I8, CliValueKind.ManagedReference),
+            _ => throw new KeyNotFoundException(),
+        };
+
+        private static MethodDefinitionModel FormatMethod(
+            EntityKey key,
+            string name,
+            bool isStatic,
+            params CliValueKind[] parameters) => new(
+                key,
+                AlgorithmsTypeKey,
+                name,
+                isStatic,
+                MethodSignatureModel.Create(CliValueKind.ManagedReference, parameters),
+                0);
 
         public ValueLayout GetValueLayout(CliTypeIdentity type) =>
             Layouts.GetValueLayout(type);
@@ -2017,5 +1827,14 @@ public sealed class EnumIntrinsicBranchTests
 
         public void EmitToString(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code) =>
             Called = true;
+    }
+
+    private sealed class FixedFunctionIndexResolver : IFunctionIndexResolver
+    {
+        public int Resolve(EntityKey method) => 17;
+
+        public int Resolve(string method) => 17;
+
+        public int Resolve(MethodInstanceModel method) => 17;
     }
 }

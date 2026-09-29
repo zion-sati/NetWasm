@@ -5,6 +5,9 @@ namespace NetWasm.TestInfrastructure;
 
 public sealed class TestAssets : IDisposable
 {
+    public const string RepositoryRootEnvironmentVariable =
+        "NETWASM_TEST_REPOSITORY_ROOT";
+
     private TestAssets(
         string directory,
         string root,
@@ -405,9 +408,38 @@ public sealed class TestAssets : IDisposable
         }
     }
 
-    private static string FindRepositoryRoot()
+    public static string FindRepositoryRoot()
     {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        return ResolveRepositoryRoot(
+            AppContext.BaseDirectory,
+            Environment.GetEnvironmentVariable(RepositoryRootEnvironmentVariable));
+    }
+
+    internal static string FindRepositoryRoot(string? startDirectory)
+    {
+        return ResolveRepositoryRoot(
+            startDirectory ?? AppContext.BaseDirectory,
+            Environment.GetEnvironmentVariable(RepositoryRootEnvironmentVariable));
+    }
+
+    internal static string ResolveRepositoryRoot(
+        string startDirectory,
+        string? configuredRoot)
+    {
+        if (configuredRoot is not null)
+        {
+            var fullPath = Path.GetFullPath(configuredRoot);
+            if (!File.Exists(Path.Combine(fullPath, "global.json")) ||
+                !File.Exists(Path.Combine(fullPath, "NetWasm.slnx")))
+            {
+                throw new InvalidOperationException(
+                    $"{RepositoryRootEnvironmentVariable} does not identify the NetWasm repository root.");
+            }
+
+            return fullPath;
+        }
+
+        var current = new DirectoryInfo(startDirectory);
         while (current is not null &&
                !File.Exists(Path.Combine(current.FullName, "global.json")))
         {

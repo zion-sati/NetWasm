@@ -139,7 +139,7 @@ public sealed class ComponentModelCoverageTests
             new SystemFileCopier());
         Assert.Throws<CompilerException>(() => optimizer.Optimize(
             files.PathFor("missing.wasm"), files.PathFor("output.wasm"),
-            ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.Size));
+            ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.Oz));
 
         var core = files.Create("core.wasm", 0);
         var package = new ComponentPackageInputValidator(

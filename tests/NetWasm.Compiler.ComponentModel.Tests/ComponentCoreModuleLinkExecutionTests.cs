@@ -30,7 +30,7 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             "application", "runtime", "environment", "merged", target,
             managed ? "host" : null, managed ? "adapter" : null), stages.Merge);
         Assert.Equal(("merged", "sanitized", width == "wasm64" ? "cm64p2" : "cm32p2"), stages.Exports);
-        Assert.Equal(("sanitized", "output", target, FinalWasmOptimization.Size),
+        Assert.Equal(("sanitized", "output", target, FinalWasmOptimization.Oz),
             stages.Optimization);
         Assert.Equal(managed ? new NetWasmHostComponentShimRequest("host", target) : null, stages.Host);
         Assert.Equal(managed ? new ManagedExecutableComponentAdapterRequest("adapter", target, entry!) : null,

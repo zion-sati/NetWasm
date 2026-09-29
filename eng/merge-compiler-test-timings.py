@@ -22,41 +22,48 @@ def parse_duration(value: str) -> Decimal:
         raise ValueError(f"invalid TRX duration: {value!r}") from error
 
 
-def test_class(test_name: str) -> str | None:
+def test_method(test_name: str) -> str | None:
     qualified_method = test_name.split("(", 1)[0]
     if not qualified_method.startswith(TEST_NAMESPACE) or "." not in qualified_method:
         return None
-    return qualified_method.rsplit(".", 1)[0]
+    return qualified_method
 
 
 def merge(paths: list[Path]) -> dict[str, object]:
     durations: dict[str, Decimal] = defaultdict(Decimal)
     cases: dict[str, int] = defaultdict(int)
+    case_durations: dict[str, Decimal] = defaultdict(Decimal)
     for path in sorted(paths):
         try:
             root = ElementTree.parse(path).getroot()
         except (ElementTree.ParseError, OSError) as error:
             raise ValueError(f"cannot read TRX timing file {path}: {error}") from error
         for result in root.findall(".//{*}UnitTestResult"):
-            class_name = test_class(result.attrib.get("testName", ""))
-            if class_name is None:
+            display_name = result.attrib.get("testName", "")
+            method_name = test_method(display_name)
+            if method_name is None:
                 continue
             duration = result.attrib.get("duration")
             if duration is None:
                 raise ValueError(f"TRX result has no duration in {path}: {result.attrib}")
-            durations[class_name] += parse_duration(duration)
-            cases[class_name] += 1
+            durations[method_name] += parse_duration(duration)
+            cases[method_name] += 1
+            case_durations[display_name] += parse_duration(duration)
 
     if not cases:
         raise ValueError("TRX inputs contained no NetWasm compiler test results")
     return {
-        "schemaVersion": 1,
-        "classes": {
+        "schemaVersion": 3,
+        "methods": {
             name: {
                 "cases": cases[name],
                 "durationSeconds": float(durations[name]),
             }
             for name in sorted(cases)
+        },
+        "cases": {
+            name: float(case_durations[name])
+            for name in sorted(case_durations)
         },
     }
 

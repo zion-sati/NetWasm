@@ -38,7 +38,9 @@
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmManagedStackTrace>
     <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == ''">false</NetWasmManagedStackTrace>
-    <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">Size</NetWasmOptimization>
+    <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">Oz</NetWasmOptimization>
+    <_NetWasmCanonicalOptimization Condition="'$(NetWasmOptimization)' == 'Size'">Oz</_NetWasmCanonicalOptimization>
+    <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
     <NetWasmPackagingIdentityPath Condition="'$(NetWasmPackagingIdentityPath)' == ''">$(NetWasmIntermediateOutputPath)packaging.identity</NetWasmPackagingIdentityPath>
@@ -140,7 +142,7 @@
                         WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
                         EmitStackTrace="$(NetWasmManagedStackTrace)"
-                        Optimization="$(NetWasmOptimization)"
+                        Optimization="$(_NetWasmCanonicalOptimization)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)">
       <Output TaskParameter="ResolvedArtifacts" ItemName="_NetWasmResolvedArtifact" />
       <Output TaskParameter="SemanticBuildId" PropertyName="NetWasmSemanticBuildId" />
@@ -155,7 +157,7 @@
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'">
     <ItemGroup>
       <_NetWasmPackagingIdentityLine Remove="@(_NetWasmPackagingIdentityLine)" />
-      <_NetWasmPackagingIdentityLine Include="optimization=$(NetWasmOptimization)" />
+      <_NetWasmPackagingIdentityLine Include="optimization=$(_NetWasmCanonicalOptimization)" />
       <_NetWasmPackagingIdentityLine Include="packagingPolicyRevision=2" />
       <_NetWasmPackagingIdentityLine Include="target=$(NetWasmTarget)" />
       <_NetWasmPackagingIdentityLine Include="world=$(NetWasmWorld)" />
@@ -216,7 +218,7 @@
                              Target="$(NetWasmTarget)"
                              JcoVersion="$(NetWasmJcoVersion)"
                              Preview2ShimVersion="$(NetWasmPreview2ShimVersion)"
-                             Optimization="$(NetWasmOptimization)">
+                             Optimization="$(_NetWasmCanonicalOptimization)">
       <Output TaskParameter="Components" ItemName="_NetWasmBuiltComponent" />
       <Output TaskParameter="SelectedWitPath" PropertyName="NetWasmSelectedWitPath" />
       <Output TaskParameter="SelectedWorld" PropertyName="NetWasmSelectedWorld" />
@@ -248,7 +250,7 @@
                               NativeBinaryenWasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
                               NativeBinaryenWasmMergePath="$(NetWasmNativeBinaryenWasmMergePath)"
                               Target="$(NetWasmTarget)"
-                              Optimization="$(NetWasmOptimization)">
+                              Optimization="$(_NetWasmCanonicalOptimization)">
       <Output TaskParameter="Modules" ItemName="_NetWasmBuiltRawModule" />
     </NetWasmLinkRawModuleTask>
   </Target>

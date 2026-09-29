@@ -112,28 +112,35 @@ namespace System
             InternalIsDefined(value);
 
         public static object Parse(Type enumType, ReadOnlySpan<char> value) =>
-            InternalParse(enumType, value.ToArray(), false);
+            Parse(enumType, value.ToString(), false);
 
         public static object Parse(Type enumType, ReadOnlySpan<char> value, bool ignoreCase) =>
-            InternalParse(enumType, value.ToArray(), ignoreCase);
+            Parse(enumType, value.ToString(), ignoreCase);
 
         public static object Parse(Type enumType, string value) =>
-            InternalParse(enumType, value, false);
+            Parse(enumType, value, false);
 
-        public static object Parse(Type enumType, string value, bool ignoreCase) =>
-            InternalParse(enumType, value, ignoreCase);
+        public static object Parse(Type enumType, string value, bool ignoreCase)
+        {
+            var raw = EnumAlgorithms.Parse(
+                InternalGetMetadata(enumType), value, ignoreCase);
+            return InternalToObject(enumType, raw);
+        }
 
         public static TEnum Parse<TEnum>(ReadOnlySpan<char> value) where TEnum : struct =>
-            InternalParse<TEnum>(value.ToArray(), false);
+            Parse<TEnum>(value.ToString(), false);
 
         public static TEnum Parse<TEnum>(ReadOnlySpan<char> value, bool ignoreCase)
-            where TEnum : struct => InternalParse<TEnum>(value.ToArray(), ignoreCase);
+            where TEnum : struct => Parse<TEnum>(value.ToString(), ignoreCase);
 
         public static TEnum Parse<TEnum>(string value) where TEnum : struct =>
-            InternalParse<TEnum>(value, false);
+            Parse<TEnum>(value, false);
 
-        public static TEnum Parse<TEnum>(string value, bool ignoreCase) where TEnum : struct =>
-            InternalParse<TEnum>(value, ignoreCase);
+        public static TEnum Parse<TEnum>(string value, bool ignoreCase) where TEnum : struct
+        {
+            var raw = EnumAlgorithms.Parse(InternalGetMetadata<TEnum>(), value, ignoreCase);
+            return Runtime.CompilerServices.Unsafe.As<ulong, TEnum>(ref raw);
+        }
 
         public static object ToObject(Type enumType, byte value) =>
             InternalToObject(enumType, value);
@@ -166,51 +173,104 @@ namespace System
             TEnum value,
             Span<char> destination,
             out int charsWritten,
-            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>)) where TEnum : struct =>
-            InternalTryFormat(value, destination, out charsWritten, format);
+            ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>)) where TEnum : struct
+        {
+            var metadata = InternalGetMetadata<TEnum>();
+            var view = new EnumMetadataView(metadata);
+            var raw = GetRawValue(ref value, view.UnderlyingTypeCode);
+            var text = EnumAlgorithms.Format(metadata, raw, format.ToString());
+            if (text.Length > destination.Length)
+            {
+                charsWritten = 0;
+                return false;
+            }
+
+            for (var index = 0; index < text.Length; index++)
+            {
+                destination[index] = text[index];
+            }
+            charsWritten = text.Length;
+            return true;
+        }
 
         public static bool TryParse(
             Type enumType,
             ReadOnlySpan<char> value,
             bool ignoreCase,
             out object? result) =>
-            InternalTryParse(enumType, value.ToArray(), ignoreCase, out result);
+            TryParse(enumType, value.ToString(), ignoreCase, out result);
 
         public static bool TryParse(
             Type enumType,
             ReadOnlySpan<char> value,
             out object? result) =>
-            InternalTryParse(enumType, value.ToArray(), false, out result);
+            TryParse(enumType, value.ToString(), false, out result);
 
         public static bool TryParse(
             Type enumType,
             string? value,
             bool ignoreCase,
-            out object? result) =>
-            InternalTryParse(enumType, value, ignoreCase, out result);
+            out object? result)
+        {
+            var metadata = InternalGetMetadata(enumType);
+            if (!EnumAlgorithms.TryParse(metadata, value, ignoreCase, out var raw))
+            {
+                result = null;
+                return false;
+            }
+
+            result = InternalToObject(enumType, raw);
+            return true;
+        }
 
         public static bool TryParse(Type enumType, string? value, out object? result) =>
-            InternalTryParse(enumType, value, false, out result);
+            TryParse(enumType, value, false, out result);
 
         public static bool TryParse<TEnum>(
             ReadOnlySpan<char> value,
             bool ignoreCase,
             out TEnum result) where TEnum : struct =>
-            InternalTryParse(value.ToArray(), ignoreCase, out result);
+            TryParse(value.ToString(), ignoreCase, out result);
 
         public static bool TryParse<TEnum>(
             ReadOnlySpan<char> value,
             out TEnum result) where TEnum : struct =>
-            InternalTryParse(value.ToArray(), false, out result);
+            TryParse(value.ToString(), false, out result);
 
         public static bool TryParse<TEnum>(
             string? value,
             bool ignoreCase,
             out TEnum result) where TEnum : struct =>
-            InternalTryParse(value, ignoreCase, out result);
+            TryParseManaged(value, ignoreCase, out result);
 
         public static bool TryParse<TEnum>(string? value, out TEnum result) where TEnum : struct =>
-            InternalTryParse(value, false, out result);
+            TryParseManaged(value, false, out result);
+
+        private static bool TryParseManaged<TEnum>(
+            string? value,
+            bool ignoreCase,
+            out TEnum result) where TEnum : struct
+        {
+            if (!EnumAlgorithms.TryParse(
+                    InternalGetMetadata<TEnum>(), value, ignoreCase, out var raw))
+            {
+                result = default;
+                return false;
+            }
+
+            result = Runtime.CompilerServices.Unsafe.As<ulong, TEnum>(ref raw);
+            return true;
+        }
+
+        private static ulong GetRawValue<TEnum>(ref TEnum value, int typeCode)
+            where TEnum : struct => typeCode switch
+            {
+                1 or 2 => Runtime.CompilerServices.Unsafe.As<TEnum, byte>(ref value),
+                3 or 4 or 9 => Runtime.CompilerServices.Unsafe.As<TEnum, ushort>(ref value),
+                5 or 6 => Runtime.CompilerServices.Unsafe.As<TEnum, uint>(ref value),
+                7 or 8 => Runtime.CompilerServices.Unsafe.As<TEnum, ulong>(ref value),
+                _ => throw new InvalidOperationException(),
+            };
 
         bool IConvertible.ToBoolean(IFormatProvider? provider) => InternalToBoolean(this);
 
@@ -299,45 +359,13 @@ namespace System
             where TEnum : struct, Enum;
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern object InternalParse(
-            Type enumType, char[] value, bool ignoreCase);
+        private static extern nint InternalGetMetadata<TEnum>() where TEnum : struct;
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern TEnum InternalParse<TEnum>(char[] value, bool ignoreCase)
-            where TEnum : struct;
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern object InternalParse(Type enumType, string value, bool ignoreCase);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern TEnum InternalParse<TEnum>(string value, bool ignoreCase)
-            where TEnum : struct;
+        private static extern nint InternalGetMetadata(Type enumType);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern object InternalToObject(Type enumType, object value);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern bool InternalTryFormat<TEnum>(
-            TEnum value,
-            Span<char> destination,
-            out int charsWritten,
-            ReadOnlySpan<char> format) where TEnum : struct;
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern bool InternalTryParse(
-            Type enumType, char[]? value, bool ignoreCase, out object? result);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern bool InternalTryParse<TEnum>(
-            char[] value, bool ignoreCase, out TEnum result) where TEnum : struct;
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern bool InternalTryParse(
-            Type enumType, string? value, bool ignoreCase, out object? result);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern bool InternalTryParse<TEnum>(
-            string? value, bool ignoreCase, out TEnum result) where TEnum : struct;
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern bool InternalToBoolean(Enum value);

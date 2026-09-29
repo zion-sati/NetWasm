@@ -326,7 +326,7 @@ public sealed class SdkRoutingTests
     }
 
     [Fact]
-    public void FinalWasmOptimizationDefaultsToSizeAndAllowsExplicitNone()
+    public void FinalWasmOptimizationDefaultsToOzAndAllowsExplicitNone()
     {
         using var defaultPolicy = EvaluationProject.Create(
             "<TargetFramework>netwasm0.1</TargetFramework>",
@@ -334,9 +334,18 @@ public sealed class SdkRoutingTests
         using var noFinalOptimization = EvaluationProject.Create(
             "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>None</NetWasmOptimization>",
             includeCompilerTargets: true);
+        using var sizeAlias = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>Size</NetWasmOptimization>",
+            includeCompilerTargets: true);
+        using var explicitOz = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>Oz</NetWasmOptimization>",
+            includeCompilerTargets: true);
 
-        Assert.Equal("Size", defaultPolicy.Property("NetWasmOptimization"));
+        Assert.Equal("Oz", defaultPolicy.Property("NetWasmOptimization"));
         Assert.Equal("None", noFinalOptimization.Property("NetWasmOptimization"));
+        Assert.Equal("Oz", sizeAlias.Property("_NetWasmCanonicalOptimization"));
+        Assert.Equal(explicitOz.Property("_NetWasmCanonicalOptimization"),
+            sizeAlias.Property("_NetWasmCanonicalOptimization"));
     }
 
     [Fact]
@@ -354,7 +363,7 @@ public sealed class SdkRoutingTests
         var identityContract = identity.ToString(SaveOptions.DisableFormatting);
         foreach (var value in new[]
                  {
-                     "$(NetWasmOptimization)",
+                     "$(_NetWasmCanonicalOptimization)",
                      "packagingPolicyRevision=2",
                      "$(NetWasmTarget)",
                      "$(NetWasmWorld)",
@@ -596,6 +605,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__RunWorkingDirectory=$(RunWorkingDirectory)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedStackTrace=$(NetWasmManagedStackTrace)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimization=$(NetWasmOptimization)" />
+                    <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkPackRoute=@(NetWasmSdkPackRoute)" />

@@ -45,30 +45,30 @@ public sealed class NumericConversionInstructionEmitterTests
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         foreach (var width in new[] { 8, 16, 32, 64 })
-        foreach (var unsigned in new[] { false, true })
-        {
-            var request = CreateRequest(CilOperation.ConvertNumeric,
-                new CilOperand.NumericConversion(width, unsigned, true, false, false), source);
-            CreateEmitter(layouts).Emit(request);
-            var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().ToList();
-            var truncate = source == CliValueKind.F4 ? WasmOpcodes.F32Truncate : WasmOpcodes.F64Truncate;
-            var constant = source == CliValueKind.F4 ? WasmOpcodes.F32Constant : WasmOpcodes.F64Constant;
-            var comparisons = source == CliValueKind.F4
-                ? new[] { WasmOpcodes.F32LessThan, WasmOpcodes.F32GreaterThanOrEqual }
-                : new[] { WasmOpcodes.F64LessThan, WasmOpcodes.F64GreaterThanOrEqual };
-            foreach (var comparison in comparisons)
+            foreach (var unsigned in new[] { false, true })
             {
-                var index = instructions.FindIndex(item => item.Opcode == comparison);
-                Assert.True(index >= 3);
-                Assert.Equal(WasmOpcodes.LocalGet, instructions[index - 3].Opcode);
-                Assert.Equal(truncate, instructions[index - 2].Opcode);
-                Assert.Equal(constant, instructions[index - 1].Opcode);
+                var request = CreateRequest(CilOperation.ConvertNumeric,
+                    new CilOperand.NumericConversion(width, unsigned, true, false, false), source);
+                CreateEmitter(layouts).Emit(request);
+                var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().ToList();
+                var truncate = source == CliValueKind.F4 ? WasmOpcodes.F32Truncate : WasmOpcodes.F64Truncate;
+                var constant = source == CliValueKind.F4 ? WasmOpcodes.F32Constant : WasmOpcodes.F64Constant;
+                var comparisons = source == CliValueKind.F4
+                    ? new[] { WasmOpcodes.F32LessThan, WasmOpcodes.F32GreaterThanOrEqual }
+                    : new[] { WasmOpcodes.F64LessThan, WasmOpcodes.F64GreaterThanOrEqual };
+                foreach (var comparison in comparisons)
+                {
+                    var index = instructions.FindIndex(item => item.Opcode == comparison);
+                    Assert.True(index >= 3);
+                    Assert.Equal(WasmOpcodes.LocalGet, instructions[index - 3].Opcode);
+                    Assert.Equal(truncate, instructions[index - 2].Opcode);
+                    Assert.Equal(constant, instructions[index - 1].Opcode);
+                }
+                Assert.Equal(2, instructions.Count(item => item.Opcode == truncate));
+                Assert.DoesNotContain(instructions.Take(instructions.FindIndex(value => value.Opcode == comparisons[1])),
+                    item => item.Opcode == WasmOpcodes.LocalSet);
+                Assert.Equal(width <= 32 ? CliValueKind.I4 : CliValueKind.I8, Assert.Single(request.Stack));
             }
-            Assert.Equal(2, instructions.Count(item => item.Opcode == truncate));
-            Assert.DoesNotContain(instructions.Take(instructions.FindIndex(value => value.Opcode == comparisons[1])),
-                item => item.Opcode == WasmOpcodes.LocalSet);
-            Assert.Equal(width <= 32 ? CliValueKind.I4 : CliValueKind.I8, Assert.Single(request.Stack));
-        }
     }
 
     [Fact]

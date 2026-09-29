@@ -47,7 +47,7 @@ public sealed class ComponentizeCliOptionsTests
     }
 
     [Fact]
-    public void DefaultsToSizeOptimizationAndRejectsUnsupportedValue()
+    public void DefaultsToOzOptimizationAndRejectsUnsupportedValue()
     {
         var options = ComponentizeCliOptions.Parse([
             "--core-module", "application.wasm",
@@ -55,7 +55,7 @@ public sealed class ComponentizeCliOptionsTests
             "--output", "component.wasm",
             "--manifest", "component.json",
         ]);
-        Assert.Equal(FinalWasmOptimization.Size, options.Optimization);
+        Assert.Equal(FinalWasmOptimization.Oz, options.Optimization);
 
         var exception = Assert.Throws<CompilerException>(() =>
             ComponentizeCliOptions.Parse([
@@ -66,6 +66,30 @@ public sealed class ComponentizeCliOptionsTests
                 "--optimization", "speed",
             ]));
         Assert.Contains("none", exception.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("None", FinalWasmOptimization.None)]
+    [InlineData("none", FinalWasmOptimization.None)]
+    [InlineData("O0", FinalWasmOptimization.O0)]
+    [InlineData("O1", FinalWasmOptimization.O1)]
+    [InlineData("O2", FinalWasmOptimization.O2)]
+    [InlineData("O3", FinalWasmOptimization.O3)]
+    [InlineData("Os", FinalWasmOptimization.Os)]
+    [InlineData("Oz", FinalWasmOptimization.Oz)]
+    public void AcceptsCanonicalOptimizationModes(
+        string value,
+        FinalWasmOptimization expected)
+    {
+        var options = ComponentizeCliOptions.Parse([
+            "--core-module", "application.wasm",
+            "--wit", "contract.wit",
+            "--output", "component.wasm",
+            "--manifest", "component.json",
+            "--optimization", value,
+        ]);
+
+        Assert.Equal(expected, options.Optimization);
     }
 
     [Fact]

@@ -112,14 +112,10 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<EnumGetValuesIntrinsicEmitter>();
         services.AddSingleton<IEnumIsDefinedEmitter, EnumIsDefinedEmitter>();
         services.AddSingleton<EnumIsDefinedIntrinsicEmitter>();
-        services.AddSingleton<IEnumNumericParseEmitter, EnumNumericParseEmitter>();
         services.AddSingleton<IEnumValueBoxEmitter, EnumValueBoxEmitter>();
-        services.AddSingleton<IEnumParseEmitter, EnumParseEmitter>();
-        services.AddSingleton<EnumParseIntrinsicEmitter>();
+        services.AddSingleton<EnumGetMetadataIntrinsicEmitter>();
         services.AddSingleton<IEnumGetUnderlyingTypeEmitter, EnumGetUnderlyingTypeEmitter>();
         services.AddSingleton<EnumGetUnderlyingTypeIntrinsicEmitter>();
-        services.AddSingleton<IEnumNumericFormatter, EnumNumericFormatter>();
-        services.AddSingleton<IEnumValueFormatter, EnumValueFormatter>();
         services.AddSingleton<IEnumToStringEmitter, EnumToStringEmitter>();
         services.AddSingleton<EnumToStringIntrinsicEmitter>();
         services.AddSingleton<IEnumToObjectEmitter, EnumToObjectEmitter>();
@@ -269,8 +265,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.EnumGetValues);
         AddRegistration<EnumIsDefinedIntrinsicEmitter>(
             services, RuntimeIntrinsic.EnumIsDefined);
-        AddRegistration<EnumParseIntrinsicEmitter>(
-            services, RuntimeIntrinsic.EnumParse);
+        AddRegistration<EnumGetMetadataIntrinsicEmitter>(
+            services, RuntimeIntrinsic.EnumGetMetadata);
         AddRegistration<EnumGetUnderlyingTypeIntrinsicEmitter>(
             services, RuntimeIntrinsic.EnumGetUnderlyingType);
         AddRegistration<EnumToStringIntrinsicEmitter>(

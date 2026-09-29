@@ -13,6 +13,9 @@ namespace NetWasm.Compiler.Analysis;
 // sole consumer after the work queue has drained.
 internal sealed class ReachabilityLedger
 {
+    internal ImmutableHashSet<EnumMetadataRequirement>.Builder EnumMetadataRequirements { get; } =
+        ImmutableHashSet.CreateBuilder<EnumMetadataRequirement>();
+
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Builder ManagedCallSites { get; } =
         ImmutableDictionary.CreateBuilder<ManagedCallSiteKey, ManagedCallSite>();
 

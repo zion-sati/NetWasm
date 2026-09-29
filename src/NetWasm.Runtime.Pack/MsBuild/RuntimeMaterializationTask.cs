@@ -4,6 +4,7 @@ using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 using NetWasm.Runtime.Pack.Composition;
 using NetWasm.Runtime.Pack.Materialization;
+using NetWasm.Runtime.Pack.Planning;
 
 namespace NetWasm.Runtime.Pack.MsBuild;
 
@@ -51,13 +52,46 @@ public sealed class RuntimeMaterializationTask : Task
     public string LogDirectory { get; set; } = string.Empty;
 
     [Required]
+    public string CacheDirectory { get; set; } = string.Empty;
+
+    [Required]
     public string Target { get; set; } = string.Empty;
 
-    public string Optimization { get; set; } = "Size";
+    public string Optimization { get; set; } = "Oz";
 
     public string InitialHeapSizeBytes { get; set; } = string.Empty;
 
     public string MaximumMemorySizeBytes { get; set; } = string.Empty;
+
+    [Required]
+    public string SdkVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string CompilerVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string RuntimeVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string RuntimePackVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string HostToolsPackageId { get; set; } = string.Empty;
+
+    [Required]
+    public string HostToolsPackageVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string WasmLdVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string WasmOptVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string WasmToolsVersion { get; set; } = string.Empty;
+
+    [Required]
+    public string NodeVersion { get; set; } = string.Empty;
 
     [Output]
     public ITaskItem[] RuntimeModules { get; private set; } = [];
@@ -78,11 +112,24 @@ public sealed class RuntimeMaterializationTask : Task
                 WasmToolsModulePath,
                 OutputPath,
                 LogDirectory,
+                CacheDirectory,
                 Target,
                 ParseOptimization(Optimization),
                 ParseOptionalSize(InitialHeapSizeBytes),
-                ParseOptionalSize(MaximumMemorySizeBytes)));
+                ParseOptionalSize(MaximumMemorySizeBytes),
+                new(
+                    SdkVersion,
+                    CompilerVersion,
+                    RuntimeVersion,
+                    RuntimePackVersion,
+                    HostToolsPackageId,
+                    HostToolsPackageVersion,
+                    WasmLdVersion,
+                    WasmOptVersion,
+                    WasmToolsVersion,
+                    NodeVersion)));
             RuntimeModules = [CreateRuntimeModule(materialization)];
+            LogCacheMetrics(materialization.CacheMetrics);
             return true;
         }
         catch (Exception exception)
@@ -92,10 +139,15 @@ public sealed class RuntimeMaterializationTask : Task
         }
     }
 
-    private static RuntimePackOptimization ParseOptimization(string value) => value switch
+    private static RuntimeWasmOptimization ParseOptimization(string value) => value switch
     {
-        "None" => RuntimePackOptimization.None,
-        "Size" => RuntimePackOptimization.Size,
+        "None" => RuntimeWasmOptimization.None,
+        "O0" => RuntimeWasmOptimization.O0,
+        "O1" => RuntimeWasmOptimization.O1,
+        "O2" => RuntimeWasmOptimization.O2,
+        "O3" => RuntimeWasmOptimization.O3,
+        "Os" => RuntimeWasmOptimization.Os,
+        "Oz" or "Size" => RuntimeWasmOptimization.Oz,
         _ => throw new InvalidOperationException("The NetWasm optimization property is invalid."),
     };
 
@@ -129,6 +181,18 @@ public sealed class RuntimeMaterializationTask : Task
         item.SetMetadata("ToolchainFingerprint", materialization.ToolchainFingerprint);
         return item;
     }
+
+    private void LogCacheMetrics(RuntimeMaterializationCacheMetrics metrics) =>
+        Log.LogMessage(
+            MessageImportance.Low,
+            "NetWasm cache: stage={0} key={1} outcome={2} recomputed={3} bytes={4} lookupMs={5:F3} totalMs={6:F3}",
+            metrics.Stage,
+            metrics.KeyPrefix,
+            metrics.Outcome.ToString().ToLowerInvariant(),
+            metrics.Recomputed.ToString().ToLowerInvariant(),
+            metrics.Bytes,
+            metrics.LookupMilliseconds,
+            metrics.TotalMilliseconds);
 
     private static string Format(long value) => value.ToString(CultureInfo.InvariantCulture);
 }

@@ -12,6 +12,10 @@ internal static class RuntimeMaterializationComposition
             new RuntimeAssetDigestVerifier(),
             new RuntimeLinkArgumentBuilder(),
             new RuntimeOptimizationArgumentBuilder(),
+            new RuntimeMaterializationCacheKeyBuilder(),
+            new RuntimeMaterializationCacheReader(),
+            new RuntimeMaterializationCacheWriter(),
+            new RuntimeArtifactPublisher(new Sha256ArtifactDigestCalculator()),
             new CommandInvoker(),
             new Sha256ArtifactDigestCalculator());
 }

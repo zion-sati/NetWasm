@@ -22,6 +22,8 @@ public sealed record ReachableProgram(
     ImmutableDictionary<EntityKey, EntityKey> Finalizers,
     ImmutableHashSet<ManagedExceptionKind> ImplicitExceptions)
 {
+    public ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
+
     public ImmutableArray<EntityKey> ModuleInitializers { get; init; } = [];
 
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites { get; init; } =

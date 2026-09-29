@@ -41,15 +41,39 @@ public sealed class FrozenOracleEvidenceReaderTests : IDisposable
     }
 
     [Fact]
-    public void RejectsRuntimeSourceAndAssemblyIdentityChanges()
+    public void HistoricalProducerIdentitySurvivesRuntimeAndCompilerUpgrades()
     {
         var reader = CreateReader();
-        Assert.Throws<InvalidOperationException>(() => reader.Read(
-            CreateRequest() with { RuntimeVersion = "different" }));
+        Assert.Equal(9, reader.Read(
+            CreateRequest() with { RuntimeVersion = "different" }).Count);
+        Assert.Equal(9, reader.Read(
+            CreateRequest() with { DesktopAssemblySha256 = "different" }).Count);
         Assert.Throws<InvalidOperationException>(() => reader.Read(
             CreateRequest() with { SourceSha256 = "different" }));
-        Assert.Throws<InvalidOperationException>(() => reader.Read(
-            CreateRequest() with { DesktopAssemblySha256 = "different" }));
+    }
+
+    [Fact]
+    public void RejectsIncompleteHistoricalProducerIdentity()
+    {
+        var missingRuntime = LoadEvidence();
+        missingRuntime["runtimeIdentity"]!["runtimeVersion"] = string.Empty;
+        var missingRuntimePath = WriteEvidence(missingRuntime);
+        var invalidAssembly = LoadEvidence();
+        invalidAssembly["hashes"]!["desktopAssemblySha256"]!["Debug"] = "not-a-hash";
+        var invalidAssemblyPath = WriteEvidence(invalidAssembly);
+        try
+        {
+            var reader = CreateReader();
+            Assert.Throws<InvalidOperationException>(() => reader.Read(
+                CreateRequest() with { RelativePath = missingRuntimePath }));
+            Assert.Throws<InvalidOperationException>(() => reader.Read(
+                CreateRequest() with { RelativePath = invalidAssemblyPath }));
+        }
+        finally
+        {
+            DeleteEvidence(missingRuntimePath);
+            DeleteEvidence(invalidAssemblyPath);
+        }
     }
 
     [Fact]
@@ -249,8 +273,10 @@ public sealed class FrozenOracleEvidenceReaderTests : IDisposable
         {
             observations[input.ToString(CultureInfo.InvariantCulture)] = new JsonObject
             {
-                ["kind"] = "Value", ["value"] = 101 + input,
-                ["exceptionType"] = null, ["trace"] = 0,
+                ["kind"] = "Value",
+                ["value"] = 101 + input,
+                ["exceptionType"] = null,
+                ["trace"] = 0,
             };
         }
         return new JsonObject
@@ -259,8 +285,10 @@ public sealed class FrozenOracleEvidenceReaderTests : IDisposable
             ["fixture"] = "SyntheticFrozenOracle",
             ["runtimeIdentity"] = new JsonObject
             {
-                ["sdkVersion"] = "10.0.302", ["targetFramework"] = ".NETCoreApp,Version=v8.0",
-                ["runtimeVersion"] = "10.0.10", ["frameworkDescription"] = ".NET 10.0.10",
+                ["sdkVersion"] = "10.0.302",
+                ["targetFramework"] = ".NETCoreApp,Version=v8.0",
+                ["runtimeVersion"] = "10.0.10",
+                ["frameworkDescription"] = ".NET 10.0.10",
                 ["processArchitecture"] = "Arm64",
             },
             ["hashes"] = new JsonObject

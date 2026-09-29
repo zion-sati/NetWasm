@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
     <ProjectReference Include="../../src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj" />
   </ItemGroup>
 </Project>

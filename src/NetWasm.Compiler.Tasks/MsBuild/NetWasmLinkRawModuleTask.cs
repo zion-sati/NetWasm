@@ -54,7 +54,7 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
     [Required]
     public string Target { get; set; } = string.Empty;
 
-    public string Optimization { get; set; } = "Size";
+    public string Optimization { get; set; } = "Oz";
 
     [Output]
     public ITaskItem[] Modules { get; private set; } = [];
@@ -114,13 +114,8 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
         return item;
     }
 
-    private FinalWasmOptimization ParseOptimization() => Optimization switch
-    {
-        "None" => FinalWasmOptimization.None,
-        "Size" => FinalWasmOptimization.Size,
-        _ => throw new InvalidOperationException(
-            "NetWasmOptimization must be None or Size."),
-    };
+    private FinalWasmOptimization ParseOptimization() =>
+        FinalWasmOptimizationParser.Parse(Optimization);
 
     private static string? NullIfEmpty(string value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;

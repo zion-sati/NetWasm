@@ -828,7 +828,7 @@ public sealed class CSharp15CompilationTests
     {
         using var document = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(
-                FindRepositoryRoot(),
+                TestAssets.FindRepositoryRoot(),
                 "eng",
                 "csharp15-toolchain.json")));
         return document.RootElement.GetProperty(propertyName).GetString()
@@ -1964,18 +1964,6 @@ public sealed class CSharp15CompilationTests
             42
         },
     };
-
-    private static string FindRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null &&
-               !File.Exists(Path.Combine(current.FullName, "global.json")))
-        {
-            current = current.Parent;
-        }
-        return current?.FullName
-            ?? throw new InvalidOperationException("Repository root was not found.");
-    }
 
     private static TypeDefinitionHandle FindType(MetadataReader metadata, string name) =>
         metadata.TypeDefinitions.Single(handle =>

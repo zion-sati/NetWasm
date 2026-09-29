@@ -20,7 +20,7 @@ public sealed class BrowserComponentCoreModulesTests
     {
         var target = memory64 ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02;
         var plan = BrowserComponentCoreModules.CreateLinkPlan(
-            CreateRequest(target) with { Optimization = FinalWasmOptimization.Size }, CreateWorkspace());
+            CreateRequest(target) with { Optimization = FinalWasmOptimization.Oz }, CreateWorkspace());
         var width = memory64 ? "i64" : "i32";
 
         Assert.Equal(new BrowserWasmTextModule("v/./env.wasm",

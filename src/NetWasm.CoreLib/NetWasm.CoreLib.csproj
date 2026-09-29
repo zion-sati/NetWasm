@@ -707,5 +707,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="EnvironmentVariableTarget.cs" />
+    <Compile Include="EnumMetadataView.cs" />
+    <Compile Include="EnumAlgorithms.cs" />
   </ItemGroup>
 </Project>

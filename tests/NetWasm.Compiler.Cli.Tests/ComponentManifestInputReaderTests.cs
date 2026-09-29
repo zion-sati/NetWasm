@@ -63,7 +63,7 @@ public sealed class ComponentManifestInputReaderTests
                 null,
                 null,
                 null,
-                FinalWasmOptimization.Size));
+                FinalWasmOptimization.Oz));
 
         Assert.Empty(result.JavaScript.Imports);
         Assert.Empty(result.JavaScript.Exports);
@@ -119,7 +119,7 @@ public sealed class ComponentManifestInputReaderTests
             interopManifest,
             null,
             null,
-            FinalWasmOptimization.Size);
+            FinalWasmOptimization.Oz);
 
     private sealed class RecordingTextFileReader(string content) : ITextFileReader
     {
