@@ -85,5 +85,12 @@ HTTP, DI, or other capabilities as available. Review the affected pages and
 their links in GitHub's rendered Markdown before submitting the change.
 
 Use the repository's issue tracker for reproducible bugs and narrowly scoped
-proposals after the public host is available. The project currently has no
-contributor licence agreement or contributor-assignment policy published here.
+proposals after the public host is available.
+
+## Contributor licence agreement
+
+Every contributor must accept the [NetWasm Contributor License Agreement](CLA.md)
+before a pull request can be merged. The pull request check identifies every
+committer who has not signed and provides the exact acceptance phrase. A
+contributor only needs to sign Version 1.0 once. A future revision that requires
+renewed consent will use a new signature record.
