@@ -211,6 +211,21 @@ public sealed class EnumAlgorithmsTests
         Assert.Equal("0", EnumAlgorithms.Format(descriptor.View, 0, "F"));
     }
 
+    [Fact]
+    public unsafe void DescriptorNamesRemainValidAcrossCompactingGarbageCollection()
+    {
+        using var descriptor = Descriptor(6, true,
+            [(1, new string(['R', 'e', 'a', 'd'])),
+             (2, new string(['W', 'r', 'i', 't', 'e']))]);
+
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+
+        Assert.Equal("Read, Write", EnumAlgorithms.Format(descriptor.View, 3, "F"));
+        Assert.Equal(3UL, EnumAlgorithms.Parse(
+            descriptor.View, "Read, Write", ignoreCase: false));
+    }
+
     private static unsafe PinnedDescriptor Descriptor(
         int typeCode, bool flags, params (ulong Value, string Name)[] members) =>
         new(typeCode, flags, members);
@@ -219,8 +234,11 @@ public sealed class EnumAlgorithmsTests
     {
         private readonly ulong[] _values;
         private readonly string[] _names;
+        private readonly nint[] _nameReferences;
         private readonly byte[] _descriptor;
         private readonly GCHandle _valuesPin;
+        private readonly GCHandle[] _namePins;
+        private readonly GCHandle _nameReferencesPin;
         private readonly GCHandle _descriptorPin;
 
         internal PinnedDescriptor(
@@ -228,8 +246,16 @@ public sealed class EnumAlgorithmsTests
         {
             _values = members.Select(member => member.Value).ToArray();
             _names = members.Select(member => member.Name).ToArray();
+            _nameReferences = new nint[_names.Length];
             _descriptor = new byte[16 + (2 * sizeof(nint))];
             _valuesPin = GCHandle.Alloc(_values, GCHandleType.Pinned);
+            _namePins = new GCHandle[_names.Length];
+            for (var index = 0; index < _names.Length; index++)
+            {
+                _namePins[index] = GCHandle.Alloc(_names[index], GCHandleType.Pinned);
+                _nameReferences[index] = Unsafe.As<string, nint>(ref _names[index]);
+            }
+            _nameReferencesPin = GCHandle.Alloc(_nameReferences, GCHandleType.Pinned);
             _descriptorPin = GCHandle.Alloc(_descriptor, GCHandleType.Pinned);
             var address = (byte*)_descriptorPin.AddrOfPinnedObject();
             ((int*)address)[0] = 1;
@@ -238,7 +264,7 @@ public sealed class EnumAlgorithmsTests
             ((int*)address)[3] = members.Length;
             *(nint*)(address + 16) = _valuesPin.AddrOfPinnedObject();
             *(nint*)(address + 16 + sizeof(nint)) =
-                (nint)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_names));
+                _nameReferencesPin.AddrOfPinnedObject();
             View = new EnumMetadataView((nint)address);
             Address = (nint)address;
         }
@@ -249,6 +275,9 @@ public sealed class EnumAlgorithmsTests
         public void Dispose()
         {
             _descriptorPin.Free();
+            _nameReferencesPin.Free();
+            foreach (var pin in _namePins)
+                pin.Free();
             _valuesPin.Free();
             GC.KeepAlive(_names);
         }
