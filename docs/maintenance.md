@@ -71,7 +71,7 @@ owner-signature verifier does not accept. Select the signed PR-head SHA with
 `--target` instead. The published Release tag supplies the package version.
 
 The release workflow verifies that the tag's commit is on `main`, builds the
-coordinated package set from that commit, checks its manifest and payloads, and
+package set from that commit, checks its manifest and payloads, and
 publishes through trusted NuGet.org publishing. It waits until prerequisite
 packages are available from the NuGet.org package feed before publishing
 `NetWasm.Sdk`, and waits for the SDK before publishing `NetWasm.Templates`.
@@ -79,7 +79,3 @@ Each stage runs under the tagged source's pinned .NET SDK and requests a fresh
 temporary credential. A manual workflow retry must name an existing published
 Release tag; it reuses an already published package only when its contents
 match the release candidate, allowing for NuGet.org's repository signature.
-
-Do not run `eng/prepare-release.py` for this workflow. That older helper writes
-versioned source metadata and a tag before the GitHub Release, which conflicts
-with the current release-as-source-of-truth flow.

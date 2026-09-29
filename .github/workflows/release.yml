@@ -1,53 +1,21 @@
 name: Release
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
-      coordinated_stage:
+      tag:
+        description: Existing published GitHub Release tag to retry
         required: true
         type: string
-      preparation_sha256:
-        required: true
-        type: string
-      release_id:
-        required: true
-        type: string
-      release_ref:
-        required: true
-        type: string
-      source_commit:
-        required: true
-        type: string
-      infrastructure_commit:
-        required: true
-        type: string
-      coordinator_repository:
-        required: true
-        type: string
-      coordinator_run_id:
-        required: true
-        type: string
-      coordinator_run_attempt:
-        required: true
-        type: string
-      stage_identity:
-        required: true
-        type: string
-      dispatch_attempt_identity:
-        required: true
-        type: string
-      upstream_receipts:
-        required: true
-        type: string
-
-run-name: Release ${{ inputs.coordinated_stage }} ${{ inputs.stage_identity }}
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: nuget-release-${{ inputs.stage_identity }}
+  group: nuget-release-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -55,8 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
-      infrastructure_commit: ${{ steps.receiver.outputs.infrastructure_commit }}
-      source_commit: ${{ steps.receiver.outputs.source_commit }}
+      infrastructure_commit: ${{ steps.release.outputs.infrastructure_commit }}
+      source_commit: ${{ steps.release.outputs.source_commit }}
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
       mode: ${{ steps.train-state.outputs.mode }}
@@ -67,97 +35,36 @@ jobs:
       artifact_name: ${{ steps.release.outputs.artifact_name }}
       ci_run_id: ${{ steps.release-ci.outputs.ci_run_id }}
     steps:
-      - name: Check out trusted receiver
+      - name: Check out release infrastructure
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-          path: bootstrap
+          ref: ${{ github.event.repository.default_branch }}
+          path: infrastructure
+
+      - name: Verify manual retry names a published release
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            --jq 'if .draft then error("Release is still a draft") else .tag_name end' |
+            grep -Fqx "${RELEASE_TAG}"
 
       - name: Check out release source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.release_ref }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
           fetch-depth: 0
           path: source
-
-      - name: Download coordinated release evidence
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ inputs.release_id }}
-          UPSTREAM_RECEIPTS: ${{ inputs.upstream_receipts }}
-        run: |
-          set -euo pipefail
-          root="$GITHUB_WORKSPACE/artifacts/dispatch"
-          mkdir -p "$root/upstream" "$root/upstream-runs"
-          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" > "$root/release.json"
-
-          download_release_asset() {
-            local name="$1"
-            local output="$2"
-            local asset_id
-            asset_id="$(jq --arg name "$name" \
-              '[.assets[] | select(.name == $name)] | if length == 1 then .[0].id else error("release asset is missing or ambiguous") end' \
-              "$root/release.json")"
-            [[ "$asset_id" =~ ^[1-9][0-9]*$ ]]
-            gh api -H 'Accept: application/octet-stream' \
-              "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" > "$output"
-          }
-
-          download_release_asset release-preparation.json "$root/release-preparation.json"
-          while IFS= read -r coordinate; do
-            stage="$(jq -r '.stage' <<< "$coordinate")"
-            name="$(jq -r '.fileName' <<< "$coordinate")"
-            [[ "$stage" =~ ^[a-z]+(-[a-z]+)*$ ]]
-            [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]]
-            receipt="$root/upstream/$name"
-            download_release_asset "$name" "$receipt"
-            repository="$(jq -r '.repository' "$receipt")"
-            run_id="$(jq -r '.publication.runId' "$receipt")"
-            [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
-            [[ "$run_id" =~ ^[1-9][0-9]*$ ]]
-            gh api "repos/${repository}/actions/runs/${run_id}" \
-              > "$root/upstream-runs/$stage.json"
-          done < <(jq -c '.[]' <<< "$UPSTREAM_RECEIPTS")
-          jq -c '.inputs' "$GITHUB_EVENT_PATH" > "$root/inputs.json"
-
-      - name: Verify coordinated receiver identity
-        id: receiver
-        shell: bash
-        env:
-          APPROVED_ACTOR_ID: ${{ vars.RELEASE_APP_ACTOR_ID }}
-        run: |
-          python3 bootstrap/eng/release-receiver.py \
-            --inputs artifacts/dispatch/inputs.json \
-            --preparation artifacts/dispatch/release-preparation.json \
-            --release artifacts/dispatch/release.json \
-            --upstream-directory artifacts/dispatch/upstream \
-            --upstream-run-directory artifacts/dispatch/upstream-runs \
-            --repository "$GITHUB_REPOSITORY" \
-            --event-name "$GITHUB_EVENT_NAME" \
-            --workflow-identity "$GITHUB_WORKFLOW_REF" \
-            --workflow-sha "$GITHUB_SHA" \
-            --workflow-ref "$GITHUB_REF_NAME" \
-            --actor-id "$GITHUB_ACTOR_ID" \
-            --approved-actor-id "$APPROVED_ACTOR_ID" \
-            --tag-commit "$(git -C source rev-parse HEAD)" \
-            --output artifacts/dispatch/receiver.json \
-            --github-output "$GITHUB_OUTPUT"
-
-      - name: Check out approved release infrastructure
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ steps.receiver.outputs.infrastructure_commit }}
-          persist-credentials: false
-          path: infrastructure
 
       - name: Resolve GitHub Release
         id: release
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          RELEASE_TAG: ${{ inputs.release_ref }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           git -C source fetch --force origin \
             "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}" \
@@ -174,17 +81,7 @@ jobs:
             --train-directory artifacts/train-manifests \
             --github-output "${GITHUB_OUTPUT}"
           infrastructure_commit="$(git -C infrastructure rev-parse HEAD)"
-          test "$source_commit" = '${{ steps.receiver.outputs.source_commit }}'
-          test "$infrastructure_commit" = '${{ steps.receiver.outputs.infrastructure_commit }}'
           printf 'infrastructure_commit=%s\n' "${infrastructure_commit}" >> "${GITHUB_OUTPUT}"
-
-      - name: Retain coordinated dispatch evidence
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: coordinated-inputs-${{ inputs.stage_identity }}
-          path: artifacts/dispatch/
-          if-no-files-found: error
-          retention-days: 90
 
       - name: Require exact-source main CI
         id: release-ci
@@ -441,13 +338,10 @@ jobs:
             --preview-tag "$PREVIEW_TAG" \
             --stable-tag "$STABLE_TAG" \
             --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --artifact-name "$ARTIFACT_NAME" \
             --preview-bundle "artifacts/train/netwasm-preview-$PREVIEW_VERSION.zip" \
             --stable-bundle "artifacts/train/netwasm-stable-$STABLE_VERSION.zip" \
             --toolchain source/eng/toolchain.json \
-            --preparation-sha256 '${{ inputs.preparation_sha256 }}' \
-            --infrastructure-commit '${{ inputs.infrastructure_commit }}' \
             --output "artifacts/train/$ARTIFACT_NAME.json"
       - name: Retain verified preview and stable train
         if: needs.build.outputs.mode == 'build'
@@ -560,7 +454,6 @@ jobs:
             --receipt "$candidate/release-package-receipt.json" \
             --timing-output "$candidate/local-verification.json"
           (cd "$candidate" && sha256sum packages/*.nupkg > SHA256SUMS)
-          cp "$train" "$candidate/release-train.json"
       - name: Retain resolved release artifacts
         if: needs.build.outputs.mode != 'build'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -597,12 +490,6 @@ jobs:
           ref: ${{ needs.build.outputs.tag }}
           fetch-depth: 0
           path: source
-
-      - name: Download coordinated dispatch evidence
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          name: coordinated-inputs-${{ inputs.stage_identity }}
-          path: artifacts/dispatch
 
       - name: Install pinned .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -643,7 +530,7 @@ jobs:
       - name: Verify release identity
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.release_ref }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
           SOURCE_COMMIT: ${{ needs.build.outputs.source_commit }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
@@ -685,31 +572,6 @@ jobs:
             --preflight \
             --timing-output ../artifacts/publish/timings/feed-preflight.json
 
-      - name: Verify coordinated publication approval
-        shell: bash
-        env:
-          ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
-          UPSTREAM_RECEIPTS: ${{ inputs.upstream_receipts }}
-        run: |
-          train="artifacts/train/$ARTIFACT_NAME.json"
-          if [[ ! -f "$train" ]]; then
-            train=artifacts/publish/release-train.json
-          fi
-          upstream_args=()
-          while IFS= read -r coordinate; do
-            name="$(jq -r '.fileName' <<< "$coordinate")"
-            digest="$(jq -r '.sha256' <<< "$coordinate")"
-            upstream_args+=(
-              --upstream-receipt "artifacts/dispatch/upstream/$name"
-              --upstream-receipt-sha256 "$digest"
-            )
-          done < <(jq -c '.[]' <<< "$UPSTREAM_RECEIPTS")
-          python3 infrastructure/eng/release-train.py approval \
-            --preparation artifacts/dispatch/release-preparation.json \
-            --stage '${{ inputs.coordinated_stage }}' \
-            --train "$train" \
-            "${upstream_args[@]}"
-
       - name: Request credential for prerequisites
         id: login_prerequisites
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
@@ -745,49 +607,6 @@ jobs:
             --packages ../artifacts/publish/packages \
             --stage final \
             --timing-output ../artifacts/publish/timings/final.json
-
-      - name: Record immutable publication receipt
-        shell: bash
-        env:
-          ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
-          UPSTREAM_RECEIPTS: ${{ inputs.upstream_receipts }}
-        run: |
-          python3 infrastructure/eng/publish-release-packages.py \
-            --manifest artifacts/publish/release-manifest.json \
-            --packages artifacts/publish/packages \
-            --feed-receipt \
-            --receipt-output artifacts/publish/feed-receipt.json
-
-          train="artifacts/train/$ARTIFACT_NAME.json"
-          if [[ ! -f "$train" ]]; then
-            train=artifacts/publish/release-train.json
-          fi
-          upstream_args=()
-          while IFS= read -r coordinate; do
-            name="$(jq -r '.fileName' <<< "$coordinate")"
-            digest="$(jq -r '.sha256' <<< "$coordinate")"
-            upstream_args+=(
-              --upstream-receipt "artifacts/dispatch/upstream/$name"
-              --upstream-receipt-sha256 "$digest"
-            )
-          done < <(jq -c '.[]' <<< "$UPSTREAM_RECEIPTS")
-          python3 infrastructure/eng/release-train.py publication \
-            --preparation artifacts/dispatch/release-preparation.json \
-            --stage '${{ inputs.coordinated_stage }}' \
-            --train "$train" \
-            --feed-receipt artifacts/publish/feed-receipt.json \
-            --publication-run-id "$GITHUB_RUN_ID" \
-            --publication-run-attempt "$GITHUB_RUN_ATTEMPT" \
-            "${upstream_args[@]}" \
-            --output artifacts/publish/publication-receipt.json
-
-      - name: Retain immutable publication receipt
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: publication-receipt-${{ inputs.coordinated_stage }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/publish/publication-receipt.json
-          if-no-files-found: error
-          retention-days: 90
 
       - name: Retain release timing evidence
         if: always()

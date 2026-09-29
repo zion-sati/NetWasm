@@ -39,10 +39,7 @@ class PublishReleasePackagesTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.manifest = {
-            "repository": "zion-sati/NetWasm",
             "releaseVersion": "0.3.0-preview.1",
-            "releaseTag": "v0.3.0-preview.1",
-            "sourceCommit": "a" * 40,
             "packages": [
                 "NetWasm.Sdk",
                 "NetWasm.Toolchain",
@@ -214,16 +211,11 @@ class PublishReleasePackagesTests(unittest.TestCase):
         local_path.write_bytes(archive_bytes(local))
         remote = archive_bytes(local + [(".signature.p7s", b"repository signature", 0o644)])
 
-        digest = MODULE.verify_feed_payload(
+        MODULE.verify_feed_payload(
             "NetWasm.Toolchain", "0.3.0-preview.1", local_path,
             "https://example.invalid/packages/",
             fetch=mock.Mock(return_value=io.BytesIO(remote)),
         )
-        with zipfile.ZipFile(local_path) as archive:
-            self.assertEqual(
-                MODULE.normalized_payload_digest(MODULE.payload_digests(archive)),
-                digest,
-            )
 
         for changed in (
             [("NetWasm.Toolchain.nuspec", b"source-commit=b", 0o644),
@@ -240,41 +232,6 @@ class PublishReleasePackagesTests(unittest.TestCase):
                     "https://example.invalid/packages/",
                     fetch=mock.Mock(return_value=io.BytesIO(archive_bytes(changed))),
                 )
-
-    def test_feed_receipt_binds_candidate_and_normalized_served_payloads(self) -> None:
-        normalized = {
-            package_id: f"{index:064x}"
-            for index, package_id in enumerate(sorted(self.manifest["packages"]), 1)
-        }
-
-        with mock.patch.object(
-            MODULE,
-            "verify_feed_payload",
-            side_effect=lambda package_id, *args: normalized[package_id],
-        ):
-            receipt = MODULE.create_feed_receipt(
-                self.manifest,
-                self.root,
-                base_address="https://example.invalid/packages/",
-            )
-
-        self.assertEqual("PASS", receipt["status"])
-        self.assertEqual("zion-sati/NetWasm", receipt["repository"])
-        self.assertEqual(MODULE.SOURCE_INDEX, receipt["feed"])
-        self.assertEqual(
-            sorted(self.manifest["packages"]),
-            [package["id"] for package in receipt["packages"]],
-        )
-        for package in receipt["packages"]:
-            path = self.root / package["fileName"]
-            self.assertEqual(
-                MODULE.hashlib.sha256(path.read_bytes()).hexdigest(),
-                package["candidateSha256"],
-            )
-            self.assertEqual(
-                normalized[package["id"]],
-                package["normalizedPayloadSha256"],
-            )
 
     def test_rejects_unsafe_or_duplicate_package_entries(self) -> None:
         for name in ("../escape", "/absolute", "a/./b", "a//b", "C:/escape"):

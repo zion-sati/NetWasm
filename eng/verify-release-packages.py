@@ -65,41 +65,7 @@ def verify_signature(
             object_to_verify,
         ],
         check=True,
-        capture_output=True,
-        text=True,
     )
-
-
-def verify_commit_signature(
-    source_root: Path,
-    allowed_signers: Path,
-    commit: str,
-) -> None:
-    try:
-        verify_signature(
-            source_root,
-            allowed_signers,
-            "verify-commit",
-            commit,
-        )
-        return
-    except subprocess.CalledProcessError as direct_error:
-        parents = git(
-            source_root, "rev-list", "--parents", "-n", "1", commit
-        ).split()
-        if len(parents) != 3:
-            raise direct_error
-        signed_head = parents[2]
-        if git(source_root, "rev-parse", f"{commit}^{{tree}}") != git(
-            source_root, "rev-parse", f"{signed_head}^{{tree}}"
-        ):
-            raise direct_error
-        verify_signature(
-            source_root,
-            allowed_signers,
-            "verify-commit",
-            signed_head,
-        )
 
 
 def verify_source(
@@ -118,15 +84,14 @@ def verify_source(
     if git(source_root, "rev-parse", f"{tag_ref}^{{commit}}") != source_commit:
         raise ValueError("Release tag does not peel to the release manifest commit.")
     if allowed_signers is not None:
-        if tag_type == "tag":
-            verify_signature(
-                source_root,
-                allowed_signers,
-                "verify-tag",
-                release_tag,
-            )
-        else:
-            verify_commit_signature(source_root, allowed_signers, source_commit)
+        object_to_verify = release_tag if tag_type == "tag" else source_commit
+        verification_command = "verify-tag" if tag_type == "tag" else "verify-commit"
+        verify_signature(
+            source_root,
+            allowed_signers,
+            verification_command,
+            object_to_verify,
+        )
 
 
 def element(parent: ElementTree.Element, name: str) -> ElementTree.Element:

@@ -178,32 +178,13 @@ def payload_digests(archive: zipfile.ZipFile) -> dict[str, tuple[int, str, int, 
     return digests
 
 
-def normalized_payload_digest(
-    entries: dict[str, tuple[int, str, int, int]]
-) -> str:
-    rows = [
-        {
-            "path": path,
-            "size": value[0],
-            "sha256": value[1],
-            "fileType": value[2],
-            "executableBits": value[3],
-        }
-        for path, value in sorted(entries.items())
-    ]
-    encoded = json.dumps(
-        rows, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def verify_feed_payload(
     package_id: str,
     version: str,
     local_path: Path,
     base_address: str,
     fetch: Callable[..., object] = urllib.request.urlopen,
-) -> str:
+) -> None:
     url = package_content_url(package_id, version, base_address)
     max_bytes = local_path.stat().st_size + 1024 * 1024
     with tempfile.TemporaryFile() as downloaded:
@@ -216,54 +197,11 @@ def verify_feed_payload(
                 downloaded.write(block)
         downloaded.seek(0)
         with zipfile.ZipFile(local_path) as local, zipfile.ZipFile(downloaded) as remote:
-            local_payload = payload_digests(local)
-            remote_payload = payload_digests(remote)
-            if local_payload != remote_payload:
+            if payload_digests(local) != payload_digests(remote):
                 raise ValueError(
                     f"NuGet.org package content differs from the release candidate: "
                     f"{package_id} {version}."
                 )
-            return normalized_payload_digest(remote_payload)
-
-
-def create_feed_receipt(
-    manifest: dict[str, object],
-    packages_root: Path,
-    *,
-    base_address: str | None = None,
-    fetch: Callable[..., object] = urllib.request.urlopen,
-) -> dict[str, object]:
-    stages = publication_stages(manifest, packages_root)
-    required = {
-        "repository": manifest.get("repository"),
-        "releaseVersion": manifest.get("releaseVersion"),
-        "releaseTag": manifest.get("releaseTag"),
-        "sourceCommit": manifest.get("sourceCommit"),
-    }
-    if any(not isinstance(value, str) or not value for value in required.values()):
-        raise ValueError("Release manifest is missing feed-receipt identity.")
-    address = base_address or package_base_address(fetch)
-    packages: list[dict[str, object]] = []
-    for package_id, path in sorted(
-        (item for stage in stages for item in stage), key=lambda item: item[0]
-    ):
-        normalized = verify_feed_payload(
-            package_id, str(required["releaseVersion"]), path, address, fetch
-        )
-        packages.append({
-            "id": package_id,
-            "version": required["releaseVersion"],
-            "fileName": path.name,
-            "candidateSha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            "normalizedPayloadSha256": normalized,
-        })
-    return {
-        "schemaVersion": 1,
-        "status": "PASS",
-        **required,
-        "feed": SOURCE_INDEX,
-        "packages": packages,
-    }
 
 
 def wait_for_feed(
@@ -441,26 +379,11 @@ def main() -> int:
     operation = parser.add_mutually_exclusive_group(required=True)
     operation.add_argument("--stage", choices=STAGE_NAMES)
     operation.add_argument("--preflight", action="store_true")
-    operation.add_argument("--feed-receipt", action="store_true")
     parser.add_argument("--timing-output", type=Path)
-    parser.add_argument("--receipt-output", type=Path)
     arguments = parser.parse_args()
     if arguments.stage is not None and not os.environ.get("NUGET_API_KEY"):
         parser.error("NUGET_API_KEY is required.")
     manifest = json.loads(arguments.manifest.read_text(encoding="utf-8"))
-    if arguments.feed_receipt:
-        if arguments.receipt_output is None:
-            parser.error("--receipt-output is required with --feed-receipt")
-        receipt = create_feed_receipt(manifest, arguments.packages)
-        arguments.receipt_output.parent.mkdir(parents=True, exist_ok=True)
-        arguments.receipt_output.write_text(
-            json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
-        )
-        print(
-            f"Recorded {len(receipt['packages'])} verified NuGet.org payloads.",
-            flush=True,
-        )
-        return 0
     timing = (
         preflight_release(manifest, arguments.packages)
         if arguments.preflight

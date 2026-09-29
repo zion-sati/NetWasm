@@ -17,26 +17,28 @@ VERSION_PATTERN = re.compile(
     r"(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
 )
 VERSION_FILE = Path("eng/NetWasm.ReleaseVersion.txt")
-# Measurements bind their original package identity, not the next release.
-HISTORICAL_FILES = {Path("docs/size-and-methodology.md")}
-RELEASE_VERSION_FILES = {
-    Path("eng/NetWasm.PackageVersions.props"),
-    Path("eng/NetWasm.ReleaseVersion.txt"),
-    Path("global.json"),
-    Path("src/NetWasm.Sdk/Sdk/NetWasm.Sdk.Tfm.props"),
-    Path("src/NetWasm.Sdk/Sdk/Sdk.props"),
-    Path("src/NetWasm.Templates/content/NetWasm.App/global.json"),
-    Path("src/NetWasm.Templates/content/NetWasm.Library/global.json"),
-    Path("src/NetWasm.Toolchain/toolchain-manifest.json"),
+XML_FIELDS = {
+    Path("eng/NetWasm.PackageVersions.props"): (
+        "NetWasmCompilerTasksPackageVersion",
+        "NetWasmHostToolsPackageVersion",
+    ),
+    Path("src/NetWasm.Sdk/Sdk/NetWasm.Sdk.Tfm.props"): (
+        "NetWasmRefPackageVersion",
+        "NetWasmRuntimePackageVersion",
+        "NetWasmRuntimePackPackageVersion",
+        "NetWasmToolchainPackageVersion",
+        "NetWasmHostingPackageVersion",
+        "NetWasmHostingBuildPackageVersion",
+        "NetWasmHostToolsPackageVersion",
+    ),
+    Path("src/NetWasm.Sdk/Sdk/Sdk.props"): ("NetWasmSdkPackageVersion",),
 }
-
-
-def projects_release_version(relative_path: Path) -> bool:
-    return relative_path in RELEASE_VERSION_FILES or (
-        relative_path.suffix == ".csproj"
-        and relative_path.parts
-        and relative_path.parts[0] in {"src", "tests", "tools"}
-    )
+JSON_FIELDS = {
+    Path("global.json"): ("NetWasm.Sdk",),
+    Path("src/NetWasm.Templates/content/NetWasm.App/global.json"): ("NetWasm.Sdk",),
+    Path("src/NetWasm.Templates/content/NetWasm.Library/global.json"): ("NetWasm.Sdk",),
+    Path("src/NetWasm.Toolchain/toolchain-manifest.json"): ("packageVersion",),
+}
 
 
 def run_git(source_root: Path, *arguments: str) -> bytes:
@@ -48,6 +50,98 @@ def run_git(source_root: Path, *arguments: str) -> bytes:
 def tracked_files(source_root: Path) -> list[Path]:
     output = run_git(source_root, "ls-files", "-z")
     return [source_root / Path(value.decode("utf-8")) for value in output.split(b"\0") if value]
+
+
+def replace_xml_field(
+    contents: bytes, field: str, source: bytes, target: bytes
+) -> tuple[bytes, int]:
+    pattern = re.compile(
+        rb"(<" + re.escape(field.encode("ascii")) + rb"(?:\s[^>]*)?>\s*)"
+        + re.escape(source)
+        + rb"(\s*</" + re.escape(field.encode("ascii")) + rb">)"
+    )
+    return pattern.subn(rb"\g<1>" + target + rb"\g<2>", contents)
+
+
+def replace_json_field(
+    contents: bytes, field: str, source: bytes, target: bytes
+) -> tuple[bytes, int]:
+    pattern = re.compile(
+        rb'(\"' + re.escape(field.encode("ascii")) + rb'\"\s*:\s*\")'
+        + re.escape(source)
+        + rb'(\")'
+    )
+    return pattern.subn(rb"\g<1>" + target + rb"\g<2>", contents)
+
+
+def project_release_fields(
+    source_root: Path,
+    source_version: str,
+    target_version: str,
+    files: list[Path],
+) -> list[dict[str, object]]:
+    if source_version == target_version:
+        return []
+    source_bytes = source_version.encode("utf-8")
+    target_bytes = target_version.encode("utf-8")
+    changed_files: list[dict[str, object]] = []
+    version_file = source_root / VERSION_FILE
+    version_file.write_text(target_version + "\n", encoding="utf-8")
+    changed_files.append({"path": VERSION_FILE.as_posix(), "replacements": 1})
+
+    tracked = {path.relative_to(source_root): path for path in files}
+    for relative, fields in XML_FIELDS.items():
+        path = tracked.get(relative)
+        if path is None:
+            continue
+        contents = path.read_bytes()
+        total = 0
+        for field in fields:
+            contents, count = replace_xml_field(
+                contents, field, source_bytes, target_bytes
+            )
+            if count == 0:
+                raise ValueError(
+                    f"Release field {field} in {relative} does not match {source_version}."
+                )
+            total += count
+        path.write_bytes(contents)
+        changed_files.append({"path": relative.as_posix(), "replacements": total})
+
+    for relative, fields in JSON_FIELDS.items():
+        path = tracked.get(relative)
+        if path is None:
+            continue
+        contents = path.read_bytes()
+        total = 0
+        for field in fields:
+            contents, count = replace_json_field(
+                contents, field, source_bytes, target_bytes
+            )
+            if count != 1:
+                raise ValueError(
+                    f"Release field {field} in {relative} does not match {source_version}."
+                )
+            total += count
+        path.write_bytes(contents)
+        changed_files.append({"path": relative.as_posix(), "replacements": total})
+
+    for relative, path in sorted(tracked.items()):
+        if (
+            relative.suffix != ".csproj"
+            or not relative.parts
+            or relative.parts[0] not in {"src", "tools"}
+        ):
+            continue
+        contents, count = replace_xml_field(
+            path.read_bytes(), "Version", source_bytes, target_bytes
+        )
+        if count:
+            path.write_bytes(contents)
+            changed_files.append({
+                "path": relative.as_posix(), "replacements": count,
+            })
+    return changed_files
 
 
 def project_version(source_root: Path, target_version: str, receipt_path: Path) -> dict[str, object]:
@@ -63,55 +157,9 @@ def project_version(source_root: Path, target_version: str, receipt_path: Path) 
     if not VERSION_PATTERN.fullmatch(source_version):
         raise ValueError(f"Invalid source release version in {VERSION_FILE}: {source_version}")
 
-    source_bytes = source_version.encode("utf-8")
-    target_bytes = target_version.encode("utf-8")
-    version_token = re.compile(
-        rb"(?<![0-9.])" + re.escape(source_bytes) + rb"(?![0-9.])"
+    changed_files = project_release_fields(
+        source_root, source_version, target_version, tracked_files(source_root)
     )
-    changed_files: list[dict[str, object]] = []
-    remaining_files: list[str] = []
-    files = [
-        path
-        for path in tracked_files(source_root)
-        if path.relative_to(source_root) not in HISTORICAL_FILES
-        and projects_release_version(path.relative_to(source_root))
-    ]
-
-    for path in files:
-        if path.is_symlink():
-            continue
-        contents = path.read_bytes()
-        if b"\0" in contents:
-            continue
-
-        replacement_count = len(version_token.findall(contents))
-        if replacement_count and source_version != target_version:
-            path.write_bytes(version_token.sub(target_bytes, contents))
-            changed_files.append(
-                {
-                    "path": path.relative_to(source_root).as_posix(),
-                    "replacements": replacement_count,
-                }
-            )
-
-    for path in files:
-        if path.is_symlink():
-            continue
-        contents = path.read_bytes()
-        remaining_contents = contents.replace(target_bytes, b"")
-        if (
-            source_version != target_version
-            and b"\0" not in contents
-            and version_token.search(remaining_contents)
-        ):
-            remaining_files.append(path.relative_to(source_root).as_posix())
-
-    if remaining_files:
-        raise ValueError(
-            "Source release version remains after projection: " + ", ".join(remaining_files)
-        )
-    if source_version != target_version and not changed_files:
-        raise ValueError(f"Source release version {source_version} was not found in tracked text files.")
 
     receipt = {
         "schemaVersion": 1,
