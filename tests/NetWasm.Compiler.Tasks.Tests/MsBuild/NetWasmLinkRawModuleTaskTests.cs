@@ -94,13 +94,15 @@ public sealed class NetWasmLinkRawModuleTaskTests
         Assert.Contains("NWSDK026", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void RejectsInvalidOptimizationBeforeCreatingSession()
+    [Theory]
+    [InlineData("Speed")]
+    [InlineData("Size")]
+    public void RejectsInvalidOptimizationBeforeCreatingSession(string optimization)
     {
         var sessions = new RecordingSessionFactory();
         var build = new RecordingBuildEngine();
         var task = CreateTask(sessions);
-        task.Optimization = "Speed";
+        task.Optimization = optimization;
         task.BuildEngine = build;
 
         Assert.False(task.Execute());
@@ -118,7 +120,6 @@ public sealed class NetWasmLinkRawModuleTaskTests
     [InlineData("O3", FinalWasmOptimization.O3)]
     [InlineData("Os", FinalWasmOptimization.Os)]
     [InlineData("Oz", FinalWasmOptimization.Oz)]
-    [InlineData("Size", FinalWasmOptimization.Oz)]
     public void CanonicalizesOptimizationProperty(
         string value,
         FinalWasmOptimization expected)

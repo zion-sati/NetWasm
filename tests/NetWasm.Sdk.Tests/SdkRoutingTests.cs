@@ -334,18 +334,13 @@ public sealed class SdkRoutingTests
         using var noFinalOptimization = EvaluationProject.Create(
             "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>None</NetWasmOptimization>",
             includeCompilerTargets: true);
-        using var sizeAlias = EvaluationProject.Create(
-            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>Size</NetWasmOptimization>",
-            includeCompilerTargets: true);
         using var explicitOz = EvaluationProject.Create(
             "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>Oz</NetWasmOptimization>",
             includeCompilerTargets: true);
 
         Assert.Equal("Oz", defaultPolicy.Property("NetWasmOptimization"));
         Assert.Equal("None", noFinalOptimization.Property("NetWasmOptimization"));
-        Assert.Equal("Oz", sizeAlias.Property("_NetWasmCanonicalOptimization"));
-        Assert.Equal(explicitOz.Property("_NetWasmCanonicalOptimization"),
-            sizeAlias.Property("_NetWasmCanonicalOptimization"));
+        Assert.Equal("Oz", explicitOz.Property("_NetWasmCanonicalOptimization"));
     }
 
     [Fact]

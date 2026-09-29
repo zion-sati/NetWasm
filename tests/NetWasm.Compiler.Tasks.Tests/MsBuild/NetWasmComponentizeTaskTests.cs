@@ -119,8 +119,10 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Contains("NWSDK021", build.Errors[0], StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void ReportsInvalidOptimizationWithoutCreatingSession()
+    [Theory]
+    [InlineData("Speed")]
+    [InlineData("Size")]
+    public void ReportsInvalidOptimizationWithoutCreatingSession(string optimization)
     {
         var sessions = new RecordingSessionFactory();
         var build = new RecordingBuildEngine();
@@ -129,7 +131,7 @@ public sealed class NetWasmComponentizeTaskTests
             new RecordingManifestInputsReader(),
             new RecordingManifestWriter(),
             new RecordingEntryPointReader());
-        task.Optimization = "Speed";
+        task.Optimization = optimization;
         task.BuildEngine = build;
 
         Assert.False(task.Execute());
@@ -146,7 +148,6 @@ public sealed class NetWasmComponentizeTaskTests
     [InlineData("O3", FinalWasmOptimization.O3)]
     [InlineData("Os", FinalWasmOptimization.Os)]
     [InlineData("Oz", FinalWasmOptimization.Oz)]
-    [InlineData("Size", FinalWasmOptimization.Oz)]
     public void CanonicalizesOptimizationProperty(
         string value,
         FinalWasmOptimization expected)

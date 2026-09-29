@@ -147,7 +147,7 @@ public sealed class RuntimeMaterializationTask : Task
         "O2" => RuntimeWasmOptimization.O2,
         "O3" => RuntimeWasmOptimization.O3,
         "Os" => RuntimeWasmOptimization.Os,
-        "Oz" or "Size" => RuntimeWasmOptimization.Oz,
+        "Oz" => RuntimeWasmOptimization.Oz,
         _ => throw new InvalidOperationException("The NetWasm optimization property is invalid."),
     };
 

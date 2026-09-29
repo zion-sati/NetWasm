@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 
-MODES = ("None", "O0", "O1", "O2", "O3", "Os", "Oz", "Size")
+MODES = ("None", "O0", "O1", "O2", "O3", "Os", "Oz")
 CANONICAL_FLAGS = {
     "None": None,
     "O0": "-O0",
@@ -22,7 +22,6 @@ CANONICAL_FLAGS = {
     "O3": "-O3",
     "Os": "-Os",
     "Oz": "-Oz",
-    "Size": "-Oz",
 }
 OPTIMIZATION_FLAGS = frozenset(flag for flag in CANONICAL_FLAGS.values() if flag)
 CANDIDATE_PACKAGE_IDS = (
@@ -402,7 +401,7 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
         results.append(
             {
                 "mode": mode,
-                "canonicalMode": "Oz" if mode == "Size" else mode,
+                "canonicalMode": mode,
                 "optimizationFlag": CANONICAL_FLAGS[mode],
                 "optimizerInvocations": len(invocations),
                 "optimizerPhases": phases,
@@ -411,19 +410,11 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
             }
         )
 
-    by_mode = {result["mode"]: result for result in results}
-    if (
-        by_mode["Size"]["componentBytes"] != by_mode["Oz"]["componentBytes"]
-        or by_mode["Size"]["componentSha256"] != by_mode["Oz"]["componentSha256"]
-    ):
-        raise RuntimeError("Size and Oz did not produce byte-identical components.")
-
     receipt: dict[str, object] = {
         "schemaVersion": 1,
         "packageVersion": args.version,
         "hostToolsVersion": host_tools_version,
         "modes": results,
-        "sizeAliasesOz": True,
     }
     if args.receipt is not None:
         receipt_path = args.receipt.expanduser().resolve()

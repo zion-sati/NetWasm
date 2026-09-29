@@ -76,7 +76,6 @@ public sealed class RuntimeMaterializationTaskTests
     [InlineData("O3", RuntimeWasmOptimization.O3)]
     [InlineData("Os", RuntimeWasmOptimization.Os)]
     [InlineData("Oz", RuntimeWasmOptimization.Oz)]
-    [InlineData("Size", RuntimeWasmOptimization.Oz)]
     public void CanonicalizesOptimizationProperty(
         string value,
         RuntimeWasmOptimization expected)
@@ -89,12 +88,14 @@ public sealed class RuntimeMaterializationTaskTests
         Assert.Equal(expected, actor.Request?.Optimization);
     }
 
-    [Fact]
-    public void ReportsInvalidOptimization()
+    [Theory]
+    [InlineData("Fast")]
+    [InlineData("Size")]
+    public void ReportsInvalidOptimization(string optimization)
     {
         var build = new RecordingBuildEngine();
         var task = Create(new RecordingMaterializer(Materialization()), build);
-        task.Optimization = "Fast";
+        task.Optimization = optimization;
 
         Assert.False(task.Execute());
         Assert.Equal("NWPACK001: The NetWasm optimization property is invalid.",
