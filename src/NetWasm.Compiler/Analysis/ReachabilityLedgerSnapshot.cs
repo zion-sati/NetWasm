@@ -33,6 +33,8 @@ internal sealed record ReachabilityLedgerSnapshot(
     ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding> JavaScriptAsyncBindings,
     ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites)
 {
+    internal ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
+
     internal ImmutableHashSet<EntityKey> ModuleInitializers { get; init; } = [];
 
     internal static ReachabilityLedgerSnapshot From(ReachabilityLedger ledger) => new(
@@ -66,5 +68,6 @@ internal sealed record ReachabilityLedgerSnapshot(
             ledger.ManagedCallSites.ToImmutable())
     {
         ModuleInitializers = ledger.ModuleInitializers.ToImmutable(),
+        EnumMetadataRequirements = ledger.EnumMetadataRequirements.ToImmutable(),
     };
 }

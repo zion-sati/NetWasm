@@ -1,11 +1,16 @@
+using System;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis;
 
-internal sealed class ReachabilityImportClassifierFactory : IReachabilityImportClassifierFactory
+internal sealed class ReachabilityImportClassifierFactory(
+    IEnumMetadataRequirementClassifier enumMetadataRequirements) : IReachabilityImportClassifierFactory
 {
+    private readonly IEnumMetadataRequirementClassifier _enumMetadataRequirements =
+        enumMetadataRequirements ?? throw new ArgumentNullException(nameof(enumMetadataRequirements));
+
     public IReachabilityImportClassifier Create(
         ITypeFinder types,
         ITypeDefinitionResolver typeDefinitions,
@@ -21,5 +26,6 @@ internal sealed class ReachabilityImportClassifierFactory : IReachabilityImportC
             delegateTypes,
             javaScriptAsyncBindings,
             intrinsics,
-            symbols);
+            symbols,
+            _enumMetadataRequirements);
 }

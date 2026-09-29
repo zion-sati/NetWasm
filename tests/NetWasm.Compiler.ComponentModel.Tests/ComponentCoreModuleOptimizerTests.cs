@@ -7,15 +7,19 @@ namespace NetWasm.Compiler.ComponentModel.Tests;
 public sealed class ComponentCoreModuleOptimizerTests
 {
     [Theory]
-    [InlineData("wasm32", false, FinalWasmOptimization.None, false)]
-    [InlineData("wasm32", false, FinalWasmOptimization.Size, true)]
-    [InlineData("wasm64", true, FinalWasmOptimization.None, false)]
-    [InlineData("wasm64", true, FinalWasmOptimization.Size, true)]
+    [InlineData("wasm32", false, FinalWasmOptimization.None, null)]
+    [InlineData("wasm32", false, FinalWasmOptimization.O0, "-O0")]
+    [InlineData("wasm32", false, FinalWasmOptimization.O1, "-O1")]
+    [InlineData("wasm32", false, FinalWasmOptimization.O2, "-O2")]
+    [InlineData("wasm32", false, FinalWasmOptimization.O3, "-O3")]
+    [InlineData("wasm32", false, FinalWasmOptimization.Os, "-Os")]
+    [InlineData("wasm32", false, FinalWasmOptimization.Oz, "-Oz")]
+    [InlineData("wasm64", true, FinalWasmOptimization.Oz, "-Oz")]
     public void FinalizesWithSelectedPolicyAndTargetFeatures(
         string width,
         bool memory64,
         FinalWasmOptimization optimization,
-        bool sizeOptimization)
+        string? optimizationFlag)
     {
         using var files = new ComponentModelTestFiles();
         var input = files.Create("input.wasm", 0x2a);
@@ -30,7 +34,7 @@ public sealed class ComponentCoreModuleOptimizerTests
             new SystemFileCopier())
             .Optimize(input, output, target, optimization);
 
-        if (!sizeOptimization)
+        if (optimizationFlag is null)
         {
             Assert.Equal(string.Empty, tools.ToolId);
             Assert.Equal(input, validator.Path);
@@ -39,12 +43,15 @@ public sealed class ComponentCoreModuleOptimizerTests
         }
         Assert.Null(validator.Path);
         Assert.Equal(BinaryenToolIds.WasmOpt, tools.ToolId);
-        Assert.Contains("-Oz", tools.Arguments);
+        Assert.Equal(optimizationFlag, Assert.Single(tools.Arguments, IsOptimizationFlag));
         Assert.Contains("--converge", tools.Arguments);
         Assert.Contains("--remove-unused-module-elements", tools.Arguments);
         Assert.Equal(memory64, tools.Arguments.Contains("--enable-memory64"));
         Assert.Equal(["--output", output], tools.Arguments[^2..]);
     }
+
+    private static bool IsOptimizationFlag(string argument) =>
+        argument is "-O0" or "-O1" or "-O2" or "-O3" or "-Os" or "-Oz";
 
     [Fact]
     public void ReportsOptimizerFailure()
@@ -58,7 +65,7 @@ public sealed class ComponentCoreModuleOptimizerTests
                 input,
                 files.PathFor("output.wasm"),
                 ComponentTarget.Wasm32Wasi02,
-                FinalWasmOptimization.Size));
+                FinalWasmOptimization.Oz));
 
         Assert.Equal(DiagnosticCode.ComponentToolchain, exception.Diagnostic.Code);
         Assert.Contains("bad module", exception.Diagnostic.Message);
@@ -76,7 +83,7 @@ public sealed class ComponentCoreModuleOptimizerTests
                 input,
                 files.PathFor("output.wasm"),
                 ComponentTarget.Wasm32Wasi02,
-                FinalWasmOptimization.Size));
+                FinalWasmOptimization.Oz));
 
         Assert.Contains("unknown error", exception.Diagnostic.Message,
             StringComparison.Ordinal);

@@ -28,9 +28,10 @@ internal sealed class EnumIsDefinedEmitter(
         if (entry.TypeId == 0)
             throw new InvalidOperationException($"enum metadata is unavailable for '{enumType.CanonicalName}'");
 
-        var input = request.Local(0, enumType.StackKind);
+        var storageKind = entry.UnderlyingType.StackKind;
+        var input = request.Local(0, storageKind);
         var result = request.Local(0, CliValueKind.I4);
-        var preservedInput = enumType.StackKind == CliValueKind.I8
+        var preservedInput = storageKind == CliValueKind.I8
             ? request.Instruction.Context.NumericTemporaryI8
             : request.Instruction.Context.NumericTemporaryI4;
         Get(code, input);
@@ -40,7 +41,7 @@ internal sealed class EnumIsDefinedEmitter(
         foreach (var member in entry.Members)
         {
             Get(code, preservedInput);
-            if (enumType.StackKind == CliValueKind.I8)
+            if (storageKind == CliValueKind.I8)
             {
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.I64Constant,

@@ -94,13 +94,15 @@ public sealed class NetWasmLinkRawModuleTaskTests
         Assert.Contains("NWSDK026", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void RejectsInvalidOptimizationBeforeCreatingSession()
+    [Theory]
+    [InlineData("Speed")]
+    [InlineData("Size")]
+    public void RejectsInvalidOptimizationBeforeCreatingSession(string optimization)
     {
         var sessions = new RecordingSessionFactory();
         var build = new RecordingBuildEngine();
         var task = CreateTask(sessions);
-        task.Optimization = "Speed";
+        task.Optimization = optimization;
         task.BuildEngine = build;
 
         Assert.False(task.Execute());
@@ -110,12 +112,44 @@ public sealed class NetWasmLinkRawModuleTaskTests
         Assert.Contains("NWSDK026", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("None", FinalWasmOptimization.None)]
+    [InlineData("O0", FinalWasmOptimization.O0)]
+    [InlineData("O1", FinalWasmOptimization.O1)]
+    [InlineData("O2", FinalWasmOptimization.O2)]
+    [InlineData("O3", FinalWasmOptimization.O3)]
+    [InlineData("Os", FinalWasmOptimization.Os)]
+    [InlineData("Oz", FinalWasmOptimization.Oz)]
+    public void CanonicalizesOptimizationProperty(
+        string value,
+        FinalWasmOptimization expected)
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions);
+        task.Optimization = value;
+
+        Assert.True(task.Execute());
+        Assert.Equal(expected, sessions.Session.Request?.Optimization);
+    }
+
     [Fact]
     public void ConstructorRejectsMissingCapabilityAndComposesDefaults()
     {
         Assert.Throws<ArgumentNullException>(() =>
             new NetWasmLinkRawModuleTask(null!));
         Assert.NotNull(new NetWasmLinkRawModuleTask());
+    }
+
+    [Fact]
+    public void UsesPortableBinaryenWhenNativeToolsAreUnavailable()
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions);
+        task.NativeBinaryenWasmOptPath = string.Empty;
+        task.NativeBinaryenWasmMergePath = " ";
+
+        Assert.True(task.Execute());
+        Assert.Empty(sessions.BinaryenConfiguration?.NativeTools ?? []);
     }
 
     private static NetWasmLinkRawModuleTask CreateTask(

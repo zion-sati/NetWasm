@@ -47,7 +47,8 @@ public sealed class FaultExceptionRegionCompilationTests
         MethodBodyPatcher.RewriteExceptionRegionKind(assembly, "NestedFaultFixture.EntryPoint", "Run",
             CilExceptionRegionKind.Finally, CilExceptionRegionKind.Fault);
         var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib],
-            "NestedFaultFixture.EntryPoint", "Run", []) { Target = target });
+            "NestedFaultFixture.EntryPoint", "Run", [])
+        { Target = target });
         Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0,
             target, result.StaticDataEnd, System.Collections.Immutable.ImmutableDictionary<string, string>.Empty,
             null, expectedEnvironmentReads: 0, expectedPreopenReads: 0));

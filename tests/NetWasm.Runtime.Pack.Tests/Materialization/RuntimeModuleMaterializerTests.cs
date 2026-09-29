@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Runtime.Pack.Materialization;
 using NetWasm.Runtime.Pack.Tests.TestSupport;
+using NetWasm.Runtime.Pack.Planning;
 
 namespace NetWasm.Runtime.Pack.Tests.Materialization;
 
@@ -22,7 +23,7 @@ public sealed class RuntimeModuleMaterializerTests
         var arguments = new RecordingArgumentBuilder(["link"]);
         var optimization = new RecordingOptimizationArgumentBuilder(["optimize"]);
         var commands = new RecordingCommandInvoker();
-        var materializer = new RuntimeModuleMaterializer(
+        var materializer = Materializer(
             manifests,
             layouts,
             calculator,
@@ -30,7 +31,7 @@ public sealed class RuntimeModuleMaterializerTests
             arguments,
             optimization,
             commands,
-            new ConstantDigestCalculator("output-digest"));
+            new Sha256ArtifactDigestCalculator());
         var request = Request(directory, target) with
         {
             InitialHeapSizeBytes = 131_072,
@@ -42,7 +43,7 @@ public sealed class RuntimeModuleMaterializerTests
 
         Assert.Equal(target, result.Target);
         Assert.Equal(Path.GetFullPath(request.OutputPath), result.OutputPath);
-        Assert.Equal("output-digest", result.Sha256);
+        Assert.Equal(new Sha256ArtifactDigestCalculator().Calculate(request.OutputPath), result.Sha256);
         Assert.Equal(manifest.RuntimeAbi, result.RuntimeAbi);
         Assert.Equal(manifest.Provenance.BuildSeam, result.BuildSeam);
         Assert.Equal(manifest.Provenance.ToolchainFingerprint, result.ToolchainFingerprint);
@@ -82,7 +83,7 @@ public sealed class RuntimeModuleMaterializerTests
     {
         using var directory = new TemporaryDirectory();
         var commands = new RecordingCommandInvoker();
-        var materializer = new RuntimeModuleMaterializer(
+        var materializer = Materializer(
             new RecordingManifestReader(RuntimePackTestData.Manifest()),
             new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 0)),
             new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
@@ -90,11 +91,11 @@ public sealed class RuntimeModuleMaterializerTests
             new RecordingArgumentBuilder(["link"]),
             new RecordingOptimizationArgumentBuilder(["optimize"]),
             commands,
-            new ConstantDigestCalculator("digest"));
+            new Sha256ArtifactDigestCalculator());
 
         materializer.Materialize(Request(directory, "wasm32") with
         {
-            Optimization = RuntimePackOptimization.None,
+            Optimization = RuntimeWasmOptimization.None,
             WasmOptPath = string.Empty,
         });
 
@@ -133,7 +134,317 @@ public sealed class RuntimeModuleMaterializerTests
             Request(directory, "wasm32") with { ManifestPath = "" }));
     }
 
-    private static RuntimeModuleMaterializer Create(RuntimeLayout layout) => new(
+    [Fact]
+    public void RejectsUndefinedOptimizationBeforeInvokingCommands()
+    {
+        using var directory = new TemporaryDirectory();
+        var commands = new RecordingCommandInvoker();
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 0)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => materializer.Materialize(
+            Request(directory, "wasm32") with
+            {
+                Optimization = (RuntimeWasmOptimization)42,
+            }));
+        Assert.Empty(commands.Commands);
+    }
+
+    [Fact]
+    public void RejectsIncompletePackagedSystemLibraryClosure()
+    {
+        using var directory = new TemporaryDirectory();
+        var target = RuntimePackTestData.Target("wasm32") with
+        {
+            SystemLibraries = new(["libc.a"], []),
+        };
+        var manifest = RuntimePackTestData.Manifest() with { Targets = [target] };
+        var commands = new RecordingCommandInvoker();
+        var materializer = Materializer(
+            new RecordingManifestReader(manifest),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 0)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator());
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            materializer.Materialize(Request(directory, "wasm32")));
+
+        Assert.Equal(
+            "The packaged Emscripten system-library closure is incomplete.",
+            exception.Message);
+        Assert.Empty(commands.Commands);
+    }
+
+    [Fact]
+    public void SameDerivedLayoutUsesCacheAndSkipsAllRuntimeTools()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32");
+        var bytes = File.ReadAllBytes(request.OutputPath);
+        var coldCommands = new RecordingCommandInvoker();
+        var cold = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            coldCommands,
+            new Sha256ArtifactDigestCalculator());
+
+        var coldResult = cold.Materialize(request);
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Miss, coldResult.CacheMetrics.Outcome);
+        Assert.True(coldResult.CacheMetrics.Recomputed);
+        Assert.Equal(3, coldCommands.Commands.Count);
+        File.Delete(request.OutputPath);
+
+        var warmCommands = new RecordingCommandInvoker();
+        var warm = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_545)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            warmCommands,
+            new Sha256ArtifactDigestCalculator());
+
+        var warmResult = warm.Materialize(request);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Hit, warmResult.CacheMetrics.Outcome);
+        Assert.False(warmResult.CacheMetrics.Recomputed);
+        Assert.Empty(warmCommands.Commands);
+        Assert.Equal(bytes, File.ReadAllBytes(request.OutputPath));
+        Assert.Equal(coldResult.Sha256, warmResult.Sha256);
+    }
+
+    [Fact]
+    public void DerivedLayoutBoundaryForcesRecomputation()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32");
+        var first = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator());
+        first.Materialize(request);
+        var commands = new RecordingCommandInvoker();
+        var changedLayout = RuntimePackTestData.Layout() with { RuntimeGlobalBase = 65_568 };
+        var second = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_553)),
+            new RecordingLayoutCalculator(changedLayout),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator());
+
+        var result = second.Materialize(request);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Miss, result.CacheMetrics.Outcome);
+        Assert.True(result.CacheMetrics.Recomputed);
+        Assert.Equal(3, commands.Commands.Count);
+    }
+
+    [Fact]
+    public void ChangedLayoutsReplaceOneTargetModeSlot()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32");
+
+        foreach (var runtimeGlobalBase in new long[] { 65_536, 131_072, 196_608, 262_144 })
+        {
+            var layout = RuntimePackTestData.Layout() with
+            {
+                RuntimeGlobalBase = runtimeGlobalBase,
+                HeapBase = runtimeGlobalBase + 65_536,
+            };
+            var result = Materializer(
+                new RecordingManifestReader(RuntimePackTestData.Manifest()),
+                new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", runtimeGlobalBase - 1)),
+                new RecordingLayoutCalculator(layout),
+                new RecordingAssetVerifier(),
+                new RecordingArgumentBuilder(["link"]),
+                new RecordingOptimizationArgumentBuilder(["optimize"]),
+                new RecordingCommandInvoker(),
+                new Sha256ArtifactDigestCalculator()).Materialize(request);
+
+            Assert.Equal(RuntimeMaterializationCacheOutcome.Miss, result.CacheMetrics.Outcome);
+            Assert.True(result.CacheMetrics.Recomputed);
+            Assert.Single(Directory.EnumerateFiles(
+                request.CacheDirectory,
+                "*.nwcache",
+                SearchOption.AllDirectories));
+        }
+    }
+
+    [Fact]
+    public void FailedReplacementPreservesThePreviousSlot()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32");
+        var originalLayout = RuntimePackTestData.Layout();
+        Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(originalLayout),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator()).Materialize(request);
+
+        var changedLayout = originalLayout with { RuntimeGlobalBase = 131_072 };
+        Assert.Throws<InvalidOperationException>(() => Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 131_071)),
+            new RecordingLayoutCalculator(changedLayout),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new ThrowingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator()).Materialize(request));
+
+        var warmCommands = new RecordingCommandInvoker();
+        var result = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(originalLayout),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            warmCommands,
+            new Sha256ArtifactDigestCalculator()).Materialize(request);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Hit, result.CacheMetrics.Outcome);
+        Assert.False(result.CacheMetrics.Recomputed);
+        Assert.Empty(warmCommands.Commands);
+        Assert.Single(Directory.EnumerateFiles(
+            request.CacheDirectory,
+            "*.nwcache",
+            SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void CorruptEntryIsRecomputedAndReplaced()
+    {
+        using var directory = new TemporaryDirectory();
+        var request = Request(directory, "wasm32");
+        var cold = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator());
+        cold.Materialize(request);
+        var cacheEntry = Assert.Single(Directory.EnumerateFiles(
+            request.CacheDirectory,
+            "*.nwcache",
+            SearchOption.AllDirectories));
+        File.WriteAllBytes(cacheEntry, [0]);
+        var commands = new RecordingCommandInvoker();
+        var retry = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator());
+
+        var result = retry.Materialize(request);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Corrupt, result.CacheMetrics.Outcome);
+        Assert.True(result.CacheMetrics.Recomputed);
+        Assert.Equal(3, commands.Commands.Count);
+        Assert.Equal(
+            RuntimeMaterializationCacheOutcome.Hit,
+            new RuntimeMaterializationCacheReader().Read(
+                request.CacheDirectory,
+                new RuntimeMaterializationCacheSlot("wasm32", RuntimeWasmOptimization.Oz),
+                CacheKeyFor(
+                    request,
+                    RuntimePackTestData.Manifest(),
+                    RuntimePackTestData.Layout())).Outcome);
+    }
+
+    [Theory]
+    [MemberData(nameof(OptionalCacheFailures))]
+    public void CachePersistenceFailureKeepsValidatedRuntime(Exception failure)
+    {
+        using var directory = new TemporaryDirectory();
+        var commands = new RecordingCommandInvoker();
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator(),
+            cacheWriter: new ThrowingCacheWriter(failure));
+        var request = Request(directory, "wasm32");
+
+        var result = materializer.Materialize(request);
+
+        Assert.True(File.Exists(request.OutputPath));
+        Assert.Equal(new Sha256ArtifactDigestCalculator().Calculate(request.OutputPath), result.Sha256);
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Miss, result.CacheMetrics.Outcome);
+        Assert.True(result.CacheMetrics.Recomputed);
+        Assert.Equal(3, commands.Commands.Count);
+    }
+
+    [Fact]
+    public void CacheInvariantFailureRemainsObservable()
+    {
+        using var directory = new TemporaryDirectory();
+        var expected = new InvalidOperationException("cache invariant");
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 65_537)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator(),
+            cacheWriter: new ThrowingCacheWriter(expected));
+
+        var actual = Assert.Throws<InvalidOperationException>(() =>
+            materializer.Materialize(Request(directory, "wasm32")));
+
+        Assert.Same(expected, actual);
+    }
+
+    public static TheoryData<Exception> OptionalCacheFailures() => new()
+    {
+        new IOException("cache unavailable"),
+        new UnauthorizedAccessException("cache denied"),
+    };
+
+    private static RuntimeModuleMaterializer Create(RuntimeLayout layout) => Materializer(
         new RecordingManifestReader(RuntimePackTestData.Manifest()),
         new RecordingLayoutReader(layout),
         new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
@@ -141,10 +452,35 @@ public sealed class RuntimeModuleMaterializerTests
         new RecordingArgumentBuilder(["link"]),
         new RecordingOptimizationArgumentBuilder(["optimize"]),
         new RecordingCommandInvoker(),
-        new ConstantDigestCalculator("digest"));
+        new Sha256ArtifactDigestCalculator());
+
+    private static RuntimeModuleMaterializer Materializer(
+        IRuntimePackManifestReader manifests,
+        IRuntimeLayoutReader layouts,
+        IRuntimeMemoryLayoutCalculator memoryLayouts,
+        IRuntimeAssetDigestVerifier assetDigests,
+        IRuntimeLinkArgumentBuilder linkArguments,
+        IRuntimeOptimizationArgumentBuilder optimizationArguments,
+        ICommandInvoker commands,
+        IArtifactDigestCalculator artifactDigests,
+        IRuntimeMaterializationCacheWriter? cacheWriter = null) =>
+        new(
+            manifests,
+            layouts,
+            memoryLayouts,
+            assetDigests,
+            linkArguments,
+            optimizationArguments,
+            new RuntimeMaterializationCacheKeyBuilder(),
+            new RuntimeMaterializationCacheReader(),
+            cacheWriter ?? new RuntimeMaterializationCacheWriter(),
+            new RuntimeArtifactPublisher(new Sha256ArtifactDigestCalculator()),
+            commands,
+            artifactDigests);
 
     private static RuntimeMaterializationRequest Request(TemporaryDirectory directory, string target)
     {
+        directory.WriteBytes("output/runtime.wasm", [0, 97, 115, 109]);
         return new(
             directory.PathTo("runtime-pack.json"),
             directory.PathTo("runtime-layout.json"),
@@ -156,10 +492,22 @@ public sealed class RuntimeModuleMaterializerTests
             directory.PathTo("wasm-tools.wasm"),
             directory.PathTo("output/runtime.wasm"),
             directory.PathTo("logs"),
+            directory.PathTo("cache"),
             target,
-            RuntimePackOptimization.Size,
+            RuntimeWasmOptimization.Oz,
             null,
-            null);
+            null,
+            new(
+                "sdk-version",
+                "compiler-version",
+                "runtime-version",
+                "runtime-pack-version",
+                "host-tools",
+                "host-tools-version",
+                "wasm-ld-version",
+                "wasm-opt-version",
+                "wasm-tools-version",
+                "node-version"));
     }
 
     private sealed class RecordingOptimizationArgumentBuilder(ImmutableArray<string> result) :
@@ -233,8 +581,35 @@ public sealed class RuntimeModuleMaterializerTests
         public void Invoke(RuntimeCommand command) => Commands.Add(command);
     }
 
-    private sealed class ConstantDigestCalculator(string result) : IArtifactDigestCalculator
+    private sealed class ThrowingCommandInvoker : ICommandInvoker
     {
-        public string Calculate(string path) => result;
+        public void Invoke(RuntimeCommand command) =>
+            throw new InvalidOperationException("runtime command failed");
     }
+
+    private sealed class ThrowingCacheWriter(Exception failure) : IRuntimeMaterializationCacheWriter
+    {
+        public void Write(
+            string cacheDirectory,
+            RuntimeMaterializationCacheSlot slot,
+            RuntimeMaterializationCacheKey key,
+            byte[] bytes,
+            string sha256) => throw failure;
+    }
+
+    private static RuntimeMaterializationCacheKey CacheKeyFor(
+        RuntimeMaterializationRequest request,
+        RuntimePackManifest manifest,
+        RuntimeMemoryLayout layout) =>
+        new RuntimeMaterializationCacheKeyBuilder().Build(new(
+            request.BuildIdentity,
+            manifest,
+            manifest.Targets.Single(target => target.Target == request.Target),
+            layout,
+            request.Optimization,
+            ["link"],
+            ["optimize"],
+            request.AssetRoot,
+            request.OutputPath));
+
 }

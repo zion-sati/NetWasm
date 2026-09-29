@@ -37,6 +37,8 @@ internal static class AnalysisServiceCollectionExtensions
             ReachabilityInstructionAnalyzerFactory>();
         services.AddSingleton<IReachabilityImportClassifierFactory,
             ReachabilityImportClassifierFactory>();
+        services.AddSingleton<IEnumMetadataRequirementClassifier,
+            EnumMetadataRequirementClassifier>();
         services.AddSingleton<ReachableMethodAnalyzerFactory>();
         services.AddSingleton<IReachableMethodAnalyzerFactory>(static provider =>
             provider.GetRequiredService<ReachableMethodAnalyzerFactory>());

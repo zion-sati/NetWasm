@@ -53,4 +53,7 @@ internal sealed record ReachabilityImportAnalysis(
     MethodDefinitionModel? JavaScriptImport,
     MethodDefinitionModel? WitImport,
     ImmutableArray<HostCallbackDeclaration> HostCallbacks,
-    JavaScriptAsyncMethodBinding? JavaScriptAsyncBinding);
+    JavaScriptAsyncMethodBinding? JavaScriptAsyncBinding)
+{
+    public ImmutableArray<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
+}

@@ -87,7 +87,8 @@ public sealed class LinkedCorpusBuildExecutorTests
         var cause = new IOException("launch failed");
         var failure = new QualifiedProcessResult(
             timeout ? QualifiedProcessCompletion.TimedOut : QualifiedProcessCompletion.LaunchFailed,
-            null, "", "", TimeSpan.Zero) { LaunchException = cause };
+            null, "", "", TimeSpan.Zero)
+        { LaunchException = cause };
         var process = new RecordingProcess { FailedStage = 0, Failure = failure };
         var executor = new LinkedCorpusBuildExecutor(process);
 

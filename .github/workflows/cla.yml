@@ -1,0 +1,38 @@
+name: CLA
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla:
+    name: Contributor agreement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check contributor agreements
+        if: >-
+          github.event_name == 'pull_request_target' ||
+          github.event.comment.body == 'recheck' ||
+          github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
+        uses: contributor-license/cla-action@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-signatures: .github/cla-signatures-v1.json
+          path-to-document: https://github.com/zion-sati/NetWasm/blob/main/CLA.md
+          branch: main
+          allowlist: 'zion-sati,dependabot[bot],github-actions[bot]'
+          custom-notsigned-prcomment: >-
+            Thank you for contributing to NetWasm. NetWasm uses Community,
+            MIT and separate commercial licensing paths, so every contributor
+            must read and sign the Contributor License Agreement before a pull
+            request can be merged: https://github.com/zion-sati/NetWasm/blob/main/CLA.md
+          custom-allsigned-prcomment: All contributors have signed the NetWasm CLA.

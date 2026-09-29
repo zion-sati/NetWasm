@@ -87,7 +87,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 _exceptionTypeNames),
-            new EnumMetadataCollector(typeRepository, types, state),
+            new EnumMetadataCollector(typeRepository, types, program.EnumMetadataRequirements, state),
             new EnumMetadataBuilder(state, types.Target));
     }
 }

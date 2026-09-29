@@ -367,6 +367,36 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  javascript-contracts:
+    name: Test / JavaScript contracts
+    needs: impact
+    if: needs.impact.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Read pinned Node.js version
+        id: toolchain
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          print(f"node={json.loads(Path('eng/toolchain.json').read_text())['node']}")
+          PY
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ steps.toolchain.outputs.node }}
+          package-manager-cache: false
+      - name: Run JavaScript contracts
+        shell: bash
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install playwright install --with-deps chromium firefox webkit
+          bash eng/test-javascript.sh
+
   package:
     needs: impact
     if: needs.impact.outputs.scope == 'full'
@@ -736,7 +766,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [impact, docs, ci-infrastructure, test, timings, package, host-tools, verify-packages, runtime-pack-hosts]
+    needs: [impact, docs, ci-infrastructure, test, javascript-contracts, timings, package, host-tools, verify-packages, runtime-pack-hosts]
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -749,6 +779,7 @@ jobs:
           DOCS_RESULT: ${{ needs.docs.result }}
           CI_INFRASTRUCTURE_RESULT: ${{ needs.ci-infrastructure.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          JAVASCRIPT_CONTRACTS_RESULT: ${{ needs.javascript-contracts.result }}
           TIMINGS_RESULT: ${{ needs.timings.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
           HOST_TOOLS_RESULT: ${{ needs.host-tools.result }}
@@ -761,6 +792,7 @@ jobs:
             --docs "$DOCS_RESULT" \
             --ci-infrastructure "$CI_INFRASTRUCTURE_RESULT" \
             --test "$TEST_RESULT" \
+            --javascript-contracts "$JAVASCRIPT_CONTRACTS_RESULT" \
             --timings "$TIMINGS_RESULT" \
             --package "$PACKAGE_RESULT" \
             --host-tools "$HOST_TOOLS_RESULT" \

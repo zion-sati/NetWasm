@@ -119,8 +119,10 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Contains("NWSDK021", build.Errors[0], StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void ReportsInvalidOptimizationWithoutCreatingSession()
+    [Theory]
+    [InlineData("Speed")]
+    [InlineData("Size")]
+    public void ReportsInvalidOptimizationWithoutCreatingSession(string optimization)
     {
         var sessions = new RecordingSessionFactory();
         var build = new RecordingBuildEngine();
@@ -129,13 +131,34 @@ public sealed class NetWasmComponentizeTaskTests
             new RecordingManifestInputsReader(),
             new RecordingManifestWriter(),
             new RecordingEntryPointReader());
-        task.Optimization = "Speed";
+        task.Optimization = optimization;
         task.BuildEngine = build;
 
         Assert.False(task.Execute());
         Assert.Null(sessions.WasmToolsCommand);
         Assert.Null(sessions.BinaryenConfiguration);
         Assert.Contains("NWSDK021", Assert.Single(build.Errors), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("None", FinalWasmOptimization.None)]
+    [InlineData("O0", FinalWasmOptimization.O0)]
+    [InlineData("O1", FinalWasmOptimization.O1)]
+    [InlineData("O2", FinalWasmOptimization.O2)]
+    [InlineData("O3", FinalWasmOptimization.O3)]
+    [InlineData("Os", FinalWasmOptimization.Os)]
+    [InlineData("Oz", FinalWasmOptimization.Oz)]
+    public void CanonicalizesOptimizationProperty(
+        string value,
+        FinalWasmOptimization expected)
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions, new RecordingManifestInputsReader(),
+            new RecordingManifestWriter(), new RecordingEntryPointReader());
+        task.Optimization = value;
+
+        Assert.True(task.Execute());
+        Assert.Equal(expected, sessions.Session.Request?.Optimization);
     }
 
     [Fact]

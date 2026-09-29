@@ -64,7 +64,6 @@ public sealed class EnumCallIntrinsicEmitterTests
             new EnumGetValuesIntrinsicEmitter(operation),
             new EnumHasFlagIntrinsicEmitter(operation),
             new EnumIsDefinedIntrinsicEmitter(operation),
-            new EnumParseIntrinsicEmitter(operation),
             new EnumToObjectIntrinsicEmitter(operation),
             new EnumToStringIntrinsicEmitter(operation),
             new EnumTypeCodeIntrinsicEmitter(operation, new RecordingValueReturnEmitter()),
@@ -182,7 +181,6 @@ public sealed class EnumCallIntrinsicEmitterTests
         IEnumGetValuesEmitter,
         IEnumHasFlagEmitter,
         IEnumIsDefinedEmitter,
-        IEnumParseEmitter,
         IEnumToObjectEmitter,
         IEnumToStringEmitter,
         IEnumTypeCodeEmitter
@@ -226,10 +224,6 @@ public sealed class EnumCallIntrinsicEmitterTests
         }
 
         public void EmitIsDefined(
-            RuntimeIntrinsicEmissionRequest request,
-            IWasmInstructionWriter code) => Calls++;
-
-        public void EmitParse(
             RuntimeIntrinsicEmissionRequest request,
             IWasmInstructionWriter code) => Calls++;
 

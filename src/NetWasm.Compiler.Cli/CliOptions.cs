@@ -74,10 +74,15 @@ internal sealed record ComponentizeCliOptions(
 
     private static FinalWasmOptimization ParseOptimization(string? value) => value switch
     {
-        null or "size" => FinalWasmOptimization.Size,
-        "none" => FinalWasmOptimization.None,
+        null or "Oz" => FinalWasmOptimization.Oz,
+        "None" or "none" => FinalWasmOptimization.None,
+        "O0" => FinalWasmOptimization.O0,
+        "O1" => FinalWasmOptimization.O1,
+        "O2" => FinalWasmOptimization.O2,
+        "O3" => FinalWasmOptimization.O3,
+        "Os" => FinalWasmOptimization.Os,
         _ => throw CliOptionException.Create(
-            "optimization must be 'none' or 'size'"),
+            "optimization must be 'none', 'O0', 'O1', 'O2', 'O3', 'Os' or 'Oz'"),
     };
 
     private static string SetOnce(string? current, string value, string option) =>

@@ -33,10 +33,7 @@ internal sealed class ManagedModuleCompiler(
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable,
             WitPath: request.WitPath,
             WitWorld: request.WitWorld,
-            EnableFrontendCache: string.Equals(
-                request.Optimization,
-                "None",
-                StringComparison.Ordinal),
+            EnableFrontendCache: true,
             IntermediateOutputPath: request.IntermediateOutputPath)) with
         {
             EntryPoint = entryPoint.Abi,

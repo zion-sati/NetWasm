@@ -8,4 +8,5 @@ internal sealed record PendingEnumMetadata(
     int TypeId,
     CliTypeIdentity UnderlyingType,
     bool IsFlags,
-    ImmutableArray<EnumMemberModel> Members);
+    ImmutableArray<EnumMemberModel> Members,
+    EnumMetadataPayload Payload);

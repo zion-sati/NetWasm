@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using NetWasm.Runtime.Pack.Planning;
 
 namespace NetWasm.Runtime.Pack.Materialization;
 
@@ -12,6 +14,10 @@ internal sealed class RuntimeModuleMaterializer(
     IRuntimeAssetDigestVerifier assetDigests,
     IRuntimeLinkArgumentBuilder linkArguments,
     IRuntimeOptimizationArgumentBuilder optimizationArguments,
+    IRuntimeMaterializationCacheKeyBuilder cacheKeys,
+    IRuntimeMaterializationCacheReader cacheReader,
+    IRuntimeMaterializationCacheWriter cacheWriter,
+    IRuntimeArtifactPublisher artifactPublisher,
     ICommandInvoker commands,
     IArtifactDigestCalculator artifactDigests) : IRuntimeModuleMaterializer
 {
@@ -20,6 +26,7 @@ internal sealed class RuntimeModuleMaterializer(
 
     public RuntimeMaterialization Materialize(RuntimeMaterializationRequest request)
     {
+        var totalStarted = Stopwatch.GetTimestamp();
         ArgumentNullException.ThrowIfNull(request);
         ValidateRequest(request);
         var manifest = manifests.Read(request.ManifestPath);
@@ -42,8 +49,6 @@ internal sealed class RuntimeModuleMaterializer(
             sourceLayout.ApplicationStaticDataEnd,
             request.InitialHeapSizeBytes,
             request.MaximumMemorySizeBytes));
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!);
-        Directory.CreateDirectory(request.LogDirectory);
         var arguments = linkArguments.Build(new(
             manifest,
             target,
@@ -51,15 +56,53 @@ internal sealed class RuntimeModuleMaterializer(
             request.AssetRoot,
             systemLibraryPaths,
             request.OutputPath));
+        var optimizeArguments = request.Optimization == RuntimeWasmOptimization.None
+            ? ImmutableArray<string>.Empty
+            : optimizationArguments.Build(new(target, request.OutputPath, request.Optimization));
+        var cacheKey = cacheKeys.Build(new(
+            request.BuildIdentity,
+            manifest,
+            target,
+            memoryLayout,
+            request.Optimization,
+            arguments,
+            optimizeArguments,
+            request.AssetRoot,
+            request.OutputPath));
+        var cacheSlot = new RuntimeMaterializationCacheSlot(target.Target, request.Optimization);
+        var lookupStarted = Stopwatch.GetTimestamp();
+        var cached = cacheReader.Read(request.CacheDirectory, cacheSlot, cacheKey);
+        var lookupMilliseconds = Stopwatch.GetElapsedTime(lookupStarted).TotalMilliseconds;
+        if (cached.Outcome == RuntimeMaterializationCacheOutcome.Hit)
+        {
+            artifactPublisher.PublishIfDifferent(request.OutputPath, cached.Bytes!, cached.Sha256!);
+            return CreateResult(
+                request,
+                manifest,
+                target,
+                memoryLayout,
+                cached.Sha256!,
+                new(
+                    "runtime-materialization",
+                    cacheKey.Prefix,
+                    cached.Outcome,
+                    Recomputed: false,
+                    cached.Bytes!.LongLength,
+                    lookupMilliseconds,
+                    Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds));
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!);
+        Directory.CreateDirectory(request.LogDirectory);
         commands.Invoke(new(
             request.WasmLdPath,
             arguments,
             Path.Combine(request.LogDirectory, "runtime-link.log")));
-        if (request.Optimization == RuntimePackOptimization.Size)
+        if (request.Optimization != RuntimeWasmOptimization.None)
         {
             commands.Invoke(new(
                 request.WasmOptPath,
-                optimizationArguments.Build(new(target, request.OutputPath)),
+                optimizeArguments,
                 Path.Combine(request.LogDirectory, "runtime-optimize.log")));
         }
         commands.Invoke(new(
@@ -74,18 +117,53 @@ internal sealed class RuntimeModuleMaterializer(
                 "all"),
             Path.Combine(request.LogDirectory, "runtime-validate.log")));
 
-        return new RuntimeMaterialization(
+        var sha256 = artifactDigests.Calculate(request.OutputPath);
+        var bytes = File.ReadAllBytes(request.OutputPath);
+        try
+        {
+            cacheWriter.Write(request.CacheDirectory, cacheSlot, cacheKey, bytes, sha256);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            // Runtime cache persistence is opportunistic. The validated output
+            // remains the authoritative result when optional storage is unavailable.
+        }
+        return CreateResult(
+            request,
+            manifest,
+            target,
+            memoryLayout,
+            sha256,
+            new(
+                "runtime-materialization",
+                cacheKey.Prefix,
+                cached.Outcome,
+                Recomputed: true,
+                bytes.LongLength,
+                lookupMilliseconds,
+                Stopwatch.GetElapsedTime(totalStarted).TotalMilliseconds));
+    }
+
+    private static RuntimeMaterialization CreateResult(
+        RuntimeMaterializationRequest request,
+        RuntimePackManifest manifest,
+        RuntimePackTarget target,
+        RuntimeMemoryLayout memoryLayout,
+        string sha256,
+        RuntimeMaterializationCacheMetrics metrics) =>
+        new(
             target.Target,
             Path.GetFullPath(request.OutputPath),
-            artifactDigests.Calculate(request.OutputPath),
+            sha256,
             manifest.RuntimeAbi,
             manifest.Provenance.BuildSeam,
             manifest.Provenance.ToolchainFingerprint,
             memoryLayout.RuntimeGlobalBase,
             memoryLayout.HeapBase,
             memoryLayout.InitialMemorySizeBytes,
-            memoryLayout.MaximumMemorySizeBytes);
-    }
+            memoryLayout.MaximumMemorySizeBytes,
+            metrics);
 
     private static void ValidateRequest(RuntimeMaterializationRequest request)
     {
@@ -93,7 +171,11 @@ internal sealed class RuntimeModuleMaterializer(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.RuntimeLayoutPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.AssetRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmLdPath);
-        if (request.Optimization == RuntimePackOptimization.Size)
+        if (!Enum.IsDefined(request.Optimization))
+        {
+            throw new ArgumentOutOfRangeException(nameof(request));
+        }
+        if (request.Optimization != RuntimeWasmOptimization.None)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmOptPath);
         }
@@ -102,7 +184,24 @@ internal sealed class RuntimeModuleMaterializer(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WasmToolsModulePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.OutputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.LogDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.CacheDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Target);
+        ValidateBuildIdentity(request.BuildIdentity);
+    }
+
+    private static void ValidateBuildIdentity(RuntimeBuildIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.SdkVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.CompilerVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.RuntimeVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.RuntimePackVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.HostToolsPackageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.HostToolsPackageVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.WasmLdVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.WasmOptVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.WasmToolsVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity.NodeVersion);
     }
 
     private void VerifyAssets(string assetRoot, RuntimePackTarget target)

@@ -146,9 +146,51 @@ actual_emscripten="$(emcc --version | sed -nE \
     exit 1
 }
 
-dependency_root="${TMPDIR:-/tmp}/netwasm-dependencies"
+dependency_root="${NETWASM_DEPENDENCY_ROOT:-${TMPDIR:-/tmp}/netwasm-dependencies}"
+[[ "$dependency_root" = /* ]] || {
+    echo "NETWASM_DEPENDENCY_ROOT must be an absolute path" >&2
+    exit 2
+}
 gc_source="$dependency_root/bdwgc-v$gc_version"
 mkdir -p "$dependency_root"
+
+dependency_lock="$dependency_root/.bdwgc-$gc_version-$emscripten_version.lock"
+dependency_lock_owned=0
+for attempt in {1..6000}; do
+    if mkdir "$dependency_lock" 2>/dev/null; then
+        printf '%s\n' "$$" > "$dependency_lock/pid"
+        dependency_lock_owned=1
+        break
+    fi
+    if [[ -f "$dependency_lock/pid" ]]; then
+        # The owner can remove the pid file between the existence check and
+        # this read. Treat that as an unlocked retry instead of letting
+        # `set -e` abort a concurrent runtime build.
+        lock_pid="$(cat "$dependency_lock/pid" 2>/dev/null || true)"
+        if [[ "$lock_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
+            stale_lock="$dependency_lock.stale.$$"
+            if mv "$dependency_lock" "$stale_lock" 2>/dev/null; then
+                rm -rf "$stale_lock"
+            fi
+        fi
+    fi
+    sleep 0.1
+done
+[[ "$dependency_lock_owned" = 1 ]] || {
+    echo "timed out waiting for shared BDWGC dependency cache" >&2
+    exit 1
+}
+release_dependency_lock() {
+    if [[ "$dependency_lock_owned" = 1 ]]; then
+        rm -f "$dependency_lock/pid"
+        rmdir "$dependency_lock" 2>/dev/null || true
+        dependency_lock_owned=0
+    fi
+}
+trap release_dependency_lock EXIT
+trap 'release_dependency_lock; exit 130' INT
+trap 'release_dependency_lock; exit 143' TERM
+
 if [[ ! -d "$gc_source/.git" ]]; then
     git clone --depth 1 --branch "v$gc_version" \
         https://github.com/ivmai/bdwgc.git "$gc_source"
@@ -169,7 +211,11 @@ if [[ "$target" = wasm64 ]]; then
     git -C "$gc_work" diff --check
 fi
 
-build_root="$dependency_root/build-bdwgc-$gc_version-$emscripten_version-$target"
+collection_profile="ordinary"
+if [[ "$force_component_collection" = 1 ]]; then
+    collection_profile="forced-component"
+fi
+build_root="$dependency_root/build-bdwgc-$gc_version-$emscripten_version-$target-$collection_profile"
 defines=(-DSTACK_NOT_SCANNED -DSMALL_CONFIG -DGC_NO_DLOPEN
     -DGC_DONT_REGISTER_MAIN_STATIC_DATA -DNO_CLOCK -DNO_GETENV
     -DGC_DISABLE_INCREMENTAL)
@@ -180,20 +226,39 @@ target_cflags=""
 if [[ "$target" = wasm64 ]]; then
     target_cflags="-sMEMORY64=1 -sWASM_BIGINT=1"
 fi
-cmake -S "$gc_work" -B "$build_root" -G Ninja \
-    -DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
-    -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=OFF \
-    -Dbuild_cord=OFF -Dbuild_tests=OFF -Denable_docs=OFF \
-    -Denable_threads=OFF -Denable_parallel_mark=OFF \
-    -Denable_thread_local_alloc=OFF -Denable_gcj_support=OFF \
-    -Denable_disclaim=OFF -Denable_atomic_uncollectable=ON \
-    -Denable_dynamic_loading=OFF -Denable_register_main_static_data=OFF \
-    -Denable_munmap=OFF -Ddisable_handle_fork=ON -Ddisable_gc_debug=ON \
-    -Denable_gc_assertions=OFF \
-    -DCMAKE_C_FLAGS="-Oz -flto${target_cflags:+ $target_cflags} ${defines[*]}" >/dev/null
-node "$repo_root/src/NetWasm.Runtime.Pack/tools/relativize-ninja-source-root.mjs" \
-    "$build_root/build.ninja" "$gc_work" "$build_root"
-cmake --build "$build_root" --target gc -j 8 >/dev/null
+dependency_cache_key="$(
+    {
+        printf '%s\n' "$gc_commit" "$emscripten_version" "$target" \
+            "$force_component_collection"
+        shasum -a 256 "$repo_root/eng/build-netwasm-runtime.sh"
+    } | shasum -a 256 | cut -d' ' -f1
+)"
+dependency_cache_stamp="$build_root/.netwasm-cache-key"
+cached_dependency_key=""
+if [[ -f "$dependency_cache_stamp" ]]; then
+    cached_dependency_key="$(cat "$dependency_cache_stamp")"
+fi
+if [[ ! -f "$build_root/libgc.a" ||
+      "$cached_dependency_key" != "$dependency_cache_key" ]]; then
+    cmake -S "$gc_work" -B "$build_root" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake" \
+        -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=OFF \
+        -Dbuild_cord=OFF -Dbuild_tests=OFF -Denable_docs=OFF \
+        -Denable_threads=OFF -Denable_parallel_mark=OFF \
+        -Denable_thread_local_alloc=OFF -Denable_gcj_support=OFF \
+        -Denable_disclaim=OFF -Denable_atomic_uncollectable=ON \
+        -Denable_dynamic_loading=OFF -Denable_register_main_static_data=OFF \
+        -Denable_munmap=OFF -Ddisable_handle_fork=ON -Ddisable_gc_debug=ON \
+        -Denable_gc_assertions=OFF \
+        -DCMAKE_C_FLAGS="-Oz -flto${target_cflags:+ $target_cflags} ${defines[*]}" >/dev/null
+    node "$repo_root/src/NetWasm.Runtime.Pack/tools/relativize-ninja-source-root.mjs" \
+        "$build_root/build.ninja" "$gc_work" "$build_root"
+    cmake --build "$build_root" --target gc -j 8 >/dev/null
+    printf '%s\n' "$dependency_cache_key" > "$dependency_cache_stamp.tmp.$$"
+    mv "$dependency_cache_stamp.tmp.$$" "$dependency_cache_stamp"
+fi
+release_dependency_lock
+trap - EXIT INT TERM
 
 optimization=(-Oz -flto)
 configuration_defines=()

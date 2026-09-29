@@ -63,7 +63,7 @@ internal sealed class EnumGetValuesEmitter(
                 WasmInstructionOperand.Unsigned((uint)temporary)));
             ManagedMemoryEmitter.EmitArrayElementAddress(
                 code, layouts.Target, result, temporary, elementLayout.Size);
-            if (elementType.StackKind == CliValueKind.I8)
+            if (definition.EnumUnderlyingType.StackKind == CliValueKind.I8)
             {
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.I64Constant,

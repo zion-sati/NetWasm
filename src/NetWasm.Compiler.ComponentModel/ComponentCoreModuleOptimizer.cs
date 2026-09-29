@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using NetWasm.Compiler.ComponentModel.Node;
 
@@ -19,6 +20,17 @@ public sealed class ComponentCoreModuleOptimizer(
     IWasmCoreModuleValidator validator,
     IFileCopier copies) : IComponentCoreModuleOptimizer
 {
+    private static readonly FrozenDictionary<FinalWasmOptimization, string>
+        OptimizationFlags = new Dictionary<FinalWasmOptimization, string>
+        {
+            [FinalWasmOptimization.O0] = "-O0",
+            [FinalWasmOptimization.O1] = "-O1",
+            [FinalWasmOptimization.O2] = "-O2",
+            [FinalWasmOptimization.O3] = "-O3",
+            [FinalWasmOptimization.Os] = "-Os",
+            [FinalWasmOptimization.Oz] = "-Oz",
+        }.ToFrozenDictionary();
+
     private readonly IBinaryenToolRunner _tools = tools ??
         throw new ArgumentNullException(nameof(tools));
     private readonly IFileExistence _files = files ??
@@ -50,6 +62,7 @@ public sealed class ComponentCoreModuleOptimizer(
         var arguments = new List<string>
         {
             inputPath,
+            OptimizationFlags[optimization],
             "--converge",
             "--remove-unused-module-elements",
             "--strip-debug",
@@ -58,7 +71,6 @@ public sealed class ComponentCoreModuleOptimizer(
             "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
         };
-        arguments.Insert(1, "-Oz");
         if (target.Width == "wasm64")
         {
             arguments.Add("--enable-memory64");

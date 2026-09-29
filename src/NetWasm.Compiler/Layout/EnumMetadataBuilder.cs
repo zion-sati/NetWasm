@@ -7,10 +7,10 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Layout;
 
 /// <summary>
-/// Publishes only the enum metadata needed by compiler intrinsics. The record
-/// format is intentionally flat: a 16-byte header followed by 16-byte member
-/// records containing a static string object address/length and the underlying
-/// bits split into two little-endian words.
+/// Publishes only the enum metadata needed by compiler intrinsics. Legacy
+/// compiler-side consumers use the flat member records. Managed algorithms use
+/// a versioned descriptor whose optional value and name arrays have the target
+/// machine's native pointer width.
 /// </summary>
 internal sealed class EnumMetadataBuilder : IEnumMetadataBuilder
 {
@@ -30,13 +30,19 @@ internal sealed class EnumMetadataBuilder : IEnumMetadataBuilder
         foreach (var pending in _state.PendingEnumMetadata.Values
                      .OrderBy(metadata => metadata.TypeId))
         {
-            _state.Cursor = ManagedTypeLayoutCompiler.Align(
-                _state.Cursor,
-                _target.ObjectReferenceAlignment);
-            var address = _state.Cursor;
+            var underlyingTypeCode = UnderlyingTypeCode(pending.UnderlyingType);
+            if (pending.Payload == EnumMetadataPayload.None)
+            {
+                _state.EnumMetadata.Add(new EnumMetadataLayout(
+                    pending.Type, pending.TypeId, 0,
+                    pending.UnderlyingType, pending.IsFlags, []));
+                continue;
+            }
             var members = pending.Members.Select(member =>
             {
-                if (!_state.Strings.TryGetValue(member.Name, out var nameLayout))
+                var nameLayout = new StringLayout(0, 0, 0);
+                if ((pending.Payload & EnumMetadataPayload.Names) != 0 &&
+                    !_state.Strings.TryGetValue(member.Name, out nameLayout))
                 {
                     throw new CompilerException(new CompilerDiagnostic(
                         DiagnosticCode.RuntimeContract,
@@ -54,28 +60,9 @@ internal sealed class EnumMetadataBuilder : IEnumMetadataBuilder
             // keeps declaration order for aliases with equal values.
             .OrderBy(member => member.RawValue)
             .ToImmutableArray();
-            var bytes = new byte[checked(16 + (members.Length * 16))];
-            BinaryPrimitives.WriteInt32LittleEndian(bytes, pending.TypeId);
-            BinaryPrimitives.WriteInt32LittleEndian(
-                bytes.AsSpan(4), UnderlyingTypeCode(pending.UnderlyingType));
-            BinaryPrimitives.WriteInt32LittleEndian(
-                bytes.AsSpan(8), pending.IsFlags ? 1 : 0);
-            BinaryPrimitives.WriteInt32LittleEndian(
-                bytes.AsSpan(12), members.Length);
-            for (var index = 0; index < members.Length; index++)
-            {
-                var member = members[index];
-                var offset = 16 + (index * 16);
-                BinaryPrimitives.WriteInt32LittleEndian(
-                    bytes.AsSpan(offset), member.NameLayout.Address);
-                BinaryPrimitives.WriteInt32LittleEndian(
-                    bytes.AsSpan(offset + 4), member.NameLayout.Length);
-                BinaryPrimitives.WriteUInt32LittleEndian(
-                    bytes.AsSpan(offset + 8), unchecked((uint)member.RawValue));
-                BinaryPrimitives.WriteUInt32LittleEndian(
-                    bytes.AsSpan(offset + 12), unchecked((uint)(member.RawValue >> 32)));
-            }
-            _state.Segments.Add(new DataSegment(address, [.. bytes]));
+            var address = (pending.Payload & EnumMetadataPayload.RuntimeDescriptor) != 0
+                ? BuildRuntimeDescriptor(pending, underlyingTypeCode, members)
+                : 0;
             _state.EnumMetadata.Add(new EnumMetadataLayout(
                 pending.Type,
                 pending.TypeId,
@@ -83,8 +70,71 @@ internal sealed class EnumMetadataBuilder : IEnumMetadataBuilder
                 pending.UnderlyingType,
                 pending.IsFlags,
                 members));
-            _state.Cursor += bytes.Length;
         }
+    }
+
+    private int BuildRuntimeDescriptor(
+        PendingEnumMetadata pending,
+        int underlyingTypeCode,
+        ImmutableArray<EnumMetadataMemberLayout> members)
+    {
+        var address = ManagedTypeLayoutCompiler.Align(_state.Cursor, sizeof(long));
+        var headerSize = checked(16 + (2 * _target.AddressSize));
+        var hasValues = (pending.Payload & EnumMetadataPayload.Values) != 0;
+        var hasNames = (pending.Payload & EnumMetadataPayload.Names) != 0;
+        var valuesAddress = hasValues && members.Length != 0
+            ? ManagedTypeLayoutCompiler.Align(address + headerSize, sizeof(ulong))
+            : 0;
+        var afterValues = valuesAddress == 0
+            ? address + headerSize
+            : checked(valuesAddress + (members.Length * sizeof(ulong)));
+        var namesAddress = hasNames && members.Length != 0
+            ? ManagedTypeLayoutCompiler.Align(afterValues, _target.ObjectReferenceAlignment)
+            : 0;
+        var endAddress = namesAddress == 0
+            ? afterValues
+            : checked(namesAddress + (members.Length * _target.AddressSize));
+        var bytes = new byte[checked(endAddress - address)];
+
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, 1);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4), underlyingTypeCode);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(8),
+            (pending.IsFlags ? 1 : 0) | (hasValues ? 2 : 0) | (hasNames ? 4 : 0));
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(12), members.Length);
+        WriteAddress(bytes.AsSpan(16), valuesAddress);
+        WriteAddress(bytes.AsSpan(16 + _target.AddressSize), namesAddress);
+
+        for (var index = 0; index < members.Length; index++)
+        {
+            if (hasValues)
+            {
+                BinaryPrimitives.WriteUInt64LittleEndian(
+                    bytes.AsSpan(valuesAddress - address + (index * sizeof(ulong))),
+                    members[index].RawValue);
+            }
+            if (hasNames)
+            {
+                WriteAddress(
+                    bytes.AsSpan(namesAddress - address + (index * _target.AddressSize)),
+                    members[index].NameLayout.Address);
+            }
+        }
+
+        _state.Segments.Add(new DataSegment(address, [.. bytes]));
+        _state.Cursor = endAddress;
+        return address;
+    }
+
+    private void WriteAddress(Span<byte> destination, int value)
+    {
+        if (_target.AddressSize == sizeof(int))
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(destination, value);
+            return;
+        }
+
+        BinaryPrimitives.WriteInt64LittleEndian(destination, value);
     }
 
     private static int UnderlyingTypeCode(CliTypeIdentity type) =>

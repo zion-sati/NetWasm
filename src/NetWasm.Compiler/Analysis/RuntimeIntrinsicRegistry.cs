@@ -142,10 +142,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Enum", "InternalIsDefined") when method.GenericArity == 1 =>
                     RuntimeIntrinsic.EnumIsDefined,
                 ("System.Enum", "InternalIsDefined") => RuntimeIntrinsic.EnumIsDefined,
-                ("System.Enum", "InternalParse") when method.GenericArity is 0 or 1 =>
-                    RuntimeIntrinsic.EnumParse,
-                ("System.Enum", "InternalTryParse") when method.GenericArity is 0 or 1 =>
-                    RuntimeIntrinsic.EnumParse,
+                ("System.Enum", "InternalGetMetadata") when method.GenericArity is 0 or 1 =>
+                    RuntimeIntrinsic.EnumGetMetadata,
                 ("System.Enum", "InternalGetUnderlyingType") => RuntimeIntrinsic.EnumGetUnderlyingType,
                 ("System.Enum", "ToString") => RuntimeIntrinsic.EnumToString,
                 ("System.Enum", "InternalToString") => RuntimeIntrinsic.EnumToString,

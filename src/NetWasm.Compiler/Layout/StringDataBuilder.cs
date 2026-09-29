@@ -1,7 +1,6 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -69,53 +68,11 @@ internal sealed class StringDataBuilder(
 
     private static IEnumerable<string> GetEnumStrings(PendingEnumMetadata metadata)
     {
-        foreach (var member in metadata.Members)
-        {
-            yield return member.Name;
-            yield return ToDecimal(member.RawValue, metadata.UnderlyingType);
-            yield return ToHex(member.RawValue, metadata.UnderlyingType);
-        }
-        var atoms = metadata.Members
-            .Where(member => member.RawValue != 0 &&
-                (member.RawValue & (member.RawValue - 1)) == 0)
-            .ToArray();
-        if (!metadata.IsFlags || atoms.Length > 10)
+        if ((metadata.Payload & EnumMetadataPayload.Names) == 0)
             yield break;
-        for (var mask = 1; mask < (1 << atoms.Length); mask++)
-        {
-            ulong raw = 0;
-            var names = new List<string>();
-            for (var index = 0; index < atoms.Length; index++)
-            {
-                if ((mask & (1 << index)) == 0) continue;
-                raw |= atoms[index].RawValue;
-                names.Add(atoms[index].Name);
-            }
-            yield return string.Join(", ", names);
-            yield return ToDecimal(raw, metadata.UnderlyingType);
-            yield return ToHex(raw, metadata.UnderlyingType);
-        }
-    }
 
-    private static string ToDecimal(ulong raw, CliTypeIdentity type) => type.CanonicalName switch
-    {
-        "primitive:i1" => unchecked((sbyte)raw).ToString(CultureInfo.InvariantCulture),
-        "primitive:i2" => unchecked((short)raw).ToString(CultureInfo.InvariantCulture),
-        "primitive:i4" => unchecked((int)raw).ToString(CultureInfo.InvariantCulture),
-        "primitive:i8" => unchecked((long)raw).ToString(CultureInfo.InvariantCulture),
-        _ => raw.ToString(CultureInfo.InvariantCulture),
-    };
-
-    private static string ToHex(ulong raw, CliTypeIdentity type)
-    {
-        var name = type.CanonicalName;
-        var width = name.EndsWith('1')
-            ? 2
-            : name.EndsWith('2') ||
-                name.EndsWith("char", StringComparison.Ordinal)
-                ? 4
-                : name.EndsWith('4') ? 8 : 16;
-        return raw.ToString($"X{width}", CultureInfo.InvariantCulture);
+        foreach (var member in metadata.Members)
+            yield return member.Name;
     }
 
     private ObjectLayout GetObjectLayout(EntityKey type) =>

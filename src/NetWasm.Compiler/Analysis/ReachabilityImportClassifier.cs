@@ -15,8 +15,12 @@ internal sealed class ReachabilityImportClassifier(
     IDelegateTypeRecognizer delegateTypes,
     IJavaScriptAsyncBindingResolver javaScriptAsyncBindings,
     IRuntimeIntrinsicRegistry intrinsics,
-    ISymbolFormatter symbols) : IReachabilityImportClassifier
+    ISymbolFormatter symbols,
+    IEnumMetadataRequirementClassifier enumMetadataRequirements) : IReachabilityImportClassifier
 {
+    private readonly IEnumMetadataRequirementClassifier _enumMetadataRequirements =
+        enumMetadataRequirements ?? throw new ArgumentNullException(nameof(enumMetadataRequirements));
+
     public ReachabilityImportAnalysis Classify(ReachabilityImportRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -63,17 +67,40 @@ internal sealed class ReachabilityImportClassifier(
         }
         if (intrinsics.TryGetIntrinsic(method.Key, out var intrinsic))
         {
+            var enumRequirements = ImmutableArray.CreateBuilder<EnumMetadataRequirement>();
+            var payload = EnumMetadataPayload.None;
             if (IsEnumIntrinsic(intrinsic))
             {
-                AddClosedEnumTypes(request.Method.MethodArguments, types);
-                var stringDefinition = typeFinder.FindType("System.String");
-                var stringType = CliTypeIdentity.Named(
-                    stringDefinition.Key.Assembly,
-                    stringDefinition.Namespace,
-                    stringDefinition.Name,
-                    isValueType: false);
-                types.Add(stringDefinition.Key);
-                allocatedTypes.Add(stringType);
+                var enumTypes = ImmutableArray.CreateBuilder<EntityKey>();
+                AddClosedEnumTypes(request.Method.MethodArguments, enumTypes);
+                types.AddRange(enumTypes);
+                payload = _enumMetadataRequirements.Classify(
+                    intrinsic, !request.Method.MethodArguments.IsEmpty, method.Name);
+                if (payload != EnumMetadataPayload.None)
+                {
+                    if (request.Method.MethodArguments.IsEmpty)
+                    {
+                        enumRequirements.Add(new(null, payload));
+                    }
+                    else
+                    {
+                        foreach (var enumType in enumTypes)
+                        {
+                            enumRequirements.Add(new(enumType, payload));
+                        }
+                    }
+                }
+                if ((payload & EnumMetadataPayload.Names) != 0)
+                {
+                    var stringDefinition = typeFinder.FindType("System.String");
+                    var stringType = CliTypeIdentity.Named(
+                        stringDefinition.Key.Assembly,
+                        stringDefinition.Namespace,
+                        stringDefinition.Name,
+                        isValueType: false);
+                    types.Add(stringDefinition.Key);
+                    allocatedTypes.Add(stringType);
+                }
             }
             if (symbols.Format(method.DeclaringType) == "System.Enum" &&
                 method.Name == "InternalGetValuesAsUnderlyingType" &&
@@ -104,13 +131,11 @@ internal sealed class ReachabilityImportClassifier(
                     ManagedExceptionKind.InvalidCast,
                     "System.InvalidCastException"));
             }
-            if (intrinsic == RuntimeIntrinsic.EnumParse)
+            if (intrinsic is RuntimeIntrinsic.EnumToString or RuntimeIntrinsic.EnumFormat ||
+                intrinsic == RuntimeIntrinsic.EnumConvert &&
+                method.Name is "InternalToType" or "System.IConvertible.ToType")
             {
-                exceptions.Add(new(
-                    ManagedExceptionKind.ArgumentNull,
-                    "System.ArgumentNullException"));
-                exceptions.Add(new(ManagedExceptionKind.Argument, "System.ArgumentException"));
-                exceptions.Add(new(ManagedExceptionKind.Overflow, "System.OverflowException"));
+                enqueuedMethods.Add(ResolveEnumFormat());
             }
             if (intrinsic == RuntimeIntrinsic.ValueTypeEquals)
             {
@@ -131,7 +156,10 @@ internal sealed class ReachabilityImportClassifier(
                 null,
                 null,
                 hostCallbacks.ToImmutable(),
-                asyncBinding);
+                asyncBinding)
+            {
+                EnumMetadataRequirements = enumRequirements.ToImmutable(),
+            };
         }
         if (method.JSImport is not null)
         {
@@ -233,6 +261,25 @@ internal sealed class ReachabilityImportClassifier(
         return new(method, declaringType, [], method.Signature);
     }
 
+    private MethodInstanceModel ResolveEnumFormat()
+    {
+        var algorithmsType = typeFinder.FindType("System.EnumAlgorithms");
+        var method = algorithmsType.Methods
+            .Select(methods.GetMethod)
+            .Single(candidate =>
+                candidate.Name == "Format" &&
+                candidate.IsStatic &&
+                candidate.Signature.ParameterSignatureTypes.Length == 3 &&
+                candidate.Signature.ParameterSignatureTypes[0].StackKind ==
+                    CliValueKind.NativeInt);
+        var declaringType = CliTypeIdentity.Named(
+            algorithmsType.Key.Assembly,
+            algorithmsType.Namespace,
+            algorithmsType.Name,
+            isValueType: false);
+        return new(method, declaringType, [], method.Signature);
+    }
+
     private static bool IsEnumIntrinsic(RuntimeIntrinsic intrinsic) => intrinsic is
         RuntimeIntrinsic.EnumEquals or
         RuntimeIntrinsic.EnumGetHashCode or
@@ -243,7 +290,7 @@ internal sealed class ReachabilityImportClassifier(
         RuntimeIntrinsic.EnumGetName or
         RuntimeIntrinsic.EnumGetValues or
         RuntimeIntrinsic.EnumIsDefined or
-        RuntimeIntrinsic.EnumParse or
+        RuntimeIntrinsic.EnumGetMetadata or
         RuntimeIntrinsic.EnumGetUnderlyingType or
         RuntimeIntrinsic.EnumToString or
         RuntimeIntrinsic.EnumFormat or

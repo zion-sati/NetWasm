@@ -93,7 +93,7 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
 
     public string Preview2ShimVersion { get; set; } = string.Empty;
 
-    public string Optimization { get; set; } = "Size";
+    public string Optimization { get; set; } = "Oz";
 
     [Output]
     public ITaskItem[] Components { get; private set; } = [];
@@ -189,13 +189,8 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
     private static string? NullIfEmpty(string value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private FinalWasmOptimization ParseOptimization() => Optimization switch
-    {
-        "None" => FinalWasmOptimization.None,
-        "Size" => FinalWasmOptimization.Size,
-        _ => throw new InvalidOperationException(
-            "NetWasmOptimization must be None or Size."),
-    };
+    private FinalWasmOptimization ParseOptimization() =>
+        FinalWasmOptimizationParser.Parse(Optimization);
 
     private static ComponentWitWorldVariant CreateWitWorldVariant(ITaskItem item) =>
         new(

@@ -7,4 +7,4 @@ public sealed record RawModuleLinkRequest(
     string RuntimeModulePath,
     string OutputPath,
     ComponentTarget Target,
-    FinalWasmOptimization Optimization = FinalWasmOptimization.Size);
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz);

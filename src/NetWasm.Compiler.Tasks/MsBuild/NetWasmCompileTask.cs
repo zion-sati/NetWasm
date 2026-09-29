@@ -56,7 +56,7 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     public string? WitPath { get; set; }
     public string? WitWorld { get; set; }
     public bool EmitStackTrace { get; set; }
-    public string Optimization { get; set; } = "Size";
+    public string Optimization { get; set; } = "Oz";
     public string? StackTraceSymbolsPath { get; set; }
 
     [Required]

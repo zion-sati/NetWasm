@@ -19,6 +19,10 @@ public static class RuntimeLinkPlanner
         ValidateVirtualPath(request.AssetRoot);
         ValidateVirtualPath(request.OutputPath);
         var manifest = RuntimePackManifestReader.ReadJson(request.ManifestJson);
+        if (!Enum.IsDefined(request.Optimization))
+        {
+            throw new ArgumentOutOfRangeException(nameof(request));
+        }
         var target = manifest.Targets.SingleOrDefault(item => item.Target == request.Target)
             ?? throw new InvalidOperationException("The requested NetWasm runtime target is unavailable.");
         var layout = new RuntimeMemoryLayoutCalculator().Calculate(new(
@@ -77,12 +81,25 @@ public static class RuntimeLinkPlanner
         var virtualArguments = arguments.Select(argument => MapPathArgument(argument, paths))
             .ToImmutableArray();
         var optimizationArguments = new RuntimeOptimizationArgumentBuilder()
-            .Build(new(target, request.OutputPath))
+            .Build(new(target, request.OutputPath, request.Optimization))
             .Select(argument => MapPathArgument(argument, paths))
             .ToImmutableArray();
+        var cache = new RuntimeMaterializationCacheDescriptorBuilder().Build(new(
+            target.Target,
+            request.Optimization,
+            manifest.RuntimeAbi,
+            manifest.Provenance.ToolchainFingerprint,
+            layout.RuntimeGlobalBase,
+            layout.HeapBase,
+            layout.InitialMemorySizeBytes,
+            layout.MaximumMemorySizeBytes,
+            virtualArguments,
+            optimizationArguments,
+            inputs));
         return new(virtualArguments, optimizationArguments, inputs, manifest.RuntimeAbi,
             manifest.Provenance.ToolchainFingerprint,
-            layout.RuntimeGlobalBase, layout.HeapBase, layout.InitialMemorySizeBytes, layout.MaximumMemorySizeBytes);
+            layout.RuntimeGlobalBase, layout.HeapBase, layout.InitialMemorySizeBytes,
+            layout.MaximumMemorySizeBytes, cache);
     }
 
     private static RuntimeLinkPlanAsset ResolveInput(

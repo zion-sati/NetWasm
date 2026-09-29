@@ -33,14 +33,15 @@ internal sealed class EnumGetNameEmitter(
         if (entry.TypeId == 0)
             throw new InvalidOperationException($"enum metadata is unavailable for '{enumType.CanonicalName}'");
 
-        var input = request.Local(0, enumType.StackKind);
+        var storageKind = entry.UnderlyingType.StackKind;
+        var input = request.Local(0, storageKind);
         var result = request.Instruction.Context.ObjectTemporary;
         addresses.Emit(code, 0);
         Set(code, result);
         foreach (var member in entry.Members)
         {
             Get(code, input);
-            if (enumType.StackKind == CliValueKind.I8)
+            if (storageKind == CliValueKind.I8)
             {
                 code.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.I64Constant,

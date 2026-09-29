@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 
@@ -7,6 +8,7 @@ namespace NetWasm.Compiler.Layout;
 internal sealed class EnumMetadataCollector(
     ITypeRepository typeDefinitions,
     ManagedTypeLayouts types,
+    ImmutableHashSet<EnumMetadataRequirement> requirements,
     ManagedStaticDataBuildState state) : IEnumMetadataCollector
 {
     private readonly ITypeRepository _typeDefinitions = typeDefinitions ??
@@ -15,6 +17,8 @@ internal sealed class EnumMetadataCollector(
         throw new ArgumentNullException(nameof(types));
     private readonly ManagedStaticDataBuildState _state = state ??
         throw new ArgumentNullException(nameof(state));
+    private readonly ImmutableHashSet<EnumMetadataRequirement> _requirements = requirements ??
+        throw new ArgumentNullException(nameof(requirements));
 
     public void Collect()
     {
@@ -24,12 +28,21 @@ internal sealed class EnumMetadataCollector(
             if (!definition.IsEnum)
                 continue;
 
+            var payload = EnumMetadataPayload.None;
+            foreach (var requirement in _requirements)
+            {
+                if (requirement.Type is null || requirement.Type.Value == type)
+                {
+                    payload |= requirement.Payload;
+                }
+            }
             _state.PendingEnumMetadata.Add(type, new PendingEnumMetadata(
                 type,
                 layout.TypeId,
                 definition.EnumUnderlyingType,
                 definition.IsFlagsEnum,
-                definition.EnumMembers));
+                payload == EnumMetadataPayload.None ? [] : definition.EnumMembers,
+                payload));
         }
     }
 }

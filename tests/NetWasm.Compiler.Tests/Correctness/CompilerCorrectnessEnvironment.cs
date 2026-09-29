@@ -1,5 +1,7 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
+using NetWasm.TestInfrastructure;
+
 internal sealed record CompilerCorrectnessEnvironment(
     string RepositoryRoot,
     string DotNetPath,
@@ -12,9 +14,12 @@ internal sealed record CompilerCorrectnessEnvironment(
     string CompilerHostPath,
     TimeSpan ProcessTimeout)
 {
+    internal const string BuildConfigurationEnvironmentVariable =
+        "NETWASM_TEST_BUILD_CONFIGURATION";
+
     public static CompilerCorrectnessEnvironment Discover(string? startDirectory = null)
     {
-        var repositoryRoot = FindRepositoryRoot(startDirectory);
+        var repositoryRoot = TestAssets.FindRepositoryRoot(startDirectory);
         var dotnetPath = Environment.ProcessPath
             ?? throw new InvalidOperationException("dotnet host path is unavailable");
         var sdkVersion = ReadSdkVersion(repositoryRoot);
@@ -36,10 +41,9 @@ internal sealed record CompilerCorrectnessEnvironment(
             .OrderByDescending(item => item.Version)
             .Select(item => Path.Combine(item.Path, "ref", "net10.0"))
             .First(Directory.Exists);
-        var configuration = new DirectoryInfo(AppContext.BaseDirectory)
-            .Parent?.Name
-            ?? throw new InvalidOperationException(
-                "test build configuration could not be discovered");
+        var configuration = ResolveBuildConfiguration(
+            AppContext.BaseDirectory,
+            Environment.GetEnvironmentVariable(BuildConfigurationEnvironmentVariable));
         return new(
             repositoryRoot,
             dotnetPath,
@@ -56,16 +60,28 @@ internal sealed record CompilerCorrectnessEnvironment(
             TimeSpan.FromMinutes(10));
     }
 
-    private static string FindRepositoryRoot(string? startDirectory)
+    internal static string ResolveBuildConfiguration(
+        string baseDirectory,
+        string? configuredValue)
     {
-        var current = new DirectoryInfo(startDirectory ?? AppContext.BaseDirectory);
-        while (current is not null &&
-               !File.Exists(Path.Combine(current.FullName, "global.json")))
+        if (configuredValue is not null)
         {
-            current = current.Parent;
+            if (string.IsNullOrWhiteSpace(configuredValue) ||
+                configuredValue is "." or ".." ||
+                configuredValue.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                configuredValue.Contains(Path.DirectorySeparatorChar) ||
+                configuredValue.Contains(Path.AltDirectorySeparatorChar))
+            {
+                throw new InvalidOperationException(
+                    $"{BuildConfigurationEnvironmentVariable} must be a build configuration name.");
+            }
+
+            return configuredValue;
         }
-        return current?.FullName
-            ?? throw new InvalidOperationException("repository root was not found");
+
+        return new DirectoryInfo(baseDirectory).Parent?.Name
+            ?? throw new InvalidOperationException(
+                "test build configuration could not be discovered");
     }
 
     private static string ReadSdkVersion(string repositoryRoot)

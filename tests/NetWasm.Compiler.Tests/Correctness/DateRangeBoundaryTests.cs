@@ -12,8 +12,8 @@ public sealed class DateRangeBoundaryTests
         {
             var cells = new TheoryData<bool, WasmTarget, int>();
             foreach (var optimize in new[] { false, true })
-            foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
-            for (var input = 0; input < 5; input++) cells.Add(optimize, target, input);
+                foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+                    for (var input = 0; input < 5; input++) cells.Add(optimize, target, input);
             return cells;
         }
     }

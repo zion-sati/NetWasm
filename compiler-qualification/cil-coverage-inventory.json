@@ -11,6 +11,7 @@
     "GetObjectType",
     "InitializeArrayData",
     "NewRectangularArray",
+    "NewBoundedRectangularArray",
     "LoadRectangularArrayElement",
     "StoreRectangularArrayElement",
     "LoadRectangularArrayElementAddress"
@@ -885,6 +886,7 @@
         "Readonly",
         "NewArray",
         "NewRectangularArray",
+        "NewBoundedRectangularArray",
         "LoadArrayLength",
         "LoadArrayElementReference",
         "StoreArrayElementReference",

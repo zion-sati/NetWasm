@@ -344,7 +344,8 @@ public sealed class RootMapTests
         var capabilities = CreateAllocationAnalyzer(program).Analyze(new(
             new Dictionary<EntityKey, StructuredMethod>
             {
-                [EntryKey] = caller, [StaticInitializerKey] = initializer,
+                [EntryKey] = caller,
+                [StaticInitializerKey] = initializer,
             }, ImmutableDictionary<string, StructuredMethod>.Empty,
             ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
 

@@ -65,8 +65,16 @@ public sealed class ManagedModuleCompilerTests
         Assert.Equal(CompilerEntryPointKind.ManagedExecutable, options.EntryPointKind);
     }
 
-    [Fact]
-    public void CompileDisablesFrontendCacheForOptimizedBuilds()
+    [Theory]
+    [InlineData("None")]
+    [InlineData("O0")]
+    [InlineData("O1")]
+    [InlineData("O2")]
+    [InlineData("O3")]
+    [InlineData("Os")]
+    [InlineData("Oz")]
+    public void CompileEnablesFrontendCacheForEveryCanonicalOptimizationMode(
+        string optimization)
     {
         var invoker = new RecordingCompilationInvoker(
             CompilerTaskTestData.CreateCompilation());
@@ -75,9 +83,9 @@ public sealed class ManagedModuleCompilerTests
             new RecordingTargetResolver(WasmTarget.Wasm32), invoker);
 
         compiler.Compile(new("application.dll", [], [], "wasm32", null, null,
-            false, "Size", "obj/netwasm"));
+            false, optimization, "obj/netwasm"));
 
-        Assert.False(invoker.Options!.EnableFrontendCache);
+        Assert.True(invoker.Options!.EnableFrontendCache);
     }
 
     [Fact]

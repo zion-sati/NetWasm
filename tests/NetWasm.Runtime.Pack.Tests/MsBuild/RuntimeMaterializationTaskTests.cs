@@ -1,6 +1,7 @@
 using Microsoft.Build.Framework;
 using NetWasm.Runtime.Pack.Materialization;
 using NetWasm.Runtime.Pack.MsBuild;
+using NetWasm.Runtime.Pack.Planning;
 
 namespace NetWasm.Runtime.Pack.Tests.MsBuild;
 
@@ -23,7 +24,8 @@ public sealed class RuntimeMaterializationTaskTests
             65_552,
             179_904,
             262_144,
-            8_589_934_592);
+            8_589_934_592,
+            Metrics());
         var actor = new RecordingMaterializer(materialization);
         var build = new RecordingBuildEngine();
         var task = Create(actor, build);
@@ -47,8 +49,13 @@ public sealed class RuntimeMaterializationTaskTests
         Assert.Equal("fingerprint", module.GetMetadata("ToolchainFingerprint"));
         Assert.Equal(131_072, actor.Request?.InitialHeapSizeBytes);
         Assert.Equal(8_589_934_592, actor.Request?.MaximumMemorySizeBytes);
-        Assert.Equal(RuntimePackOptimization.Size, actor.Request?.Optimization);
+        Assert.Equal(RuntimeWasmOptimization.Oz, actor.Request?.Optimization);
+        Assert.Equal("sdk-version", actor.Request?.BuildIdentity.SdkVersion);
+        Assert.Equal("/output/cache", actor.Request?.CacheDirectory);
         Assert.Empty(build.Errors);
+        Assert.Equal(
+            "NetWasm cache: stage=runtime-materialization key=0123456789ab outcome=hit recomputed=false bytes=42 lookupMs=0.100 totalMs=0.200",
+            Assert.Single(build.Messages).Message);
     }
 
     [Fact]
@@ -59,15 +66,36 @@ public sealed class RuntimeMaterializationTaskTests
         task.Optimization = "None";
 
         Assert.True(task.Execute());
-        Assert.Equal(RuntimePackOptimization.None, actor.Request?.Optimization);
+        Assert.Equal(RuntimeWasmOptimization.None, actor.Request?.Optimization);
     }
 
-    [Fact]
-    public void ReportsInvalidOptimization()
+    [Theory]
+    [InlineData("O0", RuntimeWasmOptimization.O0)]
+    [InlineData("O1", RuntimeWasmOptimization.O1)]
+    [InlineData("O2", RuntimeWasmOptimization.O2)]
+    [InlineData("O3", RuntimeWasmOptimization.O3)]
+    [InlineData("Os", RuntimeWasmOptimization.Os)]
+    [InlineData("Oz", RuntimeWasmOptimization.Oz)]
+    public void CanonicalizesOptimizationProperty(
+        string value,
+        RuntimeWasmOptimization expected)
+    {
+        var actor = new RecordingMaterializer(Materialization());
+        var task = Create(actor, new RecordingBuildEngine());
+        task.Optimization = value;
+
+        Assert.True(task.Execute());
+        Assert.Equal(expected, actor.Request?.Optimization);
+    }
+
+    [Theory]
+    [InlineData("Fast")]
+    [InlineData("Size")]
+    public void ReportsInvalidOptimization(string optimization)
     {
         var build = new RecordingBuildEngine();
         var task = Create(new RecordingMaterializer(Materialization()), build);
-        task.Optimization = "Fast";
+        task.Optimization = optimization;
 
         Assert.False(task.Execute());
         Assert.Equal("NWPACK001: The NetWasm optimization property is invalid.",
@@ -129,7 +157,18 @@ public sealed class RuntimeMaterializationTaskTests
             WasmToolsModulePath = "/tools/wasm-tools.wasm",
             OutputPath = "/output/runtime.wasm",
             LogDirectory = "/output/logs",
+            CacheDirectory = "/output/cache",
             Target = "wasm32",
+            SdkVersion = "sdk-version",
+            CompilerVersion = "compiler-version",
+            RuntimeVersion = "runtime-version",
+            RuntimePackVersion = "runtime-pack-version",
+            HostToolsPackageId = "host-tools",
+            HostToolsPackageVersion = "host-tools-version",
+            WasmLdVersion = "wasm-ld-version",
+            WasmOptVersion = "wasm-opt-version",
+            WasmToolsVersion = "wasm-tools-version",
+            NodeVersion = "node-version",
         };
 
     private static RuntimeMaterialization Materialization() => new(
@@ -142,7 +181,17 @@ public sealed class RuntimeMaterializationTaskTests
         16,
         91_984,
         196_608,
-        2_147_483_648);
+        2_147_483_648,
+        Metrics());
+
+    private static RuntimeMaterializationCacheMetrics Metrics() => new(
+        "runtime-materialization",
+        "0123456789ab",
+        RuntimeMaterializationCacheOutcome.Hit,
+        Recomputed: false,
+        42,
+        0.1,
+        0.2);
 
     private sealed class RecordingMaterializer(RuntimeMaterialization result) : IRuntimeModuleMaterializer
     {
@@ -164,6 +213,7 @@ public sealed class RuntimeMaterializationTaskTests
     private sealed class RecordingBuildEngine : IBuildEngine
     {
         public List<BuildErrorEventArgs> Errors { get; } = [];
+        public List<BuildMessageEventArgs> Messages { get; } = [];
         public int ColumnNumberOfTaskNode => 0;
         public bool ContinueOnError => false;
         public int LineNumberOfTaskNode => 0;
@@ -181,9 +231,7 @@ public sealed class RuntimeMaterializationTaskTests
 
         public void LogErrorEvent(BuildErrorEventArgs e) => Errors.Add(e);
 
-        public void LogMessageEvent(BuildMessageEventArgs e)
-        {
-        }
+        public void LogMessageEvent(BuildMessageEventArgs e) => Messages.Add(e);
 
         public void LogWarningEvent(BuildWarningEventArgs e)
         {

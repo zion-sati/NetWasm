@@ -21,7 +21,7 @@ public sealed class RawModuleLinkExecutionTests
         Assert.Equal(new ComponentCoreModuleMergeRequest("application", "runtime",
             Path.Combine("temporary", "environment.wasm"), Path.Combine("temporary", "merged.wasm"), request.Target), stages.Merge);
         Assert.Equal((Path.Combine("temporary", "merged.wasm"), "linked", request.Target,
-            FinalWasmOptimization.Size), stages.Optimization);
+            FinalWasmOptimization.Oz), stages.Optimization);
         Assert.Equal(("linked", "output"), stages.Publication);
         Assert.Equal("temporary", stages.DeletedDirectory);
     }
