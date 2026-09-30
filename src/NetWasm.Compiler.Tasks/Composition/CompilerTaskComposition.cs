@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Node;
 using NetWasm.Compiler.ComponentModel.Raw;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Tasks.Artifacts;
 using NetWasm.Compiler.Tasks.ComponentModel;
 using NetWasm.Compiler.Tasks.Compilation;
@@ -16,8 +17,13 @@ internal static class CompilerTaskComposition
         "--disable-warning=ExperimentalWarning";
 
     public static IManagedModuleCompilationSessionFactory
-        CreateManagedModuleCompilationSessionFactory() =>
-        new ManagedModuleCompilationSessionFactory(CreateManagedModuleCompilationSession);
+        CreateManagedModuleCompilationSessionFactory(
+            ICompilerProgressReporter progress)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        return new ManagedModuleCompilationSessionFactory(
+            command => CreateManagedModuleCompilationSession(command, progress));
+    }
 
     public static ICompilerArtifactWriter CreateArtifactWriter() =>
         new CompilerArtifactWriter();
@@ -143,9 +149,10 @@ internal static class CompilerTaskComposition
     }
 
     private static ManagedModuleCompilationSession CreateManagedModuleCompilationSession(
-        ExternalToolCommand wasmToolsCommand)
+        ExternalToolCommand wasmToolsCommand,
+        ICompilerProgressReporter progress)
     {
-        var services = CreateCompilerServices(wasmToolsCommand);
+        var services = CreateCompilerServices(wasmToolsCommand, progress: progress);
         var compiler = new ManagedModuleCompiler(
             new ManagedEntryPointReader(),
             new WasmTargetResolver(),
@@ -155,7 +162,8 @@ internal static class CompilerTaskComposition
 
     private static ServiceProvider CreateCompilerServices(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration? binaryenConfiguration = null)
+        BinaryenToolRunnerConfiguration? binaryenConfiguration = null,
+        ICompilerProgressReporter? progress = null)
     {
         var services = new ServiceCollection()
             .AddNetWasmCompiler();
@@ -163,6 +171,11 @@ internal static class CompilerTaskComposition
         services.AddSingleton<IWasmTools>(serviceProvider => new ProcessWasmTools(
             serviceProvider.GetRequiredService<IExternalToolRunner>(),
             wasmToolsCommand));
+        if (progress is not null)
+        {
+            services.RemoveAll<ICompilerProgressReporter>();
+            services.AddSingleton<ICompilerProgressReporter>(progress);
+        }
         if (binaryenConfiguration is not null)
         {
             services.RemoveAll<IBinaryenToolRunner>();

@@ -14,15 +14,18 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     private readonly ICompilerArtifactManifestTaskRequestBuilder _manifestRequestBuilder;
     private readonly ICompilerArtifactManifestBuilder _manifestBuilder;
     private readonly ICompilerArtifactManifestWriter _manifestWriter;
+    private readonly ICompilerBuildMessageWriter _messages;
 
     public NetWasmCompileTask()
-        : this(
-            CompilerTaskComposition.CreateManagedModuleCompilationSessionFactory(),
-            CompilerTaskComposition.CreateArtifactWriter(),
-            CompilerTaskComposition.CreateArtifactManifestTaskRequestBuilder(),
-            CompilerTaskComposition.CreateArtifactManifestBuilder(),
-            CompilerTaskComposition.CreateArtifactManifestWriter())
     {
+        _messages = new CompilerBuildMessageWriter(Log);
+        _compilers = CompilerTaskComposition.CreateManagedModuleCompilationSessionFactory(
+            new CompilerBuildProgressReporter(_messages));
+        _artifacts = CompilerTaskComposition.CreateArtifactWriter();
+        _manifestRequestBuilder =
+            CompilerTaskComposition.CreateArtifactManifestTaskRequestBuilder();
+        _manifestBuilder = CompilerTaskComposition.CreateArtifactManifestBuilder();
+        _manifestWriter = CompilerTaskComposition.CreateArtifactManifestWriter();
     }
 
     internal NetWasmCompileTask(
@@ -30,13 +33,15 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
         ICompilerArtifactWriter artifacts,
         ICompilerArtifactManifestTaskRequestBuilder manifestRequestBuilder,
         ICompilerArtifactManifestBuilder manifestBuilder,
-        ICompilerArtifactManifestWriter manifestWriter)
+        ICompilerArtifactManifestWriter manifestWriter,
+        ICompilerBuildMessageWriter messages)
     {
         _compilers = compilers ?? throw new ArgumentNullException(nameof(compilers));
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _manifestRequestBuilder = manifestRequestBuilder ?? throw new ArgumentNullException(nameof(manifestRequestBuilder));
         _manifestBuilder = manifestBuilder ?? throw new ArgumentNullException(nameof(manifestBuilder));
         _manifestWriter = manifestWriter ?? throw new ArgumentNullException(nameof(manifestWriter));
+        _messages = messages ?? throw new ArgumentNullException(nameof(messages));
     }
 
     [Required]
@@ -58,6 +63,7 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     public bool EmitStackTrace { get; set; }
     public string Optimization { get; set; } = "Oz";
     public string? StackTraceSymbolsPath { get; set; }
+    public bool NoLogo { get; set; }
 
     [Required]
     public string WasmToolsNodePath { get; set; } = string.Empty;
@@ -72,6 +78,13 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     {
         try
         {
+            if (!NoLogo)
+            {
+                _messages.Write($"NetWasm Compiler version {CompilerVersion}");
+                _messages.Write("Copyright © 2026 Zion Sati");
+            }
+            _messages.Write(
+                $"NetWasm: Compiling {Path.GetFileName(InputAssemblyPath)} for {Target}...");
             using var compiler = _compilers.Create(
                 CompilerTaskComposition.CreateWasmToolsCommand(
                     WasmToolsNodePath,
@@ -103,6 +116,7 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
                 _manifestWriter.Write(new(ArtifactManifestPath, buildResult.Manifest));
                 SetResolvedArtifacts(buildResult);
             }
+            _messages.Write($"NetWasm: Wrote {Path.GetFullPath(CoreModulePath)}.");
             return true;
         }
         catch (CompilerException exception)

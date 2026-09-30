@@ -142,6 +142,7 @@
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
                         EmitStackTrace="$(NetWasmManagedStackTrace)"
                         Optimization="$(_NetWasmCanonicalOptimization)"
+                        NoLogo="$(NoLogo)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)">
       <Output TaskParameter="ResolvedArtifacts" ItemName="_NetWasmResolvedArtifact" />
       <Output TaskParameter="SemanticBuildId" PropertyName="NetWasmSemanticBuildId" />
