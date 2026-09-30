@@ -118,6 +118,7 @@ internal sealed class CompilationEmissionBuilder(
             instanceFieldLayouts,
             staticFieldLayouts,
             staticDataLayout,
+            staticDataLayout,
             layouts.Snapshot,
             exceptionObjectLayouts,
             layouts.Snapshot);
@@ -155,6 +156,8 @@ internal sealed class CompilationEmissionBuilder(
             ModuleInitializers = analysis.Program.ModuleInitializers,
             ManagedCallSites = analysis.Program.ManagedCallSites,
             DelegateBindings = analysis.Program.DelegateBindings,
+            ObjectArrayDelegateAdapters = analysis.Program.ObjectArrayDelegateAdapters,
+            MemberExecution = analysis.Program.MemberExecution,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
             CollectManagedMethodMemoryMetrics = options.DiagnosticTracePath is not null,
         };

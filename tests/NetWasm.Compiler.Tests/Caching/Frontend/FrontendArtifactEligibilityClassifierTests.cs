@@ -135,6 +135,8 @@ public sealed class FrontendArtifactEligibilityClassifierTests
             }),
             WithFacts(request, facts with { CallableMethods = [entryMethod] }),
             WithFacts(request, facts with { CallSites = [callSite] }),
+            WithFacts(request, facts with { MethodDescriptors = [entryMethod] }),
+            WithFacts(request, facts with { FieldDescriptors = [entryField] }),
         };
 
         Assert.All(variants, AssertRejected);

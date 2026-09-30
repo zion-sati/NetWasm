@@ -15,7 +15,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 4;
+    private const ushort SchemaVersion = 10;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -104,6 +104,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 writer.Write(Signature(value.Signature));
                 writer.Write(value.RelativeVirtualAddress);
                 writer.Write(value.GenericArity);
+                writer.Write(value.IsPublic);
                 writer.Write(value.IsVirtual);
                 writer.Write(value.IsNewSlot);
                 writer.Write(value.IsFinal);
@@ -149,6 +150,8 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 WriteEntityKey(writer, value.Definition.DeclaringType);
                 writer.Write(String(value.Definition.Name));
                 writer.Write(value.Definition.IsStatic);
+                writer.Write(value.Definition.IsInitOnly);
+                writer.Write(value.Definition.IsLiteral);
                 WriteBytes(writer, value.Definition.InitialData);
                 writer.Write(value.Definition.LiteralValue.HasValue);
                 if (value.Definition.LiteralValue is ulong literal)
@@ -456,6 +459,12 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
             });
             WriteArray(analysis.CallableMethods, WriteMethodInstance);
             WriteArray(analysis.CallSites, WriteCallSite);
+            WriteArray(analysis.MethodDescriptors, WriteMethodInstance);
+            WriteArray(analysis.FieldDescriptors, WriteFieldInstance);
+            writer.Write(analysis.RequiresTypeFacts);
+            writer.Write(analysis.RequiresDelegateInvoke);
+            writer.Write(analysis.RequiresMemberNames);
+            writer.Write((byte)analysis.TypeNamePayload);
         }
 
         private void WriteCallSite(ManagedCallSite site)

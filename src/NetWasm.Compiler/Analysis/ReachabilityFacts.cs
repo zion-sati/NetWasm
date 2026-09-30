@@ -33,7 +33,20 @@ internal sealed record ReachabilityInstructionAnalysis(
     ImmutableArray<FieldInstanceModel> Fields,
     ImmutableArray<ReachabilityDispatch> Dispatches,
     ImmutableArray<MethodInstanceModel> CallableMethods,
-    ImmutableArray<ManagedCallSite> CallSites = default);
+    ImmutableArray<ManagedCallSite> CallSites = default)
+{
+    public ImmutableArray<MethodInstanceModel> MethodDescriptors { get; init; } = [];
+
+    public ImmutableArray<FieldInstanceModel> FieldDescriptors { get; init; } = [];
+
+    public bool RequiresTypeFacts { get; init; }
+
+    public bool RequiresDelegateInvoke { get; init; }
+
+    public bool RequiresMemberNames { get; init; }
+
+    public RuntimeTypeNamePayload TypeNamePayload { get; init; }
+}
 
 internal sealed record ReachableMethodAnalysis(
     MethodInstanceModel Method,

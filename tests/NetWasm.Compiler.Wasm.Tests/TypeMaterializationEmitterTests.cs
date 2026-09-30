@@ -69,6 +69,52 @@ public sealed class TypeMaterializationEmitterTests
     }
 
     [Theory]
+    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Multiply, WasmOpcodes.I32Load)]
+    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Multiply, WasmOpcodes.I64Load)]
+    public void TypeFactsLookupUsesBoundedTargetWidthTableWithoutPublishingRoots(
+        WasmTarget target,
+        byte multiply,
+        byte load)
+    {
+        var rootsPublished = false;
+        var request = CreateInstructionRequest(
+            CilOperation.GetTypeFacts,
+            [CliValueKind.I4],
+            maxStack: 1);
+        var emitter = CreateEmitter(
+            new RecordingRootPublicationEmitter(_ => rootsPublished = true),
+            target);
+
+        emitter.Emit(request);
+
+        Assert.False(rootsPublished);
+        Assert.Equal([CliValueKind.NativeInt], request.Stack);
+        var bytes = GetCodeBytes(request);
+        Assert.Contains(WasmOpcodes.I32LessThanUnsigned, bytes);
+        Assert.Contains(multiply, bytes);
+        Assert.Contains(load, bytes);
+        Assert.Equal(
+            target == WasmTarget.Wasm64,
+            bytes.Contains(WasmOpcodes.I64ExtendI32Unsigned));
+    }
+
+    [Fact]
+    public void TypeFactsLookupRejectsMissingFinalizedPlan()
+    {
+        var request = CreateInstructionRequest(
+            CilOperation.GetTypeFacts,
+            [CliValueKind.I4],
+            maxStack: 1);
+        var emitter = CreateEmitter(
+            new RecordingRootPublicationEmitter(_ => { }),
+            typeFacts: false);
+
+        var exception = Assert.Throws<CompilerException>(() => emitter.Emit(request));
+
+        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
+    }
+
+    [Theory]
     [InlineData(false, WasmTarget.Wasm32)]
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm32)]
@@ -105,16 +151,22 @@ public sealed class TypeMaterializationEmitterTests
 
     private static TypeMaterializationEmitter CreateEmitter(
         IRootPublicationEmitter roots,
-        WasmTarget target = WasmTarget.Wasm32)
+        WasmTarget target = WasmTarget.Wasm32,
+        bool typeFacts = true)
     {
         var layouts = new RecordingLayoutProvider(
             target == WasmTarget.Wasm32
                 ? WasmTargetLayout.Wasm32
-                : WasmTargetLayout.Wasm64);
+                : WasmTargetLayout.Wasm64)
+        {
+            TypeFactsTableAddress = typeFacts ? 160 : 0,
+            TypeFactsTableCount = typeFacts ? 16 : 0,
+        };
         var imports = WasmRuntimeImports.CreateCatalog();
         return new TypeMaterializationEmitter(
             layouts,
             new AddressInstructionEmitter(layouts),
+            layouts,
             layouts,
             imports,
             new ImplicitExceptionEmitter(

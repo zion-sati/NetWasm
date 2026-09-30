@@ -37,6 +37,12 @@ internal static class KnownNonBugSkipReasons
 
     public const string ComponentExportExceptionIdentity =
         "A WIT function returning only an integer cannot transport an arbitrary managed exception; the component adapter fails the operation, so desktop exception type identity is not observable across this ABI boundary.";
+
+    public const string DefaultMemberHandleContext =
+        "CoreCLR accepts a default declaring-type handle when the member handle already identifies its closed declaring type; NetWasm requires explicit context for the two-argument overload and throws ArgumentException.";
+
+    public const string DerivedMethodHandleContext =
+        "CoreCLR accepts a derived declaring-type handle for an inherited method; NetWasm's bounded handle profile requires the exact compiler-emitted declaring type and throws ArgumentException.";
 }
 
 internal sealed record KnownNonBugCorpusPartition(

@@ -11,7 +11,8 @@ public sealed class RootDecisionClassifier(
     ITypeRepository types,
     IFieldRepository fields,
     IMethodRepository methods,
-    IReadOnlyDictionary<string, DispatchCallSiteModel>? dispatchCallSites = null) :
+    IReadOnlyDictionary<string, DispatchCallSiteModel>? dispatchCallSites,
+    IRuntimeAllocationSafepointClassifier runtimeSafepoints) :
     IRootDecisionClassifier
 {
     private readonly ITypeRepository _types =
@@ -22,6 +23,8 @@ public sealed class RootDecisionClassifier(
         methods ?? throw new ArgumentNullException(nameof(methods));
     private readonly IReadOnlyDictionary<string, DispatchCallSiteModel> _dispatchCallSites =
         dispatchCallSites ?? ImmutableDictionary<string, DispatchCallSiteModel>.Empty;
+    private readonly IRuntimeAllocationSafepointClassifier _runtimeSafepoints =
+        runtimeSafepoints ?? throw new ArgumentNullException(nameof(runtimeSafepoints));
 
     public bool Decide(RootDecisionRequest request)
     {
@@ -58,11 +61,13 @@ public sealed class RootDecisionClassifier(
         return instruction.Operand switch
         {
             CilOperand.Entity target =>
+                IsRuntimeSafepoint(_methods.GetMethod(target.Key)) ||
                 IsAllocatingStaticCall(_methods.GetMethod(target.Key), null, request) ||
                 _methods.GetMethod(target.Key).JSImport is not null ||
                 request.AllocatingMethods.Contains(target.Key) &&
                 _methods.GetMethod(target.Key).HasBody,
             CilOperand.MethodInstance target =>
+                _runtimeSafepoints.Classify(target.Value) ||
                 IsAllocatingStaticCall(target.Value.Definition, target.Value.DeclaringType, request) ||
                 target.Value.Definition.JSImport is not null ||
                 (target.Value.IsConstructed
@@ -72,6 +77,9 @@ public sealed class RootDecisionClassifier(
             _ => false,
         };
     }
+
+    private bool IsRuntimeSafepoint(MethodDefinitionModel method) =>
+        _runtimeSafepoints.Classify(method, _types);
 
     private bool IsAllocatingStaticInitialization(
         CilInstruction instruction,

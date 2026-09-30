@@ -35,6 +35,8 @@ internal sealed class FrontendArtifactEligibilityClassifier :
             Any(instructions.Dispatches, item => References(item.Declaration, entry)) ||
             Any(instructions.CallableMethods, method => References(method, entry)) ||
             Any(instructions.CallSites, site => References(site, entry)) ||
+            Any(instructions.MethodDescriptors, method => References(method, entry)) ||
+            Any(instructions.FieldDescriptors, field => References(field, entry)) ||
             References(request.StructuredMethod, entry);
 
         return referencesEntry

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "caseId": "rtti.member-handles",
+  "featureIds": [
+    "S09"
+  ],
+  "inputKind": "Emitted",
+  "sourceFiles": [],
+  "name": "MemberHandles",
+  "namespace": "MemberHandles",
+  "entryMethod": "Run",
+  "desktopEntryMethod": "DesktopRun",
+  "inputs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+  ],
+  "expectations": [
+    { "input": 0, "returnValue": 1, "exceptionType": null },
+    { "input": 1, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 2, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 3, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 4, "returnValue": 1, "exceptionType": null },
+    { "input": 5, "returnValue": 1, "exceptionType": null },
+    { "input": 6, "returnValue": 1, "exceptionType": null },
+    { "input": 7, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 8, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 9, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 10, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 11, "returnValue": null, "exceptionType": "System.ArgumentException" },
+    { "input": 12, "returnValue": 1, "exceptionType": null },
+    { "input": 13, "returnValue": 1, "exceptionType": null },
+    { "input": 14, "returnValue": 1, "exceptionType": null }
+  ],
+  "referencePaths": [],
+  "referenceAssemblyAliases": {
+    "System.Private.CoreLib": "NetWasm.CoreLib"
+  },
+  "oracleMode": "SameIl",
+  "matrixProfile": "Extended",
+  "supportsBatchedOracle": true,
+  "reportAllMismatches": true,
+  "exposesLegacyTrace": false,
+  "testMethod": "NetWasm.Compiler.Tests.Correctness.EmittedMemberHandleTests.MemberHandlesPreserveGenericAndDeclaringTypeValidation"
+}

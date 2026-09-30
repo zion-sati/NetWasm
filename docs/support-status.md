@@ -38,8 +38,9 @@ The supported profile includes direct CIL-to-Wasm compilation, closed-world
 reachability and concrete generic specialization, exact GC, exceptions,
 finalization, value types, arrays, delegates, generic interface/virtual
 dispatch, strings, invariant formatting, scalar numerics including `decimal`,
-and the selected collection, stream, date/time, task, cancellation, JavaScript
-interop, WIT, and WASI contracts described in
+the bounded interpreter-only [expression-tree execution
+profile](expression-trees.md), and the selected collection, stream, date/time,
+task, cancellation, JavaScript interop, WIT, and WASI contracts described in
 [CoreLib/runtime compatibility](corelib-runtime.md).
 
 Selected adjacent-library work is also implemented within that same profile,
@@ -240,8 +241,9 @@ wasm32 transport evolution would not make wasm64 Component output available.
 The following are outside the closed-world, single-reactor platform profile:
 
 - broad runtime reflection, reflection-driven serialization or activation,
-  expression-tree compilation, `dynamic`, runtime assembly loading, and
-  runtime-created generic types;
+  runtime code generation, `dynamic`, runtime assembly loading, and
+  runtime-created generic types; expression nodes outside the bounded
+  [managed-interpreter profile](expression-trees.md) remain unsupported;
 - managed threads, workers sharing a managed heap, a managed thread pool,
   `Task.Run`-style parallel work, blocking waits, and cross-thread memory-order
   guarantees;

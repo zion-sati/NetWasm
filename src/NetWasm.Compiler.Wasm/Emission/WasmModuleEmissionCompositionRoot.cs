@@ -28,6 +28,7 @@ internal static class WasmModuleEmissionCompositionRoot
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
         IStaticDataLayout staticData,
+        IMemberDescriptorLayout memberDescriptors,
         IRuntimeObjectLayout runtimeObjects,
         IManagedExceptionObjectProvider exceptionObjects,
         ITypeDescriptorSource typeDescriptors,
@@ -51,6 +52,7 @@ internal static class WasmModuleEmissionCompositionRoot
             instanceFields,
             staticFields,
             staticData,
+            memberDescriptors,
             runtimeObjects,
             exceptionObjects,
             typeDescriptors,
@@ -60,7 +62,7 @@ internal static class WasmModuleEmissionCompositionRoot
             var shared = new ManagedBodySharedCapabilities(
                 types, typeDefinitions, fields, methods, symbols,
                 typeClassifier, intrinsics, targetLayout, typeLayouts,
-                staticFields, staticData, runtimeObjects, exceptionObjects,
+                staticFields, staticData, memberDescriptors, runtimeObjects, exceptionObjects,
                 typeDescriptors, logger);
             services.AddSingleton<IManagedBodyWorkerFactory>(
                 new ManagedBodyWorkerFactory(shared));

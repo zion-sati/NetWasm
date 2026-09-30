@@ -22,6 +22,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
         new(ManagedExceptionKind.InvalidCast, "System.InvalidCastException");
     private static readonly ReachabilityExceptionRequirement Overflow =
         new(ManagedExceptionKind.Overflow, "System.OverflowException");
+    private static readonly ReachabilityExceptionRequirement InvalidOperation =
+        new(ManagedExceptionKind.InvalidOperation, "System.InvalidOperationException");
 
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
@@ -55,10 +57,16 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
 
             RuntimeIntrinsic.ArrayGetValue => [NullReference, OutOfMemory],
 
+            RuntimeIntrinsic.MemberExecuteMethod =>
+                [NullReference, OutOfMemory, InvalidCast, InvalidOperation],
+
+            RuntimeIntrinsic.MemberReadField => [NullReference, OutOfMemory],
+
             RuntimeIntrinsic.NativeMemoryAlloc or
             RuntimeIntrinsic.NativeMemoryRealloc or
             RuntimeIntrinsic.NativeMemoryAlignedAlloc or
-            RuntimeIntrinsic.NativeMemoryAlignedRealloc => [OutOfMemory],
+            RuntimeIntrinsic.NativeMemoryAlignedRealloc or
+            RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate => [OutOfMemory],
 
             RuntimeIntrinsic.UnsafeUnbox => [NullReference, InvalidCast],
 

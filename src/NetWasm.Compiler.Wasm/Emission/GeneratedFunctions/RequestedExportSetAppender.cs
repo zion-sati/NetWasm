@@ -12,7 +12,7 @@ internal sealed class RequestedExportSetAppender(
     public void Append(IList<WasmFunctionDefinition> functions, int importCount,
         IDictionary<string, int> requestedExportIndices,
         IDictionary<string, int> asyncHelperIndices,
-        IReadOnlyDictionary<string, EntityKey> requestedExports,
+        IReadOnlyDictionary<string, MethodInstanceModel> requestedExports,
         IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> asyncBindings,
         RuntimeInitializationPlan initialization, bool hasFinalizers,
         WasmModuleProfile profile,
@@ -29,12 +29,12 @@ internal sealed class RequestedExportSetAppender(
         ArgumentNullException.ThrowIfNull(functionIndices);
         ArgumentNullException.ThrowIfNull(boundaryEntries);
 
-        foreach ((var name, var methodKey) in requestedExports.OrderBy(
+        foreach ((var name, var method) in requestedExports.OrderBy(
                      item => item.Key,
                      StringComparer.Ordinal))
         {
             exports.Append(functions, importCount, requestedExportIndices,
-                asyncHelperIndices, name, methodKey, asyncBindings, initialization,
+                asyncHelperIndices, name, method, asyncBindings, initialization,
                 hasFinalizers, profile, functionIndices, boundaryEntries);
         }
     }

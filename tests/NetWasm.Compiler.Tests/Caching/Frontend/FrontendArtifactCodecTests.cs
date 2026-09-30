@@ -70,7 +70,22 @@ public sealed class FrontendArtifactCodecTests
         Assert.Equal(
             "post-return",
             decoded.Analysis.Method.Definition.WitPostReturn!.FunctionName);
+        Assert.True(decoded.Analysis.Method.Definition.IsPublic);
+        var decodedField = Assert.Single(decoded.Analysis.Instructions.FieldDescriptors);
+        Assert.True(decodedField.Definition.IsInitOnly);
+        Assert.True(decodedField.Definition.IsLiteral);
         Assert.Contains("\ud800x\udfff", decoded.Analysis.Instructions.Strings);
+        Assert.Single(decoded.Analysis.Instructions.MethodDescriptors);
+        Assert.Single(decoded.Analysis.Instructions.FieldDescriptors);
+        Assert.True(decoded.Analysis.Instructions.RequiresTypeFacts);
+        Assert.True(decoded.Analysis.Instructions.RequiresDelegateInvoke);
+        Assert.True(decoded.Analysis.Instructions.RequiresMemberNames);
+        Assert.Equal(
+            RuntimeTypeNamePayload.Name |
+                RuntimeTypeNamePayload.Namespace |
+                RuntimeTypeNamePayload.FullName |
+                RuntimeTypeNamePayload.DisplayName,
+            decoded.Analysis.Instructions.TypeNamePayload);
         Assert.Contains(
             decoded.Analysis.Instructions.RuntimeTypes,
             type => type.CanonicalName.EndsWith("[]", StringComparison.Ordinal));
@@ -97,6 +112,32 @@ public sealed class FrontendArtifactCodecTests
         var second = encoder.Encode(CreateStressSnapshot());
 
         Assert.Equal(first.ToArray(), second.ToArray());
+    }
+
+    [Fact]
+    public void DecoderRejectsUnknownRuntimeTypeNamePayloadBits()
+    {
+        var encoder = new FrontendArtifactEncoder();
+        var snapshot = CreateStressSnapshot();
+        var withoutNames = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Instructions = snapshot.Analysis.Instructions with
+                {
+                    TypeNamePayload = RuntimeTypeNamePayload.None,
+                },
+            },
+        };
+        var payload = encoder.Encode(snapshot).ToArray();
+        var withoutNamesPayload = encoder.Encode(withoutNames).ToArray();
+        var payloadOffset = Assert.Single(
+            Enumerable.Range(0, payload.Length),
+            index => payload[index] != withoutNamesPayload[index]);
+        payload[payloadOffset] = 0x80;
+
+        Assert.Throws<InvalidDataException>(() =>
+            new FrontendArtifactDecoder().Decode([.. payload]));
     }
 
     [Fact]
@@ -336,7 +377,18 @@ public sealed class FrontendArtifactCodecTests
                 ManagedCallOperation.Virtual,
                 new ManagedMethodIdentity(method.CanonicalName),
                 method,
-                value)]);
+                value)])
+        {
+            MethodDescriptors = [method],
+            FieldDescriptors = [field],
+            RequiresTypeFacts = true,
+            RequiresDelegateInvoke = true,
+            RequiresMemberNames = true,
+            TypeNamePayload = RuntimeTypeNamePayload.Name |
+                RuntimeTypeNamePayload.Namespace |
+                RuntimeTypeNamePayload.FullName |
+                RuntimeTypeNamePayload.DisplayName,
+        };
         var analysis = new ReachableMethodAnalysisSnapshot(
             method,
             body,
@@ -367,6 +419,7 @@ public sealed class FrontendArtifactCodecTests
         123)
     {
         GenericArity = 1,
+        IsPublic = true,
         IsVirtual = true,
         IsNewSlot = true,
         IsFinal = true,
@@ -390,6 +443,8 @@ public sealed class FrontendArtifactCodecTests
         {
             InitialData = [1, 2, 3],
             LiteralValue = 42,
+            IsInitOnly = true,
+            IsLiteral = true,
         },
         owner,
         value);

@@ -15,7 +15,8 @@ internal sealed class TypeDescriptorBuilder(
     WasmTargetLayout target,
     ManagedStaticDataBuildState state,
     IStaticReferenceBitmapBuilder bitmaps,
-    IAssignableTypeMetadataBuilder assignableTypes) : ITypeDescriptorBuilder
+    IAssignableTypeMetadataBuilder assignableTypes,
+    IAssemblyIdentityFormatter? assemblyNames = null) : ITypeDescriptorBuilder
 {
     internal TypeDescriptorBuilder(
         ITypeIdentityResolver identities,
@@ -61,6 +62,7 @@ internal sealed class TypeDescriptorBuilder(
         throw new ArgumentNullException(nameof(bitmaps));
     private readonly IAssignableTypeMetadataBuilder _assignableTypes = assignableTypes ??
         throw new ArgumentNullException(nameof(assignableTypes));
+    private readonly IAssemblyIdentityFormatter? _assemblyNames = assemblyNames;
 
     public void Build()
     {
@@ -78,7 +80,7 @@ internal sealed class TypeDescriptorBuilder(
             AddSegment(bitmap);
             var typeIdentity = _identities.GetTypeIdentity(type);
             var assignableTypes = _assignableTypes.Build(typeIdentity);
-            _state.TypeDescriptors.Add(new TypeDescriptorLayout(
+            var descriptor = new TypeDescriptorLayout(
                 type,
                 layout.TypeId,
                 _baseTypes.GetBaseType(typeIdentity) is
@@ -95,7 +97,33 @@ internal sealed class TypeDescriptorBuilder(
                 AssignableTypeIdsAddress = assignableTypes.Address,
                 AssignableTypeIdCount = assignableTypes.Count,
                 IsInterface = _typeDefinitions.ResolveTypeIdentity(typeIdentity).IsInterface,
-            });
+            };
+            _state.TypeDescriptors.Add(descriptor);
+            if (_program.RequiresTypeFacts)
+            {
+                _state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
+                    typeIdentity,
+                    _typeDefinitions.ResolveTypeIdentity(typeIdentity),
+                    descriptor.TypeId,
+                    descriptor.BaseTypeId,
+                    descriptor.AssignableTypeIdsAddress,
+                    descriptor.AssignableTypeIdCount,
+                    _program.DelegateInvokeDescriptors.TryGetValue(
+                        typeIdentity.CanonicalName,
+                        out var delegateInvoke)
+                            ? delegateInvoke.CanonicalName
+                            : null,
+                    _program.TypeNamePayload != RuntimeTypeNamePayload.None
+                        ? RuntimeTypeNameFormatter.Format(
+                            typeIdentity,
+                            _typeDefinitions,
+                            _assemblyNames ?? throw new CompilerException(
+                                new CompilerDiagnostic(
+                                    DiagnosticCode.RuntimeContract,
+                                    "runtime type names require an assembly identity formatter")),
+                            _program.TypeNamePayload)
+                        : null));
+            }
         }
     }
 

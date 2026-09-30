@@ -421,7 +421,7 @@ internal sealed class GeneratedCilValidator : IGeneratedCilValidator
                     stack.Push(CliValueKind.ManagedReference);
                     break;
                 case CilOperation.LoadTypeToken or CilOperation.LoadFieldToken or
-                    CilOperation.SizeOf:
+                    CilOperation.LoadMethodToken or CilOperation.SizeOf:
                     _ = RequireToken(instruction);
                     stack.Push(CliValueKind.I4);
                     break;

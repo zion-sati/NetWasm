@@ -14,7 +14,10 @@ public sealed class RuntimeAllocationSafepointClassifierTests
         { "System.Runtime.InteropServices.NativeMemory", "AlignedAllocCore" },
         { "System.Runtime.InteropServices.NativeMemory", "AlignedReallocCore" },
         { "System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "Reallocate" },
-        { "System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "CreateResourceHandle" }
+        { "System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "CreateResourceHandle" },
+        { "System.Runtime.CompilerServices.ObjectArrayDelegateAdapter", "Create" },
+        { "System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod" },
+        { "System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField" }
     };
 
     [Theory]

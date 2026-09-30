@@ -28,6 +28,7 @@ internal sealed class StringDataBuilder(
     public void Build()
     {
         var values = _program.StringLiterals
+            .Concat(_state.PendingTypeFacts.SelectMany(GetTypeNames))
             .Concat(_state.PendingEnumMetadata.Values
                 .SelectMany(GetEnumStrings))
             .Distinct(StringComparer.Ordinal)
@@ -73,6 +74,30 @@ internal sealed class StringDataBuilder(
 
         foreach (var member in metadata.Members)
             yield return member.Name;
+    }
+
+    private static IEnumerable<string> GetTypeNames(PendingRuntimeTypeFacts facts)
+    {
+        if (facts.Names is not RuntimeTypeNames names)
+        {
+            yield break;
+        }
+        if (names.Name is not null)
+        {
+            yield return names.Name;
+        }
+        if (names.Namespace is not null)
+        {
+            yield return names.Namespace;
+        }
+        if (names.FullName is not null)
+        {
+            yield return names.FullName;
+        }
+        if (names.DisplayName is not null)
+        {
+            yield return names.DisplayName;
+        }
     }
 
     private ObjectLayout GetObjectLayout(EntityKey type) =>

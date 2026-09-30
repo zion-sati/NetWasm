@@ -129,6 +129,16 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
     {
         if (_state.ConstructedObjects.TryGetValue(type, out var existing))
             return existing;
+        if (type.Shape is CliTypeShape.ManagedByReference or
+            CliTypeShape.UnmanagedPointer)
+        {
+            var semanticIdentity = new ObjectLayout(
+                _state.NextTypeId++,
+                AlignObject(_target.ObjectHeaderSize),
+                []);
+            _state.ConstructedObjects.Add(type, semanticIdentity);
+            return semanticIdentity;
+        }
         if (type.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
         {
             var array = Build(_types.FindType("System.Array").Key);

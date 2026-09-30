@@ -26,6 +26,18 @@ internal sealed class ManagedStaticDataBuildState
     public Dictionary<EntityKey, PendingEnumMetadata> PendingEnumMetadata { get; } = [];
     public ImmutableArray<EnumMetadataLayout>.Builder EnumMetadata { get; } =
         ImmutableArray.CreateBuilder<EnumMetadataLayout>();
+    public Dictionary<string, int> MethodDescriptors { get; } =
+        new(StringComparer.Ordinal);
+    public Dictionary<string, int> FieldDescriptors { get; } =
+        new(StringComparer.Ordinal);
+    public Dictionary<string, int> PropertyDescriptors { get; } =
+        new(StringComparer.Ordinal);
+    public Dictionary<int, int> TypeFacts { get; } = [];
+    public List<PendingRuntimeTypeFacts> PendingTypeFacts { get; } = [];
+    public int TypeFactsTableAddress { get; set; }
+    public int TypeFactsTableCount { get; set; }
+    public int? MemberDescriptorDeclaringTypeIdOffset { get; set; }
+    public int? MemberDescriptorRequiresDeclaringTypeOffset { get; set; }
     public ImmutableArray<int>.Builder StaticRoots { get; } =
         ImmutableArray.CreateBuilder<int>();
     public int Cursor { get; set; } = ManagedLayoutSnapshot.StaticDataStart;

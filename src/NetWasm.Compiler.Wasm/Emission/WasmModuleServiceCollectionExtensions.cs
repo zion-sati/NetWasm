@@ -34,6 +34,7 @@ internal static class WasmModuleServiceCollectionExtensions
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
         IStaticDataLayout staticData,
+        IMemberDescriptorLayout memberDescriptors,
         IRuntimeObjectLayout runtimeObjects,
         IManagedExceptionObjectProvider exceptionObjects,
         ITypeDescriptorSource typeDescriptors,
@@ -52,6 +53,7 @@ internal static class WasmModuleServiceCollectionExtensions
         services.AddSingleton(instanceFields);
         services.AddSingleton(staticFields);
         services.AddSingleton(staticData);
+        services.AddSingleton(memberDescriptors);
         services.AddSingleton(runtimeObjects);
         services.AddSingleton<IRectangularArrayLayoutProvider>(
             new RectangularArrayLayoutProvider(targetLayout, runtimeObjects));

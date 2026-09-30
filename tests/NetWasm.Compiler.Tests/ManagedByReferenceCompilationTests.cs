@@ -49,6 +49,12 @@ public sealed class ManagedByReferenceCompilationTests
 
         Assert.Equal(421, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
         Assert.Equal(2, ExecuteWithNode(result.ApplicationModule, assets.Directory, 0));
+        Assert.DoesNotContain(result.Program.ConstructedTypes, type =>
+            type.Shape is CliTypeShape.ManagedByReference or
+                CliTypeShape.UnmanagedPointer);
+        Assert.False(result.Program.RequiresTypeFacts);
+        Assert.Empty(result.Program.MethodDescriptors);
+        Assert.Empty(result.Program.FieldDescriptors);
     }
 
     [Fact]

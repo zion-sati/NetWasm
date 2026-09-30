@@ -168,7 +168,27 @@ internal sealed class WholeProgramAnalyzerFactory(
             new ModuleInitializerResolver(
                 metadata.Types,
                 metadata.Methods),
-            new ModuleInitializerOrderer(BuildModuleDependencies(metadata)));
+            new ModuleInitializerOrderer(BuildModuleDependencies(metadata)),
+            new MemberDescriptorPlanner(new MetadataPropertyAccessorResolver(
+                [.. metadata.Assemblies.SelectMany(assembly =>
+                    assembly.Properties.Values)],
+                methodInstances)),
+            new ObjectArrayDelegateAdapterPlanner(
+                intrinsics,
+                delegateTypeRecognizer,
+                typeFinder,
+                typeDefinitions,
+                methodRepository,
+                methodInstances,
+                symbols),
+            new MemberExecutionPlanner(
+                intrinsics,
+                delegateTypeRecognizer,
+                typeFinder,
+                methodRepository,
+                methodInstances,
+                symbols),
+            baseTypes);
         return new WholeProgramAnalyzer(closure);
     }
 

@@ -23,6 +23,9 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.GCCollectionRuntime", "Collect"),
             ("System.GCFinalizerRuntime", "WaitForPending"),
             ("System.Array", "InternalGetValue"),
+            ("System.Runtime.CompilerServices.ObjectArrayDelegateAdapter", "Create"),
+            ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod"),
+            ("System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField"),
         }.ToFrozenSet();
 
     public bool Classify(MethodDefinitionModel method, ITypeRepository types)

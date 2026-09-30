@@ -20,6 +20,8 @@ public sealed class ValueTypeDefinitionStackKindResolverTests
     [InlineData("System.Double", CliValueKind.F8)]
     [InlineData("System.IntPtr", CliValueKind.NativeInt)]
     [InlineData("System.UIntPtr", CliValueKind.NativeInt)]
+    [InlineData("System.RuntimeMethodHandle", CliValueKind.NativeInt)]
+    [InlineData("System.RuntimeFieldHandle", CliValueKind.NativeInt)]
     [InlineData("System.Void", CliValueKind.Void)]
     [InlineData("System.Decimal", CliValueKind.ValueType)]
     [InlineData("Fixtures.CustomValue", CliValueKind.ValueType)]

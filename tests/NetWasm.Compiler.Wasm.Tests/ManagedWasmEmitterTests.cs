@@ -164,6 +164,7 @@ public sealed class ManagedWasmEmitterTests
             layouts,
             layouts,
             layouts,
+            layouts,
             new WasmModuleEmitterFactory(),
         ];
         var constructor = Assert.Single(typeof(ManagedWasmEmitter).GetConstructors());

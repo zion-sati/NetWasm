@@ -1,13 +1,22 @@
 NetWasm third-party notices
 
-This file supplies the full licence texts referenced by copied source comments.
-It does not replace the copyright, provenance, or licence notices retained in
-the corresponding source files.
+This file identifies copied-source notices and selected full licence texts.
+The corresponding standard texts are also available under LICENSES/. It does
+not replace the copyright, provenance, or licence notices retained in the
+corresponding source files.
 
 .NET Foundation source ports
 -----------------------------
 Ported .NET source files retain their upstream MIT headers. The complete MIT
 text is in LICENSES/MIT.txt.
+
+FluentValidation source adaptation
+----------------------------------
+The expression-tree compatibility fixture under
+tests/end-to-end/expression-fluentvalidation-consumer/ source-adapts a bounded
+excerpt of FluentValidation 12.1.0. It retains the .NET Foundation and
+contributors copyright notice and is licensed under Apache-2.0. The complete
+license text is in LICENSES/Apache-2.0.txt.
 
 floatconv and xxHash32 material
 -------------------------------

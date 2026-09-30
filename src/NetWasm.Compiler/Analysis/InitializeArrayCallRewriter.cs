@@ -19,8 +19,7 @@ internal sealed class InitializeArrayCallRewriter(
             var call = instructions[index];
             var token = instructions[index - 1];
             if (call.Operation != CilOperation.Call ||
-                token.Operation != CilOperation.LoadFieldToken ||
-                token.Operand is not CilOperand.Entity fieldToken)
+                token.Operation != CilOperation.LoadFieldToken)
             {
                 continue;
             }
@@ -32,7 +31,12 @@ internal sealed class InitializeArrayCallRewriter(
             {
                 continue;
             }
-            var data = fields.GetField(fieldToken.Key).InitialData;
+            var data = token.Operand switch
+            {
+                CilOperand.Entity fieldToken => fields.GetField(fieldToken.Key).InitialData,
+                CilOperand.FieldInstance fieldToken => fieldToken.Value.Definition.InitialData,
+                _ => default,
+            };
             if (data.IsDefaultOrEmpty)
             {
                 throw new CompilerException(new CompilerDiagnostic(

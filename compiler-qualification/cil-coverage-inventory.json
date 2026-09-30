@@ -8,6 +8,9 @@
     "DelegateNotEqual",
     "CompareExchange",
     "MaterializeType",
+    "MaterializeMethod",
+    "MaterializeField",
+    "GetTypeFacts",
     "GetObjectType",
     "InitializeArrayData",
     "NewRectangularArray",
@@ -684,7 +687,11 @@
       "operations": [
         "LoadTypeToken",
         "LoadFieldToken",
+        "LoadMethodToken",
         "MaterializeType",
+        "MaterializeMethod",
+        "MaterializeField",
+        "GetTypeFacts",
         "GetObjectType"
       ]
     },

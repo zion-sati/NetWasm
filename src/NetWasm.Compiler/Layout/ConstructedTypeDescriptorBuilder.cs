@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -14,7 +16,12 @@ internal sealed class ConstructedTypeDescriptorBuilder(
     WasmTargetLayout target,
     ManagedStaticDataBuildState state,
     IStaticReferenceBitmapBuilder bitmaps,
-    IAssignableTypeMetadataBuilder assignableTypes) : IConstructedTypeDescriptorBuilder
+    IAssignableTypeMetadataBuilder assignableTypes,
+    bool requiresTypeFacts = false,
+    RuntimeTypeNamePayload typeNamePayload = RuntimeTypeNamePayload.None,
+    IAssemblyIdentityFormatter? assemblyNames = null,
+    IReadOnlyDictionary<string, MethodInstanceModel>? delegateInvokeDescriptors = null) :
+    IConstructedTypeDescriptorBuilder
 {
     internal ConstructedTypeDescriptorBuilder(
         ITypeFinder typeFinder,
@@ -56,6 +63,12 @@ internal sealed class ConstructedTypeDescriptorBuilder(
         throw new ArgumentNullException(nameof(bitmaps));
     private readonly IAssignableTypeMetadataBuilder _assignableTypes = assignableTypes ??
         throw new ArgumentNullException(nameof(assignableTypes));
+    private readonly bool _requiresTypeFacts = requiresTypeFacts;
+    private readonly RuntimeTypeNamePayload _typeNamePayload = typeNamePayload;
+    private readonly IAssemblyIdentityFormatter? _assemblyNames = assemblyNames;
+    private readonly IReadOnlyDictionary<string, MethodInstanceModel>
+        _delegateInvokeDescriptors = delegateInvokeDescriptors ??
+            ImmutableDictionary<string, MethodInstanceModel>.Empty;
 
     public void Build()
     {
@@ -70,18 +83,24 @@ internal sealed class ConstructedTypeDescriptorBuilder(
                 layout.ReferenceOffsets,
                 bitCount,
                 _target.ObjectReferenceSize);
+            var isElementModifier = type.Shape is
+                CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer;
             var definition = type.Shape is CliTypeShape.SzArray or CliTypeShape.Array
                 ? _typeFinder.FindType("System.Array")
-                : _typeDefinitions.ResolveTypeIdentity(type);
+                : isElementModifier
+                    ? _typeFinder.FindType("System.Object")
+                    : _typeDefinitions.ResolveTypeIdentity(type);
             var baseTypeId = type.Shape is CliTypeShape.SzArray or CliTypeShape.Array
                 ? _objectLayouts.Resolve(definition.Key).TypeId
+                : isElementModifier
+                    ? 0
                 : _baseTypes.GetBaseType(type) is CliTypeIdentity baseType
                     ? _objectLayouts.Resolve(baseType).TypeId
                     : 0;
             var bitmapAddress = _state.Cursor;
             AddSegment(bitmap);
             var assignableTypes = _assignableTypes.Build(type);
-            _state.ConstructedTypeDescriptors.Add(new ConstructedTypeDescriptorLayout(
+            var descriptor = new ConstructedTypeDescriptorLayout(
                 type,
                 layout.TypeId,
                 baseTypeId,
@@ -92,8 +111,34 @@ internal sealed class ConstructedTypeDescriptorBuilder(
             {
                 AssignableTypeIdsAddress = assignableTypes.Address,
                 AssignableTypeIdCount = assignableTypes.Count,
-                IsInterface = definition.IsInterface,
-            });
+                IsInterface = !isElementModifier && definition.IsInterface,
+            };
+            _state.ConstructedTypeDescriptors.Add(descriptor);
+            if (_requiresTypeFacts)
+            {
+                _state.PendingTypeFacts.Add(new PendingRuntimeTypeFacts(
+                    type,
+                    definition,
+                    descriptor.TypeId,
+                    descriptor.BaseTypeId,
+                    descriptor.AssignableTypeIdsAddress,
+                    descriptor.AssignableTypeIdCount,
+                    _delegateInvokeDescriptors.TryGetValue(
+                        type.CanonicalName,
+                        out var delegateInvoke)
+                            ? delegateInvoke.CanonicalName
+                            : null,
+                    _typeNamePayload != RuntimeTypeNamePayload.None
+                        ? RuntimeTypeNameFormatter.Format(
+                            type,
+                            _typeDefinitions,
+                            _assemblyNames ?? throw new CompilerException(
+                                new CompilerDiagnostic(
+                                    DiagnosticCode.RuntimeContract,
+                                    "runtime type names require an assembly identity formatter")),
+                            _typeNamePayload)
+                        : null));
+            }
         }
     }
 

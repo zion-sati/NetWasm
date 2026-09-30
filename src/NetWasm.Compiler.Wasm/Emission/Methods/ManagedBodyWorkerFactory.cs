@@ -17,6 +17,7 @@ internal sealed class ManagedBodySharedCapabilities(
     ITypeLayoutProvider typeLayouts,
     IStaticFieldLayoutProvider staticFields,
     IStaticDataLayout staticData,
+    IMemberDescriptorLayout memberDescriptors,
     IRuntimeObjectLayout runtimeObjects,
     IManagedExceptionObjectProvider exceptionObjects,
     ITypeDescriptorSource typeDescriptors,
@@ -33,6 +34,7 @@ internal sealed class ManagedBodySharedCapabilities(
     public ITypeLayoutProvider TypeLayouts { get; } = typeLayouts;
     public IStaticFieldLayoutProvider StaticFields { get; } = staticFields;
     public IStaticDataLayout StaticData { get; } = staticData;
+    public IMemberDescriptorLayout MemberDescriptors { get; } = memberDescriptors;
     public IRuntimeObjectLayout RuntimeObjects { get; } = runtimeObjects;
     public IManagedExceptionObjectProvider ExceptionObjects { get; } = exceptionObjects;
     public ITypeDescriptorSource TypeDescriptors { get; } = typeDescriptors;
@@ -65,7 +67,7 @@ internal static class ManagedBodyWorkerCompositionRoot
             shared.Methods, shared.Symbols, shared.TypeClassifier,
             shared.Intrinsics, shared.TargetLayout, fork.Values,
             shared.TypeLayouts, fork.Fields, shared.StaticFields,
-            shared.StaticData, shared.RuntimeObjects,
+            shared.StaticData, shared.MemberDescriptors, shared.RuntimeObjects,
             shared.ExceptionObjects, shared.TypeDescriptors, logger);
         var provider = registrations.BuildServiceProvider(
             new ServiceProviderOptions

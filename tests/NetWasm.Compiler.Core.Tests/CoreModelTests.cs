@@ -671,6 +671,21 @@ public sealed class CoreModelTests
             value,
             false);
         var fieldInstance = new FieldInstanceModel(field, constructed, value);
+        var propertyDefinition = new PropertyDefinitionModel(
+            new EntityKey(Assembly, 0x17000001),
+            TypeKey,
+            "Item",
+            value,
+            [],
+            null,
+            null);
+        var propertyInstance = new PropertyInstanceModel(
+            propertyDefinition,
+            constructed,
+            value,
+            [],
+            null,
+            null);
         var implementation = new MethodImplementationModel(method, method);
         var implementationInstance = new MethodImplementationInstanceModel(
             instance, instance);
@@ -688,6 +703,9 @@ public sealed class CoreModelTests
             MethodArguments = [],
         }).IsConstructed);
         Assert.True(fieldInstance.IsConstructed);
+        Assert.True(propertyInstance.IsConstructed);
+        Assert.False((propertyInstance with { DeclaringType = declaringType }).IsConstructed);
+        Assert.Contains("0x17000001", propertyInstance.CanonicalName);
         Assert.Contains("0x04000002", fieldInstance.CanonicalName);
         Assert.Same(method, implementation.Body);
         Assert.Same(method, implementation.Declaration);
@@ -717,12 +735,98 @@ public sealed class CoreModelTests
         Assert.Equal(-1, layout.DelegateMethodIdOffset);
         Assert.Equal(-1, layout.DelegateLeftOffset);
         Assert.Equal(-1, layout.DelegateRightOffset);
+        var staticDataLayout = (IStaticDataLayout)layout;
+        Assert.Equal(0, staticDataLayout.TypeFactsTableAddress);
+        Assert.Equal(0, staticDataLayout.TypeFactsTableCount);
         Assert.Empty(layout.ConstructedTypeDescriptors);
         Assert.Empty(layout.ValueTypeDescriptors);
 
         var descriptor = new ConstructedTypeDescriptorLayout(
             constructed, 3, 2, 12, 32, 2, null);
         Assert.Equal(constructed, descriptor.Type);
+    }
+
+    [Fact]
+    public void DescriptorFactEquivalenceUsesStructuralCollections()
+    {
+        var owner = CliTypeIdentity.Named(
+            Assembly, "Example", "Owner", isValueType: false);
+        var value = CliTypeIdentity.Named(
+            Assembly, "Example", "Value", isValueType: true);
+        var alternative = CliTypeIdentity.Named(
+            Assembly, "Example", "Alternative", isValueType: true);
+        var methodKey = new EntityKey(Assembly, 0x06000005);
+        var propertyKey = new EntityKey(Assembly, 0x17000002);
+
+        MethodInstanceModel Accessor(CliTypeIdentity returnType)
+        {
+            var signature = new MethodSignatureModel(returnType, [value]);
+            var definition = new MethodDefinitionModel(
+                methodKey,
+                TypeKey,
+                "get_Item",
+                IsStatic: false,
+                signature,
+                RelativeVirtualAddress: 1)
+            {
+                GenericArity = 1,
+                IsPublic = true,
+                IsVirtual = true,
+                IsNewSlot = true,
+            };
+            return new(definition, owner, [value], signature);
+        }
+
+        PropertyInstanceModel Property(
+            MethodInstanceModel? getter,
+            CliTypeIdentity propertyType)
+        {
+            var definition = new PropertyDefinitionModel(
+                propertyKey,
+                TypeKey,
+                "Item",
+                propertyType,
+                [value],
+                getter?.Definition.Key,
+                null);
+            return new(definition, owner, propertyType, [value], getter, null);
+        }
+
+        var accessor = Accessor(value);
+        var equivalentAccessor = Accessor(value);
+        Assert.True(accessor.HasEquivalentDescriptorFacts(equivalentAccessor));
+        Assert.False(accessor.HasEquivalentDescriptorFacts(null));
+        Assert.False(accessor.HasEquivalentDescriptorFacts(Accessor(alternative)));
+
+        var property = Property(accessor, value);
+        var equivalentProperty = Property(equivalentAccessor, value);
+        Assert.True(property.HasEquivalentDescriptorFacts(equivalentProperty));
+        Assert.False(property.HasEquivalentDescriptorFacts(null));
+        Assert.False(property.HasEquivalentDescriptorFacts(
+            Property(equivalentAccessor, alternative)));
+        Assert.False(property.HasEquivalentDescriptorFacts(
+            equivalentProperty with
+            {
+                Definition = equivalentProperty.Definition with
+                {
+                    Getter = new EntityKey(Assembly, 0x06000006),
+                },
+            }));
+
+        var withoutAccessors = Property(null, value);
+        Assert.True(withoutAccessors.HasEquivalentDescriptorFacts(Property(null, value)));
+        Assert.False(property.HasEquivalentDescriptorFacts(withoutAccessors));
+        Assert.False(withoutAccessors.HasEquivalentDescriptorFacts(property));
+        var withSetter = property with
+        {
+            Definition = property.Definition with
+            {
+                Setter = accessor.Definition.Key,
+            },
+            Setter = accessor,
+        };
+        Assert.False(withSetter.HasEquivalentDescriptorFacts(property));
+        Assert.False(property.HasEquivalentDescriptorFacts(withSetter));
     }
 
     [Fact]

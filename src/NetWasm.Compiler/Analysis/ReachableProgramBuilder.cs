@@ -94,6 +94,16 @@ internal sealed class ReachableProgramBuilder(
             ConstructedAllocatingMethods = constructedAllocatingMethods,
             ConstructedRootMaps = constructedRootMaps,
             ConstructedFields = state.ConstructedFields,
+            MethodDescriptors = state.MethodDescriptors,
+            FieldDescriptors = state.FieldDescriptors,
+            PropertyDescriptors = state.PropertyDescriptors,
+            DelegateInvokeDescriptors = state.DelegateInvokeDescriptors,
+            ObjectArrayDelegateAdapters = state.ObjectArrayDelegateAdapters,
+            MemberExecution = state.MemberExecution,
+            NamedMemberDescriptors = state.NamedMemberDescriptors,
+            RequiresTypeFacts = state.RequiresTypeFacts,
+            RequiresDelegateInvoke = state.RequiresDelegateInvoke,
+            TypeNamePayload = state.TypeNamePayload,
             ConstructedStaticInitializers = [
                 ..state.ConstructedStaticInitializers
                     .Order(StringComparer.Ordinal)

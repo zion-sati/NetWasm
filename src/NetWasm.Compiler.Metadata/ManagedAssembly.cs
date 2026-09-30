@@ -20,6 +20,7 @@ public sealed class ManagedAssembly : IDisposable
     private readonly Dictionary<int, TypeDefinitionModel> _types;
     private readonly Dictionary<int, FieldDefinitionModel> _fields;
     private readonly Dictionary<int, MethodDefinitionModel> _methods;
+    private readonly Dictionary<int, PropertyDefinitionModel> _properties;
     private readonly Dictionary<int, EntityHandle> _baseTypes;
     private readonly Dictionary<int, ImmutableArray<EntityHandle>> _implementedInterfaces;
     private readonly MetadataAssemblySnapshot _metadata;
@@ -53,7 +54,9 @@ public sealed class ManagedAssembly : IDisposable
         Reader = _peReader.GetMetadataReader();
         var definition = Reader.GetAssemblyDefinition();
         Identity = new AssemblyIdentity(Reader.GetString(definition.Name));
-        (_types, _fields, _methods) = ReadDefinitions(assemblyIdentityAliases, stackKinds);
+        (_types, _fields, _methods, _properties) = ReadDefinitions(
+            assemblyIdentityAliases,
+            stackKinds);
         _baseTypes = _types.ToDictionary(
             pair => pair.Key,
             pair => Reader.GetTypeDefinition(
@@ -75,6 +78,7 @@ public sealed class ManagedAssembly : IDisposable
             _implementedInterfaces)
         {
             AssemblyIdentityAliases = assemblyIdentityAliases,
+            Properties = _properties,
         };
         References = [
             ..Reader.AssemblyReferences
@@ -89,6 +93,7 @@ public sealed class ManagedAssembly : IDisposable
     public IReadOnlyDictionary<int, TypeDefinitionModel> Types => _types;
     public IReadOnlyDictionary<int, FieldDefinitionModel> Fields => _fields;
     public IReadOnlyDictionary<int, MethodDefinitionModel> Methods => _methods;
+    public IReadOnlyDictionary<int, PropertyDefinitionModel> Properties => _properties;
     public string ContentSha256 => _contentSha256 ??=
         Convert.ToHexStringLower(SHA256.HashData(_image));
     internal MetadataAssemblySnapshot Metadata => _metadata;
@@ -137,13 +142,15 @@ public sealed class ManagedAssembly : IDisposable
     private (
         Dictionary<int, TypeDefinitionModel> Types,
         Dictionary<int, FieldDefinitionModel> Fields,
-        Dictionary<int, MethodDefinitionModel> Methods) ReadDefinitions(
+        Dictionary<int, MethodDefinitionModel> Methods,
+        Dictionary<int, PropertyDefinitionModel> Properties) ReadDefinitions(
         AssemblyIdentityAliases assemblyIdentityAliases,
         IValueTypeDefinitionStackKindResolver stackKinds)
     {
         var types = new Dictionary<int, TypeDefinitionModel>();
         var fields = new Dictionary<int, FieldDefinitionModel>();
         var methods = new Dictionary<int, MethodDefinitionModel>();
+        var properties = new Dictionary<int, PropertyDefinitionModel>();
         var constants = Enumerable.Range(1, Reader.GetTableRowCount(TableIndex.Constant))
             .Select(index => Reader.GetConstant(MetadataTokens.ConstantHandle(index)))
             .ToDictionary(constant => MetadataTokens.GetToken(constant.Parent));
@@ -181,6 +188,8 @@ public sealed class ManagedAssembly : IDisposable
                         ExplicitOffset = field.GetOffset() is var offset && offset >= 0
                             ? offset
                             : null,
+                        IsInitOnly = (field.Attributes & FieldAttributes.InitOnly) != 0,
+                        IsLiteral = (field.Attributes & FieldAttributes.Literal) != 0,
                     });
             }
 
@@ -212,6 +221,8 @@ public sealed class ManagedAssembly : IDisposable
                         WitExport = WitExport,
                         WitPostReturn = WitPostReturn,
                         GenericArity = method.GetGenericParameters().Count,
+                        IsPublic = (method.Attributes & MethodAttributes.MemberAccessMask) ==
+                            MethodAttributes.Public,
                         IsVirtual = (method.Attributes & MethodAttributes.Virtual) != 0,
                         IsNewSlot = (method.Attributes & MethodAttributes.NewSlot) != 0,
                         IsFinal = (method.Attributes & MethodAttributes.Final) != 0,
@@ -219,8 +230,29 @@ public sealed class ManagedAssembly : IDisposable
                     });
             }
 
+            foreach (var propertyHandle in definition.GetProperties())
+            {
+                var property = Reader.GetPropertyDefinition(propertyHandle);
+                var signature = property.DecodeSignature(
+                    signatureProvider,
+                    genericContext: null);
+                var accessors = property.GetAccessors();
+                var propertyToken = MetadataTokens.GetToken(propertyHandle);
+                properties.Add(
+                    propertyToken,
+                    new PropertyDefinitionModel(
+                        new EntityKey(Identity, propertyToken),
+                        typeKey,
+                        Reader.GetString(property.Name),
+                        signature.ReturnType,
+                        signature.ParameterTypes,
+                        ToEntityKey(accessors.Getter),
+                        ToEntityKey(accessors.Setter)));
+            }
+
             (var typeNamespace, var typeName) = GetTypeName(typeHandle);
             var layout = definition.GetLayout();
+            var genericParameters = definition.GetGenericParameters();
             var isEnum = IsEnumBase(definition.BaseType);
             var enumUnderlyingType = isEnum
                 ? fields.Values.Single(field =>
@@ -259,8 +291,10 @@ public sealed class ManagedAssembly : IDisposable
                     PackingSize = layout.PackingSize,
                     DeclaredSize = layout.Size,
                     InlineArrayLength = ReadInlineArrayLength(definition, typeKey),
-                    GenericArity = definition.GetGenericParameters().Count,
-                    GenericParameterVariances = [.. definition.GetGenericParameters()
+                    GenericArity = genericParameters.Count,
+                    GenericParameterNames = [.. genericParameters.Select(handle =>
+                        Reader.GetString(Reader.GetGenericParameter(handle).Name))],
+                    GenericParameterVariances = [.. genericParameters
                         .Select(handle => Reader.GetGenericParameter(handle).Attributes &
                             GenericParameterAttributes.VarianceMask)
                         .Select(attributes => attributes switch
@@ -298,7 +332,11 @@ public sealed class ManagedAssembly : IDisposable
             };
         }
 
-        return (types, fields, methods);
+        return (types, fields, methods, properties);
+
+        EntityKey? ToEntityKey(MethodDefinitionHandle handle) => handle.IsNil
+            ? null
+            : new EntityKey(Identity, MetadataTokens.GetToken(handle));
 
         int GetInitializerSize(CliTypeIdentity signature)
         {

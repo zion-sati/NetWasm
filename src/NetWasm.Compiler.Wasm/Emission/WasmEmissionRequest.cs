@@ -6,6 +6,7 @@ using NetWasm.Compiler.Core;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
@@ -50,6 +51,13 @@ public sealed record WasmEmissionRequest(
         ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty;
 
     public ImmutableArray<ManagedDelegateBinding> DelegateBindings { get; init; } = [];
+
+    public ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
+        ObjectArrayDelegateAdapters
+    { get; init; } = ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Empty;
+
+    public MemberExecutionPlan MemberExecution { get; init; } =
+        MemberExecutionPlan.Empty;
 
     public EntityKey? EntryPointArgumentFactory { get; init; }
 

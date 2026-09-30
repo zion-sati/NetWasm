@@ -19,6 +19,7 @@ public interface IManagedWasmEmitterFactory
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
         IStaticDataLayout staticData,
+        IMemberDescriptorLayout memberDescriptors,
         IRuntimeObjectLayout runtimeObjects,
         IManagedExceptionObjectProvider exceptionObjects,
         ITypeDescriptorSource typeDescriptors);
@@ -41,6 +42,7 @@ public sealed class ManagedWasmEmitterFactory(
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
         IStaticDataLayout staticData,
+        IMemberDescriptorLayout memberDescriptors,
         IRuntimeObjectLayout runtimeObjects,
         IManagedExceptionObjectProvider exceptionObjects,
         ITypeDescriptorSource typeDescriptors) => new ManagedWasmEmitter(
@@ -57,6 +59,7 @@ public sealed class ManagedWasmEmitterFactory(
             instanceFields,
             staticFields,
             staticData,
+            memberDescriptors,
             runtimeObjects,
             exceptionObjects,
             typeDescriptors,

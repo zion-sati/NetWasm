@@ -117,6 +117,12 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Runtime.InteropServices.WebAssembly.CanonicalAbi",
                     "ReleaseResourceHandle") =>
                     RuntimeIntrinsic.ComponentResourceHandleRelease,
+                ("System.Runtime.CompilerServices.ObjectArrayDelegateAdapter", "Create") =>
+                    RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate,
+                ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod") =>
+                    RuntimeIntrinsic.MemberExecuteMethod,
+                ("System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField") =>
+                    RuntimeIntrinsic.MemberReadField,
                 ("System.Enum", "Equals") => RuntimeIntrinsic.EnumEquals,
                 ("System.Enum", "InternalEquals") => RuntimeIntrinsic.EnumEquals,
                 ("System.Enum", "GetHashCode") => RuntimeIntrinsic.EnumGetHashCode,

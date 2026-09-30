@@ -5,6 +5,8 @@ using System.Linq;
 using NetWasm.Compiler.Core;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -30,6 +32,8 @@ internal sealed record WasmModuleTarget(
         Plan.DelegateRemoveHelperIndex,
         Plan.DelegateEqualityHelperIndex,
         Request.ManagedCallSites,
+        Request.ObjectArrayDelegateAdapters,
+        Request.MemberExecution,
         Request.CollectManagedMethodMemoryMetrics);
 }
 
@@ -49,6 +53,9 @@ internal sealed record InstructionModuleTarget(
     OptionalFunctionIndex DelegateRemoveHelperIndex,
     OptionalFunctionIndex DelegateEqualityHelperIndex,
     ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites,
+    ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
+        ObjectArrayDelegateAdapters,
+    MemberExecutionPlan MemberExecution,
     bool CollectManagedMethodMemoryMetrics = false);
 
 internal interface IWasmModuleTargetFactory

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
@@ -14,6 +15,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
     private readonly ITypeDescriptorBuilder _typeDescriptors;
     private readonly IConstructedTypeDescriptorBuilder _constructedTypeDescriptors;
     private readonly IValueTypeDescriptorBuilder _valueTypeDescriptors;
+    private readonly IMemberDescriptorDataBuilder _memberDescriptors;
     private readonly IStringDataBuilder _strings;
     private readonly IExceptionObjectBuilder _exceptionObjects;
     private readonly IEnumMetadataCollector _enumMetadataCollector;
@@ -27,6 +29,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         ITypeDescriptorBuilder typeDescriptors,
         IConstructedTypeDescriptorBuilder constructedTypeDescriptors,
         IValueTypeDescriptorBuilder valueTypeDescriptors,
+        IMemberDescriptorDataBuilder memberDescriptors,
         IStringDataBuilder strings,
         IExceptionObjectBuilder exceptionObjects,
         IEnumMetadataCollector enumMetadataCollector,
@@ -42,6 +45,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
             throw new ArgumentNullException(nameof(constructedTypeDescriptors));
         _valueTypeDescriptors = valueTypeDescriptors ??
             throw new ArgumentNullException(nameof(valueTypeDescriptors));
+        _memberDescriptors = memberDescriptors ??
+            throw new ArgumentNullException(nameof(memberDescriptors));
         _strings = strings ?? throw new ArgumentNullException(nameof(strings));
         _exceptionObjects = exceptionObjects ??
             throw new ArgumentNullException(nameof(exceptionObjects));
@@ -58,6 +63,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         _valueTypeDescriptors.Build();
         _enumMetadataCollector.Collect();
         _strings.Build();
+        _memberDescriptors.Build();
+        BuildTypeFacts();
         _enumMetadata.Build();
         _exceptionObjects.Build();
 
@@ -76,6 +83,97 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
             [.. _state.StaticRoots.Order()])
         {
             EnumMetadata = _state.EnumMetadata.ToImmutable(),
+            MethodDescriptors = _state.MethodDescriptors.ToImmutableDictionary(
+                StringComparer.Ordinal),
+            FieldDescriptors = _state.FieldDescriptors.ToImmutableDictionary(
+                StringComparer.Ordinal),
+            PropertyDescriptors = _state.PropertyDescriptors.ToImmutableDictionary(
+                StringComparer.Ordinal),
+            MemberDescriptorDeclaringTypeIdOffset =
+                _state.MemberDescriptorDeclaringTypeIdOffset ?? 0,
+            MemberDescriptorRequiresDeclaringTypeOffset =
+                _state.MemberDescriptorRequiresDeclaringTypeOffset ?? 0,
+            TypeFactsTableAddress = _state.TypeFactsTableAddress,
+            TypeFactsTableCount = _state.TypeFactsTableCount,
         };
+    }
+
+    private void BuildTypeFacts()
+    {
+        foreach (var facts in _state.PendingTypeFacts.OrderBy(facts => facts.TypeId))
+        {
+            var names = facts.Names is null
+                ? 0
+                : RuntimeTypeFactsEncoding.AddNames(_state, _target, facts.Names);
+            RuntimeTypeFactsEncoding.Add(
+                _state,
+                _target,
+                facts.Identity,
+                facts.Definition,
+                facts.TypeId,
+                facts.BaseTypeId,
+                facts.AssignableTypeIdsAddress,
+                facts.AssignableTypeIdCount,
+                GetDelegateInvokeAddress(facts),
+                names);
+        }
+        BuildTypeFactsTable();
+    }
+
+    private int GetDelegateInvokeAddress(PendingRuntimeTypeFacts facts)
+    {
+        if (facts.DelegateInvokeDescriptor is null)
+        {
+            return 0;
+        }
+        return _state.MethodDescriptors.TryGetValue(
+            facts.DelegateInvokeDescriptor,
+            out var address)
+                ? address
+                : throw new CompilerException(new CompilerDiagnostic(
+                    DiagnosticCode.RuntimeContract,
+                    $"delegate Invoke descriptor '{facts.DelegateInvokeDescriptor}' " +
+                    "was not assigned static storage"));
+    }
+
+    private void BuildTypeFactsTable()
+    {
+        if (_state.TypeFacts.Count == 0)
+        {
+            return;
+        }
+        var descriptorTypeIds = _state.TypeDescriptors
+            .Select(descriptor => descriptor.TypeId)
+            .Concat(_state.ConstructedTypeDescriptors.Select(descriptor =>
+                descriptor.TypeId))
+            .ToHashSet();
+        if (!descriptorTypeIds.SetEquals(_state.TypeFacts.Keys))
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.RuntimeContract,
+                "type-facts records do not cover every reachable semantic type"));
+        }
+        var count = checked(_state.TypeFacts.Keys.Max() + 1);
+        _state.Cursor = ManagedTypeLayoutCompiler.Align(
+            _state.Cursor,
+            _target.AddressSize);
+        var address = _state.Cursor;
+        var bytes = new byte[checked(count * _target.AddressSize)];
+        foreach (var (typeId, factsAddress) in _state.TypeFacts)
+        {
+            var destination = bytes.AsSpan(typeId * _target.AddressSize);
+            if (_target.AddressSize == sizeof(int))
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(destination, factsAddress);
+            }
+            else
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(destination, factsAddress);
+            }
+        }
+        _state.Segments.Add(new DataSegment(address, [.. bytes]));
+        _state.Cursor += bytes.Length;
+        _state.TypeFactsTableAddress = address;
+        _state.TypeFactsTableCount = count;
     }
 }

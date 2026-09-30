@@ -86,6 +86,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<FloatingTruncateIntrinsicEmitter>();
         services.AddSingleton<FloatingRoundIntrinsicEmitter>();
         services.AddSingleton<FloatingSquareRootIntrinsicEmitter>();
+        services.AddSingleton<ObjectArrayDelegateAdapterIntrinsicEmitter>();
+        services.AddSingleton<MemberExecutionIntrinsicEmitter>();
 
         services.AddSingleton<IEnumStorageResolver, EnumStorageResolver>();
         services.AddSingleton<IEnumNullCheckEmitter, EnumNullCheckEmitter>();
@@ -248,6 +250,12 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.FloatingRound);
         AddRegistration<FloatingSquareRootIntrinsicEmitter>(
             services, RuntimeIntrinsic.FloatingSquareRoot);
+        AddRegistration<ObjectArrayDelegateAdapterIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate);
+        AddRegistration<MemberExecutionIntrinsicEmitter>(
+            services, RuntimeIntrinsic.MemberExecuteMethod);
+        AddRegistration<MemberExecutionIntrinsicEmitter>(
+            services, RuntimeIntrinsic.MemberReadField);
         AddRegistration<EnumEqualsIntrinsicEmitter>(services, RuntimeIntrinsic.EnumEquals);
         AddRegistration<EnumGetHashCodeIntrinsicEmitter>(
             services, RuntimeIntrinsic.EnumGetHashCode);

@@ -12,10 +12,12 @@ choices and standards-permitted results.
 
 The retained profile covers selected primitive and enum operations, invariant
 ordinal UTF-16 strings and formatting, arrays/spans, selected collections,
-delegates/value types, closed generic specialization, exceptions and exact GC
-roots, browser-event-loop `Task`/`ValueTask` and cancellation, selected date
-and time types, direct JavaScript interop, WIT bindings, and selective WASI
-Preview 2 clocks/readiness/streams.
+delegates/value types, the bounded
+[expression-tree interpreter](expression-trees.md), closed generic
+specialization, exceptions and exact GC roots, browser-event-loop
+`Task`/`ValueTask` and cancellation, selected date and time types, direct
+JavaScript interop, WIT bindings, and selective WASI Preview 2
+clocks/readiness/streams.
 
 ### Binary floating-point to `decimal` policy
 

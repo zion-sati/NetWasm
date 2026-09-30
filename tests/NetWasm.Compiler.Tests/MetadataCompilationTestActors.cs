@@ -14,9 +14,7 @@ internal static class MetadataCompilationTestActors
     internal static IMethodRepository Methods(MetadataCompilationSnapshot snapshot)
     {
         var materializations = Materializations();
-        return new MetadataMethodRepositoryFactory(
-            materializations,
-            Definitions(materializations)).Create(snapshot);
+        return new MetadataMethodRepositoryFactory(materializations).Create(snapshot);
     }
 
     internal static ITypeFinder TypeFinder(MetadataCompilationSnapshot snapshot) =>
@@ -122,7 +120,7 @@ internal static class MetadataCompilationTestActors
             materializations,
             definitions,
             types,
-            new MetadataMethodRepositoryFactory(materializations, definitions)).Create(snapshot);
+            new MetadataMethodRepositoryFactory(materializations)).Create(snapshot);
     }
 
     internal static IMethodInstanceResolver MethodInstances(
@@ -137,7 +135,7 @@ internal static class MetadataCompilationTestActors
             materializations,
             definitions,
             types,
-            new MetadataMethodRepositoryFactory(materializations, definitions)).Create(snapshot);
+            new MetadataMethodRepositoryFactory(materializations)).Create(snapshot);
     }
 
     internal static IMethodBodyReader MethodBodies(MetadataCompilationSnapshot snapshot)
@@ -153,7 +151,7 @@ internal static class MetadataCompilationTestActors
             definitions,
             types,
             new MetadataFieldRepositoryFactory(materializations),
-            new MetadataMethodRepositoryFactory(materializations, definitions),
+            new MetadataMethodRepositoryFactory(materializations),
             symbols).Create(snapshot);
     }
 
@@ -163,7 +161,7 @@ internal static class MetadataCompilationTestActors
         var definitions = Definitions(materializations);
         return new MetadataMethodFinderFactory(
             materializations,
-            new MetadataMethodRepositoryFactory(materializations, definitions)).Create(snapshot);
+            new MetadataMethodRepositoryFactory(materializations)).Create(snapshot);
     }
 
     internal static ISymbolFormatter Symbols(MetadataCompilationSnapshot snapshot)

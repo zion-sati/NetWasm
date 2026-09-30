@@ -29,6 +29,7 @@ internal static class InstructionFamilyCatalogFactory
                     CilOperation.LoadString,
                     CilOperation.LoadTypeToken,
                     CilOperation.LoadFieldToken,
+                    CilOperation.LoadMethodToken,
                     CilOperation.Duplicate,
                     CilOperation.Pop,
                     CilOperation.DefaultValue,
@@ -117,6 +118,9 @@ internal static class InstructionFamilyCatalogFactory
                 InstructionFamily.AllocationBoxingTypes,
                 [
                     CilOperation.MaterializeType,
+                    CilOperation.MaterializeMethod,
+                    CilOperation.MaterializeField,
+                    CilOperation.GetTypeFacts,
                     CilOperation.GetObjectType,
                     CilOperation.NewObject,
                     CilOperation.Box,

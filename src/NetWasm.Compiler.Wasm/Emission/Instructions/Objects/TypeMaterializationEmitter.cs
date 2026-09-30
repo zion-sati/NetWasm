@@ -13,6 +13,7 @@ internal sealed class TypeMaterializationEmitter(
     ITargetLayout layouts,
     IAddressInstructionEmitter addresses,
     ITypeLayoutProvider typeLayouts,
+    IStaticDataLayout staticData,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
     IRootPublicationEmitter roots) :
@@ -28,6 +29,10 @@ internal sealed class TypeMaterializationEmitter(
             CilOperation.GetObjectType,
             InstructionFamily.AllocationBoxingTypes,
             EmitObjectType),
+        new(
+            CilOperation.GetTypeFacts,
+            InstructionFamily.AllocationBoxingTypes,
+            EmitTypeFacts),
     ];
 
     private void EmitTypeFromHandle(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
@@ -45,6 +50,65 @@ internal sealed class TypeMaterializationEmitter(
             request.Instruction.Operand is CilOperand.TypeIdentity constrained
                 ? constrained.Value
                 : null);
+    }
+
+    private void EmitTypeFacts(
+        InstructionEmissionRequest request,
+        IWasmInstructionWriter code)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (staticData.TypeFactsTableAddress <= 0 ||
+            staticData.TypeFactsTableCount <= 0)
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.RuntimeContract,
+                "type facts were demanded but no lookup table was generated"));
+        }
+
+        var slot = request.Stack.Count - 1;
+        var source = GetStackLocal(request.Context, slot, CliValueKind.I4);
+        var destination = GetStackLocal(
+            request.Context,
+            slot,
+            CliValueKind.NativeInt);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)source)));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Constant,
+            WasmInstructionOperand.Signed(staticData.TypeFactsTableCount)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanUnsigned));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.If,
+            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        addresses.Emit(code, staticData.TypeFactsTableAddress);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)source)));
+        if (layouts.Target.UsesMemory64)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+        }
+        addresses.Emit(code, layouts.Target.AddressSize);
+        code.Write(WasmInstruction.NoOperand(layouts.Target.UsesMemory64
+            ? WasmOpcodes.I64Multiply
+            : WasmOpcodes.I32Multiply));
+        addresses.Emit(code, AddressOperation.Add);
+        code.Write(WasmInstruction.WithOperand(
+            layouts.Target.UsesMemory64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(
+                layouts.Target.UsesMemory64 ? 3u : 2u,
+                0)));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)destination)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+        addresses.Emit(code, 0);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)destination)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        request.Stack[slot] = CliValueKind.NativeInt;
     }
 
     private void EmitCommand(

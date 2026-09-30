@@ -13,6 +13,9 @@ evidence of support.
   runtime-created generic types are unsupported.
 - Broad reflection, reflection-driven code generation, and `dynamic` are
   unsupported.
+- Expression-tree execution is a bounded managed-interpreter profile, not
+  runtime code generation or desktop parity. See the exact
+  [delegate and node matrix](expression-trees.md).
 - Managed threads, worker execution, and a managed thread pool are unsupported.
 - Browser-specific capabilities such as DOM, input, fetch and storage are
   only available through explicit JavaScript imports in raw-core mode; they are
