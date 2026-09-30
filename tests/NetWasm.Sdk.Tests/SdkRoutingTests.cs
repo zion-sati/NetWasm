@@ -275,11 +275,15 @@ public sealed class SdkRoutingTests
             "<NetWasmManagedStackTrace Condition=\"'$(NetWasmManagedStackTrace)' == ''\">false</NetWasmManagedStackTrace>",
             compilerTargets,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "NoLogo=\"$(NoLogo)\"",
+            compilerTargets,
+            StringComparison.Ordinal);
 
         using var project = EvaluationProject.Create("""
             <TargetFramework>netwasm0.1</TargetFramework>
             <OutputType>Exe</OutputType>
-            """);
+            """, includeCompilerTargets: true);
         Assert.Equal("allowAll", project.Property("NetWasmNetworkPolicy"));
         Assert.Equal("true", project.Property("NetWasmRandomness"));
         Assert.Equal(project.ProjectDirectory, project.Property("RunWorkingDirectory"));

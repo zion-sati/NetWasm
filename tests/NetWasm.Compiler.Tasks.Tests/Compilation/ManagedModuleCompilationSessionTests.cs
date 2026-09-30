@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.ComponentModel;
+using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Tasks.Compilation;
 using NetWasm.Compiler.Tasks.Composition;
 using NetWasm.Compiler.Tasks.Tests.TestSupport;
@@ -47,7 +48,8 @@ public sealed class ManagedModuleCompilationSessionTests
     public void FactoryCreatesConfiguredCompilationSession()
     {
         var factory = AsFactory(
-            CompilerTaskComposition.CreateManagedModuleCompilationSessionFactory());
+            CompilerTaskComposition.CreateManagedModuleCompilationSessionFactory(
+                new NullCompilerProgressReporter()));
 
         using var session = factory.Create(Command());
 
@@ -93,5 +95,12 @@ public sealed class ManagedModuleCompilationSessionTests
         public bool IsDisposed { get; private set; }
 
         public void Dispose() => IsDisposed = true;
+    }
+
+    private sealed class NullCompilerProgressReporter : ICompilerProgressReporter
+    {
+        public void Report(CompilerProgressStage stage)
+        {
+        }
     }
 }
