@@ -3,7 +3,7 @@
 Write C#. Deploy like C++. Target WASI.
 
 A clean Release build of `Console.WriteLine(42)` produces an **84,513-byte
-final Wasm artifact—runtime and precise garbage collection included.**
+final Wasm artifact, runtime and precise garbage collection included.**
 
 [![Star NetWasm on GitHub](https://img.shields.io/github/stars/zion-sati/NetWasm?style=for-the-badge&logo=github&label=Star%20NetWasm)](https://github.com/zion-sati/NetWasm)
 
@@ -18,6 +18,37 @@ memory. Deploy the compiled program to a compatible WASI host.
 [Measured size and reproduction steps](docs/size-and-methodology.md) ·
 [Quickstart](docs/sdk-quickstart.md) ·
 [Supported APIs and limitations](docs/support-status.md)
+
+## AOT vs AOT: printing `42`
+
+**82.5 KiB with NetWasm. 15.29 MB with our .NET 11 Blazor AOT build.**
+
+We published an empty-UI Blazor WebAssembly app that calls
+`Console.WriteLine(42)`, with AOT, full managed trimming, IL stripping, invariant
+globalization and size-focused native compilation/linking enabled. Both the
+.NET 10 and .NET 11 builds printed `42` in Chromium without errors.
+
+```mermaid
+xychart-beta
+    title "Console.WriteLine(42): uncompressed Wasm payload"
+    x-axis ["NetWasm", "Blazor 10", "Blazor 11 RC1"]
+    y-axis "MB" 0 --> 16
+    bar [0.084513, 12.276684, 15.289241]
+```
+
+| AOT build | Uncompressed Wasm | Size relative to NetWasm |
+| --- | ---: | ---: |
+| **NetWasm** | **84,513 bytes (82.5 KiB)** | **1x** |
+| Blazor WebAssembly, .NET 10 | 12,276,684 bytes (12.28 MB) | 145x |
+| Blazor WebAssembly, .NET 11 RC1 | 15,289,241 bytes (15.29 MB) | 181x |
+
+These are measured Wasm payloads, with no compression and no JavaScript counted.
+Blazor's total includes its native runtime and required Webcil assemblies; the
+native runtime alone was 9.47 MB on .NET 10 and 11.73 MB on .NET 11 RC1.
+NetWasm's figure includes its runtime, garbage collector and WASI component.
+NetWasm does not require a UI framework to run your C#.
+
+[Exact versions, settings and reproduction](docs/size-and-methodology.md#blazor-webassembly-aot-printing-42).
 
 ## Try it
 

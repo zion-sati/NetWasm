@@ -57,6 +57,127 @@ whole deployment's byte count nor a startup, memory-use or performance score.
 Exact size depends on the workload, compiler and toolchain. The package
 version, host and recorded hash identify a specific reproduction.
 
+## Blazor WebAssembly AOT: printing `42`
+
+Measured on 2026-09-30 on macOS arm64, using separate clean projects with
+identical source and no inherited bin/obj output. Both apps have an empty root
+component. They print `42` and start the ordinary Blazor browser host.
+
+| Build | .NET SDK | Runtime / WebAssembly package | Native runtime Wasm bytes | All loaded Wasm bytes |
+| --- | --- | --- | ---: | ---: |
+| .NET 10 | 10.0.401 | 10.0.9 | 9,474,625 | 12,276,684 |
+| .NET 11 RC1 | 11.0.100-rc.1.26425.128 | 11.0.0-rc.1.26425.128 | 11,726,126 | 15,289,241 |
+
+The .NET 10 project used the already-installed workload 10.0.301.1, pinned
+through `sdk.workloadVersion` in its project-local global.json. The .NET 11
+project used its matching RC1 workload. Both published in Release with these
+explicit settings:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <WasmStripILAfterAOT>true</WasmStripILAfterAOT>
+    <WasmNativeStrip>true</WasmNativeStrip>
+    <WasmNativeDebugSymbols>false</WasmNativeDebugSymbols>
+    <EmccCompileOptimizationFlag>-Oz</EmccCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-Oz</EmccLinkOptimizationFlag>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly"
+                      Version="10.0.9" />
+  </ItemGroup>
+</Project>
+```
+
+Name the project `Blazor42.csproj`. For the .NET 11 reproduction, change the
+TFM to `net11.0` and the package version to `11.0.0-rc.1.26425.128`.
+Select the SDK versions above in separate global.json files. The .NET 10
+file used:
+
+```json
+{
+  "sdk": {
+    "version": "10.0.401",
+    "rollForward": "disable",
+    "workloadVersion": "10.0.301.1"
+  }
+}
+```
+
+For .NET 11, select `11.0.100-rc.1.26425.128` with `rollForward: disable`
+and omit `workloadVersion`. Install the matching `wasm-tools` workload if it
+is not already available.
+
+`Program.cs`:
+
+```csharp
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Blazor42;
+
+Console.WriteLine(42);
+var builder = WebAssemblyHostBuilder.CreateDefault(args);
+builder.RootComponents.Add<App>("#app");
+await builder.Build().RunAsync();
+```
+
+`App.razor` contains only a Razor comment, so it renders no UI:
+
+```razor
+@* Empty root: this app only writes 42 to the console. *@
+```
+
+`wwwroot/index.html`:
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Blazor AOT 42</title>
+  <base href="/">
+  <link rel="preload" id="webassembly">
+  <script type="importmap"></script>
+</head>
+<body>
+  <div id="app">Loading</div>
+  <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+</html>
+```
+
+Publish each clean project:
+
+```sh
+dotnet publish Blazor42.csproj -c Release -o publish --source https://api.nuget.org/v3/index.json
+```
+
+Sum the raw `*.wasm` files under `publish/wwwroot/_framework`, excluding
+`.br` and `.gz` copies. The .NET 10 build contains 32 Wasm files; .NET 11
+contains 36. Chromium verification confirmed that all of those files were
+loaded, their uncompressed response lengths matched the published totals,
+`42` appeared in the console, the empty component rendered, and no browser
+errors occurred.
+
+Relative to the 84,513-byte NetWasm component, the measured total Wasm
+payloads are 145.26x and 180.91x as large. Counting only the native runtime
+module gives 112.11x and 138.75x. MB means 1,000,000 bytes; KiB means 1,024
+bytes. Neither total includes JavaScript, HTML or the host engine.
+
+This is [Mono WebAssembly AOT](https://learn.microsoft.com/en-us/aspnet/core/blazor/webassembly-build-tools-and-aot?view=aspnetcore-10.0),
+with [IL stripping](https://learn.microsoft.com/en-us/aspnet/core/blazor/performance/webassembly-runtime-performance?view=aspnetcore-10.0),
+rather than CoreCLR Native AOT. The Blazor outputs use a JavaScript browser
+host; NetWasm produces a WASI Preview 2 component. These measurements describe
+the tested app and settings, not a minimum size for every .NET Wasm app or a
+comparison of equivalent UI frameworks.
+
 ## Rust: a footprint reference, not a GC comparison
 
 The [Rust target documentation](https://doc.rust-lang.org/rustc/platform-support/wasm32-wasip2.html)
