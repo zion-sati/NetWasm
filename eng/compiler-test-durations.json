@@ -6609,7 +6609,7 @@
       "cases": 1,
       "durationSeconds": 25.6147462
     },
-    "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.ExpressionTreesAreAbsentFromThePlatformSurface": {
+    "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.BoundedExpressionTreesArePresentOnThePlatformSurface": {
       "cases": 1,
       "durationSeconds": 25.3723426
     },
@@ -11129,7 +11129,7 @@
     "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.AdjacentSupportedConstructCompilesAgainstTheSamePlatform(name: \"StaticBinding\", body: \"return Increment(input);\")": 63.0118403,
     "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.AdjacentSupportedConstructCompilesAgainstTheSamePlatform(name: \"SynchronousDelegate\", body: \"System.Action action = () => { }; action(); return\"\u00b7\u00b7\u00b7)": 29.1919688,
     "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.DynamicBindingIsAbsentFromThePlatformSurface": 25.6147462,
-    "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.ExpressionTreesAreAbsentFromThePlatformSurface": 25.3723426,
+    "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.BoundedExpressionTreesArePresentOnThePlatformSurface": 25.3723426,
     "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.ManagedThreadsAreAbsentFromThePlatformSurface": 14.617136,
     "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.QuerySyntaxWithoutTheOptionalLinqLibraryFailsAtRoslynBoundary": 3.9396654,
     "NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests.UnmanagedDynamicLinkageHasDeterministicDiagnostic": 61.2664141,

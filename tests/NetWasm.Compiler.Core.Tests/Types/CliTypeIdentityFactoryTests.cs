@@ -26,6 +26,8 @@ public sealed class CliTypeIdentityFactoryTests
         { "String", CliValueKind.ManagedReference, false },
         { "Object", CliValueKind.ManagedReference, false },
         { "RuntimeTypeHandle", CliValueKind.I4, true },
+        { "RuntimeMethodHandle", CliValueKind.NativeInt, true },
+        { "RuntimeFieldHandle", CliValueKind.NativeInt, true },
         { "StringComparison", CliValueKind.I4, true },
     };
 
@@ -67,9 +69,9 @@ public sealed class CliTypeIdentityFactoryTests
         var canonicalNamed = CliTypeIdentity.Named(
             CoreLibrary,
             "System",
-            "RuntimeTypeHandle",
+            "RuntimeMethodHandle",
             true,
-            CliValueKind.I4);
+            CliValueKind.NativeInt);
         var enumLike = CliTypeIdentity.Named(
             CoreLibrary,
             "Example",
@@ -84,7 +86,7 @@ public sealed class CliTypeIdentityFactoryTests
             CliValueKind.ManagedReference);
 
         Assert.Equal(CliValueKind.NativeInt, canonicalPrimitive.StackKind);
-        Assert.Equal(CliValueKind.I4, canonicalNamed.StackKind);
+        Assert.Equal(CliValueKind.NativeInt, canonicalNamed.StackKind);
         Assert.Equal(CliValueKind.I4, enumLike.StackKind);
         Assert.Equal(CliValueKind.ManagedReference, reference.StackKind);
     }
@@ -92,6 +94,8 @@ public sealed class CliTypeIdentityFactoryTests
     [Theory]
     [InlineData("System", "IntPtr", true, CliValueKind.ValueType)]
     [InlineData("System", "RuntimeTypeHandle", true, CliValueKind.ValueType)]
+    [InlineData("System", "RuntimeMethodHandle", true, CliValueKind.ValueType)]
+    [InlineData("System", "RuntimeFieldHandle", true, CliValueKind.I4)]
     [InlineData("Example", "Reference", false, CliValueKind.I4)]
     [InlineData("Example", "Value", true, CliValueKind.Void)]
     [InlineData("Example", "Value", true, CliValueKind.ManagedReference)]

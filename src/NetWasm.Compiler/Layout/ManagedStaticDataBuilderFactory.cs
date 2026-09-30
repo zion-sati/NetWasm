@@ -6,16 +6,33 @@ namespace NetWasm.Compiler.Layout;
 
 internal sealed class ManagedStaticDataBuilderFactory(
     IExceptionTypeNameResolver exceptionTypeNames,
-    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata) :
+    IAssignableTypeMetadataBuilderFactory assignableTypeMetadata,
+    IAssemblyIdentityFormatterFactory assemblyIdentityFormatters) :
     IManagedStaticDataBuilderFactory
 {
     private readonly IExceptionTypeNameResolver _exceptionTypeNames = exceptionTypeNames ??
         throw new System.ArgumentNullException(nameof(exceptionTypeNames));
     private readonly IAssignableTypeMetadataBuilderFactory _assignableTypeMetadata =
         assignableTypeMetadata ?? throw new ArgumentNullException(nameof(assignableTypeMetadata));
+    private readonly IAssemblyIdentityFormatterFactory _assemblyIdentityFormatters =
+        assemblyIdentityFormatters ??
+        throw new ArgumentNullException(nameof(assemblyIdentityFormatters));
 
     internal ManagedStaticDataBuilderFactory(IExceptionTypeNameResolver exceptionTypeNames) :
-        this(exceptionTypeNames, new EmptyAssignableTypeMetadataBuilderFactory())
+        this(
+            exceptionTypeNames,
+            new EmptyAssignableTypeMetadataBuilderFactory(),
+            new AssemblyIdentityFormatterFactory())
+    {
+    }
+
+    internal ManagedStaticDataBuilderFactory(
+        IExceptionTypeNameResolver exceptionTypeNames,
+        IAssignableTypeMetadataBuilderFactory assignableTypeMetadata) :
+        this(
+            exceptionTypeNames,
+            assignableTypeMetadata,
+            new AssemblyIdentityFormatterFactory())
     {
     }
 
@@ -42,6 +59,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
             identityBaseTypes,
             types,
             state);
+        var assemblyNames = _assemblyIdentityFormatters.Create(metadata.Assemblies);
         return new ManagedStaticDataBuilder(
             types,
             state,
@@ -56,7 +74,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 bitmaps,
-                assignableTypes),
+                assignableTypes,
+                assemblyNames),
             new ConstructedTypeDescriptorBuilder(
                 typeFinder,
                 typeDefinitions,
@@ -66,7 +85,11 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 bitmaps,
-                assignableTypes),
+                assignableTypes,
+                program.RequiresTypeFacts,
+                program.TypeNamePayload,
+                assemblyNames,
+                program.DelegateInvokeDescriptors),
             new ValueTypeDescriptorBuilder(
                 typeRepository,
                 identities,
@@ -74,6 +97,14 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 bitmaps),
+            new MemberDescriptorDataBuilder(
+                typeFinder,
+                typeDefinitions,
+                fields,
+                program,
+                types,
+                types.Target,
+                state),
             new StringDataBuilder(
                 typeFinder,
                 program,

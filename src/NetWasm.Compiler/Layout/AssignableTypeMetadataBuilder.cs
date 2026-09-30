@@ -30,7 +30,9 @@ internal sealed class AssignableTypeMetadataBuilder(
 
     public AssignableTypeMetadataLayout Build(CliTypeIdentity candidate)
     {
-        if (candidate.ContainsGenericParameters ||
+        if (candidate.Shape is CliTypeShape.ManagedByReference or
+            CliTypeShape.UnmanagedPointer ||
+            candidate.ContainsGenericParameters ||
             candidate.Shape == CliTypeShape.Named &&
             typeDefinitions.ResolveTypeIdentity(candidate).GenericArity != 0)
         {

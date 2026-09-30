@@ -90,19 +90,44 @@ public sealed class ConstantsStackEmitterTests
         Assert.Equal(WasmOpcodes.I64Constant, GetCodeBytes(request)[0]);
     }
 
-    [Fact]
-    public void FieldTokenRemainsAnI32ConstantForMemory64()
+    [Theory]
+    [InlineData(false, WasmOpcodes.I32Constant)]
+    [InlineData(true, WasmOpcodes.I64Constant)]
+    public void MemberTokensUseNativeWidthDescriptorAddresses(
+        bool memory64,
+        byte expectedOpcode)
     {
-        var request = CreateRequest(
+        var layouts = new RecordingLayoutProvider(
+            memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32);
+        var program = new FakeProgram();
+        var field = program.GetField(InstanceFieldKey);
+        var fieldInstance = new FieldInstanceModel(
+            field,
+            CliTypeIdentity.Named(Assembly, "Test", "Type", isValueType: false),
+            field.SignatureType);
+        var fieldRequest = CreateRequest(
             CilOperation.LoadFieldToken,
-            new CilOperand.Entity(InstanceFieldKey));
+            new CilOperand.FieldInstance(fieldInstance));
+        var method = program.GetMethod(EntryKey);
+        var methodInstance = new MethodInstanceModel(
+            method,
+            CliTypeIdentity.Named(Assembly, "Test", "Type", isValueType: false),
+            [],
+            method.Signature);
+        var methodRequest = CreateRequest(
+            CilOperation.LoadMethodToken,
+            new CilOperand.MethodInstance(methodInstance));
 
-        CreateEmitter(new RecordingLayoutProvider(WasmTargetLayout.Wasm64)).Emit(
-            request,
-            GetCodeWriter(request));
+        var emitter = CreateEmitter(layouts);
+        emitter.Emit(fieldRequest, GetCodeWriter(fieldRequest));
+        emitter.Emit(methodRequest, GetCodeWriter(methodRequest));
 
-        Assert.Equal(CliValueKind.I4, Assert.Single(request.Stack));
-        Assert.Equal(WasmOpcodes.I32Constant, GetCodeBytes(request)[0]);
+        Assert.Equal(CliValueKind.NativeInt, Assert.Single(fieldRequest.Stack));
+        Assert.Equal(CliValueKind.NativeInt, Assert.Single(methodRequest.Stack));
+        Assert.Equal(expectedOpcode, GetCodeBytes(fieldRequest)[0]);
+        Assert.Equal(expectedOpcode, GetCodeBytes(methodRequest)[0]);
+        Assert.Same(fieldInstance, layouts.FieldDescriptorRequest);
+        Assert.Same(methodInstance, layouts.MethodDescriptorRequest);
     }
 
     private static ConstantsStackEmitter CreateEmitter(
@@ -110,6 +135,7 @@ public sealed class ConstantsStackEmitterTests
     {
         var actualLayouts = layouts ?? new RecordingLayoutProvider();
         return new ConstantsStackEmitter(
+            actualLayouts,
             actualLayouts,
             actualLayouts,
             actualLayouts,

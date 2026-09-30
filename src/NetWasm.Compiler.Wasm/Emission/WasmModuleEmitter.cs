@@ -73,6 +73,9 @@ internal sealed class WasmModuleEmitter(
         var methods = request.Methods;
         var rootMaps = request.RootMaps;
         var requestedExports = request.RequestedExports;
+        var selectedRequestedExports = RequestedExportMethodSelector.Select(
+            requestedExports,
+            request.MethodInstances);
         var constructedMethods =
             request.ConstructedMethods;
         var methodInstances =
@@ -170,7 +173,7 @@ internal sealed class WasmModuleEmitter(
         var requestedExportIndices = ImmutableDictionary.CreateBuilder<string, int>(
             StringComparer.Ordinal);
         _requestedExports.Append(functions, imports.Length, requestedExportIndices,
-            asyncExportHelperIndices, requestedExports,
+            asyncExportHelperIndices, selectedRequestedExports,
             request.JavaScriptAsyncBindings, initialization,
             runtimeFunctions.HasFinalizers, request.ModuleProfile, functionIndices,
             boundaryEntries);

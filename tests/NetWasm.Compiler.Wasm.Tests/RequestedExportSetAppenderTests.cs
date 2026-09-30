@@ -15,9 +15,9 @@ public sealed class RequestedExportSetAppenderTests
         var appender = CreateAppender(leaf);
         var low = EmitterTestSupport.Key(0x06000010);
         var high = EmitterTestSupport.Key(0x06000020);
-        var exports = ImmutableDictionary<string, EntityKey>.Empty
-            .Add("zeta", high)
-            .Add("alpha", low);
+        var exports = ImmutableDictionary<string, MethodInstanceModel>.Empty
+            .Add("zeta", CreateInstance(high))
+            .Add("alpha", CreateInstance(low));
 
         appender.Append([], 5, new Dictionary<string, int>(),
             new Dictionary<string, int>(), exports,
@@ -38,7 +38,7 @@ public sealed class RequestedExportSetAppenderTests
         var functions = new List<WasmFunctionDefinition>();
         var indices = new Dictionary<string, int>();
         var helpers = new Dictionary<string, int>();
-        var exports = ImmutableDictionary<string, EntityKey>.Empty;
+        var exports = ImmutableDictionary<string, MethodInstanceModel>.Empty;
         var bindings = ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty;
         var resolver = EmitterTestSupport.CreateFunctionIndexResolver();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
@@ -80,6 +80,23 @@ public sealed class RequestedExportSetAppenderTests
         new RequestedExportSetAppender(leaf),
     }.Cast<IRequestedExportSetAppender>().Single();
 
+    private static MethodInstanceModel CreateInstance(EntityKey key)
+    {
+        var definition = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey) with
+        {
+            Key = key,
+        };
+        return new(
+            definition,
+            CliTypeIdentity.Named(
+                EmitterTestSupport.Assembly,
+                "Tests",
+                "EntryPoint",
+                isValueType: false),
+            [],
+            definition.Signature);
+    }
+
     private sealed class RecordingRequestedExportAppender :
         IRequestedExportFunctionAppender
     {
@@ -91,7 +108,7 @@ public sealed class RequestedExportSetAppenderTests
         public void Append(IList<WasmFunctionDefinition> functions, int importCount,
             IDictionary<string, int> requestedExportIndices,
             IDictionary<string, int> asyncHelperIndices, string exportName,
-            EntityKey methodKey,
+            MethodInstanceModel method,
             IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> asyncBindings,
             RuntimeInitializationPlan initialization, bool hasFinalizers,
             WasmModuleProfile profile,
@@ -99,7 +116,7 @@ public sealed class RequestedExportSetAppenderTests
             ICollection<ManagedBoundaryPlanEntry> boundaryEntries)
         {
             Names.Add(exportName);
-            Methods.Add(methodKey);
+            Methods.Add(method.Definition.Key);
             ImportCounts.Add(importCount);
             HasFinalizers.Add(hasFinalizers);
         }

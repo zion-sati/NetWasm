@@ -54,6 +54,54 @@ public sealed class ManagedAssemblyTests
     }
 
     [Fact]
+    public void ManagedAssemblyPreservesBoundedMemberDescriptorMetadata()
+    {
+        using var assets = TestAssets.Create();
+        var assemblyPath = assets.CompileSource(
+            "BoundedMemberMetadata",
+            """
+            public sealed class Owner<T>
+            {
+                public const int Literal = 42;
+                public readonly int Readonly;
+                public int Mutable;
+
+                public T Value { get; private set; }
+
+                public static int Visible(int value) => value;
+                private static int Hidden(int value) => value;
+            }
+            """);
+        using var assembly = ManagedAssemblyTestFactory.Load(assemblyPath);
+        var owner = assembly.Types.Values.Single(type => type.FullName == "Owner`1");
+        var fields = owner.Fields
+            .Select(key => assembly.Fields[key.MetadataToken])
+            .ToDictionary(field => field.Name);
+        var methods = owner.Methods
+            .Select(key => assembly.Methods[key.MetadataToken])
+            .ToDictionary(method => method.Name);
+        var property = Assert.Single(assembly.Properties.Values);
+
+        Assert.Equal(["T"], owner.GenericParameterNames.ToArray());
+        Assert.True(fields["Literal"].IsLiteral);
+        Assert.False(fields["Literal"].IsInitOnly);
+        Assert.True(fields["Readonly"].IsInitOnly);
+        Assert.False(fields["Readonly"].IsLiteral);
+        Assert.False(fields["Mutable"].IsInitOnly);
+        Assert.False(fields["Mutable"].IsLiteral);
+        Assert.True(methods["Visible"].IsPublic);
+        Assert.False(methods["Hidden"].IsPublic);
+        Assert.Equal(owner.Key, property.DeclaringType);
+        Assert.Equal("Value", property.Name);
+        Assert.Equal("!0", property.PropertyType.CanonicalName);
+        Assert.Empty(property.IndexParameterTypes);
+        Assert.Equal(methods["get_Value"].Key, property.Getter);
+        Assert.Equal(methods["set_Value"].Key, property.Setter);
+        Assert.True(methods["get_Value"].IsPublic);
+        Assert.False(methods["set_Value"].IsPublic);
+    }
+
+    [Fact]
     public void ManagedAssemblyReadsDefinitionsReferencesBodiesAndBaseTypes()
     {
         using var assets = TestAssets.Create();
@@ -79,6 +127,69 @@ public sealed class ManagedAssemblyTests
         var contentSha256 = assembly.ContentSha256;
         Assert.Equal(64, contentSha256.Length);
         Assert.Same(contentSha256, assembly.ContentSha256);
+    }
+
+    [Fact]
+    public void RuntimeMemberHandlesUseNativeIntegerStorageAcrossMetadataShapes()
+    {
+        using var assets = TestAssets.Create();
+        var assemblyPath = assets.CompileSource(
+            "RuntimeMemberHandleShapes",
+            """
+            using System;
+
+            public sealed class RuntimeMemberHandleShapes
+            {
+                public RuntimeMethodHandle MethodField;
+                public RuntimeFieldHandle FieldField;
+
+                public static RuntimeMethodHandle EchoMethod(RuntimeMethodHandle value)
+                {
+                    RuntimeMethodHandle local = value;
+                    return local;
+                }
+
+                public static RuntimeFieldHandle EchoField(RuntimeFieldHandle value)
+                {
+                    RuntimeFieldHandle local = value;
+                    return local;
+                }
+            }
+            """);
+        using var lease = MetadataCompilationTestFactory.Load(
+            assemblyPath,
+            [assets.CoreLib]);
+        var snapshot = lease.Snapshot;
+        var assembly = snapshot.Assemblies.Single(candidate =>
+            candidate.Identity == snapshot.EntryAssemblyIdentity);
+        var type = assembly.Types.Values.Single(candidate =>
+            candidate.FullName == "RuntimeMemberHandleShapes");
+        var fields = type.Fields
+            .Select(key => assembly.Fields[key.MetadataToken])
+            .ToDictionary(field => field.Name);
+        var methods = type.Methods
+            .Select(key => assembly.Methods[key.MetadataToken])
+            .Where(method => method.Name.StartsWith("Echo", StringComparison.Ordinal))
+            .ToArray();
+        var bodies = MetadataCapabilityTestData.MethodBodies(snapshot);
+
+        Assert.Equal(CliValueKind.NativeInt, fields["MethodField"].SignatureType.StackKind);
+        Assert.Equal(CliValueKind.NativeInt, fields["FieldField"].SignatureType.StackKind);
+        Assert.Equal(2, methods.Length);
+        foreach (var method in methods)
+        {
+            Assert.Equal(CliValueKind.NativeInt, method.Signature.ReturnType);
+            Assert.Equal(
+                CliValueKind.NativeInt,
+                Assert.Single(method.Signature.ParameterTypes));
+
+            var body = bodies.ReadMethodBody(method);
+            Assert.NotEmpty(body.LocalSignatureTypes);
+            Assert.All(body.LocalSignatureTypes, local =>
+                Assert.Equal(CliValueKind.NativeInt, local.StackKind));
+            Assert.All(body.Locals, local =>
+                Assert.Equal(CliValueKind.NativeInt, local));
+        }
     }
 
     [Fact]

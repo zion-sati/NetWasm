@@ -24,6 +24,15 @@ Selected .NET runtime and CoreLib sources retain their `.NET Foundation` MIT
 headers and remain subject to those notices in addition to the repository's
 MIT path assignment. Ported framework libraries are maintained separately.
 
+## FluentValidation source adaptation
+
+The expression-tree compatibility fixture under
+`tests/end-to-end/expression-fluentvalidation-consumer/` source-adapts a
+bounded excerpt of FluentValidation 12.1.0. It retains the .NET Foundation and
+contributors copyright notice and is licensed under Apache-2.0. The complete
+license text is available as
+[`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
+
 ## Float conversion and hashing code
 
 `NetWasm.CoreLib` contains code identified in source as derived from

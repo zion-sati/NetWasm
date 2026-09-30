@@ -78,6 +78,7 @@ internal static class CorpusCaseTestData
     public const string ClosedDelegateReceiver = "rtti.delegate-closed-receiver";
     public const string OpenDelegateReceiver = "rtti.delegate-open-receiver";
     public const string NullDelegateReceiver = "rtti.delegate-null-receiver";
+    public const string MemberHandles = "rtti.member-handles";
     public const string RankOne = "rtti.rank-one-operations";
     public const string ZeroBound = "rtti.rank-one-zero-bound";
     public const string NonZeroBound = "rtti.rank-one-nonzero-address";
@@ -130,6 +131,8 @@ internal static class CorpusCaseTestData
             nameof(EmittedDelegateReceiverTests.OpenInstanceDelegateTakesItsReceiverFromTheInvokeArgument), CorpusInputKind.Emitted),
         new(NullDelegateReceiver, typeof(EmittedDelegateReceiverTests).FullName + "." +
             nameof(EmittedDelegateReceiverTests.OpenInstanceDelegateWithNullReceiverThrowsManagedNullReference), CorpusInputKind.Emitted),
+        new(MemberHandles, typeof(EmittedMemberHandleTests).FullName + "." +
+            nameof(EmittedMemberHandleTests.MemberHandlesPreserveGenericAndDeclaringTypeValidation), CorpusInputKind.Emitted),
         new(ArrayShapes, typeof(RttiArraySemanticTests).FullName + "." +
             nameof(RttiArraySemanticTests.RectangularAndJaggedArraysPreserveShapeCovarianceAndFailureState), CorpusInputKind.CSharp),
         new(DispatchRelationships, typeof(DispatchRelationshipTests).FullName + "." +

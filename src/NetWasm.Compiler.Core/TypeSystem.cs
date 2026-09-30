@@ -154,6 +154,14 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
                 isValueType,
                 assembly: assembly,
                 fullName: fullName),
+            "System.RuntimeMethodHandle" or
+            "System.RuntimeFieldHandle" => new(
+                $"[{assembly.Name}]{fullName}",
+                CliTypeShape.Named,
+                CliValueKind.NativeInt,
+                isValueType,
+                assembly: assembly,
+                fullName: fullName),
             "System.StringComparison" => new(
                 $"[{assembly.Name}]{fullName}",
                 CliTypeShape.Named,
@@ -399,6 +407,7 @@ public sealed record TypeDefinitionModel(
     public int DeclaredSize { get; init; }
     public int InlineArrayLength { get; init; }
     public int GenericArity { get; init; }
+    public ImmutableArray<string> GenericParameterNames { get; init; } = [];
     public ImmutableArray<CliGenericVariance> GenericParameterVariances { get; init; } = [];
     public bool IsInterface { get; init; }
     public bool IsAbstract { get; init; }
@@ -426,6 +435,8 @@ public sealed record FieldDefinitionModel(
     public ImmutableArray<byte> InitialData { get; init; } = [];
     public ulong? LiteralValue { get; init; }
     public int? ExplicitOffset { get; init; }
+    public bool IsInitOnly { get; init; }
+    public bool IsLiteral { get; init; }
     public CliTypeIdentity SignatureType { get; init; } =
         CliTypeIdentity.FromStackKind(FieldType);
 
@@ -490,6 +501,7 @@ public sealed record MethodDefinitionModel(
     int RelativeVirtualAddress)
 {
     public int GenericArity { get; init; }
+    public bool IsPublic { get; init; }
     public bool IsVirtual { get; init; }
     public bool IsNewSlot { get; init; }
     public bool IsFinal { get; init; }
@@ -507,6 +519,15 @@ public sealed record MethodDefinitionModel(
         : Signature.ParameterTypes.Insert(0, CliValueKind.ManagedReference);
 }
 
+public sealed record PropertyDefinitionModel(
+    EntityKey Key,
+    EntityKey DeclaringType,
+    string Name,
+    CliTypeIdentity PropertyType,
+    ImmutableArray<CliTypeIdentity> IndexParameterTypes,
+    EntityKey? Getter,
+    EntityKey? Setter);
+
 public sealed record MethodInstanceModel(
     MethodDefinitionModel Definition,
     CliTypeIdentity DeclaringType,
@@ -522,6 +543,36 @@ public sealed record MethodInstanceModel(
     public bool IsConstructed =>
         DeclaringType.Shape is CliTypeShape.GenericInstantiation or CliTypeShape.Array ||
         !MethodArguments.IsEmpty;
+
+    public bool HasEquivalentDescriptorFacts(MethodInstanceModel? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+
+        return Definition.Key == other.Definition.Key &
+            Definition.DeclaringType == other.Definition.DeclaringType &
+            StringComparer.Ordinal.Equals(Definition.Name, other.Definition.Name) &
+            Definition.IsStatic == other.Definition.IsStatic &
+            Definition.GenericArity == other.Definition.GenericArity &
+            Definition.IsPublic == other.Definition.IsPublic &
+            Definition.IsVirtual == other.Definition.IsVirtual &
+            Definition.IsNewSlot == other.Definition.IsNewSlot &
+            Definition.IsFinal == other.Definition.IsFinal &
+            Definition.IsAbstract == other.Definition.IsAbstract &
+            HasEquivalentSignature(Definition.Signature, other.Definition.Signature) &
+            DeclaringType.Equals(other.DeclaringType) &
+            MethodArguments.AsSpan().SequenceEqual(other.MethodArguments.AsSpan()) &
+            HasEquivalentSignature(Signature, other.Signature);
+    }
+
+    private static bool HasEquivalentSignature(
+        MethodSignatureModel left,
+        MethodSignatureModel right) =>
+        left.ReturnSignatureType.Equals(right.ReturnSignatureType) &
+        left.ParameterSignatureTypes.AsSpan().SequenceEqual(
+            right.ParameterSignatureTypes.AsSpan());
 }
 
 public sealed record FieldInstanceModel(
@@ -534,6 +585,56 @@ public sealed record FieldInstanceModel(
 
     public bool IsConstructed =>
         DeclaringType.Shape == CliTypeShape.GenericInstantiation;
+}
+
+public sealed record PropertyInstanceModel(
+    PropertyDefinitionModel Definition,
+    CliTypeIdentity DeclaringType,
+    CliTypeIdentity PropertyType,
+    ImmutableArray<CliTypeIdentity> IndexParameterTypes,
+    MethodInstanceModel? Getter,
+    MethodInstanceModel? Setter)
+{
+    public string CanonicalName =>
+        $"{DeclaringType.CanonicalName}::0x{Definition.Key.MetadataToken:x8}";
+
+    public bool IsConstructed =>
+        DeclaringType.Shape == CliTypeShape.GenericInstantiation;
+
+    public bool HasEquivalentDescriptorFacts(PropertyInstanceModel? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+
+        return Definition.Key == other.Definition.Key &
+            Definition.DeclaringType == other.Definition.DeclaringType &
+            StringComparer.Ordinal.Equals(Definition.Name, other.Definition.Name) &
+            Definition.PropertyType.Equals(other.Definition.PropertyType) &
+            Definition.IndexParameterTypes.AsSpan().SequenceEqual(
+                other.Definition.IndexParameterTypes.AsSpan()) &
+            Definition.Getter == other.Definition.Getter &
+            Definition.Setter == other.Definition.Setter &
+            DeclaringType.Equals(other.DeclaringType) &
+            PropertyType.Equals(other.PropertyType) &
+            IndexParameterTypes.AsSpan().SequenceEqual(
+                other.IndexParameterTypes.AsSpan()) &
+            HasEquivalentAccessorFacts(Getter, other.Getter) &
+            HasEquivalentAccessorFacts(Setter, other.Setter);
+    }
+
+    private static bool HasEquivalentAccessorFacts(
+        MethodInstanceModel? left,
+        MethodInstanceModel? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return left.HasEquivalentDescriptorFacts(right);
+    }
 }
 
 public sealed record MethodImplementationModel(
@@ -677,6 +778,9 @@ public enum RuntimeIntrinsic
     ComponentResourceHandleCreate,
     ComponentResourceHandleGet,
     ComponentResourceHandleRelease,
+    ObjectArrayDelegateAdapterCreate,
+    MemberExecuteMethod,
+    MemberReadField,
 }
 
 public interface IRuntimeIntrinsicRegistry

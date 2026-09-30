@@ -56,7 +56,8 @@ function parseDecoder(source) {
     if (match[2].includes('ReadRuntimeHandle(')) {
       cases.push(
         { opcode: match[1], operation: 'LoadTypeToken', operand: 'TypeIdentity' },
-        { opcode: match[1], operation: 'LoadFieldToken', operand: 'Entity' });
+        { opcode: match[1], operation: 'LoadFieldToken', operand: 'Entity' },
+        { opcode: match[1], operation: 'LoadMethodToken', operand: 'MethodInstance' });
       continue;
     }
     const operation = match[2].match(/operation\s*=\s*CilOperation\.(\w+)/)?.[1];

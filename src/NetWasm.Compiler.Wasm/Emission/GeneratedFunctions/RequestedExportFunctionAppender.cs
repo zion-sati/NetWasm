@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class RequestedExportFunctionAppender(
-    IMethodRepository methods,
     IOutwardMethodFunctionAppender outwardMethods) :
     IRequestedExportFunctionAppender
 {
@@ -17,7 +15,7 @@ internal sealed class RequestedExportFunctionAppender(
         IDictionary<string, int> requestedExportIndices,
         IDictionary<string, int> asyncHelperIndices,
         string exportName,
-        EntityKey methodKey,
+        MethodInstanceModel method,
         IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> asyncBindings,
         RuntimeInitializationPlan initialization,
         bool hasFinalizers,
@@ -30,20 +28,24 @@ internal sealed class RequestedExportFunctionAppender(
         ArgumentNullException.ThrowIfNull(requestedExportIndices);
         ArgumentNullException.ThrowIfNull(asyncHelperIndices);
         ArgumentException.ThrowIfNullOrWhiteSpace(exportName);
+        ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(asyncBindings);
         ArgumentNullException.ThrowIfNull(initialization);
         ArgumentNullException.ThrowIfNull(functionIndices);
         ArgumentNullException.ThrowIfNull(boundaryEntries);
 
-        var method = methods.GetMethod(methodKey);
-        asyncBindings.TryGetValue(methodKey, out var asyncBinding);
+        var selectedDefinition = method.Definition with
+        {
+            Signature = method.Signature,
+        };
+        asyncBindings.TryGetValue(method.Definition.Key, out var asyncBinding);
         var requestedExportIndex = outwardMethods.Append(new(
             functions,
             importCount,
             asyncHelperIndices,
             $"netwasm.export.{exportName}",
             exportName,
-            method,
+            selectedDefinition,
             asyncBinding,
             asyncBinding is null
                 ? null

@@ -434,9 +434,20 @@ internal sealed class CilDecoder(
         int offset)
     {
         var token = ReadInt32(bytes, ref position, method, offset);
-        var instance = _methodReferences.Resolve(assembly.Metadata, token, method, offset, genericContext);
-        return new CilOperand.MethodInstance(instance);
+        return ResolveMethod(assembly, genericContext, method, offset, token);
     }
+
+    private CilOperand.MethodInstance ResolveMethod(
+        ManagedAssembly assembly,
+        CliGenericContext genericContext,
+        string method,
+        int offset,
+        int token) => new(_methodReferences.Resolve(
+            assembly.Metadata,
+            token,
+            method,
+            offset,
+            genericContext));
 
     private CilOperand ReadField(
         ManagedAssembly assembly,
@@ -447,12 +458,39 @@ internal sealed class CilDecoder(
         int offset)
     {
         var token = ReadInt32(bytes, ref position, method, offset);
-        var instance = _fieldReferences.Resolve(assembly.Metadata, token, method, offset, genericContext);
+        return ResolveField(assembly, genericContext, method, offset, token);
+    }
+
+    private CilOperand ResolveField(
+        ManagedAssembly assembly,
+        CliGenericContext genericContext,
+        string method,
+        int offset,
+        int token)
+    {
+        var instance = ResolveFieldInstance(
+            assembly,
+            genericContext,
+            method,
+            offset,
+            token);
         return instance.IsConstructed ||
                instance.FieldType.StackKind != instance.Definition.FieldType
             ? new CilOperand.FieldInstance(instance)
             : new CilOperand.Entity(instance.Definition.Key);
     }
+
+    private FieldInstanceModel ResolveFieldInstance(
+        ManagedAssembly assembly,
+        CliGenericContext genericContext,
+        string method,
+        int offset,
+        int token) => _fieldReferences.Resolve(
+            assembly.Metadata,
+            token,
+            method,
+            offset,
+            genericContext);
 
     private CilOperand.TypeIdentity ReadType(
         ManagedAssembly assembly,
@@ -536,17 +574,54 @@ internal sealed class CilDecoder(
     {
         var token = ReadInt32(bytes, ref position, method, offset);
         var handle = MetadataTokens.EntityHandle(token);
-        if (handle.Kind == HandleKind.FieldDefinition)
+        switch (handle.Kind)
         {
-            return (
-                CilOperation.LoadFieldToken,
-                new CilOperand.Entity(new EntityKey(assembly.Identity, token)));
+            case HandleKind.TypeDefinition:
+            case HandleKind.TypeReference:
+            case HandleKind.TypeSpecification:
+                return (
+                    CilOperation.LoadTypeToken,
+                    new CilOperand.TypeIdentity(_typeSignatures.Resolve(
+                        assembly.Metadata,
+                        token,
+                        genericContext)));
+            case HandleKind.FieldDefinition:
+                return (
+                    CilOperation.LoadFieldToken,
+                    new CilOperand.FieldInstance(ResolveFieldInstance(
+                        assembly,
+                        genericContext,
+                        method,
+                        offset,
+                        token)));
+            case HandleKind.MethodDefinition:
+            case HandleKind.MethodSpecification:
+                return (
+                    CilOperation.LoadMethodToken,
+                    ResolveMethod(assembly, genericContext, method, offset, token));
+            case HandleKind.MemberReference:
+                var member = assembly.Reader.GetMemberReference(
+                    (MemberReferenceHandle)handle);
+                if (member.GetKind() == MemberReferenceKind.Field)
+                {
+                    return (
+                        CilOperation.LoadFieldToken,
+                        new CilOperand.FieldInstance(ResolveFieldInstance(
+                            assembly,
+                            genericContext,
+                            method,
+                            offset,
+                            token)));
+                }
+                return (
+                    CilOperation.LoadMethodToken,
+                    ResolveMethod(assembly, genericContext, method, offset, token));
+            default:
+                throw Invalid(
+                    method,
+                    offset,
+                    $"token 0x{token:x8} cannot be loaded as a runtime handle");
         }
-        return (
-            CilOperation.LoadTypeToken,
-            new CilOperand.TypeIdentity(_typeSignatures.Resolve(assembly.Metadata,
-                token,
-                genericContext)));
     }
 
     private static CilOperand.TypeIdentity PrimitiveArrayElement(string name, CliValueKind kind) =>

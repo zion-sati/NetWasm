@@ -4,6 +4,7 @@ using NetWasm.Compiler.Core;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 
 namespace NetWasm.Compiler;
 
@@ -50,6 +51,33 @@ public sealed record ReachableProgram(
 
     public ImmutableDictionary<string, FieldInstanceModel> ConstructedFields { get; init; } =
         [];
+
+    public ImmutableDictionary<string, MethodInstanceModel> MethodDescriptors { get; init; } =
+        [];
+
+    public ImmutableDictionary<string, FieldInstanceModel> FieldDescriptors { get; init; } =
+        [];
+
+    public ImmutableDictionary<string, PropertyInstanceModel> PropertyDescriptors { get; init; } =
+        [];
+
+    public ImmutableDictionary<string, MethodInstanceModel> DelegateInvokeDescriptors
+    { get; init; } = [];
+
+    public ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
+        ObjectArrayDelegateAdapters
+    { get; init; } = [];
+
+    public MemberExecutionPlan MemberExecution { get; init; } =
+        MemberExecutionPlan.Empty;
+
+    public ImmutableHashSet<string> NamedMemberDescriptors { get; init; } = [];
+
+    public bool RequiresTypeFacts { get; init; }
+
+    public bool RequiresDelegateInvoke { get; init; }
+
+    public RuntimeTypeNamePayload TypeNamePayload { get; init; }
 
     public ImmutableArray<string> ConstructedStaticInitializers { get; init; } = [];
 

@@ -31,6 +31,11 @@ public sealed class MetadataCompilationMaterializationFactory :
                 assembly => assembly.Identity.Name,
                 assembly => assembly.Metadata,
                 StringComparer.Ordinal),
-            snapshot.ReferenceAssemblyAliases ?? ImmutableDictionary<string, string>.Empty);
+            snapshot.ReferenceAssemblyAliases ?? ImmutableDictionary<string, string>.Empty)
+        {
+            Properties = snapshot.Assemblies
+                .SelectMany(assembly => assembly.Properties.Values)
+                .ToImmutableDictionary(property => property.Key),
+        };
     }
 }

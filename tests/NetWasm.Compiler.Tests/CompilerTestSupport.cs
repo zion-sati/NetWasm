@@ -151,11 +151,14 @@ internal static class CompilerTestSupport
         int? expectedEnvironmentReadsBeforeRun = null,
         bool drainReactor = false,
         string? observeExportName = null,
-        WasmTarget target = WasmTarget.Wasm32)
+        WasmTarget target = WasmTarget.Wasm32,
+        bool inputIsInt64 = false)
     {
         var path = Path.Combine(directory, "application.wasm");
         File.WriteAllBytes(path, module);
-        var inputText = input.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var inputText = input.ToString(
+            System.Globalization.CultureInfo.InvariantCulture) +
+            (inputIsInt64 ? "n" : "");
         var invocationCountText = invocationCount.ToString(
             System.Globalization.CultureInfo.InvariantCulture);
         var expectedEnvironmentReadsText = expectedEnvironmentReadsBeforeRun?.ToString(

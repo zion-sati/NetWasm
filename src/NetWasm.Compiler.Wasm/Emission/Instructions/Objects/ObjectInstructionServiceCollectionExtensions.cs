@@ -20,6 +20,7 @@ internal static class ObjectInstructionServiceCollectionExtensions
         services.AddSingleton<INativeIntegerConstructionEmitter,
             NativeIntegerConstructionEmitter>();
         services.AddInstructionCommandProvider<TypeMaterializationEmitter>();
+        services.AddInstructionCommandProvider<MemberMaterializationEmitter>();
         services.AddSingleton<IArrayLengthAdapter, ArrayLengthAdapter>();
         services.AddInstructionCommandProvider<ArrayInstructionEmitter>();
         services.AddSingleton<IRectangularArrayElementAddressEmitter,

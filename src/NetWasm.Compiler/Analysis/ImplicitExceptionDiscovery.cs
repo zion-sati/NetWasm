@@ -147,6 +147,12 @@ internal sealed class ImplicitExceptionDiscovery(
             case CilOperation.MaterializeType:
                 requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
                 break;
+            case CilOperation.MaterializeMethod:
+            case CilOperation.MaterializeField:
+                requirements.Add(new(
+                    ManagedExceptionKind.Argument,
+                    "System.ArgumentException"));
+                break;
             case CilOperation.GetObjectType:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));
                 requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));

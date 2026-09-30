@@ -39,7 +39,11 @@ internal sealed class ValueTypeDescriptorBuilder(
         }
         foreach (var (type, boxed) in _types.ConstructedObjects
                      .Where(pair =>
-                         pair.Key.IsValueType && pair.Key.HasRuntimeStorage)
+                         pair.Key.IsValueType &&
+                         pair.Key.HasRuntimeStorage &&
+                         pair.Key.Shape is not (
+                             CliTypeShape.ManagedByReference or
+                             CliTypeShape.UnmanagedPointer))
                      .OrderBy(pair => pair.Value.TypeId))
         {
             AddValueDescriptor(type, boxed);

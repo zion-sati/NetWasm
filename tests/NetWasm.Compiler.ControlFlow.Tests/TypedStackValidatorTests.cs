@@ -10,6 +10,104 @@ using static NetWasm.Compiler.ControlFlow.Tests.ControlFlowTestSupport;
 public sealed class TypedStackValidatorTests
 {
     [Theory]
+    [InlineData(CilOperation.LoadMethodToken, CilOperation.MaterializeMethod)]
+    [InlineData(CilOperation.LoadFieldToken, CilOperation.MaterializeField)]
+    public void ValidatorMaterializesNativeMemberHandlesAsManagedReferences(
+        CilOperation load,
+        CilOperation materialize)
+    {
+        var program = new FakeProgram();
+        var declaringType = CliTypeIdentity.Named(
+            Assembly,
+            "Test",
+            "Type",
+            isValueType: false);
+        CilOperand operand = load == CilOperation.LoadMethodToken
+            ? new CilOperand.MethodInstance(new MethodInstanceModel(
+                program.GetMethod(StaticCallKey),
+                declaringType,
+                [],
+                program.GetMethod(StaticCallKey).Signature))
+            : new CilOperand.FieldInstance(new FieldInstanceModel(
+                program.GetField(InstanceFieldKey),
+                declaringType,
+                program.GetField(InstanceFieldKey).SignatureType));
+
+        _ = Validate(Body(
+            CliValueKind.ManagedReference,
+            1,
+            [],
+            I(0, load, operand),
+            I(1, materialize, new CilOperand.Index(1)),
+            I(2, CilOperation.Return)));
+    }
+
+    [Fact]
+    public void ValidatorAcceptsDeclaringTypeContextForMemberMaterialization()
+    {
+        var program = new FakeProgram();
+        var method = program.GetMethod(StaticCallKey);
+        var instance = new MethodInstanceModel(
+            method,
+            CliTypeIdentity.Named(Assembly, "Test", "Type", isValueType: false),
+            [],
+            method.Signature);
+
+        _ = Validate(Body(
+            CliValueKind.ManagedReference,
+            2,
+            [],
+            I(0, CilOperation.LoadMethodToken, new CilOperand.MethodInstance(instance)),
+            I(1, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(2, CilOperation.MaterializeMethod, new CilOperand.Index(2)),
+            I(3, CilOperation.Return)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void ValidatorRejectsInvalidMemberMaterializationArity(int arity)
+    {
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [],
+                I(0, CilOperation.MaterializeField, new CilOperand.Index(arity)),
+                I(1, CilOperation.Return))),
+            "member materialization arity is invalid");
+    }
+
+    [Fact]
+    public void ValidatorRejectsMissingMemberTokenAndMaterializationOperands()
+    {
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [],
+                I(0, CilOperation.LoadMethodToken),
+                I(1, CilOperation.Return))),
+            "method token has no method operand");
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [],
+                I(0, CilOperation.LoadFieldToken),
+                I(1, CilOperation.Return))),
+            "field token has no field operand");
+        AssertDiagnostic(
+            () => Validate(Body(
+                CliValueKind.Void,
+                1,
+                [],
+                I(0, CilOperation.MaterializeMethod),
+                I(1, CilOperation.Return))),
+            "member materialization has no arity operand");
+    }
+
+    [Theory]
     [InlineData(CliValueKind.I4)]
     [InlineData(CliValueKind.NativeInt)]
     public void ValidatorAcceptsCliArrayLengthTypes(CliValueKind lengthType)
@@ -660,7 +758,7 @@ public sealed class TypedStackValidatorTests
             [],
             I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
             I(1, CilOperation.StoreArgument, new CilOperand.Index(0)),
-            I(2, CilOperation.LoadFieldToken, new CilOperand.Entity(InstanceFieldKey)),
+            I(2, CilOperation.LoadFieldToken, new CilOperand.FieldInstance(field)),
             I(3, CilOperation.Pop),
             I(4, CilOperation.LoadNull),
             I(5, CilOperation.LoadFieldAddress, new CilOperand.FieldInstance(field)),

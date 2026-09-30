@@ -8,6 +8,7 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
 
 using NetWasm.Compiler.Analysis.ManagedCallSites;
+using NetWasm.Compiler.Analysis.Delegates;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -34,7 +35,11 @@ internal sealed class ReachabilityClosureBuilder(
     IReachabilityClosureObserver closureObserver,
     IDispatchCandidateIndexFactory dispatchCandidateIndexes,
     IModuleInitializerResolver moduleInitializers,
-    IModuleInitializerOrderer moduleInitializerOrderer) : IReachabilityClosureBuilder
+    IModuleInitializerOrderer moduleInitializerOrderer,
+    IMemberDescriptorPlanner memberDescriptors,
+    IObjectArrayDelegateAdapterPlanner objectArrayDelegateAdapters,
+    IMemberExecutionPlanner memberExecutions,
+    IBaseTypeResolver baseTypes) : IReachabilityClosureBuilder
 {
     private readonly IReachabilityClosureObserver _closureObserver =
         closureObserver ?? throw new ArgumentNullException(nameof(closureObserver));
@@ -62,6 +67,15 @@ internal sealed class ReachabilityClosureBuilder(
         moduleInitializers ?? throw new ArgumentNullException(nameof(moduleInitializers));
     private readonly IModuleInitializerOrderer _moduleInitializerOrderer =
         moduleInitializerOrderer ?? throw new ArgumentNullException(nameof(moduleInitializerOrderer));
+    private readonly IMemberDescriptorPlanner _memberDescriptors =
+        memberDescriptors ?? throw new ArgumentNullException(nameof(memberDescriptors));
+    private readonly IObjectArrayDelegateAdapterPlanner _objectArrayDelegateAdapters =
+        objectArrayDelegateAdapters ??
+        throw new ArgumentNullException(nameof(objectArrayDelegateAdapters));
+    private readonly IMemberExecutionPlanner _memberExecutions = memberExecutions ??
+        throw new ArgumentNullException(nameof(memberExecutions));
+    private readonly IBaseTypeResolver _baseTypes =
+        baseTypes ?? throw new ArgumentNullException(nameof(baseTypes));
 
     public ReachableProgram Build(
         MethodDefinitionModel entryPoint,
@@ -120,84 +134,17 @@ internal sealed class ReachabilityClosureBuilder(
             Enqueue(exportedMethod);
         }
 
-        while (pending.Count != 0 || pendingDispatches.Count != 0)
+        while (true)
         {
-            var iterationStarted = Stopwatch.GetTimestamp();
-            var methodPublicationTicks = 0L;
-            var dispatchCount = 0;
-            var resolvedDispatchCount = 0;
-            var methodRequests = ImmutableArray.CreateBuilder<ReachableMethodRequest>(pending.Count);
-            while (pending.TryDequeue(out var methodInstance))
+            var before = CaptureClosureStamp();
+            DrainReachabilityQueues();
+            AddDerivedRoots();
+            if (pending.Count == 0 &&
+                pendingDispatches.Count == 0 &&
+                CaptureClosureStamp() == before)
             {
-                var method = methodInstance.Definition;
-                methodInstances.Add(methodInstance.CanonicalName, methodInstance);
-                types.Add(method.DeclaringType);
-                var import = _importClassifier.Classify(new ReachabilityImportRequest(
-                    methodInstance,
-                    outwardBoundaries.Contains(method.Key)));
-                ApplyImport(import);
-                if (import.IsHandled)
-                {
-                    continue;
-                }
-                methodRequests.Add(new ReachableMethodRequest(methodInstance));
+                break;
             }
-            foreach (var analysis in _methodBatchAnalyzer.Analyze(methodRequests.ToImmutable()))
-            {
-                var publicationStarted = Stopwatch.GetTimestamp();
-                ApplyMethod(analysis);
-                _managedCallSites.Write(state, analysis.Instructions.CallSites);
-                methodPublicationTicks += Stopwatch.GetTimestamp() - publicationStarted;
-            }
-
-            var dispatchStarted = Stopwatch.GetTimestamp();
-            while (pendingDispatches.TryDequeue(out var work))
-            {
-                dispatchCount++;
-                var target = _dispatchTargets.Resolve(
-                    work.Declaration.Declaration,
-                    work.Receiver);
-                if (target is null)
-                {
-                    continue;
-                }
-
-                resolvedDispatchCount++;
-
-                if (!dispatchTargets.TryGetValue(work.DispatchKey, out var targets))
-                {
-                    targets = new Dictionary<string, DispatchTargetModel>(
-                        StringComparer.Ordinal);
-                    dispatchTargets.Add(work.DispatchKey, targets);
-                }
-                targets.TryAdd(target.ReceiverType.CanonicalName, target);
-                EnqueueInstance(target.Method);
-                if (work.Declaration.Operation == CilOperation.LoadVirtualFunction)
-                {
-                    callableMethods.TryAdd(target.Method.CanonicalName, target.Method);
-                }
-            }
-            var dispatchPublicationTicks = Stopwatch.GetTimestamp() - dispatchStarted;
-
-            _closureObserver.Observe(new ReachabilityClosureObservation(
-                methodRequests.Count,
-                Stopwatch.GetElapsedTime(0, methodPublicationTicks),
-                dispatchCount,
-                resolvedDispatchCount,
-                Stopwatch.GetElapsedTime(0, dispatchPublicationTicks),
-                Stopwatch.GetElapsedTime(iterationStarted)));
-        }
-
-        if (allocatedTypes.Any(_delegateTypes.Recognize))
-        {
-            AddImplicit(ManagedExceptionKind.Argument, "System.ArgumentException");
-            AddImplicit(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException");
-        }
-        foreach (var type in _runtimeIntrinsicTypeRoots.Plan(
-                     methodInstances.Values,
-                     constructedTypes))
-        {
-            AddRuntimeType(type);
         }
         var program = _programBuilder.Build(
             entryPoint,
@@ -214,6 +161,240 @@ internal sealed class ReachabilityClosureBuilder(
         {
             EnqueueInstance(DirectInstance(method));
         }
+
+        void DrainReachabilityQueues()
+        {
+            while (pending.Count != 0 || pendingDispatches.Count != 0)
+            {
+                var iterationStarted = Stopwatch.GetTimestamp();
+                var methodPublicationTicks = 0L;
+                var dispatchCount = 0;
+                var resolvedDispatchCount = 0;
+                var methodRequests =
+                    ImmutableArray.CreateBuilder<ReachableMethodRequest>(pending.Count);
+                while (pending.TryDequeue(out var methodInstance))
+                {
+                    var method = methodInstance.Definition;
+                    methodInstances.Add(methodInstance.CanonicalName, methodInstance);
+                    types.Add(method.DeclaringType);
+                    var import = _importClassifier.Classify(new ReachabilityImportRequest(
+                        methodInstance,
+                        outwardBoundaries.Contains(method.Key)));
+                    ApplyImport(import);
+                    if (import.IsHandled)
+                    {
+                        continue;
+                    }
+                    methodRequests.Add(new ReachableMethodRequest(methodInstance));
+                }
+                foreach (var analysis in _methodBatchAnalyzer.Analyze(
+                             methodRequests.ToImmutable()))
+                {
+                    var publicationStarted = Stopwatch.GetTimestamp();
+                    ApplyMethod(analysis);
+                    _managedCallSites.Write(state, analysis.Instructions.CallSites);
+                    methodPublicationTicks +=
+                        Stopwatch.GetTimestamp() - publicationStarted;
+                }
+
+                var dispatchStarted = Stopwatch.GetTimestamp();
+                while (pendingDispatches.TryDequeue(out var work))
+                {
+                    dispatchCount++;
+                    var target = _dispatchTargets.Resolve(
+                        work.Declaration.Declaration,
+                        work.Receiver);
+                    if (target is null)
+                    {
+                        continue;
+                    }
+
+                    resolvedDispatchCount++;
+
+                    if (!dispatchTargets.TryGetValue(work.DispatchKey, out var targets))
+                    {
+                        targets = new Dictionary<string, DispatchTargetModel>(
+                            StringComparer.Ordinal);
+                        dispatchTargets.Add(work.DispatchKey, targets);
+                    }
+                    targets.TryAdd(target.ReceiverType.CanonicalName, target);
+                    EnqueueInstance(target.Method);
+                    if (work.Declaration.Operation == CilOperation.LoadVirtualFunction)
+                    {
+                        callableMethods.TryAdd(target.Method.CanonicalName, target.Method);
+                    }
+                }
+                var dispatchPublicationTicks = Stopwatch.GetTimestamp() - dispatchStarted;
+
+                _closureObserver.Observe(new ReachabilityClosureObservation(
+                    methodRequests.Count,
+                    Stopwatch.GetElapsedTime(0, methodPublicationTicks),
+                    dispatchCount,
+                    resolvedDispatchCount,
+                    Stopwatch.GetElapsedTime(0, dispatchPublicationTicks),
+                    Stopwatch.GetElapsedTime(iterationStarted)));
+            }
+        }
+
+        void AddDerivedRoots()
+        {
+            if (allocatedTypes.Any(_delegateTypes.Recognize))
+            {
+                AddImplicit(ManagedExceptionKind.Argument, "System.ArgumentException");
+                AddImplicit(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException");
+            }
+            foreach (var type in _runtimeIntrinsicTypeRoots.Plan(
+                         methodInstances.Values,
+                         constructedTypes))
+            {
+                AddRuntimeType(type);
+            }
+            foreach (var pair in _objectArrayDelegateAdapters.Plan(
+                         methodInstances.Values))
+            {
+                if (!state.ObjectArrayDelegateAdapters.TryAdd(pair.Key, pair.Value))
+                {
+                    continue;
+                }
+                var plan = pair.Value;
+                EnqueueInstance(plan.Target);
+                if (plan.IsSupported)
+                {
+                    state.RequiresDelegateInvoke = true;
+                    AddAllocatedType(plan.DelegateType);
+                    AddConstructedType(plan.DelegateType);
+                    callableMethods.TryAdd(plan.Target.CanonicalName, plan.Target);
+                }
+            }
+            if (state.RequiresDelegateInvoke)
+            {
+                state.RequiresTypeFacts = true;
+                AddDelegateInvokeDescriptors();
+            }
+            var memberDescriptorPlan = _memberDescriptors.Build(
+                new MemberDescriptorPlanningRequest(
+                    state.MethodDescriptors.ToImmutable(),
+                    state.FieldDescriptors.ToImmutable(),
+                    IncludePropertyAssociations: true,
+                    IncludeNames: state.RequiresMemberNames));
+            foreach (var method in memberDescriptorPlan.Methods.Values)
+            {
+                AddMethodDescriptor(method);
+            }
+            foreach (var field in memberDescriptorPlan.Fields.Values)
+            {
+                AddFieldDescriptor(field);
+            }
+            foreach (var property in memberDescriptorPlan.Properties.Values)
+            {
+                AddPropertyDescriptor(property);
+            }
+            foreach (var type in memberDescriptorPlan.RequiredTypes)
+            {
+                AddDescriptorType(type);
+            }
+            state.NamedMemberDescriptors.UnionWith(
+                memberDescriptorPlan.NamedDescriptors);
+            state.Strings.UnionWith(memberDescriptorPlan.NameStrings);
+            var memberExecution = _memberExecutions.Plan(
+                methodInstances.Values,
+                state.MethodDescriptors.Values,
+                state.FieldDescriptors.Values);
+            if (memberExecution.UnsupportedTarget is not null)
+            {
+                EnqueueInstance(memberExecution.UnsupportedTarget);
+            }
+            var plannedExecutions = memberExecution.Methods.ToBuilder();
+            foreach (var pair in memberExecution.Methods)
+            {
+                var execution = pair.Value;
+                MethodInstanceModel method = execution.Descriptor;
+                if (!execution.RequiresDispatch)
+                {
+                    VisitMethod(CilOperation.Call, method);
+                }
+                else
+                {
+                    var targets = allocatedTypes
+                        .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)
+                        .Select(type => _dispatchTargets.Resolve(method, type))
+                        .Where(target => target is not null)
+                        .Select(target => target!)
+                        .DistinctBy(target => (
+                            target.ReceiverType.CanonicalName,
+                            target.Method.CanonicalName))
+                        .ToImmutableArray();
+                    foreach (var target in targets)
+                    {
+                        VisitMethod(CilOperation.CallVirtual, target.Method);
+                    }
+                    plannedExecutions[pair.Key] = execution with
+                    {
+                        Targets = targets,
+                    };
+                }
+                foreach (var parameter in method.Signature.ParameterSignatureTypes)
+                {
+                    AddMemberExecutionValue(parameter);
+                }
+                AddMemberExecutionValue(method.Signature.ReturnSignatureType);
+            }
+            foreach (var field in memberExecution.Fields.Values)
+            {
+                VisitField(field);
+                AddMemberExecutionValue(field.FieldType);
+            }
+            state.MemberExecution = memberExecution with
+            {
+                Methods = plannedExecutions.ToImmutable(),
+            };
+            if (state.TypeNamePayload != RuntimeTypeNamePayload.None)
+            {
+                state.RequiresTypeFacts = true;
+            }
+            if (state.RequiresTypeFacts)
+            {
+                AddTypeFactsClosure();
+            }
+        }
+
+        (
+            int TypeCount,
+            int RuntimeTypeDefinitionCount,
+            int ConstructedTypeCount,
+            int AllocatedTypeCount,
+            int MethodInstanceCount,
+            int MethodDescriptorCount,
+            int FieldDescriptorCount,
+            int PropertyDescriptorCount,
+            int ObjectArrayDelegateAdapterCount,
+            int MemberExecutionMethodCount,
+            int MemberExecutionFieldCount,
+            int MemberExecutionDispatchTargetCount,
+            bool HasMemberExecutionDemand,
+            bool RequiresTypeFacts,
+            bool RequiresDelegateInvoke,
+            bool RequiresMemberNames,
+            RuntimeTypeNamePayload TypeNamePayload)
+            CaptureClosureStamp() => (
+            types.Count,
+            state.RuntimeTypeDefinitions.Count,
+            constructedTypes.Count,
+            allocatedTypes.Count,
+            methodInstances.Count,
+            state.MethodDescriptors.Count,
+            state.FieldDescriptors.Count,
+            state.PropertyDescriptors.Count,
+            state.ObjectArrayDelegateAdapters.Count,
+            state.MemberExecution.Methods.Count,
+            state.MemberExecution.Fields.Count,
+            state.MemberExecution.Methods.Values.Sum(
+                execution => execution.Targets.Length),
+            state.MemberExecution.UnsupportedTarget is not null,
+            state.RequiresTypeFacts,
+            state.RequiresDelegateInvoke,
+            state.RequiresMemberNames,
+            state.TypeNamePayload);
 
         void EnsureModuleInitialized(AssemblyIdentity assembly)
         {
@@ -250,13 +431,17 @@ internal sealed class ReachabilityClosureBuilder(
 
         void ApplyInstructions(ReachabilityInstructionAnalysis analysis)
         {
+            state.RequiresTypeFacts |= analysis.RequiresTypeFacts;
+            state.RequiresDelegateInvoke |= analysis.RequiresDelegateInvoke;
+            state.RequiresMemberNames |= analysis.RequiresMemberNames;
+            state.TypeNamePayload |= analysis.TypeNamePayload;
             foreach (var type in analysis.RuntimeTypes)
             {
                 AddRuntimeType(type);
             }
             foreach (var type in analysis.ConstructedTypes)
             {
-                AddConstructedType(type);
+                AddConstructedType(type, retainElementModifierIdentity: true);
             }
             foreach (var type in analysis.AllocatedTypes)
             {
@@ -281,6 +466,14 @@ internal sealed class ReachabilityClosureBuilder(
             foreach (var field in analysis.Fields)
             {
                 VisitField(field);
+            }
+            foreach (var method in analysis.MethodDescriptors)
+            {
+                AddMethodDescriptor(method);
+            }
+            foreach (var field in analysis.FieldDescriptors)
+            {
+                AddFieldDescriptor(field);
             }
             foreach (var dispatch in analysis.Dispatches)
             {
@@ -400,13 +593,22 @@ internal sealed class ReachabilityClosureBuilder(
             }
         }
 
-        void AddConstructedType(CliTypeIdentity type)
+        void AddConstructedType(
+            CliTypeIdentity type,
+            bool retainElementModifierIdentity = false)
         {
+            var isElementModifier = type.Shape is
+                CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer;
             if (type.Shape is CliTypeShape.GenericInstantiation or
-                CliTypeShape.SzArray or CliTypeShape.Array)
+                    CliTypeShape.SzArray or CliTypeShape.Array ||
+                isElementModifier && retainElementModifierIdentity)
             {
                 AddConstructedIdentity(type.CanonicalName);
                 constructedTypes.Add(type);
+            }
+            if (isElementModifier)
+            {
+                AddConstructedType(type.ElementType!);
             }
             foreach (var argument in type.TypeArguments)
             {
@@ -563,6 +765,199 @@ internal sealed class ReachabilityClosureBuilder(
 
             EnsureModuleInitialized(field.Definition.Key.Assembly);
             EnsureTypeInitialized(field.Definition.DeclaringType, field.DeclaringType);
+        }
+
+        void AddMethodDescriptor(MethodInstanceModel method)
+        {
+            if (!state.MethodDescriptors.TryAdd(method.CanonicalName, method))
+            {
+                return;
+            }
+
+            AddDescriptorImplementationType(method.Definition.Name is ".ctor" or ".cctor"
+                ? "System.Reflection.RuntimeConstructorInfo"
+                : "System.Reflection.RuntimeMethodInfo");
+            AddDescriptorType(method.DeclaringType);
+            AddDescriptorType(method.Signature.ReturnSignatureType);
+            foreach (var parameter in method.Signature.ParameterSignatureTypes)
+            {
+                AddDescriptorType(parameter);
+            }
+            foreach (var argument in method.MethodArguments)
+            {
+                AddDescriptorType(argument);
+            }
+        }
+
+        void AddFieldDescriptor(FieldInstanceModel field)
+        {
+            if (!state.FieldDescriptors.TryAdd(field.CanonicalName, field))
+            {
+                return;
+            }
+
+            AddDescriptorImplementationType("System.Reflection.RuntimeFieldInfo");
+            AddDescriptorType(field.DeclaringType);
+            AddDescriptorType(field.FieldType);
+        }
+
+        void AddPropertyDescriptor(PropertyInstanceModel property)
+        {
+            if (state.PropertyDescriptors.TryGetValue(
+                    property.CanonicalName,
+                    out var existing))
+            {
+                if (!existing.HasEquivalentDescriptorFacts(property))
+                {
+                    throw new CompilerException(new CompilerDiagnostic(
+                        DiagnosticCode.RuntimeContract,
+                        $"member descriptor '{property.CanonicalName}' has contradictory properties"));
+                }
+                return;
+            }
+            state.PropertyDescriptors.Add(property.CanonicalName, property);
+
+            AddDescriptorImplementationType("System.Reflection.RuntimePropertyInfo");
+            AddDescriptorType(property.DeclaringType);
+            AddDescriptorType(property.PropertyType);
+            foreach (var parameter in property.IndexParameterTypes)
+            {
+                AddDescriptorType(parameter);
+            }
+        }
+
+        void AddDescriptorImplementationType(string fullName)
+        {
+            var definition = _typeFinder.FindType(fullName);
+            types.Add(definition.Key);
+            AddAllocatedType(_typeIdentities.GetTypeIdentity(definition.Key));
+        }
+
+        void AddDescriptorType(CliTypeIdentity type)
+        {
+            AddRuntimeType(type);
+            AddConstructedType(type, retainElementModifierIdentity: true);
+        }
+
+        void AddMemberExecutionValue(CliTypeIdentity type)
+        {
+            if (type.StackKind != CliValueKind.ManagedReference)
+            {
+                AddAllocatedType(type);
+            }
+        }
+
+        void AddDelegateInvokeDescriptors()
+        {
+            var candidates = types
+                .Select(_typeIdentities.GetTypeIdentity)
+                .Concat(constructedTypes)
+                .Concat(allocatedTypes)
+                .Where(type => !type.ContainsGenericParameters)
+                .Distinct()
+                .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)
+                .ToArray();
+            foreach (var type in candidates)
+            {
+                if (!_delegateTypes.Recognize(type))
+                {
+                    continue;
+                }
+                var definition = _typeDefinitions.ResolveTypeIdentity(type);
+                if (definition.FullName is
+                        "System.Delegate" or "System.MulticastDelegate" ||
+                    type.Shape == CliTypeShape.Named && definition.GenericArity > 0)
+                {
+                    continue;
+                }
+                var invokeDefinitions = definition.Methods
+                    .Select(_methodRepository.GetMethod)
+                    .Where(method => method.Name == "Invoke" && !method.IsStatic)
+                    .Take(2)
+                    .ToArray();
+                if (invokeDefinitions.Length != 1)
+                {
+                    throw new CompilerException(new CompilerDiagnostic(
+                        DiagnosticCode.RuntimeContract,
+                        $"delegate type '{type.CanonicalName}' must define exactly one " +
+                        "instance Invoke method"));
+                }
+                var invoke = type.Shape == CliTypeShape.GenericInstantiation
+                    ? ConstructedInstance(invokeDefinitions[0], type.TypeArguments)
+                    : DirectInstance(invokeDefinitions[0]);
+                if (state.DelegateInvokeDescriptors.TryGetValue(
+                        type.CanonicalName,
+                        out var existing))
+                {
+                    if (!existing.HasEquivalentDescriptorFacts(invoke))
+                    {
+                        throw new CompilerException(new CompilerDiagnostic(
+                            DiagnosticCode.RuntimeContract,
+                            $"delegate type '{type.CanonicalName}' has contradictory " +
+                            "Invoke descriptors"));
+                    }
+                    continue;
+                }
+                state.DelegateInvokeDescriptors.Add(type.CanonicalName, invoke);
+                AddMethodDescriptor(invoke);
+            }
+        }
+
+        void AddTypeFactsClosure()
+        {
+            var pendingFacts = new Queue<CliTypeIdentity>();
+            var visitedFacts = new HashSet<CliTypeIdentity>();
+            foreach (var type in types.ToArray())
+            {
+                EnqueueFacts(_typeIdentities.GetTypeIdentity(type));
+            }
+            foreach (var type in constructedTypes.ToArray())
+            {
+                EnqueueFacts(type);
+            }
+            while (pendingFacts.TryDequeue(out var type))
+            {
+                if (!CanExpandRuntimeHierarchy(type))
+                {
+                    continue;
+                }
+                var baseType = _baseTypes.Resolve(type);
+                if (baseType is null || !CanExpandRuntimeHierarchy(baseType))
+                {
+                    continue;
+                }
+                AddRuntimeType(baseType);
+                AddConstructedType(baseType);
+                EnqueueFacts(baseType);
+            }
+
+            void EnqueueFacts(CliTypeIdentity type)
+            {
+                if (!visitedFacts.Add(type))
+                {
+                    return;
+                }
+                pendingFacts.Enqueue(type);
+                if (type.Shape != CliTypeShape.GenericInstantiation &&
+                    type.ElementType is not null)
+                {
+                    EnqueueFacts(type.ElementType);
+                }
+                foreach (var argument in type.TypeArguments)
+                {
+                    EnqueueFacts(argument);
+                }
+            }
+
+            bool CanExpandRuntimeHierarchy(CliTypeIdentity type)
+            {
+                if (type.ContainsGenericParameters)
+                {
+                    return false;
+                }
+                return type.Shape != CliTypeShape.Named ||
+                    _typeDefinitions.ResolveTypeIdentity(type).GenericArity == 0;
+            }
         }
 
         void EnsureTypeInitialized(EntityKey definition, CliTypeIdentity declaringType)

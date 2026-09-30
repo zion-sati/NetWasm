@@ -4,6 +4,8 @@ using System.Collections.Immutable;
 using NetWasm.Compiler;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 
@@ -31,6 +33,28 @@ internal sealed class ReachabilityLedger
         ImmutableHashSet.CreateBuilder<EntityKey>();
     internal ImmutableDictionary<string, FieldInstanceModel>.Builder ConstructedFields { get; } =
         ImmutableDictionary.CreateBuilder<string, FieldInstanceModel>(StringComparer.Ordinal);
+    internal ImmutableDictionary<string, MethodInstanceModel>.Builder MethodDescriptors { get; } =
+        ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+    internal ImmutableDictionary<string, FieldInstanceModel>.Builder FieldDescriptors { get; } =
+        ImmutableDictionary.CreateBuilder<string, FieldInstanceModel>(StringComparer.Ordinal);
+    internal ImmutableDictionary<string, PropertyInstanceModel>.Builder PropertyDescriptors { get; } =
+        ImmutableDictionary.CreateBuilder<string, PropertyInstanceModel>(StringComparer.Ordinal);
+    internal ImmutableDictionary<string, MethodInstanceModel>.Builder DelegateInvokeDescriptors
+    { get; } =
+        ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+    internal ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Builder
+        ObjectArrayDelegateAdapters
+    { get; } = ImmutableDictionary.CreateBuilder<
+        string,
+        ObjectArrayDelegateAdapterPlan>(StringComparer.Ordinal);
+    internal MemberExecutionPlan MemberExecution { get; set; } =
+        MemberExecutionPlan.Empty;
+    internal ImmutableHashSet<string>.Builder NamedMemberDescriptors { get; } =
+        ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+    internal bool RequiresTypeFacts { get; set; }
+    internal bool RequiresDelegateInvoke { get; set; }
+    internal bool RequiresMemberNames { get; set; }
+    internal RuntimeTypeNamePayload TypeNamePayload { get; set; }
     internal ImmutableHashSet<EntityKey>.Builder Types { get; } =
         ImmutableHashSet.CreateBuilder<EntityKey>();
     internal ImmutableHashSet<EntityKey>.Builder Fields { get; } =

@@ -12,7 +12,7 @@ internal interface IRequestedExportFunctionAppender
         IDictionary<string, int> requestedExportIndices,
         IDictionary<string, int> asyncHelperIndices,
         string exportName,
-        EntityKey methodKey,
+        MethodInstanceModel method,
         IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> asyncBindings,
         RuntimeInitializationPlan initialization,
         bool hasFinalizers,

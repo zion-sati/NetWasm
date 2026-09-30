@@ -4,5 +4,5 @@ namespace NetWasm.Compiler.Layout;
 
 internal interface IStaticDataLayoutProviderFactory
 {
-    IStaticDataLayout Create(ManagedLayoutSnapshot snapshot);
+    IManagedStaticDataLayout Create(ManagedLayoutSnapshot snapshot);
 }

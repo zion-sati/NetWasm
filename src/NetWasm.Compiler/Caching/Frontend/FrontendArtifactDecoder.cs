@@ -15,7 +15,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 4;
+    private const ushort SchemaVersion = 10;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -261,6 +261,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 var signature = tables.Signature(reader.ReadInt32());
                 var relativeVirtualAddress = reader.ReadInt32();
                 var genericArity = reader.ReadInt32();
+                var isPublic = ReadBoolean();
                 var isVirtual = ReadBoolean();
                 var isNewSlot = ReadBoolean();
                 var isFinal = ReadBoolean();
@@ -281,6 +282,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 return new(key, declaringType, name, isStatic, signature, relativeVirtualAddress)
                 {
                     GenericArity = genericArity,
+                    IsPublic = isPublic,
                     IsVirtual = isVirtual,
                     IsNewSlot = isNewSlot,
                     IsFinal = isFinal,
@@ -305,6 +307,8 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 var declaringTypeKey = ReadEntityKey();
                 var name = ReadString();
                 var isStatic = ReadBoolean();
+                var isInitOnly = ReadBoolean();
+                var isLiteral = ReadBoolean();
                 var initialData = ReadBytes();
                 var literalValue = ReadNullableStruct(reader.ReadUInt64);
                 var explicitOffset = ReadNullableStruct(reader.ReadInt32);
@@ -315,6 +319,8 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     InitialData = initialData,
                     LiteralValue = literalValue,
                     ExplicitOffset = explicitOffset,
+                    IsInitOnly = isInitOnly,
+                    IsLiteral = isLiteral,
                 };
                 return new(
                     definition,
@@ -472,31 +478,56 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 ReadString())),
             ReadInstructionAnalysis());
 
-        private ReachabilityInstructionAnalysis ReadInstructionAnalysis() => new(
-            ReadArray(ReadType),
-            ReadArray(ReadType),
-            ReadArray(ReadType),
-            ReadArray(ReadEntityKey),
-            ReadArray(ReadString),
-            ReadArray(() => new ReachabilityMethodReference(
-                ReadEnum<CilOperation>(),
-                ReadMethodInstance())),
-            ReadArray(() => new ReachabilityEntityReference(
-                ReadEnum<CilOperation>(),
-                ReadEntityKey())),
-            ReadArray(ReadFieldInstance),
-            ReadArray(() =>
+        private ReachabilityInstructionAnalysis ReadInstructionAnalysis()
+        {
+            var analysis = new ReachabilityInstructionAnalysis(
+                ReadArray(ReadType),
+                ReadArray(ReadType),
+                ReadArray(ReadType),
+                ReadArray(ReadEntityKey),
+                ReadArray(ReadString),
+                ReadArray(() => new ReachabilityMethodReference(
+                    ReadEnum<CilOperation>(),
+                    ReadMethodInstance())),
+                ReadArray(() => new ReachabilityEntityReference(
+                    ReadEnum<CilOperation>(),
+                    ReadEntityKey())),
+                ReadArray(ReadFieldInstance),
+                ReadArray(() =>
+                {
+                    var key = ReadString();
+                    var declaration = new DispatchDeclaration(
+                        ReadString(),
+                        reader.ReadInt32(),
+                        ReadMethodInstance(),
+                        ReadEnum<CilOperation>());
+                    return new ReachabilityDispatch(key, declaration);
+                }),
+                ReadArray(ReadMethodInstance),
+                ReadArray(ReadCallSite));
+            return analysis with
             {
-                var key = ReadString();
-                var declaration = new DispatchDeclaration(
-                    ReadString(),
-                    reader.ReadInt32(),
-                    ReadMethodInstance(),
-                    ReadEnum<CilOperation>());
-                return new ReachabilityDispatch(key, declaration);
-            }),
-            ReadArray(ReadMethodInstance),
-            ReadArray(ReadCallSite));
+                MethodDescriptors = ReadArray(ReadMethodInstance),
+                FieldDescriptors = ReadArray(ReadFieldInstance),
+                RequiresTypeFacts = reader.ReadBoolean(),
+                RequiresDelegateInvoke = reader.ReadBoolean(),
+                RequiresMemberNames = reader.ReadBoolean(),
+                TypeNamePayload = ReadTypeNamePayload(),
+            };
+        }
+
+        private RuntimeTypeNamePayload ReadTypeNamePayload()
+        {
+            var payload = (RuntimeTypeNamePayload)reader.ReadByte();
+            return (payload & ~(
+                    RuntimeTypeNamePayload.Name |
+                    RuntimeTypeNamePayload.Namespace |
+                    RuntimeTypeNamePayload.FullName |
+                    RuntimeTypeNamePayload.DisplayName)) == 0
+                ? payload
+                : throw Invalid(
+                    "The frontend artifact contains an invalid runtime type-name payload.");
+        }
 
         private ManagedCallSite ReadCallSite()
         {

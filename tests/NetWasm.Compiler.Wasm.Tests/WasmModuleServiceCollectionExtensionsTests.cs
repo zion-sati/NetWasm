@@ -38,6 +38,7 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
                 layouts,
                 layouts,
                 layouts,
+                layouts,
                 new DescriptorSourceWithoutEnumMetadata()));
 
         Assert.Equal("typeDescriptors", exception.ParamName);

@@ -17,6 +17,9 @@ public sealed record MetadataAssemblySnapshot(
     internal AssemblyIdentityAliases AssemblyIdentityAliases { get; init; } =
         AssemblyIdentityAliases.Empty;
 
+    public IReadOnlyDictionary<int, PropertyDefinitionModel> Properties { get; init; } =
+        ImmutableDictionary<int, PropertyDefinitionModel>.Empty;
+
     internal MetadataAssemblySnapshot(
         AssemblyIdentity identity,
         MetadataReader reader,

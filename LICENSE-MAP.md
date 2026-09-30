@@ -15,6 +15,7 @@ where they are more specific than a path default.
 | src/NetWasm.Testing.VSTest/** | LicenseRef-NetWasm-Community-1.0 |
 | tools/** | LicenseRef-NetWasm-Community-1.0 |
 | eng/** | LicenseRef-NetWasm-Community-1.0 |
+| tests/end-to-end/expression-fluentvalidation-consumer/** | Apache-2.0 |
 | tests/** | LicenseRef-NetWasm-Community-1.0 |
 | build and repository tooling metadata | LicenseRef-NetWasm-Community-1.0 |
 | src/NetWasm.Ref/** | MIT |

@@ -19,6 +19,7 @@ internal sealed class ExceptionTypeNameResolver : IExceptionTypeNameResolver
         ManagedExceptionKind.ArgumentOutOfRange => "System.ArgumentOutOfRangeException",
         ManagedExceptionKind.ArrayTypeMismatch => "System.ArrayTypeMismatchException",
         ManagedExceptionKind.JSException => "System.JSException",
+        ManagedExceptionKind.InvalidOperation => "System.InvalidOperationException",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 }

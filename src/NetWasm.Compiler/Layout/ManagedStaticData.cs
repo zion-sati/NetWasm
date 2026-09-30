@@ -18,4 +18,22 @@ internal sealed partial record ManagedStaticData(
 internal sealed partial record ManagedStaticData
 {
     public ImmutableArray<EnumMetadataLayout> EnumMetadata { get; init; } = [];
+
+    public ImmutableDictionary<string, int> MethodDescriptors { get; init; } =
+        ImmutableDictionary<string, int>.Empty;
+
+    public ImmutableDictionary<string, int> FieldDescriptors { get; init; } =
+        ImmutableDictionary<string, int>.Empty;
+
+    public ImmutableDictionary<string, int> PropertyDescriptors { get; init; } =
+        ImmutableDictionary<string, int>.Empty;
+
+    public int MemberDescriptorDeclaringTypeIdOffset { get; init; }
+
+    public int MemberDescriptorRequiresDeclaringTypeOffset { get; init; }
+
+    public int TypeFactsTableAddress { get; init; }
+
+    public int TypeFactsTableCount { get; init; }
+
 }

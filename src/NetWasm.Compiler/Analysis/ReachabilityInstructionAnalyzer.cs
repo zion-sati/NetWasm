@@ -29,9 +29,15 @@ internal sealed class ReachabilityInstructionAnalyzer(
         var methods = ImmutableArray.CreateBuilder<ReachabilityMethodReference>();
         var entities = ImmutableArray.CreateBuilder<ReachabilityEntityReference>();
         var fields = ImmutableArray.CreateBuilder<FieldInstanceModel>();
+        var methodDescriptors = ImmutableArray.CreateBuilder<MethodInstanceModel>();
+        var fieldDescriptors = ImmutableArray.CreateBuilder<FieldInstanceModel>();
         var dispatches = ImmutableArray.CreateBuilder<ReachabilityDispatch>();
         var callableMethods = ImmutableArray.CreateBuilder<MethodInstanceModel>();
         var callSites = ImmutableArray.CreateBuilder<ManagedCallSite>();
+        var requiresTypeFacts = false;
+        var requiresDelegateInvoke = false;
+        var requiresMemberNames = false;
+        var typeNamePayload = RuntimeTypeNamePayload.None;
         var instructions = request.Body.Instructions;
         for (var instructionIndex = 0; instructionIndex < instructions.Length; instructionIndex++)
         {
@@ -46,6 +52,25 @@ internal sealed class ReachabilityInstructionAnalyzer(
             var calledMethod = calledMethods.Resolve(instruction);
             if (calledMethod is not null)
             {
+                if (calledMethod.Definition.Name == "get_Name" &&
+                    calledMethod.DeclaringType.FullName ==
+                        "System.Reflection.MemberInfo")
+                {
+                    requiresMemberNames = true;
+                }
+                if (calledMethod.DeclaringType.FullName == "System.Type")
+                {
+                    requiresDelegateInvoke |=
+                        calledMethod.Definition.Name == "GetDelegateInvokeMethod";
+                    typeNamePayload |= calledMethod.Definition.Name switch
+                    {
+                        "GetRuntimeName" => RuntimeTypeNamePayload.Name,
+                        "GetRuntimeNamespace" => RuntimeTypeNamePayload.Namespace,
+                        "GetRuntimeFullName" => RuntimeTypeNamePayload.FullName,
+                        "GetRuntimeDisplayName" => RuntimeTypeNamePayload.DisplayName,
+                        _ => RuntimeTypeNamePayload.None,
+                    };
+                }
                 callSites.Add(managedCallSites.Create(
                     request.Method,
                     request.Body,
@@ -105,11 +130,35 @@ internal sealed class ReachabilityInstructionAnalyzer(
                     runtimeTypes.Add(constrainedType.Value);
                 }
             }
+            if (instruction.Operation == CilOperation.GetTypeFacts)
+            {
+                requiresTypeFacts = true;
+            }
             if (instruction.Operation == CilOperation.LoadTypeToken)
             {
                 var runtimeType = typeOperands.Resolve(instruction, request.Method);
                 runtimeTypes.Add(runtimeType);
                 constructedTypes.Add(runtimeType);
+                continue;
+            }
+            if (instruction.Operation == CilOperation.LoadMethodToken)
+            {
+                var descriptor = instruction.Operand is CilOperand.MethodInstance method
+                    ? method.Value
+                    : throw new InvalidOperationException(
+                        "A method-token instruction requires a method instance operand.");
+                methodDescriptors.Add(descriptor);
+                continue;
+            }
+            if (instruction.Operation == CilOperation.LoadFieldToken)
+            {
+                var descriptor = instruction.Operand switch
+                {
+                    CilOperand.FieldInstance field => field.Value,
+                    _ => throw new InvalidOperationException(
+                        "A field-token instruction requires a field operand."),
+                };
+                fieldDescriptors.Add(descriptor);
                 continue;
             }
             if (instruction.Operation == CilOperation.LoadFunction && calledMethod is not null)
@@ -214,6 +263,15 @@ internal sealed class ReachabilityInstructionAnalyzer(
             fields.ToImmutable(),
             dispatches.ToImmutable(),
             callableMethods.ToImmutable(),
-            callSites.ToImmutable());
+            callSites.ToImmutable())
+        {
+            MethodDescriptors = methodDescriptors.ToImmutable(),
+            FieldDescriptors = fieldDescriptors.ToImmutable(),
+            RequiresTypeFacts = requiresTypeFacts,
+            RequiresDelegateInvoke = requiresDelegateInvoke,
+            RequiresMemberNames = requiresMemberNames,
+            TypeNamePayload = typeNamePayload,
+        };
+
     }
 }

@@ -9,4 +9,8 @@ public sealed record MetadataCompilationMaterialization(
     ImmutableDictionary<EntityKey, FieldDefinitionModel> Fields,
     ImmutableDictionary<EntityKey, MethodDefinitionModel> Methods,
     ImmutableDictionary<string, MetadataAssemblySnapshot> MetadataAssemblies,
-    ImmutableDictionary<string, string> ReferenceAssemblyAliases);
+    ImmutableDictionary<string, string> ReferenceAssemblyAliases)
+{
+    public ImmutableDictionary<EntityKey, PropertyDefinitionModel> Properties { get; init; } =
+        ImmutableDictionary<EntityKey, PropertyDefinitionModel>.Empty;
+}

@@ -18,7 +18,7 @@ public sealed class MetadataCapabilityFactoryTests
         var fields = new MetadataFieldRepositoryFactory(materializations);
         var typeFinder = new MetadataTypeFinderFactory(materializations);
         var definitions = new MetadataTypeDefinitionResolverFactory(materializations, typeFinder);
-        var methods = new MetadataMethodRepositoryFactory(materializations, definitions);
+        var methods = new MetadataMethodRepositoryFactory(materializations);
         var identities = new MetadataTypeIdentityResolverFactory(types);
         var baseTypeIdentities = new MetadataBaseTypeIdentityResolverFactory(
             materializations,
@@ -95,9 +95,7 @@ public sealed class MetadataCapabilityFactoryTests
         Assert.Throws<ArgumentNullException>(() => new MetadataTypeRepositoryFactory(null!));
         Assert.Throws<ArgumentNullException>(() => new MetadataFieldRepositoryFactory(null!));
         Assert.Throws<ArgumentNullException>(() =>
-            new MetadataMethodRepositoryFactory(null!, null!));
-        Assert.Throws<ArgumentNullException>(() => new MetadataMethodRepositoryFactory(
-            new MetadataCompilationMaterializationFactory(), null!));
+            new MetadataMethodRepositoryFactory(null!));
         Assert.Throws<ArgumentNullException>(() => new MetadataTypeFinderFactory(null!));
         Assert.Throws<ArgumentNullException>(() => new MetadataTypeDefinitionResolverFactory(null!, null!));
         Assert.Throws<ArgumentNullException>(() => new MetadataTypeDefinitionResolverFactory(
@@ -211,11 +209,7 @@ public sealed class MetadataCapabilityFactoryTests
             new MetadataTypeRepositoryFactory(new MetadataCompilationMaterializationFactory()),
             new MetadataFieldRepositoryFactory(new MetadataCompilationMaterializationFactory()),
             new MetadataMethodRepositoryFactory(
-                new MetadataCompilationMaterializationFactory(),
-                new MetadataTypeDefinitionResolverFactory(
-                    new MetadataCompilationMaterializationFactory(),
-                    new MetadataTypeFinderFactory(
-                        new MetadataCompilationMaterializationFactory()))),
+                new MetadataCompilationMaterializationFactory()),
             null!));
     }
 
@@ -227,7 +221,7 @@ public sealed class MetadataCapabilityFactoryTests
         var fields = new MetadataFieldRepositoryFactory(materializations);
         var finder = new MetadataTypeFinderFactory(materializations);
         var definitions = new MetadataTypeDefinitionResolverFactory(materializations, finder);
-        var methods = new MetadataMethodRepositoryFactory(materializations, definitions);
+        var methods = new MetadataMethodRepositoryFactory(materializations);
         var identities = new MetadataTypeIdentityResolverFactory(types);
         var baseIdentities = new MetadataBaseTypeIdentityResolverFactory(
             materializations,

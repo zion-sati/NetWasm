@@ -507,8 +507,11 @@ public sealed class RootMapTests
         IRootDecisionClassifier classifier = new RootDecisionClassifier(
             program,
             program,
-            program);
-        IRootDecisionClassifierFactory factory = new RootDecisionClassifierFactory();
+            program,
+            null,
+            new RuntimeAllocationSafepointClassifier());
+        IRootDecisionClassifierFactory factory = new RootDecisionClassifierFactory(
+            new RuntimeAllocationSafepointClassifier());
 #pragma warning restore CA1859
 
         Assert.True(classifier.Decide(new(
@@ -557,11 +560,56 @@ public sealed class RootMapTests
         Assert.Throws<ArgumentNullException>(() => classifier.Decide(new(
             method, block.Index, I(0, CilOperation.Nop), new HashSet<EntityKey>(), null!)));
         Assert.Throws<ArgumentNullException>(() =>
-            new RootDecisionClassifier(null!, program, program));
+            new RootDecisionClassifier(
+                null!, program, program, null,
+                new RuntimeAllocationSafepointClassifier()));
         Assert.Throws<ArgumentNullException>(() =>
-            new RootDecisionClassifier(program, null!, program));
+            new RootDecisionClassifier(
+                program, null!, program, null,
+                new RuntimeAllocationSafepointClassifier()));
         Assert.Throws<ArgumentNullException>(() =>
-            new RootDecisionClassifier(program, program, null!));
+            new RootDecisionClassifier(
+                program, program, null!, null,
+                new RuntimeAllocationSafepointClassifier()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new RootDecisionClassifier(program, program, program, null, null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new RootDecisionClassifierFactory(null!));
+    }
+
+    [Fact]
+    public void RootDecisionClassifierUsesRuntimeSafepointsForEveryCallOperandShape()
+    {
+        var program = new FakeProgram();
+        var runtimeSafepoints = new AlwaysRuntimeSafepointClassifier();
+        var method = Structured(
+            program,
+            Method(EntryKey),
+            I(0, CilOperation.Return));
+        var block = Assert.Single(method.ControlFlow.Graph.Blocks);
+        var classifier = new RootDecisionClassifier(
+            program,
+            program,
+            program,
+            null,
+            runtimeSafepoints);
+
+        Assert.True(classifier.Decide(new(
+            method,
+            block.Index,
+            I(0, CilOperation.Call, new CilOperand.Entity(LeafKey)),
+            new HashSet<EntityKey>(),
+            new HashSet<string>())));
+        Assert.True(classifier.Decide(new(
+            method,
+            block.Index,
+            I(0, CilOperation.Call, new CilOperand.MethodInstance(
+                Instance(program.GetMethod(LeafKey),
+                    CliTypeIdentity.Named(Assembly, "Roots", "Object", false)))),
+            new HashSet<EntityKey>(),
+            new HashSet<string>())));
+        Assert.Equal(1, runtimeSafepoints.DefinitionCalls);
+        Assert.Equal(1, runtimeSafepoints.InstanceCalls);
     }
 
     [Theory]
@@ -586,7 +634,12 @@ public sealed class RootMapTests
                 [new DispatchTargetModel(owner, target)]),
         };
         var classifier = Assert.IsAssignableFrom<IRootDecisionClassifier>(
-            new RootDecisionClassifier(program, program, program, dispatch));
+            new RootDecisionClassifier(
+                program,
+                program,
+                program,
+                dispatch,
+                new RuntimeAllocationSafepointClassifier()));
         var methods = new HashSet<EntityKey>();
         var instances = new HashSet<string>();
         if (allocates)
@@ -1549,7 +1602,12 @@ public sealed class RootMapTests
 
 #pragma warning disable CA1859 // Composition helper returns the capability contract used by the analyzer.
     private static IRootDecisionClassifier CreateRootDecisions(FakeProgram program) =>
-        new RootDecisionClassifier(program, program, program);
+        new RootDecisionClassifier(
+            program,
+            program,
+            program,
+            null,
+            new RuntimeAllocationSafepointClassifier());
 #pragma warning restore CA1859
 
     private static IAllocationCapabilityAnalyzer CreateAllocationAnalyzer(

@@ -25,6 +25,7 @@ public sealed class ManagedWasmEmitter(
     IInstanceFieldLayoutProvider instanceFields,
     IStaticFieldLayoutProvider staticFields,
     IStaticDataLayout staticData,
+    IMemberDescriptorLayout memberDescriptors,
     IRuntimeObjectLayout runtimeObjects,
     IManagedExceptionObjectProvider exceptionObjects,
     ITypeDescriptorSource typeDescriptors,
@@ -56,6 +57,8 @@ public sealed class ManagedWasmEmitter(
         throw new ArgumentNullException(nameof(staticFields));
     private readonly IStaticDataLayout _staticData = staticData ??
         throw new ArgumentNullException(nameof(staticData));
+    private readonly IMemberDescriptorLayout _memberDescriptors = memberDescriptors ??
+        throw new ArgumentNullException(nameof(memberDescriptors));
     private readonly IRuntimeObjectLayout _runtimeObjects = runtimeObjects ??
         throw new ArgumentNullException(nameof(runtimeObjects));
     private readonly IManagedExceptionObjectProvider _exceptionObjects = exceptionObjects ??
@@ -117,6 +120,7 @@ public sealed class ManagedWasmEmitter(
             _instanceFields,
             _staticFields,
             _staticData,
+            _memberDescriptors,
             _runtimeObjects,
             _exceptionObjects,
             _typeDescriptors,

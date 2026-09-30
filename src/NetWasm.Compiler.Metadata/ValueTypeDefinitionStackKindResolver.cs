@@ -24,7 +24,9 @@ public sealed class ValueTypeDefinitionStackKindResolver : IValueTypeDefinitionS
             "System.Single" => CliValueKind.F4,
             "System.Double" => CliValueKind.F8,
             "System.IntPtr" or
-            "System.UIntPtr" => CliValueKind.NativeInt,
+            "System.UIntPtr" or
+            "System.RuntimeMethodHandle" or
+            "System.RuntimeFieldHandle" => CliValueKind.NativeInt,
             "System.Void" => CliValueKind.Void,
             _ => CliValueKind.ValueType,
         };

@@ -52,6 +52,42 @@ public sealed class ManagedFunctionAppenderTests
     }
 
     [Fact]
+    public void DefinitionAppenderUsesTheSelectedMethodInstanceSignature()
+    {
+        var fixture = new Fixture();
+        var body = new RecordingBodyEmitter();
+        var functionTypes = new FixedFunctionTypeResolver();
+        var method = fixture.CreateDefinitionMethodInstance();
+        var structured = fixture.Structured with
+        {
+            Header = fixture.Structured.Header with { MethodInstance = method },
+        };
+        var appender = AsDefinition(new ManagedDefinitionFunctionAppender(
+            fixture.Program,
+            fixture.Program,
+            body,
+            functionTypes));
+
+        appender.Append(
+            fixture.Functions,
+            fixture.Environments,
+            fixture.Emissions,
+            new ManagedMethodIdentity("test-caller"),
+            EmitterTestSupport.EntryKey,
+            structured,
+            fixture.RootMap,
+            fixture.Target,
+            fixture.FunctionIndices);
+
+        Assert.Same(method, body.MethodInstance);
+        Assert.Same(method, functionTypes.MethodInstance);
+        Assert.Null(functionTypes.MethodDefinition);
+        var functionType = Assert.Single(fixture.Functions).Type;
+        Assert.Equal(CliValueKind.I8, functionType.Result);
+        Assert.Equal(CliValueKind.I8, Assert.Single(functionType.Parameters));
+    }
+
+    [Fact]
     public void DefinitionAppenderRejectsMissingCollaborativeInputs()
     {
         var fixture = new Fixture();
@@ -168,6 +204,20 @@ public sealed class ManagedFunctionAppenderTests
                 [CliTypeIdentity.Primitive("i4", CliValueKind.I4)],
                 definition.Signature);
         }
+
+        public MethodInstanceModel CreateDefinitionMethodInstance()
+        {
+            var definition = Program.GetMethod(EmitterTestSupport.EntryKey);
+            return new(
+                definition,
+                CliTypeIdentity.Named(
+                    EmitterTestSupport.Assembly,
+                    "Tests",
+                "Type",
+                isValueType: false),
+                [],
+                MethodSignatureModel.Create(CliValueKind.I8, CliValueKind.I8));
+        }
     }
 
     private sealed class RecordingBodyEmitter : IManagedMethodBodyEmitter
@@ -189,10 +239,20 @@ StructuredMethod structured, MethodRootMap rootMap,
 
     private sealed class FixedFunctionTypeResolver : IManagedMethodFunctionTypeResolver
     {
-        public WasmFunctionType Resolve(MethodDefinitionModel method) =>
-            WasmFunctionType.Create(CliValueKind.I4);
+        public MethodDefinitionModel? MethodDefinition { get; private set; }
 
-        public WasmFunctionType Resolve(MethodInstanceModel method) =>
-            WasmFunctionType.Create(CliValueKind.I4);
+        public MethodInstanceModel? MethodInstance { get; private set; }
+
+        public WasmFunctionType Resolve(MethodDefinitionModel method)
+        {
+            MethodDefinition = method;
+            return WasmFunctionType.Create(CliValueKind.I4);
+        }
+
+        public WasmFunctionType Resolve(MethodInstanceModel method)
+        {
+            MethodInstance = method;
+            return WasmFunctionType.Create(CliValueKind.I8, CliValueKind.I8);
+        }
     }
 }

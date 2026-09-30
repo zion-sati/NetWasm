@@ -13,9 +13,7 @@ internal static class MetadataCapabilityTestData
     internal static IMethodRepository Methods(MetadataCompilationSnapshot snapshot)
     {
         var materializations = Materializations();
-        return new MetadataMethodRepositoryFactory(
-            materializations,
-            Definitions(materializations)).Create(snapshot);
+        return new MetadataMethodRepositoryFactory(materializations).Create(snapshot);
     }
 
     internal static ITypeFinder TypeFinder(MetadataCompilationSnapshot snapshot) =>
@@ -42,7 +40,7 @@ internal static class MetadataCapabilityTestData
         var materializations = Materializations();
         var types = new MetadataTypeRepositoryFactory(materializations);
         var definitions = Definitions(materializations);
-        var methods = new MetadataMethodRepositoryFactory(materializations, definitions);
+        var methods = new MetadataMethodRepositoryFactory(materializations);
         return new MetadataMethodInstanceResolverFactory(
             materializations,
             definitions,
@@ -56,7 +54,7 @@ internal static class MetadataCapabilityTestData
         var types = new MetadataTypeRepositoryFactory(materializations);
         var fields = new MetadataFieldRepositoryFactory(materializations);
         var definitions = Definitions(materializations);
-        var methods = new MetadataMethodRepositoryFactory(materializations, definitions);
+        var methods = new MetadataMethodRepositoryFactory(materializations);
         var symbols = new MetadataSymbolFormatterFactory(types);
         return new MetadataMethodBodyReaderFactory(
             materializations,
@@ -70,9 +68,7 @@ internal static class MetadataCapabilityTestData
     internal static IMethodFinder MethodFinder(MetadataCompilationSnapshot snapshot)
     {
         var materializations = Materializations();
-        var methods = new MetadataMethodRepositoryFactory(
-            materializations,
-            Definitions(materializations));
+        var methods = new MetadataMethodRepositoryFactory(materializations);
         return new MetadataMethodFinderFactory(materializations, methods).Create(snapshot);
     }
 

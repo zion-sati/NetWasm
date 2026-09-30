@@ -1,14 +1,25 @@
+using System;
 using System.Collections.Generic;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.GarbageCollection;
 
-public sealed class RootDecisionClassifierFactory : IRootDecisionClassifierFactory
+public sealed class RootDecisionClassifierFactory(
+    IRuntimeAllocationSafepointClassifier runtimeSafepoints) :
+    IRootDecisionClassifierFactory
 {
+    private readonly IRuntimeAllocationSafepointClassifier _runtimeSafepoints =
+        runtimeSafepoints ?? throw new ArgumentNullException(nameof(runtimeSafepoints));
+
     public IRootDecisionClassifier Create(
         ITypeRepository types,
         IFieldRepository fields,
         IMethodRepository methods,
         IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites) =>
-        new RootDecisionClassifier(types, fields, methods, dispatchCallSites);
+        new RootDecisionClassifier(
+            types,
+            fields,
+            methods,
+            dispatchCallSites,
+            _runtimeSafepoints);
 }

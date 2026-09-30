@@ -31,8 +31,19 @@ internal sealed class ManagedDefinitionFunctionAppender(
         ArgumentNullException.ThrowIfNull(functionIndices);
 
         var method = methods.GetMethod(methodKey);
-        var emission = bodies.Emit(method, callerIdentity, structured, rootMap, target, functionIndices);
-        functions.Add(new(symbols.Format(method), functionTypes.Resolve(method), emission.Body));
+        var methodInstance = structured.Header.MethodInstance;
+        var emission = bodies.Emit(
+            method,
+            callerIdentity,
+            structured,
+            rootMap,
+            target,
+            functionIndices,
+            methodInstance);
+        var functionType = methodInstance is null
+            ? functionTypes.Resolve(method)
+            : functionTypes.Resolve(methodInstance);
+        functions.Add(new(symbols.Format(method), functionType, emission.Body));
         filterEnvironments[emission.MethodKey] = emission.FilterEnvironment;
         emissions.Add(new(method.Key.ToString(), emission.MethodKey, emission));
     }

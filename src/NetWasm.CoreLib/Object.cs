@@ -12,7 +12,7 @@ namespace System
 
         public virtual bool Equals(object? value) => this == value;
         public virtual int GetHashCode() => ObjectIdentityRuntime.GetHashCode(this);
-        public virtual string ToString() => "System.Object";
+        public virtual string ToString() => GetType().ToString();
         public Type GetType() => null!;
         public static bool Equals(object? left, object? right) =>
             left == null ? right == null : left.Equals(right);

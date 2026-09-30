@@ -4,6 +4,8 @@ using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 
@@ -37,6 +39,33 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal ImmutableHashSet<EntityKey> ModuleInitializers { get; init; } = [];
 
+    internal ImmutableDictionary<string, MethodInstanceModel> MethodDescriptors { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    internal ImmutableDictionary<string, FieldInstanceModel> FieldDescriptors { get; init; } =
+        ImmutableDictionary<string, FieldInstanceModel>.Empty;
+
+    internal ImmutableDictionary<string, PropertyInstanceModel> PropertyDescriptors { get; init; } =
+        ImmutableDictionary<string, PropertyInstanceModel>.Empty;
+
+    internal ImmutableDictionary<string, MethodInstanceModel> DelegateInvokeDescriptors
+    { get; init; } = ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    internal ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
+        ObjectArrayDelegateAdapters
+    { get; init; } = ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Empty;
+
+    internal MemberExecutionPlan MemberExecution { get; init; } =
+        MemberExecutionPlan.Empty;
+
+    internal ImmutableHashSet<string> NamedMemberDescriptors { get; init; } = [];
+
+    internal bool RequiresTypeFacts { get; init; }
+
+    internal bool RequiresDelegateInvoke { get; init; }
+
+    internal RuntimeTypeNamePayload TypeNamePayload { get; init; }
+
     internal static ReachabilityLedgerSnapshot From(ReachabilityLedger ledger) => new(
         ledger.Methods.ToImmutable(),
         ledger.ConstructedMethods.ToImmutable(),
@@ -69,5 +98,15 @@ internal sealed record ReachabilityLedgerSnapshot(
     {
         ModuleInitializers = ledger.ModuleInitializers.ToImmutable(),
         EnumMetadataRequirements = ledger.EnumMetadataRequirements.ToImmutable(),
+        MethodDescriptors = ledger.MethodDescriptors.ToImmutable(),
+        FieldDescriptors = ledger.FieldDescriptors.ToImmutable(),
+        PropertyDescriptors = ledger.PropertyDescriptors.ToImmutable(),
+        DelegateInvokeDescriptors = ledger.DelegateInvokeDescriptors.ToImmutable(),
+        ObjectArrayDelegateAdapters = ledger.ObjectArrayDelegateAdapters.ToImmutable(),
+        MemberExecution = ledger.MemberExecution,
+        NamedMemberDescriptors = ledger.NamedMemberDescriptors.ToImmutable(),
+        RequiresTypeFacts = ledger.RequiresTypeFacts,
+        RequiresDelegateInvoke = ledger.RequiresDelegateInvoke,
+        TypeNamePayload = ledger.TypeNamePayload,
     };
 }

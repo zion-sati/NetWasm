@@ -38,6 +38,7 @@ public enum ManagedExceptionKind
     ArgumentOutOfRange,
     ArrayTypeMismatch,
     JSException,
+    InvalidOperation,
 }
 public readonly record struct TypeDescriptorLayout(
     EntityKey Type,
@@ -111,7 +112,19 @@ public interface IStaticDataLayout
     int StaticDataEnd { get; }
     ImmutableArray<int> StaticRootAddresses { get; }
     ImmutableArray<DataSegment> DataSegments { get; }
+    int TypeFactsTableAddress => 0;
+    int TypeFactsTableCount => 0;
 }
+
+public interface IMemberDescriptorLayout
+{
+    int GetMethodDescriptorAddress(MethodInstanceModel method);
+    int GetFieldDescriptorAddress(FieldInstanceModel field);
+    int DeclaringTypeIdOffset { get; }
+    int RequiresDeclaringTypeOffset { get; }
+}
+
+public interface IManagedStaticDataLayout : IStaticDataLayout, IMemberDescriptorLayout;
 
 public interface IRuntimeObjectLayout
 {

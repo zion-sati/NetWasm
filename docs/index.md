@@ -44,6 +44,8 @@ repository.
   raw-core and Component Model example, not the package-consumer quickstart.
 - [Compiler architecture](ARCHITECTURE.md) — compiler composition,
   reachability, layout, and Wasm emission.
+- [Expression-tree execution profile](expression-trees.md): the bounded,
+  interpreter-only executable node and delegate matrix.
 - [Timezone assets](timezone-assets.md) — optional timezone deployment and
   runtime capability selection.
 

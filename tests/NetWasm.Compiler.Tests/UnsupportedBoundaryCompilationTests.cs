@@ -75,26 +75,25 @@ public sealed class UnsupportedBoundaryCompilationTests
     }
 
     [Fact]
-    public void ExpressionTreesAreAbsentFromThePlatformSurface()
+    public void BoundedExpressionTreesArePresentOnThePlatformSurface()
     {
         using var assets = TestAssets.Create();
 
-        var exception = Assert.Throws<RoslynCompilationException>(() =>
-            assets.CompileSource(
-                "ExpressionTreeFixture",
-                """
-                public static class EntryPoint
+        var assembly = assets.CompileSource(
+            "ExpressionTreeFixture",
+            """
+            public static class EntryPoint
+            {
+                public static int Run(int input)
                 {
-                    public static int Run(int input)
-                    {
-                        System.Linq.Expressions.Expression<System.Func<int, int>> expression =
-                            value => value + 1;
-                        return input;
-                    }
+                    System.Linq.Expressions.Expression<System.Func<int, int>> expression =
+                        value => value + 1;
+                    return expression.Compile()(input);
                 }
-                """));
+            }
+            """);
 
-        Assert.Equal(["CS0234"], exception.DiagnosticCodes);
+        Assert.True(File.Exists(assembly));
     }
 
     [Fact]

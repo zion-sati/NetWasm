@@ -277,6 +277,7 @@ internal sealed class GeneratedCilSerializer(
         Add(result, CilOperation.StoreStaticField, OpCodes.Stsfld, EncodingOperand.Token);
         Add(result, CilOperation.LoadTypeToken, OpCodes.Ldtoken, EncodingOperand.Token);
         Add(result, CilOperation.LoadFieldToken, OpCodes.Ldtoken, EncodingOperand.Token);
+        Add(result, CilOperation.LoadMethodToken, OpCodes.Ldtoken, EncodingOperand.Token);
         Add(result, CilOperation.SizeOf, OpCodes.Sizeof, EncodingOperand.Token);
         Add(result, CilOperation.LoadObject, OpCodes.Ldobj, EncodingOperand.Token);
         Add(result, CilOperation.StoreObject, OpCodes.Stobj, EncodingOperand.Token);

@@ -341,6 +341,8 @@ internal sealed class RandomCilGenerator : IRandomCilGenerator
                             IsStatic: true,
                             IsConstructor: false)),
                     Instruction(CilOperation.Pop),
+                    Instruction(CilOperation.LoadMethodToken, unaryMethod),
+                    Instruction(CilOperation.Pop),
                     Instruction(CilOperation.LoadString, userString),
                     Instruction(CilOperation.Pop),
                     Instruction(CilOperation.SizeOf, scalarType),

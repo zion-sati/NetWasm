@@ -507,6 +507,123 @@ public sealed class CilDecoderTests
     }
 
     [Fact]
+    public void DecoderClassifiesEveryReferencedRuntimeHandleShape()
+    {
+        using var assets = TestAssets.Create();
+        var library = assets.CompileSource(
+            "RuntimeHandle.Library",
+            """
+            namespace RuntimeHandle.Library;
+
+            public static class Box<T>
+            {
+                public static T Value = default!;
+                public static TValue Identity<TValue>(TValue value) => value;
+            }
+            """);
+        var application = assets.CompileSource(
+            "RuntimeHandle.Application",
+            """
+            using RuntimeHandle.Library;
+
+            public static class EntryPoint
+            {
+                public static int Run()
+                {
+                    Box<int>.Value = 42;
+                    return Box<int>.Identity<int>(Box<int>.Value);
+                }
+            }
+            """,
+            library);
+        using var original = ManagedAssemblyTestFactory.Load(application);
+        var target = original.Methods.Values.Single(method => method.Name == "Run");
+        var reader = original.Reader;
+        var memberReferences = Enumerable.Range(
+                1,
+                reader.GetTableRowCount(TableIndex.MemberRef))
+            .Select(MetadataTokens.MemberReferenceHandle)
+            .ToArray();
+        var methodReference = memberReferences.First(handle =>
+            reader.GetMemberReference(handle).GetKind() == MemberReferenceKind.Method);
+        var fieldReference = memberReferences.First(handle =>
+            reader.GetMemberReference(handle).GetKind() == MemberReferenceKind.Field);
+        var cases = new[]
+        {
+            new RuntimeHandleCase(
+                MetadataTokens.GetToken(MetadataTokens.TypeReferenceHandle(1)),
+                CilOperation.LoadTypeToken,
+                typeof(CilOperand.TypeIdentity)),
+            new RuntimeHandleCase(
+                MetadataTokens.GetToken(MetadataTokens.TypeSpecificationHandle(1)),
+                CilOperation.LoadTypeToken,
+                typeof(CilOperand.TypeIdentity)),
+            new RuntimeHandleCase(
+                MetadataTokens.GetToken(MetadataTokens.MethodSpecificationHandle(1)),
+                CilOperation.LoadMethodToken,
+                typeof(CilOperand.MethodInstance)),
+            new RuntimeHandleCase(
+                MetadataTokens.GetToken(methodReference),
+                CilOperation.LoadMethodToken,
+                typeof(CilOperand.MethodInstance)),
+            new RuntimeHandleCase(
+                MetadataTokens.GetToken(fieldReference),
+                CilOperation.LoadFieldToken,
+                typeof(CilOperand.FieldInstance)),
+        };
+
+        Assert.True(reader.GetTableRowCount(TableIndex.TypeRef) > 0);
+        Assert.True(reader.GetTableRowCount(TableIndex.TypeSpec) > 0);
+        Assert.True(reader.GetTableRowCount(TableIndex.MethodSpec) > 0);
+        foreach (var item in cases)
+        {
+            var image = File.ReadAllBytes(application);
+            PatchMethodBody(
+                image,
+                original,
+                target,
+                Encode(OpCodes.Ldtoken, BitConverter.GetBytes(item.Token)));
+            var patchedPath = Path.Combine(
+                assets.Directory,
+                $"runtime-handle-{item.Token:x8}.dll");
+            File.WriteAllBytes(patchedPath, image);
+            using var assembly = ManagedAssemblyTestFactory.Load(patchedPath);
+            var method = assembly.Methods[target.Key.MetadataToken];
+            var fieldType = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+            var decoder = new CilDecoder(
+                new MetadataMethodBodyBlockReader(new FixedSymbols()),
+                new FixedSymbols(),
+                new FixedMethodReferences(method),
+                new FixedTypeEntities(),
+                new FixedFieldReferences(
+                    new FieldDefinitionModel(
+                        new EntityKey(assembly.Identity, 0x04000001),
+                        method.DeclaringType,
+                        "Value",
+                        fieldType,
+                        true),
+                    false),
+                new FixedTypeSignatures(),
+                new FixedCallSiteSignatures(),
+                new IdentityMetadataStackTypeResolver(),
+                new IdentitySwitchLowerer());
+
+            var body = ((ICilDecoder)decoder).Decode(
+                assembly,
+                new MethodInstanceModel(
+                    method,
+                    CliTypeIdentity.Named(assembly.Identity, "Test", "Type", false),
+                    [],
+                    method.Signature));
+            var instruction = Assert.Single(body.Instructions.Where(candidate =>
+                candidate.Operation != CilOperation.Nop));
+
+            Assert.Equal(item.Operation, instruction.Operation);
+            Assert.IsType(item.OperandType, instruction.Operand);
+        }
+    }
+
+    [Fact]
     public void DecoderAcceptsEveryRecognizedOpcodeShapeWithoutCompilerIntegration()
     {
         using var assets = TestAssets.Create();
@@ -583,7 +700,28 @@ public sealed class CilDecoderTests
             Encode(OpCodes.Castclass, BitConverter.GetBytes(fieldToken)));
         Assert.Equal(DiagnosticCode.UnsupportedMetadata, invalidType!.Diagnostic.Code);
         Assert.Null(DecodePatched(
-            Encode(OpCodes.Ldtoken, BitConverter.GetBytes(fieldToken))));
+            Encode(OpCodes.Ldtoken, BitConverter.GetBytes(fieldToken)),
+            inspect: body =>
+            {
+                var instruction = Assert.Single(body.Instructions.Where(candidate =>
+                    candidate.Operation != CilOperation.Nop));
+                Assert.Equal(CilOperation.LoadFieldToken, instruction.Operation);
+                Assert.IsType<CilOperand.FieldInstance>(instruction.Operand);
+            }));
+        Assert.Null(DecodePatched(
+            Encode(
+                OpCodes.Ldtoken,
+                BitConverter.GetBytes(target.Method.Key.MetadataToken)),
+            inspect: body =>
+            {
+                var instruction = Assert.Single(body.Instructions.Where(candidate =>
+                    candidate.Operation != CilOperation.Nop));
+                Assert.Equal(CilOperation.LoadMethodToken, instruction.Operation);
+                Assert.IsType<CilOperand.MethodInstance>(instruction.Operand);
+            }));
+        var invalidRuntimeHandle = DecodePatched(
+            Encode(OpCodes.Ldtoken, BitConverter.GetBytes(0x00000001)));
+        Assert.Equal(DiagnosticCode.InvalidCil, invalidRuntimeHandle!.Diagnostic.Code);
 
         var validSwitch = DecodePatched(
             Encode(OpCodes.Switch, [1, 0, 0, 0, 0, 0, 0, 0]));
@@ -616,7 +754,8 @@ public sealed class CilDecoderTests
             int? codeSizeOverride = null,
             bool genericInstance = false,
             bool constructedMethod = false,
-            bool constructedField = false)
+            bool constructedField = false,
+            Action<CilMethodBody>? inspect = null)
         {
             var image = File.ReadAllBytes(assets.CoreLib);
             PatchMethodBody(image, original, target.Method, encoded, codeSizeOverride);
@@ -637,7 +776,7 @@ public sealed class CilDecoderTests
                 new IdentitySwitchLowerer());
             try
             {
-                _ = ((ICilDecoder)decoder).Decode(
+                var body = ((ICilDecoder)decoder).Decode(
                     assembly,
                     new MethodInstanceModel(
                         method,
@@ -650,6 +789,7 @@ public sealed class CilDecoderTests
                             ? [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]
                             : [],
                         method.Signature));
+                inspect?.Invoke(body);
                 return null;
             }
             catch (CompilerException exception)
@@ -687,6 +827,11 @@ public sealed class CilDecoderTests
             OperandType.InlineSwitch => new byte[sizeof(int)],
             _ => throw new InvalidOperationException($"unsupported operand type {operandType}"),
         };
+
+    private sealed record RuntimeHandleCase(
+        int Token,
+        CilOperation Operation,
+        Type OperandType);
 
     private static byte[] Encode(OpCode opCode, byte[] operand)
     {

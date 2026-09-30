@@ -28,6 +28,7 @@ public sealed class RequestedExportFunctionAppenderTests
         {
             JSExport = asynchronous ? new("run") : null,
         };
+        var methodInstance = CreateInstance(method);
         var binding = CreateBinding(method);
         var asyncHelpers = new RecordingAsyncHelperAppender();
         var wrappers = new RecordingAsyncWrapperEmitter();
@@ -35,7 +36,6 @@ public sealed class RequestedExportFunctionAppenderTests
         IRequestedExportFunctionAppender appender = new[]
         {
             new RequestedExportFunctionAppender(
-                new FixedMethodRepository(method),
                 new OutwardMethodFunctionAppender(
                     wrappers,
                     asyncHelpers,
@@ -60,7 +60,7 @@ public sealed class RequestedExportFunctionAppenderTests
             indices,
             helperIndices,
             "run",
-            method.Key,
+            methodInstance,
             bindings,
             TestRuntimeInitialization.Create(256),
             true,
@@ -85,6 +85,7 @@ public sealed class RequestedExportFunctionAppenderTests
     public void RejectsMissingInputsInvalidNameAndNegativeValues()
     {
         var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
+        var methodInstance = CreateInstance(method);
         var appender = CreateAppender(method);
         var functions = new List<WasmFunctionDefinition>();
         var indices = new Dictionary<string, int>();
@@ -94,31 +95,34 @@ public sealed class RequestedExportFunctionAppenderTests
         var boundaries = new List<ManagedBoundaryPlanEntry>();
 
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            null!, 0, indices, helpers, "run", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            null!, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentOutOfRangeException>(() => appender.Append(
-            functions, -1, indices, helpers, "run", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            functions, -1, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, 0, null!, helpers, "run", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            functions, 0, null!, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, 0, indices, null!, "run", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            functions, 0, indices, null!, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentException>(() => appender.Append(
-            functions, 0, indices, helpers, " ", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            functions, 0, indices, helpers, " ", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, 0, indices, helpers, "run", method.Key, null!, TestRuntimeInitialization.Create(0), false,
+            functions, 0, indices, helpers, "run", null!, bindings, TestRuntimeInitialization.Create(0), false,
+            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+        Assert.Throws<ArgumentNullException>(() => appender.Append(
+            functions, 0, indices, helpers, "run", methodInstance, null!, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentOutOfRangeException>(() => appender.Append(
-            functions, 0, indices, helpers, "run", method.Key, bindings, TestRuntimeInitialization.Create(-1), false,
+            functions, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(-1), false,
             WasmModuleProfile.CoreApplication, functionIndices, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, 0, indices, helpers, "run", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            functions, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, null!, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
-            functions, 0, indices, helpers, "run", method.Key, bindings, TestRuntimeInitialization.Create(0), false,
+            functions, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
             WasmModuleProfile.CoreApplication, functionIndices, null!));
     }
 
@@ -126,7 +130,6 @@ public sealed class RequestedExportFunctionAppenderTests
         MethodDefinitionModel method) => new[]
     {
         new RequestedExportFunctionAppender(
-            new FixedMethodRepository(method),
             new OutwardMethodFunctionAppender(
                 new RecordingAsyncWrapperEmitter(),
                 new RecordingAsyncHelperAppender(),
@@ -134,6 +137,17 @@ public sealed class RequestedExportFunctionAppenderTests
                 new FixedFunctionTypeResolver(),
                 new FixedBoundaryBuilder())),
     }.Cast<IRequestedExportFunctionAppender>().Single();
+
+    private static MethodInstanceModel CreateInstance(MethodDefinitionModel method) =>
+        new(
+            method,
+            CliTypeIdentity.Named(
+                EmitterTestSupport.Assembly,
+                "Tests",
+                "EntryPoint",
+                isValueType: false),
+            [],
+            method.Signature);
 
     private static JavaScriptAsyncMethodBinding CreateBinding(
         MethodDefinitionModel method)
@@ -154,12 +168,6 @@ public sealed class RequestedExportFunctionAppenderTests
             instance,
             instance,
             instance);
-    }
-
-    private sealed class FixedMethodRepository(MethodDefinitionModel method) :
-        IMethodRepository
-    {
-        public MethodDefinitionModel GetMethod(EntityKey key) => method;
     }
 
     private sealed class RecordingAsyncWrapperEmitter : IAsyncJSExportWrapperEmitter

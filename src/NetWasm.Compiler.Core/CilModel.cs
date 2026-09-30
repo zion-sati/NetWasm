@@ -131,6 +131,10 @@ public enum CilOperation
     EndFinally,
     EndFilter,
     Return,
+    LoadMethodToken,
+    MaterializeMethod,
+    MaterializeField,
+    GetTypeFacts,
 }
 
 public abstract record CilOperand

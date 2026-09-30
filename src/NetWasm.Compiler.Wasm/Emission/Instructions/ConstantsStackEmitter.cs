@@ -10,6 +10,7 @@ internal sealed class ConstantsStackEmitter(
     ITargetLayout layouts,
     ITypeLayoutProvider typeLayouts,
     IStaticDataLayout staticData,
+    IMemberDescriptorLayout memberDescriptors,
     ICilTypeOperandResolver types) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -24,6 +25,7 @@ internal sealed class ConstantsStackEmitter(
         Command(CilOperation.LoadString, EmitString),
         Command(CilOperation.LoadTypeToken, EmitTypeToken),
         Command(CilOperation.LoadFieldToken, EmitFieldToken),
+        Command(CilOperation.LoadMethodToken, EmitMethodToken),
         Command(CilOperation.Duplicate, EmitDuplicate),
         Command(CilOperation.Pop, EmitPop),
     ];
@@ -61,8 +63,19 @@ internal sealed class ConstantsStackEmitter(
     private void EmitTypeToken(InstructionEmissionRequest request, IWasmInstructionWriter code) => EmitConstant(
         request, code, typeLayouts.GetObjectLayout(types.Resolve(request.Instruction, request.Header.MethodInstance)).TypeId);
 
-    private void EmitFieldToken(InstructionEmissionRequest request, IWasmInstructionWriter code) => EmitConstant(
-        request, code, ((CilOperand.Entity)request.Instruction.Operand).Key.MetadataToken);
+    private void EmitFieldToken(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
+        EmitNativeIntConstant(
+            request,
+            code,
+            memberDescriptors.GetFieldDescriptorAddress(
+                ((CilOperand.FieldInstance)request.Instruction.Operand).Value));
+
+    private void EmitMethodToken(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
+        EmitNativeIntConstant(
+            request,
+            code,
+            memberDescriptors.GetMethodDescriptorAddress(
+                ((CilOperand.MethodInstance)request.Instruction.Operand).Value));
 
     private void EmitDuplicate(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -94,6 +107,21 @@ internal sealed class ConstantsStackEmitter(
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
         }
         Store(request, code, type);
+    }
+
+    private void EmitNativeIntConstant(
+        InstructionEmissionRequest request,
+        IWasmInstructionWriter code,
+        int value)
+    {
+        code.Write(layouts.Target.UsesMemory64
+            ? WasmInstruction.WithOperand(
+                WasmOpcodes.I64Constant,
+                WasmInstructionOperand.Signed64(value))
+            : WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(value)));
+        Store(request, code, CliValueKind.NativeInt);
     }
 
     private void EmitConstant(InstructionEmissionRequest request, IWasmInstructionWriter code, long value)

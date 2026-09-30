@@ -133,8 +133,18 @@ public sealed class TypedStackValidator(
                 stack.Add(CliValueKind.I4);
                 return;
             case CilOperation.LoadFieldToken:
-                _ = GetEntity(instruction);
-                stack.Add(CliValueKind.I4);
+                if (instruction.Operand is not CilOperand.FieldInstance)
+                {
+                    throw Invalid(body, instruction, "field token has no field operand");
+                }
+                stack.Add(CliValueKind.NativeInt);
+                return;
+            case CilOperation.LoadMethodToken:
+                if (instruction.Operand is not CilOperand.MethodInstance)
+                {
+                    throw Invalid(body, instruction, "method token has no method operand");
+                }
+                stack.Add(CliValueKind.NativeInt);
                 return;
             case CilOperation.LoadInt64:
                 stack.Add(CliValueKind.I8);
@@ -367,6 +377,31 @@ public sealed class TypedStackValidator(
                 return;
             case CilOperation.MaterializeType:
                 PopExpected(body, instruction, stack, CliValueKind.I4);
+                stack.Add(CliValueKind.ManagedReference);
+                return;
+            case CilOperation.GetTypeFacts:
+                PopExpected(body, instruction, stack, CliValueKind.I4);
+                stack.Add(CliValueKind.NativeInt);
+                return;
+            case CilOperation.MaterializeMethod:
+            case CilOperation.MaterializeField:
+                if (instruction.Operand is not CilOperand.Index count)
+                {
+                    throw Invalid(
+                        body,
+                        instruction,
+                        "member materialization has no arity operand");
+                }
+                var handleCount = count.Value;
+                if (handleCount == 2)
+                {
+                    PopExpected(body, instruction, stack, CliValueKind.I4);
+                }
+                else if (handleCount != 1)
+                {
+                    throw Invalid(body, instruction, "member materialization arity is invalid");
+                }
+                PopExpected(body, instruction, stack, CliValueKind.NativeInt);
                 stack.Add(CliValueKind.ManagedReference);
                 return;
             case CilOperation.GetObjectType:

@@ -9,7 +9,7 @@ internal interface IRequestedExportSetAppender
     void Append(IList<WasmFunctionDefinition> functions, int importCount,
         IDictionary<string, int> requestedExportIndices,
         IDictionary<string, int> asyncHelperIndices,
-        IReadOnlyDictionary<string, EntityKey> requestedExports,
+        IReadOnlyDictionary<string, MethodInstanceModel> requestedExports,
         IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> asyncBindings,
         RuntimeInitializationPlan initialization, bool hasFinalizers,
         WasmModuleProfile profile,

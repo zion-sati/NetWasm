@@ -27,7 +27,14 @@ internal sealed class IntrinsicCallRewriter(
             var replacement = (symbols.Format(target.Definition.DeclaringType),
                 target.Definition.Name) switch
             {
-                ("System.Type", "GetTypeFromHandle") => CilOperation.MaterializeType,
+                ("System.Type", "GetTypeFromHandle" or "GetTypeFromSemanticId") =>
+                    CilOperation.MaterializeType,
+                ("System.Type", "InternalGetFacts") when IsTypeFactsLookup(target) =>
+                    CilOperation.GetTypeFacts,
+                ("System.Reflection.MethodBase", "GetMethodFromHandle") =>
+                    CilOperation.MaterializeMethod,
+                ("System.Reflection.FieldInfo", "GetFieldFromHandle") =>
+                    CilOperation.MaterializeField,
                 ("System.Object", "GetType") => CilOperation.GetObjectType,
                 _ => (CilOperation?)null,
             };
@@ -38,15 +45,25 @@ internal sealed class IntrinsicCallRewriter(
             instructions[index] = call with
             {
                 Operation = replacement.Value,
-                Operand = replacement == CilOperation.GetObjectType &&
-                    index > 0 &&
-                    instructions[index - 1].Operation == CilOperation.Constrained &&
-                    instructions[index - 1].Operand is CilOperand.TypeIdentity constrained
-                        ? constrained
-                        : new CilOperand.None(),
+                Operand = replacement switch
+                {
+                    CilOperation.GetObjectType when
+                        index > 0 &&
+                        instructions[index - 1].Operation == CilOperation.Constrained &&
+                        instructions[index - 1].Operand is CilOperand.TypeIdentity constrained =>
+                        constrained,
+                    CilOperation.MaterializeMethod or CilOperation.MaterializeField =>
+                        new CilOperand.Index(target.Signature.ParameterTypes.Length),
+                    _ => new CilOperand.None(),
+                },
             };
             changed = true;
         }
         return changed ? body with { Instructions = [.. instructions] } : body;
     }
+
+    private static bool IsTypeFactsLookup(MethodInstanceModel method) =>
+        method.Definition.IsStatic &&
+        method.Signature.ReturnSignatureType.StackKind == CliValueKind.NativeInt &&
+        method.Signature.ParameterSignatureTypes is [{ StackKind: CliValueKind.I4 }];
 }

@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.ControlFlow.Structuring;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
@@ -126,7 +128,8 @@ internal static class EmitterTestSupport
         IWasmModuleEmitterFactory modules)
         where TLayouts : ITargetLayout, IValueLayoutProvider, ITypeLayoutProvider,
             IInstanceFieldLayoutProvider, IStaticFieldLayoutProvider,
-            IStaticDataLayout, IRuntimeObjectLayout, IRectangularArrayLayoutProvider,
+            IStaticDataLayout, IMemberDescriptorLayout, IRuntimeObjectLayout,
+            IRectangularArrayLayoutProvider,
             IManagedExceptionObjectProvider,
             ITypeDescriptorSource => new(
         program,
@@ -145,6 +148,7 @@ internal static class EmitterTestSupport
         layouts,
         layouts,
         layouts,
+        layouts,
         modules);
 
     public static IServiceCollection AddWasmModuleEmission<TLayouts>(
@@ -154,7 +158,8 @@ internal static class EmitterTestSupport
         TLayouts layouts)
         where TLayouts : ITargetLayout, IValueLayoutProvider, ITypeLayoutProvider,
             IInstanceFieldLayoutProvider, IStaticFieldLayoutProvider,
-            IStaticDataLayout, IRuntimeObjectLayout, IRectangularArrayLayoutProvider,
+            IStaticDataLayout, IMemberDescriptorLayout, IRuntimeObjectLayout,
+            IRectangularArrayLayoutProvider,
             IManagedExceptionObjectProvider,
         ITypeDescriptorSource => services.AddWasmModuleEmission(
         program,
@@ -164,6 +169,7 @@ internal static class EmitterTestSupport
         program,
         program,
         intrinsics,
+        layouts,
         layouts,
         layouts,
         layouts,
@@ -182,7 +188,8 @@ internal static class EmitterTestSupport
         WasmEmissionRequest request)
         where TLayouts : ITargetLayout, IValueLayoutProvider, ITypeLayoutProvider,
             IInstanceFieldLayoutProvider, IStaticFieldLayoutProvider,
-            IStaticDataLayout, IRuntimeObjectLayout, IRectangularArrayLayoutProvider,
+            IStaticDataLayout, IMemberDescriptorLayout, IRuntimeObjectLayout,
+            IRectangularArrayLayoutProvider,
             IManagedExceptionObjectProvider,
         ITypeDescriptorSource => factory.Emit(
         program,
@@ -192,6 +199,7 @@ internal static class EmitterTestSupport
         program,
         program,
         intrinsics,
+        layouts,
         layouts,
         layouts,
         layouts,
@@ -531,7 +539,9 @@ internal static class EmitterTestSupport
                 IncludeTerminalExceptionReporter: true),
             OptionalFunctionIndex.At(41),
             OptionalFunctionIndex.At(42),
-            ManagedCallSites: []);
+            ManagedCallSites: [],
+            ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Empty,
+            MemberExecutionPlan.Empty);
     }
 
     internal static IFunctionIndexResolver CreateFunctionIndexResolver(
@@ -702,6 +712,7 @@ internal sealed class RecordingLayoutProvider(
     IInstanceFieldLayoutProvider,
     IStaticFieldLayoutProvider,
     IStaticDataLayout,
+    IMemberDescriptorLayout,
     IRuntimeObjectLayout,
     IRectangularArrayLayoutProvider,
     IManagedExceptionObjectProvider,
@@ -713,6 +724,8 @@ internal sealed class RecordingLayoutProvider(
     public EntityKey? FieldRequest { get; private set; }
     public EntityKey? StaticFieldRequest { get; private set; }
     public string? StringRequest { get; private set; }
+    public MethodInstanceModel? MethodDescriptorRequest { get; private set; }
+    public FieldInstanceModel? FieldDescriptorRequest { get; private set; }
 
     public WasmTargetLayout Target { get; } = target ?? WasmTargetLayout.Wasm32;
     public int StringLengthOffset => 44;
@@ -740,6 +753,10 @@ internal sealed class RecordingLayoutProvider(
     public ImmutableArray<EnumMetadataLayout> EnumMetadata => [];
     public ImmutableArray<int> StaticRootAddresses => [200];
     public ImmutableArray<DataSegment> DataSegments => [];
+    public int DeclaringTypeIdOffset => 24;
+    public int RequiresDeclaringTypeOffset => 28;
+    public int TypeFactsTableAddress { get; init; } = 160;
+    public int TypeFactsTableCount { get; init; } = 16;
 
     public ObjectLayout GetObjectLayout(EntityKey type)
     {
@@ -784,6 +801,18 @@ internal sealed class RecordingLayoutProvider(
     {
         StringRequest = value;
         return new StringLayout(220, 1, StringDataOffset);
+    }
+
+    public int GetMethodDescriptorAddress(MethodInstanceModel method)
+    {
+        MethodDescriptorRequest = method;
+        return 224;
+    }
+
+    public int GetFieldDescriptorAddress(FieldInstanceModel field)
+    {
+        FieldDescriptorRequest = field;
+        return 228;
     }
 }
 
