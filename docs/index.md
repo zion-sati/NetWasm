@@ -27,6 +27,9 @@ repository.
   corrective action.
 - [CoreLib and runtime compatibility](corelib-runtime.md) — the supported
   platform boundary, intentionally unsupported surfaces, and license split.
+- [Language, CLI, and .NET behavior differences](spec-deviations.md) — the
+  durable ledger for deliberate profile differences and
+  specification-permitted results.
 - [Known gaps and boundaries](gaps.md) — a concise route to the canonical
   status inventory and its current external/tooling boundaries.
 - [Licensing guide](licensing.md) — the NetWasm Community License 1.0 for
@@ -51,6 +54,11 @@ Until 1.0, CIL support, CoreLib APIs, runtime ABI, generated manifests, and buil
 output can change between minor releases. A desktop-targeted NuGet package is
 compatible only when its API and CIL dependencies fit the documented NetWasm
 profile and the desired output boundary.
+
+Desktop behavior is not automatically the conformance oracle. Consult the
+[behavior-differences ledger](spec-deviations.md) for intentional profile
+choices and cases where C#, ECMA-335, or a .NET API permits more than one
+result.
 
 For the current answer to "is this supported?", start with the
 [support status and roadmap](support-status.md), then use the target and

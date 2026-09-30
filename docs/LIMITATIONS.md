@@ -75,6 +75,9 @@ against the desired target. Do not assume that a desktop NuGet package works
 because it compiles for another .NET deployment model.
 
 The [CoreLib/runtime reference](corelib-runtime.md) is the detailed
-compatibility boundary. See [targets and output formats](targets-and-outputs.md)
-for the wasm32/wasm64 and Component Model matrix, and [compiler diagnostics](diagnostics.md)
-for actionable rejection codes.
+compatibility boundary. The
+[language, CLI, and .NET behavior differences](spec-deviations.md) ledger
+records deliberate profile differences and standards-permitted results. See
+[targets and output formats](targets-and-outputs.md) for the wasm32/wasm64 and
+Component Model matrix, and [compiler diagnostics](diagnostics.md) for
+actionable rejection codes.
