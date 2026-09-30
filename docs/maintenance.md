@@ -10,6 +10,7 @@ change affects any of the following, update the corresponding page under
 
 - compiler diagnostics;
 - support status or known limitations;
+- deliberate profile differences or specification-permitted results;
 - target widths, output formats, or Component Model and WASI boundaries;
 - CLI options, build inputs, generated artifacts, or deployment entry points;
 - CoreLib and runtime behaviour; or
@@ -22,6 +23,11 @@ the user-facing contract pages.
 Before submitting a documentation change, check the documentation index,
 diagnostic coverage, support-status categories, critical target and tooling
 terminology, and every changed link in GitHub's rendered Markdown.
+
+Keep `spec-deviations.md` aligned with the accepted non-bug cases in
+`KnownNonBugCorpusPartitioner.cs`. A standards-permitted result needs both its
+focused test reason and its public ledger entry; a compiler or CoreLib defect
+must not be reclassified as a deviation.
 
 For a package-boundary change, also run `eng/build-packages.sh` from a clean
 checkout and inspect the resulting package graph before publication. The

@@ -6,7 +6,9 @@ managed/runtime code with `NetWasm.Runtime`; a namespace or copied source file
 does not guarantee that every member is supported.
 
 See the [support status and roadmap](support-status.md) for the canonical
-implementation and qualification inventory.
+implementation and qualification inventory, and the
+[behavior-differences ledger](spec-deviations.md) for deliberate profile
+choices and standards-permitted results.
 
 The retained profile covers selected primitive and enum operations, invariant
 ordinal UTF-16 strings and formatting, arrays/spans, selected collections,
@@ -28,7 +30,8 @@ particular, a project built with the .NET 10 SDK and C# 14 or earlier does
 **not** select the older .NET 10 seven-significant-digit (`float`) or
 fifteen-significant-digit (`double`) conversion rule. A desktop `net10.0`
 oracle may therefore differ from NetWasm by design for these conversions;
-that difference alone is not a compiler bug.
+that difference alone is not a compiler bug. It is also recorded in the
+[behavior-differences ledger](spec-deviations.md).
 
 The implementation on this source branch passes its focused 16-cell
 Debug/Release, wasm32/wasm64, direct/optimized, simulated/linked conversion
