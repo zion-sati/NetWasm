@@ -21,7 +21,7 @@ memory. Deploy the compiled program to a compatible WASI host.
 
 ## AOT vs AOT: printing `42`
 
-**82.5 KiB with NetWasm. 15.29 MB with our .NET 11 Blazor AOT build.**
+**82.5 KiB with NetWasm. 15.29 MB with .NET 11 Blazor WebAssembly AOT.**
 
 ![AOT Wasm size comparison, lower is better: NetWasm 82.5 KiB, Blazor .NET 10 12.28 MB, Blazor .NET 11 RC1 15.29 MB.](docs/images/aot-console42-size.svg)
 
