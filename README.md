@@ -21,9 +21,10 @@ memory. Deploy the compiled program to a compatible WASI host.
 
 ## AOT vs AOT: printing `42`
 
-**82.5 KiB with NetWasm. 15.29 MB with .NET 11 Blazor WebAssembly AOT.**
+**82.5 KB with NetWasm. 14.58 MB with .NET 11 Blazor WebAssembly AOT.**
+Using the exact byte counts, NetWasm is **181× smaller**.
 
-![AOT Wasm size comparison, lower is better: NetWasm 82.5 KiB, Blazor .NET 10 12.28 MB, Blazor .NET 11 RC1 15.29 MB.](docs/images/aot-console42-size.svg)
+![AOT Wasm size comparison, lower is better: NetWasm 82.5 KB, Blazor .NET 10 11.71 MB, Blazor .NET 11 RC1 14.58 MB. NetWasm is 181 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size.svg)
 
 We published an empty-UI Blazor WebAssembly app that calls
 `Console.WriteLine(42)`, with AOT, full managed trimming, IL stripping, invariant
@@ -32,13 +33,13 @@ globalization and size-focused native compilation/linking enabled. Both the
 
 | AOT build | Uncompressed Wasm | Size relative to NetWasm |
 | --- | ---: | ---: |
-| **NetWasm** | **84,513 bytes (82.5 KiB)** | **1x** |
-| Blazor WebAssembly, .NET 10 | 12,276,684 bytes (12.28 MB) | 145x |
-| Blazor WebAssembly, .NET 11 RC1 | 15,289,241 bytes (15.29 MB) | 181x |
+| **NetWasm** | **84,513 bytes (82.5 KB)** | **1x** |
+| Blazor WebAssembly, .NET 10 | 12,276,684 bytes (11.71 MB) | 145x |
+| Blazor WebAssembly, .NET 11 RC1 | 15,289,241 bytes (14.58 MB) | 181x |
 
 These are measured Wasm payloads, with no compression and no JavaScript counted.
 Blazor's total includes its native runtime and required Webcil assemblies; the
-native runtime alone was 9.47 MB on .NET 10 and 11.73 MB on .NET 11 RC1.
+native runtime alone was 9.04 MB on .NET 10 and 11.18 MB on .NET 11 RC1.
 NetWasm's figure includes its runtime, garbage collector and WASI component.
 NetWasm does not require a UI framework to run your C#.
 
