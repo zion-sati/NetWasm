@@ -5,8 +5,8 @@
     <RootNamespace>NetWasm.Sdk</RootNamespace>
     <PackageId>NetWasm.Sdk</PackageId>
     <Version>0.4.2</Version>
-    <Description>NetWasm project SDK for the netwasm0.1 profile.</Description>
-    <PackageTags>netwasm;msbuild;sdk;nuget;wasm</PackageTags>
+    <Description>MSBuild SDK for compiling C# and .NET CIL to standalone WebAssembly with the netwasm0.1 profile.</Description>
+    <PackageTags>netwasm;csharp;dotnet;webassembly;wasm;wasi;aot;msbuild;sdk;nuget</PackageTags>
     <PackageType>MSBuildSdk</PackageType>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
