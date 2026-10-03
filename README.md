@@ -1,6 +1,10 @@
-# C# at native Wasm size.
+# NetWasm: compile C# to WebAssembly at native Wasm size.
 
-Write C#. Deploy like C++. Target WASI.
+NetWasm is an independent .NET compiler, CoreLib, runtime, and SDK that compiles
+C# and .NET CIL into small, standalone WebAssembly modules and WASI Preview 2
+components.
+
+Write C#. Deploy like C++. Target WebAssembly and WASI.
 
 A clean Release build of `Console.WriteLine(42)` produces an **84,513-byte
 final Wasm artifact, runtime and precise garbage collection included.**
@@ -14,6 +18,7 @@ NetWasm compiles C# into a standalone WebAssembly Component, without carrying
 the desktop .NET runtime. Keep the language, generics, exceptions and managed
 memory. Deploy the compiled program to a compatible WASI host.
 
+[Compile C# to WebAssembly](https://www.netwasm.com/compile-csharp-to-webassembly/) ·
 [Try it in the browser](https://playground.netwasm.com/) ·
 [Measured size and reproduction steps](docs/size-and-methodology.md) ·
 [Quickstart](docs/sdk-quickstart.md) ·

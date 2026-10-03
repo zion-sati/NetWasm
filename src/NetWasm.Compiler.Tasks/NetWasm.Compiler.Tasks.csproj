@@ -8,8 +8,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>NetWasm.Compiler.Tasks</PackageId>
     <Version>$(NetWasmCompilerTasksPackageVersion)</Version>
-    <Description>Structured MSBuild compiler tasks for NetWasm projects.</Description>
-    <PackageTags>netwasm;msbuild;compiler;wasm</PackageTags>
+    <Description>MSBuild compiler tasks that turn C# and .NET CIL into WebAssembly with NetWasm.</Description>
+    <PackageTags>netwasm;csharp;dotnet;webassembly;wasm;compiler;aot;msbuild</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsPackable>true</IsPackable>
