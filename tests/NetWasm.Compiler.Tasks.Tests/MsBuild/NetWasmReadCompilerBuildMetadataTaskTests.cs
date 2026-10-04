@@ -21,7 +21,13 @@ public sealed class NetWasmReadCompilerBuildMetadataTaskTests
 
         Assert.Equal("compiler.json", reader.Path);
         Assert.Equal("wasm64", task.Target);
-        Assert.Equal(["local-time"], task.RuntimeFeatures.Select(item => item.ItemSpec));
+        Assert.Equal([
+            "ephemeron-handles",
+            "local-time",
+            "structured-command-diagnostics",
+        ], task.RuntimeFeatures.Select(item => item.ItemSpec));
+        Assert.Equal(["local-time"],
+            task.DeploymentRuntimeFeatures.Select(item => item.ItemSpec));
     }
 
     [Fact]
@@ -38,6 +44,7 @@ public sealed class NetWasmReadCompilerBuildMetadataTaskTests
 
         Assert.Empty(task.Target);
         Assert.Empty(task.RuntimeFeatures);
+        Assert.Empty(task.DeploymentRuntimeFeatures);
         Assert.Contains("NWSDK033", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
@@ -56,7 +63,11 @@ public sealed class NetWasmReadCompilerBuildMetadataTaskTests
         public CompilerBuildMetadata Read(string path)
         {
             Path = path;
-            return new(1, "wasm64", ["local-time"],
+            return new(1, "wasm64", [
+                "ephemeron-handles",
+                "local-time",
+                "structured-command-diagnostics",
+            ],
                 [new("host", "call", WasmFunctionType.Create(CliValueKind.Void))]);
         }
     }

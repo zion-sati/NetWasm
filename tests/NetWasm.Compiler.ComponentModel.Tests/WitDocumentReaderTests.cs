@@ -122,6 +122,8 @@ public sealed class WitDocumentReaderTests
 
         Assert.Equal(selected, document.SelectWorld("main"));
         Assert.Equal(selected, document.SelectWorld(null));
+        Assert.Equal(selected, document.SelectWorld("example:test/main@1.0.0"));
+        Assert.Equal(selected, document.SelectWorld("example:test@1.0.0/main"));
 
         var missing = Assert.Throws<CompilerException>(() =>
             document.SelectWorld("missing"));

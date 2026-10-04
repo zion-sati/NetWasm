@@ -408,7 +408,7 @@
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NoBuild)' != 'true' AND '$(DesignTimeBuild)' != 'true'">
     <NetWasmReadCompilerBuildMetadataTask MetadataPath="$(NetWasmCompilerMetadataPath)">
       <Output TaskParameter="Target" PropertyName="_NetWasmCompilerMetadataTarget" />
-      <Output TaskParameter="RuntimeFeatures" ItemName="_NetWasmRuntimeFeature" />
+      <Output TaskParameter="DeploymentRuntimeFeatures" ItemName="_NetWasmRuntimeFeature" />
     </NetWasmReadCompilerBuildMetadataTask>
     <Error Code="NWSDK036"
            Condition="'$(_NetWasmCompilerMetadataTarget)' != '$(NetWasmTarget)'"
@@ -700,7 +700,7 @@
 
     <NetWasmReadCompilerBuildMetadataTask MetadataPath="$(NetWasmCompilerMetadataPath)">
       <Output TaskParameter="Target" PropertyName="_NetWasmWorkerCompilerTarget" />
-      <Output TaskParameter="RuntimeFeatures" ItemName="_NetWasmWorkerRuntimeFeature" />
+      <Output TaskParameter="DeploymentRuntimeFeatures" ItemName="_NetWasmWorkerRuntimeFeature" />
     </NetWasmReadCompilerBuildMetadataTask>
     <Error Code="NWSDK050"
            Condition="'$(_NetWasmWorkerCompilerTarget)' != '$(NetWasmTarget)'"
@@ -846,7 +846,7 @@
 
     <NetWasmReadCompilerBuildMetadataTask MetadataPath="$(NetWasmCompilerMetadataPath)">
       <Output TaskParameter="Target" PropertyName="_NetWasmWitWorkerCompilerTarget" />
-      <Output TaskParameter="RuntimeFeatures" ItemName="_NetWasmWitWorkerRuntimeFeature" />
+      <Output TaskParameter="DeploymentRuntimeFeatures" ItemName="_NetWasmWitWorkerRuntimeFeature" />
     </NetWasmReadCompilerBuildMetadataTask>
     <Error Code="NWSDK070"
            Condition="'$(_NetWasmWitWorkerCompilerTarget)' != '$(NetWasmTarget)'"

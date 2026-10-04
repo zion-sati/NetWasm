@@ -88,12 +88,22 @@ public sealed record WitDocument(
         var matches = Worlds.Where(world =>
                 string.Equals(world.Name, requestedWorld, StringComparison.Ordinal) ||
                 string.Equals($"{world.Package}/{world.Name}", requestedWorld,
+                    StringComparison.Ordinal) ||
+                string.Equals(FormatWorldSpecifier(world), requestedWorld,
                     StringComparison.Ordinal))
             .ToArray();
         return matches.Length == 1
             ? matches[0]
             : throw ComponentException.Invalid(
                 $"WIT world '{requestedWorld}' was not found or is ambiguous");
+    }
+
+    private static string FormatWorldSpecifier(WitWorld world)
+    {
+        var versionIndex = world.Package.LastIndexOf('@');
+        return versionIndex < 0
+            ? $"{world.Package}/{world.Name}"
+            : $"{world.Package[..versionIndex]}/{world.Name}{world.Package[versionIndex..]}";
     }
 }
 
