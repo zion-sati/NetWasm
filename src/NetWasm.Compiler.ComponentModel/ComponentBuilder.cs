@@ -45,7 +45,8 @@ public sealed class ComponentBuilder(
             request.Target,
             request.RuntimeModulePath,
             request.ManagedExecutableEntryPoint,
-            request.Optimization));
+            request.Optimization,
+            request.StructuredDiagnostics));
         return manifest;
     }
 }

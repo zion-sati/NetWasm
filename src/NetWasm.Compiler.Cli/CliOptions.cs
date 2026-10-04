@@ -107,7 +107,9 @@ internal sealed record CompileCliOptions(
     string? StackTraceSymbols,
     string? Wit,
     string? World,
-    ImmutableArray<string> Sources)
+    ImmutableArray<string> Sources,
+    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
+    bool UseJavaScriptExportBoundary = false)
 {
     public static CompileCliOptions Parse(string[] arguments)
     {
@@ -115,6 +117,7 @@ internal sealed record CompileCliOptions(
         string? input = null;
         string? output = null;
         string? entry = null;
+        string? entryKind = null;
         string? target = null;
         string? interopManifest = null;
         string? runtimeLayout = null;
@@ -123,6 +126,7 @@ internal sealed record CompileCliOptions(
         string? stackTraceSymbols = null;
         string? wit = null;
         string? world = null;
+        string? javaScriptExportBoundary = null;
         var references = ImmutableArray.CreateBuilder<string>();
         var exports = ImmutableArray.CreateBuilder<RequestedExport>();
         var sources = ImmutableArray.CreateBuilder<string>();
@@ -133,6 +137,7 @@ internal sealed record CompileCliOptions(
                 case "--input": input = SetOnce(input, value, option); break;
                 case "--output": output = SetOnce(output, value, option); break;
                 case "--entry": entry = SetOnce(entry, value, option); break;
+                case "--entry-kind": entryKind = SetOnce(entryKind, value, option); break;
                 case "--target": target = SetOnce(target, value, option); break;
                 case "--interop-manifest": interopManifest = SetOnce(interopManifest, value, option); break;
                 case "--runtime-layout": runtimeLayout = SetOnce(runtimeLayout, value, option); break;
@@ -141,6 +146,9 @@ internal sealed record CompileCliOptions(
                 case "--stack-trace-symbols": stackTraceSymbols = SetOnce(stackTraceSymbols, value, option); break;
                 case "--wit": wit = SetOnce(wit, value, option); break;
                 case "--world": world = SetOnce(world, value, option); break;
+                case "--javascript-export-boundary":
+                    javaScriptExportBoundary =
+                    SetOnce(javaScriptExportBoundary, value, option); break;
                 case "--reference": references.Add(value); break;
                 case "--export": exports.Add(ParseExport(value)); break;
                 case "--source": sources.Add(value); break;
@@ -148,8 +156,21 @@ internal sealed record CompileCliOptions(
             }
         });
 
-        (var entryType, var entryMethod) = ParseMethod(
-            entry ?? throw CliOptionException.Create("missing required option '--entry'"));
+        var selectedEntryKind = entryKind switch
+        {
+            null or "raw-function" => CompilerEntryPointKind.RawFunction,
+            "managed-executable" => CompilerEntryPointKind.ManagedExecutable,
+            "library" => CompilerEntryPointKind.Library,
+            _ => throw CliOptionException.Create(
+                "entry kind must be 'raw-function', 'managed-executable' or 'library'"),
+        };
+        if (selectedEntryKind == CompilerEntryPointKind.Library && entry is not null)
+        {
+            throw CliOptionException.Create("library compilation cannot specify '--entry'");
+        }
+        (var entryType, var entryMethod) = selectedEntryKind == CompilerEntryPointKind.Library
+            ? (string.Empty, string.Empty)
+            : ParseMethod(entry ?? throw CliOptionException.Create("missing required option '--entry'"));
         return new CompileCliOptions(
             input ?? throw CliOptionException.Create("missing required option '--input'"),
             output ?? throw CliOptionException.Create("missing required option '--output'"),
@@ -170,7 +191,15 @@ internal sealed record CompileCliOptions(
             stackTraceSymbols,
             wit,
             world,
-            sources.ToImmutable());
+            sources.ToImmutable(),
+            selectedEntryKind,
+            javaScriptExportBoundary switch
+            {
+                null or "false" => false,
+                "true" => true,
+                _ => throw CliOptionException.Create(
+                    "javascript export boundary must be 'true' or 'false'"),
+            });
     }
 
     private static RequestedExport ParseExport(string value)

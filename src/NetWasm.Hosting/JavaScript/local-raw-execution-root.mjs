@@ -13,10 +13,14 @@ export function createLocalRawNetWasmExecution(options) {
       createRawExecutionStrategy(createLocalRawLoader({
         manifestPath: value.manifestPath,
       }))),
-    ({ consumerModules, manifest, stderr }) => prepareRawNetWasmInterop({
+    ({ consumerModules, diagnosticArtifacts, manifest, stackTraceSymbols, stderr, observeAsyncCompletion, assertAsyncDeliveryAvailable }) => prepareRawNetWasmInterop({
+      observeAsyncCompletion,
+      assertAsyncDeliveryAvailable,
       consumerModules,
+      diagnosticArtifacts,
       manifest,
       runtimeModules: Object.freeze(Object.create(null)),
+      stackTraceSymbols,
       managedExceptionReporting: createManagedExceptionOutput(stderr),
     }));
 }

@@ -257,13 +257,13 @@ public sealed class ComponentWorkflowContractTests
         public int Calls { get; private set; }
         public string Prefix { get; private set; } = string.Empty;
 
-        public void RetainComponentExports(
+        public void Rewrite(
             string inputPath,
             string outputPath,
-            string prefix)
+            WasmExportSelection selection)
         {
             Calls++;
-            Prefix = prefix;
+            Prefix = selection.ComponentPrefix!;
         }
     }
 

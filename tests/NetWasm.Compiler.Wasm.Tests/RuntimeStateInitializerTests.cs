@@ -33,13 +33,24 @@ public sealed class RuntimeStateInitializerTests
     [Fact]
     public void InitializesEveryDescriptorFamilyAndStaticRootThroughFocusedActions()
     {
+        var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
+        var finalizer = new MethodInstanceModel(
+            method,
+            CliTypeIdentity.Named(
+                EmitterTestSupport.Assembly,
+                "Test",
+                "Type",
+                false),
+            [],
+            method.Signature);
         var descriptors = new FixedTypeDescriptorSource(
             [
                 new(EmitterTestSupport.TypeKey, 1, 0, 16, 100, 3, null),
-                new(EmitterTestSupport.TypeKey, 2, 1, 20, 104, 4, EmitterTestSupport.EntryKey),
+                new(EmitterTestSupport.TypeKey, 2, 1, 20, 104, 4, finalizer),
             ],
             [new(CliTypeIdentity.FromStackKind(CliValueKind.I4), 3, 0, 24, 108, 5, null)],
-            [new(CliTypeIdentity.FromStackKind(CliValueKind.I8), 4, 8, 8, 112, 6)]);
+            [new(CliTypeIdentity.FromStackKind(CliValueKind.I8), 4, 8, 8, 112, 6)],
+            [new(CliTypeIdentity.ScopedGenericParameter("owner", false, 0), 5)]);
         var staticData = new FixedStaticDataLayout([200, 204]);
         var imports = new RecordingRuntimeImportResolver();
         var addresses = new RecordingAddressEmitter();
@@ -58,7 +69,7 @@ public sealed class RuntimeStateInitializerTests
         initializer.Initialize(code, TestRuntimeInitialization.Create(512));
 
         Assert.Equal(512, core.StaticDataEnd);
-        Assert.Equal(3, imports.Symbols.Count(symbol =>
+        Assert.Equal(4, imports.Symbols.Count(symbol =>
             symbol == RuntimeImportSymbol.RegisterType));
         Assert.Single(imports.Symbols, symbol =>
             symbol == RuntimeImportSymbol.RegisterValueType);
@@ -120,11 +131,13 @@ public sealed class RuntimeStateInitializerTests
             ImmutableDictionary<EntityKey, int>.Empty,
             ImmutableDictionary<string, int>.Empty,
             [new(1, "Example.Program.Main()")],
+            ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty,
             29,
             31);
 
         var code = new GeneratedFunctionWriterFactory().Create();
         var instructionWriter = new EmitterTestSupport.RecordingInstructionWriter();
+        var addresses = new RecordingAddressEmitter();
         var recordingCode = new GeneratedFunctionWriterLease(
             code.Bytes,
             code.Snapshots,
@@ -133,7 +146,7 @@ public sealed class RuntimeStateInitializerTests
             new FixedTypeDescriptorSource([], [], []),
             new FixedStaticDataLayout([]),
             imports,
-            new RecordingAddressEmitter(),
+            addresses,
             new RecordingRuntimeCoreInitializer()).Initialize(
                 recordingCode,
                 new RuntimeInitializationPlan(
@@ -142,7 +155,11 @@ public sealed class RuntimeStateInitializerTests
                     new RuntimeImportSelection(
                         WasmModuleProfile.CoreApplication,
                         IncludeTerminalExceptionReporter: true,
-                        IncludeStackTrace: true)));
+                        IncludeStackTrace: true))
+                {
+                    StackTraceSymbolRegistrationGuardAddress = 300,
+                    StackTraceSymbols = [new(1, 304, 22)],
+                });
         var instructions = instructionWriter.ToInstructions();
 
         Assert.Contains(instructions, instruction =>
@@ -159,6 +176,49 @@ public sealed class RuntimeStateInitializerTests
         Assert.Contains(instructions, instruction =>
             instruction.Opcode == WasmOpcodes.I32Constant &&
             instruction.Operand.SignedValue == 31);
+        Assert.Contains(instructions, instruction =>
+            instruction.Opcode == WasmOpcodes.Call &&
+            instruction.Operand.UnsignedValue == (uint)imports.Resolve(
+                RuntimeImportSymbol.StackTraceRegisterSymbol,
+                new RuntimeImportSelection(
+                    WasmModuleProfile.CoreApplication,
+                    IncludeTerminalExceptionReporter: true,
+                    IncludeStackTrace: true)));
+        Assert.Equal(2, addresses.Constants.Count(value => value == 300));
+        Assert.Contains(304, addresses.Constants);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Load);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.If);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
+    }
+
+    [Fact]
+    public void EnabledStackTracePlanRequiresRegistrationGuard()
+    {
+        var plan = new StackTraceMethodPlan(
+            ImmutableDictionary<EntityKey, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            [new(1, "Example.Program.Main()")],
+            ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty,
+            29,
+            31);
+        var initializer = new RuntimeStateInitializer(
+            new FixedTypeDescriptorSource([], [], []),
+            new FixedStaticDataLayout([]),
+            WasmRuntimeImports.CreateCatalog(),
+            new RecordingAddressEmitter(),
+            new RecordingRuntimeCoreInitializer());
+
+        var exception = Assert.Throws<InvalidOperationException>(() => initializer.Initialize(
+            new GeneratedFunctionWriterFactory().Create(),
+            new RuntimeInitializationPlan(
+                512,
+                plan,
+                new RuntimeImportSelection(
+                    WasmModuleProfile.CoreApplication,
+                    IncludeTerminalExceptionReporter: true,
+                    IncludeStackTrace: true))));
+
+        Assert.Contains("guard address", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -191,6 +251,64 @@ public sealed class RuntimeStateInitializerTests
         Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
     }
 
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CallbackReadinessPublishesAfterStaticRootsAndBeforeModuleInitializers(
+        WasmTarget target)
+    {
+        var code = new GeneratedFunctionWriterFactory().Create();
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+        var recordingCode = new GeneratedFunctionWriterLease(
+            code.Bytes,
+            code.Snapshots,
+            writer);
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var plan = TestRuntimeInitialization.Create(512) with
+        {
+            NativeCallbackReadinessAddress = 300,
+            ModuleInitializers = [new ModuleInitializerCall(256, 37)],
+        };
+
+        new RuntimeStateInitializer(
+            new FixedTypeDescriptorSource([], [], []),
+            new FixedStaticDataLayout([200]),
+            imports,
+            new AddressInstructionEmitter(layouts),
+            new RecordingRuntimeCoreInitializer()).Initialize(recordingCode, plan);
+
+        var instructions = writer.ToInstructions();
+        var rootRegistration = Enumerable.Range(0, instructions.Length).Single(index =>
+            instructions[index].Opcode == WasmOpcodes.Call &&
+            instructions[index].Operand.UnsignedValue == (uint)imports.Resolve(
+                RuntimeImportSymbol.RegisterStaticRoot));
+        var readinessStore = Enumerable.Range(0, instructions.Length).Single(index =>
+            instructions[index].Opcode == WasmOpcodes.I32Store);
+        var moduleInitializer = Enumerable.Range(0, instructions.Length).Single(index =>
+            instructions[index].Opcode == WasmOpcodes.Call &&
+            instructions[index].Operand.UnsignedValue == 37);
+
+        Assert.True(rootRegistration < readinessStore);
+        Assert.True(readinessStore < moduleInitializer);
+        Assert.Equal(WasmOpcodes.I32Constant, instructions[readinessStore - 1].Opcode);
+        Assert.Equal(1, instructions[readinessStore - 1].Operand.SignedValue);
+        var address = instructions[readinessStore - 2];
+        Assert.Equal(
+            target == WasmTarget.Wasm32
+                ? WasmOpcodes.I32Constant
+                : WasmOpcodes.I64Constant,
+            address.Opcode);
+        if (target == WasmTarget.Wasm32)
+        {
+            Assert.Equal(300, address.Operand.SignedValue);
+        }
+        else
+        {
+            Assert.Equal(300, address.Operand.Signed64Value);
+        }
+    }
+
     private static byte[] Emit(
         WasmTargetLayout target,
         RuntimeImportCatalog runtimeImports,
@@ -216,12 +334,16 @@ public sealed class RuntimeStateInitializerTests
     private sealed class FixedTypeDescriptorSource(
         ImmutableArray<TypeDescriptorLayout> types,
         ImmutableArray<ConstructedTypeDescriptorLayout> constructedTypes,
-        ImmutableArray<ValueTypeDescriptorLayout> valueTypes) : ITypeDescriptorSource
+        ImmutableArray<ValueTypeDescriptorLayout> valueTypes,
+        ImmutableArray<MetadataTypeDescriptorLayout> metadataTypes = default) :
+        ITypeDescriptorSource
     {
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => types;
         public ImmutableArray<ConstructedTypeDescriptorLayout>
             ConstructedTypeDescriptors => constructedTypes;
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => valueTypes;
+        public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors =>
+            metadataTypes.IsDefault ? [] : metadataTypes;
     }
 
     private sealed class FixedStaticDataLayout(ImmutableArray<int> roots) : IStaticDataLayout

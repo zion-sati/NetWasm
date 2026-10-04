@@ -488,7 +488,7 @@ class StageJcoClosureTests(unittest.TestCase):
                 [],
                 list(fixture["generation"].parent.glob(".generation.staging-*")),
             )
-            self.assertEqual(2, self._run_stage(fixture))
+            self.assertEqual(3, self._run_stage(fixture))
             self.assertTrue(fixture["marker"].is_file())
 
     def test_stage_rejects_cache_and_generation_path_overlap(self):
@@ -566,7 +566,7 @@ class StageJcoClosureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fixture = self._stage_fixture(Path(directory))
             count = self._run_stage(fixture)
-            self.assertEqual(2, count)
+            self.assertEqual(3, count)
             canonical = fixture["canonical"]
             self.assertTrue(
                 (canonical / "node_modules/@bytecodealliance/jco/dist/jco.js").is_file()
@@ -589,6 +589,72 @@ class StageJcoClosureTests(unittest.TestCase):
             with self.assertRaises(stager.ClosureStagingError):
                 self._run_stage(fixture)
 
+    def test_stage_applies_one_hash_pinned_bindgen_patch_before_integrity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._stage_fixture(Path(directory))
+            patch_manifest = self._patch_manifest(fixture)
+
+            self._run_stage(fixture, patch_manifest)
+
+            target = fixture["canonical"].joinpath(*stager.BINDGEN_PATCH_TARGET.split("/"))
+            replacement = patch_manifest.parent / "replacement.wasm"
+            self.assertEqual(replacement.read_bytes(), target.read_bytes())
+            provenance = fixture["canonical"] / stager.PATCH_PROVENANCE_NAME
+            self.assertEqual(patch_manifest.read_bytes(), provenance.read_bytes())
+            integrity = json.loads(
+                (fixture["canonical"] / "closure-integrity.json").read_text()
+            )
+            target_entry = next(
+                entry for entry in integrity["files"]
+                if entry["path"] == stager.BINDGEN_PATCH_TARGET
+            )
+            self.assertEqual(hashlib.sha256(replacement.read_bytes()).hexdigest(), target_entry["sha256"])
+            marker = json.loads(fixture["marker"].read_text())
+            self.assertEqual(stager.PATCHED_JCO_VERSION, marker["patchVersion"])
+            self.assertEqual(
+                hashlib.sha256(patch_manifest.read_bytes()).hexdigest(),
+                marker["patchManifestSha256"],
+            )
+
+    def test_stage_rejects_patch_digest_drift_without_publishing_generation(self):
+        for field in ("originalSha256", "replacement", "sourcePatch"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                fixture = self._stage_fixture(Path(directory))
+                patch_manifest = self._patch_manifest(fixture)
+                manifest = json.loads(patch_manifest.read_text())
+                if field == "originalSha256":
+                    manifest[field] = "0" * 64
+                else:
+                    manifest[field]["sha256"] = "0" * 64
+                patch_manifest.write_text(json.dumps(manifest) + "\n")
+
+                with self.assertRaises(stager.ClosureStagingError):
+                    self._run_stage(fixture, patch_manifest)
+                self.assertFalse(fixture["generation"].exists())
+
+    def test_stage_rejects_patch_traversal_and_symlink_inputs(self):
+        for value in ("../replacement.wasm", "/replacement.wasm"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                fixture = self._stage_fixture(Path(directory))
+                patch_manifest = self._patch_manifest(fixture)
+                manifest = json.loads(patch_manifest.read_text())
+                manifest["replacement"]["path"] = value
+                patch_manifest.write_text(json.dumps(manifest) + "\n")
+
+                with self.assertRaises(stager.ClosureStagingError):
+                    self._run_stage(fixture, patch_manifest)
+                self.assertFalse(fixture["generation"].exists())
+
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._stage_fixture(Path(directory))
+            patch_manifest = self._patch_manifest(fixture)
+            replacement = patch_manifest.parent / "replacement.wasm"
+            replacement.unlink()
+            replacement.symlink_to(patch_manifest.parent / "source.patch")
+            with self.assertRaises(stager.ClosureStagingError):
+                self._run_stage(fixture, patch_manifest)
+            self.assertFalse(fixture["generation"].exists())
+
     @classmethod
     def _stage_fixture(cls, root):
         lock_path = root / "package-lock.json"
@@ -600,13 +666,27 @@ class StageJcoClosureTests(unittest.TestCase):
         package_paths = {
             stager.ROOT_PACKAGES[0]: ("@bytecodealliance/jco", "1.28.1", True),
             stager.ROOT_PACKAGES[1]: ("@bytecodealliance/preview2-shim", "0.24.1", False),
+            "node_modules/@bytecodealliance/jco-transpile": (
+                "@bytecodealliance/jco-transpile",
+                "0.7.0",
+                False,
+            ),
         }
         records = {}
         for path, (name, version, jco) in package_paths.items():
-            files = {"package.json": json.dumps({"name": name, "version": version})}
+            metadata = {"name": name, "version": version}
+            if jco:
+                metadata["dependencies"] = {
+                    "@bytecodealliance/jco-transpile": "0.7.0",
+                }
+            files = {"package.json": json.dumps(metadata)}
             if jco:
                 files["dist/jco.js"] = "#!/usr/bin/env node\n"
                 files["LICENSE"] = "license\n"
+            if name == "@bytecodealliance/jco-transpile":
+                files["vendor/js-component-bindgen-component.core.wasm"] = (
+                    "original bindgen wasm"
+                )
             payload = cls._package_tarball(files)
             integrity = "sha512-" + base64.b64encode(hashlib.sha512(payload).digest()).decode()
             cache.mkdir(parents=True, exist_ok=True)
@@ -618,6 +698,9 @@ class StageJcoClosureTests(unittest.TestCase):
                 "resolved": f"https://example/{name}-{version}.tgz",
                 "integrity": integrity,
             }
+        records[stager.ROOT_PACKAGES[0]]["dependencies"] = {
+            "@bytecodealliance/jco-transpile": "0.7.0",
+        }
 
         lock = {"name": "fixture", "lockfileVersion": 3, "packages": records}
         policy = cls._policy(lock, list(records), [])
@@ -635,13 +718,52 @@ class StageJcoClosureTests(unittest.TestCase):
         }
 
     @staticmethod
-    def _run_stage(fixture):
+    def _run_stage(fixture, patch_manifest=None):
         return stager.stage(
             fixture["lock"],
             fixture["policy"],
             fixture["generation"],
             fixture["cache"],
+            patch_manifest,
         )
+
+    @staticmethod
+    def _patch_manifest(fixture):
+        root = fixture["lock"].parent / "patch"
+        root.mkdir()
+        original = b"original bindgen wasm"
+        replacement = b"patched bindgen wasm"
+        source_patch = b"patch source"
+        license_bytes = b"upstream license"
+        (root / "replacement.wasm").write_bytes(replacement)
+        (root / "source.patch").write_bytes(source_patch)
+        (root / "LICENSE.upstream").write_bytes(license_bytes)
+        manifest = {
+            "schemaVersion": 1,
+            "effectiveVersion": stager.PATCHED_JCO_VERSION,
+            "targetPath": stager.BINDGEN_PATCH_TARGET,
+            "originalSha256": hashlib.sha256(original).hexdigest(),
+            "replacement": {
+                "path": "replacement.wasm",
+                "sha256": hashlib.sha256(replacement).hexdigest(),
+            },
+            "sourcePatch": {
+                "path": "source.patch",
+                "sha256": hashlib.sha256(source_patch).hexdigest(),
+            },
+            "licensePath": "LICENSE.upstream",
+            "licenseSha256": hashlib.sha256(license_bytes).hexdigest(),
+            "upstream": {
+                "repository": "https://example.test/jco",
+                "revision": "fixture",
+                "tag": "jco-v1.28.1",
+                "jcoVersion": "1.28.1",
+                "jcoTranspileVersion": "0.7.0",
+            },
+        }
+        path = root / "manifest.json"
+        path.write_text(json.dumps(manifest, sort_keys=True) + "\n")
+        return path
 
     @staticmethod
     def _record(name, version, optional_dependencies=None, peer_dependencies=None):

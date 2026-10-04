@@ -1,10 +1,115 @@
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using static NetWasm.Compiler.ControlFlow.Tests.ControlFlowTestSupport;
 
 namespace NetWasm.Compiler.ControlFlow.Tests;
 
 public sealed class CilExceptionRegionValidatorTests
 {
+    [Fact]
+    public void ConstructedCatchIdentitySatisfiesOnlyCatchClauses()
+    {
+        var identity = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(new AssemblyIdentity("catch-tests"), "Tests", "Failure`1", false),
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var body = Body(
+            CliValueKind.Void,
+            1,
+            [],
+            I(0, CilOperation.Nop),
+            I(1, CilOperation.Leave, new CilOperand.BranchTarget(4)),
+            I(2, CilOperation.Pop),
+            I(3, CilOperation.Leave, new CilOperand.BranchTarget(4)),
+            I(4, CilOperation.Return)) with
+        {
+            ExceptionRegions =
+            [
+                new CilExceptionRegion(
+                    CilExceptionRegionKind.Catch,
+                    0,
+                    2,
+                    2,
+                    2,
+                    null,
+                    null)
+                {
+                    CatchTypeIdentity = identity,
+                },
+            ],
+        };
+
+        CreateExceptionRegionValidator().Validate(body, body.Instructions[^1].NextOffset);
+
+        AssertDiagnostic(
+            () => CreateExceptionRegionValidator().Validate(
+                body with
+                {
+                    ExceptionRegions = [body.ExceptionRegions[0] with
+                    {
+                        CatchTypeIdentity = null,
+                    }],
+                },
+                body.Instructions[^1].NextOffset),
+            "catch clause has invalid token or filter offset");
+        AssertDiagnostic(
+            () => CreateExceptionRegionValidator().Validate(
+                body with
+                {
+                    ExceptionRegions = [body.ExceptionRegions[0] with { FilterOffset = 0 }],
+                },
+                body.Instructions[^1].NextOffset),
+            "catch clause has invalid token or filter offset");
+        AssertDiagnostic(
+            () => CreateExceptionRegionValidator().Validate(
+                body with
+                {
+                    ExceptionRegions = [body.ExceptionRegions[0] with
+                    {
+                        CatchType = TypeKey,
+                        CatchTypeIdentity = null,
+                        FilterOffset = 0,
+                    }],
+                },
+                body.Instructions[^1].NextOffset),
+            "catch clause has invalid token or filter offset");
+        AssertDiagnostic(
+            () => CreateExceptionRegionValidator().Validate(
+                FinallyBody() with
+                {
+                    ExceptionRegions = [FinallyBody().ExceptionRegions[0] with
+                    {
+                        CatchTypeIdentity = identity,
+                    }],
+                },
+                FinallyBody().Instructions[^1].NextOffset),
+            "finally clause has a catch token or filter offset");
+        AssertDiagnostic(
+            () => CreateExceptionRegionValidator().Validate(
+                body with
+                {
+                    ExceptionRegions = [body.ExceptionRegions[0] with
+                    {
+                        Kind = CilExceptionRegionKind.Filter,
+                        FilterOffset = 0,
+                    }],
+                },
+                body.Instructions[^1].NextOffset),
+            "filter clause has invalid token or missing filter offset");
+        AssertDiagnostic(
+            () => CreateExceptionRegionValidator().Validate(
+                body with
+                {
+                    ExceptionRegions = [body.ExceptionRegions[0] with
+                    {
+                        Kind = CilExceptionRegionKind.Filter,
+                        CatchTypeIdentity = null,
+                        FilterOffset = null,
+                    }],
+                },
+                body.Instructions[^1].NextOffset),
+            "filter clause has invalid token or missing filter offset");
+    }
+
     [Fact]
     public void ValidatesRegionAwareTransfersAndCleanupTerminators()
     {

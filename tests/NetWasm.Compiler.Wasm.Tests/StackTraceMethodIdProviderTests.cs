@@ -29,6 +29,7 @@ public sealed class StackTraceMethodIdProviderTests
             ImmutableDictionary<EntityKey, int>.Empty.Add(method.Key, 7),
             ImmutableDictionary<string, int>.Empty.Add(instance.CanonicalName, 11),
             [],
+            ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty,
             4,
             5);
 

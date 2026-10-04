@@ -1,7 +1,7 @@
 // Adapted from dotnet/runtime System.Runtime.InteropServices metadata
 // declarations. The upstream implementation is licensed under MIT.
-// These declarations describe metadata only; no COM, native marshalling,
-// GCHandle, or P/Invoke execution is provided here.
+// These declarations describe metadata only. They do not provide COM or
+// runtime marshalling. Static native calls use the separately qualified compiler profile.
 
 namespace System.Runtime.InteropServices
 {

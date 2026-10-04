@@ -200,21 +200,6 @@ public sealed class AsyncJSExportFunctionEmitterTests
         Assert.Contains("requires Task<T>", exception.Message);
     }
 
-    [Fact]
-    public void CompletionEmitterReleasesTheHandle()
-    {
-        var imports = WasmRuntimeImports.CreateCatalog();
-        var emitter = new AsyncJSExportCompletionEmitter(
-            imports,
-            new GeneratedFunctionWriterFactory());
-
-        var body = ((IAsyncJSExportCompletionEmitter)emitter).Emit();
-
-        Assert.Contains(
-            Call(imports.Resolve(RuntimeImportSymbol.HandleRelease)),
-            Calls(body));
-    }
-
     [Theory]
     [InlineData(WasmTarget.Wasm32, CliValueKind.I4)]
     [InlineData(WasmTarget.Wasm64, CliValueKind.I8)]

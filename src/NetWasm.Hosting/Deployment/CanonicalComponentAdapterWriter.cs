@@ -6,7 +6,7 @@ namespace NetWasm.Hosting.Deployment;
 /// <summary>Emits an alias-free adapter over the exact pinned jco output shape.</summary>
 public sealed class CanonicalComponentAdapterWriter : ICanonicalComponentAdapterWriter
 {
-    public const string SupportedJcoVersion = "1.28.1";
+    public const string SupportedJcoVersion = "1.28.1+netwasm.2";
     public const string CommandContract = "wasi-command@0.2.11";
     public const string ProcessContract = "netwasm:runtime/process@1.0.0";
 
@@ -24,6 +24,7 @@ public sealed class CanonicalComponentAdapterWriter : ICanonicalComponentAdapter
             ProcessContract => ProcessSource(),
             _ => throw new NotSupportedException("The component execution contract has no generated adapter."),
         };
+        source = $"// Generated for jco {SupportedJcoVersion}.\n{source}";
         return Encoding.UTF8.GetBytes(source.ReplaceLineEndings("\n") + "\n");
     }
 
@@ -41,7 +42,15 @@ public sealed class CanonicalComponentAdapterWriter : ICanonicalComponentAdapter
               if (command === null || typeof command !== "object" || typeof command.run !== "function") {
                 throw new TypeError("pinned jco command export is unavailable");
               }
+              const diagnosticCommand = root["netwasm:diagnostics/command@1.0.0"];
+              if (diagnosticCommand !== undefined && (diagnosticCommand === null
+                  || typeof diagnosticCommand !== "object" || typeof diagnosticCommand.run !== "function")) {
+                throw new TypeError("pinned jco diagnostic command export is invalid");
+              }
               return Object.freeze({
+                ...(diagnosticCommand === undefined ? {} : {
+                  diagnosticCommand: Object.freeze({ run: diagnosticCommand.run.bind(diagnosticCommand) }),
+                }),
                 command: Object.freeze({
                   run() {
                     try {

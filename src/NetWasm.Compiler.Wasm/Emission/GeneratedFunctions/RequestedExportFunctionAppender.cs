@@ -21,6 +21,7 @@ internal sealed class RequestedExportFunctionAppender(
         bool hasFinalizers,
         WasmModuleProfile profile,
         IFunctionIndexResolver functionIndices,
+        InteropImportPlan interopImports,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries)
     {
         ArgumentNullException.ThrowIfNull(functions);
@@ -32,6 +33,7 @@ internal sealed class RequestedExportFunctionAppender(
         ArgumentNullException.ThrowIfNull(asyncBindings);
         ArgumentNullException.ThrowIfNull(initialization);
         ArgumentNullException.ThrowIfNull(functionIndices);
+        ArgumentNullException.ThrowIfNull(interopImports);
         ArgumentNullException.ThrowIfNull(boundaryEntries);
 
         var selectedDefinition = method.Definition with
@@ -54,18 +56,22 @@ internal sealed class RequestedExportFunctionAppender(
                 ? null
                 : ManagedAsyncBoundaryKinds.Export with
                 {
-                    Start = profile == WasmModuleProfile.CoreApplication
+                    Start = interopImports.UseJavaScriptExportBoundary ||
+                        profile == WasmModuleProfile.CoreApplication
                         ? ManagedBoundaryKind.AsynchronousExportStart
                         : ManagedBoundaryKind.ComponentAdapter,
                 },
             initialization,
             hasFinalizers,
-            profile == WasmModuleProfile.CoreApplication,
-            profile == WasmModuleProfile.CoreApplication
+            interopImports.UseJavaScriptExportBoundary ||
+                profile == WasmModuleProfile.CoreApplication,
+            interopImports.UseJavaScriptExportBoundary ||
+                profile == WasmModuleProfile.CoreApplication
                 ? ManagedBoundaryKind.SynchronousExport
                 : ManagedBoundaryKind.ComponentAdapter,
             functionIndices,
-            boundaryEntries));
+            boundaryEntries,
+            InteropImports: interopImports));
         requestedExportIndices.Add(exportName, requestedExportIndex);
     }
 }

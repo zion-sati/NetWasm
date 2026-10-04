@@ -1,0 +1,7 @@
+using System.Runtime.InteropServices;
+
+internal static class UnusedCallback
+{
+    [UnmanagedCallersOnly]
+    public static int NeverCalled(int value) => value + 1;
+}

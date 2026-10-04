@@ -72,14 +72,17 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
             exceptionAwareDispatcherShells,
             new StructuredSequenceStepChain(
                 [
-                    new DispatcherSequenceStepExecutor(
-                        new ActiveControlFlowBlockClipper(),
-                        activeBlockRetention),
+                    // Optimized CIL can start a loop and its enclosing protected
+                    // region at the same block. Preserve the exception boundary,
+                    // then structure the loop inside its protected body.
                     new ExceptionRegionSequenceStepExecutor(
                         _reachableSetOverlaps,
                         _dispatcherBoundaries,
                         joins,
                         reachableBlocks),
+                    new DispatcherSequenceStepExecutor(
+                        new ActiveControlFlowBlockClipper(),
+                        activeBlockRetention),
                     new BranchingSequenceStepExecutor(
                         joins,
                         reachableBlocks,
@@ -87,6 +90,7 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
                         branchOverlaps,
                         new DispatcherExitSelector())]));
         var stateBuilder = new ControlFlowStructuringStateBuilder(
+            new ExceptionContinuationGraphProjector(),
             _components,
             _naturalLoops,
             domains,

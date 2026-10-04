@@ -16,13 +16,15 @@ public sealed class RawWitFunctionLayoutBuilderTests
         var document = new WitDocument([], [], [], [], "{}");
         var declaration = new WitFunction("[method]file.read", [], null, new("method", 3));
 
-        var product = Create(dependencies).Build(document, "example:files@1.0.0/api", declaration, target);
+        var product = Create(dependencies).Build(
+            document, "example:files@1.0.0/api", "file-alias", declaration, target);
 
         Assert.Same(declaration, product.Declaration);
         Assert.Same(dependencies.Layout, product.Layout);
         Assert.Equal(["function", "layout"], dependencies.Calls);
         Assert.Equal((document, "example:files@1.0.0/api", declaration), dependencies.FunctionRequest);
-        Assert.Equal((dependencies.Function, target), dependencies.LayoutRequest);
+        Assert.Equal((dependencies.Function with { CoreInterfaceName = "file-alias" }, target),
+            dependencies.LayoutRequest);
     }
 
     [Theory]
@@ -42,7 +44,12 @@ public sealed class RawWitFunctionLayoutBuilderTests
             new RawCanonicalFunctionLayoutPlanner(new RawCanonicalImportIdentityFormatter(),
                 new CanonicalAbiSignaturePlanner(new CanonicalAbiTypeFlattener()), new CanonicalAbiMemoryLayoutPlanner())));
 
-        var product = builder.Build(document, "example:files@1.0.0/api", declaration, target);
+        var product = builder.Build(
+            document,
+            "example:files@1.0.0/api",
+            "example:files/api@1",
+            declaration,
+            target);
 
         Assert.Same(declaration, product.Declaration);
         Assert.Equal(new WitTypeReference.Defined(3), product.Declaration.Result);
@@ -72,7 +79,7 @@ public sealed class RawWitFunctionLayoutBuilderTests
         var dependencies = new RecordingDependencies { FailingCall = failingCall };
 
         Assert.Same(dependencies.Failure, Assert.Throws<InvalidOperationException>(() => Create(dependencies).Build(
-            new([], [], [], [], "{}"), "", new("run", [], null, new("freestanding")), WasmTarget.Wasm64)));
+            new([], [], [], [], "{}"), "", "", new("run", [], null, new("freestanding")), WasmTarget.Wasm64)));
         Assert.Equal(failingCall, dependencies.Calls.Count);
     }
 
@@ -84,10 +91,11 @@ public sealed class RawWitFunctionLayoutBuilderTests
         var document = new WitDocument([], [], [], [], "{}");
         var declaration = new WitFunction("run", [], null, new("freestanding"));
 
-        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, "", declaration, WasmTarget.Wasm32));
-        Assert.Throws<ArgumentNullException>(() => builder.Build(document, null!, declaration, WasmTarget.Wasm32));
-        Assert.Throws<ArgumentNullException>(() => builder.Build(document, "", null!, WasmTarget.Wasm32));
-        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Build(document, "", declaration, (WasmTarget)99));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, "", "", declaration, WasmTarget.Wasm32));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(document, null!, "", declaration, WasmTarget.Wasm32));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(document, "", null!, declaration, WasmTarget.Wasm32));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(document, "", "", null!, WasmTarget.Wasm32));
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Build(document, "", "", declaration, (WasmTarget)99));
         Assert.Throws<ArgumentNullException>(() => new RawWitFunctionLayoutBuilder(null!, dependencies));
         Assert.Throws<ArgumentNullException>(() => new RawWitFunctionLayoutBuilder(dependencies, null!));
         Assert.Empty(dependencies.Calls);

@@ -74,6 +74,60 @@ public sealed class TestAssets : IDisposable
     public string CompileSource(string assemblyName, string source, params string[] references)
         => CompileSourceCore(assemblyName, source, allowUnsafe: false, references);
 
+    public string CompileSourceWithPortablePdb(
+        string assemblyName,
+        string source,
+        bool optimize = false,
+        params string[] references)
+        => CompileSourceWithPortablePdb(
+            assemblyName,
+            source,
+            optimize,
+            sourceLinkJson: null,
+            references);
+
+    public string CompileSourceWithPortablePdbAndSourceLink(
+        string assemblyName,
+        string source,
+        string sourceLinkJson,
+        bool optimize = false,
+        params string[] references) => CompileSourceWithPortablePdb(
+            assemblyName,
+            source,
+            optimize,
+            sourceLinkJson,
+            references);
+
+    private string CompileSourceWithPortablePdb(
+        string assemblyName,
+        string source,
+        bool optimize,
+        string? sourceLinkJson,
+        string[] references)
+    {
+        var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
+        var output = Path.Combine(Directory, assemblyName + ".dll");
+        var sourceLinkPath = sourceLinkJson is null
+            ? null
+            : Path.Combine(Directory, assemblyName + ".sourcelink.json");
+        File.WriteAllText(sourcePath, source);
+        if (sourceLinkPath is not null)
+        {
+            File.WriteAllText(sourceLinkPath, sourceLinkJson);
+        }
+        Compile(
+            Root,
+            CoreLib,
+            output,
+            [sourcePath],
+            allowUnsafe: false,
+            optimize,
+            references,
+            emitPortablePdb: true,
+            sourceLinkPath: sourceLinkPath);
+        return output;
+    }
+
     public string CompileSourceWithCompiler(
         string assemblyName,
         string source,
@@ -337,7 +391,9 @@ public sealed class TestAssets : IDisposable
         string? sdkVersionOverride = null,
         string languageVersion = "latest",
         IReadOnlyList<string>? features = null,
-        bool warningsAsErrors = false)
+        bool warningsAsErrors = false,
+        bool emitPortablePdb = false,
+        string? sourceLinkPath = null)
     {
         var sdkVersion = sdkVersionOverride ?? File.ReadAllText(Path.Combine(root, "global.json"))
             .Split("\"version\": \"", StringSplitOptions.None)[1]
@@ -372,6 +428,15 @@ public sealed class TestAssets : IDisposable
         foreach (var argument in arguments)
         {
             start.ArgumentList.Add(argument);
+        }
+        if (emitPortablePdb)
+        {
+            start.ArgumentList.Add("-debug:portable");
+            start.ArgumentList.Add("-pdb:" + Path.ChangeExtension(output, ".pdb"));
+        }
+        if (sourceLinkPath is not null)
+        {
+            start.ArgumentList.Add("-sourcelink:" + sourceLinkPath);
         }
         if (features is { Count: > 0 })
         {

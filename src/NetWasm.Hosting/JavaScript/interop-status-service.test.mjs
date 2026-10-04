@@ -33,12 +33,14 @@ function descriptor(overrides = {}) {
 function request(overrides = {}) {
   const memory = new WebAssembly.Memory({ initial: 1 });
   return {
+    assertAsyncDeliveryAvailable() {},
     callbacks: [],
     descriptor: descriptor(),
     exceptionReporter: { consumeTerminalEvent: () => null },
     getInstance: () => ({ exports: {} }),
     getMemory: () => memory,
     handles: createInteropHandleTable(),
+    observeAsyncFailure() {},
     pendingAsyncOperations: new Map(),
     service() {},
     statusAbi,
@@ -49,6 +51,78 @@ function request(overrides = {}) {
 }
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test("notifies process observation after an externally invoked subscription callback", async () => {
+  let callback;
+  const observations = [];
+  const handles = createInteropHandleTable();
+  const state = request({
+    handles,
+    callbacks: [{
+      module: baseDescriptor.module, importName: baseDescriptor.name,
+      parameterIndex: 0, exportName: "callback", parameters: ["bytes"], result: "i32",
+    }],
+    descriptor: descriptor({ parameters: ["callback"], result: "subscription" }),
+    getInstance: () => ({ exports: {
+      callback(handle, bytes) {
+        assert.equal(handle, 7);
+        assert.deepEqual([...handles.get(bytes)], [21]);
+        return 42;
+      },
+    } }),
+    service(value) { callback = value; return { dispose() {} }; },
+  });
+  const invoke = createInteropStatusService(state, error => observations.push({ error, handles: handles.count }));
+  assert.equal(invoke(7, 0), 0);
+  assert.deepEqual(observations, []);
+  assert.equal(callback(new Uint8Array([21])), 42);
+  assert.deepEqual(observations, []);
+  await tick();
+  assert.deepEqual(observations, [{ error: undefined, handles: 1 }]);
+});
+
+test("defers reentrant callback observation until the host service returns", async () => {
+  const events = [];
+  const invoke = createInteropStatusService(request({
+    callbacks: [{
+      module: baseDescriptor.module, importName: baseDescriptor.name,
+      parameterIndex: 0, exportName: "callback", parameters: [], result: "void",
+    }],
+    descriptor: descriptor({ parameters: ["callback"] }),
+    getInstance: () => ({ exports: { callback() { events.push("callback"); } } }),
+    service(callback) { callback(); events.push("service-return"); },
+  }), () => { events.push("observe"); throw new Error("observer failure"); });
+  assert.equal(invoke(7, 0), 0);
+  events.push("guest-return");
+  assert.deepEqual(events, ["callback", "service-return", "guest-return"]);
+  await tick();
+  assert.deepEqual(events, ["callback", "service-return", "guest-return", "observe"]);
+});
+
+test("preserves callback failures while notifying the process after cleanup", async () => {
+  for (const cause of [new WebAssembly.RuntimeError("trap"), new Error("foreign"), undefined]) {
+    let callback;
+    const observations = [];
+    const handles = createInteropHandleTable();
+    const state = request({
+      handles,
+      callbacks: [{
+        module: baseDescriptor.module, importName: baseDescriptor.name,
+        parameterIndex: 0, exportName: "callback", parameters: ["bytes"], result: "void",
+      }],
+      descriptor: descriptor({ parameters: ["callback"] }),
+      getInstance: () => ({ exports: { callback() { throw cause; } } }),
+      service(value) { callback = value; },
+    });
+    assert.equal(createInteropStatusService(state, error => observations.push(error))(7, 0), 0);
+    let failure;
+    assert.throws(() => callback(new Uint8Array([21])), error => { failure = error; return true; });
+    assert.equal(handles.count, 0);
+    assert.deepEqual(observations, []);
+    await tick();
+    assert.deepEqual(observations, [failure]);
+  }
+});
 
 test("lifts every host-service argument family and writes a scalar result", () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
@@ -160,6 +234,7 @@ test("maps invalid synchronous service values and invocations to host failure", 
 test("settles Promise-style callback services and owns callback releases", async () => {
   for (const rejected of [false, true]) {
     const calls = [];
+    const observations = [];
     const state = request({
       callbacks: [0, 1].map((parameterIndex) => ({
         module: baseDescriptor.module,
@@ -177,10 +252,11 @@ test("settles Promise-style callback services and owns callback releases", async
       } }),
       service: () => rejected ? Promise.reject(new Error("rejected")) : Promise.resolve(37),
     });
-    assert.equal(createInteropStatusService(state)(7, 8, 0), 0);
+    assert.equal(createInteropStatusService(state, error => observations.push(error))(7, 8, 0), 0);
     const handle = new DataView(state.getMemory().buffer).getInt32(0, true);
     await tick();
     assert.deepEqual(calls[0], rejected ? ["failure", 8] : ["success", 7, 37]);
+    assert.deepEqual(observations, [undefined]);
     state.handles.releaseSubscription(handle);
     assert.deepEqual(calls.slice(1), [["release", 7], ["release", 8]]);
   }
@@ -220,6 +296,31 @@ test("suppresses Promise-style callbacks after subscription disposal", async () 
     settle();
     await tick();
     assert.deepEqual(calls, []);
+  }
+});
+
+test("contains Promise-style managed callback failures", async () => {
+  for (const rejected of [false, true]) {
+    const failures = [];
+    const state = request({
+      callbacks: [0, 1].map(parameterIndex => ({
+        module: baseDescriptor.module, importName: baseDescriptor.name, parameterIndex,
+        exportName: parameterIndex === 0 ? "success" : "failure",
+        parameters: parameterIndex === 0 ? ["i32"] : [], result: "void",
+      })),
+      descriptor: descriptor({ parameters: ["callback", "callback"], result: "promise" }),
+      getInstance: () => ({ exports: {
+        success() { throw new Error("success failed"); },
+        failure() { throw new Error("failure failed"); },
+        handle_release() {},
+      } }),
+      observeAsyncFailure: cause => failures.push(cause),
+      service: () => rejected ? Promise.reject(new Error("service failed")) : Promise.resolve(37),
+    });
+    assert.equal(createInteropStatusService(state)(7, 8, 0), 0);
+    await tick();
+    assert.equal(failures.length, 1);
+    assert.match(failures[0].message, rejected ? /failure/ : /success/);
   }
 });
 
@@ -276,6 +377,35 @@ test("settles and cancels task-style asynchronous services", async () => {
   }
 });
 
+test("contains asynchronous guest completion failures and reports them once", async () => {
+  for (const mode of ["resolve", "reject", "invalid", "observer-failure"]) {
+    const failures = [];
+    const state = request({
+      descriptor: descriptor({
+        asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject",
+        cancelExport: "cancel", result: "i32",
+      }),
+      getInstance: () => ({ exports: {
+        resolve() { throw new Error("resolve failed"); },
+        reject() { throw new Error("reject failed"); },
+        cancel() {},
+      } }),
+      observeAsyncFailure(cause) {
+        failures.push(cause);
+        if (mode === "observer-failure") throw new Error("observer failed");
+      },
+      service: () => mode === "reject" || mode === "observer-failure"
+        ? Promise.reject(new Error("service failed"))
+        : Promise.resolve(mode === "invalid" ? "invalid" : 42),
+    });
+    assert.equal(createInteropStatusService(state)(17, 0), 0);
+    await tick();
+    assert.equal(state.pendingAsyncOperations.size, 0);
+    assert.equal(failures.length, 1);
+    assert.match(failures[0].message, mode === "resolve" ? /resolve/ : /reject/);
+  }
+});
+
 test("rejects unavailable or synchronously failing task completion", () => {
   const asyncDescriptor = descriptor({
     asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject",
@@ -305,6 +435,107 @@ test("rejects malformed status-service composition", () => {
   ]) assert.throws(() => createInteropStatusService(value), TypeError);
   for (const value of [
     { service: null }, { getMemory: null }, { getInstance: null },
+    { assertAsyncDeliveryAvailable: null },
+    { observeAsyncFailure: null },
     { pendingAsyncOperations: {} },
   ]) assert.throws(() => createInteropStatusService({ ...valid, ...value }), TypeError);
+});
+
+test("notifies process observation after asynchronous guest delivery", async () => {
+  for (const mode of ["success", "failure", "undefined-failure", "observer-failure"]) {
+    const calls = [];
+    const cause = mode === "undefined-failure" ? undefined : new Error("delivery failure");
+    const state = request({
+      descriptor: descriptor({ asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel", result: "i32" }),
+      getInstance: () => ({ exports: {
+        resolve() { calls.push("guest"); if (mode === "failure" || mode === "undefined-failure") throw cause; },
+        reject() {}, cancel() {},
+      } }),
+      observeAsyncFailure(error) { calls.push("failure"); assert.equal(error, cause); },
+      service: () => Promise.resolve(42),
+    });
+    const invoke = createInteropStatusService(state, error => {
+      assert.equal(state.pendingAsyncOperations.size, 0);
+      calls.push("observe");
+      if (mode === "failure") assert.equal(error, cause);
+      else if (mode === "undefined-failure") assert.notEqual(error, undefined);
+      else assert.equal(error, undefined);
+      if (mode === "observer-failure") throw new Error("observer failure");
+    });
+    assert.equal(invoke(17, 0), 0);
+    await tick();
+    assert.deepEqual(calls, mode === "failure" || mode === "undefined-failure"
+      ? ["guest", "failure", "observe"] : ["guest", "observe"]);
+  }
+  assert.throws(() => createInteropStatusService(request(), null), /actions are invalid/);
+  assert.throws(() => createInteropStatusService(request(), () => {}, null), /actions are invalid/);
+});
+
+test("preserves an undefined callback binding failure and reports a nonempty wake failure", async () => {
+  let callback;
+  const observations = [];
+  const state = request({
+    callbacks: [{
+      module: baseDescriptor.module, importName: baseDescriptor.name,
+      parameterIndex: 0, exportName: "callback", parameters: [], result: "void",
+    }],
+    descriptor: descriptor({ parameters: ["callback"] }),
+    getInstance() { throw undefined; },
+    service(value) { callback = value; },
+  });
+  assert.equal(createInteropStatusService(state, error => observations.push(error))(7, 0), 0);
+  assert.throws(() => callback(), error => error === undefined);
+  await tick();
+  assert.equal(observations.length, 1);
+  assert.notEqual(observations[0], undefined);
+});
+
+test("blocks external callback entry after managed process observation has finished", async () => {
+  let callback;
+  let available = true;
+  let calls = 0;
+  const invoke = createInteropStatusService(request({
+    callbacks: [{
+      module: baseDescriptor.module, importName: baseDescriptor.name,
+      parameterIndex: 0, exportName: "callback", parameters: [], result: "void",
+    }],
+    descriptor: descriptor({ parameters: ["callback"] }),
+    assertAsyncDeliveryAvailable() { if (!available) throw new Error("finished"); },
+    getInstance: () => ({ exports: { callback() { calls++; } } }),
+    service(value) { callback = value; },
+  }), () => { available = false; });
+  assert.equal(invoke(7, 0), 0);
+  callback();
+  await tick();
+  assert.equal(calls, 1);
+  assert.throws(() => callback(), /finished/);
+  await tick();
+  assert.equal(calls, 1);
+});
+
+test("blocks a queued completion when an earlier delivery settles the process", async () => {
+  let available = true;
+  let guestEntries = 0;
+  let notifications = 0;
+  const state = request({
+    descriptor: descriptor({ asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel", result: "i32" }),
+    assertAsyncDeliveryAvailable() { if (!available) throw new Error("execution finished"); },
+    getInstance: () => ({ exports: {
+      resolve() { guestEntries++; throw new Error("guest delivery failed"); },
+      reject() { assert.fail("the successful service does not reject"); }, cancel() {},
+    } }),
+    service: () => Promise.resolve(42),
+  });
+  const invoke = createInteropStatusService(state, error => {
+    if (!available) return;
+    assert.notEqual(error, undefined);
+    notifications++;
+    available = false;
+  });
+  assert.equal(invoke(17, 0), 0);
+  assert.equal(invoke(18, 0), 0);
+  await tick();
+  assert.equal(guestEntries, 1);
+  assert.equal(notifications, 1);
+  assert.equal(state.pendingAsyncOperations.size, 0);
 });

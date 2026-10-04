@@ -30,12 +30,12 @@ public sealed class BrowserComponentCoreModulesTests
         {
             "v/runtime.wasm", "netwasm.runtime.v1", "v/Application.wasm", "netwasm.application.v1",
             "v/./env.wasm", "env", "--output", "v/merged.wasm", "--enable-multimemory",
-            "--enable-exception-handling", "--enable-bulk-memory", "--enable-nontrapping-float-to-int",
+            "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory", "--enable-nontrapping-float-to-int",
         };
         var expectedOptimization = new List<string>
         {
             "v/sanitized.wasm", "-Oz", "--converge", "--remove-unused-module-elements", "--strip-debug",
-            "--enable-multimemory", "--enable-exception-handling", "--enable-bulk-memory",
+            "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
         };
         if (memory64)
@@ -48,7 +48,8 @@ public sealed class BrowserComponentCoreModulesTests
         Assert.Equal(expectedMerge, plan.Merge.Arguments);
         Assert.Equal(BinaryenToolIds.WasmOpt, plan.Optimization!.ToolId);
         Assert.Equal(expectedOptimization, plan.Optimization.Arguments);
-        Assert.Null(plan.Validation);
+        Assert.Equal("v/output.wasm", plan.Validation!.Path);
+        Assert.Equal(ExpectedValidation("v/output.wasm", memory64), plan.Validation.Arguments);
         Assert.Null(plan.Copy);
         Assert.Equal(new BrowserComponentExportPruning("v/merged.wasm", "v/sanitized.wasm",
             memory64 ? "cm64p2" : "cm32p2"), plan.ExportPruning);
@@ -68,7 +69,7 @@ public sealed class BrowserComponentCoreModulesTests
             CreateRequest(ComponentTarget.Wasm32Wasi02) with { ManagedExecutableEntryPoint = abi }, CreateWorkspace());
 
         Assert.Equal(ExpectedManagedModulePaths, plan.TextModules.Select(module => module.OutputPath));
-        Assert.Contains("report_terminal_exception_v1", plan.TextModules[1].Text);
+        Assert.Contains("report_terminal_exception_v2", plan.TextModules[1].Text);
         var adapter = plan.TextModules[2].Text;
         if (asynchronous)
         {
@@ -112,7 +113,8 @@ public sealed class BrowserComponentCoreModulesTests
             }, CreateWorkspace());
 
         Assert.Null(plan.Optimization);
-        Assert.Equal(new BrowserCoreModuleValidation("v/sanitized.wasm"), plan.Validation);
+        Assert.Equal("v/sanitized.wasm", plan.Validation!.Path);
+        Assert.Equal(ExpectedValidation("v/sanitized.wasm", false), plan.Validation.Arguments);
         Assert.Equal(new BrowserFileCopy("v/sanitized.wasm", "v/output.wasm"), plan.Copy);
     }
 
@@ -181,6 +183,11 @@ public sealed class BrowserComponentCoreModulesTests
         Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.RetainComponentExports(
             Module("cm32p2", extraMemory: false), " "));
     }
+
+    private static string[] ExpectedValidation(string path, bool memory64) =>
+        ["validate", path, "--features",
+            "mvp,mutable-global,saturating-float-to-int,sign-extension,reference-types," +
+            "multi-value,bulk-memory,exceptions,multi-memory" + (memory64 ? ",memory64" : "")];
 
     private static ComponentCoreModuleLinkRequest CreateRequest(ComponentTarget target) =>
         new("v/Application.wasm", "v/runtime.wasm", "v/output.wasm", target);

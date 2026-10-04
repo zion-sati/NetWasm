@@ -3,6 +3,9 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
@@ -11,7 +14,16 @@ internal sealed record ValueFrameLayout(
     ImmutableDictionary<int, int> LocalOffsets,
     ImmutableDictionary<int, int> ArgumentOffsets,
     ImmutableDictionary<int, int> TemporaryOffsets,
-    ImmutableHashSet<int> SpilledScalarLocals);
+    ImmutableHashSet<int> SpilledScalarLocals)
+{
+    public ImmutableDictionary<(int InstructionOffset, int ParameterIndex), int>
+        NativeArgumentOffsets
+    { get; init; } =
+            ImmutableDictionary<(int InstructionOffset, int ParameterIndex), int>.Empty;
+
+    public ImmutableDictionary<int, int> MemberResultOffsets { get; init; } =
+        ImmutableDictionary<int, int>.Empty;
+}
 
 internal sealed class ValueFrameLayoutPlanner(
     IFieldRepository fields,
@@ -37,7 +49,8 @@ internal sealed class ValueFrameLayoutPlanner(
     private readonly IArgumentSignatureTypeResolver _argumentSignatureTypes =
         argumentSignatureTypes;
 
-    public ValueFrameLayout Create(StructuredMethodHeader header)
+    public ValueFrameLayout Create(StructuredMethodHeader header, NativeImportPlan? nativeImports = null,
+        MemberExecutionPlan? memberExecution = null)
     {
         ArgumentNullException.ThrowIfNull(header);
 
@@ -91,6 +104,8 @@ internal sealed class ValueFrameLayoutPlanner(
         }
 
         var temporaries = ImmutableDictionary.CreateBuilder<int, int>();
+        var memberResults = ImmutableDictionary.CreateBuilder<int, int>();
+        var nativeArguments = ImmutableDictionary.CreateBuilder<(int InstructionOffset, int ParameterIndex), int>();
         foreach (var instruction in header.Instructions.Where(
                      instruction => instruction.Operation is CilOperation.NewObject or
                          CilOperation.NewRectangularArray or
@@ -214,7 +229,11 @@ internal sealed class ValueFrameLayoutPlanner(
             locals.ToImmutable(),
             arguments.ToImmutable(),
             temporaries.ToImmutable(),
-            spilledScalars.ToImmutable());
+            spilledScalars.ToImmutable())
+        {
+            NativeArgumentOffsets = nativeArguments.ToImmutable(),
+            MemberResultOffsets = memberResults.ToImmutable(),
+        };
 
         void ReserveCallResult(CilInstruction instruction)
         {
@@ -227,6 +246,72 @@ internal sealed class ValueFrameLayoutPlanner(
             var callSignature = instruction.Operand is CilOperand.MethodInstance instanceTarget
                 ? instanceTarget.Value.Signature
                 : calledMethod.Signature;
+            if (memberExecution?.MethodInvokers.Contains(calledMethod.Key) == true)
+            {
+                var results = memberExecution.Methods.Values
+                    .Select(method => method.Descriptor.Signature.ReturnSignatureType)
+                    .Where(type => type.StackKind == CliValueKind.ValueType)
+                    .Distinct().Select(_values.GetValueLayout).ToArray();
+                if (results.Length != 0)
+                {
+                    // Only nullable scalars are admitted by member execution. Their return
+                    // scratch is reused across dispatcher cases and contains no GC roots.
+                    if (results.Any(layout => !layout.ReferenceOffsets.IsEmpty))
+                    {
+                        throw new CompilerException(new(DiagnosticCode.RuntimeContract,
+                            "Member result scratch cannot contain managed references.",
+                            calledMethod.Name, instruction.Offset));
+                    }
+                    size = Align(size, results.Max(layout => layout.Alignment));
+                    memberResults.Add(instruction.Offset, size);
+                    size = checked(size + results.Max(layout => layout.Size));
+                }
+                return;
+            }
+            if (memberExecution?.DelegateInvocation is { } delegateInvocation &&
+                delegateInvocation.Invokers.Contains(calledMethod.Key))
+            {
+                var results = delegateInvocation.Methods.Values
+                    .Select(method => method.Signature.ReturnSignatureType)
+                    .Where(type => type.StackKind == CliValueKind.ValueType &&
+                        type.Shape == CliTypeShape.GenericInstantiation)
+                    .Distinct()
+                    .Select(type => (Type: type, Underlying: type.TypeArguments[0]))
+                    .Where(item => item.Type.ElementType?.FullName == "System.Nullable`1")
+                    .Select(item => _values.GetValueLayout(item.Type))
+                    .ToArray();
+                if (results.Length != 0)
+                {
+                    if (results.Any(layout => !layout.ReferenceOffsets.IsEmpty))
+                    {
+                        throw new CompilerException(new(
+                            DiagnosticCode.RuntimeContract,
+                            "DynamicInvoke nullable result scratch cannot contain managed references.",
+                            calledMethod.Name,
+                            instruction.Offset));
+                    }
+                    size = Align(size, results.Max(layout => layout.Alignment));
+                    memberResults.Add(instruction.Offset, size);
+                    size = checked(size + results.Max(layout => layout.Size));
+                }
+                return;
+            }
+            if (calledMethod.NativeImport is not null)
+            {
+                if (nativeImports is null || !nativeImports.ByMethod.TryGetValue(calledMethod.Key, out var native))
+                    throw new CompilerException(new(DiagnosticCode.CompilerInvariant,
+                        "A native call has no published ABI plan.", calledMethod.Name, instruction.Offset));
+                var lowering = native.Abi.Lowering;
+                foreach (var parameter in lowering.Parameters)
+                {
+                    if (parameter.Value.Kind == NativeAbiValueKind.IndirectAggregate)
+                        nativeArguments.Add((instruction.Offset, parameter.LogicalIndex),
+                            ReserveNative(parameter.Value));
+                }
+                if (lowering.Result.LogicalType.StackKind == CliValueKind.ValueType)
+                    temporaries.Add(instruction.Offset, ReserveNative(lowering.Result));
+                return;
+            }
             var receiverType = instruction.Operand is CilOperand.MethodInstance receiver
                 ? receiver.Value.DeclaringType
                 : _typeIdentities.Resolve(calledMethod.DeclaringType);
@@ -248,6 +333,18 @@ internal sealed class ValueFrameLayoutPlanner(
             size = Align(size, layout.Alignment);
             temporaries.Add(instructionOffset, size);
             size = checked(size + layout.Size);
+        }
+
+        int ReserveNative(NativeAbiValuePlan value)
+        {
+            if (value.Size <= 0 || value.Alignment <= 0 || value.Alignment > 16 ||
+                (value.Alignment & (value.Alignment - 1)) != 0)
+                throw new CompilerException(new(DiagnosticCode.CompilerInvariant,
+                    "A native aggregate has invalid value-frame storage.", header.Method.Name));
+            size = Align(size, value.Alignment);
+            var offset = size;
+            size = checked(size + value.Size);
+            return offset;
         }
     }
 

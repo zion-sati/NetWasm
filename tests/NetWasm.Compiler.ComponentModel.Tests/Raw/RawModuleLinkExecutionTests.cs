@@ -58,21 +58,71 @@ public sealed class RawModuleLinkExecutionTests
     public void RequiresEveryCapability()
     {
         var stages = new RecordingStages();
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(null!, stages, stages, stages));
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, null!, stages, stages));
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, stages, null!, stages));
-        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, stages, stages, null!));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(null!, stages, stages, stages, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, null!, stages, stages, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, stages, null!, stages, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, stages, stages, null!, stages));
+        Assert.Throws<ArgumentNullException>(() => new RawModuleLinkExecution(stages, stages, stages, stages, null!));
+        Assert.Empty(stages.Calls);
+    }
+
+    [Theory]
+    [InlineData(FinalWasmOptimization.None)]
+    [InlineData(FinalWasmOptimization.Oz)]
+    public void RemovesOnlyPlannedInternalExportsBeforeOptimization(FinalWasmOptimization optimization)
+    {
+        var stages = new RecordingStages();
+        var request = new RawModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm64Wasi02, optimization)
+        {
+            InternalRuntimeExports = [new("native", 0), new("__heap_base", 3)],
+            InternalApplicationExports = [new("callback", 0)],
+        };
+        CreateExecution(stages).Run(request, CreateWorkspace(stages));
+        Assert.Equal(["environment", "merge", "exports", "optimize", "publish", "delete"], stages.Calls);
+        Assert.Null(stages.Selection!.ComponentPrefix);
+        Assert.Equal(
+            request.InternalRuntimeExports.AddRange(
+                request.InternalApplicationExports),
+            stages.Selection.RemovedExports);
+        Assert.Equal((Path.Combine("temporary", "sanitized.wasm"), "linked", request.Target, optimization), stages.Optimization);
+    }
+
+    [Fact]
+    public void ExportFailureStopsOptimizationAndPublicationAndReleasesWorkspace()
+    {
+        var stages = new RecordingStages { FailingStage = "exports" };
+        var request = new RawModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm32Wasi02)
+        { InternalRuntimeExports = [new("native", 0)] };
+        Assert.Same(stages.Failure, Assert.Throws<InvalidOperationException>(() => CreateExecution(stages).Run(request, CreateWorkspace(stages))));
+        Assert.Equal(["environment", "merge", "exports", "delete"], stages.Calls);
+        Assert.Null(stages.Optimization);
+        Assert.Null(stages.Publication);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RejectsUninitializedRemovalFactsBeforeCallingAnyStage(
+        bool runtimeFacts)
+    {
+        var stages = new RecordingStages();
+        var request = new RawModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm32Wasi02)
+        {
+            InternalRuntimeExports = runtimeFacts ? default : [],
+            InternalApplicationExports = runtimeFacts ? [] : default,
+        };
+        Assert.Throws<NetWasm.Compiler.Core.CompilerException>(() => CreateExecution(stages).Run(request, CreateWorkspace(stages)));
         Assert.Empty(stages.Calls);
     }
 
     private static IRawModuleLinkExecution CreateExecution(RecordingStages stages) =>
-        Assert.IsAssignableFrom<IRawModuleLinkExecution>(new RawModuleLinkExecution(stages, stages, stages, stages));
+        Assert.IsAssignableFrom<IRawModuleLinkExecution>(new RawModuleLinkExecution(stages, stages, stages, stages, stages));
 
     private static ComponentPackageWorkspace CreateWorkspace(RecordingStages stages) =>
         new(stages, "temporary", "linked", "embedded", "unstripped", "component");
 
     private sealed class RecordingStages : IEmscriptenEnvironmentShimWriter,
-        IComponentCoreModuleMergeRunner, IComponentCoreModuleOptimizer, IFileMover, IDirectoryDeleter
+        IComponentCoreModuleMergeRunner, IComponentCoreModuleOptimizer, IFileMover, IDirectoryDeleter, IWasmCoreModuleExportEditor
     {
         public List<string> Calls { get; } = [];
         public string? FailingStage { get; init; }
@@ -82,6 +132,14 @@ public sealed class RawModuleLinkExecutionTests
         public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
         public (string, string)? Publication { get; private set; }
         public string? DeletedDirectory { get; private set; }
+        public WasmExportSelection? Selection { get; private set; }
+        public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
+        {
+            Enter("exports");
+            Assert.Equal(Path.Combine("temporary", "merged.wasm"), inputPath);
+            Assert.Equal(Path.Combine("temporary", "sanitized.wasm"), outputPath);
+            Selection = selection;
+        }
 
         public void Write(string outputPath, ComponentTarget target)
         {

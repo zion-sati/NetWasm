@@ -7,7 +7,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 internal sealed class EnumGetMetadataIntrinsicEmitter(
     IEnumMetadataSource metadata,
-    ITypeRepository types,
     IEnumTypeArgumentValidator typeArguments,
     IAddressInstructionEmitter addresses) : IRuntimeIntrinsicEmitter
 {
@@ -17,9 +16,7 @@ internal sealed class EnumGetMetadataIntrinsicEmitter(
         {
             var enumType = request.Method.MethodArguments[0];
             var entry = metadata.EnumMetadata
-                .Where(candidate => candidate.Type.Assembly.Equals(enumType.Assembly))
-                .Single(candidate =>
-                    types.GetTypeDefinition(candidate.Type).FullName == enumType.FullName);
+                .Single(candidate => candidate.EnumType.Equals(enumType));
 
             addresses.Emit(code, entry.Address);
             SetResult(request, code);

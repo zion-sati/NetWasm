@@ -52,7 +52,7 @@ internal sealed class ComponentContractResolver(
             return ComponentBoundaryContract.Empty;
         }
 
-        var document = _documents.Read(options.WitPath);
+        var document = _documents.Read(options.WitPath, options.WitWorld);
         var world = document.SelectWorld(options.WitWorld);
         var imports = ResolveFunctions(
                 metadata,
@@ -113,14 +113,14 @@ internal sealed class ComponentContractResolver(
         CanonicalAbiFunctionKind kind)
     {
         var functions = ImmutableArray.CreateBuilder<CanonicalAbiFunction>();
-        foreach (var interfaceId in items
+        foreach (var item in items
                      .Where(item => item.InterfaceId is not null)
-                     .Select(item => item.InterfaceId!.Value)
-                     .Distinct()
-                     .Order())
+                     .OrderBy(item => item.InterfaceId))
         {
+            var interfaceId = item.InterfaceId!.Value;
             var @interface = document.Interfaces[interfaceId];
             var interfaceName = $"{@interface.Package}/{@interface.Name}";
+            var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             foreach (var resource in @interface.Types
                          .OrderBy(pair => pair.Value)
                          .Select(pair => document.Types[pair.Value])
@@ -132,6 +132,7 @@ internal sealed class ComponentContractResolver(
                     symbols,
                     document,
                     interfaceName,
+                    coreInterfaceName,
                     resource.Name!,
                     kind));
             }
@@ -144,6 +145,7 @@ internal sealed class ComponentContractResolver(
         ISymbolFormatter symbols,
         WitDocument document,
         string interfaceName,
+        string coreInterfaceName,
         string resourceName,
         CanonicalAbiFunctionKind kind)
     {
@@ -193,6 +195,7 @@ internal sealed class ComponentContractResolver(
             [new CanonicalAbiParameter("handle", value)],
             result)
         {
+            CoreInterfaceName = coreInterfaceName,
             HasManagedBinding = !candidates.IsEmpty,
             Kind = kind,
             ResourceName = resourceName,
@@ -224,12 +227,14 @@ internal sealed class ComponentContractResolver(
                     symbols,
                     document,
                     string.Empty,
+                    string.Empty,
                     item.Function,
                     imported));
                 continue;
             }
             var @interface = document.Interfaces[item.InterfaceId!.Value];
             var interfaceName = $"{@interface.Package}/{@interface.Name}";
+            var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             foreach (var function in @interface.Functions)
             {
                 functions.Add(ResolveFunction(
@@ -237,6 +242,7 @@ internal sealed class ComponentContractResolver(
                     symbols,
                     document,
                     interfaceName,
+                    coreInterfaceName,
                     function,
                     imported));
             }
@@ -252,6 +258,7 @@ internal sealed class ComponentContractResolver(
         ISymbolFormatter symbols,
         WitDocument document,
         string interfaceName,
+        string coreInterfaceName,
         WitFunction function,
         bool imported)
     {
@@ -288,6 +295,7 @@ internal sealed class ComponentContractResolver(
             parameters,
             result)
         {
+            CoreInterfaceName = coreInterfaceName,
             HasManagedBinding = method is not null,
         };
         ValidateCanonicalSignatures(

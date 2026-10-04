@@ -17,10 +17,14 @@ internal sealed class ManagedTerminalExceptionBoundaryEmitter(
         int typeIdLocal,
         int messageLocal,
         int messageLengthLocal,
+        int stackTraceLocal,
+        int stackTraceLengthLocal,
         CliValueKind resultType,
         int resultLocal,
         int reportFunctionIndex,
-        Action emitBody)
+        int? raiseFunctionIndex,
+        Action emitBody,
+        Action? emitCatchCleanup = null)
     {
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(emitBody);
@@ -40,6 +44,7 @@ internal sealed class ManagedTerminalExceptionBoundaryEmitter(
         WriteBranch(code, 1);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         WriteLocalSet(code, exceptionLocal);
+        emitCatchCleanup?.Invoke();
 
         WriteI32Constant(code, 1);
         WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.RootFrameEnter));
@@ -57,13 +62,22 @@ internal sealed class ManagedTerminalExceptionBoundaryEmitter(
             exceptionLocal,
             typeIdLocal,
             messageLocal,
-            messageLengthLocal);
+            messageLengthLocal,
+            stackTraceLocal,
+            stackTraceLengthLocal);
         WriteLocalGet(code, typeIdLocal);
         WriteLocalGet(code, messageLocal);
         WriteLocalGet(code, messageLengthLocal);
+        WriteLocalGet(code, stackTraceLocal);
+        WriteLocalGet(code, stackTraceLengthLocal);
         WriteCall(code, reportFunctionIndex);
         WriteLocalGet(code, rootFrameLocal);
         WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.RootFrameLeave));
+        if (raiseFunctionIndex is { } raise)
+            WriteCall(code, raise);
+        // Structured providers raise their private tag here. The lean command
+        // path and raw providers reach this instruction directly, preserving a
+        // genuine, uncatchable Wasm trap without carrying the private tag ABI.
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }

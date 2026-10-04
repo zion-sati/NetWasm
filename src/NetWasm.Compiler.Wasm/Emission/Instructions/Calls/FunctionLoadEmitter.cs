@@ -11,6 +11,7 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 internal sealed class FunctionLoadEmitter(
     ITargetLayout layouts,
     IManagedCallSiteResolver callSites,
+    INativeFunctionAddressEmitter nativeAddresses,
     IInstructionCommandFactory commands) :
     InstructionCommandProvider,
     IFunctionLoader
@@ -32,10 +33,21 @@ internal sealed class FunctionLoadEmitter(
         IFunctionIndexResolver functionIndices)
     {
         var target = callSites.Resolve(request).Target;
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(functionIndices.Resolve(target))));
-        if (layouts.Target.UsesMemory64)
+        if (request.Target.NativeCallbacks.ByMethodIdentity.TryGetValue(
+            target.CanonicalName,
+            out var callback))
         {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+            nativeAddresses.Emit(callback, code);
+        }
+        else
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(functionIndices.Resolve(target))));
+            if (layouts.Target.UsesMemory64)
+            {
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+            }
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,

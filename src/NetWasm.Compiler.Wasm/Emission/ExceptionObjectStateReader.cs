@@ -10,6 +10,7 @@ internal sealed class ExceptionObjectStateReader : IExceptionObjectStateReader
     private readonly ITargetLayout _target;
     private readonly IRuntimeObjectLayout _runtimeObjects;
     private readonly int? _messageOffset;
+    private readonly int? _stackTraceOffset;
 
     public ExceptionObjectStateReader(
         ITargetLayout target,
@@ -20,6 +21,7 @@ internal sealed class ExceptionObjectStateReader : IExceptionObjectStateReader
         _runtimeObjects = runtimeObjects ?? throw new ArgumentNullException(nameof(runtimeObjects));
         ArgumentNullException.ThrowIfNull(fields);
         _messageOffset = fields.Resolve("_message");
+        _stackTraceOffset = fields.Resolve("_stackTrace");
     }
 
     public void Emit(
@@ -27,7 +29,9 @@ internal sealed class ExceptionObjectStateReader : IExceptionObjectStateReader
         int exceptionLocal,
         int typeIdLocal,
         int messageLocal,
-        int messageLengthLocal)
+        int messageLengthLocal,
+        int stackTraceLocal,
+        int stackTraceLengthLocal)
     {
         ArgumentNullException.ThrowIfNull(code);
 
@@ -41,12 +45,23 @@ internal sealed class ExceptionObjectStateReader : IExceptionObjectStateReader
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)typeIdLocal)));
 
-        if (_messageOffset is null)
+        EmitStringState(code, exceptionLocal, _messageOffset, messageLocal, messageLengthLocal);
+        EmitStringState(code, exceptionLocal, _stackTraceOffset, stackTraceLocal, stackTraceLengthLocal);
+    }
+
+    private void EmitStringState(
+        IWasmInstructionWriter code,
+        int exceptionLocal,
+        int? fieldOffset,
+        int stringLocal,
+        int stringLengthLocal)
+    {
+        if (fieldOffset is null)
         {
             EmitAddressConstant(code, 0);
-            WriteLocalSet(code, messageLocal);
+            WriteLocalSet(code, stringLocal);
             WriteI32Constant(code, 0);
-            WriteLocalSet(code, messageLengthLocal);
+            WriteLocalSet(code, stringLengthLocal);
             return;
         }
 
@@ -54,20 +69,20 @@ internal sealed class ExceptionObjectStateReader : IExceptionObjectStateReader
         ManagedMemoryEmitter.EmitLoadBySize(
             code,
             _target.Target,
-            _messageOffset.Value,
+            fieldOffset.Value,
             _target.Target.ObjectReferenceSize);
-        WriteLocalSet(code, messageLocal);
-        WriteLocalGet(code, messageLocal);
+        WriteLocalSet(code, stringLocal);
+        WriteLocalGet(code, stringLocal);
         EmitReferenceEqualZero(code);
         WriteBlock(code, WasmOpcodes.If);
         WriteI32Constant(code, 0);
-        WriteLocalSet(code, messageLengthLocal);
+        WriteLocalSet(code, stringLengthLocal);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        WriteLocalGet(code, messageLocal);
+        WriteLocalGet(code, stringLocal);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.I32Load,
             WasmInstructionOperand.Memory(2, (uint)_runtimeObjects.StringLengthOffset)));
-        WriteLocalSet(code, messageLengthLocal);
+        WriteLocalSet(code, stringLengthLocal);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 

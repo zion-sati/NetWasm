@@ -3,7 +3,9 @@ namespace NetWasm.Wit.Bindings;
 internal static class Program
 {
     internal static int Main(string[] arguments) =>
-        Run(arguments, WitBindingToolCompositionRoot.Create);
+        Run(arguments, arguments.Contains("--worker-contract", StringComparer.Ordinal)
+            ? Workers.WitWorkerClientCommandComposition.Create
+            : WitBindingToolCompositionRoot.Create);
 
     internal static int Run(
         string[] arguments,

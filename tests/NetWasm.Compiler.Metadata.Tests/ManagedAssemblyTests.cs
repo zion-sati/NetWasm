@@ -13,6 +13,35 @@ using static NetWasm.Compiler.Metadata.Tests.MetadataTestData;
 public sealed class ManagedAssemblyTests
 {
     [Fact]
+    public void GenericCustomAttributesDoNotBecomeCompilerDeclarations()
+    {
+        var builder = new PersistedAssemblyBuilder(
+            new AssemblyName("GenericAttributeMetadata"), typeof(object).Assembly);
+        var module = builder.DefineDynamicModule("GenericAttributeMetadata");
+        var owner = module.DefineType("Fixture.Owner", TypeAttributes.Public);
+        var attribute = new CustomAttributeBuilder(
+            typeof(MarkerAttribute<int>).GetConstructor(Type.EmptyTypes)!, []);
+        owner.SetCustomAttribute(attribute);
+        var method = owner.DefineMethod("Run", MethodAttributes.Public | MethodAttributes.Static,
+            typeof(void), Type.EmptyTypes);
+        method.SetCustomAttribute(attribute);
+        method.GetILGenerator().Emit(OpCodes.Ret);
+        _ = owner.CreateType();
+        using var image = new MemoryStream();
+        builder.Save(image);
+        using var assembly = ManagedAssembly.Parse("memory/generic-attribute.dll", image.ToArray(),
+            AssemblyIdentityAliases.Empty, new ValueTypeDefinitionStackKindResolver(),
+            new NativeImportDeclarationReader());
+
+        Assert.Equal(0, assembly.Types.Values.Single(type => type.FullName == "Fixture.Owner")
+            .InlineArrayLength);
+        Assert.Contains(assembly.Methods.Values, candidate => candidate.Name == "Run");
+    }
+
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+    private sealed class MarkerAttribute<T> : Attribute;
+
+    [Fact]
     public void PreservesExplicitFieldOffsetsAndAbsentSequentialOffsets()
     {
         var builder = new PersistedAssemblyBuilder(new AssemblyName("LayoutMetadata"), typeof(object).Assembly);
@@ -29,7 +58,7 @@ public sealed class ManagedAssemblyTests
         using var image = new MemoryStream();
         builder.Save(image);
         using var assembly = ManagedAssembly.Parse("memory/layout.dll", image.ToArray(),
-            AssemblyIdentityAliases.Empty, new ValueTypeDefinitionStackKindResolver());
+            AssemblyIdentityAliases.Empty, new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader());
         Assert.Equal(0, assembly.Fields.Values.Single(field => field.Name == "First").ExplicitOffset);
         Assert.Equal(2, assembly.Fields.Values.Single(field => field.Name == "Second").ExplicitOffset);
         Assert.Null(assembly.Fields.Values.Single(field => field.Name == "Value").ExplicitOffset);
@@ -48,7 +77,7 @@ public sealed class ManagedAssemblyTests
         using var image = new MemoryStream();
         builder.Save(image);
         using var assembly = ManagedAssembly.Parse("memory/initialization.dll", image.ToArray(),
-            AssemblyIdentityAliases.Empty, new ValueTypeDefinitionStackKindResolver());
+            AssemblyIdentityAliases.Empty, new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader());
 
         Assert.Equal(beforeFieldInit, assembly.Types.Values.Single(type => type.FullName == "Fixture.Owner").IsBeforeFieldInit);
     }
@@ -202,7 +231,7 @@ public sealed class ManagedAssemblyTests
             "memory/application.dll",
             image,
             AssemblyIdentityAliases.Empty,
-            new ValueTypeDefinitionStackKindResolver());
+            new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader());
 
         Assert.Equal("Fixture.Application", assembly.Identity.Name);
     }

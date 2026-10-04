@@ -28,6 +28,10 @@ internal sealed class InterlockedCallRewriter(
             {
                 continue;
             }
+            if (target.Definition.GenericArity == 0)
+            {
+                continue;
+            }
             if (target.MethodArguments.Length != 1 ||
                 target.MethodArguments[0].Shape is CliTypeShape.GenericMethodParameter or
                     CliTypeShape.GenericTypeParameter)

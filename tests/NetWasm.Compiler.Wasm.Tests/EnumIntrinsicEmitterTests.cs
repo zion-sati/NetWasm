@@ -355,7 +355,7 @@ public sealed class EnumIntrinsicEmitterTests
         var layouts = new EnumLayouts(program.UnderlyingType);
         var references = new ReferenceComparisonEmitter(layouts);
         var emitter = new EnumTypeCodeEmitter(
-            new EnumStorageResolver(program, program, layouts, layouts, layouts),
+            new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
                 new ImplicitExceptionEmitter(layouts, layouts, 0)));
@@ -398,7 +398,7 @@ public sealed class EnumIntrinsicEmitterTests
     {
         var references = new ReferenceComparisonEmitter(layouts);
         return new EnumEqualsEmitter(
-            new EnumStorageResolver(program, program, layouts, layouts, layouts),
+            new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
                 new ImplicitExceptionEmitter(layouts, layouts, 0)),
@@ -413,7 +413,7 @@ public sealed class EnumIntrinsicEmitterTests
     {
         var references = new ReferenceComparisonEmitter(layouts);
         return new EnumHashCodeEmitter(
-            new EnumStorageResolver(program, program, layouts, layouts, layouts),
+            new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
                 new ImplicitExceptionEmitter(layouts, layouts, 0)),
@@ -427,7 +427,7 @@ public sealed class EnumIntrinsicEmitterTests
     {
         var references = new ReferenceComparisonEmitter(layouts);
         return new EnumCompareToEmitter(
-            new EnumStorageResolver(program, program, layouts, layouts, layouts),
+            new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
                 new ImplicitExceptionEmitter(layouts, layouts, 0)),
@@ -522,8 +522,13 @@ public sealed class EnumIntrinsicEmitterTests
         IStaticDataLayout,
         IRuntimeObjectLayout,
         IManagedExceptionObjectProvider,
-        ITypeDescriptorSource
+        ITypeDescriptorSource,
+        IEnumMetadataSource
     {
+        public ImmutableArray<EnumMetadataLayout> EnumMetadata =>
+            [new(EnumProgram.TypeKey,
+                CliTypeIdentity.Named(EnumProgram.TypeKey.Assembly, "Tests", "State", true, underlyingType.StackKind),
+                7, 0, underlyingType, false, false, [])];
         public WasmTargetLayout Target => WasmTargetLayout.Wasm32;
         public int ReferenceArrayTypeId => 0;
         public int StringTypeId => 0;

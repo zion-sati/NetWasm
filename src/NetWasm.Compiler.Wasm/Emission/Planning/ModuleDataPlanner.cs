@@ -10,6 +10,8 @@ using NetWasm.Compiler.Wasm.Emission.Methods;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
+internal sealed record StackTraceSymbolData(int Id, int Address, int Length);
+
 internal sealed record ModuleDataPlan(
     IReadOnlyDictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>
         ExceptionMetadata,
@@ -19,6 +21,9 @@ internal sealed record ModuleDataPlan(
     int StaticDataEnd)
 {
     public StaticInitializerFunctionPlan? StaticInitializerFunctions { get; init; }
+    public int? NativeCallbackReadinessAddress { get; init; }
+    public int? StackTraceSymbolRegistrationGuardAddress { get; init; }
+    public ImmutableArray<StackTraceSymbolData> StackTraceSymbols { get; init; } = [];
 
     public static ModuleDataPlan Empty { get; } = new(
         ImmutableDictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>.Empty,
@@ -37,7 +42,9 @@ internal sealed class ModuleDataPlanner(
     public ModuleDataPlan Build(
         IEnumerable<StructuredMethodEmission> methods,
         IReadOnlyList<EntityKey> directInitializers,
-        IReadOnlyList<string> constructedInitializers)
+        IReadOnlyList<string> constructedInitializers,
+        bool reserveNativeCallbackReadiness,
+        StackTraceMethodPlan? stackTraceMethods = null)
     {
         var metadata = new Dictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>();
         var segments = layouts.DataSegments.ToList();
@@ -79,12 +86,44 @@ internal sealed class ModuleDataPlanner(
             address += sizeof(int);
         }
 
+        int? nativeCallbackReadinessAddress = null;
+        if (reserveNativeCallbackReadiness)
+        {
+            nativeCallbackReadinessAddress = address;
+            segments.Add(new(address, [0, 0, 0, 0]));
+            address += sizeof(int);
+        }
+
+        var plannedStackTraceSymbols = stackTraceMethods?.Symbols ?? [];
+        int? stackTraceSymbolRegistrationGuardAddress = null;
+        if (!plannedStackTraceSymbols.IsEmpty)
+        {
+            stackTraceSymbolRegistrationGuardAddress = address;
+            segments.Add(new(address, [0, 0, 0, 0]));
+            address += sizeof(int);
+        }
+
+        var stackTraceSymbols = ImmutableArray.CreateBuilder<StackTraceSymbolData>();
+        foreach (var symbol in plannedStackTraceSymbols)
+        {
+            var bytes = System.Text.Encoding.Unicode.GetBytes(symbol.Name);
+            segments.Add(new(address, [.. bytes]));
+            stackTraceSymbols.Add(new(symbol.Id, address, symbol.Name.Length));
+            address = checked(address + bytes.Length);
+        }
+
         return new(
             metadata,
             filterFunclets.ToImmutable(),
             [.. segments],
             guards.ToImmutable(),
-            address);
+            address)
+        {
+            NativeCallbackReadinessAddress = nativeCallbackReadinessAddress,
+            StackTraceSymbolRegistrationGuardAddress =
+                stackTraceSymbolRegistrationGuardAddress,
+            StackTraceSymbols = stackTraceSymbols.ToImmutable(),
+        };
     }
 
     private int AddExceptionGroup(
@@ -111,7 +150,9 @@ internal sealed class ModuleDataPlanner(
 
         var catches = group.Clauses
             .Where(clause => clause.Kind == CilExceptionRegionKind.Catch)
-            .Select(clause => clause.CatchType!.Value)
+            .Select(clause => clause.CatchTypeIdentity is { } identity
+                ? types.GetObjectLayout(identity).TypeId
+                : types.GetObjectLayout(clause.CatchType!.Value).TypeId)
             .ToArray();
         if (catches.Length == 0)
         {
@@ -124,7 +165,7 @@ internal sealed class ModuleDataPlanner(
         {
             BinaryPrimitives.WriteInt32LittleEndian(
                 bytes.AsSpan(index * sizeof(int), sizeof(int)),
-                types.GetObjectLayout(catches[index]).TypeId);
+                catches[index]);
         }
         segments.Add(new(address, [.. bytes]));
         metadata.Add(exceptionGroupKeys.Create(method, group.Id), new(address, catches.Length, false));
@@ -150,7 +191,9 @@ internal sealed class ModuleDataPlanner(
                 case CilExceptionRegionKind.Catch:
                     BinaryPrimitives.WriteInt32LittleEndian(
                         bytes.AsSpan(entry + sizeof(int), sizeof(int)),
-                        types.GetObjectLayout(clause.CatchType!.Value).TypeId);
+                        clause.CatchTypeIdentity is { } identity
+                            ? types.GetObjectLayout(identity).TypeId
+                            : types.GetObjectLayout(clause.CatchType!.Value).TypeId);
                     break;
                 case CilExceptionRegionKind.Filter:
                     var funcletId = filterFunclets.Count + 1;

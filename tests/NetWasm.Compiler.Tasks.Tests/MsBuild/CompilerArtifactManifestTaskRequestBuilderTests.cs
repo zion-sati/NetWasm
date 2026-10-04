@@ -1,3 +1,5 @@
+using System.Collections;
+using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 using NetWasm.Compiler.Tasks.MsBuild;
 
@@ -11,6 +13,7 @@ public sealed class CompilerArtifactManifestTaskRequestBuilderTests
         var artifact = new TaskItem("application.core.wasm");
         artifact.SetMetadata("Kind", "CoreModule");
         artifact.SetMetadata("MediaType", "application/wasm");
+        artifact.SetMetadata("CopyToPublishDirectory", "Never");
         var input = new CompilerArtifactManifestTaskInput(
             "obj/manifest.json",
             "/project",
@@ -37,6 +40,26 @@ public sealed class CompilerArtifactManifestTaskRequestBuilderTests
         Assert.Equal("CoreModule", output.Kind);
         Assert.Equal("application/wasm", output.MediaType);
         Assert.Equal("application.core.wasm", output.Path);
+        Assert.Equal("Never", output.CopyToPublishDirectory);
+    }
+
+    [Fact]
+    public void BuilderRecordsCompilationSettingsAndTheSelectedWitClosure()
+    {
+        var input = new CompilerArtifactManifestTaskInput(
+            "manifest.json", ".", "netwasm0.1", "wasm32", "none",
+            "sdk", "compiler", "abi", "runtime", "worker.dll", [], [], null, [],
+            CompilationIdentityPath: "obj/compilation.identity",
+            WitInputs: [new TaskItem("worker/world.wit"), new TaskItem("worker/deps/platform.wit")]);
+        var builder = Assert.IsAssignableFrom<ICompilerArtifactManifestTaskRequestBuilder>(
+            new CompilerArtifactManifestTaskRequestBuilder());
+
+        var request = builder.Build(input);
+
+        Assert.Equal(["InputAssembly", "CompilationIdentity", "Wit", "Wit"],
+            request.Inputs.Select(item => item.Kind));
+        Assert.Equal(["worker.dll", "obj/compilation.identity", "worker/world.wit",
+            "worker/deps/platform.wit"], request.Inputs.Select(item => item.Path));
     }
 
     [Fact]
@@ -63,6 +86,26 @@ public sealed class CompilerArtifactManifestTaskRequestBuilderTests
         var output = Assert.Single(request.Outputs);
         Assert.Equal("Unknown", output.Kind);
         Assert.Equal("application/octet-stream", output.MediaType);
+        Assert.Equal("PreserveNewest", output.CopyToPublishDirectory);
+    }
+
+    [Theory]
+    [InlineData("obj")]
+    [InlineData("obj/")]
+    public void BuilderResolvesSourceItemsWhenFullPathMetadataIsAbsent(string generatedRoot)
+    {
+        var input = new CompilerArtifactManifestTaskInput(
+            "manifest.json", ".", "profile", "wasm32", "none", "sdk", "compiler",
+            "abi", "runtime", "app.dll", [],
+            [new ItemWithoutFullPath("Program.cs"), new ItemWithoutFullPath("obj/generated.cs")],
+            null, [], generatedRoot, WitInputs: []);
+        var builder = Assert.IsAssignableFrom<ICompilerArtifactManifestTaskRequestBuilder>(
+            new CompilerArtifactManifestTaskRequestBuilder());
+
+        var result = builder.Build(input);
+
+        var source = Assert.Single(result.Inputs, item => item.Kind == "Source");
+        Assert.Equal("Program.cs", source.Path);
     }
 
     [Fact]
@@ -94,4 +137,20 @@ public sealed class CompilerArtifactManifestTaskRequestBuilderTests
         var source = Assert.Single(request.Inputs, static item => item.Kind == "Source");
         Assert.Equal("Program.cs", source.Path);
     }
+    private sealed class ItemWithoutFullPath(string path) : ITaskItem
+    {
+        private readonly TaskItem _item = new(path);
+        public string ItemSpec { get => _item.ItemSpec; set => _item.ItemSpec = value; }
+        public int MetadataCount => _item.MetadataCount;
+        public ICollection MetadataNames => _item.MetadataNames;
+        public string GetMetadata(string metadataName) => metadataName == "FullPath"
+            ? string.Empty
+            : _item.GetMetadata(metadataName);
+        public void SetMetadata(string metadataName, string metadataValue) =>
+            _item.SetMetadata(metadataName, metadataValue);
+        public void RemoveMetadata(string metadataName) => _item.RemoveMetadata(metadataName);
+        public void CopyMetadataTo(ITaskItem destinationItem) => _item.CopyMetadataTo(destinationItem);
+        public IDictionary CloneCustomMetadata() => _item.CloneCustomMetadata();
+    }
+
 }

@@ -3,12 +3,15 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.Support;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Memory;
 
 internal sealed class AtomicInstructionEmitter(
     ITargetLayout layouts,
-    ICilTypeOperandResolver types) : InstructionCommandProvider
+    ICilTypeOperandResolver types,
+    IImplicitExceptionEmitter exceptions,
+    IAddressInstructionEmitter addresses) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -42,6 +45,13 @@ internal sealed class AtomicInstructionEmitter(
             request.Context,
             address,
             resultKind);
+        // Generic Interlocked calls reach this command without executing the
+        // CoreLib body, so its managed null-location contract belongs here too.
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)addressLocal)));
+        addresses.Emit(code, AddressOperation.EqualZero);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        exceptions.Emit(code, ManagedExceptionKind.NullReference);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(addressLocal))));
         code.Write(WasmInstruction.WithOperand(
             encoding.Load,

@@ -115,6 +115,39 @@ public sealed class RuntimeModuleMaterializerTests
     }
 
     [Fact]
+    public void CallbackOnlyLayoutSelectsNativeMaterialization()
+    {
+        using var directory = new TemporaryDirectory();
+        var callbackSupport = RuntimePackTestData.CallbackSupport();
+        var native = new RecordingNativeMaterializer();
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(4, "wasm32", 65_537)
+            {
+                NativeCallbackSupport = callbackSupport,
+            }),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            new RecordingCommandInvoker(),
+            new Sha256ArtifactDigestCalculator(),
+            nativeModules: native);
+        var request = Request(directory, "wasm32") with
+        {
+            NativeCallbackObjectPath = directory.PathTo(
+                "application.callbacks.o"),
+        };
+
+        var result = materializer.Materialize(request);
+
+        Assert.Same(native.Result, result);
+        Assert.Same(callbackSupport,
+            native.Request?.SourceLayout.NativeCallbackSupport);
+        Assert.Empty(native.Request!.SourceLayout.NativeImports);
+    }
+
+    [Fact]
     public void RejectsUnavailableTarget()
     {
         using var directory = new TemporaryDirectory();
@@ -463,7 +496,8 @@ public sealed class RuntimeModuleMaterializerTests
         IRuntimeOptimizationArgumentBuilder optimizationArguments,
         ICommandInvoker commands,
         IArtifactDigestCalculator artifactDigests,
-        IRuntimeMaterializationCacheWriter? cacheWriter = null) =>
+        IRuntimeMaterializationCacheWriter? cacheWriter = null,
+        IRuntimeNativeModuleMaterializer? nativeModules = null) =>
         new(
             manifests,
             layouts,
@@ -476,7 +510,40 @@ public sealed class RuntimeModuleMaterializerTests
             cacheWriter ?? new RuntimeMaterializationCacheWriter(),
             new RuntimeArtifactPublisher(new Sha256ArtifactDigestCalculator()),
             commands,
-            artifactDigests);
+            artifactDigests,
+            nativeModules ?? new RejectingNativeMaterializer());
+
+    private sealed class RejectingNativeMaterializer : IRuntimeNativeModuleMaterializer
+    {
+        public RuntimeMaterialization Materialize(RuntimeNativeMaterializationRequest request) =>
+            throw new InvalidOperationException("Unexpected native materialization in runtime-only test.");
+    }
+
+    private sealed class RecordingNativeMaterializer : IRuntimeNativeModuleMaterializer
+    {
+        public RuntimeMaterialization Result { get; } = new(
+            "wasm32",
+            "/runtime.wasm",
+            RuntimePackTestData.Digest,
+            "netwasm.runtime.v1",
+            "test",
+            "fingerprint",
+            0,
+            0,
+            0,
+            65_536,
+            new("runtime-materialization", "0123456789ab",
+                RuntimeMaterializationCacheOutcome.Miss, true, 0, 0, 0));
+
+        public RuntimeNativeMaterializationRequest? Request { get; private set; }
+
+        public RuntimeMaterialization Materialize(
+            RuntimeNativeMaterializationRequest request)
+        {
+            Request = request;
+            return Result;
+        }
+    }
 
     private static RuntimeMaterializationRequest Request(TemporaryDirectory directory, string target)
     {
@@ -594,14 +661,15 @@ public sealed class RuntimeModuleMaterializerTests
             RuntimeMaterializationCacheSlot slot,
             RuntimeMaterializationCacheKey key,
             byte[] bytes,
-            string sha256) => throw failure;
+            string sha256,
+            RuntimeNativeCacheEvidence? nativeEvidence = null) => throw failure;
     }
 
     private static RuntimeMaterializationCacheKey CacheKeyFor(
         RuntimeMaterializationRequest request,
         RuntimePackManifest manifest,
         RuntimeMemoryLayout layout) =>
-        new RuntimeMaterializationCacheKeyBuilder().Build(new(
+        new RuntimeMaterializationCacheKeyBuilder().Build(new RuntimeMaterializationCacheKeyRequest(
             request.BuildIdentity,
             manifest,
             manifest.Targets.Single(target => target.Target == request.Target),

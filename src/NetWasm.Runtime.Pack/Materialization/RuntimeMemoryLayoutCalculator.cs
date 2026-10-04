@@ -2,33 +2,24 @@ using System;
 
 namespace NetWasm.Runtime.Pack.Materialization;
 
-internal sealed class RuntimeMemoryLayoutCalculator : IRuntimeMemoryLayoutCalculator
+internal sealed class RuntimeMemoryLayoutCalculator(IRuntimeMemoryPlanBuilder plans) : IRuntimeMemoryLayoutCalculator
 {
+    private readonly IRuntimeMemoryPlanBuilder _plans = plans ?? throw new ArgumentNullException(nameof(plans));
+
     public RuntimeMemoryLayout Calculate(RuntimeMemoryLayoutRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Target);
-        if (request.ApplicationStaticDataEnd < 0 || request.WasmPageSize <= 0)
-        {
-            throw new InvalidOperationException("The NetWasm application memory layout is invalid.");
-        }
-
-        var initialHeapSize = request.InitialHeapSizeBytes ?? request.Target.DefaultInitialHeapSizeBytes;
-        var maximumMemorySize = request.MaximumMemorySizeBytes ?? request.Target.DefaultMaximumMemorySizeBytes;
-        if (initialHeapSize < 0 ||
-            maximumMemorySize <= 0 ||
-            maximumMemorySize > request.Target.MaximumMemorySizeBytes ||
-            maximumMemorySize % request.WasmPageSize != 0)
-        {
-            throw new InvalidOperationException("The requested NetWasm memory limits are invalid.");
-        }
+        var plan = _plans.Build(request);
+        if (request.Target.RuntimeFootprintBytes < 0)
+            throw new InvalidOperationException("The NetWasm runtime footprint is invalid.");
 
         try
         {
-            var runtimeGlobalBase = Align(request.ApplicationStaticDataEnd, request.Target.Alignment);
+            var runtimeGlobalBase = plan.RuntimeGlobalBase;
             var heapBase = checked(runtimeGlobalBase + request.Target.RuntimeFootprintBytes);
-            var initialMemorySize = Align(checked(heapBase + initialHeapSize), request.WasmPageSize);
-            if (initialMemorySize > maximumMemorySize)
+            var initialMemorySize = Align(checked(heapBase + plan.InitialHeapSizeBytes), plan.WasmPageSize);
+            if (initialMemorySize > plan.MaximumMemorySizeBytes)
             {
                 throw new InvalidOperationException("The requested NetWasm maximum memory is smaller than the initial layout.");
             }
@@ -37,7 +28,7 @@ internal sealed class RuntimeMemoryLayoutCalculator : IRuntimeMemoryLayoutCalcul
                 runtimeGlobalBase,
                 heapBase,
                 initialMemorySize,
-                maximumMemorySize);
+                plan.MaximumMemorySizeBytes);
         }
         catch (OverflowException exception)
         {

@@ -12,6 +12,92 @@ namespace NetWasm.Compiler.Metadata.Tests;
 
 public sealed class CilDecoderTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CatchDecodingPreservesOpenIdentityAndForwardsClosedContext(bool methodParameter, bool closed)
+    {
+        var builder = new PersistedAssemblyBuilder(new AssemblyName("CatchContext"), typeof(object).Assembly);
+        var module = builder.DefineDynamicModule("CatchContext");
+        var owner = module.DefineType("Fixture.Owner", TypeAttributes.Public);
+        var methodBuilder = owner.DefineMethod("Run", MethodAttributes.Public | MethodAttributes.Static,
+            typeof(void), Type.EmptyTypes);
+        var parameter = methodParameter
+            ? methodBuilder.DefineGenericParameters("T")[0]
+            : owner.DefineGenericParameters("T")[0];
+        parameter.SetBaseTypeConstraint(typeof(Exception));
+        var il = methodBuilder.GetILGenerator();
+        il.BeginExceptionBlock();
+        il.Emit(OpCodes.Ldnull);
+        il.Emit(OpCodes.Throw);
+        il.BeginCatchBlock(parameter);
+        il.Emit(OpCodes.Pop);
+        il.EndExceptionBlock();
+        il.Emit(OpCodes.Ret);
+        _ = owner.CreateType();
+        using var image = new MemoryStream();
+        builder.Save(image);
+        using var assembly = ManagedAssembly.Parse("memory/catch-context.dll", image.ToArray(),
+            AssemblyIdentityAliases.Empty, new ValueTypeDefinitionStackKindResolver(),
+            new NativeImportDeclarationReader());
+        var method = assembly.Methods.Values.Single(candidate => candidate.Name == "Run");
+        var ownerIdentity = CliTypeIdentity.FromDefinition(assembly.Types[method.DeclaringType.MetadataToken]);
+        var catchIdentity = closed
+            ? CliTypeIdentity.Named(assembly.Identity, "Fixture", "ClosedException", false)
+            : CliTypeIdentity.GenericParameter(methodParameter, 0);
+        var context = new CliGenericContext(
+            closed && !methodParameter ? [catchIdentity] : [],
+            closed && methodParameter ? [catchIdentity] : []);
+        var signatures = new CatchTypeSignatures(context, catchIdentity);
+        var entities = new CatchTypeEntities(context);
+        var decoder = Assert.IsAssignableFrom<ICilDecoder>(new CilDecoder(
+            new MetadataMethodBodyBlockReader(new FixedSymbols()), new FixedSymbols(),
+            new FixedMethodReferences(method), entities,
+            new FixedFieldReferences(MetadataActorTestData.Field, false), signatures,
+            new FixedCallSiteSignatures(), new IdentityMetadataStackTypeResolver(), new IdentitySwitchLowerer()));
+
+        var body = decoder.Decode(assembly, new MethodInstanceModel(method,
+            context.TypeArguments.IsEmpty ? ownerIdentity
+                : CliTypeIdentity.GenericInstantiation(ownerIdentity, context.TypeArguments),
+            context.MethodArguments, method.Signature));
+
+        var region = Assert.Single(body.ExceptionRegions);
+        Assert.Equal(CilExceptionRegionKind.Catch, region.Kind);
+        Assert.Same(catchIdentity, region.CatchTypeIdentity);
+        Assert.Equal(closed ? MetadataActorTestData.TypeKey : (EntityKey?)null, region.CatchType);
+        Assert.Equal(1, signatures.Calls);
+        Assert.Equal(closed ? 1 : 0, entities.Calls);
+    }
+
+    private sealed class CatchTypeSignatures(CliGenericContext expected, CliTypeIdentity identity)
+        : IMetadataTypeSignatureResolver
+    {
+        internal int Calls;
+        public CliTypeIdentity Resolve(MetadataAssemblySnapshot source, int metadataToken,
+            CliGenericContext? genericContext = null)
+        {
+            Assert.Equal(expected, genericContext);
+            Assert.Equal(HandleKind.TypeSpecification, MetadataTokens.Handle(metadataToken).Kind);
+            Calls++;
+            return identity;
+        }
+    }
+
+    private sealed class CatchTypeEntities(CliGenericContext expected) : IMetadataTypeEntityResolver
+    {
+        internal int Calls;
+        public EntityKey Resolve(MetadataAssemblySnapshot source, EntityHandle handle,
+            CliGenericContext? genericContext = null)
+        {
+            Assert.Equal(expected, genericContext);
+            Assert.Equal(HandleKind.TypeSpecification, handle.Kind);
+            Calls++;
+            return MetadataActorTestData.TypeKey;
+        }
+    }
+
     private static readonly string[] PrimitiveArrayMethods =
     [
         "SignedByte", "Byte", "Short", "UShort", "Int", "UInt",
@@ -908,7 +994,7 @@ public sealed class CilDecoderTests
 
     private sealed class FixedTypeEntities : IMetadataTypeEntityResolver
     {
-        public EntityKey Resolve(MetadataAssemblySnapshot source, EntityHandle handle) =>
+        public EntityKey Resolve(MetadataAssemblySnapshot source, EntityHandle handle, CliGenericContext? genericContext = null) =>
             new(source.Identity, MetadataTokens.GetToken(handle));
     }
 

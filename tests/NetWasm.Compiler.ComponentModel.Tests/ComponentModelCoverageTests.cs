@@ -154,6 +154,18 @@ public sealed class ComponentModelCoverageTests
     }
 
     [Fact]
+    public void SystemFileCopierCopiesAndOverwritesFiles()
+    {
+        using var files = new ComponentModelTestFiles();
+        var source = files.Create("source.bin", 4);
+        var destination = files.Create("destination.bin", 1);
+
+        new SystemFileCopier().Copy(source, destination);
+
+        Assert.Equal(File.ReadAllBytes(source), File.ReadAllBytes(destination));
+    }
+
+    [Fact]
     public void ContractAdaptersRejectMissingCollaborators()
     {
         var merge = new NoopMerge();
@@ -471,7 +483,7 @@ public sealed class ComponentModelCoverageTests
 
     private sealed class NoopExports : IWasmCoreModuleExportEditor
     {
-        public void RetainComponentExports(string inputPath, string outputPath, string prefix)
+        public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
         {
         }
     }

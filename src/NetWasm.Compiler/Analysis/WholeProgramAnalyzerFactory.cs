@@ -10,6 +10,7 @@ using NetWasm.Compiler.Metadata;
 
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
+using NetWasm.Compiler.Analysis.Attributes;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -17,6 +18,7 @@ internal sealed class WholeProgramAnalyzerFactory(
     ICalledMethodResolverFactory calledMethods,
     ITypeOperandResolverFactory typeOperands,
     IMethodSpecializerFactory specializers,
+    IAttributeQueryMethodSpecializerFactory attributeQueries,
     IDispatchTargetResolverFactory dispatchTargets,
     ITypeRelationshipClassifierFactory typeRelationships,
     IDelegateTypeRecognizerFactory delegateTypes,
@@ -35,7 +37,8 @@ internal sealed class WholeProgramAnalyzerFactory(
     IManagedCallSiteLedgerWriter managedCallSites,
     INullableTypeResolver nullableTypes,
     IReachableMethodBatchObserver reachableMethodBatchObserver,
-    IReachabilityClosureObserver reachabilityClosureObserver) : IWholeProgramAnalyzerFactory
+    IReachabilityClosureObserver reachabilityClosureObserver,
+    ITypeClassifierFactory typeClassifiers) : IWholeProgramAnalyzerFactory
 {
     public IWholeProgramAnalyzer Create(
         MetadataCompilationSnapshot metadata,
@@ -100,6 +103,9 @@ internal sealed class WholeProgramAnalyzerFactory(
             typeFinder,
             calls,
             methodImplementations);
+        specializer = attributeQueries.Create(specializer, metadata, typeRepository, fieldRepository,
+            methodRepository, typeFinder, typeDefinitions, typeIdentities, methodInstances,
+            relationships, baseTypes, calls, types, symbols);
         var concurrency = SelectConcurrency(
             OperatingSystem.IsBrowser(), Environment.ProcessorCount);
         var methodAnalyzerWorkers =
@@ -134,7 +140,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             allocationCapabilities.Create(
                 typeRepository,
                 fieldRepository,
-                methodRepository),
+                methodRepository,
+                typeClassifiers.Create(metadata)),
             delegateBindingPlanners.Create(relationships));
         var closure = new ReachabilityClosureBuilder(
             typeRepository,
@@ -162,7 +169,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             programBuilder,
             ledgers,
             managedCallSites,
-            new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes),
+            new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes, typeDefinitions),
             reachabilityClosureObserver,
             new DispatchCandidateIndexFactory(relationships),
             new ModuleInitializerResolver(
@@ -187,8 +194,14 @@ internal sealed class WholeProgramAnalyzerFactory(
                 typeFinder,
                 methodRepository,
                 methodInstances,
-                symbols),
-            baseTypes);
+                symbols,
+                nullableTypes),
+            baseTypes,
+            new FinalizerResolver(
+                typeDefinitions,
+                methodRepository,
+                baseTypes),
+            nullableTypes);
         return new WholeProgramAnalyzer(closure);
     }
 

@@ -91,7 +91,7 @@ test("rejects unsupported contracts and invalid optional dependencies", () => {
   }), /release actions/);
 });
 
-test("projects only valid plain import data and reserves the reactor host", () => {
+test("projects only valid plain import data and reserves internal hosts", () => {
   const invalidImports = [null, 1, [], Object.create({ inherited: {} }),
     { "": {} }, { invalid: null }, { invalid: () => {} }];
   for (const imports of invalidImports) assertInvalidImports(imports);
@@ -104,7 +104,12 @@ test("projects only valid plain import data and reserves the reactor host", () =
   const accessor = {};
   Object.defineProperty(accessor, "getter", { get: () => ({}), enumerable: true });
   assertInvalidImports(accessor);
-  for (const name of ["netwasm:runtime/reactor-host", "netwasm:runtime/reactor-host@1.0.0"]) {
+  for (const name of [
+    "netwasm:runtime/reactor-host",
+    "netwasm:runtime/reactor-host@1.0.0",
+    "netwasm:diagnostics/terminal",
+    "netwasm:diagnostics/terminal@1.0.0",
+  ]) {
     assertInvalidImports({ [name]: {} }, /reserved/);
   }
 });

@@ -17,6 +17,7 @@ internal sealed class RequestedExportSetAppender(
         RuntimeInitializationPlan initialization, bool hasFinalizers,
         WasmModuleProfile profile,
         IFunctionIndexResolver functionIndices,
+        InteropImportPlan interopImports,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries)
     {
         ArgumentNullException.ThrowIfNull(functions);
@@ -27,6 +28,7 @@ internal sealed class RequestedExportSetAppender(
         ArgumentNullException.ThrowIfNull(asyncBindings);
         ArgumentNullException.ThrowIfNull(initialization);
         ArgumentNullException.ThrowIfNull(functionIndices);
+        ArgumentNullException.ThrowIfNull(interopImports);
         ArgumentNullException.ThrowIfNull(boundaryEntries);
 
         foreach ((var name, var method) in requestedExports.OrderBy(
@@ -35,7 +37,7 @@ internal sealed class RequestedExportSetAppender(
         {
             exports.Append(functions, importCount, requestedExportIndices,
                 asyncHelperIndices, name, method, asyncBindings, initialization,
-                hasFinalizers, profile, functionIndices, boundaryEntries);
+                hasFinalizers, profile, functionIndices, interopImports, boundaryEntries);
         }
     }
 }

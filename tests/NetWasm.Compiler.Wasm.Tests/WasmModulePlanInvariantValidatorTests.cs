@@ -12,6 +12,176 @@ using static EmitterTestSupport;
 public sealed class WasmModulePlanInvariantValidatorTests
 {
     [Fact]
+    public void RequiresCanonicalOrderingAcrossMultipleReachedNativeMethods()
+    {
+        var (request, plan) = CreateNativePlan();
+        var first = Assert.Single(plan.NativeImports.Methods);
+        var secondMethod = first.Method with
+        {
+            Definition = first.Method.Definition with { Key = Key(0x0600007e), Name = "Another" },
+        };
+        var ordered = new[] { first, first with { Method = secondMethod } }
+            .OrderBy(import => import.Method.CanonicalName, StringComparer.Ordinal)
+            .ToImmutableArray();
+        request = request with
+        {
+            MethodInstances = request.MethodInstances.ToImmutableDictionary().Add(secondMethod.CanonicalName, secondMethod),
+        };
+        plan = plan with
+        {
+            NativeImports = new(ordered),
+            FunctionIndices = plan.FunctionIndices with
+            {
+                ImportedMethods = ordered.Select((import, index) => (import.Method.Definition.Key, index))
+                    .ToImmutableDictionary(pair => pair.Key, pair => new WasmFunctionIndex(pair.index)),
+            },
+        };
+        var validator = CreateValidator();
+
+        validator.Validate(request, [], plan);
+        var error = Assert.Throws<InvalidOperationException>(() => validator.Validate(request, [],
+            plan with { NativeImports = new([.. ordered.Reverse()]) }));
+
+        Assert.Contains("canonical order", error.Message);
+    }
+
+    [Fact]
+    public void AcceptsExactlyReachedNativeImportsAndTheirSequentialIndices()
+    {
+        var (request, plan) = CreateNativePlan();
+
+        CreateValidator().Validate(request, [], plan);
+
+        var native = Assert.Single(plan.NativeImports.Methods);
+        Assert.Same(Assert.Single(request.MethodInstances.Values), native.Method);
+        Assert.Equal(0, plan.FunctionIndices.ImportedMethods[native.Method.Definition.Key].Value);
+    }
+
+    [Fact]
+    public void RejectsOmittedOrContradictoryReachedNativeImports()
+    {
+        var (request, plan) = CreateNativePlan();
+        var validator = CreateValidator();
+        var omitted = Assert.Throws<InvalidOperationException>(() =>
+            validator.Validate(request, [], plan with { NativeImports = NativeImportPlan.Empty }));
+        Assert.Contains("native imports do not match reached native methods", omitted.Message);
+
+        var native = Assert.Single(plan.NativeImports.Methods);
+        var changed = native.Method with
+        {
+            Definition = native.Method.Definition with { Name = "different" },
+        };
+        var contradictory = Assert.Throws<InvalidOperationException>(() =>
+            validator.Validate(request, [], plan with
+            {
+                NativeImports = new([native with { Method = changed }]),
+            }));
+        Assert.Contains("native imports do not match reached native methods", contradictory.Message);
+    }
+
+    [Fact]
+    public void RejectsNativeImportWithoutAnIndex()
+    {
+        var (request, plan) = CreateNativePlan();
+        var invalid = plan with
+        {
+            FunctionIndices = plan.FunctionIndices with
+            {
+                ImportedMethods = ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty,
+            },
+        };
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CreateValidator().Validate(request, [], invalid));
+
+        Assert.Contains("native import has no function index", error.Message);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public void RejectsNegativeOrNonSequentialNativeIndices(int index)
+    {
+        var (request, plan) = CreateNativePlan();
+        var native = Assert.Single(plan.NativeImports.Methods);
+        var invalid = plan with
+        {
+            FunctionIndices = plan.FunctionIndices with
+            {
+                ImportedMethods = plan.FunctionIndices.ImportedMethods.SetItem(
+                    native.Method.Definition.Key, new(index)),
+            },
+        };
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CreateValidator().Validate(request, [], invalid));
+
+        Assert.Contains("native import function index", error.Message);
+    }
+
+    [Fact]
+    public void RejectsCallbackPlanThatContradictsReachability()
+    {
+        var program = new FakeProgram();
+        var request = CreateRequest(program);
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
+        var definition = program.GetMethod(EntryKey) with
+        {
+            Key = Key(0x0600007d),
+            Name = "Callback",
+            Signature = signature,
+            NativeCallback = new([], null, false, false),
+        };
+        var callback = new MethodInstanceModel(
+            definition,
+            CliTypeIdentity.Named(Assembly, "Test", "Callbacks", false),
+            [],
+            signature);
+        var namedDefinition = definition with
+        {
+            Key = Key(0x0600007c),
+            Name = "NamedCallback",
+            NativeCallback = new([], "named_callback", false, false),
+        };
+        var namedCallback = new MethodInstanceModel(
+            namedDefinition,
+            callback.DeclaringType,
+            [],
+            signature);
+        request = request with
+        {
+            NativeCallbacks = ImmutableDictionary<string, MethodInstanceModel>.Empty
+                .Add(callback.CanonicalName, callback)
+                .Add(namedCallback.CanonicalName, namedCallback),
+            AddressedNativeCallbacks = ImmutableHashSet.Create(
+                StringComparer.Ordinal,
+                callback.CanonicalName),
+        };
+        var plan = CreatePlanner(program).Build(
+            request,
+            CreateMethodEmissions(request));
+        var validator = CreateValidator();
+
+        Validate(validator, request, plan);
+        var missing = Assert.Throws<InvalidOperationException>(() =>
+            Validate(validator, request, plan with
+            {
+                NativeCallbacks = NativeCallbackPlan.Empty,
+            }));
+        Assert.Contains("native callbacks do not match", missing.Message);
+
+        var ownership = Assert.Throws<InvalidOperationException>(() =>
+            Validate(
+                validator,
+                request with
+                {
+                    AddressedNativeCallbacks = ImmutableHashSet<string>.Empty,
+                },
+                plan));
+        Assert.Contains("callback address ownership", ownership.Message);
+    }
+
+    [Fact]
     public void RejectsAnInvalidFunctionIndexBeforeSerialization()
     {
         var (request, plan) = CreatePlan();
@@ -339,6 +509,45 @@ public sealed class WasmModulePlanInvariantValidatorTests
         return (request, CreatePlanner(program).Build(request, new TestStructuredMethodEmissionPlanner(new ManagedMethodIdentityFactory(), new TestCilTypeIdentityResolver()).Plan(request)));
     }
 
+    internal static (WasmEmissionRequest Request, WasmModulePlan Plan) CreateNativePlan()
+    {
+        var program = new FakeProgram();
+        var signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.NativeInt);
+        var definition = program.GetMethod(EntryKey) with
+        {
+            Key = Key(0x0600007f),
+            Name = "Native",
+            RelativeVirtualAddress = 0,
+            Signature = signature,
+            NativeImport = new("mule", "native", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
+                false, false, false, false),
+        };
+        var method = new MethodInstanceModel(definition,
+            CliTypeIdentity.Named(Assembly, "Test", "Native", false), [], signature);
+        var request = WasmEmissionRequest.Create(program.GetMethod(EntryKey),
+            ImmutableDictionary<EntityKey, StructuredMethod>.Empty, EmptyRootMaps([]), [],
+            ImmutableDictionary<string, EntityKey>.Empty,
+            methodInstances: ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(method.CanonicalName, method));
+        var native = new NativeMethodImport(method,
+            NativeAbiTestSupport.Plan(definition.NativeImport!, signature, signature),
+            new(RuntimeAbi.RuntimeModule, "native", new(signature.ParameterTypes, signature.ReturnType)));
+        var plan = new WasmModulePlan(new(WasmModuleProfile.CoreApplication, false), [], [], [],
+            StackTraceMethodPlan.Disabled, [],
+            new(ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty,
+                ImmutableDictionary<string, WasmFunctionIndex>.Empty,
+                ImmutableDictionary<string, WasmFunctionIndex>.Empty,
+                ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(definition.Key, new(0))),
+            new([], OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
+                OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
+                OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing),
+            OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
+            OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing)
+        {
+            NativeImports = new([native]),
+        };
+        return (request, plan);
+    }
+
     private static WasmEmissionRequest CreateRequest(FakeProgram program)
     {
         var entry = program.GetMethod(EntryKey);
@@ -376,8 +585,11 @@ public sealed class WasmModulePlanInvariantValidatorTests
         program,
         program,
         program,
+        new FakeIntrinsics(),
         new InteropImportPlanner(),
         WasmRuntimeImports.CreateCatalog(),
             new DisabledStackTraceMethodPlanBuilder(),
-        new WasmModulePlanInvariantValidator());
+        new WasmModulePlanInvariantValidator(),
+        new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
+        NativeAbiTestSupport.CallbackPlanner());
 }

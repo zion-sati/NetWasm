@@ -47,11 +47,14 @@ public sealed class ComponentCoreModuleLinkExecution(
             {
                 _hostShim.Write(new(
                     workspace.HostModulePath,
-                    request.Target));
+                    request.Target,
+                    request.ManagedExecutableEntryPoint.CompletionShape,
+                    request.StructuredDiagnostics));
                 _managedExecutables.Write(new(
                     workspace.ManagedExecutableAdapterModulePath,
                     request.Target,
-                    request.ManagedExecutableEntryPoint));
+                    request.ManagedExecutableEntryPoint,
+                    request.StructuredDiagnostics));
                 hostModulePath = workspace.HostModulePath;
                 managedExecutableAdapterModulePath =
                     workspace.ManagedExecutableAdapterModulePath;
@@ -67,10 +70,10 @@ public sealed class ComponentCoreModuleLinkExecution(
             var wasmTarget = request.Target.Width == "wasm64"
                 ? WasmTarget.Wasm64
                 : WasmTarget.Wasm32;
-            _exports.RetainComponentExports(
+            _exports.Rewrite(
                 workspace.MergedModulePath,
                 workspace.SanitizedModulePath,
-                CanonicalAbiNames.ModulePrefix(wasmTarget));
+                new(CanonicalAbiNames.ModulePrefix(wasmTarget), []));
             _optimizer.Optimize(
                 workspace.SanitizedModulePath,
                 request.OutputPath,

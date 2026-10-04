@@ -15,11 +15,13 @@ public sealed class RootDecisionClassifierFactory(
         ITypeRepository types,
         IFieldRepository fields,
         IMethodRepository methods,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites) =>
+        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        ITypeClassifier typeClassifier) =>
         new RootDecisionClassifier(
             types,
             fields,
             methods,
             dispatchCallSites,
-            _runtimeSafepoints);
+            _runtimeSafepoints,
+            typeClassifier);
 }

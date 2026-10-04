@@ -10,11 +10,11 @@ public sealed record BrowserComponentExportPruning(string InputPath, string Outp
 
 public sealed record BrowserFileCopy(string InputPath, string OutputPath);
 
-public sealed record BrowserCoreModuleValidation(string Path);
+public sealed record BrowserCoreModuleValidation(string Path, ImmutableArray<string> Arguments);
 
 /// <summary>
 /// Parse TextModules, run Merge, apply ExportPruning to the merged bytes, and run
-/// either Optimization or Copy in that order. Release the owned CleanupPaths on success or failure.
+/// Optimization then Validation, or Validation then Copy. Release the owned CleanupPaths on success or failure.
 /// The plan records authoritative commands; it does not execute tools.
 /// </summary>
 public sealed record BrowserComponentCoreModuleLinkPlan(

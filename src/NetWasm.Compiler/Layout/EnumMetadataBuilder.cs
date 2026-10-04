@@ -34,8 +34,8 @@ internal sealed class EnumMetadataBuilder : IEnumMetadataBuilder
             if (pending.Payload == EnumMetadataPayload.None)
             {
                 _state.EnumMetadata.Add(new EnumMetadataLayout(
-                    pending.Type, pending.TypeId, 0,
-                    pending.UnderlyingType, pending.IsFlags, []));
+                    pending.Type, pending.EnumType, pending.TypeId, 0,
+                    pending.UnderlyingType, pending.IsFlags, pending.IsOpenDefinition, []));
                 continue;
             }
             var members = pending.Members.Select(member =>
@@ -65,10 +65,12 @@ internal sealed class EnumMetadataBuilder : IEnumMetadataBuilder
                 : 0;
             _state.EnumMetadata.Add(new EnumMetadataLayout(
                 pending.Type,
+                pending.EnumType,
                 pending.TypeId,
                 address,
                 pending.UnderlyingType,
                 pending.IsFlags,
+                pending.IsOpenDefinition,
                 members));
         }
     }

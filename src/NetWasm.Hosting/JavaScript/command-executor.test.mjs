@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { executeCommand } from "./command-executor.mjs";
+import { NetWasmManagedError } from "./managed-errors.mjs";
 
 test("preserves every signed 32-bit command exit code", () => {
   for (const exitCode of [-0x80000000, -1, 0, 1, 0x7fffffff]) {
@@ -47,6 +48,21 @@ test("maps invocation failure without exposing exception details", () => {
   assert.equal(result.completionKind, "hostFailure");
   assert.equal(result.primaryFailure.code, "host.command-invoke");
   assert.doesNotMatch(JSON.stringify(result), /private/);
+});
+
+test("classifies only branded terminal evidence as a managed failure", () => {
+  const result = executeCommand({
+    run() {
+      throw new NetWasmManagedError("run", {
+        cause: new WebAssembly.RuntimeError("private trap"),
+        managedType: 7,
+      });
+    },
+  });
+
+  assert.equal(result.completionKind, "managedFailure");
+  assert.equal(result.primaryFailure.code, "managed.failure");
+  assert.doesNotMatch(JSON.stringify(result), /private|managedType/u);
 });
 
 test("maps every invalid exit representation to contract failure", () => {

@@ -56,6 +56,9 @@
     <None Include="$(NetWasmToolchainJcoClosurePolicyPath)"
           Pack="true"
           PackagePath="tools/jco/closure-policy.json" />
+    <None Include="$(NetWasmToolchainJcoAssetRoot)/patch-provenance.json"
+          Pack="true"
+          PackagePath="tools/jco/patch-provenance.json" />
     <None Include="JavaScript/netwasm-bundle.mjs"
           Pack="true"
           PackagePath="tools/bundler/netwasm-bundle.mjs" />

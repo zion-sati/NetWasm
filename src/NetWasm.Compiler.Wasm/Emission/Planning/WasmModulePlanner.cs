@@ -23,26 +23,45 @@ internal sealed record WasmModulePlan(
     OptionalFunctionIndex DelegateRemoveHelperIndex)
 {
     public int StaticInitializerFunctionBase { get; init; }
+    public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
+    public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
 }
 
 internal sealed class WasmModulePlanner(
     ITypeRepository types,
     IMethodRepository methods,
     ITypeClassifier typeClassifier,
+    IRuntimeIntrinsicRegistry intrinsics,
     IInteropImportPlanner interopImportPlanner,
     IRuntimeImportResolver runtimeImports,
     IStackTraceMethodPlanBuilder stackTraceMethods,
-    IWasmModulePlanInvariantValidator invariants) : IWasmModulePlanner
+    IWasmModulePlanInvariantValidator invariants,
+    INativeImportPlanner nativeImports,
+    INativeCallbackPlanBuilder callbackPlans) : IWasmModulePlanner
 {
+    private readonly INativeImportPlanner _nativeImports = nativeImports ??
+        throw new ArgumentNullException(nameof(nativeImports));
+    private readonly INativeCallbackPlanBuilder _callbackPlans = callbackPlans ??
+        throw new ArgumentNullException(nameof(callbackPlans));
     public WasmModulePlan Build(
         WasmEmissionRequest request,
         ImmutableArray<StructuredMethodEmission> methodEmissions)
     {
+        var hasInteropTerminalBoundary =
+            !request.HostCallbacks.IsEmpty ||
+            request.NativeCallbacks.Count != 0 ||
+            (request.UseJavaScriptExportBoundary ||
+             request.ModuleProfile == WasmModuleProfile.CoreApplication) &&
+             request.RequestedExports.Count != 0;
         var runtimeImportSelection = new RuntimeImportSelection(
             request.ModuleProfile,
-            request.EntryPointProfile == WasmEntryPointProfile.Process ||
-            !request.HostCallbacks.IsEmpty,
-            request.EmitStackTrace);
+            request.EntryPointProfile == WasmEntryPointProfile.Process &&
+            request.StructuredDiagnostics ||
+            hasInteropTerminalBoundary,
+            request.EmitStackTrace,
+            request.RequestedExports.Values.Any(request.JavaScriptAsyncBindings.ContainsKey),
+            RequiresEphemeronHandles(methodEmissions),
+            request.StructuredDiagnostics || hasInteropTerminalBoundary);
         var selectedRuntimeImports = runtimeImports.Resolve(runtimeImportSelection);
         var runtimeImportCount = selectedRuntimeImports.Length;
         var interopImports = interopImportPlanner.Build(request, runtimeImportCount);
@@ -51,8 +70,19 @@ internal sealed class WasmModulePlanner(
             .Select(method => method.WitImport!.Identity)
             .Distinct()
             .ToImmutableArray();
+        var nativeImportPlan = _nativeImports.Plan(request.MethodInstances.Values);
+        var callbackGetterBase = runtimeImportCount + helperImportCount +
+            request.JSImportMethods.Length + witImportIdentities.Length +
+            nativeImportPlan.Methods.Length;
+        var callbackPlan = request.NativeCallbacks.Count == 0
+            ? NativeCallbackPlan.Empty
+            : _callbackPlans.Build(
+                request.NativeCallbacks,
+                request.AddressedNativeCallbacks,
+                callbackGetterBase);
         var importedFunctionCount = runtimeImportCount + helperImportCount +
-            request.JSImportMethods.Length + witImportIdentities.Length;
+            request.JSImportMethods.Length + witImportIdentities.Length +
+            nativeImportPlan.Methods.Length + callbackPlan.AddressedMethods.Length;
         var firstManagedImportIndex = runtimeImportCount + helperImportCount;
         var witImportIndices = witImportIdentities
             .Select((identity, index) => (Identity: identity, Index: new WasmFunctionIndex(
@@ -64,6 +94,10 @@ internal sealed class WasmModulePlanner(
             .Concat(request.WitImportMethods.Select(method => (
                 method.Key,
                 Index: witImportIndices[method.WitImport!.Identity])))
+            .Concat(nativeImportPlan.Methods.Select((import, index) => (
+                import.Method.Definition.Key,
+                Index: new WasmFunctionIndex(firstManagedImportIndex + request.JSImportMethods.Length +
+                    witImportIdentities.Length + index))))
             .ToImmutableDictionary(item => item.Key, item => item.Index);
         var constructedIdentities = request.ConstructedMethods.Keys
             .ToHashSet(StringComparer.Ordinal);
@@ -100,10 +134,18 @@ internal sealed class WasmModulePlanner(
         var orderedConstructedMethodKeys = orderedConstructedMethods
             .Select(identity => identity.CanonicalName)
             .ToImmutableArray();
+        var stackTraceConstructedMethods = request.EmitStackTrace
+            ? orderedConstructedMethodKeys
+                .Select(name => new StackTraceConstructedMethod(
+                    name,
+                    request.MethodInstances[name].Definition.Key))
+                .ToImmutableArray()
+            : [];
         var stackTracePlan = stackTraceMethods.Build(
             request.EmitStackTrace,
             orderedMethodKeys,
-            orderedConstructedMethodKeys);
+            stackTraceConstructedMethods,
+            request.SourceLocations);
         var functionIndices = orderedMethodKeys
             .Select((key, index) => (
                 key,
@@ -128,6 +170,7 @@ internal sealed class WasmModulePlanner(
                 method.Definition.Name == "Invoke" &&
                 typeClassifier.IsDelegateType(method.Definition.DeclaringType))
             .Concat(request.HostCallbacks.Select(callback => callback.Invoke))
+            .Concat(request.MemberExecution.DelegateInvocation?.Methods.Values ?? [])
             .DistinctBy(method => method.DeclaringType.CanonicalName)
             .OrderBy(method => method.DeclaringType.CanonicalName, StringComparer.Ordinal)
             .ToImmutableArray();
@@ -162,6 +205,8 @@ internal sealed class WasmModulePlanner(
             Optional(hasDelegates, helperBase + 3))
         {
             StaticInitializerFunctionBase = helperBase + (hasDelegates ? 4 : 0),
+            NativeImports = nativeImportPlan,
+            NativeCallbacks = callbackPlan,
         };
         invariants.Validate(request, methodEmissions, plan);
         return plan;
@@ -169,6 +214,26 @@ internal sealed class WasmModulePlanner(
 
     private static OptionalFunctionIndex Optional(bool present, int index) =>
         present ? OptionalFunctionIndex.At(index) : OptionalFunctionIndex.Missing;
+
+    private bool RequiresEphemeronHandles(
+        ImmutableArray<StructuredMethodEmission> methodEmissions) =>
+        methodEmissions
+            .SelectMany(static emission => emission.Method.Header.Instructions)
+            .Where(static instruction =>
+                instruction.Operation is CilOperation.Call or CilOperation.CallVirtual)
+            .Select(static instruction => instruction.Operand switch
+            {
+                CilOperand.Entity entity => entity.Key,
+                CilOperand.MethodInstance method => method.Value.Definition.Key,
+                _ => default,
+            })
+            .Any(method =>
+                method != default &&
+                intrinsics.TryGetIntrinsic(method, out var intrinsic) &&
+                intrinsic is RuntimeIntrinsic.EphemeronHandleCreate or
+                    RuntimeIntrinsic.EphemeronHandleGetKey or
+                    RuntimeIntrinsic.EphemeronHandleGetValue or
+                    RuntimeIntrinsic.EphemeronHandleRelease);
 
     private MethodInstanceModel GetMethodInstance(CilInstruction instruction) =>
         instruction.Operand switch

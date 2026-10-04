@@ -29,6 +29,24 @@ namespace System
         public bool IsSZArray => HasFlag(RuntimeTypeFactsFlags.SzArray);
         public bool IsClass => HasFlag(RuntimeTypeFactsFlags.Class);
         public bool IsSealed => HasFlag(RuntimeTypeFactsFlags.Sealed);
+        public bool IsAbstract => HasFlag(RuntimeTypeFactsFlags.Abstract);
+
+        public unsafe Type[] GetGenericArguments()
+        {
+            RuntimeTypeFacts facts = GetFacts();
+            if (facts.GenericArgumentCount == 0)
+            {
+                return [];
+            }
+
+            var arguments = new Type[facts.GenericArgumentCount];
+            int* typeIds = (int*)facts.GenericArgumentTypeIds;
+            for (int index = 0; index < arguments.Length; index++)
+            {
+                arguments[index] = GetTypeFromSemanticId(typeIds[index]);
+            }
+            return arguments;
+        }
 
         internal bool IsNullable => HasFlag(RuntimeTypeFactsFlags.Nullable);
 
@@ -86,6 +104,18 @@ namespace System
 
         public bool IsInstanceOfType(object? value) =>
             value is not null && IsAssignableFrom(value.GetType());
+
+        public override object[] GetCustomAttributes(Type attributeType, bool inherit) =>
+            Runtime.CompilerServices.RuntimeCustomAttributes.GetMany(
+                this,
+                attributeType,
+                inherit);
+
+        public override bool IsDefined(Type attributeType, bool inherit) =>
+            Runtime.CompilerServices.RuntimeCustomAttributes.IsDefined(
+                this,
+                attributeType,
+                inherit);
 
         internal MethodInfo GetDelegateInvokeMethod()
         {
@@ -196,6 +226,7 @@ namespace System
         internal const int Class = 1 << 10;
         internal const int Sealed = 1 << 11;
         internal const int Nullable = 1 << 12;
+        internal const int Abstract = 1 << 13;
     }
 
     internal static class RuntimeTypeNamePayload
@@ -215,6 +246,8 @@ namespace System
         internal readonly nint AssignableTypeIds;
         internal readonly nint DelegateInvoke;
         internal readonly nint NameFacts;
+        internal readonly int GenericArgumentCount;
+        internal readonly nint GenericArgumentTypeIds;
     }
 
     internal readonly struct RuntimeTypeNameFacts

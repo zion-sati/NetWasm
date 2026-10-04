@@ -72,9 +72,17 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeComponentReallocate,
             RuntimeAbi.RuntimeComponentFree,
             RuntimeAbi.RuntimeReportTerminalException,
+            RuntimeAbi.RuntimeRaiseTerminalException,
             RuntimeAbi.RuntimeStackTraceFrameEnter,
+            RuntimeAbi.RuntimeStackTraceFrameLocation,
             RuntimeAbi.RuntimeStackTraceFrameLeave,
             RuntimeAbi.RuntimeStackTraceInitialize,
+            RuntimeAbi.RuntimeStackTraceRegisterSymbol,
+            RuntimeAbi.RuntimeCaptureManagedException,
+            RuntimeAbi.RuntimeEphemeronHandleCreate,
+            RuntimeAbi.RuntimeEphemeronHandleGetKey,
+            RuntimeAbi.RuntimeEphemeronHandleGetValue,
+            RuntimeAbi.RuntimeEphemeronHandleRelease,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));
@@ -82,6 +90,50 @@ public sealed class RuntimeImportCatalogTests
         {
             Assert.Equal((int)symbol, catalog.Resolve(symbol));
         }
+    }
+
+    [Theory]
+    [InlineData(WasmModuleProfile.CoreApplication)]
+    [InlineData(WasmModuleProfile.ComponentCoreModule)]
+    public void EphemeronImportsAreIncludedOnlyWhenSelected(WasmModuleProfile profile)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var disabled = new RuntimeImportSelection(
+            profile,
+            IncludeTerminalExceptionReporter: false);
+        var enabled = disabled with { IncludeEphemeronHandles = true };
+
+        Assert.DoesNotContain(
+            catalog.Resolve(disabled),
+            import => import.Name == RuntimeAbi.RuntimeEphemeronHandleCreate);
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.EphemeronHandleCreate, disabled));
+        var imports = catalog.Resolve(enabled);
+        Assert.Equal(
+            RuntimeAbi.RuntimeEphemeronHandleCreate,
+            imports[catalog.Resolve(RuntimeImportSymbol.EphemeronHandleCreate, enabled)].Name);
+        Assert.Equal(
+            RuntimeAbi.RuntimeEphemeronHandleRelease,
+            imports[catalog.Resolve(RuntimeImportSymbol.EphemeronHandleRelease, enabled)].Name);
+    }
+
+    [Theory]
+    [InlineData(WasmModuleProfile.CoreApplication)]
+    [InlineData(WasmModuleProfile.ComponentCoreModule)]
+    public void ExceptionCaptureIsIncludedOnlyWhenSelected(WasmModuleProfile profile)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var disabled = new RuntimeImportSelection(profile, IncludeTerminalExceptionReporter: false);
+        var enabled = disabled with { IncludeExceptionCapture = true };
+
+        Assert.DoesNotContain(catalog.Resolve(disabled),
+            import => import.Name == RuntimeAbi.RuntimeCaptureManagedException);
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.ManagedExceptionCapture, disabled));
+        var imports = catalog.Resolve(enabled);
+        Assert.Equal(RuntimeAbi.RuntimeCaptureManagedException,
+            imports[catalog.Resolve(RuntimeImportSymbol.ManagedExceptionCapture, enabled)].Name);
+        Assert.Equal(catalog.Resolve(disabled).ToArray(), imports.RemoveAt(imports.Length - 1).ToArray());
     }
 
     [Fact]
@@ -96,6 +148,8 @@ public sealed class RuntimeImportCatalogTests
         Assert.Contains(imports, import => import.Name == RuntimeAbi.RuntimeReportTerminalException);
         Assert.DoesNotContain(imports,
             import => import.Name == RuntimeAbi.RuntimeStackTraceFrameEnter);
+        Assert.DoesNotContain(imports,
+            import => import.Name == RuntimeAbi.RuntimeStackTraceFrameLocation);
         Assert.DoesNotContain(imports,
             import => import.Name == RuntimeAbi.RuntimeStackTraceFrameLeave);
         Assert.DoesNotContain(imports,
@@ -127,6 +181,11 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeStackTraceInitialize,
             imports[catalog.Resolve(
                 RuntimeImportSymbol.StackTraceInitialize,
+                selection)].Name);
+        Assert.Equal(
+            RuntimeAbi.RuntimeStackTraceRegisterSymbol,
+            imports[catalog.Resolve(
+                RuntimeImportSymbol.StackTraceRegisterSymbol,
                 selection)].Name);
     }
 

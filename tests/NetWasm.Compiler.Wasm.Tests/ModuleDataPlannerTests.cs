@@ -23,6 +23,7 @@ public sealed class ModuleDataPlannerTests
         Assert.Empty(plan.DataSegments);
         Assert.Empty(plan.StaticInitializerGuards);
         Assert.Equal(0, plan.StaticDataEnd);
+        Assert.Null(plan.NativeCallbackReadinessAddress);
     }
 
     [Fact]
@@ -39,7 +40,8 @@ public sealed class ModuleDataPlannerTests
                 new StructuredExceptionGroupKeyFactory()),
             [],
             [later, earlier],
-            ["z-generic", "a-generic"]);
+            ["z-generic", "a-generic"],
+            false);
 
         Assert.Equal(256, plan.StaticInitializerGuards[
             StaticInitializerGuard.KeyFor(earlier)].Address);
@@ -65,13 +67,76 @@ public sealed class ModuleDataPlannerTests
                 new StructuredExceptionGroupKeyFactory()),
             [],
             [],
-            []);
+            [],
+            false);
 
         Assert.Empty(plan.ExceptionMetadata);
         Assert.Empty(plan.FilterFunclets);
         Assert.Empty(plan.StaticInitializerGuards);
         Assert.Empty(plan.DataSegments);
         Assert.Equal(256, plan.StaticDataEnd);
+    }
+
+    [Fact]
+    public void CallbackReadinessReservesOneZeroInitializedAlignedWord()
+    {
+        var plan = BuildThroughContract(
+            new ModuleDataPlanner(
+                new RecordingLayoutProvider(),
+                new RecordingLayoutProvider(),
+                new ExceptionGroupEnumerator(),
+                new StructuredExceptionGroupKeyFactory()),
+            [],
+            [],
+            [],
+            true);
+
+        Assert.Equal(256, plan.NativeCallbackReadinessAddress);
+        Assert.Equal(260, plan.StaticDataEnd);
+        var segment = Assert.Single(plan.DataSegments);
+        Assert.Equal(256, segment.Address);
+        Assert.True(segment.Data.AsSpan().SequenceEqual("\0\0\0\0"u8));
+        Assert.Empty(plan.StaticInitializerGuards);
+    }
+
+    [Fact]
+    public void StackTraceSymbolsReserveOneRegistrationGuardBeforeUtf16Names()
+    {
+        var stackTrace = new StackTraceMethodPlan(
+            ImmutableDictionary<EntityKey, int>.Empty,
+            ImmutableDictionary<string, int>.Empty,
+            [new(7, "Trace")],
+            ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty,
+            29,
+            31);
+
+        var plan = new ModuleDataPlanner(
+            new RecordingLayoutProvider(),
+            new RecordingLayoutProvider(),
+            new ExceptionGroupEnumerator(),
+            new StructuredExceptionGroupKeyFactory()).Build(
+                [],
+                [],
+                [],
+                false,
+                stackTrace);
+
+        Assert.Equal(256, plan.StackTraceSymbolRegistrationGuardAddress);
+        Assert.Equal(270, plan.StaticDataEnd);
+        Assert.Collection(plan.DataSegments,
+            segment =>
+            {
+                Assert.Equal(256, segment.Address);
+                Assert.True(segment.Data.AsSpan().SequenceEqual("\0\0\0\0"u8));
+            },
+            segment =>
+            {
+                Assert.Equal(260, segment.Address);
+                Assert.Equal("Trace", System.Text.Encoding.Unicode.GetString(
+                    segment.Data.AsSpan()));
+            });
+        Assert.Equal(new StackTraceSymbolData(7, 260, 5),
+            Assert.Single(plan.StackTraceSymbols));
     }
 
     [Fact]
@@ -99,7 +164,8 @@ public sealed class ModuleDataPlannerTests
                 new StructuredExceptionGroupKeyFactory()),
             [method],
             [],
-            []);
+            [],
+            false);
 
         var keys = new StructuredExceptionGroupKeyFactory();
         Assert.Equal(
@@ -139,7 +205,8 @@ public sealed class ModuleDataPlannerTests
                 new StructuredExceptionGroupKeyFactory()),
             [method],
             [],
-            []);
+            [],
+            false);
 
         var metadata = plan.ExceptionMetadata[
             new StructuredExceptionGroupKeyFactory().Create(method, filtered.Id)];
@@ -182,10 +249,63 @@ public sealed class ModuleDataPlannerTests
                     new StructuredExceptionGroupKeyFactory()),
                 [method],
                 [],
-                []));
+                [],
+                false));
 
         Assert.Equal(DiagnosticCode.UnsupportedCil, exception.Diagnostic.Code);
         Assert.Contains("may contain only filters and catches", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CatchTablesResolveClosedIdentitiesInsteadOfTheirSharedDefinition(bool includeFilter)
+    {
+        var program = new FakeProgram();
+        var method = Structure(program, program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.Return));
+        var definition = CliTypeIdentity.FromDefinition(program.GetTypeDefinition(TypeKey));
+        var first = CliTypeIdentity.GenericInstantiation(definition,
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var second = CliTypeIdentity.GenericInstantiation(definition,
+            [CliTypeIdentity.Primitive("i8", CliValueKind.I8)]);
+        var clauses = new List<StructuredExceptionClause>
+        {
+            Clause(method, CilExceptionRegionKind.Catch, TypeKey) with { CatchTypeIdentity = first },
+            Clause(method, CilExceptionRegionKind.Catch, TypeKey) with { CatchTypeIdentity = second },
+        };
+        if (includeFilter)
+            clauses.Add(Clause(method, CilExceptionRegionKind.Filter, null));
+        var group = ExceptionGroup(method, 0, [.. clauses]);
+        method = WithExceptionGroups(method, group);
+        var layouts = new ClosedCatchLayouts(first, second);
+
+        var plan = BuildThroughContract(new ModuleDataPlanner(new RecordingLayoutProvider(),
+            layouts, new ExceptionGroupEnumerator(),
+            new StructuredExceptionGroupKeyFactory()), [method], [], [], false);
+
+        var data = Assert.Single(plan.DataSegments).Data;
+        Assert.Equal(41, BitConverter.ToInt32(data.AsSpan(includeFilter ? 4 : 0, 4)));
+        Assert.Equal(42, BitConverter.ToInt32(data.AsSpan(includeFilter ? 16 : 4, 4)));
+        Assert.Equal(2, layouts.Calls);
+        Assert.Equal(includeFilter ? 1 : 0, plan.FilterFunclets.Length);
+    }
+
+    private sealed class ClosedCatchLayouts(CliTypeIdentity first, CliTypeIdentity second) : ITypeLayoutProvider
+    {
+        internal int Calls;
+        public int ReferenceArrayTypeId => throw new NotSupportedException();
+        public int StringTypeId => throw new NotSupportedException();
+        public int TypeTypeId => throw new NotSupportedException();
+        public ObjectLayout GetObjectLayout(EntityKey type) => throw new NotSupportedException();
+        public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout) =>
+            throw new NotSupportedException();
+        public ObjectLayout GetObjectLayout(CliTypeIdentity type)
+        {
+            Assert.Equal(Calls == 0 ? first : second, type);
+            return new(41 + Calls++, 16, []);
+        }
     }
 
     private static StructuredExceptionGroup ExceptionGroup(
@@ -225,12 +345,15 @@ public sealed class ModuleDataPlannerTests
         IModuleDataPlanner planner,
         IEnumerable<StructuredMethod> methods,
         IReadOnlyList<EntityKey> directInitializers,
-        IReadOnlyList<string> constructedInitializers);
+        IReadOnlyList<string> constructedInitializers,
+        bool reserveNativeCallbackReadiness);
 
     private static readonly ModuleDataPlannerCall BuildThroughContract =
-        static (planner, methods, directInitializers, constructedInitializers) =>
+        static (planner, methods, directInitializers, constructedInitializers,
+            reserveNativeCallbackReadiness) =>
             planner.Build(
             methods.Select((method, index) => new StructuredMethodEmission(
                 new ManagedMethodIdentity($"test-method:{index}"),
-                method)), directInitializers, constructedInitializers);
+                method)), directInitializers, constructedInitializers,
+                reserveNativeCallbackReadiness);
 }

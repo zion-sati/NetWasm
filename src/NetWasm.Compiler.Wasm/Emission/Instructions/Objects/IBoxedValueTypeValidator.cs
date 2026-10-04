@@ -8,5 +8,6 @@ internal interface IBoxedValueTypeValidator
     void Validate(
         IWasmInstructionWriter code,
         int objectLocal,
-        CliTypeIdentity targetType);
+        CliTypeIdentity targetType,
+        ManagedExceptionKind mismatchException = ManagedExceptionKind.InvalidCast);
 }

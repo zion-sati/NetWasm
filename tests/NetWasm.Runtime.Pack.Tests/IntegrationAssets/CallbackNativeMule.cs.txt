@@ -1,0 +1,275 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+public static unsafe partial class EntryPoint
+{
+    private const int OpaqueTokenInput = 0x1234567;
+    private const int ContainedFailureInput = int.MinValue;
+    private const int FatalFailureInput = int.MaxValue;
+    private const int ReentrantUnregisterInput = 0x2345678;
+    private static int s_callbackMarker;
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_scalar_matrix")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial int QualifyCallbackSignatures(
+        delegate* unmanaged[Cdecl]<int, int> signed32,
+        delegate* unmanaged[Cdecl]<uint, uint> unsigned32,
+        delegate* unmanaged[Cdecl]<long, long> signed64,
+        delegate* unmanaged[Cdecl]<ulong, ulong> unsigned64,
+        delegate* unmanaged[Cdecl]<float, float> single,
+        delegate* unmanaged[Cdecl]<double, double> real,
+        delegate* unmanaged[Cdecl]<nint, nint> signedPointer,
+        delegate* unmanaged[Cdecl]<nuint, nuint> unsignedPointer,
+        delegate* unmanaged[Cdecl]<byte*, byte*> pointer,
+        delegate* unmanaged[Cdecl]<int, void> mark,
+        delegate* unmanaged<int> readMarker,
+        delegate* unmanaged[Cdecl]<int, double, nint, long, double> mixed);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_invoke_callbacks")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial int InvokeCallbacks(
+        delegate* unmanaged[Cdecl]<nint, int, nint> first,
+        delegate* unmanaged[Cdecl]<nint, int, nint> second,
+        nint token,
+        int input,
+        out nint firstResult,
+        out nint secondResult);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_invoke_dynamic")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial int InvokeDynamic(
+        delegate* unmanaged[Cdecl]<int, int> callback,
+        int input);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_registry_reset")]
+    private static partial void ResetCallbackRegistry();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_register")]
+    private static partial int RegisterCallbacks(
+        delegate* unmanaged[Cdecl]<nint, int, nint> first,
+        delegate* unmanaged[Cdecl]<nint, int, nint> second,
+        nint token);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_invoke")]
+    private static partial int InvokeRetainedCallbacks(
+        int input,
+        out nint firstResult,
+        out nint secondResult);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_unregister")]
+    private static partial int UnregisterCallbacks();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_register_count")]
+    private static partial int CallbackRegisterCount();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_callback_unregister_count")]
+    private static partial int CallbackUnregisterCount();
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static nint First(nint token, int input)
+    {
+        if (input == FatalFailureInput)
+            throw new InvalidOperationException("fatal callback qualification");
+        if (input == OpaqueTokenInput)
+            return token + 1;
+        var state = (State)GCHandle.FromIntPtr(token).Target!;
+        if (input == ReentrantUnregisterInput && UnregisterCallbacks() != 42)
+            return -778;
+        var transient = new byte[256 * 1024];
+        transient[0] = 19;
+        GC.Collect();
+        return state.Offset + input + transient[0] - 19;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static nint Second(nint token, int input)
+    {
+        if (input == OpaqueTokenInput)
+            return token - 1;
+        if (input == ContainedFailureInput)
+        {
+            try
+            {
+                throw new InvalidOperationException("contained callback qualification");
+            }
+            catch (InvalidOperationException)
+            {
+                return -777;
+            }
+        }
+        return ((State)GCHandle.FromIntPtr(token).Target!).Offset - input;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int EchoSigned32(int value) => value + 7;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static uint EchoUnsigned32(uint value) => value ^ 0xa5a5a5a5U;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static long EchoSigned64(long value) => value - 9;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static ulong EchoUnsigned64(ulong value) => value ^ 0xa5a5a5a5a5a5a5a5UL;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static float EchoSingle(float value) => value * -2.0F;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static double EchoDouble(double value) => value + 0.5;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static nint EchoSignedPointer(nint value) => value ^ (nint)0x55;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static nuint EchoUnsignedPointer(nuint value) => value + 3;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static byte* AdvancePointer(byte* value)
+    {
+        if (value == null)
+            return null;
+        value[4] ^= 0x5a;
+        return value + 5;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static void Mark(int value) => s_callbackMarker = value;
+
+    [UnmanagedCallersOnly]
+    private static int ReadMarker() => s_callbackMarker;
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static double Mix(int integer, double real, nint pointer, long wide)
+    {
+        var expectedPointer = sizeof(nint) == 8
+            ? unchecked((nint)0x123456789abcdefL)
+            : unchecked((nint)0x81234567U);
+        if (pointer != expectedPointer || wide != -0x123456789abcdefL)
+            return -1.0;
+        return integer * 2.0 + real + 30.0 * 4.0 + 400.0 * 8.0;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int Dynamic(int input)
+    {
+        Func<int, int> target = input == FatalFailureInput
+            ? ThrowDynamicTarget
+            : AddSeven;
+        return (int)target.DynamicInvoke(input)!;
+    }
+
+    private static int AddSeven(int input) => input + 7;
+
+    private static int ThrowDynamicTarget(int _) =>
+        throw new InvalidOperationException("dynamic callback qualification");
+
+    public static int Run(int input)
+    {
+        if (InvokeDynamic(&Dynamic, input) != input + 7)
+            return -10;
+        if (QualifyCallbackSignatures(
+                &EchoSigned32,
+                &EchoUnsigned32,
+                &EchoSigned64,
+                &EchoUnsigned64,
+                &EchoSingle,
+                &EchoDouble,
+                &EchoSignedPointer,
+                &EchoUnsignedPointer,
+                &AdvancePointer,
+                &Mark,
+                &ReadMarker,
+                &Mix) != 42)
+            return -9;
+
+        byte* grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            grown[0] = 42;
+            grown[6 * 1024 * 1024 - 1] = 71;
+            var callerRoot = new byte[1024 * 1024];
+            callerRoot[0] = 23;
+            var handle = GCHandle.Alloc(new State(142));
+            try
+            {
+                var token = GCHandle.ToIntPtr(handle);
+                if (InvokeCallbacks(&First, &Second, token, input,
+                        out var first, out var second) != 42 ||
+                    first != 142 + input || second != 142 - input)
+                    return -1;
+                if (callerRoot[0] != 23 || grown[0] != 42 ||
+                    grown[6 * 1024 * 1024 - 1] != 71)
+                    return -2;
+                if (InvokeCallbacks(&First, &Second, token,
+                        ContainedFailureInput, out _, out second) != 42 ||
+                    second != -777)
+                    return -3;
+                if (InvokeCallbacks(&First, &Second, token, input,
+                        out first, out second) != 42 ||
+                    first != 142 + input || second != 142 - input)
+                    return -4;
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            var opaque = sizeof(nint) == 8
+                ? unchecked((nint)0x123456789abcdefL)
+                : unchecked((nint)0x81234567);
+            if (InvokeCallbacks(&First, &Second, opaque, OpaqueTokenInput,
+                    out var opaqueFirst, out var opaqueSecond) != 42 ||
+                opaqueFirst != opaque + 1 || opaqueSecond != opaque - 1)
+                return -5;
+            if (input == FatalFailureInput)
+                return -6;
+            if (callerRoot[0] != 23)
+                return -7;
+            if (!RetainedRegistrationRoundTrip(input))
+                return -8;
+        }
+        finally
+        {
+            NativeMemory.Free(grown);
+        }
+
+        return 42;
+    }
+
+    private static bool RetainedRegistrationRoundTrip(int input)
+    {
+        ResetCallbackRegistry();
+        var handle = GCHandle.Alloc(new State(241));
+        try
+        {
+            if (RegisterCallbacks(&First, &Second, GCHandle.ToIntPtr(handle)) != 42 ||
+                CallbackRegisterCount() != 1 || CallbackUnregisterCount() != 0)
+                return false;
+            if (InvokeRetainedCallbacks(input, out var first, out var second) != 42 ||
+                first != 241 + input || second != 241 - input)
+                return false;
+            if (InvokeRetainedCallbacks(ReentrantUnregisterInput,
+                    out first, out second) != 42 ||
+                first != 241 + ReentrantUnregisterInput ||
+                second != 241 - ReentrantUnregisterInput)
+                return false;
+            return CallbackRegisterCount() == 1 &&
+                CallbackUnregisterCount() == 1 &&
+                InvokeRetainedCallbacks(input, out _, out _) == -8 &&
+                UnregisterCallbacks() == -8;
+        }
+        finally
+        {
+            handle.Free();
+        }
+    }
+
+    private sealed class State(int offset)
+    {
+        internal int Offset { get; } = offset;
+    }
+}

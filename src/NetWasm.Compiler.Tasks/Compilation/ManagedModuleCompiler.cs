@@ -17,26 +17,34 @@ internal sealed class ManagedModuleCompiler(
     public ManagedModuleCompilation Compile(ManagedModuleCompileRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var entryPoint = _entryPoints.Read(request.InputAssemblyPath);
+        var entryPoint = request.CompileAsLibrary
+            ? null
+            : _entryPoints.Read(request.InputAssemblyPath);
         return _compiler.Compile(new CompilerOptions(
             request.InputAssemblyPath,
             request.ReferencePaths,
-            entryPoint.TypeName,
-            entryPoint.MethodName,
+            entryPoint?.TypeName ?? string.Empty,
+            entryPoint?.MethodName ?? string.Empty,
             ImmutableArray<RequestedExport>.Empty,
             _targets.Resolve(request.Target),
             request.DiagnosticTracePath,
             request.DiagnosticLogPath,
             SourcePaths: request.SourcePaths,
             EmitStackTrace: request.EmitStackTrace,
-            EntryMethodToken: entryPoint.MetadataToken,
-            EntryPointKind: CompilerEntryPointKind.ManagedExecutable,
+            EntryMethodToken: entryPoint?.MetadataToken,
+            EntryPointKind: request.CompileAsLibrary
+                ? CompilerEntryPointKind.Library
+                : CompilerEntryPointKind.ManagedExecutable,
             WitPath: request.WitPath,
             WitWorld: request.WitWorld,
             EnableFrontendCache: true,
-            IntermediateOutputPath: request.IntermediateOutputPath)) with
+            IntermediateOutputPath: request.IntermediateOutputPath,
+            UseJavaScriptExportBoundary: request.UseJavaScriptExportBoundary,
+            ProjectDirectory: request.ProjectDirectory,
+            PathMap: request.PathMap,
+            StructuredDiagnostics: request.StructuredDiagnostics)) with
         {
-            EntryPoint = entryPoint.Abi,
+            EntryPoint = entryPoint?.Abi,
         };
     }
 }

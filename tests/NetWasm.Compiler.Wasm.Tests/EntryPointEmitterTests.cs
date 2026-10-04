@@ -84,7 +84,7 @@ public sealed class EntryPointEmitterTests
             declaredLocalCount += body[offset];
             offset += 2;
         }
-        Assert.Equal(6, declaredLocalCount);
+        Assert.Equal(8, declaredLocalCount);
     }
 
     [Fact]
@@ -125,14 +125,17 @@ public sealed class EntryPointEmitterTests
                 }) > 0);
     }
 
-    [Fact]
-    public void ComponentProcessEntryUsesItsSelectedTerminalReporterIndex()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComponentProcessEntryUsesItsSelectedTerminalReporterIndex(bool includeRaise)
     {
         var layouts = new RecordingLayoutProvider();
         var imports = WasmRuntimeImports.CreateCatalog();
         var selection = new RuntimeImportSelection(
             WasmModuleProfile.ComponentCoreModule,
-            IncludeTerminalExceptionReporter: true);
+            IncludeTerminalExceptionReporter: true,
+            IncludeTerminalExceptionRaise: includeRaise);
         var indices = new FunctionIndexMap(
             ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(
                 EntryKey, new(30)),
@@ -159,6 +162,18 @@ public sealed class EntryPointEmitterTests
             WasmOpcodes.Call,
             (byte)selectedIndex,
         ]) >= 0);
+        var reportOffset = body.AsSpan().IndexOf([
+            WasmOpcodes.Call,
+            (byte)selectedIndex,
+        ]);
+        var raiseIndex = imports.Resolve(
+            RuntimeImportSymbol.ManagedTerminalExceptionRaise,
+            selection with { IncludeTerminalExceptionRaise = true });
+        Assert.Equal(includeRaise, body.AsSpan(reportOffset + 2).IndexOf([
+            WasmOpcodes.Call,
+            (byte)raiseIndex,
+        ]) >= 0);
+        Assert.Contains(WasmOpcodes.Unreachable, body[reportOffset..]);
     }
 
     [Fact]
@@ -226,7 +241,7 @@ public sealed class EntryPointEmitterTests
             declaredLocalCount += body[offset];
             offset += 2;
         }
-        Assert.Equal(5, declaredLocalCount);
+        Assert.Equal(7, declaredLocalCount);
     }
 
     private static EntryPointEmitter CreateEmitter(
@@ -251,6 +266,9 @@ public sealed class EntryPointEmitterTests
             imports,
             CreateRuntimeStateInitializer(layouts, imports),
             terminal,
+            new ManagedTerminalTrapBoundaryEmitter(
+                layouts,
+                new ExceptionPayloadBlockEmitter(layouts)),
             new GeneratedFunctionWriterFactory());
     }
 }

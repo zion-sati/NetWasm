@@ -167,6 +167,8 @@ available application dependencies or promises of a future API shape.
 
 | Area | Current boundary |
 | --- | --- |
+| Bounded custom attribute queries | Type-targeted queries, DescriptionAttribute and user-defined attributes, including closed generics, pass source and immutable candidate-SDK qualification on raw wasm32/wasm64 and component wasm32. Release delivery remains pending. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [candidate query profile](custom-attributes.md). |
+| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. Source and immutable candidate-package qualification is complete for scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, SafeHandle inputs, and static scalar/pointer `UnmanagedCallersOnly` callbacks across ordinary app, library and test consumers on wasm32 and raw wasm64. Public SDK distribution remains pending. Dynamic loading, broad runtime/custom marshalling, SafeHandle construction, arbitrary unmanaged `calli`, delegate conversion, native threads and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 | Portable diagnostics | DP01–DP06 are implemented and locally qualified for in-process `DiagnosticSource`, `Activity`, propagation and Metrics under the single-reactor contract. Public package/reference-pack distribution remains incomplete. OS tracing, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
 | `System.Uri` | U01/U02 are implemented and locally qualified for the selected portable parsing, resolution, escaping, builder and IDN/IRI profile. Public reference-pack distribution remains incomplete. |
 
@@ -197,6 +199,13 @@ wasm64. Optimized or Release DWARF, reconstruction of optimized-away values,
 and a partial source-debugging experience are intentionally unsupported. The
 managed stack-trace sidecar is separate and remains the available diagnostic
 facility.
+
+The deferred debugger direction includes Rider and Visual Studio breakpoints,
+stepping, call stacks, Locals and a defined read-only Watch subset. The design
+retains portable PDBs as development inputs; emitted Wasm address/storage mappings and a
+debugger backend with IDE integration are also required. PDB retention or the
+exception-trace sidecar alone does not enable interactive debugging. Source-aware
+exception reporting is an independent immediate DX priority.
 
 ## Deferred non-collecting allocator mode
 

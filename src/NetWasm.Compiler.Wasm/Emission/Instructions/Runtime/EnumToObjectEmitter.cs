@@ -43,7 +43,6 @@ internal sealed class EnumToObjectEmitter(
         {
             var underlying = entry.UnderlyingType;
             var valueLayout = values.GetValueLayout(underlying);
-            var objectLayout = typeLayouts.GetObjectLayout(entry.Type);
             var payload = WasmTargetLayout.Align(layouts.Target.ObjectHeaderSize, valueLayout.Alignment);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                 WasmInstructionOperand.Unsigned((uint)typeId)));
@@ -51,6 +50,15 @@ internal sealed class EnumToObjectEmitter(
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
                 WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            if (entry.IsOpenDefinition)
+            {
+                // An open generic enum has type metadata but no boxed value
+                // representation. Match Enum.ToObject's desktop rejection.
+                exceptions.Emit(code, ManagedExceptionKind.Argument);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+                continue;
+            }
+            var objectLayout = typeLayouts.GetObjectLayout(entry.EnumType);
             var boxedValue = request.Local(1, underlying.StackKind);
             if (argumentType == CliValueKind.ManagedReference)
             {
@@ -136,6 +144,10 @@ internal sealed class EnumToObjectEmitter(
         }
         foreach (var entry in metadata.EnumMetadata)
         {
+            if (entry.IsOpenDefinition)
+            {
+                continue;
+            }
             var valueLayout = values.GetValueLayout(entry.UnderlyingType);
             sources.Add(new(
                 entry.TypeId,

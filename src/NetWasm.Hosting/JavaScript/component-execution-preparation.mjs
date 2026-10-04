@@ -19,6 +19,8 @@ const supportedContracts = new Set([
 ]);
 const reactorHostModule = "netwasm:runtime/reactor-host";
 const versionedReactorHostModule = `${reactorHostModule}@1.0.0`;
+const diagnosticsModule = "netwasm:diagnostics/terminal";
+const versionedDiagnosticsModule = `${diagnosticsModule}@1.0.0`;
 
 export function prepareComponentExecution(request = {}) {
   assertRequest(request);
@@ -73,8 +75,9 @@ function projectImports(imports) {
         || typeof descriptor.value !== "object") {
       throw new TypeError("projected component import is invalid");
     }
-    if (name === reactorHostModule || name === versionedReactorHostModule) {
-      throw new TypeError("component reactor host is a reserved import");
+    if (name === reactorHostModule || name === versionedReactorHostModule
+        || name === diagnosticsModule || name === versionedDiagnosticsModule) {
+      throw new TypeError("component internal host module is a reserved import");
     }
     projection[name] = descriptor.value;
   }

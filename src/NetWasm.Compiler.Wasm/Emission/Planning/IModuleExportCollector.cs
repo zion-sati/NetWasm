@@ -6,11 +6,12 @@ internal interface IModuleExportCollector
 {
     IReadOnlyList<WasmExport> Collect(
         WasmEntryPointProfile entryPointProfile,
-        int entryPointIndex,
+        int? entryPointIndex,
         int filterDispatcherIndex,
         int finalizerDispatcherIndex,
         IReadOnlyDictionary<string, int> requestedExports,
         IReadOnlyDictionary<string, int> hostCallbacks,
+        IReadOnlyDictionary<string, int> nativeCallbacks,
         IReadOnlyDictionary<string, int> asyncImports,
         IReadOnlyDictionary<string, int> asyncExportHelpers);
 }

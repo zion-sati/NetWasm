@@ -127,6 +127,7 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
             CompleteExport = asyncReturn.IsAsync
                 ? JavaScriptAsyncAbiNames.ExportComplete(method.Key)
                 : null,
+            CompletionResult = asyncReturn.IsAsync ? "exception-handle-v1" : null,
         };
     }
 

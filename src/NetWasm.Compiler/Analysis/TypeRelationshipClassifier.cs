@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
@@ -13,9 +14,9 @@ internal sealed class TypeRelationshipClassifier(
     IImplementedInterfaceResolver interfaces,
     IBaseTypeResolver baseTypes) : ITypeRelationshipClassifier
 {
-    private readonly Dictionary<(CliTypeIdentity Candidate, CliTypeIdentity Target),
+    private readonly ConcurrentDictionary<(CliTypeIdentity Candidate, CliTypeIdentity Target),
         TypeRelationship> _relationships = [];
-    private readonly Dictionary<CliTypeIdentity, IReadOnlySet<CliTypeIdentity>> _interfaceClosures = [];
+    private readonly ConcurrentDictionary<CliTypeIdentity, IReadOnlySet<CliTypeIdentity>> _interfaceClosures = [];
 
     public TypeRelationship Classify(
         CliTypeIdentity candidate,
@@ -38,8 +39,7 @@ internal sealed class TypeRelationshipClassifier(
             (IsVariantCompatible(candidate, target)
                 ? TypeRelationshipCharacteristics.GenericVariance
                 : TypeRelationshipCharacteristics.None));
-        _relationships.Add(key, relationship);
-        return relationship;
+        return _relationships.GetOrAdd(key, relationship);
     }
 
     private bool IsHierarchyAssignable(CliTypeIdentity candidate, CliTypeIdentity target)
@@ -242,8 +242,7 @@ internal sealed class TypeRelationshipClassifier(
             }
         }
 
-        _interfaceClosures.Add(candidate, closure);
-        return closure;
+        return _interfaceClosures.GetOrAdd(candidate, closure);
     }
 
     private bool IsVariantCompatible(

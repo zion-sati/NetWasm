@@ -110,9 +110,7 @@ internal sealed class EnumToStringEmitter(
         var enumType = request.ConstrainedType ?? throw new InvalidOperationException(
             "enum formatting requires a closed receiver type");
         var entry = metadata.EnumMetadata
-            .Where(candidate => candidate.Type.Assembly.Equals(enumType.Assembly))
-            .SingleOrDefault(candidate =>
-                types.GetTypeDefinition(candidate.Type).FullName == enumType.FullName);
+            .SingleOrDefault(candidate => candidate.EnumType.Equals(enumType));
         if (entry.TypeId == 0)
         {
             throw new InvalidOperationException(

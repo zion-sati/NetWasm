@@ -69,6 +69,11 @@ typedef struct {
     u32 length;
 } StackTraceSymbol;
 
+typedef struct {
+    u32 method_id;
+    u32 symbol_id;
+} StackTraceFrame;
+
 _Static_assert(sizeof(ExceptionClause) == 12,
                "Exception-clause metadata must remain three u32 fields");
 
@@ -101,7 +106,7 @@ static RootFrame *shadow_frame;
 static u32 shadow_top;
 static ValueFrame *value_frame;
 static u32 value_frame_top;
-static u32 *stack_trace_frames;
+static StackTraceFrame *stack_trace_frames;
 static u32 stack_trace_frame_capacity;
 static u32 stack_trace_frame_top;
 static StackTraceSymbol *stack_trace_symbols;
@@ -173,12 +178,130 @@ static void managed_finalizer(void *raw_object, void *client_data)
 static int initialized;
 
 
-__attribute__((export_name("report_unobserved_task_exception")))
-void report_unobserved_task_exception(void)
+static void write_diagnostic_bytes(const char *value, size_t length)
 {
-    static const char message[] =
+    while (length != 0) {
+        ssize_t written = write(STDERR_FILENO, value, length);
+        if (written <= 0) {
+            return;
+        }
+        value += written;
+        length -= (size_t)written;
+    }
+}
+
+static size_t encode_utf8(u32 value, char *destination)
+{
+    if (value <= 0x7f) {
+        destination[0] = (char)value;
+        return 1;
+    }
+    if (value <= 0x7ff) {
+        destination[0] = (char)(0xc0 | (value >> 6));
+        destination[1] = (char)(0x80 | (value & 0x3f));
+        return 2;
+    }
+    if (value <= 0xffff) {
+        destination[0] = (char)(0xe0 | (value >> 12));
+        destination[1] = (char)(0x80 | ((value >> 6) & 0x3f));
+        destination[2] = (char)(0x80 | (value & 0x3f));
+        return 3;
+    }
+    destination[0] = (char)(0xf0 | (value >> 18));
+    destination[1] = (char)(0x80 | ((value >> 12) & 0x3f));
+    destination[2] = (char)(0x80 | ((value >> 6) & 0x3f));
+    destination[3] = (char)(0x80 | (value & 0x3f));
+    return 4;
+}
+
+static void write_diagnostic_string(netwasm_reference_t string)
+{
+    char buffer[256];
+    size_t buffered = 0;
+    u32 length;
+    uint16_t *characters;
+    if (string == 0) {
+        return;
+    }
+    length = *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
+    characters = (uint16_t *)(uintptr_t)(string + NETWASM_STRING_DATA_OFFSET);
+    for (u32 index = 0; index < length; index++) {
+        u32 value = characters[index];
+        if (value >= 0xd800 && value <= 0xdbff && index + 1 < length &&
+            characters[index + 1] >= 0xdc00 && characters[index + 1] <= 0xdfff) {
+            value = 0x10000 + ((value - 0xd800) << 10) +
+                (characters[++index] - 0xdc00);
+        } else if (value >= 0xd800 && value <= 0xdfff) {
+            value = 0xfffd;
+        }
+        if (sizeof(buffer) - buffered < 4) {
+            write_diagnostic_bytes(buffer, buffered);
+            buffered = 0;
+        }
+        buffered += encode_utf8(value, buffer + buffered);
+    }
+    write_diagnostic_bytes(buffer, buffered);
+}
+
+static int diagnostic_string_is_empty(netwasm_reference_t string)
+{
+    return string == 0 ||
+        *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET) == 0;
+}
+
+static int diagnostic_string_ends_with_newline(netwasm_reference_t string)
+{
+    u32 length;
+    uint16_t *characters;
+    if (diagnostic_string_is_empty(string)) {
+        return 0;
+    }
+    length = *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
+    characters = (uint16_t *)(uintptr_t)(string + NETWASM_STRING_DATA_OFFSET);
+    return characters[length - 1] == '\n';
+}
+
+static void write_diagnostic_separator(void)
+{
+    char separator[2] = { ':', ' ' };
+    write_diagnostic_bytes(separator, sizeof(separator));
+}
+
+static void write_diagnostic_newline(void)
+{
+    char newline = '\n';
+    write_diagnostic_bytes(&newline, sizeof(newline));
+}
+
+#ifdef NETWASM_STRUCTURED_COMMAND_DIAGNOSTICS
+#include "command_diagnostics.h"
+#endif
+
+__attribute__((export_name("report_unobserved_task_exception")))
+void report_unobserved_task_exception(
+    netwasm_reference_t exception_type,
+    netwasm_reference_t exception_message,
+    netwasm_reference_t stack_trace)
+{
+    static const char header[] =
         "NetWasm: an unobserved managed Task exception was finalized\n";
-    (void)write(STDERR_FILENO, message, sizeof(message) - 1);
+    write_diagnostic_bytes(header, sizeof(header) - 1);
+    if (!diagnostic_string_is_empty(exception_type) ||
+        !diagnostic_string_is_empty(exception_message)) {
+        write_diagnostic_string(exception_type);
+        if (!diagnostic_string_is_empty(exception_type) &&
+            !diagnostic_string_is_empty(exception_message)) {
+            write_diagnostic_separator();
+        }
+        write_diagnostic_string(exception_message);
+        write_diagnostic_newline();
+    }
+    if (!diagnostic_string_is_empty(stack_trace)) {
+        write_diagnostic_string(stack_trace);
+        if (!diagnostic_string_ends_with_newline(stack_trace)) {
+            write_diagnostic_newline();
+        }
+    }
 }
 
 static int grow_exception_frames(void)
@@ -210,18 +333,19 @@ static int grow_stack_trace_frames(void)
 {
     u32 capacity = stack_trace_frame_capacity == 0 ? 32 :
         stack_trace_frame_capacity * 2;
-    u32 *frames;
+    StackTraceFrame *frames;
     if (capacity < stack_trace_frame_capacity ||
-        (size_t)capacity > SIZE_MAX / sizeof(u32)) {
+        (size_t)capacity > SIZE_MAX / sizeof(StackTraceFrame)) {
         return 0;
     }
-    frames = (u32 *)collector_allocate_metadata((size_t)capacity * sizeof(u32));
+    frames = (StackTraceFrame *)collector_allocate_metadata(
+        (size_t)capacity * sizeof(StackTraceFrame));
     if (frames == NULL) {
         return 0;
     }
     if (stack_trace_frame_top != 0) {
         memcpy(frames, stack_trace_frames,
-               (size_t)stack_trace_frame_top * sizeof(u32));
+               (size_t)stack_trace_frame_top * sizeof(StackTraceFrame));
     }
     if (stack_trace_frame_capacity != 0) {
         collector_release_metadata(stack_trace_frames);
@@ -239,14 +363,25 @@ void stack_trace_frame_enter(u32 method_id)
          !grow_stack_trace_frames())) {
         __builtin_trap();
     }
-    stack_trace_frames[stack_trace_frame_top++] = method_id;
+    stack_trace_frames[stack_trace_frame_top++] =
+        (StackTraceFrame){ method_id, method_id };
+}
+
+__attribute__((export_name("stack_trace_frame_location")))
+void stack_trace_frame_location(u32 method_id, u32 symbol_id)
+{
+    if (method_id == 0 || symbol_id == 0 || stack_trace_frame_top == 0 ||
+        stack_trace_frames[stack_trace_frame_top - 1].method_id != method_id) {
+        __builtin_trap();
+    }
+    stack_trace_frames[stack_trace_frame_top - 1].symbol_id = symbol_id;
 }
 
 __attribute__((export_name("stack_trace_frame_leave")))
 void stack_trace_frame_leave(u32 method_id)
 {
     if (method_id == 0 || stack_trace_frame_top == 0 ||
-        stack_trace_frames[stack_trace_frame_top - 1] != method_id) {
+        stack_trace_frames[stack_trace_frame_top - 1].method_id != method_id) {
         __builtin_trap();
     }
     stack_trace_frame_top--;
@@ -303,7 +438,14 @@ void stack_trace_register_symbol(
     netwasm_address_t characters,
     u32 length)
 {
-    if (method_id == 0 || characters == 0 || length == 0 ||
+    if (method_id == 0) {
+        __builtin_trap();
+    }
+    if (method_id < stack_trace_symbol_capacity &&
+        stack_trace_symbols[method_id].characters != NULL) {
+        return;
+    }
+    if (characters == 0 || length == 0 ||
         (method_id >= stack_trace_symbol_capacity &&
          !grow_stack_trace_symbols(method_id)) ||
         (size_t)length > SIZE_MAX / sizeof(uint16_t)) {
@@ -316,9 +458,6 @@ void stack_trace_register_symbol(
     }
     memcpy(copy, (const void *)(uintptr_t)characters,
         (size_t)length * sizeof(uint16_t));
-    if (stack_trace_symbols[method_id].characters != NULL) {
-        collector_release_metadata(stack_trace_symbols[method_id].characters);
-    }
     stack_trace_symbols[method_id].characters = copy;
     stack_trace_symbols[method_id].length = length;
 }
@@ -361,11 +500,11 @@ static void capture_stack_trace(netwasm_reference_t exception)
     }
     u32 length = 0;
     for (u32 index = stack_trace_frame_top; index != 0; index--) {
-        u32 method_id = stack_trace_frames[index - 1];
-        StackTraceSymbol *symbol = method_id < stack_trace_symbol_capacity ?
-            &stack_trace_symbols[method_id] : NULL;
+        StackTraceFrame frame = stack_trace_frames[index - 1];
+        StackTraceSymbol *symbol = frame.symbol_id < stack_trace_symbol_capacity ?
+            &stack_trace_symbols[frame.symbol_id] : NULL;
         u32 frame_length = symbol != NULL && symbol->characters != NULL ?
-            symbol->length : 7 + decimal_digit_count(method_id);
+            symbol->length : 7 + decimal_digit_count(frame.symbol_id);
         if (!add_trace_length(&length, 3) ||
             !add_trace_length(&length, frame_length) ||
             (index != 1 && !add_trace_length(&length, 1))) {
@@ -388,9 +527,9 @@ static void capture_stack_trace(netwasm_reference_t exception)
         *destination++ = 'a';
         *destination++ = 't';
         *destination++ = ' ';
-        u32 method_id = stack_trace_frames[index - 1];
-        StackTraceSymbol *symbol = method_id < stack_trace_symbol_capacity ?
-            &stack_trace_symbols[method_id] : NULL;
+        StackTraceFrame frame = stack_trace_frames[index - 1];
+        StackTraceSymbol *symbol = frame.symbol_id < stack_trace_symbol_capacity ?
+            &stack_trace_symbols[frame.symbol_id] : NULL;
         if (symbol != NULL && symbol->characters != NULL) {
             memcpy(destination, symbol->characters,
                 (size_t)symbol->length * sizeof(uint16_t));
@@ -400,7 +539,7 @@ static void capture_stack_trace(netwasm_reference_t exception)
             for (u32 character = 0; character < 7; character++) {
                 *destination++ = (uint16_t)fallback[character];
             }
-            destination = write_decimal(destination, method_id);
+            destination = write_decimal(destination, frame.symbol_id);
         }
         if (index != 1) {
             *destination++ = '\n';
@@ -410,6 +549,18 @@ static void capture_stack_trace(netwasm_reference_t exception)
         exception + stack_trace_exception_field_offset);
     collector_store_reference(exception, slot, trace);
     collector_unregister_roots(&exception, sizeof(exception));
+}
+
+static void capture_stack_trace_if_missing(netwasm_reference_t exception)
+{
+    if (!stack_trace_initialized || exception == 0) {
+        return;
+    }
+    netwasm_reference_t *slot = (netwasm_reference_t *)(uintptr_t)(
+        exception + stack_trace_exception_field_offset);
+    if (*slot == 0) {
+        capture_stack_trace(exception);
+    }
 }
 
 
@@ -720,6 +871,7 @@ void begin_throw(netwasm_reference_t exception)
 __attribute__((export_name("begin_rethrow")))
 void begin_rethrow(netwasm_reference_t exception)
 {
+    capture_stack_trace_if_missing(exception);
     dispatch_exception(exception);
 }
 

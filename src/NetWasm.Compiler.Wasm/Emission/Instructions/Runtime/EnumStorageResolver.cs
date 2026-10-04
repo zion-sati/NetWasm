@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
@@ -5,35 +6,30 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 internal sealed class EnumStorageResolver(
-    ITypeRepository types,
-    IFieldRepository fields,
+    IEnumMetadataSource metadata,
     ITargetLayout layouts,
-    IValueLayoutProvider values,
-    ITypeDescriptorSource descriptors) : IEnumStorageResolver
+    IValueLayoutProvider values) : IEnumStorageResolver
 {
+    private readonly IEnumMetadataSource _metadata = metadata ??
+        throw new ArgumentNullException(nameof(metadata));
+    private readonly ITargetLayout _layouts = layouts ??
+        throw new ArgumentNullException(nameof(layouts));
+    private readonly IValueLayoutProvider _values = values ??
+        throw new ArgumentNullException(nameof(values));
+
     public ImmutableArray<EnumStorage> Resolve() =>
-        [.. descriptors.TypeDescriptors
-            .Where(descriptor => IsEnumType(types.GetTypeDefinition(descriptor.Type)))
+        [.. _metadata.EnumMetadata
+            .Where(entry => !entry.IsOpenDefinition)
             .Select(CreateStorage)];
 
-    private EnumStorage CreateStorage(TypeDescriptorLayout descriptor)
+    private EnumStorage CreateStorage(EnumMetadataLayout entry)
     {
-        var type = types.GetTypeDefinition(descriptor.Type);
-        var field = type.Fields
-            .Select(fields.GetField)
-            .Single(candidate => candidate.Name == "value__");
-        var layout = values.GetValueLayout(field.SignatureType);
+        var layout = _values.GetValueLayout(entry.UnderlyingType);
         return new EnumStorage(
-            descriptor,
-            CliTypeIdentity.Named(
-                descriptor.Type.Assembly,
-                type.Namespace,
-                type.Name,
-                isValueType: true),
-            field.SignatureType,
+            entry.TypeId,
+            entry.EnumType,
+            entry.UnderlyingType,
             layout,
-            WasmTargetLayout.Align(layouts.Target.ObjectHeaderSize, layout.Alignment));
+            WasmTargetLayout.Align(_layouts.Target.ObjectHeaderSize, layout.Alignment));
     }
-
-    private static bool IsEnumType(TypeDefinitionModel type) => type.IsEnum;
 }

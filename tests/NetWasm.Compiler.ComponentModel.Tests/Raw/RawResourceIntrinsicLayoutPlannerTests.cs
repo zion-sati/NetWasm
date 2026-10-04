@@ -18,7 +18,7 @@ public sealed class RawResourceIntrinsicLayoutPlannerTests
     public void DelegatesTheDeclaredHandleShapeWithoutMemoryPlanning(WasmTarget target, CanonicalAbiFunctionKind kind, bool returnsHandle)
     {
         var dependencies = new RecordingDependencies();
-        var declaration = Declaration(kind);
+        var declaration = Declaration(kind) with { CoreInterfaceName = "files-alias" };
         var document = new WitDocument([], [], [], [declaration.Definition], "{}");
 
         var layout = Create(dependencies).Plan(document, declaration, target);
@@ -32,6 +32,7 @@ public sealed class RawResourceIntrinsicLayoutPlannerTests
         var function = dependencies.IdentityRequest!.Value.Function;
         Assert.Equal(target, dependencies.IdentityRequest.Value.Target);
         Assert.Equal(declaration.InterfaceName, function.InterfaceName);
+        Assert.Equal(declaration.CoreInterfaceName, function.CoreInterfaceName);
         Assert.Equal(kind, function.Kind);
         Assert.Equal("file", function.ResourceName);
         var handle = Assert.Single(function.Parameters);

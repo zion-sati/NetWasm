@@ -655,6 +655,17 @@ namespace System
             {
                 throw new FormatException();
             }
+            if (format == InvariantDateTimeText.Rfc3339Format)
+            {
+                var suffix = _kind switch
+                {
+                    DateTimeKind.Utc => "Z",
+                    DateTimeKind.Local => FormatOffset(
+                        ResolveLocalTimeOffset(_ticks, LocalTimeBasis.Local).Ticks),
+                    _ => string.Empty,
+                };
+                return InvariantDateTimeText.FormatRfc3339(this, suffix);
+            }
             return format is "O" or "o" ? FormatRoundTrip() : ToString();
         }
 
@@ -691,7 +702,8 @@ namespace System
         }
 
         private static bool IsSupportedFormat(string? format) =>
-            format is not null && (format.Length == 0 || format is "O" or "o" or "s" or "u" or "G" or "g");
+            format is not null && (format.Length == 0 || format is "O" or "o" or "s" or "u" or "G" or "g"
+                || format == InvariantDateTimeText.Rfc3339Format);
 
         private static string? TrimWhiteSpace(string? value, System.Globalization.DateTimeStyles style)
         {

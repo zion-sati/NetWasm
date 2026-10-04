@@ -29,6 +29,10 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<WeakHandleGetIntrinsicEmitter>();
         services.AddSingleton<WeakHandleSetIntrinsicEmitter>();
         services.AddSingleton<WeakHandleReleaseIntrinsicEmitter>();
+        services.AddSingleton<EphemeronHandleCreateIntrinsicEmitter>();
+        services.AddSingleton<EphemeronHandleGetKeyIntrinsicEmitter>();
+        services.AddSingleton<EphemeronHandleGetValueIntrinsicEmitter>();
+        services.AddSingleton<EphemeronHandleReleaseIntrinsicEmitter>();
         services.AddSingleton<GcHandleCreateIntrinsicEmitter>();
         services.AddSingleton<GcHandleGetIntrinsicEmitter>();
         services.AddSingleton<GcHandleSetIntrinsicEmitter>();
@@ -47,6 +51,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<SuppressFinalizeIntrinsicEmitter>();
         services.AddSingleton<ReRegisterForFinalizeIntrinsicEmitter>();
         services.AddSingleton<ReportUnobservedTaskExceptionIntrinsicEmitter>();
+        services.AddSingleton<ExceptionDispatchPreservedIntrinsicEmitter>();
         services.AddSingleton<IsReferenceOrContainsReferencesIntrinsicEmitter>();
         services.AddSingleton<GetArrayDataReferenceIntrinsicEmitter>();
         services.AddSingleton<NativeIntegerSizeIntrinsicEmitter>();
@@ -88,6 +93,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<FloatingSquareRootIntrinsicEmitter>();
         services.AddSingleton<ObjectArrayDelegateAdapterIntrinsicEmitter>();
         services.AddSingleton<MemberExecutionIntrinsicEmitter>();
+        services.AddSingleton<DelegateDynamicInvokeIntrinsicEmitter>();
 
         services.AddSingleton<IEnumStorageResolver, EnumStorageResolver>();
         services.AddSingleton<IEnumNullCheckEmitter, EnumNullCheckEmitter>();
@@ -156,6 +162,18 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<WeakHandleGetIntrinsicEmitter>(services, RuntimeIntrinsic.WeakHandleGet);
         AddRegistration<WeakHandleSetIntrinsicEmitter>(services, RuntimeIntrinsic.WeakHandleSet);
         AddRegistration<WeakHandleReleaseIntrinsicEmitter>(services, RuntimeIntrinsic.WeakHandleRelease);
+        AddRegistration<EphemeronHandleCreateIntrinsicEmitter>(
+            services,
+            RuntimeIntrinsic.EphemeronHandleCreate);
+        AddRegistration<EphemeronHandleGetKeyIntrinsicEmitter>(
+            services,
+            RuntimeIntrinsic.EphemeronHandleGetKey);
+        AddRegistration<EphemeronHandleGetValueIntrinsicEmitter>(
+            services,
+            RuntimeIntrinsic.EphemeronHandleGetValue);
+        AddRegistration<EphemeronHandleReleaseIntrinsicEmitter>(
+            services,
+            RuntimeIntrinsic.EphemeronHandleRelease);
         AddRegistration<GcHandleCreateIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleCreate);
         AddRegistration<GcHandleGetIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleGet);
         AddRegistration<GcHandleSetIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleSet);
@@ -179,6 +197,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.SuppressFinalize);
         AddRegistration<ReRegisterForFinalizeIntrinsicEmitter>(
             services, RuntimeIntrinsic.ReRegisterForFinalize);
+        AddRegistration<ExceptionDispatchPreservedIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ExceptionDispatchPreserved);
         AddRegistration<ReportUnobservedTaskExceptionIntrinsicEmitter>(
             services, RuntimeIntrinsic.ReportUnobservedTaskException);
         AddRegistration<IsReferenceOrContainsReferencesIntrinsicEmitter>(
@@ -254,6 +274,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate);
         AddRegistration<MemberExecutionIntrinsicEmitter>(
             services, RuntimeIntrinsic.MemberExecuteMethod);
+        AddRegistration<DelegateDynamicInvokeIntrinsicEmitter>(
+            services, RuntimeIntrinsic.DelegateDynamicInvoke);
         AddRegistration<MemberExecutionIntrinsicEmitter>(
             services, RuntimeIntrinsic.MemberReadField);
         AddRegistration<EnumEqualsIntrinsicEmitter>(services, RuntimeIntrinsic.EnumEquals);

@@ -47,9 +47,11 @@ public sealed class EnumTypeArgumentValidatorTests
 
     private static EnumMetadataLayout Entry(int typeId) => new(
         new EntityKey(new AssemblyIdentity("EnumTypeArgumentValidatorTests"), typeId),
+        CliTypeIdentity.Named(new AssemblyIdentity("EnumTypeArgumentValidatorTests"), "Tests", $"Enum{typeId}", true),
         typeId,
         0,
         CliTypeIdentity.Primitive("i4", CliValueKind.I4),
+        false,
         false,
         []);
 

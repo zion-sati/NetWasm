@@ -36,6 +36,7 @@ public static class CilSafepointClassifier
             CilOperation.LoadField or
             CilOperation.LoadFieldAddress or
             CilOperation.StoreField or
+            CilOperation.CompareExchange or
             CilOperation.LoadStaticField or
             CilOperation.LoadStaticFieldAddress or
             CilOperation.StoreStaticField or

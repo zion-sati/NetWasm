@@ -244,6 +244,60 @@ test("executes a raw command through the exact projected imports", async () => {
   assert.deepEqual(calls, ["instantiate", "run"]);
 });
 
+test("drains a terminal report when managed cleanup cannot be bound", async () => {
+  const calls = [];
+  const result = await executeRaw({
+    ...base(),
+    contractKey: commandComponentContract,
+    abi: commandAbi(),
+    instantiate: async () => rawInstance({
+      run() { throw new WebAssembly.RuntimeError("terminal managed failure"); },
+    }),
+    consumeTerminalEvent() {
+      calls.push("consume");
+      return { typeId: 7 };
+    },
+    async drainTerminalReports() { calls.push("drain"); },
+  });
+
+  assert.equal(result.primaryFailure.code, "host.command-invoke");
+  assert.deepEqual(calls, ["consume", "drain"]);
+});
+
+test("clears the active exception before returning a managed command failure", async () => {
+  const calls = [];
+  const result = await executeRaw({
+    ...base(),
+    contractKey: commandComponentContract,
+    abi: commandAbi(),
+    instantiate: async () => rawInstance({
+      run() { throw new WebAssembly.RuntimeError("terminal managed failure"); },
+      exception_clear_active() { calls.push("clear"); },
+    }),
+    consumeTerminalEvent() {
+      calls.push("consume");
+      return { typeId: 7 };
+    },
+    async drainTerminalReports() { calls.push("drain"); },
+  });
+
+  assert.equal(result.primaryFailure.code, "managed.failure");
+  assert.deepEqual(calls, ["consume", "clear", "drain"]);
+});
+
+test("preserves an unreported raw trap as a host command failure", async () => {
+  const result = await executeRaw({
+    ...base(),
+    contractKey: commandComponentContract,
+    abi: commandAbi(),
+    instantiate: async () => rawInstance({
+      run() { throw new WebAssembly.RuntimeError("ordinary raw trap"); },
+    }),
+  });
+
+  assert.equal(result.primaryFailure.code, "host.command-invoke");
+});
+
 test("executes a generated canonical import beside an explicit physical import", async () => {
   let canonicalImport;
   const result = await executeRaw({
@@ -370,6 +424,45 @@ test("observes an immediate raw managed process and closes in ownership order", 
   });
   assert.equal(result.exitCode, 23);
   assert.deepEqual(calls, ["instantiate", "start", "status", "result", "complete", "caller-close"]);
+});
+
+test("observes process completion and delivery failure without a pollable wake", async () => {
+  for (const failed of [false, true]) {
+    let completed = false;
+    let subscribed = false;
+    let observer;
+    const calls = [];
+    const result = await executeRaw({
+      ...processBase(),
+      contractKey: processComponentContract,
+      abi: processAbi(),
+      subscribeInteropCompletion(value) {
+        observer = value; subscribed = true; calls.push("subscribe");
+        return () => { subscribed = false; calls.push("unsubscribe"); };
+      },
+      instantiate: async () => rawInstance({
+        run() {
+          assert.equal(subscribed, true);
+          queueMicrotask(() => {
+            completed = true;
+            observer(failed ? new Error("delivery failed") : undefined);
+          });
+          return 7;
+        },
+        "netwasm.process.status": () => completed ? 1 : 0,
+        "netwasm.process.result": () => 42,
+        "netwasm.process.complete"() { assert.equal(subscribed, false); calls.push("complete"); },
+        "cm32p2|netwasm:runtime/reactor-guest@1|wake"() { assert.fail("no pollable wake is needed"); },
+      }),
+      instanceReleaseActions: [{ code: "host.interop-close", message: "close", release() { assert.equal(subscribed, false); calls.push("close"); } }],
+    });
+    assert.equal(result.completionKind, failed ? "hostFailure" : "normal");
+    if (failed) assert.equal(result.primaryFailure.code, "host.process-wake");
+    else assert.equal(result.exitCode, 42);
+    assert.deepEqual(calls, ["subscribe", "unsubscribe", "complete", "close"]);
+    observer();
+    assert.deepEqual(calls, ["subscribe", "unsubscribe", "complete", "close"]);
+  }
 });
 
 test("closes reactor, instance services, canonical state, and caller resources in order", async () => {
@@ -648,6 +741,8 @@ test("validates the raw execution request before invoking dependencies", async (
     { physicalProviders: null },
     { instantiate: null },
     { bindInstance: null },
+    { consumeTerminalEvent: null },
+    { drainTerminalReports: null },
     { instanceReleaseActions: null },
     { releaseActions: null },
     { schedule: null },
@@ -781,4 +876,9 @@ test("records raw reactor and caller cleanup failures", async () => {
   assert.equal(result.primaryFailure.code, "host.raw-reactor");
   assert.deepEqual(result.cleanupFailures.map(failure => failure.code), ["host.caller-close"]);
   assert.doesNotMatch(JSON.stringify(result), /private/);
+});
+
+test("rejects an invalid interop observer subscription before guest entry", async () => {
+  await assert.rejects(() => executeRaw({ ...base(), contractKey: commandComponentContract,
+    abi: commandAbi(), instantiate: async () => { assert.fail("must not enter guest"); }, subscribeInteropCompletion: null }), /subscription/);
 });

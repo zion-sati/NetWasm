@@ -228,6 +228,8 @@ jobs:
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
           NETWASM_COMPATIBILITY_REFERENCE_ROOT: ${{ runner.temp }}/compiler-qualification/compatibility-references
           NETWASM_EMSDK_ROOT: ${{ runner.temp }}/emsdk
+          NETWASM_NATIVE_INTEROP_HOST_TOOLS_ROOT: ${{ runner.temp }}/native-interop-tools/host-tools
+          NETWASM_NATIVE_INTEROP_TOOLCHAIN_ROOT: ${{ runner.temp }}/native-interop-tools/toolchain
           NETWASM_WASM_TOOLS_PATH: ${{ runner.temp }}/wasm-tools/wasm-tools
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
@@ -237,6 +239,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           bash eng/verify-toolchain.sh
           bash src/NetWasm.Runtime.Pack/tools/regenerate-runtime-pack.sh --allow-emscripten
+          bash eng/prepare-native-interop-test-tools.sh "$RUNNER_TEMP/native-interop-tools"
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s eng/tests -p 'test_*.py'
           dotnet restore NetWasm.slnx --disable-build-servers --nologo
           dotnet build NetWasm.slnx -c Release --no-restore --disable-build-servers --nologo

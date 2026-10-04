@@ -86,24 +86,16 @@ public sealed class BoxedValueTypeValidatorTests
 
     private static ImmutableArray<EnumStorage> Storages() =>
         [
-            Storage(FirstEnum, Int32, 11, 1),
-            Storage(SecondEnum, Int32, 12, 2),
-            Storage(ByteEnum, Byte, 13, 3),
+            Storage(FirstEnum, Int32, 11),
+            Storage(SecondEnum, Int32, 12),
+            Storage(ByteEnum, Byte, 13),
         ];
 
     private static EnumStorage Storage(
         CliTypeIdentity enumType,
         CliTypeIdentity underlyingType,
-        int typeId,
-        int token) => new(
-            new TypeDescriptorLayout(
-                new EntityKey(Assembly, token),
-                typeId,
-                0,
-                16,
-                0,
-                0,
-                null),
+        int typeId) => new(
+            typeId,
             enumType,
             underlyingType,
             new ValueLayout(underlyingType, 4, 4, []),

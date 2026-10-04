@@ -20,7 +20,8 @@ internal sealed class ConstructedTypeDescriptorBuilder(
     bool requiresTypeFacts = false,
     RuntimeTypeNamePayload typeNamePayload = RuntimeTypeNamePayload.None,
     IAssemblyIdentityFormatter? assemblyNames = null,
-    IReadOnlyDictionary<string, MethodInstanceModel>? delegateInvokeDescriptors = null) :
+    IReadOnlyDictionary<string, MethodInstanceModel>? delegateInvokeDescriptors = null,
+    IReadOnlyDictionary<CliTypeIdentity, MethodInstanceModel>? finalizers = null) :
     IConstructedTypeDescriptorBuilder
 {
     internal ConstructedTypeDescriptorBuilder(
@@ -69,6 +70,8 @@ internal sealed class ConstructedTypeDescriptorBuilder(
     private readonly IReadOnlyDictionary<string, MethodInstanceModel>
         _delegateInvokeDescriptors = delegateInvokeDescriptors ??
             ImmutableDictionary<string, MethodInstanceModel>.Empty;
+    private readonly IReadOnlyDictionary<CliTypeIdentity, MethodInstanceModel> _finalizers =
+        finalizers ?? ImmutableDictionary<CliTypeIdentity, MethodInstanceModel>.Empty;
 
     public void Build()
     {
@@ -107,7 +110,7 @@ internal sealed class ConstructedTypeDescriptorBuilder(
                 layout.Size,
                 bitmapAddress,
                 bitCount,
-                Finalizer: null)
+                _finalizers.TryGetValue(type, out var finalizer) ? finalizer : null)
             {
                 AssignableTypeIdsAddress = assignableTypes.Address,
                 AssignableTypeIdCount = assignableTypes.Count,

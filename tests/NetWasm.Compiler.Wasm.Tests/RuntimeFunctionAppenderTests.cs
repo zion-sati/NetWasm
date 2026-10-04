@@ -9,6 +9,34 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 public sealed class RuntimeFunctionAppenderTests
 {
+    [Fact]
+    public void EntrylessLibraryAppendsDispatchersWithoutAnEntryFunction()
+    {
+        var appender = CreateAppender();
+        var functions = new List<WasmFunctionDefinition>();
+        var boundaries = new List<ManagedBoundaryPlanEntry>();
+
+        var result = appender.Append(functions, 4, [],
+            ImmutableDictionary<int, int>.Empty, null,
+            TestRuntimeInitialization.Create(256), WasmEntryPointProfile.None,
+            null, new Dictionary<string, int>(), new FixedFunctionIndexResolver(), boundaries);
+
+        Assert.Equal(2, functions.Count);
+        Assert.Equal(4, result.FilterDispatcherIndex);
+        Assert.Equal(5, result.FinalizerDispatcherIndex);
+        Assert.Null(result.EntryPointIndex);
+        Assert.Equal(2, boundaries.Count);
+        Assert.DoesNotContain(functions, function => function.Name == "netwasm.entry");
+
+        var before = functions.Count;
+        Assert.Throws<ArgumentException>(() => appender.Append(functions, 4, [],
+            ImmutableDictionary<int, int>.Empty,
+            new FakeProgram().GetMethod(EmitterTestSupport.EntryKey),
+            TestRuntimeInitialization.Create(256), WasmEntryPointProfile.None,
+            null, new Dictionary<string, int>(), new FixedFunctionIndexResolver(), boundaries));
+        Assert.Equal(before, functions.Count);
+    }
+
     [Theory]
     [InlineData(WasmEntryPointProfile.Process, true, 3)]
     [InlineData(WasmEntryPointProfile.Internal, false, 2)]
@@ -123,7 +151,8 @@ public sealed class RuntimeFunctionAppenderTests
                     helpers,
                     entries,
                     functionTypes,
-                    boundaryBuilder),
+                    boundaryBuilder,
+                    WasmRuntimeImports.CreateCatalog()),
                 boundaryBuilder),
         }.Cast<IRuntimeFunctionAppender>().Single();
         var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
@@ -142,7 +171,8 @@ public sealed class RuntimeFunctionAppenderTests
             instance.DeclaringType,
             instance,
             instance,
-            instance);
+            instance)
+        { GetVoidResult = instance };
         var helperIndices = new Dictionary<string, int>();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
 
@@ -197,7 +227,8 @@ public sealed class RuntimeFunctionAppenderTests
             new FixedAsyncHelperAppender(),
             entries,
             functionTypes,
-            boundaries);
+            boundaries,
+            WasmRuntimeImports.CreateCatalog());
 
     private sealed class FixedDescriptorSource(bool withFinalizers) :
         ITypeDescriptorSource
@@ -205,16 +236,44 @@ public sealed class RuntimeFunctionAppenderTests
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => withFinalizers
             ?
             [
-                new(EmitterTestSupport.TypeKey, 3, 0, 0, 0, 0,
-                    EmitterTestSupport.EntryKey),
                 new(EmitterTestSupport.TypeKey, 2, 0, 0, 0, 0, null),
                 new(EmitterTestSupport.TypeKey, 1, 0, 0, 0, 0,
-                    EmitterTestSupport.ConstructorKey),
+                    Finalizer(EmitterTestSupport.ConstructorKey)),
             ]
             : [];
         public ImmutableArray<ConstructedTypeDescriptorLayout>
-            ConstructedTypeDescriptors => [];
+            ConstructedTypeDescriptors => withFinalizers
+                ?
+                [
+                    new(
+                        CliTypeIdentity.Named(
+                            EmitterTestSupport.Assembly,
+                            "Test",
+                            "ConstructedType",
+                            false),
+                        3,
+                        0,
+                        0,
+                        0,
+                        0,
+                        Finalizer(EmitterTestSupport.EntryKey)),
+                ]
+                : [];
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
+
+        private static MethodInstanceModel Finalizer(EntityKey methodKey)
+        {
+            var method = new FakeProgram().GetMethod(methodKey);
+            return new MethodInstanceModel(
+                method,
+                CliTypeIdentity.Named(
+                    EmitterTestSupport.Assembly,
+                    "Test",
+                    "Type",
+                    false),
+                [],
+                method.Signature);
+        }
     }
 
     private sealed class FixedFilterDispatcherEmitter : IFilterDispatcherEmitter
@@ -229,7 +288,7 @@ public sealed class RuntimeFunctionAppenderTests
         public int[] TypeIds { get; private set; } = [];
 
         public byte[] Emit(
-            TypeDescriptorLayout[] finalizableTypes,
+            FinalizerDispatchPlan[] finalizableTypes,
             IFunctionIndexResolver functionIndices)
         {
             TypeIds = [.. finalizableTypes.Select(type => type.TypeId)];
@@ -286,7 +345,8 @@ public sealed class RuntimeFunctionAppenderTests
             JavaScriptAsyncMethodBinding binding,
             ManagedAsyncBoundaryNames names,
             ManagedAsyncBoundaryKinds kinds,
-            ICollection<ManagedBoundaryPlanEntry> boundaryEntries)
+            ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
+            AsyncTaskCompletionPlan completion)
         {
             Count++;
         }

@@ -59,6 +59,88 @@ public sealed class InteropImportPlannerTests
         Assert.Equal(51, subscriptionPlan.ReleaseSubscription.Value);
     }
 
+    [Fact]
+    public void JavaScriptStringResultExportPlansHostHandleImports()
+    {
+        var program = new FakeProgram();
+        var definition = program.GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliTypeIdentity.Primitive(
+                "string",
+                CliValueKind.ManagedReference,
+                isValueType: false)),
+        };
+        var instance = new MethodInstanceModel(
+            definition,
+            CliTypeIdentity.Named(
+                Assembly,
+                "Tests",
+                "EntryPoint",
+                isValueType: false),
+            [],
+            definition.Signature);
+        var request = WasmEmissionRequest.Create(
+            definition,
+            ImmutableDictionary<EntityKey, StructuredMethod>.Empty,
+            ImmutableDictionary<EntityKey, MethodRootMap>.Empty,
+            [],
+            ImmutableDictionary<string, EntityKey>.Empty.Add("value", definition.Key),
+            methodInstances: ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
+                instance.CanonicalName,
+                instance)) with
+        {
+            UseJavaScriptExportBoundary = true,
+        };
+
+        var plan = new InteropImportPlanner().Build(request, firstIndex: 17);
+
+        Assert.True(plan.UseJavaScriptExportBoundary);
+        Assert.Equal(17, plan.StringLength.Value);
+        Assert.Equal(18, plan.CopyStringUtf16.Value);
+        Assert.Equal(19, plan.ReleaseHandle.Value);
+    }
+
+    [Fact]
+    public void DefaultCoreApplicationStringExportUsesJavaScriptBoundaryImports()
+    {
+        var program = new FakeProgram();
+        var stringType = CliTypeIdentity.Primitive(
+            "string",
+            CliValueKind.ManagedReference,
+            isValueType: false);
+        var definition = program.GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(
+                CliTypeIdentity.FromStackKind(CliValueKind.Void),
+                stringType),
+        };
+        var instance = new MethodInstanceModel(
+            definition,
+            CliTypeIdentity.Named(
+                Assembly,
+                "Tests",
+                "EntryPoint",
+                isValueType: false),
+            [],
+            definition.Signature);
+        var request = WasmEmissionRequest.Create(
+            definition,
+            ImmutableDictionary<EntityKey, StructuredMethod>.Empty,
+            ImmutableDictionary<EntityKey, MethodRootMap>.Empty,
+            [],
+            ImmutableDictionary<string, EntityKey>.Empty.Add("accept", definition.Key),
+            methodInstances: ImmutableDictionary<string, MethodInstanceModel>.Empty.Add(
+                instance.CanonicalName,
+                instance));
+
+        var plan = new InteropImportPlanner().Build(request, firstIndex: 23);
+
+        Assert.True(plan.UseJavaScriptExportBoundary);
+        Assert.Equal(23, plan.StringLength.Value);
+        Assert.Equal(24, plan.CopyStringUtf16.Value);
+        Assert.Equal(25, plan.ReleaseHandle.Value);
+    }
+
     private static WasmEmissionRequest RequestWithImport(CliTypeIdentity returnType)
     {
         var program = new FakeProgram();

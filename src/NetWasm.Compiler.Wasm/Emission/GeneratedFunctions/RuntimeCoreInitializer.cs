@@ -19,6 +19,8 @@ internal sealed class RuntimeCoreInitializer(
                 descriptor => descriptor.TypeId))
             .Concat(descriptors.ValueTypeDescriptors.Select(
                 descriptor => descriptor.TypeId))
+            .Concat(descriptors.MetadataTypeDescriptors.Select(
+                descriptor => descriptor.TypeId))
             .DefaultIfEmpty(0)
             .Max() + 1;
         addresses.Emit(code.Instructions, staticDataEnd);

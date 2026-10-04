@@ -3,11 +3,15 @@ import { snapshotDeploymentArtifact } from "./deployment-artifact.mjs";
 const requestKeys = ["artifacts", "deploymentKind"];
 const roleMediaTypes = Object.freeze({
   application: "application/wasm",
+  "exception-type-map": "application/vnd.netwasm.exception-types+json;version=2",
   "interop-manifest": "application/json",
   "raw-adapter": "text/javascript",
   "runtime-layout": "application/json",
+  "stack-trace-symbols": "application/vnd.netwasm.stack-trace-symbols+json;version=1",
 });
-const singletonRoles = Object.freeze(Object.keys(roleMediaTypes).sort());
+const singletonRoles = Object.freeze(Object.keys(roleMediaTypes)
+  .filter(role => role !== "exception-type-map" && role !== "stack-trace-symbols")
+  .sort());
 
 export function createRawArtifactPlan(request = {}) {
   assertExactDataObject(request, requestKeys, "raw artifact plan request");
@@ -40,12 +44,20 @@ export function createRawArtifactPlan(request = {}) {
       throw new TypeError(`raw artifact role '${role}' must occur exactly once`);
     }
   }
+  if ((byRole.get("exception-type-map")?.length ?? 0) > 1) {
+    throw new TypeError("raw artifact role 'exception-type-map' may occur at most once");
+  }
+  if ((byRole.get("stack-trace-symbols")?.length ?? 0) > 1) {
+    throw new TypeError("raw artifact role 'stack-trace-symbols' may occur at most once");
+  }
 
   return Object.freeze({
     application: byRole.get("application")[0],
     adapter: byRole.get("raw-adapter")[0],
+    exceptionTypeMap: byRole.get("exception-type-map")?.[0],
     interopManifest: byRole.get("interop-manifest")[0],
     runtimeLayout: byRole.get("runtime-layout")[0],
+    stackTraceSymbols: byRole.get("stack-trace-symbols")?.[0],
   });
 }
 

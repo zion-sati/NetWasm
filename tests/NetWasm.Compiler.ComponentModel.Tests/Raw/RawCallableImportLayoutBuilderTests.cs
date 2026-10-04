@@ -11,12 +11,16 @@ public sealed class RawCallableImportLayoutBuilderTests
     public void ProjectsTheCallableAndWrapsTheExactFunctionLayout(WasmTarget target)
     {
         var functions = new RecordingFunctions();
-        var declaration = new RawWitImportDeclaration.Callable("example:test@1.0.0/api", new("call", [], null, new("freestanding")));
+        var declaration = new RawWitImportDeclaration.Callable("example:test@1.0.0/api", new("call", [], null, new("freestanding")))
+        {
+            CoreInterfaceName = "api-alias",
+        };
         var document = new WitDocument([], [], [], [], "{}");
 
         var result = Assert.IsType<RawWitImportLayout.Callable>(Create(functions).Build(new(document, declaration, target)));
 
-        Assert.Equal((document, declaration.InterfaceName, declaration.Definition, target), functions.Request);
+        Assert.Equal((document, declaration.InterfaceName, declaration.CoreInterfaceName,
+            declaration.Definition, target), functions.Request);
         Assert.Same(functions.Layout, result.Function);
         Assert.Equal(functions.Layout.Layout.Target, result.Target);
         Assert.Equal(new RawCanonicalImportIdentity("physical", "member"), result.Identity);
@@ -50,15 +54,20 @@ public sealed class RawCallableImportLayoutBuilderTests
 
     private sealed class RecordingFunctions : IRawWitFunctionLayoutBuilder
     {
-        public (WitDocument, string, WitFunction, WasmTarget)? Request { get; private set; }
+        public (WitDocument, string, string, WitFunction, WasmTarget)? Request { get; private set; }
         public InvalidOperationException? Failure { get; init; }
         public RawWitFunctionLayout Layout { get; } = new(new("returned", [], null, new("freestanding")),
             new(WasmTarget.Wasm32, new("", "returned", default, [], null), "physical", "member",
                 new([], CliValueKind.Void, [], [], false, false), new(0, 1, []), null));
 
-        public RawWitFunctionLayout Build(WitDocument document, string interfaceName, WitFunction witFunction, WasmTarget target)
+        public RawWitFunctionLayout Build(
+            WitDocument document,
+            string interfaceName,
+            string coreInterfaceName,
+            WitFunction witFunction,
+            WasmTarget target)
         {
-            Request = (document, interfaceName, witFunction, target);
+            Request = (document, interfaceName, coreInterfaceName, witFunction, target);
             if (Failure is not null) throw Failure;
             return Layout;
         }

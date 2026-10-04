@@ -53,7 +53,8 @@ internal sealed class CompilerHostApplication(
                 EntryPointKind: request.EntryPointKind,
                 MetricsObserver: request.CollectCompilerMetrics ? metrics : null,
                 EnableFrontendCache: request.EnableFrontendCache,
-                IntermediateOutputPath: request.IntermediateOutputPath));
+                IntermediateOutputPath: request.IntermediateOutputPath,
+                StructuredDiagnostics: request.StructuredDiagnostics));
             _artifactWriter.Write(_artifactFormatter.Format(request, result));
 
             using var metadata = request.ReferenceAssemblyAliases.Count == 0

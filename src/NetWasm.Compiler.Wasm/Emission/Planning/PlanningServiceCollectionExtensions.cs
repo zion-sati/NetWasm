@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -12,6 +13,14 @@ internal static class PlanningServiceCollectionExtensions
     {
         services.TryAddSingleton<ILogger>(NullLogger.Instance);
         services.AddSingleton<IEntryPointValidator, EntryPointValidator>();
+        services.TryAddSingleton<INativeDeclarationValidator, NativeDeclarationValidator>();
+        services.TryAddSingleton<INativeCallbackDeclarationValidator,
+            NativeCallbackDeclarationValidator>();
+        services.TryAddSingleton<INativeAggregateAbiPlanner, NativeAggregateAbiPlanner>();
+        services.TryAddSingleton<INativeAbiSignaturePlanner, NativeAbiSignaturePlanner>();
+        services.TryAddSingleton<INativeAbiPlanner, NativeAbiPlanner>();
+        services.AddSingleton<INativeImportPlanner, NativeImportPlanner>();
+        services.AddSingleton<INativeCallbackPlanBuilder, NativeCallbackPlanBuilder>();
         services.AddSingleton<InteropImportPlanner>();
         services.AddSingleton<IInteropImportPlanner>(provider =>
             provider.GetRequiredService<InteropImportPlanner>());
@@ -39,6 +48,7 @@ internal static class PlanningServiceCollectionExtensions
         services.AddSingleton<IFunctionIndexResolverFactory,
             FunctionIndexResolverFactory>();
         services.AddSingleton<IModuleExportCollector, ModuleExportCollector>();
+        services.AddSingleton<IModuleExportValidator, ModuleExportValidator>();
         services.AddSingleton<IModuleImportCollector, ModuleImportCollector>();
         services.AddSingleton<WasmModuleTargetFactory>();
         services.AddSingleton<IWasmModuleTargetFactory>(provider =>

@@ -46,6 +46,70 @@ public sealed class VirtualWitDocumentReaderTests
     }
 
     [Fact]
+    public void AppliesTheSuppliedCoreBindingInventoryForNamedWorldItems()
+    {
+        const string path = "contract.wit.wasm";
+        var documents = ImmutableDictionary<string, string>.Empty.Add(path, """
+            {"packages":[{"name":"example:test@1.0.0","interfaces":{"api":0},"worlds":{"main":0}}],
+             "interfaces":[{"name":"api","package":0,"types":{},"functions":{"run":{"name":"run","kind":"freestanding","params":[]}}}],
+             "types":[],
+             "worlds":[{"name":"main","package":0,"imports":{},"exports":{"interface-0":{"interface":{"id":0}}}}]}
+            """);
+        var inventories = ImmutableDictionary<string, string>.Empty.Add(path, """
+            (module
+              (export "cm32p2|interface-0|run" (func 0))
+              (export "cm32p2|interface-0|run_post" (func 1))
+            )
+            """);
+        var reader = new VirtualWitDocumentReader(
+            documents,
+            inventories,
+            new WitDocumentJsonReader());
+
+        var resolved = reader.Read(path, "main");
+
+        Assert.Equal("interface-0",
+            Assert.Single(resolved.SelectWorld("main").Exports).CoreBindingName);
+    }
+
+    [Fact]
+    public void RejectsInterfacePlacementsWithoutACoreBindingInventory()
+    {
+        const string path = "contract.wit.wasm";
+        var reader = CreateReader(
+            ImmutableDictionary<string, string>.Empty.Add(path, """
+                {"packages":[{"name":"example:test@1.0.0","interfaces":{"api":0},"worlds":{"main":0}}],
+                 "interfaces":[{"name":"api","package":0,"types":{},"functions":{"run":{"name":"run","kind":"freestanding","params":[]}}}],
+                 "types":[],
+                 "worlds":[{"name":"main","package":0,"imports":{},"exports":{"interface-0":{"interface":{"id":0}}}}]}
+                """),
+            new WitDocumentJsonReader());
+
+        var failure = Assert.Throws<CompilerException>(() =>
+            reader.Read(path, "main"));
+
+        Assert.Contains("requires a core binding inventory", failure.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RootOnlyWorldDoesNotRequireACoreBindingInventory()
+    {
+        const string path = "contract.wit.wasm";
+        var reader = CreateReader(
+            ImmutableDictionary<string, string>.Empty.Add(path, """
+                {"packages":[{"name":"example:test@1.0.0","interfaces":{},"worlds":{"main":0}}],
+                 "interfaces":[],"types":[],
+                 "worlds":[{"name":"main","package":0,"imports":{"run":{"function":{"name":"run","kind":"freestanding","params":[]}}},"exports":{}}]}
+                """),
+            new WitDocumentJsonReader());
+
+        var resolved = reader.Read(path, "main");
+
+        Assert.Equal("run", Assert.Single(resolved.SelectWorld("main").Imports).Name);
+    }
+
+    [Fact]
     public void PreservesTheJsonReadersCompilerDiagnostic()
     {
         var expected = new CompilerException(new CompilerDiagnostic(DiagnosticCode.ComponentContract, "invalid virtual WIT"));

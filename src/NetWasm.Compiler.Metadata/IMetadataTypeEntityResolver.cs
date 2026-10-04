@@ -5,5 +5,5 @@ namespace NetWasm.Compiler.Metadata;
 
 internal interface IMetadataTypeEntityResolver
 {
-    EntityKey Resolve(MetadataAssemblySnapshot source, EntityHandle handle);
+    EntityKey Resolve(MetadataAssemblySnapshot source, EntityHandle handle, CliGenericContext? genericContext = null);
 }

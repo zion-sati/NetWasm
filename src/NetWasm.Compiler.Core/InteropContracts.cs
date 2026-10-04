@@ -95,6 +95,7 @@ public sealed record JavaScriptAsyncMethodBinding(
     public MethodInstanceModel? ValueTaskAsTask { get; init; }
     public FieldInstanceModel StatusField { get; init; } = null!;
     public FieldInstanceModel? ResultField { get; init; }
+    public MethodInstanceModel? GetVoidResult { get; init; }
 }
 
 public readonly record struct WitFunctionIdentity(
@@ -194,6 +195,7 @@ public sealed record CanonicalAbiFunction(
     CanonicalAbiType? Result)
 {
     public WitFunctionIdentity Identity => new(InterfaceName, FunctionName);
+    public string CoreInterfaceName { get; init; } = InterfaceName;
     public bool HasManagedBinding { get; init; } = true;
     public EntityKey? PostReturnMethod { get; init; }
     public CanonicalAbiFunctionKind Kind { get; init; }
@@ -265,6 +267,7 @@ public sealed record HostInteropExport(
     public string? StatusExport { get; init; }
     public string? ResultExport { get; init; }
     public string? CompleteExport { get; init; }
+    public string? CompletionResult { get; init; }
 }
 
 public sealed record HostInteropCallback(

@@ -18,12 +18,19 @@ internal sealed class ObjectLayoutResolver(
             ? layout
             : throw Missing(type);
 
-    public ObjectLayout Resolve(CliTypeIdentity type) =>
-        _layouts.ConstructedObjects.TryGetValue(type, out var layout)
+    public ObjectLayout Resolve(CliTypeIdentity type)
+    {
+        if (_layouts.ConstructedObjects.TryGetValue(type, out var layout) ||
+            _layouts.ObjectIdentities.TryGetValue(type, out layout))
+        {
+            return layout;
+        }
+
+        var definition = _typeDefinitions.ResolveTypeIdentity(type);
+        return _layouts.Objects.TryGetValue(definition.Key, out layout)
             ? layout
-            : _layouts.ObjectIdentities.TryGetValue(type, out var namedLayout)
-                ? namedLayout
-                : Resolve(_typeDefinitions.ResolveTypeIdentity(type).Key);
+            : throw Missing(type);
+    }
 
     private static CompilerException Missing(object type) => new(new CompilerDiagnostic(
         DiagnosticCode.RuntimeContract,

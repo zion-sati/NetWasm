@@ -64,6 +64,12 @@ namespace System
 
         public virtual object Clone() => this;
 
+        public object? DynamicInvoke(params object?[]? args) =>
+            Runtime.CompilerServices.RuntimeMemberExecution.InvokeDelegate(
+                GetType().GetDelegateInvokeMethod(),
+                this,
+                args);
+
         public static Delegate? Combine(Delegate? left, Delegate? right)
         {
             if (left is null) return right;

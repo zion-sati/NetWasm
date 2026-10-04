@@ -9,5 +9,7 @@ internal interface IModuleDataPlanner
     ModuleDataPlan Build(
         IEnumerable<StructuredMethodEmission> methods,
         IReadOnlyList<EntityKey> directInitializers,
-        IReadOnlyList<string> constructedInitializers);
+        IReadOnlyList<string> constructedInitializers,
+        bool reserveNativeCallbackReadiness,
+        StackTraceMethodPlan? stackTraceMethods = null);
 }

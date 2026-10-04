@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.Analysis;
 internal interface IReachableProgramBuilder
 {
     ReachableProgram Build(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         ImmutableArray<ProgramExport> exports,
         ReachabilityLedgerSnapshot state,
         IDelegateTypeRecognizer delegateTypes,

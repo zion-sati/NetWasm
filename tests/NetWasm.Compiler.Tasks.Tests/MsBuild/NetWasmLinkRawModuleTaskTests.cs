@@ -21,6 +21,8 @@ public sealed class NetWasmLinkRawModuleTaskTests
         var task = CreateTask(sessions);
         task.Target = target;
         task.Optimization = "None";
+        task.InternalRuntimeExports = "wire metadata";
+        task.InternalApplicationExports = "application metadata";
 
         Assert.True(task.Execute());
 
@@ -52,6 +54,10 @@ public sealed class NetWasmLinkRawModuleTaskTests
         Assert.Equal("linked.wasm", sessions.Session.Request.OutputPath);
         Assert.Equal(expectedWidth, sessions.Session.Request.Target.Width);
         Assert.Equal(FinalWasmOptimization.None, sessions.Session.Request.Optimization);
+        Assert.Equal([new WasmInternalExport("native", 0)], sessions.Session.Request.InternalRuntimeExports.ToArray());
+        Assert.Equal(
+            [new WasmInternalExport("callback", 0)],
+            sessions.Session.Request.InternalApplicationExports.ToArray());
         Assert.True(sessions.Session.IsDisposed);
         var module = Assert.Single(task.Modules);
         Assert.Equal("RawModule", module.GetMetadata("Kind"));
@@ -136,7 +142,8 @@ public sealed class NetWasmLinkRawModuleTaskTests
     public void ConstructorRejectsMissingCapabilityAndComposesDefaults()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new NetWasmLinkRawModuleTask(null!));
+            new NetWasmLinkRawModuleTask(null!, new ExportReader()));
+        Assert.Throws<ArgumentNullException>(() => new NetWasmLinkRawModuleTask(new RecordingSessionFactory(), null!));
         Assert.NotNull(new NetWasmLinkRawModuleTask());
     }
 
@@ -153,7 +160,7 @@ public sealed class NetWasmLinkRawModuleTaskTests
     }
 
     private static NetWasmLinkRawModuleTask CreateTask(
-        IRawModuleLinkSessionFactory sessions) => new(sessions)
+        IRawModuleLinkSessionFactory sessions) => new(sessions, new ExportReader())
         {
             CoreModulePath = "app.core.wasm",
             RuntimeModulePath = "runtime.wasm",
@@ -167,6 +174,14 @@ public sealed class NetWasmLinkRawModuleTaskTests
             NativeBinaryenWasmMergePath = Path.GetFullPath("native-wasm-merge"),
             Target = "wasm32",
         };
+
+    private sealed class ExportReader : IInternalRuntimeExportReader
+    {
+        public System.Collections.Immutable.ImmutableArray<WasmInternalExport> Read(string metadata) =>
+            string.IsNullOrEmpty(metadata)
+                ? []
+                : [new(metadata == "application metadata" ? "callback" : "native", 0)];
+    }
 
     private sealed class RecordingSessionFactory : IRawModuleLinkSessionFactory
     {

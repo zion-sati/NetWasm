@@ -39,6 +39,7 @@ public enum ManagedExceptionKind
     ArrayTypeMismatch,
     JSException,
     InvalidOperation,
+    NotSupported,
 }
 public readonly record struct TypeDescriptorLayout(
     EntityKey Type,
@@ -47,7 +48,7 @@ public readonly record struct TypeDescriptorLayout(
     int ObjectSize,
     int BitmapAddress,
     int BitmapBitCount,
-    EntityKey? Finalizer)
+    MethodInstanceModel? Finalizer)
 {
     public int AssignableTypeIdsAddress { get; init; }
     public int AssignableTypeIdCount { get; init; }
@@ -60,7 +61,7 @@ public readonly record struct ConstructedTypeDescriptorLayout(
     int ObjectSize,
     int BitmapAddress,
     int BitmapBitCount,
-    string? Finalizer)
+    MethodInstanceModel? Finalizer)
 {
     public int AssignableTypeIdsAddress { get; init; }
     public int AssignableTypeIdCount { get; init; }
@@ -73,6 +74,9 @@ public readonly record struct ValueTypeDescriptorLayout(
     int BoxedPayloadOffset,
     int BitmapAddress,
     int BitmapBitCount);
+public readonly record struct MetadataTypeDescriptorLayout(
+    CliTypeIdentity Type,
+    int TypeId);
 
 public interface ITargetLayout
 {
@@ -118,13 +122,11 @@ public interface IStaticDataLayout
 
 public interface IMemberDescriptorLayout
 {
-    int GetMethodDescriptorAddress(MethodInstanceModel method);
-    int GetFieldDescriptorAddress(FieldInstanceModel field);
+    int GetDescriptorAddress(MethodInstanceModel method);
+    int GetDescriptorAddress(FieldInstanceModel field);
     int DeclaringTypeIdOffset { get; }
     int RequiresDeclaringTypeOffset { get; }
 }
-
-public interface IManagedStaticDataLayout : IStaticDataLayout, IMemberDescriptorLayout;
 
 public interface IRuntimeObjectLayout
 {
@@ -185,6 +187,7 @@ public interface ITypeDescriptorSource
     ImmutableArray<TypeDescriptorLayout> TypeDescriptors { get; }
     ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors { get; }
     ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors { get; }
+    ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors => [];
 }
 
 public sealed record DataSegment(int Address, ImmutableArray<byte> Data);
@@ -211,8 +214,10 @@ public static class RuntimeAbi
     public const string RuntimeValueFrameEnter = "value_frame_enter";
     public const string RuntimeValueFrameLeave = "value_frame_leave";
     public const string RuntimeStackTraceFrameEnter = "stack_trace_frame_enter";
+    public const string RuntimeStackTraceFrameLocation = "stack_trace_frame_location";
     public const string RuntimeStackTraceFrameLeave = "stack_trace_frame_leave";
     public const string RuntimeStackTraceInitialize = "stack_trace_initialize";
+    public const string RuntimeStackTraceRegisterSymbol = "stack_trace_register_symbol";
     public const string RuntimeExceptionFrameEnter = "exception_frame_enter";
     public const string RuntimeExceptionFrameLeave = "exception_frame_leave";
     public const string RuntimeExceptionFrameTargetClause = "exception_frame_target_clause";
@@ -244,6 +249,10 @@ public static class RuntimeAbi
     public const string RuntimeWeakHandleGet = "weak_handle_get";
     public const string RuntimeWeakHandleSet = "weak_handle_set";
     public const string RuntimeWeakHandleRelease = "weak_handle_release";
+    public const string RuntimeEphemeronHandleCreate = "ephemeron_handle_new";
+    public const string RuntimeEphemeronHandleGetKey = "ephemeron_handle_get_key";
+    public const string RuntimeEphemeronHandleGetValue = "ephemeron_handle_get_value";
+    public const string RuntimeEphemeronHandleRelease = "ephemeron_handle_release";
     public const string RuntimeGcHandleCreate = "gc_handle_new";
     public const string RuntimeGcHandleGet = "gc_handle_get";
     public const string RuntimeGcHandleSet = "gc_handle_set";
@@ -264,7 +273,9 @@ public static class RuntimeAbi
     public const string RuntimeSuppressFinalize = "suppress_finalize";
     public const string RuntimeReRegisterForFinalize = "reregister_for_finalize";
     public const string RuntimeReportUnobservedTaskException = "report_unobserved_task_exception";
-    public const string RuntimeReportTerminalException = "report_terminal_exception_v1";
+    public const string RuntimeReportTerminalException = "report_terminal_exception_v2";
+    public const string RuntimeCaptureManagedException = "capture_managed_exception_v1";
+    public const string RuntimeRaiseTerminalException = "raise_terminal_exception";
     public const string RuntimeIsAssignable = "is_assignable";
     public const string RuntimeEndCatch = "end_catch";
 }

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
@@ -13,7 +14,8 @@ internal sealed record InteropImportPlan(
     OptionalFunctionIndex ReleaseHandle,
     OptionalFunctionIndex ReleaseSubscription,
     OptionalFunctionIndex ByteLength,
-    OptionalFunctionIndex CopyBytes);
+    OptionalFunctionIndex CopyBytes,
+    bool UseJavaScriptExportBoundary = false);
 
 internal interface IInteropImportPlanner
 {
@@ -24,14 +26,32 @@ internal sealed class InteropImportPlanner : IInteropImportPlanner
 {
     public InteropImportPlan Build(WasmEmissionRequest request, int firstIndex)
     {
+        var useJavaScriptExportBoundary =
+            request.UseJavaScriptExportBoundary ||
+            request.ModuleProfile == WasmModuleProfile.CoreApplication;
+        var requestedExports = RequestedExportMethodSelector.Select(
+            request.RequestedExports,
+            request.MethodInstances);
         var hasStrings = request.JSImportMethods.Any(method =>
             InteropTypeClassifier.IsString(method.Signature.ReturnSignatureType)) ||
             request.HostCallbacks.Any(callback => callback.Invoke.Signature
-                .ParameterSignatureTypes.Any(InteropTypeClassifier.IsString));
+                .ParameterSignatureTypes.Any(InteropTypeClassifier.IsString)) ||
+            useJavaScriptExportBoundary &&
+            requestedExports.Values.Any(method =>
+                method.Signature.ParameterSignatureTypes.Any(
+                    InteropTypeClassifier.IsString) ||
+                InteropTypeClassifier.IsString(
+                    method.Signature.ReturnSignatureType));
         var hasBytes = request.JSImportMethods.Any(method =>
             InteropTypeClassifier.IsByteArray(method.Signature.ReturnSignatureType)) ||
             request.HostCallbacks.Any(callback => callback.Invoke.Signature
-                .ParameterSignatureTypes.Any(InteropTypeClassifier.IsByteArray));
+                .ParameterSignatureTypes.Any(InteropTypeClassifier.IsByteArray)) ||
+            useJavaScriptExportBoundary &&
+            requestedExports.Values.Any(method =>
+                method.Signature.ParameterSignatureTypes.Any(
+                    InteropTypeClassifier.IsByteArray) ||
+                InteropTypeClassifier.IsByteArray(
+                    method.Signature.ReturnSignatureType));
         var hasObjects = request.JSImportMethods.Any(method =>
             InteropTypeClassifier.IsHostObject(method.Signature.ReturnSignatureType) ||
             method.Signature.ParameterSignatureTypes.Any(InteropTypeClassifier.IsHostObject));
@@ -69,7 +89,8 @@ internal sealed class InteropImportPlanner : IInteropImportPlanner
             releaseHandle,
             releaseSubscription,
             byteLength,
-            copyBytes);
+            copyBytes,
+            useJavaScriptExportBoundary);
     }
 
     private static OptionalFunctionIndex Append(

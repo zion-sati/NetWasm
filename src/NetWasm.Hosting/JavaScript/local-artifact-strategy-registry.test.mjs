@@ -84,6 +84,8 @@ test("composes exactly raw and location-bound component execution locally", asyn
         assert.equal(manifest.version, 1);
         calls.push("prepare");
         return {
+          consumeTerminalEvent() {},
+          async drainTerminalReports() {},
           imports: { "netwasm.host.v1": { service: () => 43 } },
           bindInstance(instance) {
             assert.equal(instance instanceof WebAssembly.Instance, true);

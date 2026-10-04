@@ -47,6 +47,7 @@ namespace System.Threading.Tasks.Sources
         private Action<object?>? _continuation;
         private object? _continuationState;
         private Threading.SynchronizationContext? _synchronizationContext;
+        private Threading.Tasks.TaskScheduler? _scheduler;
         private Threading.ExecutionContext? _executionContext;
         private Exception? _error;
         private TResult _result;
@@ -62,6 +63,7 @@ namespace System.Threading.Tasks.Sources
             _continuation = null;
             _continuationState = null;
             _synchronizationContext = null;
+            _scheduler = null;
             _executionContext = null;
             _error = null;
             _result = default!;
@@ -127,22 +129,25 @@ namespace System.Threading.Tasks.Sources
             }
             if (_completed)
             {
+                CaptureSchedulingContext(
+                    flags,
+                    out var synchronizationContext,
+                    out var scheduler);
                 InvokeContinuation(
                     continuation,
                     state,
-                    (flags & ValueTaskSourceOnCompletedFlags.UseSchedulingContext) != 0
-                        ? Threading.SynchronizationContext.Current
-                        : null,
+                    synchronizationContext,
+                    scheduler,
                     (flags & ValueTaskSourceOnCompletedFlags.FlowExecutionContext) != 0
                         ? Threading.ExecutionContext.Capture()
                         : null);
                 return;
             }
             _continuationState = state;
-            _synchronizationContext =
-                (flags & ValueTaskSourceOnCompletedFlags.UseSchedulingContext) != 0
-                    ? Threading.SynchronizationContext.Current
-                    : null;
+            CaptureSchedulingContext(
+                flags,
+                out _synchronizationContext,
+                out _scheduler);
             _executionContext =
                 (flags & ValueTaskSourceOnCompletedFlags.FlowExecutionContext) != 0
                     ? Threading.ExecutionContext.Capture()
@@ -160,10 +165,12 @@ namespace System.Threading.Tasks.Sources
             var continuation = _continuation;
             var state = _continuationState;
             var synchronizationContext = _synchronizationContext;
+            var scheduler = _scheduler;
             var executionContext = _executionContext;
             _continuation = null;
             _continuationState = null;
             _synchronizationContext = null;
+            _scheduler = null;
             _executionContext = null;
             if (continuation != null)
             {
@@ -171,7 +178,35 @@ namespace System.Threading.Tasks.Sources
                     continuation,
                     state,
                     synchronizationContext,
+                    scheduler,
                     executionContext);
+            }
+        }
+
+        private static void CaptureSchedulingContext(
+            ValueTaskSourceOnCompletedFlags flags,
+            out Threading.SynchronizationContext? synchronizationContext,
+            out Threading.Tasks.TaskScheduler? scheduler)
+        {
+            synchronizationContext = null;
+            scheduler = null;
+            if ((flags & ValueTaskSourceOnCompletedFlags.UseSchedulingContext) == 0)
+            {
+                return;
+            }
+
+            var currentContext = Threading.SynchronizationContext.Current;
+            if (currentContext is not null &&
+                currentContext.GetType() != typeof(Threading.SynchronizationContext))
+            {
+                synchronizationContext = currentContext;
+                return;
+            }
+
+            var currentScheduler = Threading.Tasks.Task.InternalCurrentScheduler;
+            if (currentScheduler is not null && !currentScheduler.IsDefaultScheduler)
+            {
+                scheduler = currentScheduler;
             }
         }
 
@@ -179,6 +214,7 @@ namespace System.Threading.Tasks.Sources
             Action<object?> continuation,
             object? state,
             Threading.SynchronizationContext? synchronizationContext,
+            Threading.Tasks.TaskScheduler? scheduler,
             Threading.ExecutionContext? executionContext)
         {
             var invocation = new ContinuationInvocation(
@@ -191,6 +227,13 @@ namespace System.Threading.Tasks.Sources
                     static invocationState =>
                         ((ContinuationInvocation)invocationState!).Invoke(),
                     invocation);
+                return;
+            }
+            if (scheduler is not null)
+            {
+                Threading.Tasks.Task.ScheduleAwaitContinuation(
+                    scheduler,
+                    invocation.Invoke);
                 return;
             }
             if (RunContinuationsAsynchronously)

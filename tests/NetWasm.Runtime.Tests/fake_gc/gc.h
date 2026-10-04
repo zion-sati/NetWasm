@@ -15,6 +15,13 @@ extern int fake_unregister_long_calls;
 extern void **fake_last_link;
 extern const void *fake_last_target;
 
+typedef enum GC_EventType {
+    GC_EVENT_START,
+    GC_EVENT_MARK_END,
+} GC_EventType;
+
+typedef void (*GC_on_collection_event_proc)(GC_EventType event);
+
 struct GC_stack_base {
     void *mem_base;
 };
@@ -42,5 +49,11 @@ void GC_enable(void);
 int GC_is_init_called(void);
 void *GC_malloc_atomic_uncollectable(size_t size);
 void GC_free(void *address);
+GC_on_collection_event_proc GC_get_on_collection_event(void);
+void GC_set_on_collection_event(GC_on_collection_event_proc callback);
+int GC_is_marked(const void *address);
+void GC_push_all_eager(void *bottom, void *top);
+int GC_mark_stack_empty(void);
+void fake_mark_from_mark_stack(void);
 
 #endif

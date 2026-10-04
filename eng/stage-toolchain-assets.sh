@@ -80,6 +80,7 @@ trap cleanup EXIT
 python3 "${REPOSITORY_ROOT}/eng/stage-jco-closure.py" \
   --lock "${REPOSITORY_ROOT}/package-lock.json" \
   --policy "${REPOSITORY_ROOT}/eng/jco-transpile-closure.json" \
+  --patch-manifest "${REPOSITORY_ROOT}/eng/jco-patches/1.28.1-netwasm.2/patch-manifest.json" \
   --generation-root "${work_root}/jco" \
   --cache "${CACHE_ROOT}/npm"
 

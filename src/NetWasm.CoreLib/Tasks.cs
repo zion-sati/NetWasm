@@ -25,11 +25,14 @@ namespace System.Runtime.CompilerServices
             public bool IsCompleted => false;
 
             public void OnCompleted(Action continuation) =>
-                Runtime.InteropServices.PlatformServices.Scheduler.Schedule(
-                    continuation ?? throw new ArgumentNullException(nameof(continuation)),
-                    0);
+                global::System.Threading.Tasks.Task.QueueYieldContinuation(
+                    continuation,
+                    flowExecutionContext: true);
 
-            public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
+            public void UnsafeOnCompleted(Action continuation) =>
+                global::System.Threading.Tasks.Task.QueueYieldContinuation(
+                    continuation,
+                    flowExecutionContext: false);
 
             public void GetResult()
             {
@@ -794,10 +797,15 @@ namespace System.Threading.Tasks
         private Threading.CancellationToken _cancellationToken;
         protected readonly Delegate? _action;
         protected bool _started;
+        private bool _enteredExecution;
+        private bool _isContinuation;
+        private ContinueWithRegistration? _continuationActivation;
+        private TaskScheduler? _scheduler;
+        private Threading.ExecutionContext? _capturedContext;
         private CancellationTokenRegistration _cancellationRegistration;
         internal Exception? _exception;
         private bool _exceptionIsAggregateContainer;
-        private List<ContinuationRegistration>? _continuations;
+        private List<TaskContinuation>? _continuations;
         private TaskExceptionTracker? _exceptionTracker;
         private bool _disposed;
 
@@ -876,6 +884,7 @@ namespace System.Threading.Tasks
             : this(state, creationOptions)
         {
             _action = action ?? throw new ArgumentNullException(nameof(action));
+            _capturedContext = Threading.ExecutionContext.Capture();
             _cancellationToken = cancellationToken;
             if (cancellationToken.IsCancellationRequested)
             {
@@ -901,14 +910,21 @@ namespace System.Threading.Tasks
             1 => TaskStatus.RanToCompletion,
             2 => TaskStatus.Faulted,
             3 => TaskStatus.Canceled,
-            _ => _action is not null
-                ? (_started ? TaskStatus.WaitingToRun : TaskStatus.Created)
+            _ => _action is not null || _isContinuation
+                ? (_enteredExecution ? TaskStatus.Running : _started ? TaskStatus.WaitingToRun
+                    : _isContinuation ? TaskStatus.WaitingForActivation : TaskStatus.Created)
                 : TaskStatus.WaitingForActivation,
         };
         public TaskCreationOptions CreationOptions => _creationOptions;
         public object? AsyncState => _asyncState;
         public int Id => _id;
         public static int? CurrentId => s_currentTask?._id;
+        internal static TaskScheduler? InternalCurrentScheduler =>
+            s_currentTask is { } task && (task._creationOptions & TaskCreationOptions.HideScheduler) == 0
+                ? task._scheduler
+                : null;
+        internal TaskScheduler? ExecutingTaskScheduler => _scheduler;
+        internal bool HasEnteredExecution => _enteredExecution;
         public AggregateException? Exception => _exception == null
             ? null
             : ObserveException(_exception, _exceptionIsAggregateContainer);
@@ -1161,6 +1177,9 @@ namespace System.Threading.Tasks
             {
                 if (task.IsFaulted)
                 {
+                    // WhenAll consumes each child fault; its own task retains
+                    // responsibility for reporting an ignored aggregate.
+                    task.GetVoidResult(suppressThrowing: true);
                     if (task._exception is AggregateException aggregate)
                     {
                         foreach (var exception in aggregate.InnerExceptions)
@@ -1244,6 +1263,9 @@ namespace System.Threading.Tasks
             {
                 if (task.IsFaulted)
                 {
+                    // WhenAll consumes each child fault; its own task retains
+                    // responsibility for reporting an ignored aggregate.
+                    task.GetVoidResult(suppressThrowing: true);
                     if (task._exception is AggregateException aggregate)
                     {
                         foreach (var exception in aggregate.InnerExceptions)
@@ -1409,6 +1431,7 @@ namespace System.Threading.Tasks
                 }
                 if (IsFaulted)
                 {
+                    GetVoidResult(suppressThrowing: true);
                     completion.TrySetException(
                         _exception!,
                         ExceptionIsAggregateContainer);
@@ -1483,6 +1506,7 @@ namespace System.Threading.Tasks
                 registration.Dispose();
                 if (IsFaulted)
                 {
+                    GetVoidResult(suppressThrowing: true);
                     completion.TrySetException(
                         _exception!,
                         ExceptionIsAggregateContainer);
@@ -1552,6 +1576,7 @@ namespace System.Threading.Tasks
                 registration.Dispose();
                 if (IsFaulted)
                 {
+                    GetVoidResult(suppressThrowing: true);
                     completion.TrySetException(
                         _exception!,
                         ExceptionIsAggregateContainer);
@@ -1612,265 +1637,32 @@ namespace System.Threading.Tasks
             return materialized.ToArray();
         }
 
-        public Task ContinueWith(Action<Task> continuationAction) =>
-            AddContinuation(continuationAction, default, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task> continuationAction,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationAction, cancellationToken, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task> continuationAction,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationAction, default, continuationOptions);
-
-        public Task ContinueWith(Action<Task, object?> continuationAction, object? state) =>
-            AddContinuation(continuationAction, state, default, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task, object?> continuationAction,
-            object? state,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationAction, state, cancellationToken, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task, object?> continuationAction,
-            object? state,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationAction, state, default, continuationOptions);
-
-        public Task<TResult> ContinueWith<TResult>(Func<Task, TResult> continuationFunction) =>
-            AddContinuation(continuationFunction, null, default, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task, TResult> continuationFunction,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationFunction, null, cancellationToken, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task, TResult> continuationFunction,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationFunction, null, default, continuationOptions);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task, object?, TResult> continuationFunction,
-            object? state) =>
-            AddContinuation(continuationFunction, state, default, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task, object?, TResult> continuationFunction,
-            object? state,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationFunction, state, cancellationToken, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task, object?, TResult> continuationFunction,
-            object? state,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationFunction, state, default, continuationOptions);
-
-        private Task AddContinuation(
-            Action<Task> continuationAction,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(
-                (task, _) => continuationAction(task),
-                null,
-                cancellationToken,
-                continuationOptions);
-
-        private Task AddContinuation(
-            Action<Task, object?> continuationAction,
-            object? state,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions continuationOptions)
-        {
-            ArgumentNullException.ThrowIfNull(continuationAction);
-            var continuation = new Task((object?)null, continuationOptions.HasFlag(TaskContinuationOptions.RunContinuationsAsynchronously)
-                ? TaskCreationOptions.RunContinuationsAsynchronously
-                : TaskCreationOptions.None);
-            if (cancellationToken.IsCancellationRequested)
-            {
-                continuation.SetCanceled(new TaskCanceledException(
-                    message: null,
-                    innerException: null,
-                    cancellationToken));
-                return continuation;
-            }
-
-            CancellationTokenRegistration registration = default;
-            void Run()
-            {
-                if (continuation.IsCompleted)
-                {
-                    return;
-                }
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    continuation.TrySetCanceled(new TaskCanceledException(
-                        message: null,
-                        innerException: null,
-                        cancellationToken));
-                }
-                else if (!ShouldRunContinuation(continuationOptions))
-                {
-                    continuation.TrySetCanceled(new TaskCanceledException(
-                        message: null,
-                        innerException: null,
-                        cancellationToken));
-                }
-                else
-                {
-                    try
-                    {
-                        continuation.ExecuteAsCurrent(() =>
-                        {
-                            continuationAction(this, state);
-                            continuation.TrySetResult();
-                        });
-                    }
-                    catch (OperationCanceledException exception)
-                    {
-                        continuation.TrySetCanceled(exception);
-                    }
-                    catch (Exception exception)
-                    {
-                        continuation.TrySetException(exception);
-                    }
-                }
-                registration.Dispose();
-            }
-
-            if (cancellationToken.CanBeCanceled)
-            {
-                registration = cancellationToken.Register(
-                    static state =>
-                    {
-                        var cancellation = ((Task, Threading.CancellationToken))state!;
-                        cancellation.Item1.TrySetCanceled(new TaskCanceledException(
-                            message: null,
-                            innerException: null,
-                            cancellation.Item2));
-                    },
-                    (continuation, cancellationToken));
-            }
-            RegisterContinuation(
-                Run,
-                continueOnCapturedContext: false,
-                flowExecutionContext: true,
-                runAsynchronously:
-                    !continuationOptions.HasFlag(TaskContinuationOptions.ExecuteSynchronously),
-                runInlineIfCompleted:
-                    continuationOptions.HasFlag(TaskContinuationOptions.ExecuteSynchronously));
-            return continuation;
-        }
-
-        private Task<TResult> AddContinuation<TResult>(
-            Func<Task, TResult> continuationFunction,
-            object? state,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(
-                (task, _) => continuationFunction(task),
-                state,
-                cancellationToken,
-                continuationOptions);
-
-        private Task<TResult> AddContinuation<TResult>(
-            Func<Task, object?, TResult> continuationFunction,
-            object? state,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions continuationOptions)
-        {
-            ArgumentNullException.ThrowIfNull(continuationFunction);
-            var continuation = new Task<TResult>((object?)null, continuationOptions.HasFlag(TaskContinuationOptions.RunContinuationsAsynchronously)
-                ? TaskCreationOptions.RunContinuationsAsynchronously
-                : TaskCreationOptions.None);
-            if (cancellationToken.IsCancellationRequested)
-            {
-                continuation.SetCanceled(new TaskCanceledException(
-                    message: null,
-                    innerException: null,
-                    cancellationToken));
-                return continuation;
-            }
-
-            CancellationTokenRegistration registration = default;
-            void Run()
-            {
-                if (continuation.IsCompleted)
-                {
-                    return;
-                }
-                if (cancellationToken.IsCancellationRequested || !ShouldRunContinuation(continuationOptions))
-                {
-                    continuation.TrySetCanceled(new TaskCanceledException(
-                        message: null,
-                        innerException: null,
-                        cancellationToken));
-                }
-                else
-                {
-                    try
-                    {
-                        continuation.ExecuteAsCurrent(() =>
-                            continuation.TrySetResult(continuationFunction(this, state)));
-                    }
-                    catch (OperationCanceledException exception)
-                    {
-                        continuation.TrySetCanceled(exception);
-                    }
-                    catch (Exception exception)
-                    {
-                        continuation.TrySetException(exception);
-                    }
-                }
-                registration.Dispose();
-            }
-
-            if (cancellationToken.CanBeCanceled)
-            {
-                registration = cancellationToken.Register(
-                    static state =>
-                    {
-                        var cancellation =
-                            ((Task<TResult>, Threading.CancellationToken))state!;
-                        cancellation.Item1.TrySetCanceled(new TaskCanceledException(
-                            message: null,
-                            innerException: null,
-                            cancellation.Item2));
-                    },
-                    (continuation, cancellationToken));
-            }
-            RegisterContinuation(
-                Run,
-                continueOnCapturedContext: false,
-                flowExecutionContext: true,
-                runAsynchronously:
-                    !continuationOptions.HasFlag(TaskContinuationOptions.ExecuteSynchronously),
-                runInlineIfCompleted:
-                    continuationOptions.HasFlag(TaskContinuationOptions.ExecuteSynchronously));
-            return continuation;
-        }
-
-        private bool ShouldRunContinuation(TaskContinuationOptions options)
-        {
-            if ((options & TaskContinuationOptions.OnlyOnRanToCompletion) != 0 && !IsCompletedSuccessfully ||
-                (options & TaskContinuationOptions.OnlyOnFaulted) != 0 && !IsFaulted ||
-                (options & TaskContinuationOptions.OnlyOnCanceled) != 0 && !IsCanceled ||
-                (options & TaskContinuationOptions.NotOnRanToCompletion) != 0 && IsCompletedSuccessfully ||
-                (options & TaskContinuationOptions.NotOnFaulted) != 0 && IsFaulted ||
-                (options & TaskContinuationOptions.NotOnCanceled) != 0 && IsCanceled)
-            {
-                return false;
-            }
-            return true;
-        }
-
         public static Task Run(Action action) => throw new PlatformNotSupportedException();
 
         public static global::System.Runtime.CompilerServices.YieldAwaitable Yield() => new();
+
+        internal static void QueueYieldContinuation(
+            Action continuation,
+            bool flowExecutionContext)
+        {
+            ArgumentNullException.ThrowIfNull(continuation);
+            CreateContinuationRegistration(
+                continuation,
+                continueOnCapturedContext: true,
+                flowExecutionContext,
+                runAsynchronously: true,
+                clearCurrentTask: true,
+                captureSchedulerExecutionContext: true).Schedule();
+        }
+
+        internal static void ScheduleAwaitContinuation(
+            TaskScheduler scheduler,
+            Action continuation)
+        {
+            ArgumentNullException.ThrowIfNull(scheduler);
+            ArgumentNullException.ThrowIfNull(continuation);
+            new AwaitContinuationTask(continuation).Schedule(scheduler);
+        }
 
         internal void OnCompleted(
             Action continuation,
@@ -1881,65 +1673,136 @@ namespace System.Threading.Tasks
                 continueOnCapturedContext,
                 flowExecutionContext,
                 runAsynchronously: false,
-                runInlineIfCompleted: false);
+                runInlineIfCompleted: false,
+                clearCurrentTask: true);
 
         internal void RegisterContinuation(
             Action continuation,
             bool continueOnCapturedContext,
             bool flowExecutionContext,
             bool runAsynchronously,
-            bool runInlineIfCompleted)
+            bool runInlineIfCompleted,
+            bool clearCurrentTask = false)
         {
             if (continuation == null)
             {
                 throw new ArgumentNullException(nameof(continuation));
             }
 
-            var registration = new ContinuationRegistration(
+            var registration = CreateContinuationRegistration(
                 continuation,
-                continueOnCapturedContext
-                    ? Threading.SynchronizationContext.Current
-                    : null,
-                flowExecutionContext
-                    ? Threading.ExecutionContext.Capture()
-                    : null,
-                runAsynchronously);
+                continueOnCapturedContext,
+                flowExecutionContext,
+                runAsynchronously,
+                clearCurrentTask);
 
             if (_status == 0)
             {
-                (_continuations ??= new List<ContinuationRegistration>()).Add(registration);
+                (_continuations ??= new List<TaskContinuation>()).Add(registration);
                 return;
             }
 
-            if (runInlineIfCompleted && !registration.RequiresAsynchronousDispatch)
-            {
-                registration.Invoke();
-            }
-            else
-            {
-                registration.Schedule();
-            }
+            registration.Run(this, runInlineIfCompleted);
         }
 
-        public void Start()
+        private static ContinuationRegistration CreateContinuationRegistration(
+            Action continuation,
+            bool continueOnCapturedContext,
+            bool flowExecutionContext,
+            bool runAsynchronously,
+            bool clearCurrentTask,
+            bool captureSchedulerExecutionContext = false) =>
+            new ContinuationRegistration(
+                continuation,
+                continueOnCapturedContext,
+                flowExecutionContext,
+                runAsynchronously,
+                clearCurrentTask,
+                captureSchedulerExecutionContext);
+
+        public void Start() => Start(TaskScheduler.Current);
+
+        public void Start(TaskScheduler scheduler)
         {
+            ArgumentNullException.ThrowIfNull(scheduler);
             if (_action is null || _started || IsCompleted)
             {
                 throw new InvalidOperationException();
             }
             _started = true;
-            PlatformServices.Scheduler.Schedule(ExecuteAction, 0);
+            _scheduler = scheduler;
+            try { scheduler.QueueTask(this); }
+            catch (Exception exception)
+            {
+                var failure = new TaskSchedulerException(exception);
+                TrySetException(failure);
+                _exceptionTracker?.Observe();
+                throw failure;
+            }
         }
 
-        public void RunSynchronously()
+        public void RunSynchronously() => RunSynchronously(TaskScheduler.Current);
+
+        public void RunSynchronously(TaskScheduler scheduler)
         {
+            ArgumentNullException.ThrowIfNull(scheduler);
             if (_action is null || _started || IsCompleted)
             {
                 throw new InvalidOperationException();
             }
 
             _started = true;
-            ExecuteAction();
+            _scheduler = scheduler;
+            bool inlined;
+            try { inlined = scheduler.TryRunInline(this, previouslyQueued: false); }
+            catch (Exception exception)
+            {
+                var failure = new TaskSchedulerException(exception);
+                TrySetException(failure);
+                _exceptionTracker?.Observe();
+                throw failure;
+            }
+            if (!inlined)
+            {
+                // Queue-and-block would deadlock a reactor. Leave an unexecuted
+                // task restartable so its caller can Start and await it instead.
+                if (!_enteredExecution && !IsCompleted)
+                {
+                    _scheduler = null;
+                    _started = false;
+                }
+                throw new PlatformNotSupportedException("The scheduler declined synchronous execution. Start and await the task instead.");
+            }
+        }
+
+        internal bool ExecuteEntry()
+        {
+            if (_enteredExecution || IsCompleted)
+                return false;
+            // Lazy continuations deliberately have no token registration. Check
+            // on dispatch, without canceling an already-running delegate.
+            if (_cancellationToken.IsCancellationRequested)
+            {
+                CancelFromToken();
+                return true;
+            }
+            _enteredExecution = true;
+            var context = _capturedContext;
+            _capturedContext = null;
+            var previousTask = s_currentTask;
+            s_currentTask = this;
+            try
+            {
+                if (context is null)
+                    ExecuteAction();
+                else
+                    Threading.ExecutionContext.Run(context, static state => ((Task)state!).ExecuteAction(), this);
+            }
+            finally
+            {
+                s_currentTask = previousTask;
+            }
+            return true;
         }
 
         protected virtual void ExecuteAction()
@@ -1978,7 +1841,7 @@ namespace System.Threading.Tasks
 
         private void CancelFromToken()
         {
-            if (!IsCompleted)
+            if (!IsCompleted && !_enteredExecution)
             {
                 TrySetCanceled(new TaskCanceledException(
                     message: null,
@@ -1995,6 +1858,8 @@ namespace System.Threading.Tasks
             }
             _status = 1;
             _cancellationRegistration.Dispose();
+            _cancellationRegistration = default;
+            ClearExecutionReferences();
             DispatchContinuation();
             return true;
         }
@@ -2019,9 +1884,11 @@ namespace System.Threading.Tasks
             }
             _exception = exception;
             _exceptionIsAggregateContainer = aggregateContainer;
-            _exceptionTracker = new TaskExceptionTracker();
+            _exceptionTracker = new TaskExceptionTracker(this, exception, aggregateContainer);
             _status = 2;
             _cancellationRegistration.Dispose();
+            _cancellationRegistration = default;
+            ClearExecutionReferences();
             DispatchContinuation();
             return true;
         }
@@ -2046,6 +1913,8 @@ namespace System.Threading.Tasks
             }
             _status = 3;
             _cancellationRegistration.Dispose();
+            _cancellationRegistration = default;
+            ClearExecutionReferences();
             DispatchContinuation();
             return true;
         }
@@ -2069,11 +1938,12 @@ namespace System.Threading.Tasks
                 _exceptionTracker?.Observe();
                 if (!suppressThrowing)
                 {
-                    throw _exceptionIsAggregateContainer &&
+                    Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(
+                        _exceptionIsAggregateContainer &&
                         _exception is AggregateException aggregate &&
                         aggregate.InnerExceptions.Count != 0
                         ? aggregate.InnerExceptions[0]
-                        : _exception;
+                        : _exception);
                 }
             }
         }
@@ -2101,15 +1971,15 @@ namespace System.Threading.Tasks
                 (_creationOptions & TaskCreationOptions.RunContinuationsAsynchronously) != 0;
             foreach (var continuation in continuations)
             {
-                if (forceAsynchronous || continuation.RequiresAsynchronousDispatch)
-                {
-                    continuation.Schedule();
-                }
-                else
-                {
-                    continuation.Invoke();
-                }
+                continuation.Run(this, !forceAsynchronous);
             }
+        }
+
+        internal virtual void ClearExecutionReferences()
+        {
+            _capturedContext = null;
+            _continuationActivation?.Detach();
+            _continuationActivation = null;
         }
 
         internal void ExecuteAsCurrent(Action action)
@@ -2126,56 +1996,174 @@ namespace System.Threading.Tasks
             }
         }
 
-        private sealed class ContinuationRegistration
+        private static void ExecuteWithoutCurrentTask(Action action)
         {
-            private readonly Action _continuation;
-            private readonly Threading.SynchronizationContext? _synchronizationContext;
-            private readonly Threading.ExecutionContext? _executionContext;
+            var previousTask = s_currentTask;
+            s_currentTask = null;
+            try
+            {
+                action();
+            }
+            finally
+            {
+                s_currentTask = previousTask;
+            }
+        }
+
+        private sealed class ContinuationRegistration : TaskContinuation
+        {
+            private Action? _continuation;
+            private Threading.SynchronizationContext? _synchronizationContext;
+            private TaskScheduler? _scheduler;
+            private Threading.ExecutionContext? _executionContext;
             private readonly bool _runAsynchronously;
+            private readonly bool _clearCurrentTask;
 
             internal ContinuationRegistration(
                 Action continuation,
-                Threading.SynchronizationContext? synchronizationContext,
-                Threading.ExecutionContext? executionContext,
-                bool runAsynchronously)
+                bool continueOnCapturedContext,
+                bool flowExecutionContext,
+                bool runAsynchronously,
+                bool clearCurrentTask,
+                bool captureSchedulerExecutionContext)
             {
                 _continuation = continuation;
-                _synchronizationContext = synchronizationContext;
-                _executionContext = executionContext;
                 _runAsynchronously = runAsynchronously;
+                _clearCurrentTask = clearCurrentTask;
+
+                if (continueOnCapturedContext)
+                {
+                    var currentContext = Threading.SynchronizationContext.Current;
+                    if (currentContext is not null &&
+                        currentContext.GetType() != typeof(Threading.SynchronizationContext))
+                    {
+                        _synchronizationContext = currentContext;
+                    }
+                    else
+                    {
+                        var currentScheduler = InternalCurrentScheduler;
+                        if (currentScheduler is not null && !currentScheduler.IsDefaultScheduler)
+                        {
+                            _scheduler = currentScheduler;
+                        }
+                    }
+                }
+
+                if (flowExecutionContext ||
+                    captureSchedulerExecutionContext && _scheduler is not null)
+                {
+                    _executionContext = Threading.ExecutionContext.Capture();
+                }
             }
 
             internal bool RequiresAsynchronousDispatch =>
-                _runAsynchronously;
+                _runAsynchronously || _synchronizationContext is not null || _scheduler is not null;
 
-            internal void Schedule() =>
-                PlatformServices.Scheduler.Schedule(Invoke, 0);
-
-            internal void Invoke()
+            internal override void Run(Task antecedent, bool allowInline)
             {
-                if (_synchronizationContext is not null)
+                if (allowInline && !RequiresAsynchronousDispatch)
+                    InvokeWithoutSchedulerTask();
+                else
+                    Schedule();
+            }
+
+            internal void Schedule()
+            {
+                var synchronizationContext = _synchronizationContext;
+                if (synchronizationContext is not null)
                 {
-                    _synchronizationContext.Post(
-                        static state => ((ContinuationRegistration)state!).InvokeCore(),
+                    _synchronizationContext = null;
+                    synchronizationContext.Post(
+                        static state => ((ContinuationRegistration)state!).InvokeWithoutSchedulerTask(),
                         this);
                     return;
                 }
 
-                InvokeCore();
+                var scheduler = _scheduler;
+                if (scheduler is not null)
+                {
+                    _scheduler = null;
+                    ScheduleAwaitContinuation(scheduler, InvokeCore);
+                    return;
+                }
+
+                PlatformServices.Scheduler.Schedule(InvokeWithoutSchedulerTask, 0);
             }
 
-            private void InvokeCore()
+            private void InvokeWithoutSchedulerTask()
             {
-                if (_executionContext is null)
+                if (_clearCurrentTask)
+                    ExecuteWithoutCurrentTask(InvokeCore);
+                else
+                    InvokeCore();
+            }
+
+            internal void InvokeCore()
+            {
+                var continuation = _continuation;
+                if (continuation is null)
                 {
-                    _continuation();
+                    return;
+                }
+
+                _continuation = null;
+                _synchronizationContext = null;
+                _scheduler = null;
+                var executionContext = _executionContext;
+                _executionContext = null;
+                if (executionContext is null)
+                {
+                    continuation();
                     return;
                 }
 
                 Threading.ExecutionContext.Run(
-                    _executionContext,
+                    executionContext,
                     static state => ((Action)state!).Invoke(),
-                    _continuation);
+                    continuation);
+            }
+        }
+
+        private sealed class AwaitContinuationTask : Task
+        {
+            private Action? _continuation;
+
+            internal AwaitContinuationTask(Action continuation)
+                : base(state: null, TaskCreationOptions.DenyChildAttach) =>
+                _continuation = continuation;
+
+            internal void Schedule(TaskScheduler scheduler)
+            {
+                _scheduler = scheduler;
+                _started = true;
+                try
+                {
+                    scheduler.QueueTask(this);
+                }
+                catch (Exception exception)
+                {
+                    _continuation = null;
+                    TrySetException(new TaskSchedulerException(exception));
+                }
+            }
+
+            protected override void ExecuteAction()
+            {
+                var continuation = _continuation;
+                _continuation = null;
+                try
+                {
+                    continuation!();
+                    TrySetResult();
+                }
+                catch (OperationCanceledException exception)
+                {
+                    TrySetCanceled(exception);
+                }
+                catch (Exception exception)
+                {
+                    TrySetException(exception);
+                }
             }
         }
 
@@ -2201,7 +2189,7 @@ namespace System.Threading.Tasks
         }
     }
 
-    public class Task<T> : Task
+    public partial class Task<T> : Task
     {
         internal T _result = default!;
 
@@ -2372,193 +2360,6 @@ namespace System.Threading.Tasks
             }
         }
 
-        public Task ContinueWith(Action<Task<T>> continuationAction) =>
-            AddContinuation(continuationAction, default, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task<T>> continuationAction,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationAction, cancellationToken, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task<T>> continuationAction,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationAction, default, continuationOptions);
-
-        public Task ContinueWith(Action<Task<T>, object?> continuationAction, object? state) =>
-            AddContinuation(continuationAction, state, default, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task<T>, object?> continuationAction,
-            object? state,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationAction, state, cancellationToken, TaskContinuationOptions.None);
-
-        public Task ContinueWith(
-            Action<Task<T>, object?> continuationAction,
-            object? state,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationAction, state, default, continuationOptions);
-
-        public Task<TResult> ContinueWith<TResult>(Func<Task<T>, TResult> continuationFunction) =>
-            AddContinuation(continuationFunction, default, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task<T>, TResult> continuationFunction,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationFunction, cancellationToken, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task<T>, TResult> continuationFunction,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationFunction, default, continuationOptions);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task<T>, object?, TResult> continuationFunction,
-            object? state) =>
-            AddContinuation(continuationFunction, state, default, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task<T>, object?, TResult> continuationFunction,
-            object? state,
-            Threading.CancellationToken cancellationToken) =>
-            AddContinuation(continuationFunction, state, cancellationToken, TaskContinuationOptions.None);
-
-        public Task<TResult> ContinueWith<TResult>(
-            Func<Task<T>, object?, TResult> continuationFunction,
-            object? state,
-            TaskContinuationOptions continuationOptions) =>
-            AddContinuation(continuationFunction, state, default, continuationOptions);
-
-        private Task AddContinuation(
-            Action<Task<T>> action,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions options) =>
-            AddContinuation((task, _) => action(task), null, cancellationToken, options);
-
-        private Task AddContinuation(
-            Action<Task<T>, object?> action,
-            object? state,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions options)
-        {
-            ArgumentNullException.ThrowIfNull(action);
-            var continuation = new Task((object?)null, options.HasFlag(TaskContinuationOptions.RunContinuationsAsynchronously)
-                ? TaskCreationOptions.RunContinuationsAsynchronously
-                : TaskCreationOptions.None);
-            AttachContinuation(continuation, cancellationToken, options, () => action(this, state));
-            return continuation;
-        }
-
-        private Task<TResult> AddContinuation<TResult>(
-            Func<Task<T>, TResult> function,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions options) =>
-            AddContinuation((task, _) => function(task), null, cancellationToken, options);
-
-        private Task<TResult> AddContinuation<TResult>(
-            Func<Task<T>, object?, TResult> function,
-            object? state,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions options)
-        {
-            ArgumentNullException.ThrowIfNull(function);
-            var continuation = new Task<TResult>((object?)null, options.HasFlag(TaskContinuationOptions.RunContinuationsAsynchronously)
-                ? TaskCreationOptions.RunContinuationsAsynchronously
-                : TaskCreationOptions.None);
-            AttachContinuation(continuation, cancellationToken, options, () => continuation.TrySetResult(function(this, state)));
-            return continuation;
-        }
-
-        private void AttachContinuation(
-            Task continuation,
-            Threading.CancellationToken cancellationToken,
-            TaskContinuationOptions options,
-            Action action)
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                continuation.TrySetCanceled(new TaskCanceledException(
-                    message: null,
-                    innerException: null,
-                    cancellationToken));
-                return;
-            }
-            CancellationTokenRegistration registration = default;
-            void Run()
-            {
-                if (continuation.IsCompleted)
-                {
-                    return;
-                }
-                if (cancellationToken.IsCancellationRequested || !ShouldRunContinuation(options))
-                {
-                    continuation.TrySetCanceled(new TaskCanceledException(
-                        message: null,
-                        innerException: null,
-                        cancellationToken));
-                }
-                else
-                {
-                    try
-                    {
-                        continuation.ExecuteAsCurrent(() =>
-                        {
-                            action();
-                            if (!continuation.IsCompleted)
-                            {
-                                continuation.TrySetResult();
-                            }
-                        });
-                    }
-                    catch (OperationCanceledException exception)
-                    {
-                        continuation.TrySetCanceled(exception);
-                    }
-                    catch (Exception exception)
-                    {
-                        continuation.TrySetException(exception);
-                    }
-                }
-                registration.Dispose();
-            }
-            if (cancellationToken.CanBeCanceled)
-            {
-                registration = cancellationToken.Register(
-                    static state =>
-                    {
-                        var cancellation = ((Task, Threading.CancellationToken))state!;
-                        cancellation.Item1.TrySetCanceled(new TaskCanceledException(
-                            message: null,
-                            innerException: null,
-                            cancellation.Item2));
-                    },
-                    (continuation, cancellationToken));
-            }
-            RegisterContinuation(
-                Run,
-                continueOnCapturedContext: false,
-                flowExecutionContext: true,
-                runAsynchronously:
-                    !options.HasFlag(TaskContinuationOptions.ExecuteSynchronously),
-                runInlineIfCompleted:
-                    options.HasFlag(TaskContinuationOptions.ExecuteSynchronously));
-        }
-
-        private bool ShouldRunContinuation(TaskContinuationOptions options)
-        {
-            if ((options & TaskContinuationOptions.OnlyOnRanToCompletion) != 0 && !IsCompletedSuccessfully ||
-                (options & TaskContinuationOptions.OnlyOnFaulted) != 0 && !IsFaulted ||
-                (options & TaskContinuationOptions.OnlyOnCanceled) != 0 && !IsCanceled ||
-                (options & TaskContinuationOptions.NotOnRanToCompletion) != 0 && IsCompletedSuccessfully ||
-                (options & TaskContinuationOptions.NotOnFaulted) != 0 && IsFaulted ||
-                (options & TaskContinuationOptions.NotOnCanceled) != 0 && IsCanceled)
-            {
-                return false;
-            }
-            return true;
-        }
-
         internal T GetResult()
         {
             GetResultCore();
@@ -2597,6 +2398,7 @@ namespace System.Threading.Tasks
                 }
                 if (IsFaulted)
                 {
+                    GetVoidResult(suppressThrowing: true);
                     completion.TrySetException(
                         _exception!,
                         ExceptionIsAggregateContainer);
@@ -2671,6 +2473,7 @@ namespace System.Threading.Tasks
                 registration.Dispose();
                 if (IsFaulted)
                 {
+                    GetVoidResult(suppressThrowing: true);
                     completion.TrySetException(
                         _exception!,
                         ExceptionIsAggregateContainer);
@@ -2740,6 +2543,7 @@ namespace System.Threading.Tasks
                 registration.Dispose();
                 if (IsFaulted)
                 {
+                    GetVoidResult(suppressThrowing: true);
                     completion.TrySetException(
                         _exception!,
                         ExceptionIsAggregateContainer);
@@ -3170,7 +2974,17 @@ namespace System.Threading.Tasks
 
     internal sealed class TaskExceptionTracker
     {
+        private readonly Task _task;
+        private readonly Exception _exception;
+        private readonly bool _aggregateContainer;
         private bool _observed;
+
+        internal TaskExceptionTracker(Task task, Exception exception, bool aggregateContainer)
+        {
+            _task = task;
+            _exception = exception ?? throw new ArgumentNullException(nameof(exception));
+            _aggregateContainer = aggregateContainer;
+        }
 
         internal void Observe() => _observed = true;
 
@@ -3178,14 +2992,64 @@ namespace System.Threading.Tasks
         {
             if (!_observed)
             {
-                TaskDiagnostics.ReportUnobservedException();
+                // Like the desktop holder, retain the Task until publication so
+                // the event has its real sender. The collector supports this
+                // finalizable cycle; a weak sender could already have vanished.
+                // Do not use Task.Exception: that would mark the fault observed.
+                var aggregate = _aggregateContainer && _exception is AggregateException container
+                    ? container
+                    : new AggregateException(_exception);
+                var args = new UnobservedTaskExceptionEventArgs(aggregate);
+                try { TaskScheduler.PublishUnobservedTaskException(_task, args); }
+                catch (Exception failure)
+                {
+                    // User callbacks must not escape a finalizer. Preserve the
+                    // reactor's nonterminating fault-reporting policy for both
+                    // callback failures and the original unobserved exception.
+                    TaskDiagnostics.ReportUnobservedException(failure);
+                }
+                if (!args.Observed && !_observed)
+                    TaskDiagnostics.ReportUnobservedException(_exception);
             }
         }
     }
 
     internal static class TaskDiagnostics
     {
-        internal static void ReportUnobservedException()
+        internal static void ReportUnobservedException(Exception exception)
+        {
+            string? exceptionType = null;
+            string? message = null;
+            string? stackTrace = null;
+            // A diagnostic accessor must not let another exception escape the finalizer.
+            try
+            {
+                exceptionType = exception.GetType().ToString();
+            }
+            catch
+            {
+            }
+            try
+            {
+                message = exception.Message;
+            }
+            catch
+            {
+            }
+            try
+            {
+                stackTrace = exception.StackTrace;
+            }
+            catch
+            {
+            }
+            ReportUnobservedExceptionCore(exceptionType, message, stackTrace);
+        }
+
+        private static void ReportUnobservedExceptionCore(
+            string? exceptionType,
+            string? message,
+            string? stackTrace)
         {
         }
     }
@@ -3264,6 +3128,9 @@ namespace System.Threading.Tasks
         {
             if (task.IsFaulted)
             {
+                // Like desktop TrySetFromTask, reading a fault observes the
+                // source even when the destination is already completed.
+                task.GetVoidResult(suppressThrowing: true);
                 return TrySetException(
                     task._exception!,
                     task.ExceptionIsAggregateContainer);
@@ -3365,6 +3232,9 @@ namespace System.Threading.Tasks
         {
             if (task.IsFaulted)
             {
+                // Like desktop TrySetFromTask, reading a fault observes the
+                // source even when the destination is already completed.
+                task.GetVoidResult(suppressThrowing: true);
                 return TrySetException(
                     task._exception!,
                     task.ExceptionIsAggregateContainer);

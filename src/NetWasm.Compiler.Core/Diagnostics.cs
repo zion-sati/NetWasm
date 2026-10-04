@@ -16,6 +16,7 @@ public enum DiagnosticCode
     ComponentContract = 1009,
     ComponentToolchain = 1010,
     CompilerInvariant = 1011,
+    NativeInterop = 1012,
     GenericExpansion = 2001,
 }
 

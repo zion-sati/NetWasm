@@ -2,12 +2,19 @@ using System.Collections.Immutable;
 
 namespace NetWasm.Compiler.Tasks.Artifacts;
 
+internal static class CompilerArtifactKinds
+{
+    public const string NativeCallbackSupportObject =
+        "NativeCallbackSupportObject";
+}
+
 internal sealed record CompilerArtifactInputRequest(string Kind, string Path);
 
 internal sealed record CompilerArtifactOutputRequest(
     string Kind,
     string MediaType,
-    string Path);
+    string Path,
+    string CopyToPublishDirectory = "PreserveNewest");
 
 internal sealed record CompilerArtifactManifestBuildRequest(
     string ManifestPath,
@@ -52,7 +59,8 @@ internal sealed record CompilerArtifactManifest(
 
 internal sealed record CompilerArtifactResult(
     string FullPath,
-    CompilerArtifactManifestArtifact ManifestArtifact);
+    CompilerArtifactManifestArtifact ManifestArtifact,
+    string CopyToPublishDirectory = "PreserveNewest");
 
 internal sealed record CompilerArtifactManifestBuildResult(
     CompilerArtifactManifest Manifest,

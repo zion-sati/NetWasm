@@ -30,6 +30,7 @@ internal sealed record CompilationScenario(
     internal bool DrainReactor { get; init; }
     internal string? ObserveExportName { get; init; }
     internal bool EmitStackTrace { get; init; }
+    internal bool EmitPortablePdb { get; init; }
     internal bool LoadStackTraceSymbols { get; init; } = true;
     internal int EntryInvocationCount { get; init; } = 1;
     internal string? DiagnosticTracePath { get; init; }
@@ -56,25 +57,31 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
         ArgumentNullException.ThrowIfNull(scenario);
 
         var references = scenario.ReferencePaths.ToArray();
-        var assembly = (scenario.Optimize, scenario.AllowUnsafe) switch
-        {
-            (true, true) => _assets.CompileOptimizedUnsafeSource(
+        var assembly = scenario.EmitPortablePdb
+            ? _assets.CompileSourceWithPortablePdb(
                 scenario.AssemblyName,
                 scenario.Source,
-                references),
-            (true, false) => _assets.CompileOptimizedSource(
-                scenario.AssemblyName,
-                scenario.Source,
-                references),
-            (false, true) => _assets.CompileUnsafeSource(
-                scenario.AssemblyName,
-                scenario.Source,
-                references),
-            (false, false) => _assets.CompileSource(
-                scenario.AssemblyName,
-                scenario.Source,
-                references),
-        };
+                scenario.Optimize,
+                references)
+            : (scenario.Optimize, scenario.AllowUnsafe) switch
+            {
+                (true, true) => _assets.CompileOptimizedUnsafeSource(
+                    scenario.AssemblyName,
+                    scenario.Source,
+                    references),
+                (true, false) => _assets.CompileOptimizedSource(
+                    scenario.AssemblyName,
+                    scenario.Source,
+                    references),
+                (false, true) => _assets.CompileUnsafeSource(
+                    scenario.AssemblyName,
+                    scenario.Source,
+                    references),
+                (false, false) => _assets.CompileSource(
+                    scenario.AssemblyName,
+                    scenario.Source,
+                    references),
+            };
         var compilerReferences = scenario.ReferencePaths.Add(_assets.CoreLib);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
@@ -87,7 +94,8 @@ internal sealed class CompilationScenarioExecutor(TestAssets assets) :
             DiagnosticLogPath: scenario.DiagnosticLogPath,
             WitPath: scenario.WitPath,
             WitWorld: scenario.WitWorld,
-            EmitStackTrace: scenario.EmitStackTrace));
+            EmitStackTrace: scenario.EmitStackTrace,
+            ProjectDirectory: _assets.Directory));
 
         CompilerTestSupport.ValidateWithNode(compilation.ApplicationModule, _assets.Directory);
 

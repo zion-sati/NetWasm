@@ -7,5 +7,6 @@ internal interface IRuntimeMaterializationCacheWriter
         RuntimeMaterializationCacheSlot slot,
         RuntimeMaterializationCacheKey key,
         byte[] bytes,
-        string sha256);
+        string sha256,
+        RuntimeNativeCacheEvidence? nativeEvidence = null);
 }

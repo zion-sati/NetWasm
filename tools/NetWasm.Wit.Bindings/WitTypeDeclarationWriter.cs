@@ -123,7 +123,7 @@ public sealed class WitTypeDeclarationWriter(
         writer.Line($"public readonly struct {name}");
         writer.Line("{");
         writer.Indent();
-        writer.Line($"public {name}(");
+        writer.Line($"public {name}({(fields.Length == 0 ? ")" : "")}");
         writer.Indent();
         for (var index = 0; index < fields.Length; index++)
         {

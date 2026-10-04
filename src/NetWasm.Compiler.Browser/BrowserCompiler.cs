@@ -27,9 +27,14 @@ public static class BrowserCompiler
         registrations.AddSingleton<IManagedAssemblyImageReader>(
             new VirtualManagedAssemblyImageReader(request.Inputs));
         registrations.AddSingleton<ICompilationInputHasher>(
-            new VirtualCompilationInputHasher(request.Inputs));
+            new VirtualCompilationInputHasher(
+                request.Inputs,
+                request.WitCoreBindingInventories));
         registrations.AddSingleton<IWitDocumentReader>(
-            new VirtualWitDocumentReader(request.NormalizedWitDocuments, new WitDocumentJsonReader()));
+            new VirtualWitDocumentReader(
+                request.NormalizedWitDocuments,
+                request.WitCoreBindingInventories,
+                new WitDocumentJsonReader()));
         registrations.AddSingleton<IBrowserCompilationResultProjector, BrowserCompilationResultProjector>();
         registrations.AddSingleton<IManagedExecutableEntryPointSelector, ManagedExecutableEntryPointSelector>();
         var metrics = collectMetrics
@@ -60,8 +65,9 @@ public static class BrowserCompiler
             }
 
             var result = services.GetRequiredService<INetWasmCompiler>().Compile(options);
+            // Only managed executables prepare an image; their entry is mandatory.
             var actualEntry = image is null ? null : entries.SelectEntryPoint(
-                options.EntryAssemblyPath, image, result.Program.EntryPoint.Key.MetadataToken);
+                options.EntryAssemblyPath, image, result.Program.EntryPoint!.Key.MetadataToken);
             if (actualEntry is not null)
             {
                 options = options with

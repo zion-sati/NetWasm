@@ -56,14 +56,22 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     [Required]
     public string CompilerMetadataPath { get; set; } = string.Empty;
 
+    [Required]
+    public string NativeCallbackObjectPath { get; set; } = string.Empty;
+
     public string? DiagnosticTracePath { get; set; }
     public string? DiagnosticLogPath { get; set; }
     public string? WitPath { get; set; }
     public string? WitWorld { get; set; }
     public bool EmitStackTrace { get; set; }
+    public bool StructuredDiagnostics { get; set; }
+    public bool CompileAsLibrary { get; set; }
+    public bool UseJavaScriptExportBoundary { get; set; }
     public string Optimization { get; set; } = "Oz";
     public string? StackTraceSymbolsPath { get; set; }
+    public string? ExceptionTypeMapPath { get; set; }
     public bool NoLogo { get; set; }
+    public string? PathMap { get; set; }
 
     [Required]
     public string WasmToolsNodePath { get; set; } = string.Empty;
@@ -101,18 +109,31 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
                 Optimization,
                 Path.GetDirectoryName(CompilerMetadataPath),
                 WitPath,
-                WitWorld));
+                WitWorld,
+                CompileAsLibrary,
+                UseJavaScriptExportBoundary,
+                ProjectDirectory,
+                PathMap,
+                StructuredDiagnostics));
             _artifacts.Write(new(
                 compilation,
                 CoreModulePath,
                 RuntimeLayoutPath,
                 InteropManifestPath,
                 CompilerMetadataPath,
-                StackTraceSymbolsPath));
+                NativeCallbackObjectPath,
+                StackTraceSymbolsPath)
+            {
+                ExceptionTypeMapPath = ExceptionTypeMapPath,
+            });
             if (!string.IsNullOrWhiteSpace(ArtifactManifestPath))
             {
+                var callbackArtifacts = compilation.NativeCallbackSupport is null
+                    ? ImmutableArray<CompilerArtifactManifestTaskArtifact>.Empty
+                    : [CreateNativeCallbackSupportArtifact(
+                        NativeCallbackObjectPath)];
                 var buildResult = _manifestBuilder.Build(
-                    _manifestRequestBuilder.Build(CreateManifestTaskInput()));
+                    _manifestRequestBuilder.Build(CreateManifestTaskInput(callbackArtifacts)));
                 _manifestWriter.Write(new(ArtifactManifestPath, buildResult.Manifest));
                 SetResolvedArtifacts(buildResult);
             }
@@ -130,4 +151,5 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
             return false;
         }
     }
+
 }

@@ -1,4 +1,5 @@
 using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
 using NetWasm.Runtime.Pack.Materialization;
 using NetWasm.Runtime.Pack.MsBuild;
 using NetWasm.Runtime.Pack.Planning;
@@ -7,6 +8,69 @@ namespace NetWasm.Runtime.Pack.Tests.MsBuild;
 
 public sealed class RuntimeMaterializationTaskTests
 {
+    [Theory]
+    [InlineData("native%3Bentry")]
+    [InlineData("native;entry")]
+    [InlineData("native%253B;entry")]
+    public void PublishesInternalExportNamesAsLiteralMetadata(string name)
+    {
+        var materialization = Materialization() with
+        {
+            InternalRuntimeExports = [new(name, 0)],
+            InternalApplicationExports = [new("callback", 0)],
+        };
+        var task = Create(new RecordingMaterializer(materialization), new RecordingBuildEngine());
+
+        Assert.True(task.Execute());
+
+        var metadata = Assert.Single(task.RuntimeModules).GetMetadata("InternalRuntimeExports");
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(materialization.InternalRuntimeExports), metadata);
+        Assert.Equal(
+            System.Text.Json.JsonSerializer.Serialize(
+                materialization.InternalApplicationExports),
+            Assert.Single(task.RuntimeModules).GetMetadata(
+                "InternalApplicationExports"));
+    }
+
+    [Fact]
+    public void SuppliesEvaluatedNativeProviderMetadataToMaterialization()
+    {
+        var actor = new RecordingMaterializer(Materialization());
+        var task = Create(actor, new RecordingBuildEngine());
+        var item = new TaskItem("/package/native/wasm64/libmule.a");
+        item.SetMetadata("NetWasmLibraryName", "mule");
+        item.SetMetadata("WasmTarget", "wasm64");
+        task.NativeLibraries = [item];
+        task.NativeCallbackObjectPath = "/output/application.callbacks.o";
+
+        Assert.True(task.Execute());
+
+        var descriptor = Assert.Single(actor.Request!.NativeLibraries);
+        Assert.Equal("mule", descriptor.LibraryName);
+        Assert.Equal("wasm64", descriptor.Target);
+        Assert.Equal("/package/native/wasm64/libmule.a", descriptor.Path);
+        Assert.Equal(
+            "/output/application.callbacks.o",
+            actor.Request.NativeCallbackObjectPath);
+    }
+
+    [Fact]
+    public void InvalidNativeItemsFailBeforeMaterializationAndLeaveNoOutputs()
+    {
+        var actor = new RecordingMaterializer(Materialization());
+        var build = new RecordingBuildEngine();
+        var task = Create(actor, build);
+        Assert.True(task.Execute());
+        var previousRequest = actor.Request;
+        task.NativeLibraries = [new TaskItem("/native/libmule.a")];
+
+        Assert.False(task.Execute());
+
+        Assert.Same(previousRequest, actor.Request);
+        Assert.Empty(task.RuntimeModules);
+        Assert.Contains("NativeLibrary", Assert.Single(build.Errors).Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void DefaultConstructorComposesMaterializationCapability() =>
         Assert.NotNull(new RuntimeMaterializationTask());
@@ -25,7 +89,7 @@ public sealed class RuntimeMaterializationTaskTests
             179_904,
             262_144,
             8_589_934_592,
-            Metrics());
+            Metrics()) { InternalRuntimeExports = [new("native", 0), new("__heap_base", 3)] };
         var actor = new RecordingMaterializer(materialization);
         var build = new RecordingBuildEngine();
         var task = Create(actor, build);
@@ -47,6 +111,7 @@ public sealed class RuntimeMaterializationTaskTests
         Assert.Equal("netwasm.runtime.v1", module.GetMetadata("RuntimeAbi"));
         Assert.Equal("build-seam", module.GetMetadata("BuildSeam"));
         Assert.Equal("fingerprint", module.GetMetadata("ToolchainFingerprint"));
+        Assert.Equal("[{\"Name\":\"native\",\"Kind\":0},{\"Name\":\"__heap_base\",\"Kind\":3}]", module.GetMetadata("InternalRuntimeExports"));
         Assert.Equal(131_072, actor.Request?.InitialHeapSizeBytes);
         Assert.Equal(8_589_934_592, actor.Request?.MaximumMemorySizeBytes);
         Assert.Equal(RuntimeWasmOptimization.Oz, actor.Request?.Optimization);
@@ -139,12 +204,15 @@ public sealed class RuntimeMaterializationTaskTests
     }
 
     [Fact]
-    public void ConstructorRejectsMissingCapability() =>
-        Assert.Throws<ArgumentNullException>(() => new RuntimeMaterializationTask(null!));
+    public void ConstructorRejectsMissingCapability()
+    {
+        Assert.Throws<ArgumentNullException>(() => new RuntimeMaterializationTask(null!, new NativeLibraryItemReader()));
+        Assert.Throws<ArgumentNullException>(() => new RuntimeMaterializationTask(new RecordingMaterializer(Materialization()), null!));
+    }
 
     private static RuntimeMaterializationTask Create(
         IRuntimeModuleMaterializer materializer,
-        IBuildEngine buildEngine) => new(materializer)
+        IBuildEngine buildEngine) => new(materializer, new NativeLibraryItemReader())
         {
             BuildEngine = buildEngine,
             ManifestPath = "/runtime/runtime-pack.json",

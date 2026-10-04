@@ -26,9 +26,9 @@ test("WASI host copies immediately and loads diagnostic artifacts lazily", async
   assert.equal(loads, 0);
   assert.equal(host.imports["wasi:cli/exit@0.2.11"].exit instanceof Function, true);
   host.bindInstance({ exports: { memory } });
-  host.imports["netwasm.host.v1"].report_terminal_exception_v1(7, 16, 2);
+  host.imports["netwasm.host.v1"].report_terminal_exception_v2(7, 16, 2);
   assert.equal(loads, 1);
-  assert.deepEqual(immediate, [{ eventId: 1, typeId: 7, message: "ok", messageTruncated: false }]);
+  assert.deepEqual(immediate, [{ eventId: 1, typeId: 7, message: "ok", messageTruncated: false, stackTrace: null }]);
   memory.grow(1);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(enriched.length, 1);
@@ -43,6 +43,25 @@ test("WASI host rejects execution binding without exported memory", () => {
   });
 
   assert.throws(() => host.bindInstance({ exports: {} }), /must export/);
+});
+
+test("WASI host default reporting omits absent stack traces", async t => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const messages = [];
+  t.mock.method(console, "error", message => messages.push(message));
+  const host = createNetWasmWasiHost({
+    wasiImports: {},
+    stringDataOffset: 0,
+  });
+  host.bindInstance({ exports: { memory } });
+
+  host.imports["netwasm.host.v1"].report_terminal_exception_v1(7, 0, 0);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(messages, [
+    "[netwasm:1] managed exception typeId=7: null",
+    "[netwasm:1] resolved exception type: <exception type #7 unavailable>",
+  ]);
 });
 
 for (const prefix of ["", "cm32p2|", "cm64p2|"]) {
@@ -152,15 +171,16 @@ for (const artifactsAvailable of [false, true]) {
     });
     const instance = { exports: { memory } };
     assert.equal(host.bindInstance(instance), instance);
-    host.imports["netwasm.host.v1"].report_terminal_exception_v1(7, 16, 2);
+    new Uint16Array(memory.buffer, 32, 2).set([0x0061, 0x0074]);
+    host.imports["netwasm.host.v1"].report_terminal_exception_v2(7, 16, 2, 32, 2);
     assert.deepEqual(host.consumeTerminalEvent(), {
-      eventId: 1, typeId: 7, message: "o", messageTruncated: true,
+      eventId: 1, typeId: 7, message: "o", messageTruncated: true, stackTrace: "at",
     });
     assert.equal(host.consumeTerminalEvent(), undefined);
     await reported;
     assert.deepEqual(messages, [
-      "[netwasm:1] managed exception typeId=7: o",
-      `[netwasm:1] resolved exception type: ${artifactsAvailable ? "ExampleException" : "<exception type #7 unavailable>"}`,
+      "[netwasm:1] managed exception typeId=7: o\nat",
+      `[netwasm:1] resolved exception type: ${artifactsAvailable ? "ExampleException" : "<exception type #7 unavailable>"}\nat`,
     ]);
   });
 }

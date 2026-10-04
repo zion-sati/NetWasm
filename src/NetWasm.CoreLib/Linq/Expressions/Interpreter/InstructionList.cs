@@ -69,8 +69,13 @@ namespace System.Linq.Expressions.Interpreter
         internal void EmitGreaterThan(Type type) =>
             Emit(ComparisonInstruction.Create(type, NumericComparison.GreaterThan));
 
-        internal void EmitNumericConvert(TypeCode from, TypeCode to) =>
-            Emit(new NumericConvertInstruction(from, to));
+        internal void EmitEqual(Type type, bool liftedToNull) =>
+            Emit(new EqualInstruction(type, liftedToNull));
+
+        internal void EmitNumericConvert(TypeCode from, TypeCode to, bool liftedToNull) =>
+            Emit(new NumericConvertInstruction(from, to, liftedToNull));
+
+        internal void EmitNullableValue() => Emit(new NullableValueInstruction());
 
         internal BranchLabel MakeLabel()
         {

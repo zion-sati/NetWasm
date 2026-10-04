@@ -114,7 +114,7 @@ public sealed class BrowserCompilationCommandTests
         ImmutableHashSet<EntityKey>.Empty,
         [], ImmutableHashSet<string>.Empty, [], ImmutableHashSet<EntityKey>.Empty,
         ImmutableDictionary<EntityKey, MethodRootMap>.Empty,
-        ImmutableDictionary<EntityKey, EntityKey>.Empty,
+        ImmutableDictionary<CliTypeIdentity, MethodInstanceModel>.Empty,
         ImmutableHashSet<ManagedExceptionKind>.Empty);
 
     private static MethodDefinitionModel Method(int token)

@@ -11,7 +11,8 @@ public sealed class AllocationCapabilityAnalyzer(
     ITypeRepository types,
     IFieldRepository fields,
     IMethodRepository methods,
-    IRuntimeAllocationSafepointClassifier runtimeSafepoints) : IAllocationCapabilityAnalyzer
+    IRuntimeAllocationSafepointClassifier runtimeSafepoints,
+    ITypeClassifier typeClassifier) : IAllocationCapabilityAnalyzer
 {
     private readonly ITypeRepository _types =
         types ?? throw new ArgumentNullException(nameof(types));
@@ -21,6 +22,9 @@ public sealed class AllocationCapabilityAnalyzer(
         methods ?? throw new ArgumentNullException(nameof(methods));
     private readonly IRuntimeAllocationSafepointClassifier _runtimeSafepoints =
         runtimeSafepoints ?? throw new ArgumentNullException(nameof(runtimeSafepoints));
+
+    private readonly ITypeClassifier _typeClassifier = typeClassifier ??
+        throw new ArgumentNullException(nameof(typeClassifier));
 
     public AllocationCapabilities Analyze(AllocationCapabilityAnalysisRequest request)
     {
@@ -148,10 +152,29 @@ public sealed class AllocationCapabilityAnalyzer(
         {
             return false;
         }
+        var calledMethod = instruction.Operand is CilOperand.Entity entityCall
+            ? _methods.GetMethod(entityCall.Key)
+            : ((CilOperand.MethodInstance)instruction.Operand).Value.Definition;
+        // The generated delegate helper can collect even though Invoke has no
+        // managed body and is not represented by ordinary virtual dispatch.
+        if (calledMethod is { IsStatic: false, Name: "Invoke" } &&
+            _typeClassifier.IsDelegateType(calledMethod.DeclaringType))
+        {
+            return true;
+        }
+        // Emission can replace a declared intrinsic before virtual dispatch.
+        // Its hidden allocations remain safepoints even with no managed body.
+        if (instruction.Operand is CilOperand.Entity
+            ? _runtimeSafepoints.Classify(calledMethod, _types)
+            : _runtimeSafepoints.Classify(((CilOperand.MethodInstance)instruction.Operand).Value))
+        {
+            return true;
+        }
         var dispatchKey = $"{caller}@{instruction.Offset:x8}";
         if (dispatchCallSites.TryGetValue(dispatchKey, out var dispatch))
         {
             return dispatch.Targets.Any(target =>
+                _runtimeSafepoints.Classify(target.Method) ||
                 allocating.Contains(target.Method.CanonicalName));
         }
         if (instruction.Operand is CilOperand.Entity target)
@@ -159,8 +182,8 @@ public sealed class AllocationCapabilityAnalyzer(
             var directMethod = _methods.GetMethod(target.Key);
             return HasAllocatingInitializer(directMethod, null, allocating,
                        directInitializers, constructedInitializers) ||
-                   _runtimeSafepoints.Classify(directMethod, _types) ||
                    directMethod.JSImport is not null ||
+                   directMethod.NativeImport is not null ||
                    directIdentities.TryGetValue(target.Key, out var identity) &&
                    allocating.Contains(identity);
         }
@@ -168,8 +191,8 @@ public sealed class AllocationCapabilityAnalyzer(
         var method = ((CilOperand.MethodInstance)instruction.Operand).Value;
         return HasAllocatingInitializer(method.Definition, method.DeclaringType, allocating,
                    directInitializers, constructedInitializers) ||
-               _runtimeSafepoints.Classify(method) ||
                method.Definition.JSImport is not null ||
+               method.Definition.NativeImport is not null ||
                allocating.Contains(method.CanonicalName);
     }
 

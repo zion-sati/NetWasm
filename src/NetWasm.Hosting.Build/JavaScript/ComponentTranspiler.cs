@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -11,21 +12,43 @@ public sealed record ComponentTranspileRequest(
 
 public sealed record ComponentTranspileResult(
     string JavaScriptPath,
-    ImmutableArray<string> CoreModulePaths);
+    ImmutableArray<string> CoreModulePaths,
+    ImmutableArray<JcoComponentRootExport> RootExports);
+
+public sealed record JcoComponentRootExport(string Name, string Kind);
 
 public interface IComponentTranspiler
 {
     ComponentTranspileResult Transpile(ComponentTranspileRequest request);
 }
 
-public sealed class ComponentTranspiler(IJavaScriptProcessRunner process) : IComponentTranspiler
+public sealed class ComponentTranspiler : IComponentTranspiler
 {
-    private readonly IJavaScriptProcessRunner _process = process ??
-        throw new ArgumentNullException(nameof(process));
+    private const string MetadataFileName = ".netwasm-jco-exports.json";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+    private readonly IJavaScriptProcessRunner _process;
+    private readonly string _runnerPath;
 
     public ComponentTranspiler()
-        : this(new JavaScriptProcessRunner())
+        : this(
+            new JavaScriptProcessRunner(),
+            Path.Combine(
+                Path.GetDirectoryName(typeof(ComponentTranspiler).Assembly.Location)!,
+                "run-jco-transpile.mjs"))
     {
+    }
+
+    internal ComponentTranspiler(
+        IJavaScriptProcessRunner process,
+        string? runnerPath = null)
+    {
+        _process = process ?? throw new ArgumentNullException(nameof(process));
+        _runnerPath = runnerPath ?? Path.Combine(
+            Path.GetDirectoryName(typeof(ComponentTranspiler).Assembly.Location)!,
+            "run-jco-transpile.mjs");
     }
 
     public ComponentTranspileResult Transpile(ComponentTranspileRequest request)
@@ -39,25 +62,19 @@ public sealed class ComponentTranspiler(IJavaScriptProcessRunner process) : ICom
         Directory.CreateDirectory(temporary);
         try
         {
+            var metadataPath = Path.Combine(temporary, MetadataFileName);
             _process.Run(new(
                 request.NodePath,
-                request.JcoPath,
+                Path.GetFullPath(_runnerPath),
                 [
-                    "transpile",
+                    Path.Combine(Path.GetDirectoryName(request.JcoPath)!, "api.js"),
                     request.ComponentPath,
-                    "--out-dir",
                     temporary,
-                    "--name",
                     request.BaseName,
-                    "--instantiation",
-                    "async",
-                    "--strict",
-                    "--bindgen-enable-wasm-exnref",
-                    "--no-wasi-shim",
-                    "--no-typescript",
-                    "--quiet",
+                    metadataPath,
                 ],
                 "component transpiler"));
+            var rootExports = ReadMetadata(metadataPath);
             var files = Directory.GetFiles(temporary, "*", SearchOption.AllDirectories)
                 .Order(StringComparer.Ordinal)
                 .ToArray();
@@ -73,7 +90,9 @@ public sealed class ComponentTranspiler(IJavaScriptProcessRunner process) : ICom
             var typeDeclarations = files.Where(path =>
                     path.EndsWith(".d.ts", StringComparison.Ordinal))
                 .ToArray();
-            var runtimeFiles = cores.Append(javaScript).ToHashSet(StringComparer.Ordinal);
+            var runtimeFiles = cores.Append(javaScript)
+                .Append(metadataPath)
+                .ToHashSet(StringComparer.Ordinal);
             var unexpectedFiles = files.Except(runtimeFiles, StringComparer.Ordinal)
                 .Except(typeDeclarations, StringComparer.Ordinal)
                 .ToArray();
@@ -109,6 +128,7 @@ public sealed class ComponentTranspiler(IJavaScriptProcessRunner process) : ICom
             {
                 Directory.Delete(directory);
             }
+            File.Delete(metadataPath);
 
             if (Directory.Exists(request.OutputDirectory))
             {
@@ -119,7 +139,8 @@ public sealed class ComponentTranspiler(IJavaScriptProcessRunner process) : ICom
                 Path.Combine(request.OutputDirectory, request.BaseName + ".js"),
                 [.. cores.Select(path => Path.Combine(
                     request.OutputDirectory,
-                    Path.GetFileName(path)))]);
+                    Path.GetFileName(path)))],
+                rootExports);
         }
         finally
         {
@@ -128,6 +149,47 @@ public sealed class ComponentTranspiler(IJavaScriptProcessRunner process) : ICom
                 Directory.Delete(temporary, recursive: true);
             }
         }
+    }
+
+    private static ImmutableArray<JcoComponentRootExport> ReadMetadata(string path)
+    {
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException(
+                "The NetWasm component transpiler produced no root export metadata.");
+        }
+        JcoTranspileMetadata? metadata;
+        try
+        {
+            metadata = JsonSerializer.Deserialize<JcoTranspileMetadata>(
+                File.ReadAllBytes(path),
+                JsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException(
+                "The NetWasm component transpiler produced invalid root export metadata.",
+                exception);
+        }
+        if (metadata is null || metadata.SchemaVersion != 1
+            || metadata.Exports.IsDefault
+            || metadata.Exports.Any(value =>
+                value is null
+                || string.IsNullOrWhiteSpace(value.Name)
+                || value.Kind is not ("function" or "instance"))
+            || metadata.Exports.Select(value => value!.Name)
+                .Distinct(StringComparer.Ordinal).Count() != metadata.Exports.Length)
+        {
+            throw new InvalidOperationException(
+                "The NetWasm component transpiler produced invalid root export metadata.");
+        }
+        return [.. metadata.Exports.Select(value => value!)];
+    }
+
+    private sealed record JcoTranspileMetadata
+    {
+        public int SchemaVersion { get; init; }
+        public ImmutableArray<JcoComponentRootExport?> Exports { get; init; }
     }
 
     private static void Validate(ComponentTranspileRequest request)

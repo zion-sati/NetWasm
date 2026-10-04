@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Wasm;
+using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler;
@@ -10,6 +11,7 @@ public enum CompilerEntryPointKind
 {
     RawFunction,
     ManagedExecutable,
+    Library,
 }
 
 public sealed record RequestedExport(string Name, string TypeName, string MethodName);
@@ -33,7 +35,11 @@ public sealed record CompilerOptions(
     CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
     ICompilerMetricsObserver? MetricsObserver = null,
     bool EnableFrontendCache = false,
-    string? IntermediateOutputPath = null);
+    string? IntermediateOutputPath = null,
+    bool UseJavaScriptExportBoundary = false,
+    string? ProjectDirectory = null,
+    string? PathMap = null,
+    bool StructuredDiagnostics = false);
 
 public sealed partial record CompilationResult(
     byte[] ApplicationModule,
@@ -43,5 +49,7 @@ public sealed partial record CompilationResult(
     int StaticDataEnd)
 {
     public ImmutableArray<WasmFunctionImport> FunctionImports { get; init; } = [];
+    public ImmutableArray<WasmNativeImport> NativeImports { get; init; } = [];
     public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
+    public WasmNativeCallbackSupportArtifact? NativeCallbackSupport { get; init; }
 }

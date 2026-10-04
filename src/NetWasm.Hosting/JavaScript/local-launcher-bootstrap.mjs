@@ -13,6 +13,7 @@ import { overlayExecutionEnvironment } from "./execution-request-environment.mjs
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { createLocalLauncher } from "./local-launcher.mjs";
 import { createLocalLauncherCommand } from "./local-launcher-command.mjs";
+import { adaptCommandProcessResult } from "./command-process-result.mjs";
 import { createPreview2PlatformLoader } from "./preview2-platform-loader.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
 import { parseStrictJson } from "./strict-json-reader.mjs";
@@ -73,8 +74,11 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
   process.once("SIGTERM", cancel);
 
   try {
-    await run(Object.freeze({
-      arguments: process.argv.slice(2),
+    const arguments_ = process.argv.slice(2);
+    const forwardCommandResult = arguments_[0] === "--forward-command-result";
+    if (forwardCommandResult) arguments_.shift();
+    const result = await run(Object.freeze({
+      arguments: arguments_,
       environment: snapshotProcessEnvironment(process.env),
       hostExecutablePath: process.execPath,
       launcherPath,
@@ -82,6 +86,11 @@ export async function runLocalNetWasmLauncher(createExecution, launcherPath) {
       stderr,
       stdout,
     }));
+    if (forwardCommandResult) {
+      const adapted = adaptCommandProcessResult(result);
+      if (adapted.diagnostic !== null) process.stderr.write(adapted.diagnostic);
+      process.exitCode = adapted.exitCode;
+    }
   } catch {
     process.stderr.write("NetWasm launcher failed before completing its result channel.\n");
     process.exitCode = 1;

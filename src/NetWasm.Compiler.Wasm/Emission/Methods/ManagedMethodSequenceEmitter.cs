@@ -15,7 +15,8 @@ internal sealed class ManagedMethodSequenceEmitter(
     IStructuredControlFlowEmitter controlFlow,
     IStructuredLeaveEmitter leaves,
     IBranchComparisonEmitter branchComparisons,
-    ICilInstructionDispatcher instructionDispatcher) : IManagedMethodSequenceEmitter
+    ICilInstructionDispatcher instructionDispatcher,
+    IStackTraceFrameLocationEmitter stackTraceLocations) : IManagedMethodSequenceEmitter
 {
     public ManagedMethodSequenceEmission Emit(
         IWasmInstructionWriter code,
@@ -293,7 +294,18 @@ internal sealed class ManagedMethodSequenceEmitter(
         List<CliValueKind> stack,
         MethodEmissionContext context,
         InstructionModuleTarget target,
-        IFunctionIndexResolver functionIndices) =>
+        IFunctionIndexResolver functionIndices)
+    {
+        if (context.StackTraceMethodId != 0)
+        {
+            stackTraceLocations.Update(
+                code,
+                context.StackTraceMethodId,
+                target.StackTraceMethods.ResolveSymbolId(
+                    context.StackTraceMethodId,
+                    instruction.SourceOffset),
+                context.RuntimeImportSelection);
+        }
         instructionDispatcher.Emit(new(
             header,
                 instruction,
@@ -302,6 +314,7 @@ internal sealed class ManagedMethodSequenceEmitter(
                 target),
             code,
             functionIndices);
+    }
 
     private int GetStackLocal(
         EvaluationStackLocalLayout stackLocals,

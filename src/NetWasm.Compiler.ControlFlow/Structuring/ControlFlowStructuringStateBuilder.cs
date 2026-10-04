@@ -7,12 +7,14 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.ControlFlow.Structuring;
 
 internal sealed class ControlFlowStructuringStateBuilder(
+    IExceptionContinuationGraphProjector exceptionContinuations,
     IControlFlowComponentAnalyzer components,
     IControlFlowNaturalLoopAnalyzer naturalLoops,
     IControlFlowDomainFinder domains,
     ILoopRegionFactory loops,
     IControlFlowCycleClassifier cycles) : IControlFlowStructuringStateBuilder
 {
+    private readonly IExceptionContinuationGraphProjector _exceptionContinuations = exceptionContinuations ?? throw new ArgumentNullException(nameof(exceptionContinuations));
     private readonly IControlFlowComponentAnalyzer _components = components ?? throw new ArgumentNullException(nameof(components));
     private readonly IControlFlowNaturalLoopAnalyzer _naturalLoops = naturalLoops ?? throw new ArgumentNullException(nameof(naturalLoops));
     private readonly IControlFlowDomainFinder _domains = domains ?? throw new ArgumentNullException(nameof(domains));
@@ -23,9 +25,10 @@ internal sealed class ControlFlowStructuringStateBuilder(
     {
         ArgumentNullException.ThrowIfNull(validated);
         var state = new ControlFlowStructuringState(validated);
-        var domains = _domains.Find(validated.Graph);
+        var discoveryGraph = _exceptionContinuations.Project(validated.Graph);
+        var domains = _domains.Find(discoveryGraph);
         var naturalLoops = domains
-            .SelectMany(domain => FindNaturalLoops(validated.Graph, domain)
+            .SelectMany(domain => FindNaturalLoops(discoveryGraph, domain)
                 .Select(component => new NaturalLoopCandidate(component, domain)))
             .ToArray();
         foreach (var candidate in naturalLoops)
@@ -60,9 +63,9 @@ internal sealed class ControlFlowStructuringStateBuilder(
         foreach (var domain in domains)
         {
             foreach (var component in FindStronglyConnectedComponents(
-                         validated.Graph,
+                         discoveryGraph,
                          domain.Blocks).Where(component =>
-                         _cycles.Classify(validated.Graph, component)))
+                         _cycles.Classify(discoveryGraph, component)))
             {
                 if (!naturalLoops.Any(loop =>
                         component.IsSubsetOf(loop.Component)))

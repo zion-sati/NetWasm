@@ -28,28 +28,89 @@ internal sealed class ComponentExportMerger : IComponentExportMerger
             return exports;
         }
 
-        var result = exports.ToBuilder();
-        var methodsByName = exports.ToDictionary(
+        var existingMethods = exports.ToDictionary(
+            export => export.Name,
+            export => export.Method,
+            StringComparer.Ordinal);
+        var replacements = contract.Exports
+            .SelectMany(function => ReplacedBindings(function, target))
+            .ToArray();
+        foreach (var replacement in replacements)
+        {
+            if (existingMethods.TryGetValue(replacement.Name, out var existing) &&
+                existing != replacement.Method)
+            {
+                throw Conflict(replacement.Name);
+            }
+        }
+        var replacedNames = replacements
+            .Select(replacement => replacement.Name)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+        var result = exports
+            .Where(export => !replacedNames.Contains(export.Name))
+            .ToImmutableArray()
+            .ToBuilder();
+        var methodsByName = result.ToDictionary(
             export => export.Name,
             export => export.Method,
             StringComparer.Ordinal);
         foreach (var function in contract.Exports)
         {
-            var name = CanonicalAbiNames.Export(function, target);
-            if (methodsByName.TryGetValue(name, out var existing))
+            Add(
+                CanonicalAbiNames.Export(function, target),
+                function.ManagedMethod);
+            if (function.PostReturnMethod is { } postReturn)
             {
-                if (existing != function.ManagedMethod)
-                {
-                    throw new CompilerException(new CompilerDiagnostic(
-                        DiagnosticCode.ComponentContract,
-                        $"component export '{name}' has conflicting managed bindings"));
-                }
-                continue;
+                Add(CanonicalAbiNames.PostReturn(function, target), postReturn);
             }
-
-            methodsByName.Add(name, function.ManagedMethod);
-            result.Add(new ProgramExport(name, function.ManagedMethod));
         }
         return result.ToImmutable();
+
+        void Add(string name, EntityKey method)
+        {
+            if (methodsByName.TryGetValue(name, out var existing))
+            {
+                if (existing != method)
+                {
+                    throw Conflict(name);
+                }
+                return;
+            }
+            methodsByName.Add(name, method);
+            result.Add(new ProgramExport(name, method));
+        }
+    }
+
+    private static CompilerException Conflict(string name) => new(
+        new CompilerDiagnostic(
+            DiagnosticCode.ComponentContract,
+            $"component export '{name}' has conflicting managed bindings"));
+
+    private static IEnumerable<(string Name, EntityKey Method)> ReplacedBindings(
+        CanonicalAbiFunction function,
+        WasmTarget target)
+    {
+        var physical = CanonicalAbiNames.Export(function, target);
+        var semantic = CanonicalAbiNames.Export(
+            function.InterfaceName,
+            function.FunctionName,
+            target);
+        if (!string.Equals(physical, semantic, StringComparison.Ordinal))
+        {
+            yield return (semantic, function.ManagedMethod);
+        }
+        if (function.PostReturnMethod is not null)
+        {
+            var physicalPostReturn = CanonicalAbiNames.PostReturn(function, target);
+            var semanticPostReturn = CanonicalAbiNames.PostReturn(
+                function.InterfaceName,
+                function.FunctionName,
+                target);
+            if (!string.Equals(physicalPostReturn, semanticPostReturn,
+                StringComparison.Ordinal))
+            {
+                yield return (semanticPostReturn, function.PostReturnMethod.Value);
+            }
+        }
     }
 }

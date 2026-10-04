@@ -11,4 +11,5 @@ public sealed record ComponentBuildRequest(
     ComponentTarget Target,
     ComponentManifestInputs ManifestInputs,
     ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null,
-    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz);
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
+    bool StructuredDiagnostics = false);

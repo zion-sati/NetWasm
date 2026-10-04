@@ -61,7 +61,8 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
         var results = outputIdentities
             .Select((output, index) => new CompilerArtifactResult(
                 output.FullPath,
-                artifacts[index]))
+                artifacts[index],
+                output.CopyToPublishDirectory))
             .ToImmutableArray();
 
         return new CompilerArtifactManifestBuildResult(manifest, results);
@@ -93,7 +94,8 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
             output.Kind,
             output.MediaType,
             NormalizePath(fullPath, projectDirectory),
-            _digests.Calculate(fullPath));
+            _digests.Calculate(fullPath),
+            output.CopyToPublishDirectory);
     }
 
     private static void ValidateMetadata(CompilerArtifactManifestBuildRequest request)
@@ -141,6 +143,7 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
                 output.MediaType,
                 output.Path,
                 output.Sha256,
+                output.CopyToPublishDirectory,
             }),
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
@@ -151,5 +154,6 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
         string Kind,
         string MediaType,
         string Path,
-        string Sha256);
+        string Sha256,
+        string CopyToPublishDirectory);
 }

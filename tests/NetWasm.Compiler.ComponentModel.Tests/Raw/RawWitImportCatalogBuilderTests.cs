@@ -78,6 +78,41 @@ public sealed class RawWitImportCatalogBuilderTests
     }
 
     [Fact]
+    public void NamedWorldBindingsControlCallableAndResourcePhysicalIdentities()
+    {
+        var (document, world) = Fixture();
+        world = world with
+        {
+            Imports = world.Imports.SetItem(1, world.Imports[1] with
+            {
+                CoreBindingName = "file-input",
+            }),
+            Exports = world.Exports.SetItem(0, world.Exports[0] with
+            {
+                CoreBindingName = "file-output",
+            }),
+        };
+        document = document with { Worlds = [world] };
+        var builder = new RawWitImportCatalogBuilder(
+            new WitWorldValidator(),
+            new RawCanonicalImportIdentityFormatter(),
+            new WitWorldSpecifierFormatter(),
+            new WitInterfaceSpecifierFormatter());
+
+        var catalog = builder.Build(document, world, WasmTarget.Wasm32);
+
+        Assert.Equal("file-input", Assert.IsType<RawWitImportDeclaration.Callable>(
+            catalog.Imports[new("cm32p2|file-input", "[method]file.read")]).CoreInterfaceName);
+        Assert.Equal("file-input", Assert.IsType<RawWitImportDeclaration.Resource>(
+            catalog.Imports[new("cm32p2|file-input", "file_drop")]).CoreInterfaceName);
+        foreach (var suffix in new[] { "new", "rep", "drop" })
+        {
+            Assert.Equal("file-output", Assert.IsType<RawWitImportDeclaration.Resource>(
+                catalog.Imports[new("cm32p2|_ex_file-output", "file_" + suffix)]).CoreInterfaceName);
+        }
+    }
+
+    [Fact]
     public void EmptyWorldHasNoInventedImports()
     {
         var dependencies = new RecordingDependencies();

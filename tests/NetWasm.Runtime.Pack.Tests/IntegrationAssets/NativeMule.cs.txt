@@ -1,0 +1,73 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+public static unsafe class EntryPoint
+{
+    [DllImport("mule", EntryPoint = "native_mule_probe", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int Probe();
+    [DllImport("mule", EntryPoint = "native_mule_data_end", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern nuint DataEnd();
+    [DllImport("mule", EntryPoint = "native_mule_sum", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int Sum(int left, int right);
+    [DllImport("mule", EntryPoint = "native_mule_unsigned32", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern uint Unsigned32(uint value);
+    [DllImport("mule", EntryPoint = "native_mule_signed_pointer", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern nint SignedPointer(nint value);
+    [DllImport("mule", EntryPoint = "native_mule_signed", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern long Signed(long value);
+    [DllImport("mule", EntryPoint = "native_mule_unsigned", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern ulong Unsigned(ulong value);
+    [DllImport("mule", EntryPoint = "native_mule_single", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern float Single(float value);
+    [DllImport("mule", EntryPoint = "native_mule_double", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern double Double(double value);
+    [DllImport("mule", EntryPoint = "native_mule_pointer", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern byte* Pointer(byte* value);
+    [DllImport("mule", EntryPoint = "native_mule_buffer", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int Buffer(byte* bytes, nuint count);
+    [DllImport("mule", EntryPoint = "native_mule_ref", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void Ref(ref int value);
+    [DllImport("mule", EntryPoint = "native_mule_out", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void Out(out long value);
+    [DllImport("mule", EntryPoint = "native_mule_status", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int Status(int value, int* result);
+    [DllImport("unused", EntryPoint = "not_present")]
+    private static extern int Unused(string unsupported);
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180 || DataEnd() <= 2 * 1024 * 1024) return -1;
+        if (Sum(int.MinValue + 100, 23) != int.MinValue + 123) return -2;
+        if (Signed(long.MinValue + 42) != long.MinValue + 42) return -3;
+        if (Unsigned(ulong.MaxValue - 42) != ulong.MaxValue - 42) return -4;
+        if (Single(1.25f) != 1.25f || Single(float.PositiveInfinity) != float.PositiveInfinity ||
+            !float.IsNaN(Single(float.NaN)) || BitConverter.SingleToInt32Bits(Single(-0.0f)) != int.MinValue) return -5;
+        if (Double(1.25) != 1.25 || Double(double.NegativeInfinity) != double.NegativeInfinity ||
+            !double.IsNaN(Double(double.NaN)) || BitConverter.DoubleToInt64Bits(Double(-0.0)) != long.MinValue) return -6;
+        byte* bytes = stackalloc byte[4];
+        bytes[0] = 3; bytes[1] = 7; bytes[2] = 11; bytes[3] = 19;
+        if (Pointer(bytes) != bytes || Buffer(bytes, 4) != 40 || Buffer(bytes, 0) != 0) return -7;
+        var value = input;
+        Ref(ref value);
+        if (value != input + 7) return -8;
+        Out(out var wide);
+        if (wide != 0x123456789abcdef0L) return -9;
+        var result = 99;
+        if (Status(-1, &result) != -7 || result != 99) return -10;
+        if (Status(41, &result) != 0 || result != 42) return -11;
+        if (Probe() != 180) return -12;
+        if (Unsigned32(uint.MaxValue - 42) != uint.MaxValue - 42 || SignedPointer(-42) != -42) return -13;
+        byte* grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            if ((nuint)grown < DataEnd()) return -14;
+            grown[0] = 3; grown[1] = 7; grown[2] = 11; grown[3] = 19;
+            grown[6 * 1024 * 1024 - 1] = 71;
+            if (Pointer(grown) != grown || Buffer(grown, 4) != 40 || grown[6 * 1024 * 1024 - 1] != 71) return -15;
+        }
+        finally { NativeMemory.Free(grown); }
+        return 42;
+    }
+}

@@ -149,5 +149,14 @@ public sealed record WasmInstructionOperand
             blockTypeValue: blockType,
             tagIndex: tagIndex,
             labelDepth: labelDepth);
+
+    public static WasmInstructionOperand TryTableCatchAllRef(
+        byte blockType,
+        uint labelDepth) =>
+        new(
+            WasmInstructionOperandShape.TryTableCatch,
+            byteValue: 3,
+            blockTypeValue: blockType,
+            labelDepth: labelDepth);
 }
 #pragma warning restore CA1720

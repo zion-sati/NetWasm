@@ -35,6 +35,8 @@ internal static class MethodEmissionServiceCollectionExtensions
             FilterEnvironmentRootEmitter>();
         services.AddSingleton<IStackTraceFrameEntryEmitter,
             StackTraceFrameEntryEmitter>();
+        services.AddSingleton<IStackTraceFrameLocationEmitter,
+            StackTraceFrameLocationEmitter>();
         services.AddSingleton<IStackTraceFrameExitEmitter,
             StackTraceFrameExitEmitter>();
         services.AddSingleton<IMethodFrameEntryEmitter, MethodFrameEntryEmitter>();

@@ -150,11 +150,13 @@ namespace System.Linq.Expressions.Interpreter
     {
         private readonly TypeCode _from;
         private readonly TypeCode _to;
+        private readonly bool _liftedToNull;
 
-        internal NumericConvertInstruction(TypeCode from, TypeCode to)
+        internal NumericConvertInstruction(TypeCode from, TypeCode to, bool liftedToNull)
         {
             _from = from;
             _to = to;
+            _liftedToNull = liftedToNull;
         }
 
         internal override int ConsumedStack => 1;
@@ -163,8 +165,12 @@ namespace System.Linq.Expressions.Interpreter
 
         internal override int Run(InterpretedFrame frame)
         {
-            var value = frame.Pop()!;
-            frame.Push(Convert(value));
+            var value = frame.Pop();
+            if (value is null && !_liftedToNull)
+            {
+                throw new InvalidOperationException("Nullable object must have a value.");
+            }
+            frame.Push(value is null ? null : Convert(value));
             return 1;
         }
 

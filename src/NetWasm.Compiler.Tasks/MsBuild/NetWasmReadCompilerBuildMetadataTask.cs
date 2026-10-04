@@ -1,5 +1,6 @@
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
+using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Tasks.Artifacts;
 using NetWasm.Compiler.Tasks.Composition;
 
@@ -29,15 +30,22 @@ public sealed class NetWasmReadCompilerBuildMetadataTask : Microsoft.Build.Utili
     [Output]
     public ITaskItem[] RuntimeFeatures { get; private set; } = [];
 
+    [Output]
+    public ITaskItem[] DeploymentRuntimeFeatures { get; private set; } = [];
+
     public override bool Execute()
     {
         Target = string.Empty;
         RuntimeFeatures = [];
+        DeploymentRuntimeFeatures = [];
         try
         {
             var metadata = _metadata.Read(MetadataPath);
             Target = metadata.Target;
             RuntimeFeatures = [.. metadata.RuntimeFeatures.Select(feature => new TaskItem(feature))];
+            DeploymentRuntimeFeatures = [.. metadata.RuntimeFeatures
+                .Where(feature => feature == NetWasmRuntimeFeatureIds.LocalTime)
+                .Select(feature => new TaskItem(feature))];
             return true;
         }
         catch (Exception exception)

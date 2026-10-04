@@ -33,6 +33,8 @@ public sealed class CompilationSemanticInputProvider(
         var inputs = ImmutableArray.CreateBuilder<string>();
         inputs.Add("diagnostic-artifact-schema=1");
         inputs.Add("target=" + options.Target);
+        inputs.Add("entry-kind=" + options.EntryPointKind);
+        inputs.Add("javascript-export-boundary=" + options.UseJavaScriptExportBoundary);
         inputs.Add("entry-assembly=" + metadata.EntryAssemblyIdentity.Name);
         inputs.Add("entry-type=" + options.EntryTypeName);
         inputs.Add("entry-method=" + options.EntryMethodName);

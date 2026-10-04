@@ -202,38 +202,18 @@
         <PackKind>BuildOutput</PackKind>
       </_NetWasmSdkPackageFile>
 
-      <!-- Explicit package paths remain authoritative.  Content without an
-           explicit path follows stock ContentTargetFolders semantics. -->
-      <_NetWasmSdkPackageFile Include="@(_PackageFiles)"
-                               Condition="'%(_PackageFiles.PackagePath)' != '' OR '%(_PackageFiles.BuildAction)' != 'Content'">
+      <!-- Preserve raw content metadata for the adapter.  In particular,
+           NuGet distinguishes an omitted PackagePath from an explicitly
+           empty PackagePath and may expand one item to multiple destinations. -->
+      <_NetWasmSdkPackageFile Include="@(_PackageFiles)">
         <SourcePath Condition="'%(_PackageFiles.FullPath)' != ''">%(_PackageFiles.FullPath)</SourcePath>
         <SourcePath Condition="'%(_PackageFiles.FullPath)' == ''">%(_PackageFiles.Identity)</SourcePath>
-        <PackagePath Condition="'%(_PackageFiles.PackagePath)' != ''">%(_PackageFiles.PackagePath)</PackagePath>
-        <PackagePath Condition="'%(_PackageFiles.PackagePath)' == ''">%(_PackageFiles.NuGetRecursiveDir)%(_PackageFiles.Filename)%(_PackageFiles.Extension)</PackagePath>
         <TargetFramework>%(_PackageFiles.TargetFramework)</TargetFramework>
         <BuildAction>%(_PackageFiles.BuildAction)</BuildAction>
         <TargetFrameworkAlias Condition="'%(_PackageFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
         <PackKind>Content</PackKind>
-      </_NetWasmSdkPackageFile>
-      <_NetWasmSdkPackageFile Include="@(_PackageFiles)"
-                               Condition="'%(_PackageFiles.PackagePath)' == '' AND '%(_PackageFiles.BuildAction)' == 'Content' AND $([System.String]::Copy(';$(ContentTargetFolders);').Contains(';content;'))">
-        <SourcePath Condition="'%(_PackageFiles.FullPath)' != ''">%(_PackageFiles.FullPath)</SourcePath>
-        <SourcePath Condition="'%(_PackageFiles.FullPath)' == ''">%(_PackageFiles.Identity)</SourcePath>
-        <PackagePath>content/%(_PackageFiles.NuGetRecursiveDir)%(_PackageFiles.Filename)%(_PackageFiles.Extension)</PackagePath>
-        <TargetFramework>%(_PackageFiles.TargetFramework)</TargetFramework>
-        <BuildAction>%(_PackageFiles.BuildAction)</BuildAction>
-        <TargetFrameworkAlias Condition="'%(_PackageFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
-        <PackKind>Content</PackKind>
-      </_NetWasmSdkPackageFile>
-      <_NetWasmSdkPackageFile Include="@(_PackageFiles)"
-                               Condition="'%(_PackageFiles.PackagePath)' == '' AND '%(_PackageFiles.BuildAction)' == 'Content' AND $([System.String]::Copy(';$(ContentTargetFolders);').Contains(';contentFiles;'))">
-        <SourcePath Condition="'%(_PackageFiles.FullPath)' != ''">%(_PackageFiles.FullPath)</SourcePath>
-        <SourcePath Condition="'%(_PackageFiles.FullPath)' == ''">%(_PackageFiles.Identity)</SourcePath>
-        <PackagePath>contentFiles/any/any/%(_PackageFiles.NuGetRecursiveDir)%(_PackageFiles.Filename)%(_PackageFiles.Extension)</PackagePath>
-        <TargetFramework>%(_PackageFiles.TargetFramework)</TargetFramework>
-        <BuildAction>%(_PackageFiles.BuildAction)</BuildAction>
-        <TargetFrameworkAlias Condition="'%(_PackageFiles.TargetFramework)' == 'netwasm0.1'">netwasm0.1</TargetFrameworkAlias>
-        <PackKind>Content</PackKind>
+        <NetWasmRawContent>true</NetWasmRawContent>
+        <NetWasmContentTargetFolders>$(ContentTargetFolders)</NetWasmContentTargetFolders>
       </_NetWasmSdkPackageFile>
 
       <_NetWasmSdkSymbolFile Include="@(_TargetPathsToSymbols)">

@@ -10,6 +10,51 @@ namespace System
         {
             get => GetType();
         }
+
+        public static Attribute? GetCustomAttribute(
+            Reflection.MemberInfo element,
+            Type attributeType) =>
+            Reflection.CustomAttributeExtensions.GetCustomAttribute(element, attributeType);
+
+        public static Attribute? GetCustomAttribute(
+            Reflection.MemberInfo element,
+            Type attributeType,
+            bool inherit) =>
+            Reflection.CustomAttributeExtensions.GetCustomAttribute(
+                element,
+                attributeType,
+                inherit);
+
+        public static Attribute[] GetCustomAttributes(
+            Reflection.MemberInfo element,
+            Type attributeType) =>
+            Reflection.CustomAttributeExtensions.GetCustomAttributesArray(
+                element,
+                attributeType,
+                inherit: true);
+
+        public static Attribute[] GetCustomAttributes(
+            Reflection.MemberInfo element,
+            Type attributeType,
+            bool inherit) =>
+            Reflection.CustomAttributeExtensions.GetCustomAttributesArray(
+                element,
+                attributeType,
+                inherit);
+
+        public static bool IsDefined(
+            Reflection.MemberInfo element,
+            Type attributeType) =>
+            Reflection.CustomAttributeExtensions.IsDefined(element, attributeType);
+
+        public static bool IsDefined(
+            Reflection.MemberInfo element,
+            Type attributeType,
+            bool inherit) =>
+            Reflection.CustomAttributeExtensions.IsDefined(
+                element,
+                attributeType,
+                inherit);
     }
 
     public enum AttributeTargets
@@ -37,6 +82,7 @@ namespace System
         public AttributeUsageAttribute(AttributeTargets validOn)
         {
             ValidOn = validOn;
+            Inherited = true;
         }
 
         public AttributeTargets ValidOn { get; }

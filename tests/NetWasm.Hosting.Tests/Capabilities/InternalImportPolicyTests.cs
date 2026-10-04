@@ -9,7 +9,9 @@ public sealed class InternalImportPolicyTests
     [Theory]
     [InlineData("netwasm:runtime/reactor-host")]
     [InlineData("netwasm:runtime/reactor-host@1.0.0")]
-    public void RecognizesExactRuntimeOwnedReactorModules(string module)
+    [InlineData("netwasm:diagnostics/terminal")]
+    [InlineData("netwasm:diagnostics/terminal@1.0.0")]
+    public void RecognizesExactRuntimeOwnedModules(string module)
     {
         Assert.True(_subject.IsInternal(module));
     }
@@ -19,6 +21,8 @@ public sealed class InternalImportPolicyTests
     [InlineData("netwasm:runtime/reactor-host@1")]
     [InlineData("netwasm:runtime/reactor-hosted@1.0.0")]
     [InlineData("example:runtime/reactor-host@1.0.0")]
+    [InlineData("netwasm:diagnostics/terminal@1")]
+    [InlineData("netwasm:diagnostics/terminal@1.0.1")]
     public void LeavesEveryOtherModuleAtTheExternalProviderBoundary(string module)
     {
         Assert.False(_subject.IsInternal(module));

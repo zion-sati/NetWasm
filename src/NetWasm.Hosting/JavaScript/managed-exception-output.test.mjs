@@ -9,11 +9,16 @@ test("writes stable immediate and enriched diagnostics to explicit stderr", () =
     write: bytes => lines.push(new TextDecoder().decode(bytes)),
   }));
   assert.equal(Object.isFrozen(output), true);
-  output.reportImmediate({ typeId: 7, message: "boom", private: "ignored" });
+  output.reportImmediate({
+    typeId: 7,
+    message: "boom",
+    stackTrace: "at Example.Run in Example.cs:line 7",
+    private: "ignored",
+  });
   output.reportImmediate({ typeId: 8, message: null });
   output.reportEnriched({ typeId: 7, typeName: "Example.Boom", private: "ignored" });
   assert.deepEqual(lines, [
-    "Managed exception #7: boom\n",
+    "Managed exception #7: boom\nat Example.Run in Example.cs:line 7\n",
     "Managed exception #8: <no stored message>\n",
     "Managed exception #7 type: Example.Boom\n",
   ]);

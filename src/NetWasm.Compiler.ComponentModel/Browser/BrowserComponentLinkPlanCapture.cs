@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.ComponentModel.Browser;
 
 internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> ownedPaths)
 {
-    private enum Phase { Text, Merged, Pruned, Validated, Finalized, Cleanup }
+    private enum Phase { Text, Merged, Pruned, Optimized, Validated, Finalized, Cleanup }
 
     private readonly ImmutableHashSet<string> _ownedPaths = ownedPaths;
     private readonly List<BrowserWasmTextModule> _modules = [];
@@ -18,6 +18,7 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
     private BrowserBinaryenInvocation? _optimization;
     private BrowserCoreModuleValidation? _validation;
     private BrowserFileCopy? _copy;
+    private bool _finalized;
 
     public void AddText(string source, string outputPath)
     {
@@ -52,7 +53,7 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
         {
             RequirePhase(Phase.Pruned);
             _optimization = new(toolId, [.. arguments]);
-            _phase = Phase.Finalized;
+            _phase = Phase.Optimized;
             return;
         }
         throw new InvalidOperationException("The link producer requested an unexpected tool.");
@@ -76,17 +77,22 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
         RequirePhase(Phase.Validated);
         _copy = new(inputPath, outputPath);
         _phase = Phase.Finalized;
+        _finalized = true;
     }
 
-    public void AddValidation(string path)
+    public void AddValidation(BrowserCoreModuleValidation validation)
     {
-        RequirePhase(Phase.Pruned);
-        if (!string.Equals(_exports!.OutputPath, path, StringComparison.Ordinal))
+        ArgumentNullException.ThrowIfNull(validation);
+        var optimized = _phase == Phase.Optimized;
+        if (!optimized) RequirePhase(Phase.Pruned);
+        var expected = optimized ? _optimization!.Arguments[^1] : _exports!.OutputPath;
+        if (!string.Equals(expected, validation.Path, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Core validation requires the export-processed module.");
+            throw new InvalidOperationException("Core validation requires the selected final core module.");
         }
-        _validation = new(path);
-        _phase = Phase.Validated;
+        _validation = validation;
+        _phase = optimized ? Phase.Finalized : Phase.Validated;
+        _finalized = optimized;
     }
 
     public void AddCleanup(string path)
@@ -105,7 +111,7 @@ internal sealed class BrowserComponentLinkPlanCapture(ImmutableHashSet<string> o
     public BrowserComponentCoreModuleLinkPlan Snapshot()
     {
         RequirePhase(Phase.Cleanup);
-        if (_cleanup.Count != _ownedPaths.Count)
+        if (_cleanup.Count != _ownedPaths.Count || !_finalized)
         {
             throw new InvalidOperationException("The link producer did not capture a complete plan.");
         }
@@ -147,8 +153,13 @@ internal sealed class BrowserBinaryenInvocationCapture(BrowserComponentLinkPlanC
 internal sealed class BrowserComponentExportPruningCapture(BrowserComponentLinkPlanCapture capture)
     : IWasmCoreModuleExportEditor
 {
-    public void RetainComponentExports(string inputPath, string outputPath, string prefix) =>
-        capture.AddExportPruning(inputPath, outputPath, prefix);
+    public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        if (selection.RemovedExports.IsDefault || selection.ComponentPrefix is null || !selection.RemovedExports.IsEmpty)
+            throw new InvalidOperationException("The browser component plan requires component-prefix export retention.");
+        capture.AddExportPruning(inputPath, outputPath, selection.ComponentPrefix);
+    }
 }
 
 internal sealed class BrowserPlannedFileExistence(BrowserComponentLinkPlanCapture capture) : IFileExistence
@@ -162,10 +173,21 @@ internal sealed class BrowserFileCopyCapture(BrowserComponentLinkPlanCapture cap
         capture.AddCopy(sourcePath, destinationPath);
 }
 
-internal sealed class BrowserCoreModuleValidationCapture(BrowserComponentLinkPlanCapture capture) :
-    IWasmCoreModuleValidator
+internal sealed class BrowserCoreModuleValidationOperationCapture(BrowserComponentLinkPlanCapture capture) :
+    IComponentPackageOperationRunner
 {
-    public void Validate(string path) => capture.AddValidation(path);
+    public void Run(IEnumerable<string> arguments, string operation)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+        var command = arguments.ToImmutableArray();
+        if (command.Length != 4 || command[0] != "validate" || command[2] != "--features")
+        {
+            throw new InvalidOperationException("The core validation capture requires an explicit validation command.");
+        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(command[3]);
+        capture.AddValidation(new(command[1], command));
+    }
 }
 
 internal sealed class BrowserCleanupPathCapture(BrowserComponentLinkPlanCapture capture) : IFileDeleter

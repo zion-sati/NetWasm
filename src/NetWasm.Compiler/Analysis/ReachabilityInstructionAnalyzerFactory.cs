@@ -1,4 +1,5 @@
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
@@ -8,9 +9,19 @@ namespace NetWasm.Compiler.Analysis;
 
 internal sealed class ReachabilityInstructionAnalyzerFactory(
     INullableTypeResolver nullableTypes,
-    IManagedCallSiteFactory managedCallSites) :
+    IManagedCallSiteFactory managedCallSites,
+    INativeCallbackDeclarationValidator nativeCallbacks) :
     IReachabilityInstructionAnalyzerFactory
 {
+    public ReachabilityInstructionAnalyzerFactory(
+        INullableTypeResolver nullableTypes,
+        IManagedCallSiteFactory managedCallSites) : this(
+            nullableTypes,
+            managedCallSites,
+            new NativeCallbackDeclarationValidator())
+    {
+    }
+
     public IReachabilityInstructionAnalyzer Create(
         ITypeFinder typeFinder,
         ITypeIdentityResolver typeIdentities,
@@ -26,5 +37,6 @@ internal sealed class ReachabilityInstructionAnalyzerFactory(
             dispatchSiteKeys,
             delegateMethods,
             nullableTypes,
-            managedCallSites), typeFinder);
+            managedCallSites,
+            nativeCallbacks), typeFinder);
 }

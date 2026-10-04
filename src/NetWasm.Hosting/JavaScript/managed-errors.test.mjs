@@ -37,3 +37,18 @@ test("managed and host errors allow absent optional details", () => {
   assert.equal(managed.cause, undefined);
   assert.equal(managed.managedType, undefined);
 });
+
+test("managed errors expose copied payloads and distinguish empty from absent messages", () => {
+  for (const message of ["original 🌏", "", null]) {
+    for (const typeName of ["System.FormatException", null]) {
+      const managed = { typeId: 7, typeName, message, stackTrace: "managed trace" };
+      const error = new NetWasmManagedError("run", { managed });
+      assert.equal(error.message, message ?? typeName ?? "managed export run failed");
+      assert.equal(error.managedType, 7);
+      assert.deepEqual(error.managed, managed);
+      assert.notEqual(error.managed, managed);
+      assert.equal(Object.isFrozen(error.managed), true);
+    }
+  }
+  assert.throws(() => new NetWasmManagedError("run", { managed: {} }), TypeError);
+});

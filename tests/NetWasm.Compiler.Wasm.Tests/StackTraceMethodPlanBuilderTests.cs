@@ -15,7 +15,8 @@ public sealed class StackTraceMethodPlanBuilderTests
         var plan = Create(null!, null!, null!, null!).Build(
             false,
             default,
-            default);
+            default,
+            ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>.Empty);
 
         Assert.Same(StackTraceMethodPlan.Disabled, plan);
     }
@@ -31,7 +32,8 @@ public sealed class StackTraceMethodPlanBuilderTests
         var plan = Create(program, program, fields, layouts).Build(
             true,
             [directMethod],
-            ["Example.Generic<System.Int32>.Run()"]);
+            [new("Example.Generic<System.Int32>.Run()", directMethod)],
+            ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>.Empty);
 
         Assert.Equal(1, plan.DirectMethodIds[directMethod]);
         Assert.Equal(2, plan.ConstructedMethodIds[
@@ -67,7 +69,8 @@ public sealed class StackTraceMethodPlanBuilderTests
                 new FixedExceptionFieldLayoutResolver(null), layouts).Build(
                     true,
                     [EmitterTestSupport.EntryKey],
-                    []));
+                    [],
+                    ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>.Empty));
 
         Assert.Contains("System.Exception._stackTrace", error.Message,
             StringComparison.Ordinal);

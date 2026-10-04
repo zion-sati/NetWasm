@@ -9,17 +9,19 @@ public sealed class ModuleExportCollectorTests
     [Theory]
     [InlineData(WasmEntryPointProfile.Process, true)]
     [InlineData(WasmEntryPointProfile.Internal, false)]
+    [InlineData(WasmEntryPointProfile.None, false)]
     public void CollectsRuntimeAndNamedExportsInDeterministicOrder(
         WasmEntryPointProfile entryPointProfile,
         bool includesRun)
     {
         var exports = CreateCollector().Collect(
             entryPointProfile,
-            3,
+            entryPointProfile == WasmEntryPointProfile.None ? null : 3,
             4,
             5,
             new Dictionary<string, int> { ["z"] = 9, ["a"] = 8 },
             new Dictionary<string, int> { ["callback"] = 10 },
+            new Dictionary<string, int> { ["native"] = 13 },
             new Dictionary<string, int> { ["resolve"] = 11 },
             new Dictionary<string, int> { ["status"] = 12 });
 
@@ -30,6 +32,7 @@ public sealed class ModuleExportCollectorTests
             item.Name == RuntimeAbi.ManagedFinalizerDispatcher && item.Index == 5);
         Assert.True(exports.IndexOf("a") < exports.IndexOf("z"));
         Assert.Equal(8, exports.Single(item => item.Name == "a").Index);
+        Assert.Equal(13, exports.Single(item => item.Name == "native").Index);
     }
 
     [Fact]
@@ -39,19 +42,23 @@ public sealed class ModuleExportCollectorTests
         IReadOnlyDictionary<string, int> empty = new Dictionary<string, int>();
 
         Assert.Throws<ArgumentOutOfRangeException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, -1, 0, 0, empty, empty, empty, empty));
+            WasmEntryPointProfile.Process, -1, 0, 0, empty, empty, empty, empty, empty));
+        Assert.Throws<ArgumentException>(() => collector.Collect(
+            WasmEntryPointProfile.Process, null, 0, 0, empty, empty, empty, empty, empty));
         Assert.Throws<ArgumentOutOfRangeException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, 0, -1, 0, empty, empty, empty, empty));
+            WasmEntryPointProfile.Process, 0, -1, 0, empty, empty, empty, empty, empty));
         Assert.Throws<ArgumentOutOfRangeException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, 0, 0, -1, empty, empty, empty, empty));
+            WasmEntryPointProfile.Process, 0, 0, -1, empty, empty, empty, empty, empty));
         Assert.Throws<ArgumentNullException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, 0, 0, 0, null!, empty, empty, empty));
+            WasmEntryPointProfile.Process, 0, 0, 0, null!, empty, empty, empty, empty));
         Assert.Throws<ArgumentNullException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, 0, 0, 0, empty, null!, empty, empty));
+            WasmEntryPointProfile.Process, 0, 0, 0, empty, null!, empty, empty, empty));
         Assert.Throws<ArgumentNullException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, 0, 0, 0, empty, empty, null!, empty));
+            WasmEntryPointProfile.Process, 0, 0, 0, empty, empty, null!, empty, empty));
         Assert.Throws<ArgumentNullException>(() => collector.Collect(
-            WasmEntryPointProfile.Process, 0, 0, 0, empty, empty, empty, null!));
+            WasmEntryPointProfile.Process, 0, 0, 0, empty, empty, empty, null!, empty));
+        Assert.Throws<ArgumentNullException>(() => collector.Collect(
+            WasmEntryPointProfile.Process, 0, 0, 0, empty, empty, empty, empty, null!));
     }
 
     private static IModuleExportCollector CreateCollector() =>

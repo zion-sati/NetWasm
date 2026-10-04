@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
+using NetWasm.Compiler.Wasm.Emission.NativeInterop;
 
 namespace NetWasm.Compiler.Cli;
 
@@ -45,6 +46,10 @@ internal static class CompilerCliServiceCollectionExtensions
         services.AddSingleton<ITextFileReader, SystemTextFileReader>();
         services.AddSingleton<ITextFileWriter, SystemTextFileWriter>();
         services.AddSingleton<IBinaryFileWriter, SystemBinaryFileWriter>();
+        services.AddSingleton<IFileDeleter, SystemFileDeleter>();
+        services.AddSingleton<INativeCallbackSupportArtifactValidator,
+            NativeCallbackSupportArtifactValidator>();
+        services.AddSingleton<ICompileCliArtifactPlanner, CompileCliArtifactPlanner>();
         services.AddSingleton<IComponentManifestInputReader,
             ComponentManifestInputReader>();
         services.AddSingleton<ICompilerCli, CompilerCli>();

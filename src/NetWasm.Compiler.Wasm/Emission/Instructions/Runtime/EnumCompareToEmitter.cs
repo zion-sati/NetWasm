@@ -57,7 +57,7 @@ internal sealed class EnumCompareToEmitter(
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(left))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(storage.Descriptor.TypeId)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(storage.TypeId)));
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
             EmitComparisonResult(code, storage, left, right, temporaryI4);
@@ -102,7 +102,7 @@ internal sealed class EnumCompareToEmitter(
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.I32Load,
             WasmInstructionOperand.Memory(2, 0)));
-        WriteI32(code, storage.Descriptor.TypeId);
+        WriteI32(code, storage.TypeId);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.If,

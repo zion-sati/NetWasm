@@ -19,13 +19,18 @@ public sealed class CanonicalComponentAdapterWriterTests
         var source = Encoding.UTF8.GetString(first);
 
         Assert.Equal(first, second);
-        Assert.Equal((byte)'e', first[0]);
+        Assert.StartsWith(
+            $"// Generated for jco {CanonicalComponentAdapterWriter.SupportedJcoVersion}.\n",
+            source,
+            StringComparison.Ordinal);
         Assert.EndsWith("\n", source, StringComparison.Ordinal);
         Assert.DoesNotContain('\r', source);
         Assert.DoesNotContain("import ", source, StringComparison.Ordinal);
         Assert.Contains("export function createAdapter(generatedModule)", source, StringComparison.Ordinal);
         Assert.Contains("generatedModule.instantiate.bind(generatedModule)", source, StringComparison.Ordinal);
         Assert.Contains("root?.[\"wasi:cli/run@0.2.11\"]", source, StringComparison.Ordinal);
+        Assert.Contains("root[\"netwasm:diagnostics/command@1.0.0\"]", source, StringComparison.Ordinal);
+        Assert.Contains("diagnosticCommand.run.bind(diagnosticCommand)", source, StringComparison.Ordinal);
         Assert.Contains("Object.hasOwn(error, \"payload\")", source, StringComparison.Ordinal);
         Assert.Contains("constructor?.name === \"ComponentError\"", source, StringComparison.Ordinal);
         Assert.Contains("if (isWasiCommandError(error)) return 1;", source, StringComparison.Ordinal);

@@ -224,6 +224,7 @@ namespace System.Linq.Expressions
                 ExpressionType.Add => "+",
                 ExpressionType.AndAlso => "AndAlso",
                 ExpressionType.Assign => "=",
+                ExpressionType.Equal => "==",
                 ExpressionType.GreaterThan => ">",
                 ExpressionType.LessThan => "<",
                 _ => throw new NotSupportedException(

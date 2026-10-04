@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
@@ -8,11 +9,13 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Planning;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
-internal sealed class ExpressionIntrinsicEmissionFixture
+internal sealed class ExpressionIntrinsicEmissionFixture : INullableTypeResolver,
+    INullableBoxEmitter, IValueFrameAddressEmitter
 {
     public ExpressionIntrinsicEmissionFixture(bool memory64)
     {
@@ -34,6 +37,28 @@ internal sealed class ExpressionIntrinsicEmissionFixture
     public int RootCount { get; private set; }
     public InstructionEmissionRequest? PublishedRequest { get; private set; }
     public ImmutableArray<WasmInstruction> Code => Writer.ToInstructions();
+    public Dictionary<CliTypeIdentity, CliTypeIdentity> NullableTypes { get; } = [];
+    public List<(CliTypeIdentity Underlying, int Source, int Result, int CodeIndex)> NullableBoxes { get; } = [];
+    public List<(MethodEmissionContext Context, int Offset, int CodeIndex)> ValueAddresses { get; } = [];
+
+    public CliTypeIdentity? Resolve(CliTypeIdentity type) => NullableTypes.GetValueOrDefault(type);
+
+    public void Emit(IWasmInstructionWriter code, CliTypeIdentity underlyingType,
+        int sourceAddressLocal, int targetLocal) =>
+        NullableBoxes.Add((underlyingType, sourceAddressLocal, targetLocal, Code.Length));
+
+    public void Emit(InstructionEmissionRequest request, IWasmInstructionWriter code,
+        CliTypeIdentity underlyingType) => throw new NotSupportedException();
+
+    public void Emit(IWasmInstructionWriter code, MethodEmissionContext context, int offset)
+    {
+        ValueAddresses.Add((context, offset, Code.Length));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned(99)));
+    }
+
+    public void Emit(IWasmInstructionWriter code, MethodEmissionContext context,
+        FilterCapture capture) => throw new NotSupportedException();
 
     public IRootPublicationEmitter Roots => new RecordingRootPublicationEmitter((request, code, _) =>
     {
@@ -52,7 +77,8 @@ internal sealed class ExpressionIntrinsicEmissionFixture
         var count = intrinsic switch
         {
             RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate => 1,
-            RuntimeIntrinsic.MemberExecuteMethod => 3,
+            RuntimeIntrinsic.MemberExecuteMethod or
+            RuntimeIntrinsic.DelegateDynamicInvoke => 3,
             _ => 2,
         };
         factory ??= Method("Factory", CliValueKind.ManagedReference,
@@ -139,7 +165,8 @@ internal sealed class ExpressionIntrinsicEmissionFixture
         public void Validate(
             IWasmInstructionWriter code,
             int objectLocal,
-            CliTypeIdentity targetType) =>
+            CliTypeIdentity targetType,
+            ManagedExceptionKind mismatchException = ManagedExceptionKind.InvalidCast) =>
             Requests.Add((objectLocal, targetType));
     }
 

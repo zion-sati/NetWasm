@@ -1,0 +1,131 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+[StructLayout(LayoutKind.Sequential)] public struct SingleInt { public int Value; }
+[StructLayout(LayoutKind.Sequential)] public struct SingleDouble { public double Value; }
+[StructLayout(LayoutKind.Sequential)] public struct SinglePointer { public nuint Value; }
+[StructLayout(LayoutKind.Sequential)] public struct NestedSingle { public SingleInt Inner; }
+[StructLayout(LayoutKind.Sequential)] public struct Pair { public int Integer; public double Real; }
+[StructLayout(LayoutKind.Sequential)] public struct Nested { public Pair Pair; public nuint Pointer; }
+[StructLayout(LayoutKind.Explicit)] public struct UnionScalar
+{
+    [FieldOffset(0)] public uint Integer;
+    [FieldOffset(0)] public float Real;
+}
+[StructLayout(LayoutKind.Explicit)] public struct UnionPair
+{
+    [FieldOffset(0)] public Pair Pair;
+    [FieldOffset(0)] public double Real;
+}
+[StructLayout(LayoutKind.Sequential, Pack = 1)] public struct Packed { public byte Marker; public int Value; }
+[StructLayout(LayoutKind.Sequential)] public struct Empty { }
+[StructLayout(LayoutKind.Explicit)] public struct SingleUnion { [FieldOffset(0)] public int Value; }
+[StructLayout(LayoutKind.Sequential)] public unsafe struct SingleArray { public fixed int Values[1]; }
+[StructLayout(LayoutKind.Sequential)] public unsafe struct PairArray { public fixed int Values[2]; }
+[StructLayout(LayoutKind.Sequential, Size = 16)] public struct Padded { public int Value; }
+[StructLayout(LayoutKind.Sequential)] public struct Narrow { public short Value; }
+
+public static unsafe partial class EntryPoint
+{
+    [LibraryImport("mule", EntryPoint = "native_mule_probe")] private static partial int Probe();
+    [LibraryImport("mule", EntryPoint = "native_mule_data_end")] private static partial nuint DataEnd();
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_layout")] private static partial uint Layout(uint item);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_int")] private static partial SingleInt Int(SingleInt value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_double")] private static partial SingleDouble Double(SingleDouble value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_pointer")] private static partial SinglePointer Pointer(SinglePointer value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_singleton")] private static partial NestedSingle Singleton(NestedSingle value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_pair")] private static partial Pair Aggregate(Pair value, int delta);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_mix")] private static partial Pair Mix(Pair left, Pair right, int delta);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_nested")] private static partial Nested Nested(Nested value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_union")] private static partial UnionScalar Union(UnionScalar value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_wide_union")] private static partial UnionPair WideUnion(UnionPair value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_packed")] private static partial Packed Packed(Packed value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_empty")] private static partial Empty Empty(Empty value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_single_union")] private static partial SingleUnion SingleUnion(SingleUnion value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_single_array")] private static partial SingleArray SingleArray(SingleArray value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_pair_array")] private static partial PairArray PairArray(PairArray value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_padded")] private static partial Padded Padded(Padded value);
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_narrow")] private static partial Narrow Narrow(Narrow value);
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180 || DataEnd() <= 2 * 1024 * 1024) return -1;
+        if (sizeof(SingleInt) != Layout(0) || sizeof(SingleDouble) != Layout(2) ||
+            sizeof(SinglePointer) != Layout(4) || sizeof(NestedSingle) != Layout(6) ||
+            sizeof(Pair) != Layout(8) || sizeof(Nested) != Layout(11) ||
+            sizeof(UnionScalar) != Layout(14) || sizeof(UnionPair) != Layout(16) ||
+            sizeof(Packed) != Layout(18) || sizeof(SingleUnion) != Layout(23) ||
+            sizeof(SingleArray) != Layout(25) || sizeof(PairArray) != Layout(27) ||
+            sizeof(Padded) != Layout(31) || sizeof(Narrow) != Layout(33)) return -2;
+        var packed = new Packed { Marker = 7, Value = 39 };
+        var pair = new Pair { Integer = 39, Real = 1.25 };
+        var nested = new Nested { Pair = pair, Pointer = 100 };
+        if ((nuint)((byte*)&pair.Real - (byte*)&pair) != Layout(10) ||
+            (nuint)((byte*)&nested.Pointer - (byte*)&nested) != Layout(13) ||
+            (nuint)((byte*)&packed.Value - (byte*)&packed) != Layout(20)) return -3;
+
+        var integer = new SingleInt { Value = input };
+        if (Int(integer).Value != input + 3 || integer.Value != input) return -4;
+        var real = new SingleDouble { Value = 1.25 };
+        if (Double(real).Value != -2.5 || real.Value != 1.25) return -5;
+        real.Value = -0.0;
+        if (BitConverter.DoubleToInt64Bits(Double(real).Value) != 0 ||
+            BitConverter.DoubleToInt64Bits(real.Value) != long.MinValue) return -6;
+        real.Value = double.NaN;
+        if (!double.IsNaN(Double(real).Value)) return -7;
+        var high = sizeof(nuint) == 8 ? unchecked((nuint)0x8000000000001000UL) : (nuint)0x80001000u;
+        var pointer = new SinglePointer { Value = high };
+        if (Pointer(pointer).Value != high + 3 || pointer.Value != high) return -8;
+        var singleton = new NestedSingle { Inner = integer };
+        if (Singleton(singleton).Inner.Value != input - 4 || singleton.Inner.Value != input) return -9;
+        var changed = Aggregate(pair, 3);
+        if (changed.Integer != 42 || changed.Real != -1.25 || pair.Integer != 39 || pair.Real != 1.25) return -10;
+        var changedNested = Nested(nested);
+        if (changedNested.Pair.Integer != 40 || changedNested.Pair.Real != 2.5 ||
+            changedNested.Pointer != 107 || nested.Pair.Integer != 39 || nested.Pair.Real != 1.25 || nested.Pointer != 100) return -11;
+        var union = new UnionScalar { Integer = 0x3f800000u };
+        if (Union(union).Real != -1.0f || union.Real != 1.0f) return -12;
+        union.Integer = 0x7fc00001u;
+        if (Union(union).Integer != 0xffc00001u || union.Integer != 0x7fc00001u) return -13;
+        var wide = new UnionPair { Pair = pair };
+        var changedWide = WideUnion(wide);
+        if (changedWide.Pair.Integer != 41 || changedWide.Pair.Real != 3.75 || wide.Pair.Integer != 39 || wide.Pair.Real != 1.25) return -14;
+        var changedPacked = Packed(packed);
+        if (changedPacked.Marker != 8 || changedPacked.Value != 30 || packed.Marker != 7 || packed.Value != 39) return -15;
+        Empty(Empty(default));
+        var singleUnion = new SingleUnion { Value = 39 };
+        if (SingleUnion(singleUnion).Value != 42 || singleUnion.Value != 39) return -16;
+        var singleArray = default(SingleArray);
+        singleArray.Values[0] = 39;
+        var changedSingleArray = SingleArray(singleArray);
+        if (changedSingleArray.Values[0] != 42 || singleArray.Values[0] != 39) return -17;
+        var pairArray = default(PairArray);
+        pairArray.Values[0] = 39; pairArray.Values[1] = 3;
+        var changedPairArray = PairArray(pairArray);
+        if (changedPairArray.Values[0] != 42 || changedPairArray.Values[1] != 3 ||
+            pairArray.Values[0] != 39 || pairArray.Values[1] != 3) return -18;
+        var padded = new Padded { Value = 39 };
+        if (Padded(padded).Value != 42 || padded.Value != 39) return -19;
+        var narrow = new Narrow { Value = -1200 };
+        if (Narrow(narrow).Value != -1233 || narrow.Value != -1200) return -20;
+        var left = new Pair { Integer = 20, Real = 1.25 };
+        var right = new Pair { Integer = 19, Real = 2.5 };
+        var mixed = Mix(left, right, 3);
+        if (mixed.Integer != 42 || mixed.Real != 3.75 || left.Integer != 20 || left.Real != 1.25 ||
+            right.Integer != 19 || right.Real != 2.5 || pair.Integer != 39 || pair.Real != 1.25) return -21;
+        var grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            // Desktop shared libraries and heaps have no portable address order. The distant
+            // write plus the static-data probe validates Wasm growth without assuming one.
+            grown[0] = 3; grown[6 * 1024 * 1024 - 1] = 71;
+            mixed = Mix(left, right, 3);
+            if (mixed.Integer != 42 || mixed.Real != 3.75 || left.Integer != 20 || right.Integer != 19 ||
+                grown[0] != 3 || grown[6 * 1024 * 1024 - 1] != 71 || Probe() != 180) return -23;
+        }
+        finally { NativeMemory.Free(grown); }
+        return 42;
+    }
+}

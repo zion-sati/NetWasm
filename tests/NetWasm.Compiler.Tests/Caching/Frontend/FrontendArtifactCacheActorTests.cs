@@ -1250,6 +1250,64 @@ public sealed class FrontendArtifactCacheActorTests
     }
 
     [Fact]
+    public void ConstructedCatchIdentitySurvivesColdStageAndWarmDiskRestore()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var catchType = CliTypeIdentity.GenericInstantiation(
+                CliTypeIdentity.Named(new("Dependency"), "Fixture", "Failure`1", false),
+                [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+            var artifact = FrontendArtifactSnapshotTests.CreateConstructedCatchArtifact(catchType);
+            var dependency = artifact.Analysis.Method.Definition.Key.Assembly.Name;
+            var context = new FrontendArtifactCacheContext("namespace", new("Entry"),
+                ImmutableDictionary<string, string>.Empty.Add(dependency, "content"), directory);
+
+            var coldState = new FrontendArtifactCacheState();
+            var coldResolver = new FrontendArtifactCacheRequestResolver(coldState);
+            var coldFactory = new FrontendArtifactCacheRequestFactory(coldState,
+                new FixedIdentityBuilder(context), new FrontendArtifactPayloadPublisher(),
+                new RecordingObjectPublisher());
+            using (var request = coldFactory.Begin(Options(enabled: true)))
+            {
+                new FrontendAnalysisRecorder(coldResolver).Record(artifact.Analysis);
+                new FrontendArtifactStager(coldResolver,
+                    new FrontendArtifactEligibilityClassifier(),
+                    new FrontendArtifactSnapshotter(), new FrontendArtifactEncoder()).Stage(
+                        artifact.Analysis.Method, artifact.StructuredMethod);
+                Assert.Equal(1, coldState.Active!.StagedArtifacts);
+                request.Commit();
+            }
+
+            var warmState = new FrontendArtifactCacheState();
+            var warmResolver = new FrontendArtifactCacheRequestResolver(warmState);
+            var warmFactory = new FrontendArtifactCacheRequestFactory(warmState,
+                new FixedIdentityBuilder(context), new RecordingPublisher(),
+                new RecordingObjectPublisher());
+            using var warmRequest = warmFactory.Begin(Options(enabled: true));
+            var restorer = new FrontendArtifactRestorer(warmResolver,
+                new FrontendArtifactObjectReader(new()),
+                new FrontendArtifactPayloadReader(new(), warmResolver),
+                new FrontendArtifactDecoder(),
+                FrontendCacheTestFactory.Hydrator(new ControlFlowGraphBuilderFactory().Create()));
+
+            Assert.True(restorer.TryRestore(artifact.Analysis.Method, out var restored));
+            Assert.Equal(catchType,
+                Assert.Single(restored.Analysis.Body.Body.ExceptionRegions).CatchTypeIdentity);
+            Assert.All(restored.StructuredMethod.ExceptionGroups.Values
+                    .SelectMany(group => group.Clauses),
+                clause => Assert.Equal(catchType, clause.CatchTypeIdentity));
+            Assert.Equal(1, warmState.Active!.Hits);
+            Assert.Equal(1, warmState.Active.DiskHits);
+            Assert.Equal(0, warmState.Active.Misses);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void StagingEnforcesThePerRequestBudget()
     {
         var artifact = FrontendArtifactSnapshotTests.CreateArtifact();
@@ -1359,7 +1417,7 @@ public sealed class FrontendArtifactCacheActorTests
     }
 
     [Fact]
-    public async Task PayloadReaderHandlesConcurrentBundleLoadAndMissingFiles()
+    public void PayloadReaderHandlesConcurrentBundleLoadAndMissingFiles()
     {
         var state = new FrontendArtifactCacheState();
         var resolver = new FrontendArtifactCacheRequestResolver(state);
@@ -1370,22 +1428,48 @@ public sealed class FrontendArtifactCacheActorTests
         using var request = factory.Begin(Options(enabled: true));
         var memory = new FrontendArtifactMemoryStore();
         var reader = new FrontendArtifactPayloadReader(memory, resolver);
-        Assert.False(reader.TryRead(new(context, new string('a', 64)), out _));
+        Assert.False(((IFrontendArtifactPayloadReader)reader).TryRead(
+            new(context, new string('a', 64)), out _));
         var payload = ImmutableArray.Create<byte>(9);
+        var active = Assert.IsType<FrontendArtifactCacheRequest>(state.Active);
+        var found = false;
+        var observed = ImmutableArray<byte>.Empty;
+        Exception? failure = null;
+        var pending = new Thread(() =>
+        {
+            try
+            {
+                found = ((IFrontendArtifactPayloadReader)reader).TryRead(
+                    new(context, new string('b', 64)), out observed);
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+        })
+        { IsBackground = true };
         Monitor.Enter(memory.Gate);
         try
         {
-            var pending = Task.Run(() => reader.TryRead(
-                new(context, new string('b', 64)), out _));
-            Thread.Sleep(20);
+            pending.Start();
+            // The dedicated reader can only block on this gate. Publish after
+            // it has passed the first lookup, not after a scheduling delay.
+            Assert.True(SpinWait.SpinUntil(() =>
+                (pending.ThreadState & System.Threading.ThreadState.WaitSleepJoin) != 0,
+                TimeSpan.FromSeconds(10)));
             memory.Payloads[context.Namespace + "/" + new string('b', 64)] = payload;
-            Monitor.Exit(memory.Gate);
-            Assert.True(await pending);
         }
         finally
         {
-            if (Monitor.IsEntered(memory.Gate)) Monitor.Exit(memory.Gate);
+            Monitor.Exit(memory.Gate);
+            Assert.True(pending.Join(TimeSpan.FromSeconds(10)));
         }
+
+        Assert.Null(failure);
+        Assert.True(found);
+        Assert.Equal(payload, observed);
+        Assert.Equal(1, active.DiskHits);
+        Assert.Equal(0, active.MemoryHits);
     }
 
     [Fact]

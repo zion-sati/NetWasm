@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
+using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
@@ -21,7 +23,10 @@ internal sealed class MemberExecutionIntrinsicEmitter(
     IStaticInitializationEmitter initialization,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots) : IRuntimeIntrinsicEmitter
+    IRootPublicationEmitter roots,
+    INullableTypeResolver nullableTypes,
+    INullableBoxEmitter nullableBoxes,
+    IValueFrameAddressEmitter valueFrames) : IRuntimeIntrinsicEmitter
 {
     private readonly ITargetLayout _layouts = layouts ??
         throw new ArgumentNullException(nameof(layouts));
@@ -47,6 +52,12 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         throw new ArgumentNullException(nameof(exceptions));
     private readonly IRootPublicationEmitter _roots = roots ??
         throw new ArgumentNullException(nameof(roots));
+    private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
+        throw new ArgumentNullException(nameof(nullableTypes));
+    private readonly INullableBoxEmitter _nullableBoxes = nullableBoxes ??
+        throw new ArgumentNullException(nameof(nullableBoxes));
+    private readonly IValueFrameAddressEmitter _valueFrames = valueFrames ??
+        throw new ArgumentNullException(nameof(valueFrames));
 
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -61,6 +72,14 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         ValidatePlan(
             request.Intrinsic == RuntimeIntrinsic.MemberExecuteMethod,
             plan);
+        if (request.Intrinsic == RuntimeIntrinsic.MemberExecuteMethod &&
+            plan.Methods.Values.Any(method =>
+                method.Descriptor.Signature.ReturnType == CliValueKind.ValueType) &&
+            !request.Instruction.Context.ValueLayout.MemberResultOffsets.ContainsKey(
+                request.Instruction.Instruction.Offset))
+        {
+            throw RuntimeContract("nullable member results require planned return storage");
+        }
 
         _roots.Emit(request.Instruction, code);
         int descriptorLocal = request.Local(0, CliValueKind.ManagedReference);
@@ -117,7 +136,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
             EmitDescriptorCase(
                 code,
                 descriptorLocal,
-                _descriptors.GetMethodDescriptorAddress(method));
+                _descriptors.GetDescriptorAddress(method));
             EmitArgumentArityCheck(
                 code,
                 argumentsLocal,
@@ -177,12 +196,21 @@ internal sealed class MemberExecutionIntrinsicEmitter(
             EmitDescriptorCase(
                 code,
                 descriptorLocal,
-                _descriptors.GetFieldDescriptorAddress(field));
+                _descriptors.GetDescriptorAddress(field));
             EmitNullCheck(code, receiverLocal);
             var layout = _fields.GetFieldLayout(field);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
                 WasmInstructionOperand.Unsigned((uint)receiverLocal)));
+            var underlying = _nullableTypes.Resolve(field.FieldType);
+            if (underlying is not null)
+            {
+                _addresses.Emit(code, layout.Offset);
+                _addresses.Emit(code, AddressOperation.Add);
+                EmitNullableResult(request, code, underlying);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+                continue;
+            }
             ManagedMemoryEmitter.EmitLoadByType(
                 code,
                 _layouts.Target,
@@ -249,6 +277,11 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         CliTypeIdentity resultType,
         CliTypeIdentity? receiverType = null)
     {
+        var underlying = _nullableTypes.Resolve(resultType);
+        if (underlying is not null)
+        {
+            EmitMemberResultAddress(request, code);
+        }
         if (!method.Definition.IsStatic)
         {
             code.Write(WasmInstruction.WithOperand(
@@ -274,8 +307,30 @@ internal sealed class MemberExecutionIntrinsicEmitter(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned(
                 (uint)request.FunctionIndices.Resolve(method))));
+        if (underlying is not null)
+        {
+            EmitMemberResultAddress(request, code);
+            EmitNullableResult(request, code, underlying);
+            return;
+        }
         int valueLocal = PreserveResult(request, code, resultType.StackKind);
         EmitObjectResult(request, code, resultType, valueLocal);
+    }
+
+    private void EmitMemberResultAddress(RuntimeIntrinsicEmissionRequest request,
+        IWasmInstructionWriter code) =>
+        _valueFrames.Emit(code, request.Instruction.Context,
+            request.Instruction.Context.ValueLayout.MemberResultOffsets[
+                request.Instruction.Instruction.Offset]);
+
+    private void EmitNullableResult(RuntimeIntrinsicEmissionRequest request,
+        IWasmInstructionWriter code, CliTypeIdentity underlying)
+    {
+        var source = request.Instruction.Context.ObjectTemporary;
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)source)));
+        _nullableBoxes.Emit(code, underlying, source,
+            request.Local(0, CliValueKind.ManagedReference));
     }
 
     private void EmitArguments(
@@ -570,7 +625,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         }
     }
 
-    private static void ValidatePlan(
+    private void ValidatePlan(
         bool executeMethod,
         MemberExecutionPlan plan)
     {
@@ -590,7 +645,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
                         "bounded method execution contains contradictory dispatch facts");
                 }
 
-                ValidateValueKind(method.Signature.ReturnType);
+                ValidateResultType(method.Signature.ReturnSignatureType);
                 foreach (var parameter in method.Signature.ParameterSignatureTypes)
                 {
                     ValidateValueKind(parameter.StackKind);
@@ -622,8 +677,23 @@ internal sealed class MemberExecutionIntrinsicEmitter(
                 throw RuntimeContract(
                     "bounded field execution contains contradictory facts");
             }
-            ValidateValueKind(pair.Value.FieldType.StackKind);
+            ValidateResultType(pair.Value.FieldType);
         }
+    }
+
+    private void ValidateResultType(CliTypeIdentity type)
+    {
+        if (type.StackKind == CliValueKind.ValueType &&
+            !type.ContainsGenericParameters &&
+            _nullableTypes.Resolve(type) is
+            {
+                StackKind:
+                CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8
+            })
+        {
+            return;
+        }
+        ValidateValueKind(type.StackKind);
     }
 
     private static void ValidateValueKind(CliValueKind kind)

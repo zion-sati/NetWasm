@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
+using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
 namespace NetWasm.Compiler.Metadata;
 
@@ -35,6 +36,7 @@ public sealed class MetadataMethodBodyReaderFactory(
         var typeDefinitions = _definitions.Create(snapshot);
         var types = _types.Create(snapshot);
         var methods = _methods.Create(snapshot);
+        var fields = _fields.Create(snapshot);
         var signatureTypes = new MetadataSignatureTypeResolver(
             new MetadataTypeResolver(typeDefinitions),
             new MetadataTypeIdentityResolver(types));
@@ -57,13 +59,13 @@ public sealed class MetadataMethodBodyReaderFactory(
             new FieldSignatureContextResolver(),
             types,
             typeDefinitions,
-            _fields.Create(snapshot),
+            fields,
             stackTypes);
         var decoders = new CilDecoderFactory(
             methodBodies,
             symbols,
             methodReferences,
-            new MetadataTypeEntityResolver(new MetadataTypeResolver(typeDefinitions)),
+            new MetadataTypeEntityResolver(signatureTypes, typeDefinitions),
             fieldReferences,
             new MetadataTypeSignatureResolver(
                 signatureTypes,
@@ -77,6 +79,10 @@ public sealed class MetadataMethodBodyReaderFactory(
                     assembly => assembly.Identity.Name,
                     StringComparer.Ordinal),
                 materialized.ReferenceAssemblyAliases,
-                availability));
+                availability),
+            methodReferences,
+            symbols,
+            new UnsafeAccessorTargetResolverFactory(materialized, typeDefinitions, types, methods, fields, stackTypes),
+            new UnsafeAccessorBodyBuilder());
     }
 }

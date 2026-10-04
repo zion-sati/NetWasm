@@ -12,7 +12,8 @@ public sealed class RawModuleLinkExecution(
     IEmscriptenEnvironmentShimWriter environment,
     IComponentCoreModuleMergeRunner merge,
     IComponentCoreModuleOptimizer optimizer,
-    IFileMover files) : IRawModuleLinkExecution
+    IFileMover files,
+    IWasmCoreModuleExportEditor exports) : IRawModuleLinkExecution
 {
     private readonly IEmscriptenEnvironmentShimWriter _environment = environment ??
         throw new ArgumentNullException(nameof(environment));
@@ -22,11 +23,16 @@ public sealed class RawModuleLinkExecution(
         throw new ArgumentNullException(nameof(optimizer));
     private readonly IFileMover _files = files ??
         throw new ArgumentNullException(nameof(files));
+    private readonly IWasmCoreModuleExportEditor _exports = exports ??
+        throw new ArgumentNullException(nameof(exports));
 
     public void Run(RawModuleLinkRequest request, ComponentPackageWorkspace workspace)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(workspace);
+        if (request.InternalRuntimeExports.IsDefault ||
+            request.InternalApplicationExports.IsDefault)
+            throw ComponentException.Invalid("raw module internal exports are uninitialized");
         try
         {
             var environment = Path.Combine(workspace.TemporaryDirectory, "environment.wasm");
@@ -38,8 +44,16 @@ public sealed class RawModuleLinkExecution(
                 environment,
                 merged,
                 request.Target));
+            var optimizerInput = merged;
+            var removedExports = request.InternalRuntimeExports
+                .AddRange(request.InternalApplicationExports);
+            if (!removedExports.IsEmpty)
+            {
+                optimizerInput = Path.Combine(workspace.TemporaryDirectory, "sanitized.wasm");
+                _exports.Rewrite(merged, optimizerInput, new(null, removedExports));
+            }
             _optimizer.Optimize(
-                merged,
+                optimizerInput,
                 workspace.LinkedModulePath,
                 request.Target,
                 request.Optimization);

@@ -132,3 +132,19 @@ test("rejects missing and mixed process bindings without fallback", () => {
     },
   }), /mixes/);
 });
+
+test("binds optional diagnostic command and preserves its receiver", () => {
+  const diagnosticCommand = { value: { tag: "exited", val: 0 }, run() { return this.value; } };
+  const binding = bindCanonicalComponent({
+    contractKey: commandComponentContract,
+    instance: { command: { run() { return 0; } }, diagnosticCommand },
+  });
+  assert.equal(binding.diagnosticCommand.run(), diagnosticCommand.value);
+  assert.equal(Object.isFrozen(binding.diagnosticCommand), true);
+  for (const invalid of [null, 1, {}, { run: null }]) {
+    assert.throws(() => bindCanonicalComponent({
+      contractKey: commandComponentContract,
+      instance: { command: { run() { return 0; } }, diagnosticCommand: invalid },
+    }), /diagnostic command component is incomplete/u);
+  }
+});

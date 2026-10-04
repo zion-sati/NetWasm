@@ -11,7 +11,8 @@ public interface IRootMapAnalyzerFactory
         IFieldRepository fields,
         IMethodRepository methods,
         IValueLayoutProvider layouts,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites);
+        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        ITypeClassifier typeClassifier);
 }
 
 public sealed class RootMapAnalyzerFactory(
@@ -25,10 +26,11 @@ public sealed class RootMapAnalyzerFactory(
         IFieldRepository fields,
         IMethodRepository methods,
         IValueLayoutProvider layouts,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites) =>
+        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        ITypeClassifier typeClassifier) =>
         new RootMapAnalyzer(
             types,
             methods,
             layouts,
-            _rootDecisions.Create(types, fields, methods, dispatchCallSites));
+            _rootDecisions.Create(types, fields, methods, dispatchCallSites, typeClassifier));
 }

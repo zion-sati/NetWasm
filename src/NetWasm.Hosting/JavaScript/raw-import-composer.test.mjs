@@ -55,11 +55,19 @@ function canonicalBinding(imports = {}, target = "wasm32") {
   return { imports, target };
 }
 
+function importInventory(plan = commandPlan()) {
+  return {
+    target: plan.target,
+    imports: plan.imports,
+    reactorHostModule: plan.reactorHostModule,
+  };
+}
+
 function compose(overrides = {}) {
   return composeRawImports({
     canonicalBinding: canonicalBinding(),
+    inventory: importInventory(),
     physicalProviders: {},
-    plan: commandPlan(),
     ...overrides,
   });
 }
@@ -73,7 +81,7 @@ test("composes exact canonical and separately declared physical imports", () => 
     functionImport("netwasm:runtime/js@1", "invoke"),
   ]);
   const imports = compose({
-    plan,
+    inventory: importInventory(plan),
     canonicalBinding: canonicalBinding({
       "cm32p2|sample:api/value@1": { read: canonicalCall },
     }),
@@ -106,7 +114,7 @@ test("composes the generated process reactor without exposing it to physical pro
     canonicalBinding: canonicalBinding({
       "cm32p2|netwasm:runtime/reactor-host@1": reactorHost,
     }),
-    plan: processPlan(),
+    inventory: importInventory(processPlan()),
   });
   const reactor = imports["cm32p2|netwasm:runtime/reactor-host@1"];
   reactor.watch(3);
@@ -114,22 +122,22 @@ test("composes the generated process reactor without exposing it to physical pro
   assert.deepEqual(calls, [["watch", 3], ["cancel", 5]]);
 });
 
-test("rejects malformed requests and forged ABI plans", () => {
+test("rejects malformed requests and forged import inventories", () => {
   for (const request of [null, [], {}, { extra: true }]) {
     assert.throws(() => composeRawImports(request), /request/);
   }
-  const valid = commandPlan();
-  for (const plan of [
+  const valid = importInventory();
+  for (const inventory of [
     null,
     [],
     {},
     { ...valid, extra: true },
-    { ...valid, contractKey: "other" },
     { ...valid, target: "wasm128" },
     { ...valid, imports: null },
     { ...valid, reactorHostModule: null },
+    { ...valid, reactorHostModule: "" },
   ]) {
-    assert.throws(() => compose({ plan }), /plan/);
+    assert.throws(() => compose({ inventory }), /inventory/);
   }
 });
 
@@ -157,7 +165,10 @@ test("rejects malformed, wrong-target, reserved and invalid canonical imports", 
       enumerable: true,
     })),
   ]) {
-    assert.throws(() => compose({ canonicalBinding: binding, plan }), /canonical/);
+    assert.throws(() => compose({
+      canonicalBinding: binding,
+      inventory: importInventory(plan),
+    }), /canonical/);
   }
 });
 
@@ -167,11 +178,13 @@ test("requires every canonical member to be one exact final function import", ()
   assert.throws(() => compose({ canonicalBinding: binding }), /absent/);
   assert.throws(() => compose({
     canonicalBinding: binding,
-    plan: commandPlan([{ module: moduleName, name: "read", kind: "memory" }]),
+    inventory: importInventory(commandPlan([
+      { module: moduleName, name: "read", kind: "memory" },
+    ])),
   }), /function import/);
   assert.throws(() => compose({
     canonicalBinding: binding,
-    plan: commandPlan([functionImport(moduleName, "read")]),
+    inventory: importInventory(commandPlan([functionImport(moduleName, "read")])),
     physicalProviders: { [moduleName]: { read() {} } },
   }), /cannot be replaced/);
   const getter = Object.defineProperty({}, moduleName, {
@@ -180,7 +193,7 @@ test("requires every canonical member to be one exact final function import", ()
   });
   assert.throws(() => compose({
     canonicalBinding: binding,
-    plan: commandPlan([functionImport(moduleName, "read")]),
+    inventory: importInventory(commandPlan([functionImport(moduleName, "read")])),
     physicalProviders: getter,
   }), /data property/);
 });
@@ -188,7 +201,10 @@ test("requires every canonical member to be one exact final function import", ()
 test("rejects malformed physical providers and unavailable physical members", () => {
   const plan = commandPlan([functionImport("platform", "value")]);
   for (const physicalProviders of [null, [], Object.create({}), { [Symbol("bad")]: true }]) {
-    assert.throws(() => compose({ physicalProviders, plan }), /providers/);
+    assert.throws(() => compose({
+      physicalProviders,
+      inventory: importInventory(plan),
+    }), /providers/);
   }
   for (const physicalProviders of [
     {},
@@ -201,7 +217,10 @@ test("rejects malformed physical providers and unavailable physical members", ()
     { platform: Object.defineProperty({}, "value", { get() { return () => {}; }, enumerable: true }) },
     { platform: Object.defineProperty({}, "value", { value() {}, enumerable: false }) },
   ]) {
-    assert.throws(() => compose({ physicalProviders, plan }), /provider|import|function/);
+    assert.throws(() => compose({
+      physicalProviders,
+      inventory: importInventory(plan),
+    }), /provider|import|function/);
   }
 });
 

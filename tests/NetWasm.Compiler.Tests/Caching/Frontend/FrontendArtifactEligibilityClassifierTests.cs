@@ -15,6 +15,41 @@ public sealed class FrontendArtifactEligibilityClassifierTests
     private static readonly AssemblyIdentity Entry = new("Entry");
     private static readonly AssemblyIdentity Dependency = new("Dependency");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClassifyRejectsEntryTypesNestedInCatchIdentity(bool structured)
+    {
+        var request = CreateRequest();
+        var identity = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Dependency, "Fixture", "Exception`1", false),
+            [CliTypeIdentity.Named(Entry, "Fixture", "Argument", false)]);
+        if (structured)
+        {
+            var id = new Structured.StructuredExceptionGroupId(1);
+            var clause = new Structured.StructuredExceptionClause(CilExceptionRegionKind.Catch,
+                0, 1, Key(Dependency, 0x02000002), null, Structured.StructuredSequence.Empty, null)
+            {
+                HandlerBlock = request.StructuredMethod.EntryBlock,
+                CatchTypeIdentity = identity,
+            };
+            request = request with
+            {
+                StructuredMethod = request.StructuredMethod with
+                {
+                    ExceptionGroups = request.StructuredMethod.ExceptionGroups.Add(id,
+                        new(id, null, 0, 1, [], [clause], [], null, null)),
+                },
+            };
+        }
+        else
+        {
+            request = CreateRequest(bodyCatchType: Key(Dependency, 0x02000002), bodyCatchIdentity: identity);
+        }
+
+        Assert.Equal(FrontendArtifactEligibility.ReferencesEntryAssembly, Classifier().Classify(request));
+    }
+
     [Fact]
     public void ClassifyAcceptsDetachedDependencyArtifact()
     {
@@ -135,6 +170,7 @@ public sealed class FrontendArtifactEligibilityClassifierTests
             }),
             WithFacts(request, facts with { CallableMethods = [entryMethod] }),
             WithFacts(request, facts with { CallSites = [callSite] }),
+            WithFacts(request, facts with { NativeCallbacks = [entryMethod] }),
             WithFacts(request, facts with { MethodDescriptors = [entryMethod] }),
             WithFacts(request, facts with { FieldDescriptors = [entryField] }),
         };
@@ -382,7 +418,8 @@ public sealed class FrontendArtifactEligibilityClassifierTests
         CilOperand? instructionOperand = null,
         CliTypeIdentity? bodyLocalSignature = null,
         EntityKey? bodyCatchType = null,
-        bool addFinallyRegion = false)
+        bool addFinallyRegion = false,
+        CliTypeIdentity? bodyCatchIdentity = null)
     {
         definition ??= Method(Dependency);
         var instance = Instance(definition);
@@ -418,7 +455,7 @@ public sealed class FrontendArtifactEligibilityClassifierTests
                     1,
                     1,
                     bodyCatchType,
-                    null)]
+                    null) { CatchTypeIdentity = bodyCatchIdentity }]
                 : [],
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);

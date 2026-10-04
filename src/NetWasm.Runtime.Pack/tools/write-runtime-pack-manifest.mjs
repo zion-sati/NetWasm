@@ -37,6 +37,13 @@ async function describeAsset(relativePath) {
 
 const targets = [];
 for (const [target, targetPolicy] of Object.entries(policy.targets)) {
+  const pointerType = targetPolicy.pointerSizeBytes === 8 ? 0x7e : 0x7f;
+  const prefix = targetPolicy.pointerSizeBytes === 8 ? 'cm64p2' : 'cm32p2';
+  const valueTypes = { i32: 0x7f, i64: 0x7e, f32: 0x7d, f64: 0x7c, ptr: pointerType };
+  const physicalTypes = values => values.map(value => {
+    if (!Object.hasOwn(valueTypes, value)) throw new Error('Unsupported native policy value type');
+    return valueTypes[value];
+  });
   const measured = JSON.parse(await readFile(join(runtimeRoot, target, "layout.json"), "utf8"));
   const runtimeArchive = await describeAsset(`${target}/libnetwasm-runtime.a`);
   const collectorArchive = await describeAsset(`${target}/libgc.a`);
@@ -54,6 +61,15 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     runtimeArchive,
     collectorArchive,
     allowedUndefinedSymbols,
+    nativeValidation: {
+      version: policy.staticNative.version,
+      features: [...policy.staticNative.features, ...(target === 'wasm64' ? ['memory64'] : [])],
+      imports: policy.staticNative.imports.map(imported => ({
+        module: imported.module.replace('{prefix}', prefix), name: imported.name,
+        parameters: physicalTypes(imported.parameters), results: physicalTypes(imported.results),
+        required: imported.required,
+      })),
+    },
     systemLibraries: {
       names: targetPolicy.systemLibraries,
       assets: await Promise.all(targetPolicy.systemLibraries.map((name) =>

@@ -24,11 +24,20 @@ internal sealed class CompilerReproductionCommandBuilder(
             options.EntryAssemblyPath,
             "--output",
             "reproduction.wasm",
-            "--entry",
-            $"{options.EntryTypeName}::{options.EntryMethodName}",
             "--target",
             options.Target == Core.WasmTarget.Wasm64 ? "wasm64" : "wasm32",
         };
+        if (options.EntryPointKind != CompilerEntryPointKind.Library)
+        {
+            arguments.Add("--entry");
+            arguments.Add($"{options.EntryTypeName}::{options.EntryMethodName}");
+        }
+        if (options.EntryPointKind != CompilerEntryPointKind.RawFunction)
+        {
+            arguments.Add("--entry-kind");
+            arguments.Add(options.EntryPointKind == CompilerEntryPointKind.Library
+                ? "library" : "managed-executable");
+        }
         foreach (var reference in options.ReferencePaths)
         {
             arguments.Add("--reference");
@@ -53,6 +62,11 @@ internal sealed class CompilerReproductionCommandBuilder(
         {
             arguments.Add("--world");
             arguments.Add(options.WitWorld);
+        }
+        if (options.UseJavaScriptExportBoundary)
+        {
+            arguments.Add("--javascript-export-boundary");
+            arguments.Add("true");
         }
         return string.Join(' ', arguments.Select(Quote));
     }

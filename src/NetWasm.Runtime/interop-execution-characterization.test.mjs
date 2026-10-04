@@ -93,7 +93,15 @@ test("adapts runtime interop to the raw execution strategy contract", async () =
   });
 
   assert.equal(Object.isFrozen(rawInterop), true);
-  assert.deepEqual(Object.keys(rawInterop).sort(), ["bindInstance", "close", "imports"]);
+  assert.deepEqual(Object.keys(rawInterop).sort(), [
+    "bindInstance",
+    "close",
+    "consumeTerminalEvent",
+    "drainTerminalReports",
+    "imports",
+  ]);
+  assert.equal(rawInterop.consumeTerminalEvent(), undefined);
+  await rawInterop.drainTerminalReports();
   assert.equal(rawInterop.imports.consumer.read_value(0), statusAbi.hostFailureStatus);
   const boundary = rawInterop.bindInstance(instance);
   assert.equal(boundary.instance, instance);

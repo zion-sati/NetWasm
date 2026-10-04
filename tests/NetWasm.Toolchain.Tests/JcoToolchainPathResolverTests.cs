@@ -30,7 +30,7 @@ public sealed class JcoToolchainPathResolverTests
             assets.Requests.ToArray());
         Assert.Equal("NetWasm.Toolchain", result.PackageId);
         Assert.Equal("0.1.0-preview.23", result.PackageVersion);
-        Assert.Equal("1.28.1", result.JcoVersion);
+        Assert.Equal("1.28.1+netwasm.2", result.JcoVersion);
         Assert.Equal("0.24.1", result.Preview2ShimVersion);
         Assert.Equal(NodePath, result.NodePath);
         Assert.Equal(new Version(25, 0), result.NodeVersion);
@@ -272,6 +272,7 @@ public sealed class JcoToolchainPathResolverTests
         {
             ToolchainPlatformAssetIds.JcoPackage => "1.28.1",
             ToolchainPlatformAssetIds.JcoEntryPoint => "1.28.1",
+            ToolchainPlatformAssetIds.JcoBindgenPatch => "1.28.1+netwasm.2",
             ToolchainPlatformAssetIds.Preview2ShimPackage => "0.24.1",
             _ => "1",
         };
@@ -330,6 +331,11 @@ public sealed class JcoToolchainPathResolverTests
             "tools",
             "jco",
             "closure-policy.json"),
+        ToolchainPlatformAssetIds.JcoBindgenPatch => Path.Combine(
+            PackageRoot,
+            "tools",
+            "jco",
+            "patch-provenance.json"),
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, null),
     };
 

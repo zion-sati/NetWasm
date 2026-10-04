@@ -31,6 +31,8 @@
     <NetWasmSdkPackTaskAssemblyFile>$(NetWasmPackTaskOutput)</NetWasmSdkPackTaskAssemblyFile>
   </PropertyGroup>
 
+  <Import Project="NetWasm.Ref.ImportGenerator.targets" />
+
   <ItemGroup>
     <ProjectReference Include="$(CoreLibProjectPath)"
                       ReferenceOutputAssembly="false"
@@ -78,7 +80,7 @@
        It runs before the wrapper's Pack target and feeds the one-action
        CanonicalPackMsBuildTask directly; no stock package is produced first. -->
   <Target Name="NetWasmRefPack"
-          DependsOnTargets="NetWasmRefBuildContract;NetWasmRefResolvePackTaskOutput;_InitializeNuspecRepositoryInformationProperties"
+          DependsOnTargets="NetWasmRefBuildContract;NetWasmRefResolvePackTaskOutput;NetWasmRefResolveImportGeneratorAssets;_InitializeNuspecRepositoryInformationProperties"
           Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
     <PropertyGroup>
       <NetWasmRefPackageFilePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmRefPackageFilePath>
@@ -105,6 +107,7 @@
         <TargetFrameworkAlias>netwasm0.1</TargetFrameworkAlias>
         <PackKind>BuildOutput</PackKind>
       </_NetWasmRefPackageFile>
+      <_NetWasmRefPackageFile Include="@(_NetWasmRefGeneratorPackageFile)" />
     </ItemGroup>
     <CanonicalPackMsBuildTask
       PackageId="$(PackageId)"

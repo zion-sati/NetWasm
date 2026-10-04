@@ -16,7 +16,11 @@ internal static class MetadataCompilationTestFactory
             .Load(entryAssemblyPath, referencePaths, aliases);
 
     private static MetadataCompilationLoader CreateLoader() => new(
-        new ManagedAssemblyLoader(new ManagedAssemblyImageReader(), new ValueTypeDefinitionStackKindResolver()),
+        new ManagedAssemblyLoader(
+            new ManagedAssemblyImageReader(),
+            new ValueTypeDefinitionStackKindResolver(),
+            new NativeImportDeclarationReader(),
+            new NativeCallbackDeclarationReader()),
         new ReferenceClosureValidator(),
         new MetadataCompilationFactory());
 }

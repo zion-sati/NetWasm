@@ -58,17 +58,19 @@ public sealed class RawWitImportCatalogBuilder(
         {
             if (item.Function is not null)
             {
-                AddFunction(imports, "", worldSpecifier, item.Function, target);
+                AddFunction(imports, "", "", worldSpecifier, item.Function, target);
                 continue;
             }
             var definition = document.Interfaces[item.InterfaceId!.Value];
             var interfaceName = $"{definition.Package}/{definition.Name}";
+            var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             var deploymentInterfaceName = _interfaceSpecifiers.Format(definition);
             foreach (var function in definition.Functions)
             {
-                AddFunction(imports, interfaceName, deploymentInterfaceName, function, target);
+                AddFunction(imports, interfaceName, coreInterfaceName,
+                    deploymentInterfaceName, function, target);
             }
-            AddResources(imports, document, definition, interfaceName,
+            AddResources(imports, document, definition, interfaceName, coreInterfaceName,
                 deploymentInterfaceName, CanonicalAbiFunctionKind.ImportedResourceDrop, target);
         }
         foreach (var item in world.Exports)
@@ -76,10 +78,11 @@ public sealed class RawWitImportCatalogBuilder(
             if (item.InterfaceId is not { } id) continue;
             var definition = document.Interfaces[id];
             var interfaceName = $"{definition.Package}/{definition.Name}";
+            var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             var deploymentInterfaceName = _interfaceSpecifiers.Format(definition);
             foreach (var kind in ExportedResourceImports)
             {
-                AddResources(imports, document, definition, interfaceName,
+                AddResources(imports, document, definition, interfaceName, coreInterfaceName,
                     deploymentInterfaceName, kind, target);
             }
         }
@@ -89,13 +92,22 @@ public sealed class RawWitImportCatalogBuilder(
     private void AddFunction(
         ImmutableDictionary<RawCanonicalImportIdentity, RawWitImportDeclaration>.Builder imports,
         string interfaceName,
+        string coreInterfaceName,
         string deploymentInterfaceName,
         WitFunction function,
         WasmTarget target)
     {
-        var identity = _identities.Format(new(interfaceName, function.Name, default, [], null), target);
+        var canonical = new CanonicalAbiFunction(
+            interfaceName, function.Name, default, [], null)
+        {
+            CoreInterfaceName = coreInterfaceName,
+        };
+        var identity = _identities.Format(canonical, target);
         Add(imports, identity, new RawWitImportDeclaration.Callable(
-            interfaceName, deploymentInterfaceName, function));
+            interfaceName, deploymentInterfaceName, function)
+        {
+            CoreInterfaceName = coreInterfaceName,
+        });
     }
 
     private void AddResources(
@@ -103,6 +115,7 @@ public sealed class RawWitImportCatalogBuilder(
         WitDocument document,
         WitInterface definition,
         string interfaceName,
+        string coreInterfaceName,
         string deploymentInterfaceName,
         CanonicalAbiFunctionKind kind,
         WasmTarget target)
@@ -114,12 +127,16 @@ public sealed class RawWitImportCatalogBuilder(
             ArgumentException.ThrowIfNullOrWhiteSpace(resource.Name);
             var canonical = new CanonicalAbiFunction(interfaceName, resource.Name, default, [], null)
             {
+                CoreInterfaceName = coreInterfaceName,
                 Kind = kind,
                 ResourceName = resource.Name,
             };
             var identity = _identities.Format(canonical, target);
             Add(imports, identity, new RawWitImportDeclaration.Resource(
-                interfaceName, deploymentInterfaceName, resource, kind));
+                interfaceName, deploymentInterfaceName, resource, kind)
+            {
+                CoreInterfaceName = coreInterfaceName,
+            });
         }
     }
 

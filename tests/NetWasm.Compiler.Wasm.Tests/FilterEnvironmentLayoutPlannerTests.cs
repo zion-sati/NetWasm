@@ -43,6 +43,7 @@ public sealed class FilterEnvironmentLayoutPlannerTests
                 new FilterEnvironmentLayoutPlanner(
                     layouts,
                     layouts,
+                    CreateArgumentTypes(program),
                     CreateArgumentSignatureTypes(program),
                     new ExceptionGroupEnumerator()),
             }
@@ -77,6 +78,7 @@ public sealed class FilterEnvironmentLayoutPlannerTests
                 new FilterEnvironmentLayoutPlanner(
                     layouts,
                     layouts,
+                    CreateArgumentTypes(program),
                     CreateArgumentSignatureTypes(program),
                     new ExceptionGroupEnumerator()),
             }
@@ -143,6 +145,7 @@ public sealed class FilterEnvironmentLayoutPlannerTests
                 new FilterEnvironmentLayoutPlanner(
                     layouts,
                     layouts,
+                    CreateArgumentTypes(program),
                     CreateArgumentSignatureTypes(program),
                     new ExceptionGroupEnumerator()),
             }
@@ -191,6 +194,7 @@ public sealed class FilterEnvironmentLayoutPlannerTests
                 new FilterEnvironmentLayoutPlanner(
                     layouts,
                     layouts,
+                    CreateArgumentTypes(program),
                     new ValueTypeArgumentSignatureResolver(valueType),
                     new ExceptionGroupEnumerator()),
             }
@@ -211,6 +215,39 @@ public sealed class FilterEnvironmentLayoutPlannerTests
         Assert.Equal(0, result.RootSlotCount);
         Assert.Equal(12, result.Captures[new CapturedSlot(true, 0)].Offset);
         Assert.Equal(4, result.Captures[new CapturedSlot(false, 0)].Offset);
+    }
+
+    [Fact]
+    public void CapturesStructReceiversAsManagedAddresses()
+    {
+        var program = new FakeProgram();
+        var structured = Structure(
+            program,
+            program.GetMethod(EntryKey),
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(3, CilOperation.Return));
+        var filter = ExceptionClause(structured, CilExceptionRegionKind.Filter, true);
+        structured = WithExceptionGroups(structured, ExceptionGroup(structured, 0, filter));
+        var valueType = CliTypeIdentity.Named(
+            Assembly,
+            "Tests",
+            "Mutable",
+            isValueType: true);
+        var layouts = new RecordingLayoutProvider();
+        var planner = new FilterEnvironmentLayoutPlanner(
+            layouts,
+            layouts,
+            new FixedArgumentTypeResolver(CliValueKind.ManagedAddress),
+            new ValueTypeArgumentSignatureResolver(valueType),
+            new ExceptionGroupEnumerator());
+
+        var result = planner.Create(structured, new ValueFrameLayout(0, [], [], [], []));
+
+        var capture = result.Captures[new CapturedSlot(true, 0)];
+        Assert.Equal(CliValueKind.ManagedAddress, capture.Type.StackKind);
+        Assert.Equal(4, capture.Offset);
     }
 
     [Fact]
@@ -252,6 +289,7 @@ public sealed class FilterEnvironmentLayoutPlannerTests
         var planner = new FilterEnvironmentLayoutPlanner(
             layouts,
             layouts,
+            CreateArgumentTypes(program),
             CreateArgumentSignatureTypes(program),
             new ExceptionGroupEnumerator());
 
@@ -267,5 +305,11 @@ public sealed class FilterEnvironmentLayoutPlannerTests
         IArgumentSignatureTypeResolver
     {
         public CliTypeIdentity Resolve(StructuredMethodHeader header, int index) => type;
+    }
+
+    private sealed class FixedArgumentTypeResolver(CliValueKind type) :
+        IArgumentTypeResolver
+    {
+        public CliValueKind Resolve(StructuredMethodHeader header, int index) => type;
     }
 }

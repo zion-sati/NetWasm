@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
@@ -9,7 +11,11 @@ internal sealed class OutwardMethodFunctionAppender(
     IAsyncJSExportHelperAppender asyncHelpers,
     IEntryPointEmitter synchronousEntries,
     IManagedMethodFunctionTypeResolver functionTypes,
-    IManagedBoundaryPlanBuilder boundaries) : IOutwardMethodFunctionAppender
+    IManagedBoundaryPlanBuilder boundaries,
+    IRuntimeImportResolver runtimeImports,
+    ISynchronousJSExportEmitter? synchronousJSExports = null,
+    ISynchronousJSExportFunctionTypeResolver? synchronousJSExportTypes = null) :
+    IOutwardMethodFunctionAppender
 {
     public int Append(OutwardMethodFunctionAppendRequest request)
     {
@@ -34,6 +40,21 @@ internal sealed class OutwardMethodFunctionAppender(
             var kinds = request.AsyncKinds ?? throw new ArgumentException(
                 "an asynchronous outward boundary requires boundary kinds",
                 nameof(request));
+            var process = kinds.Completion == ManagedBoundaryKind.AsynchronousProcessCompletion;
+            int? deliverFunctionIndex = process
+                ? request.Initialization.RuntimeImportSelection.IncludeTerminalExceptionReporter
+                    ? runtimeImports.Resolve(
+                        RuntimeImportSymbol.ManagedTerminalExceptionReport,
+                        request.Initialization.RuntimeImportSelection)
+                    : null
+                : runtimeImports.Resolve(
+                    RuntimeImportSymbol.ManagedExceptionCapture,
+                    request.Initialization.RuntimeImportSelection);
+            var completion = new AsyncTaskCompletionPlan(
+                request.FunctionIndices.Resolve(binding.GetVoidResult ??
+                    throw new InvalidOperationException("An asynchronous boundary requires task fault observation.")),
+                deliverFunctionIndex,
+                process ? CliValueKind.Void : CliValueKind.I4);
             request.Functions.Add(new WasmFunctionDefinition(
                 request.GeneratedFunctionName,
                 new(
@@ -55,24 +76,43 @@ internal sealed class OutwardMethodFunctionAppender(
                 binding,
                 names,
                 kinds,
-                request.BoundaryEntries);
+                request.BoundaryEntries,
+                completion);
             kind = kinds.Start;
         }
         else
         {
-            var type = functionTypes.Resolve(request.Method);
+            var isJSExport = request.SynchronousKind == ManagedBoundaryKind.SynchronousExport &&
+                request.InteropImports is not null &&
+                (request.Method.Signature.ParameterSignatureTypes.Any(
+                    type => InteropTypeClassifier.IsString(type) ||
+                        InteropTypeClassifier.IsByteArray(type)) ||
+                 InteropTypeClassifier.IsString(
+                     request.Method.Signature.ReturnSignatureType) ||
+                 InteropTypeClassifier.IsByteArray(
+                     request.Method.Signature.ReturnSignatureType));
+            var type = isJSExport
+                ? RequireJSExportTypes().Resolve(request.Method)
+                : functionTypes.Resolve(request.Method);
             request.Functions.Add(new WasmFunctionDefinition(
                 request.GeneratedFunctionName,
                 request.ArgumentFactory is null
                     ? type
                     : new([], type.Result),
-                synchronousEntries.Emit(
-                    request.Method,
-                    request.Initialization,
-                    request.HasFinalizers,
-                    request.FunctionIndices,
-                    request.ReportTerminalExceptions,
-                    request.ArgumentFactory)));
+                isJSExport
+                    ? RequireJSExporter().Emit(
+                        request.Method,
+                        request.Initialization,
+                        request.HasFinalizers,
+                        request.FunctionIndices,
+                        request.InteropImports!)
+                    : synchronousEntries.Emit(
+                        request.Method,
+                        request.Initialization,
+                        request.HasFinalizers,
+                        request.FunctionIndices,
+                        request.ReportTerminalExceptions,
+                        request.ArgumentFactory)));
             kind = request.SynchronousKind;
         }
 
@@ -84,5 +124,12 @@ internal sealed class OutwardMethodFunctionAppender(
             kind,
             true)));
         return functionIndex;
+
+        ISynchronousJSExportEmitter RequireJSExporter() => synchronousJSExports ??
+            throw new InvalidOperationException(
+                "synchronous JS export marshalling was not configured");
+        ISynchronousJSExportFunctionTypeResolver RequireJSExportTypes() =>
+            synchronousJSExportTypes ?? throw new InvalidOperationException(
+                "synchronous JS export function types were not configured");
     }
 }

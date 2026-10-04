@@ -9,6 +9,26 @@ namespace NetWasm.Compiler.ComponentModel.Tests;
 public sealed class WitDocumentReaderTests
 {
     [Fact]
+    public void ConstructorRejectsMissingCollaborators()
+    {
+        var tools = new StubTools("contract.wit", 0, NormalizedDocument, string.Empty);
+        var json = new WitDocumentJsonReader();
+        var coreBindings = new WitCoreBindingResolver(
+            tools,
+            new NetWasm.Compiler.ComponentModel.Worlds.WitWorldSpecifierFormatter());
+
+        Assert.Throws<ArgumentNullException>(() => new WitDocumentReader(null!));
+        Assert.Throws<ArgumentNullException>(() => new WitDocumentReader(null!, json));
+        Assert.Throws<ArgumentNullException>(() => new WitDocumentReader(tools, null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new WitDocumentReader(null!, json, coreBindings));
+        Assert.Throws<ArgumentNullException>(() =>
+            new WitDocumentReader(tools, null!, coreBindings));
+        Assert.Throws<ArgumentNullException>(() =>
+            new WitDocumentReader(tools, json, null!));
+    }
+
+    [Fact]
     public void ReadsNormalizedWorldInterfacesFunctionsAndTypes()
     {
         var reader = new WitDocumentReader(new StubTools(
@@ -59,6 +79,30 @@ public sealed class WitDocumentReaderTests
     }
 
     [Fact]
+    public void ReaderContractsSupportDefaultAndResolvedWorldReads()
+    {
+        var expected = new WitDocument(
+            [],
+            [],
+            [new WitWorld(0, "main", "example:test@1.0.0", [], [])],
+            [],
+            "expected");
+        IWitDocumentReader defaultReader = new FixedDocumentReader(expected);
+        Assert.Same(expected, defaultReader.Read("contract.wit", "main"));
+
+        var json = new RecordingJsonReader(expected);
+        var coreBindings = new RecordingCoreBindingResolver(expected);
+        var reader = new WitDocumentReader(
+            new StubTools("contract.wit", 0, "normalized", string.Empty),
+            json,
+            coreBindings);
+
+        Assert.Same(expected, reader.Read("contract.wit", "main"));
+        Assert.Equal("contract.wit", coreBindings.Path);
+        Assert.Equal(expected.Worlds[0], coreBindings.World);
+    }
+
+    [Fact]
     public void SelectWorldRequiresOneUnambiguousWorld()
     {
         var document = new WitDocument([], [], [], [], "{}");
@@ -78,6 +122,8 @@ public sealed class WitDocumentReaderTests
 
         Assert.Equal(selected, document.SelectWorld("main"));
         Assert.Equal(selected, document.SelectWorld(null));
+        Assert.Equal(selected, document.SelectWorld("example:test/main@1.0.0"));
+        Assert.Equal(selected, document.SelectWorld("example:test@1.0.0/main"));
 
         var missing = Assert.Throws<CompilerException>(() =>
             document.SelectWorld("missing"));
@@ -174,6 +220,26 @@ public sealed class WitDocumentReaderTests
         public WitDocument Read(string normalizedJson)
         {
             Input = normalizedJson;
+            return result;
+        }
+    }
+
+    private sealed class FixedDocumentReader(WitDocument result) : IWitDocumentReader
+    {
+        public WitDocument Read(string witPath) => result;
+    }
+
+    private sealed class RecordingCoreBindingResolver(WitDocument result) :
+        IWitCoreBindingResolver
+    {
+        public string? Path { get; private set; }
+
+        public WitWorld? World { get; private set; }
+
+        public WitDocument Resolve(string witPath, WitDocument document, WitWorld world)
+        {
+            Path = witPath;
+            World = world;
             return result;
         }
     }

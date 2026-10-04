@@ -1919,6 +1919,12 @@ namespace System
                         }
                         result.Add(item);
                     }
+                    if (index == Length)
+                    {
+                        // The end of the input contributes the final segment once. There is no
+                        // matched separator to advance past, so continuing would repeat forever.
+                        break;
+                    }
                     start = index + matchedLength;
                     index = start;
                     continue;

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using NetWasm.Compiler.Tasks.Artifacts;
 using NetWasm.Compiler.Tasks.Composition;
 
@@ -7,6 +8,8 @@ public sealed class NetWasmValidateArtifactTask : CompilerArtifactManifestTaskBa
 {
     private readonly ICompilerArtifactManifestTaskRequestBuilder _requestBuilder;
     private readonly ICompilerArtifactManifestValidator _validator;
+
+    public string? NativeCallbackObjectPath { get; set; }
 
     public NetWasmValidateArtifactTask()
         : this(
@@ -27,7 +30,12 @@ public sealed class NetWasmValidateArtifactTask : CompilerArtifactManifestTaskBa
     {
         try
         {
-            var request = _requestBuilder.Build(CreateManifestTaskInput());
+            var callbackArtifacts = string.IsNullOrWhiteSpace(NativeCallbackObjectPath) ||
+                !File.Exists(NativeCallbackObjectPath)
+                ? ImmutableArray<CompilerArtifactManifestTaskArtifact>.Empty
+                : [CreateNativeCallbackSupportArtifact(
+                    NativeCallbackObjectPath)];
+            var request = _requestBuilder.Build(CreateManifestTaskInput(callbackArtifacts));
             SetResolvedArtifacts(_validator.Validate(new(request, ArtifactManifestPath)));
             return true;
         }
@@ -37,4 +45,5 @@ public sealed class NetWasmValidateArtifactTask : CompilerArtifactManifestTaskBa
             return false;
         }
     }
+
 }

@@ -6,7 +6,12 @@ namespace NetWasm.Compiler.ComponentModel.Raw;
 
 public interface IRawWitFunctionLayoutBuilder
 {
-    RawWitFunctionLayout Build(WitDocument document, string interfaceName, WitFunction witFunction, WasmTarget target);
+    RawWitFunctionLayout Build(
+        WitDocument document,
+        string interfaceName,
+        string coreInterfaceName,
+        WitFunction witFunction,
+        WasmTarget target);
 }
 
 public sealed class RawWitFunctionLayoutBuilder(
@@ -16,16 +21,25 @@ public sealed class RawWitFunctionLayoutBuilder(
     private readonly IWitCanonicalFunctionBuilder _functions = functions ?? throw new ArgumentNullException(nameof(functions));
     private readonly IRawCanonicalFunctionLayoutPlanner _layouts = layouts ?? throw new ArgumentNullException(nameof(layouts));
 
-    public RawWitFunctionLayout Build(WitDocument document, string interfaceName, WitFunction witFunction, WasmTarget target)
+    public RawWitFunctionLayout Build(
+        WitDocument document,
+        string interfaceName,
+        string coreInterfaceName,
+        WitFunction witFunction,
+        WasmTarget target)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(interfaceName);
+        ArgumentNullException.ThrowIfNull(coreInterfaceName);
         ArgumentNullException.ThrowIfNull(witFunction);
         if (target is not (WasmTarget.Wasm32 or WasmTarget.Wasm64))
         {
             throw new ArgumentOutOfRangeException(nameof(target));
         }
-        var canonical = _functions.Build(document, interfaceName, witFunction);
+        var canonical = _functions.Build(document, interfaceName, witFunction) with
+        {
+            CoreInterfaceName = coreInterfaceName,
+        };
         return new(witFunction, _layouts.Plan(canonical, target));
     }
 }

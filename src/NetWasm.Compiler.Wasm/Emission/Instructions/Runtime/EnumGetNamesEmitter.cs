@@ -10,7 +10,6 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 internal sealed class EnumGetNamesEmitter(
     IEnumMetadataSource metadata,
-    ITypeRepository types,
     ITypeLayoutProvider typeLayouts,
     IRuntimeImportResolver runtimeImports,
     ITargetLayout layouts,
@@ -41,8 +40,9 @@ internal sealed class EnumGetNamesEmitter(
     {
         var type = request.Local(0, CliValueKind.ManagedReference);
         var result = request.Local(0, CliValueKind.ManagedReference);
+        var typeId = request.Instruction.Context.NumericTemporaryI4Second;
         var temporary = request.Instruction.Context.NumericTemporaryI4;
-        typeArguments.Validate(code, type, temporary);
+        typeArguments.Validate(code, type, typeId);
         addresses.Emit(code, 0);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
@@ -51,7 +51,7 @@ internal sealed class EnumGetNamesEmitter(
         {
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)temporary)));
+                WasmInstructionOperand.Unsigned((uint)typeId)));
             WriteI32(code, entry.TypeId);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(
@@ -75,7 +75,8 @@ internal sealed class EnumGetNamesEmitter(
         EnumMetadataLayout entry)
     {
         WriteI32(code, entry.Members.Length);
-        WriteI32(code, typeLayouts.ReferenceArrayTypeId);
+        WriteI32(code, typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(
+            CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false))).TypeId);
         WriteI32(code, typeLayouts.StringTypeId);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
@@ -100,12 +101,7 @@ internal sealed class EnumGetNamesEmitter(
 
     private EnumMetadataLayout Find(CliTypeIdentity enumType) =>
         metadata.EnumMetadata
-            .Where(candidate => candidate.Type.Assembly.Equals(enumType.Assembly))
-            .SingleOrDefault(candidate =>
-            {
-                var definition = types.GetTypeDefinition(candidate.Type);
-                return definition.FullName == enumType.FullName;
-            }) is { TypeId: not 0 } match
+            .SingleOrDefault(candidate => candidate.EnumType.Equals(enumType)) is { TypeId: not 0 } match
             ? match
             : throw new InvalidOperationException(
                 $"enum metadata is unavailable for '{enumType.CanonicalName}'");

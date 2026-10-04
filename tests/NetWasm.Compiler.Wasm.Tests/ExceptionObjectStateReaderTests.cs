@@ -41,7 +41,7 @@ public sealed class ExceptionObjectStateReaderTests
                 fieldLayouts)),
         }.Cast<IExceptionObjectStateReader>().Single();
 
-        reader.Emit(code, 0, 1, 2, 3);
+        reader.Emit(code, 0, 1, 2, 3, 4, 5);
 
         Assert.Equal(MessageFieldRepository.MessageKey, fieldLayouts.Request);
         Assert.Contains(
@@ -68,7 +68,7 @@ public sealed class ExceptionObjectStateReaderTests
                 layouts)),
         }.Cast<IExceptionObjectStateReader>().Single();
 
-        reader.Emit(code, 0, 1, 2, 3);
+        reader.Emit(code, 0, 1, 2, 3, 4, 5);
 
         Assert.Contains(WasmOpcodes.I64Constant, code.ToArray());
     }
@@ -86,7 +86,9 @@ public sealed class ExceptionObjectStateReaderTests
             exceptionLocal: 0,
             typeIdLocal: 1,
             messageLocal: 2,
-            messageLengthLocal: 3);
+            messageLengthLocal: 3,
+            stackTraceLocal: 4,
+            stackTraceLengthLocal: 5);
 
         contract(new ExceptionObjectStateReader(
             layouts,
@@ -98,7 +100,7 @@ public sealed class ExceptionObjectStateReaderTests
 
         var body = new WasmBinarySnapshotReader(outputBuffer).Read();
         Assert.Equal(-1, Array.IndexOf(body, WasmOpcodes.Call));
-        Assert.Equal(3, body.Count(value => value == WasmOpcodes.LocalSet));
+        Assert.Equal(5, body.Count(value => value == WasmOpcodes.LocalSet));
     }
 
     [Fact]

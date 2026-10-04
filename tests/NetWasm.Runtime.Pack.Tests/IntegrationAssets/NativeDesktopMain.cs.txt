@@ -1,0 +1,5 @@
+internal static class Program
+{
+    public static int Main() =>
+        NativeMule.EntryPoint.Run(-100) == 42 && NativeMule.EntryPoint.Run(35) == 42 ? 0 : 1;
+}

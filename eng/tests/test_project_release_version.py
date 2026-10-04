@@ -57,6 +57,33 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         self.assertEqual(receipt, json.loads(receipt_path.read_text()))
         receipt_path.unlink()
 
+    def test_projects_shared_app_template_sdk_version(self) -> None:
+        template_global_json = (
+            self.root
+            / "src/NetWasm.Templates/content/NetWasm.App/base/global.json"
+        )
+        template_global_json.parent.mkdir(parents=True)
+        template_global_json.write_text(
+            '{"msbuild-sdks":{"NetWasm.Sdk":"0.1.0-rc.1"}}\n',
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["git", "-C", str(self.root), "add", template_global_json], check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "--quiet", "-m", "template"],
+            check=True,
+        )
+
+        MODULE.project_version(
+            self.root, "0.1.0-alpha.1", self.root / "receipt.json"
+        )
+
+        self.assertEqual(
+            '{"msbuild-sdks":{"NetWasm.Sdk":"0.1.0-alpha.1"}}\n',
+            template_global_json.read_text(encoding="utf-8"),
+        )
+
     def test_rejects_invalid_version(self) -> None:
         with self.assertRaisesRegex(ValueError, "Invalid release version"):
             MODULE.project_version(self.root, "not a version", self.root / "receipt.json")

@@ -1,12 +1,16 @@
+using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
+public sealed record BrowserJavaScriptModule(string Module, string SourcePath);
+
 public sealed record BrowserBootstrapEntryRequest(
     string HostingBrowserModulePath,
     string Preview2ShimRoot,
-    string OutputPath);
+    string OutputPath,
+    ImmutableArray<BrowserJavaScriptModule> Modules = default);
 
 public interface IBrowserBootstrapEntryWriter
 {
@@ -29,10 +33,16 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
             "dist",
             "browser",
             "filesystem.js"));
+        var modules = request.Modules.IsDefault ? [] : request.Modules;
+        var moduleImports = string.Join("\n", modules.Select((module, index) =>
+            $"import * as consumerModule{index} from {ModuleSpecifier(module.SourcePath)};"));
+        var moduleBindings = string.Join(", ", modules.Select((module, index) =>
+            $"[{JsonSerializer.Serialize(module.Module)}]: consumerModule{index}"));
         var source = $$"""
             import { createBrowserNetWasmBootstrap } from {{hosting}};
             import { WASIShim } from {{instantiation}};
             import { createFilesystem, InMemoryFilesystemAdapter } from {{filesystem}};
+            {{moduleImports}}
 
             const manifestUrl = new URL("./deployment.json", import.meta.url).href;
             const preview2 = Object.freeze({
@@ -62,7 +72,7 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
               manifestUrl,
               preview2,
               web,
-            });
+            }, Object.freeze({ {{moduleBindings}} }));
             """;
         Directory.CreateDirectory(Path.GetDirectoryName(request.OutputPath)!);
         File.WriteAllText(
@@ -91,6 +101,13 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
                     "Browser bootstrap paths must be absolute.",
                     nameof(request));
             }
+        }
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var module in request.Modules.IsDefault ? [] : request.Modules)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(module.Module);
+            if (!names.Add(module.Module) || !Path.IsPathFullyQualified(module.SourcePath))
+                throw new ArgumentException("Browser JavaScript module bindings must be unique and use absolute source paths.", nameof(request));
         }
     }
 }

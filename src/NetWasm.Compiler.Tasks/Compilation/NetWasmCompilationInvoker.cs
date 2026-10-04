@@ -17,6 +17,11 @@ internal sealed class NetWasmCompilationInvoker(
             result.StackTraceSymbols,
             options.Target == Core.WasmTarget.Wasm64 ? "wasm64" : "wasm32",
             RuntimeFeatures: result.RuntimeFeatures,
-            FunctionImports: result.FunctionImports);
+            FunctionImports: result.FunctionImports)
+        {
+            ExceptionTypeMap = result.DiagnosticArtifacts?.ExceptionTypeMap,
+            NativeImports = result.NativeImports,
+            NativeCallbackSupport = result.NativeCallbackSupport,
+        };
     }
 }

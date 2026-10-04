@@ -27,7 +27,7 @@ internal sealed class CompilerProgramSnapshotBuilder(
             .ToArray();
         return new
         {
-            EntryPoint = symbols.Format(program.EntryPoint),
+            EntryPoint = program.EntryPoint is { } entryPoint ? symbols.Format(entryPoint) : null,
             ReachableMethods = program.Methods.Keys.Select(key => key.ToString())
                 .Order(StringComparer.Ordinal).ToArray(),
             ConstructedMethods = program.ConstructedMethods.Keys
@@ -104,6 +104,7 @@ internal sealed class CompilerProgramSnapshotBuilder(
                 region.HandlerOffset,
                 region.HandlerLength,
                 region.CatchType,
+                CatchTypeIdentity = region.CatchTypeIdentity?.CanonicalName,
                 region.FilterOffset,
             }),
             Blocks = graph.Blocks.Select(block => new

@@ -2,9 +2,11 @@ using System;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 
@@ -34,7 +36,9 @@ internal sealed class ManagedMethodEmitter(
         MethodInstanceModel? methodInstance,
         int stackTraceMethodId,
         RuntimeImportSelection runtimeImportSelection,
-        Action<IWasmInstructionWriter, StructuredMethod, MethodEmissionContext> emitBody)
+        Action<IWasmInstructionWriter, StructuredMethod, MethodEmissionContext> emitBody,
+        NativeImportPlan? nativeImports = null,
+        MemberExecutionPlan? memberExecution = null)
     {
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(structured);
@@ -47,7 +51,7 @@ internal sealed class ManagedMethodEmitter(
         {
             Header = structured.Header with { MethodInstance = effectiveMethodInstance },
         };
-        var valueLayout = valueFrames.Create(emissionStructure.Header);
+        var valueLayout = valueFrames.Create(emissionStructure.Header, nativeImports, memberExecution);
         var filterEnvironment = filterEnvironments.Create(emissionStructure, valueLayout);
         valueLayout = valueLayout with
         {

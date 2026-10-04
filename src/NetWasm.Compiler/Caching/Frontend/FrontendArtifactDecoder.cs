@@ -7,6 +7,9 @@ using System.Linq;
 using System.Text;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
+using NetWasm.Compiler.Core.UnsafeAccessors;
+using System.Reflection;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 
@@ -15,7 +18,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 10;
+    private const ushort SchemaVersion = 16;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -211,6 +214,11 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 var assembly = ReadNullableStruct(() => new AssemblyIdentity(ReadString()));
                 var fullName = ReadNullableClass(ReadString);
                 var storageType = ReadNullableClass(() => tables.Type(reader.ReadInt32()));
+                var functionPointer = ReadNullableClass(() => new CliFunctionPointerSignature(
+                    reader.ReadByte(), reader.ReadInt32(), reader.ReadInt32(),
+                    new(tables.Type(reader.ReadInt32()), ReadArray(() => tables.Type(reader.ReadInt32())))));
+                var modifier = ReadNullableClass(() => tables.Type(reader.ReadInt32()));
+                var isRequiredModifier = ReadBoolean();
 
                 var result = shape switch
                 {
@@ -230,6 +238,10 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                         Required(elementType, shape)),
                     CliTypeShape.UnmanagedPointer => CliTypeIdentity.UnmanagedPointer(
                         Required(elementType, shape)),
+                    CliTypeShape.FunctionPointer => CliTypeIdentity.FunctionPointer(
+                        functionPointer ?? throw Invalid("The function-pointer signature is missing.")),
+                    CliTypeShape.Modified => CliTypeIdentity.Modified(
+                        Required(elementType, shape), Required(modifier, shape), isRequiredModifier),
                     _ => throw Invalid($"CLI type shape {shape} is unsupported."),
                 };
                 if (storageType is not null)
@@ -279,6 +291,21 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     () => new WitExportDeclaration(ReadString(), ReadString()));
                 var witPostReturn = ReadNullableClass(
                     () => new WitPostReturnDeclaration(ReadString(), ReadString()));
+                var nativeImport = ReadNullableClass(() => new NativeImportDeclaration(
+                    ReadString(),
+                    ReadString(),
+                    (MethodImportAttributes)reader.ReadInt32(),
+                    ReadBoolean(),
+                    ReadBoolean(),
+                    ReadBoolean(),
+                    ReadBoolean()));
+                var nativeCallback = ReadNullableClass(() => new NativeCallbackDeclaration(
+                    ReadArray(ReadString),
+                    ReadNullableString(),
+                    ReadBoolean(),
+                    ReadBoolean()));
+                var unsafeAccessor = ReadNullableClass(() => new UnsafeAccessorDeclaration(
+                    reader.ReadInt32(), ReadNullableString(), ReadBoolean(), ReadBoolean(), ReadBoolean()));
                 return new(key, declaringType, name, isStatic, signature, relativeVirtualAddress)
                 {
                     GenericArity = genericArity,
@@ -292,6 +319,9 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     WitImport = witImport,
                     WitExport = witExport,
                     WitPostReturn = witPostReturn,
+                    NativeImport = nativeImport,
+                    NativeCallback = nativeCallback,
+                    UnsafeAccessor = unsafeAccessor,
                 };
             }
 
@@ -332,6 +362,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
             {
                 var offset = reader.ReadInt32();
                 var nextOffset = reader.ReadInt32();
+                var originalOffset = ReadNullableStruct(reader.ReadInt32);
                 var operation = ReadEnum<CilOperation>();
                 CilOperand operand = reader.ReadByte() switch
                 {
@@ -357,7 +388,10 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     15 => new CilOperand.ByteData(ReadBytes()),
                     var tag => throw Invalid($"CIL operand tag {tag} is unsupported."),
                 };
-                return new(offset, nextOffset, operation, operand);
+                return new(offset, nextOffset, operation, operand)
+                {
+                    OriginalOffset = originalOffset,
+                };
             }
 
             private EntityKey ReadEntityKey() =>
@@ -507,10 +541,12 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 ReadArray(ReadCallSite));
             return analysis with
             {
+                NativeCallbacks = ReadArray(ReadMethodInstance),
                 MethodDescriptors = ReadArray(ReadMethodInstance),
                 FieldDescriptors = ReadArray(ReadFieldInstance),
                 RequiresTypeFacts = reader.ReadBoolean(),
                 RequiresDelegateInvoke = reader.ReadBoolean(),
+                RequiresGenericArguments = reader.ReadBoolean(),
                 RequiresMemberNames = reader.ReadBoolean(),
                 TypeNamePayload = ReadTypeNamePayload(),
             };
@@ -556,7 +592,10 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 reader.ReadInt32(),
                 reader.ReadInt32(),
                 ReadNullableStruct(ReadEntityKey),
-                ReadNullableStruct(reader.ReadInt32)));
+                ReadNullableStruct(reader.ReadInt32))
+            {
+                CatchTypeIdentity = ReadNullableClass(ReadType),
+            });
             return new(method, maxStack, locals, instructions)
             {
                 MethodInstance = methodInstance,
@@ -735,6 +774,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 {
                     HandlerBlock = handlerBlock,
                     FilterBlock = filterBlock,
+                    CatchTypeIdentity = ReadNullableClass(ReadType),
                 };
             });
             var continuations = ReadArray(() => new StructuredExceptionContinuation(

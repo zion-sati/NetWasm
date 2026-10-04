@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -14,13 +15,16 @@ internal sealed record RuntimeTypeNames(
 
 internal sealed record PendingRuntimeTypeFacts(
     CliTypeIdentity Identity,
-    TypeDefinitionModel Definition,
+    TypeDefinitionModel? Definition,
     int TypeId,
     int BaseTypeId,
     int AssignableTypeIdsAddress,
     int AssignableTypeIdCount,
     string? DelegateInvokeDescriptor,
-    RuntimeTypeNames? Names);
+    RuntimeTypeNames? Names)
+{
+    internal ImmutableArray<int> GenericArgumentTypeIds { get; init; } = [];
+}
 
 internal static class RuntimeTypeNameFormatter
 {

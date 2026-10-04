@@ -35,7 +35,11 @@ public sealed class ManagedModuleCompilerTests
             "None",
             "obj/netwasm",
             "compiler-wit",
-            "netwasm:platform@1.0.0/platform");
+            "netwasm:platform@1.0.0/platform",
+            UseJavaScriptExportBoundary: true,
+            ProjectDirectory: "/project",
+            PathMap: "/source=/mapped",
+            StructuredDiagnostics: true);
 
         var result = compiler.Compile(request);
 
@@ -60,9 +64,52 @@ public sealed class ManagedModuleCompilerTests
         Assert.Equal(request.WitWorld, options.WitWorld);
         Assert.True(options.EnableFrontendCache);
         Assert.Equal(request.IntermediateOutputPath, options.IntermediateOutputPath);
+        Assert.True(options.UseJavaScriptExportBoundary);
+        Assert.Equal(request.ProjectDirectory, options.ProjectDirectory);
+        Assert.Equal(request.PathMap, options.PathMap);
         Assert.True(options.EmitStackTrace);
+        Assert.True(options.StructuredDiagnostics);
         Assert.Equal(0x06000001, options.EntryMethodToken);
         Assert.Equal(CompilerEntryPointKind.ManagedExecutable, options.EntryPointKind);
+    }
+
+    [Theory]
+    [InlineData("wasm32")]
+    [InlineData("wasm64")]
+    public void LibraryCompilationDoesNotReadOrFabricateAnEntryPoint(string target)
+    {
+        var entryPoints = new RecordingEntryPointReader(CreateEntryPoint());
+        var width = target == "wasm32" ? WasmTarget.Wasm32 : WasmTarget.Wasm64;
+        var targets = new RecordingTargetResolver(width);
+        var invoker = new RecordingCompilationInvoker(
+            CompilerTaskTestData.CreateCompilation(target) with
+            {
+                EntryPoint = CreateEntryPoint().Abi,
+            });
+        var compiler = Assert.IsAssignableFrom<IManagedModuleCompiler>(
+            new ManagedModuleCompiler(entryPoints, targets, invoker));
+        var request = new ManagedModuleCompileRequest(
+            "worker.dll", ["corelib.dll"], ["Worker.cs"], target,
+            null, null, false, "None", "obj/netwasm", "worker.wit", "worker",
+            CompileAsLibrary: true);
+
+        var result = compiler.Compile(request);
+
+        Assert.Null(entryPoints.AssemblyPath);
+        Assert.Null(result.EntryPoint);
+        var options = Assert.IsType<CompilerOptions>(invoker.Options);
+        Assert.Equal(CompilerEntryPointKind.Library, options.EntryPointKind);
+        Assert.Empty(options.EntryTypeName);
+        Assert.Empty(options.EntryMethodName);
+        Assert.Null(options.EntryMethodToken);
+        Assert.Equal(request.WitPath, options.WitPath);
+        Assert.Equal(request.WitWorld, options.WitWorld);
+        Assert.Equal(request.ReferencePaths, options.ReferencePaths);
+        Assert.Equal(request.SourcePaths, options.SourcePaths);
+        Assert.Equal(width, options.Target);
+        Assert.True(options.EnableFrontendCache);
+        Assert.Equal(request.IntermediateOutputPath, options.IntermediateOutputPath);
+        Assert.Equal(invoker.Result with { EntryPoint = null }, result);
     }
 
     [Theory]

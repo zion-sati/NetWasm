@@ -1,6 +1,7 @@
 import { createContractError, isContractError } from "./contract-error.mjs";
 import { assertExecutionResult, failedExecutionResult } from "./execution-result.mjs";
 import { validateOutputSink } from "./output-sink-stream.mjs";
+import { createManagedExceptionOutput } from "./managed-exception-output.mjs";
 
 const factoryKeys = [
   "createFilesystem",
@@ -128,6 +129,7 @@ export function createDeploymentExecution(options) {
               artifacts: manifest.artifacts,
               contractKey: manifest.executionContract,
               imports: providers.componentImports,
+              managedExceptionReporting: createManagedExceptionOutput(output.stderr),
               signal,
             }));
           }

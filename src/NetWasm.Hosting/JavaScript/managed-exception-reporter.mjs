@@ -4,42 +4,99 @@ export function createManagedExceptionReporter(options) {
   const {
     getMemory,
     stringDataOffset,
-    reportImmediate,
-    reportEnriched,
-    loadArtifacts,
-    maximumReportedMessageLength = Number.POSITIVE_INFINITY,
-    crypto: cryptoProvider = globalThis.crypto,
   } = options;
 
   if (typeof getMemory !== "function") throw new TypeError("getMemory must be a function");
   if (!Number.isSafeInteger(stringDataOffset) || stringDataOffset < 0) throw new RangeError("stringDataOffset must be a non-negative safe integer");
+  const reporter = createManagedExceptionEventReporter(options);
+
+  function reportTerminalException(
+    typeId,
+    messageReference,
+    messageLength,
+    stackTraceReference = 0,
+    stackTraceLength = 0) {
+    reporter.reportTerminalEvent(
+      typeId,
+      copyManagedString(getMemory(), messageReference, messageLength, stringDataOffset),
+      copyManagedString(getMemory(), stackTraceReference, stackTraceLength, stringDataOffset));
+  }
+
+  function reportTerminalExceptionV1(typeId, messageReference, messageLength) {
+    reportTerminalException(typeId, messageReference, messageLength);
+  }
+
+  return Object.freeze({
+    importObject: Object.freeze({
+      report_terminal_exception_v1: reportTerminalExceptionV1,
+      report_terminal_exception_v2: reportTerminalException,
+      raise_terminal_exception() {
+        // Raw modules execute the emitter's immediately following `unreachable`.
+        // Throwing from JavaScript here would create a catchable foreign
+        // exception instead of preserving the terminal Wasm trap contract.
+      },
+    }),
+    reportTerminalException,
+    reportTerminalEvent: reporter.reportTerminalEvent,
+    consumeTerminalEvent: reporter.consumeTerminalEvent,
+    drain: reporter.drain,
+  });
+}
+
+export function createManagedExceptionEventReporter(options) {
+  const {
+    reportImmediate,
+    reportEnriched,
+    loadArtifacts,
+    stackTraceSymbols = [],
+    maximumReportedMessageLength = Number.POSITIVE_INFINITY,
+    crypto: cryptoProvider = globalThis.crypto,
+  } = options;
+
   if (typeof reportImmediate !== "function") throw new TypeError("reportImmediate must be a function");
   if (typeof reportEnriched !== "function") throw new TypeError("reportEnriched must be a function");
   if (typeof loadArtifacts !== "function") throw new TypeError("loadArtifacts must be a function");
   if (maximumReportedMessageLength !== Number.POSITIVE_INFINITY &&
       (!Number.isSafeInteger(maximumReportedMessageLength) || maximumReportedMessageLength < 0))
     throw new RangeError("maximumReportedMessageLength must be a non-negative safe integer or Infinity");
+  const stackTraceSymbolNames = readStackTraceSymbolNames(stackTraceSymbols);
 
   let nextEventId = 1;
   let artifactsPromise;
+  let enrichmentFailure;
+  const pendingEnrichments = new Set();
   const terminalEvents = [];
 
-  function reportTerminalException(typeId, messageReference, messageLength) {
+  function reportTerminalEvent(typeId, storedMessage, stackTrace = null) {
     if (!Number.isSafeInteger(typeId) || typeId <= 0 || typeId > 0x7fffffff)
       throw new RangeError("Managed exception type ID must be a positive i32 value.");
+    if (storedMessage !== null && typeof storedMessage !== "string") {
+      throw new TypeError("Managed exception message must be a string or null.");
+    }
+    if (stackTrace !== null && typeof stackTrace !== "string") {
+      throw new TypeError("Managed exception stack trace must be a string or null.");
+    }
 
     const eventId = nextEventId++;
-    const copiedMessage = copyManagedString(getMemory(), messageReference, messageLength, stringDataOffset);
-    const messageTruncated = typeof copiedMessage === "string" && copiedMessage.length > maximumReportedMessageLength;
+    const resolvedStackTrace = resolveStackTrace(stackTrace, stackTraceSymbolNames);
+    const messageTruncated = typeof storedMessage === "string"
+      && storedMessage.length > maximumReportedMessageLength;
     const message = messageTruncated
-      ? copiedMessage.slice(0, maximumReportedMessageLength)
-      : copiedMessage;
-    const terminalEvent = Object.freeze({ eventId, typeId, message, messageTruncated });
+      ? storedMessage.slice(0, maximumReportedMessageLength)
+      : storedMessage;
+    const terminalEvent = Object.freeze({
+      eventId,
+      typeId,
+      message,
+      messageTruncated,
+      stackTrace: resolvedStackTrace,
+    });
     terminalEvents.push(terminalEvent);
     reportImmediate(terminalEvent);
 
     artifactsPromise ??= loadAndValidateArtifacts(loadArtifacts, cryptoProvider);
-    void artifactsPromise.then(
+    let enrichment;
+    enrichment = artifactsPromise.then(
       artifacts => {
         const entry = artifacts.types.get(typeId);
         reportEnriched({
@@ -49,22 +106,58 @@ export function createManagedExceptionReporter(options) {
           canonicalIdentity: entry?.canonicalIdentity,
           assemblyIdentity: entry?.assemblyIdentity,
           message,
+          stackTrace: resolvedStackTrace,
           buildId: artifacts.manifest.buildId,
         });
       },
       error => {
-        reportEnriched({ eventId, typeId, typeName: `<exception type #${typeId} unavailable>`, message, artifactError: String(error) });
+        reportEnriched({ eventId, typeId, typeName: `<exception type #${typeId} unavailable>`, message, stackTrace: resolvedStackTrace, artifactError: String(error) });
       },
-    );
+    ).catch(error => {
+      enrichmentFailure ??= error;
+    }).finally(() => pendingEnrichments.delete(enrichment));
+    pendingEnrichments.add(enrichment);
   }
 
   return Object.freeze({
-    importObject: Object.freeze({ report_terminal_exception_v1: reportTerminalException }),
-    reportTerminalException,
+    reportTerminalEvent,
     consumeTerminalEvent() {
       return terminalEvents.pop();
     },
+    async drain() {
+      while (pendingEnrichments.size !== 0) {
+        await Promise.all([...pendingEnrichments]);
+      }
+      if (enrichmentFailure !== undefined) throw enrichmentFailure;
+    },
   });
+}
+
+export function readStackTraceSymbolNames(symbols) {
+  if (!Array.isArray(symbols)) {
+    throw new TypeError("Managed stack-trace symbols must be an array.");
+  }
+  const names = new Map();
+  for (const symbol of symbols) {
+    if (symbol === null || typeof symbol !== "object"
+        || !Number.isSafeInteger(symbol.id) || symbol.id <= 0
+        || typeof symbol.name !== "string" || symbol.name.length === 0
+        || names.has(symbol.id)) {
+      throw new TypeError("Managed stack-trace symbol is invalid.");
+    }
+    names.set(symbol.id, symbol.name);
+  }
+  return names;
+}
+
+export function resolveStackTrace(stackTrace, symbols) {
+  if (stackTrace === null || symbols.size === 0) return stackTrace;
+  return stackTrace.split("\n").map(frame => {
+    const match = /^at method#([1-9][0-9]*)$/u.exec(frame);
+    if (match === null) return frame;
+    const name = symbols.get(Number(match[1]));
+    return name === undefined ? frame : `at ${name}`;
+  }).join("\n");
 }
 
 export function copyManagedString(memory, reference, length, stringDataOffset) {
@@ -88,7 +181,7 @@ export function copyManagedString(memory, reference, length, stringDataOffset) {
   return result;
 }
 
-async function loadAndValidateArtifacts(loadArtifacts, cryptoProvider) {
+export async function loadAndValidateArtifacts(loadArtifacts, cryptoProvider) {
   const artifacts = await loadArtifacts();
   const { manifest, mapBytes, wasmBytes } = artifacts;
   if (!manifest || manifest.schemaVersion !== 1 || typeof manifest.buildId !== "string") throw new Error("invalid diagnostic artifact manifest");

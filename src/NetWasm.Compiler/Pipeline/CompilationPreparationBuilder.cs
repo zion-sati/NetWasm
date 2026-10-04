@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
@@ -97,11 +98,9 @@ internal sealed class CompilationPreparationBuilder(
             entry.Exports,
             componentContract,
             options.Target);
-        var argumentFactory = _argumentFactories.Resolve(
-            options.EntryPointKind,
-            entry.EntryPoint,
-            types,
-            methods);
+        var argumentFactory = entry.EntryPoint is { } entryPoint
+            ? _argumentFactories.Resolve(options.EntryPointKind, entryPoint, types, methods)
+            : null;
         var reachabilityRoots = _stackTraceRoots.Provide(
             options.EmitStackTrace,
             types,
@@ -113,6 +112,18 @@ internal sealed class CompilationPreparationBuilder(
                 Methods = reachabilityRoots.Methods.Add(method),
             };
         }
+        var namedCallbacks = metadata.Methods
+            .Where(method => method.NativeCallback?.EntryPoint is not null)
+            .Select(method => method.Key);
+        reachabilityRoots = reachabilityRoots with
+        {
+            InvokedMethods =
+            [
+                .. reachabilityRoots.InvokedMethods
+                    .Concat(namedCallbacks)
+                    .Distinct(),
+            ],
+        };
         return new CompilationPreparation(
             componentContract,
             entry,

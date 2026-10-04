@@ -23,17 +23,25 @@ public sealed class MsBuildPackInputAdapter : IMsBuildPackInputAdapter
             authors,
             description,
             outputPath,
-            files.Select(AdaptFile).ToArray(),
+            files.SelectMany(AdaptFiles).ToArray(),
             dependencies.Select(AdaptDependency).ToArray(),
             canonicalTargetFramework);
     }
 
-    private static CanonicalPackageFileInput AdaptFile(ITaskItem item)
+    private static IEnumerable<CanonicalPackageFileInput> AdaptFiles(ITaskItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
         var source = FirstMetadata(item, "SourcePath", "FullPath");
-        var target = FirstMetadata(item, "PackagePath", "TargetPath");
-        return new CanonicalPackageFileInput(source, target)
+        if (ParseBoolean(OptionalMetadata(item, "NetWasmRawContent")))
+        {
+            return ResolveContentTargets(item, source).Select(target => CreateFileInput(item, source, target));
+        }
+
+        return [CreateFileInput(item, source, FirstMetadata(item, "PackagePath", "TargetPath"))];
+    }
+
+    private static CanonicalPackageFileInput CreateFileInput(ITaskItem item, string source, string target) =>
+        new(source, target)
         {
             TargetFrameworkAlias = OptionalMetadata(item, "TargetFrameworkAlias"),
             SourceRoot = OptionalMetadata(item, "SourceRoot"),
@@ -42,14 +50,90 @@ public sealed class MsBuildPackInputAdapter : IMsBuildPackInputAdapter
             ExpectedSha256 = OptionalMetadata(item, "ExpectedSha256", "Sha256"),
             ExpectedLength = ParseLength(OptionalMetadata(item, "ExpectedLength", "Length"))
         };
+
+    private static IEnumerable<string> ResolveContentTargets(ITaskItem item, string source)
+    {
+        var packagePathSpecified = item.MetadataNames.Cast<string>()
+            .Contains("PackagePath", StringComparer.OrdinalIgnoreCase);
+        var fileName = Path.GetFileName(source);
+        IEnumerable<string> targetDirectories;
+
+        if (packagePathSpecified)
+        {
+            targetDirectories = item.GetMetadata("PackagePath")
+                .Split(';', StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            var relativePath = NormalizeRelativeIdentity(item.ItemSpec, fileName);
+            return SplitMetadata(item.GetMetadata("NetWasmContentTargetFolders"))
+                .Select(folder => folder.Equals("contentFiles", StringComparison.OrdinalIgnoreCase)
+                    ? $"contentFiles/any/any/{relativePath}"
+                    : $"{folder}/{relativePath}");
+        }
+
+        var recursiveDirectory = FirstNonEmptyMetadata(item, "RecursiveDir", "NuGetRecursiveDir");
+        return targetDirectories.Select(target => ResolveExplicitTarget(target, recursiveDirectory, fileName));
     }
 
+    private static string ResolveExplicitTarget(string target, string? recursiveDirectory, string fileName)
+    {
+        // NuGet uses a single separator to designate the package root.
+        if (target is "/" or "\\")
+        {
+            target = string.Empty;
+        }
+
+        if (!string.IsNullOrEmpty(recursiveDirectory) && !ExtensionsMatch(fileName, target))
+        {
+            target = Path.Combine(target, recursiveDirectory);
+        }
+
+        if (!ExtensionsMatch(fileName, target))
+        {
+            target = Path.Combine(target, fileName);
+        }
+
+        return target.Replace('\\', '/');
+    }
+
+    private static string NormalizeRelativeIdentity(string identity, string fileName)
+    {
+        var relativePath = Path.IsPathRooted(identity) ? fileName : identity;
+        return relativePath.Replace('\\', '/').TrimStart('/');
+    }
+
+    private static bool ExtensionsMatch(string source, string target)
+    {
+        var sourceExtension = Path.GetExtension(source);
+        return sourceExtension.Length > 0 &&
+            sourceExtension.Equals(Path.GetExtension(target), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<string> SplitMetadata(string value) =>
+        value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private static string? FirstNonEmptyMetadata(ITaskItem item, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var value = item.GetMetadata(name);
+            if (!string.IsNullOrEmpty(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
     private static CanonicalPackageDependencyInput AdaptDependency(ITaskItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
         return new CanonicalPackageDependencyInput(
             item.ItemSpec,
-            FirstMetadata(item, "VersionRange", "Version"),
+            OptionalMetadata(item, "VersionRange", "Version") ?? string.Empty,
             FirstMetadata(item, "TargetFramework", "TargetFrameworkMoniker"))
         {
             TargetFrameworkAlias = OptionalMetadata(item, "TargetFrameworkAlias"),

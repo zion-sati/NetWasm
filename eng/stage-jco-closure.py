@@ -51,6 +51,15 @@ MAX_TARBALL_BYTES = 64_000_000
 MAX_ARCHIVE_MEMBERS = 20_000
 MAX_PACKAGE_EXPANDED_BYTES = 256_000_000
 MAX_CLOSURE_EXPANDED_BYTES = 1_000_000_000
+MAX_PATCH_INPUT_BYTES = 16_000_000
+PATCH_SCHEMA_VERSION = 1
+PATCH_PROVENANCE_NAME = "patch-provenance.json"
+BINDGEN_PATCH_TARGET = (
+    "node_modules/@bytecodealliance/jco-transpile/vendor/"
+    "js-component-bindgen-component.core.wasm"
+)
+PATCHED_JCO_VERSION = "1.28.1+netwasm.2"
+UPSTREAM_JCO_VERSION = "1.28.1"
 ACCEPTED_INVOCATION = [
     "transpile",
     "<component>",
@@ -748,6 +757,137 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _validate_sha256(value: Any, owner: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ClosureStagingError(f"{owner} has no valid lowercase SHA-256 digest")
+    return value
+
+
+def _normalise_patch_path(value: Any, owner: str) -> PurePosixPath:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ClosureStagingError(f"{owner} has an invalid path")
+    if "//" in value or any(part in ("", ".", "..") for part in value.split("/")):
+        raise ClosureStagingError(f"{owner} has an unsafe path")
+    path = PurePosixPath(value)
+    if path.is_absolute():
+        raise ClosureStagingError(f"{owner} has an unsafe path")
+    for part in path.parts:
+        _validate_portable_segment(part, value)
+    return path
+
+
+def _read_regular_bounded(path: Path, limit: int, owner: str) -> bytes:
+    if path.is_symlink() or not path.is_file():
+        raise ClosureStagingError(f"{owner} is not a regular file: {path}")
+    if path.stat().st_size > limit:
+        raise ClosureStagingError(f"{owner} exceeds the {limit}-byte limit")
+    with path.open("rb") as stream:
+        return _read_bounded(stream, limit, owner)
+
+
+def _apply_bindgen_patch(
+    canonical_stage: Path,
+    patch_manifest_path: Path,
+) -> tuple[bytes, str]:
+    manifest_bytes = _read_regular_bounded(
+        patch_manifest_path,
+        MAX_PATCH_INPUT_BYTES,
+        "jco patch manifest",
+    )
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exception:
+        raise ClosureStagingError("jco patch manifest is invalid JSON") from exception
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != PATCH_SCHEMA_VERSION:
+        raise ClosureStagingError("jco patch manifest schema is unsupported")
+
+    effective_version = manifest.get("effectiveVersion")
+    if effective_version != PATCHED_JCO_VERSION:
+        raise ClosureStagingError("jco patch manifest has the wrong effective version")
+    upstream = manifest.get("upstream")
+    if not isinstance(upstream, dict) or upstream.get("jcoVersion") != UPSTREAM_JCO_VERSION:
+        raise ClosureStagingError("jco patch manifest has the wrong upstream jco version")
+    for field in ("repository", "revision", "tag", "jcoTranspileVersion"):
+        value = upstream.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ClosureStagingError(f"jco patch manifest has no upstream {field}")
+
+    target_relative = _normalise_patch_path(manifest.get("targetPath"), "jco patch target")
+    if target_relative.as_posix() != BINDGEN_PATCH_TARGET:
+        raise ClosureStagingError("jco patch manifest has the wrong target path")
+    target = canonical_stage.joinpath(*target_relative.parts)
+    original = _read_regular_bounded(target, MAX_PATCH_INPUT_BYTES, "jco patch target")
+    original_sha256 = _validate_sha256(
+        manifest.get("originalSha256"),
+        "jco patch original",
+    )
+    if hashlib.sha256(original).hexdigest() != original_sha256:
+        raise ClosureStagingError("jco patch target digest does not match the pinned original")
+
+    manifest_root = patch_manifest_path.parent
+    replacement = manifest.get("replacement")
+    source_patch = manifest.get("sourcePatch")
+    if not isinstance(replacement, dict) or not isinstance(source_patch, dict):
+        raise ClosureStagingError("jco patch manifest has invalid patch inputs")
+
+    replacement_relative = _normalise_patch_path(
+        replacement.get("path"),
+        "jco patch replacement",
+    )
+    replacement_path = manifest_root.joinpath(*replacement_relative.parts)
+    replacement_bytes = _read_regular_bounded(
+        replacement_path,
+        MAX_PATCH_INPUT_BYTES,
+        "jco patch replacement",
+    )
+    replacement_sha256 = _validate_sha256(
+        replacement.get("sha256"),
+        "jco patch replacement",
+    )
+    if hashlib.sha256(replacement_bytes).hexdigest() != replacement_sha256:
+        raise ClosureStagingError("jco patch replacement digest does not match")
+
+    source_patch_relative = _normalise_patch_path(
+        source_patch.get("path"),
+        "jco source patch",
+    )
+    source_patch_bytes = _read_regular_bounded(
+        manifest_root.joinpath(*source_patch_relative.parts),
+        MAX_PATCH_INPUT_BYTES,
+        "jco source patch",
+    )
+    source_patch_sha256 = _validate_sha256(
+        source_patch.get("sha256"),
+        "jco source patch",
+    )
+    if hashlib.sha256(source_patch_bytes).hexdigest() != source_patch_sha256:
+        raise ClosureStagingError("jco source patch digest does not match")
+
+    license_relative = _normalise_patch_path(
+        manifest.get("licensePath"),
+        "jco patch license",
+    )
+    license_bytes = _read_regular_bounded(
+        manifest_root.joinpath(*license_relative.parts),
+        MAX_PATCH_INPUT_BYTES,
+        "jco patch license",
+    )
+    license_sha256 = _validate_sha256(
+        manifest.get("licenseSha256"),
+        "jco patch license",
+    )
+    if hashlib.sha256(license_bytes).hexdigest() != license_sha256:
+        raise ClosureStagingError("jco patch license digest does not match")
+
+    target.write_bytes(replacement_bytes)
+    (canonical_stage / PATCH_PROVENANCE_NAME).write_bytes(manifest_bytes)
+    return manifest_bytes, effective_version
+
+
 def _files(root: Path) -> Iterable[Path]:
     for path in sorted(root.rglob("*")):
         if path.is_symlink():
@@ -869,6 +1009,7 @@ def stage(
     policy_path: Path,
     generation_root: Path,
     cache: Path,
+    patch_manifest_path: Path | None = None,
 ) -> int:
     generation_root = Path(generation_root).absolute()
     cache = Path(cache).absolute()
@@ -918,6 +1059,15 @@ def stage(
                     f"{MAX_CLOSURE_EXPANDED_BYTES}-byte expanded limit"
                 )
 
+        patch_manifest_sha256 = None
+        patch_version = None
+        if patch_manifest_path is not None:
+            patch_manifest_bytes, patch_version = _apply_bindgen_patch(
+                canonical_stage,
+                patch_manifest_path,
+            )
+            patch_manifest_sha256 = hashlib.sha256(patch_manifest_bytes).hexdigest()
+
         entry_point = canonical_stage / "node_modules/@bytecodealliance/jco/dist/jco.js"
         if not entry_point.is_file():
             raise ClosureStagingError("canonical jco entrypoint is missing")
@@ -935,6 +1085,9 @@ def stage(
             "packageCount": len(selected),
             "fileCount": len(integrity),
         }
+        if patch_version is not None:
+            marker_payload["patchVersion"] = patch_version
+            marker_payload["patchManifestSha256"] = patch_manifest_sha256
         _write_exclusive_json(marker, marker_payload)
 
     print(f"packages={len(selected)} files={len(integrity)}")
@@ -958,6 +1111,7 @@ def _arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--policy", required=True, type=Path)
     parser.add_argument("--generation-root", required=True, type=Path)
     parser.add_argument("--cache", required=True, type=Path)
+    parser.add_argument("--patch-manifest", type=Path)
     return parser.parse_args(argv)
 
 
@@ -969,6 +1123,7 @@ def main(argv: list[str] | None = None) -> int:
             arguments.policy.absolute(),
             arguments.generation_root.absolute(),
             arguments.cache.absolute(),
+            arguments.patch_manifest.absolute() if arguments.patch_manifest else None,
         )
     except (ClosureStagingError, OSError, json.JSONDecodeError) as exception:
         print(f"NW-JCO-STAGE-001: {exception}", file=sys.stderr)

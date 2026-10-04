@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Core;
 
@@ -29,6 +30,8 @@ public enum CliTypeShape
     GenericMethodParameter,
     ManagedByReference,
     UnmanagedPointer,
+    FunctionPointer,
+    Modified,
 }
 
 /// <summary>
@@ -49,7 +52,10 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         int arrayRank = 0,
         AssemblyIdentity? assembly = null,
         string? fullName = null,
-        CliTypeIdentity? stackStorageType = null)
+        CliTypeIdentity? stackStorageType = null,
+        CliFunctionPointerSignature? functionPointerSignature = null,
+        CliTypeIdentity? customModifier = null,
+        bool isRequiredModifier = false)
     {
         CanonicalName = canonicalName;
         Shape = shape;
@@ -64,6 +70,9 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         Assembly = assembly;
         FullName = fullName;
         StackStorageType = stackStorageType;
+        FunctionPointerSignature = functionPointerSignature;
+        CustomModifier = customModifier;
+        IsRequiredModifier = isRequiredModifier;
     }
 
     public string CanonicalName { get; }
@@ -79,12 +88,18 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
     public AssemblyIdentity? Assembly { get; }
     public string? FullName { get; }
     public CliTypeIdentity? StackStorageType { get; }
+    public CliFunctionPointerSignature? FunctionPointerSignature { get; }
+    public CliTypeIdentity? CustomModifier { get; }
+    public bool IsRequiredModifier { get; }
 
     public bool ContainsGenericParameters => Shape switch
     {
         CliTypeShape.GenericTypeParameter or CliTypeShape.GenericMethodParameter => true,
         CliTypeShape.SzArray or CliTypeShape.Array or CliTypeShape.ManagedByReference or
-            CliTypeShape.UnmanagedPointer => ElementType!.ContainsGenericParameters,
+            CliTypeShape.UnmanagedPointer or CliTypeShape.Modified => ElementType!.ContainsGenericParameters,
+        CliTypeShape.FunctionPointer =>
+            FunctionPointerSignature!.Signature.ReturnSignatureType.ContainsGenericParameters ||
+            FunctionPointerSignature.Signature.ParameterSignatureTypes.Any(type => type.ContainsGenericParameters),
         CliTypeShape.GenericInstantiation =>
             TypeArguments.Any(argument => argument.ContainsGenericParameters),
         _ => false,
@@ -262,7 +277,8 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             genericType.StackKind,
             genericType.IsValueType,
             elementType: genericType,
-            typeArguments: typeArguments);
+            typeArguments: typeArguments,
+            stackStorageType: genericType.StackStorageType);
 
     public static CliTypeIdentity GenericParameter(bool method, int index) => new(
         $"{(method ? "!!" : "!")}{index}",
@@ -270,6 +286,21 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         CliValueKind.Unknown,
         isValueType: false,
         genericParameterIndex: index);
+
+    public static CliTypeIdentity ScopedGenericParameter(
+        string ownerCanonicalName,
+        bool method,
+        int index)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(ownerCanonicalName);
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        return new(
+            $"generic-parameter:{ownerCanonicalName}:{(method ? "!!" : "!")}{index}",
+            method ? CliTypeShape.GenericMethodParameter : CliTypeShape.GenericTypeParameter,
+            CliValueKind.Unknown,
+            isValueType: false,
+            genericParameterIndex: index);
+    }
 
     public static CliTypeIdentity ManagedByReference(CliTypeIdentity elementType) => new(
         $"{elementType.CanonicalName}&",
@@ -285,6 +316,41 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         isValueType: true,
         elementType);
 
+    public static CliTypeIdentity FunctionPointer(CliFunctionPointerSignature signature)
+    {
+        ArgumentNullException.ThrowIfNull(signature);
+        ArgumentNullException.ThrowIfNull(signature.Signature);
+        ArgumentOutOfRangeException.ThrowIfNegative(signature.GenericArity);
+        ArgumentOutOfRangeException.ThrowIfNegative(signature.RequiredParameterCount);
+        if (signature.RequiredParameterCount > signature.Signature.ParameterSignatureTypes.Length)
+            throw new ArgumentOutOfRangeException(nameof(signature));
+        return new(
+            $"fnptr:{signature.Header:x2}:{signature.GenericArity}:{signature.RequiredParameterCount}:" +
+            $"{signature.Signature.ReturnSignatureType.CanonicalName}" +
+            $"({string.Join(',', signature.Signature.ParameterSignatureTypes.Select(type => type.CanonicalName))})",
+            CliTypeShape.FunctionPointer,
+            CliValueKind.NativeInt,
+            isValueType: true,
+            functionPointerSignature: signature);
+    }
+
+    public static CliTypeIdentity Modified(
+        CliTypeIdentity elementType,
+        CliTypeIdentity modifier,
+        bool isRequired)
+    {
+        ArgumentNullException.ThrowIfNull(elementType);
+        ArgumentNullException.ThrowIfNull(modifier);
+        return new(
+            $"{(isRequired ? "modreq" : "modopt")}({modifier.CanonicalName}){elementType.CanonicalName}",
+            CliTypeShape.Modified,
+            elementType.StackKind,
+            elementType.IsValueType,
+            elementType,
+            customModifier: modifier,
+            isRequiredModifier: isRequired);
+    }
+
     public CliTypeIdentity WithStackKind(CliValueKind stackKind) => new(
         CanonicalName,
         Shape,
@@ -296,7 +362,10 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         ArrayRank,
         Assembly,
         FullName,
-        StackStorageType);
+        StackStorageType,
+        FunctionPointerSignature,
+        CustomModifier,
+        IsRequiredModifier);
 
     public CliTypeIdentity WithStackStorageType(CliTypeIdentity storageType)
     {
@@ -312,7 +381,10 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             ArrayRank,
             Assembly,
             FullName,
-            storageType);
+            storageType,
+            FunctionPointerSignature,
+            CustomModifier,
+            IsRequiredModifier);
     }
 
     public CliTypeIdentity Substitute(
@@ -339,6 +411,13 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
                 ElementType!.Substitute(typeArguments, methodArguments)),
             CliTypeShape.UnmanagedPointer => UnmanagedPointer(
                 ElementType!.Substitute(typeArguments, methodArguments)),
+            CliTypeShape.Modified => Modified(
+                ElementType!.Substitute(typeArguments, methodArguments),
+                CustomModifier!, IsRequiredModifier),
+            CliTypeShape.FunctionPointer => FunctionPointer(FunctionPointerSignature! with
+            {
+                Signature = FunctionPointerSignature.Signature.Substitute(typeArguments, methodArguments),
+            }),
             CliTypeShape.GenericInstantiation => GenericInstantiation(
                 ElementType!.Substitute(typeArguments, methodArguments),
                 [.. TypeArguments.Select(argument =>
@@ -358,6 +437,12 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
 
     public override string ToString() => CanonicalName;
 }
+
+public sealed record CliFunctionPointerSignature(
+    byte Header,
+    int GenericArity,
+    int RequiredParameterCount,
+    MethodSignatureModel Signature);
 
 public readonly record struct CliGenericContext(
     ImmutableArray<CliTypeIdentity> TypeArguments,
@@ -511,8 +596,15 @@ public sealed record MethodDefinitionModel(
     public WitImportDeclaration? WitImport { get; init; }
     public WitExportDeclaration? WitExport { get; init; }
     public WitPostReturnDeclaration? WitPostReturn { get; init; }
+    public NativeImportDeclaration? NativeImport { get; init; }
+    public NativeCallbackDeclaration? NativeCallback { get; init; }
+    public UnsafeAccessors.UnsafeAccessorDeclaration? UnsafeAccessor { get; init; }
 
     public bool HasBody => RelativeVirtualAddress != 0;
+
+    // Physical metadata readers still use HasBody. Managed analysis may also
+    // consume compiler-generated accessor wrappers with no physical RVA.
+    public bool HasManagedBody => HasBody || UnsafeAccessor is not null;
 
     public ImmutableArray<CliValueKind> WasmParameterTypes => IsStatic
         ? Signature.ParameterTypes
@@ -561,6 +653,12 @@ public sealed record MethodInstanceModel(
             Definition.IsNewSlot == other.Definition.IsNewSlot &
             Definition.IsFinal == other.Definition.IsFinal &
             Definition.IsAbstract == other.Definition.IsAbstract &
+            Definition.UnsafeAccessor == other.Definition.UnsafeAccessor &
+            Definition.NativeImport == other.Definition.NativeImport &
+            (Definition.NativeCallback is null
+                ? other.Definition.NativeCallback is null
+                : Definition.NativeCallback.HasEquivalentFacts(
+                    other.Definition.NativeCallback)) &
             HasEquivalentSignature(Definition.Signature, other.Definition.Signature) &
             DeclaringType.Equals(other.DeclaringType) &
             MethodArguments.AsSpan().SequenceEqual(other.MethodArguments.AsSpan()) &
@@ -725,6 +823,7 @@ public enum RuntimeIntrinsic
     SuppressFinalize,
     ReRegisterForFinalize,
     ReportUnobservedTaskException,
+    ExceptionDispatchPreserved,
     JSObjectDispose,
     JSSubscriptionDispose,
     IsReferenceOrContainsReferences,
@@ -780,7 +879,12 @@ public enum RuntimeIntrinsic
     ComponentResourceHandleRelease,
     ObjectArrayDelegateAdapterCreate,
     MemberExecuteMethod,
+    DelegateDynamicInvoke,
     MemberReadField,
+    EphemeronHandleCreate,
+    EphemeronHandleGetKey,
+    EphemeronHandleGetValue,
+    EphemeronHandleRelease,
 }
 
 public interface IRuntimeIntrinsicRegistry

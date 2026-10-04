@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRawExecutionStrategy } from "./raw-execution-strategy.mjs";
-import { commandExecutionContract } from "./execution-contracts.mjs";
+import { commandExecutionContract, processExecutionContract } from "./execution-contracts.mjs";
 
 const application = Buffer.from(
   "AGFzbQEAAAABDQJgAAF/YAR/f39/AX8CGwEPbmV0d2FzbS5ob3N0LnYxB3NlcnZpY2UAAAMDAgEABQMBAAEHMQQGbWVtb3J5AgANY20zMnAyX21lbW9yeQIADmNtMzJwMl9yZWFsbG9jAAEDcnVuAAIKCwIEAEEICwQAEAALAEkEbmFtZQEYAwAHc2VydmljZQEHcmVhbGxvYwIDcnVuBB0CAAxzZXJ2aWNlLXR5cGUBDHJlYWxsb2MtdHlwZQYJAQAGbWVtb3J5",
   "base64");
 const fingerprint = `sha256:${"1".repeat(64)}`;
 const manifest = Object.freeze({ version: 1, target: "wasm32" });
+const diagnosticArtifacts = Object.freeze({ marker: "verified deployment closure" });
+const terminalActions = Object.freeze({
+  consumeTerminalEvent() {},
+  async drainTerminalReports() {},
+});
 const release = (code, action) => ({
   code,
   message: `The execution host could not release ${code}.`,
@@ -45,6 +50,7 @@ async function loadedRawModule() {
       exports: Object.freeze(WebAssembly.Module.exports(module)),
     }),
     adapter: emptyAdapter(),
+    diagnosticArtifacts,
     interopManifest: manifest,
     module,
   });
@@ -75,12 +81,26 @@ test("loads, prepares, binds, executes, and closes one real raw instance", async
 
   const result = await execute(request(value => {
     assert.equal(Object.isFrozen(value), true);
-    assert.deepEqual(Object.keys(value).sort(), ["abi", "adapter", "manifest"]);
+    assert.deepEqual(Object.keys(value).sort(), [
+      "abi",
+      "adapter",
+      "assertAsyncDeliveryAvailable",
+      "diagnosticArtifacts",
+      "manifest",
+      "observeAsyncCompletion",
+      "stackTraceSymbols",
+    ]);
     assert.equal(value.abi, loaded.abi);
     assert.equal(value.adapter, loaded.adapter);
+    assert.equal(value.diagnosticArtifacts, diagnosticArtifacts);
     assert.equal(value.manifest, manifest);
+    assert.deepEqual(value.stackTraceSymbols, []);
+    assert.equal(typeof value.observeAsyncCompletion, "function");
+    assert.equal(typeof value.assertAsyncDeliveryAvailable, "function");
     calls.push("prepare");
     return {
+      consumeTerminalEvent() {},
+      async drainTerminalReports() { calls.push("diagnostic-drain"); },
       imports: {
         "netwasm.host.v1": {
           service() {
@@ -111,6 +131,7 @@ test("loads, prepares, binds, executes, and closes one real raw instance", async
     "prepare",
     "bind",
     "service",
+    "diagnostic-drain",
     "interop-close",
     "caller-close",
   ]);
@@ -122,6 +143,7 @@ test("normalizes a custom instantiator result and binds that exact instance", as
   let bound;
   const execute = createRawExecutionStrategy(async () => loaded);
   const result = await execute(request(() => ({
+    ...terminalActions,
     imports: { "netwasm.host.v1": { service: () => 11 } },
     bindInstance(instance) { bound = instance; },
     close() {},
@@ -196,6 +218,8 @@ test("maps interop preparation failures before instantiation", async () => {
     () => ({ imports: null, bindInstance() {}, close() {} }),
     () => ({ imports: [], bindInstance() {}, close() {} }),
     () => ({ imports: new Date(), bindInstance() {}, close() {} }),
+    () => ({ ...terminalActions, imports: {}, bindInstance() {}, close() {}, consumeTerminalEvent: null }),
+    () => ({ ...terminalActions, imports: {}, bindInstance() {}, close() {}, drainTerminalReports: null }),
   ];
   const inherited = Object.create({ imports: {}, bindInstance() {}, close() {} });
   invalidPreparations.push(() => inherited);
@@ -235,6 +259,7 @@ test("contains instantiation, binding, and execution-boundary failures", async (
       };
     });
     const result = await execute(request(() => ({
+      ...terminalActions,
       imports: { "netwasm.host.v1": { service: () => 0 } },
       bindInstance() {
         if (mode === "bind") throw new Error("private bind detail");
@@ -263,6 +288,7 @@ test("records interop and caller cleanup failures in ownership order", async () 
   const calls = [];
   const execute = createRawExecutionStrategy(async () => loaded);
   const result = await execute(request(() => ({
+    ...terminalActions,
     imports: { "netwasm.host.v1": { service: () => 0 } },
     bindInstance() {},
     close() { calls.push("interop-close"); throw new Error("private interop close"); },
@@ -294,6 +320,7 @@ test("contains unexpected raw executor failures and closes managed interop", asy
   };
   const execute = createRawExecutionStrategy(async () => loaded);
   const result = await execute(request(() => ({
+    ...terminalActions,
     imports: { "netwasm.host.v1": { service: () => 0 } },
     bindInstance() { calls.push("bind"); },
     close() { calls.push("interop-close"); },
@@ -314,7 +341,12 @@ test("validates the factory and exact request before loading", async () => {
   }
   let loads = 0;
   const execute = createRawExecutionStrategy(async () => { loads++; });
-  const base = request(() => ({ imports: {}, bindInstance() {}, close() {} }));
+  const base = request(() => ({
+    ...terminalActions,
+    imports: {},
+    bindInstance() {},
+    close() {},
+  }));
   for (const invalid of [
     null,
     1,
@@ -354,4 +386,26 @@ test("validates the factory and exact request before loading", async () => {
   Object.defineProperty(providerAccessor, "module", { enumerable: true, get: () => ({}) });
   await assert.rejects(() => execute({ ...base, providers: providerAccessor }), TypeError);
   assert.equal(loads, 0);
+});
+
+test("observes an asynchronous process and closes delivery before interop teardown", async () => {
+  const module = await WebAssembly.compile(Buffer.from("AGFzbQEAAAABFARgBH9/f38Bf2AAAX9gAABgAX8AAwcGAAEBAQIDBQMBAAEHrAEIBm1lbW9yeQIADWNtMzJwMl9tZW1vcnkCAA5jbTMycDJfcmVhbGxvYwAAA3J1bgABFm5ldHdhc20ucHJvY2Vzcy5zdGF0dXMAAhZuZXR3YXNtLnByb2Nlc3MucmVzdWx0AAMYbmV0d2FzbS5wcm9jZXNzLmNvbXBsZXRlAAQrY20zMnAyfG5ldHdhc206cnVudGltZS9yZWFjdG9yLWd1ZXN0QDF8d2FrZQAFChsGBABBCAsEAEEHCwQAQQELBABBKgsCAAsCAAs=", "base64"));
+  const metadata = { ...emptyAdapter().rawAdapterMetadata, requiredCapabilities: ["bindReactor"] };
+  const adapter = { rawAdapterMetadata: metadata, createAdapter: () => ({ metadata, imports: {} }) };
+  const loaded = { module, adapter, interopManifest: manifest,
+    abi: { target: "wasm32", entryPoint: { parameterShape: "none", returnShape: "exitCode", completionShape: "asynchronous" }, imports: WebAssembly.Module.imports(module), exports: WebAssembly.Module.exports(module) } };
+  let delivery;
+  let closed = false;
+  const result = await createRawExecutionStrategy(async () => loaded)(request(value => {
+    delivery = value;
+    value.assertAsyncDeliveryAvailable();
+    value.observeAsyncCompletion();
+    return { ...terminalActions, imports: {}, bindInstance() { value.assertAsyncDeliveryAvailable(); value.observeAsyncCompletion(); },
+      close() { assert.throws(() => value.assertAsyncDeliveryAvailable(), /unavailable/); value.observeAsyncCompletion(); closed = true; } };
+  }, { contractKey: processExecutionContract }));
+  assert.equal(result.completionKind, "normal", result.primaryFailure?.code);
+  assert.equal(result.exitCode, 42);
+  assert.equal(closed, true);
+  assert.throws(() => delivery.assertAsyncDeliveryAvailable(), /unavailable/);
+  delivery.observeAsyncCompletion(new Error("late completion"));
 });

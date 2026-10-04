@@ -10,6 +10,41 @@ namespace NetWasm.Compiler.Metadata.Tests;
 public sealed class SignatureTypeProviderTests
 {
     [Fact]
+    public void AccessorMatchingCanPreserveNonCallingConventionModifiers()
+    {
+        var provider = new SignatureTypeProvider(new("System.Runtime"), preserveCustomModifiers: true);
+        var element = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var modifier = CliTypeIdentity.Named(new("System.Runtime"),
+            "System.Runtime.CompilerServices", "IsExternalInit", false);
+        var result = provider.GetModifiedType(modifier, element, isRequired: true);
+        Assert.Equal(CliTypeShape.Modified, result.Shape);
+        Assert.Same(element, result.ElementType);
+        Assert.Same(modifier, result.CustomModifier);
+        Assert.True(result.IsRequiredModifier);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ResolvesGenericArgumentsOnlyFromTheMatchingContextAndPosition(bool method)
+    {
+        var provider = Assert.IsAssignableFrom<ISignatureTypeProvider<CliTypeIdentity, object?>>(
+            new SignatureTypeProvider(new("System.Runtime")));
+        Func<object?, int, CliTypeIdentity> resolve = method
+            ? provider.GetGenericMethodParameter
+            : provider.GetGenericTypeParameter;
+        var typeArgument = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var methodArgument = CliTypeIdentity.Primitive("i8", CliValueKind.I8);
+        var context = new CliGenericContext([typeArgument], [methodArgument]);
+
+        Assert.Same(method ? methodArgument : typeArgument, resolve(context, 0));
+        Assert.Equal(CliTypeIdentity.GenericParameter(method, 1), resolve(context, 1));
+        Assert.Equal(CliTypeIdentity.GenericParameter(method, 0), resolve(null, 0));
+        Assert.Equal(CliTypeIdentity.GenericParameter(method, 0),
+            resolve(new CliGenericContext(default, default), 0));
+    }
+
+    [Fact]
     public void ProvidesStandardSignatureShapesThroughItsPublicContract()
     {
         var provider = new SignatureTypeProvider(new("System.Runtime"));
@@ -19,7 +54,8 @@ public sealed class SignatureTypeProviderTests
             new ArrayShape(1, ImmutableArray<int>.Empty, ImmutableArray<int>.Empty));
 
         Assert.Equal(CliTypeShape.Array, signature.Shape);
-        Assert.Equal(CliTypeShape.UnmanagedPointer, provider.GetFunctionPointerType(default).Shape);
+        Assert.Equal(CliTypeShape.FunctionPointer, provider.GetFunctionPointerType(
+            new(default, element, 0, 0, [])).Shape);
         Assert.Same(element, provider.GetPinnedType(element));
         Assert.Equal(CliTypeShape.UnmanagedPointer, provider.GetPointerType(element).Shape);
         Assert.Equal(CliTypeShape.ManagedByReference, provider.GetByReferenceType(element).Shape);
@@ -34,6 +70,37 @@ public sealed class SignatureTypeProviderTests
             provider.GetGenericTypeParameter(
                 new CliGenericContext([element], []),
                 0));
+    }
+
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)1)]
+    [InlineData((byte)5)]
+    [InlineData((byte)9)]
+    public void PreservesFunctionPointerHeaderAndCallingConventionModifiers(byte header)
+    {
+        var provider = new SignatureTypeProvider(new("System.Runtime"));
+        var element = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var modifier = CliTypeIdentity.Named(new("System.Runtime"),
+            "System.Runtime.CompilerServices", "CallConvCdecl", false);
+        var modified = provider.GetModifiedType(modifier, element, isRequired: false);
+        var required = provider.GetModifiedType(modifier, element, isRequired: true);
+        var pointer = provider.GetFunctionPointerType(new(new(header), modified, 1, 0, [element]));
+
+        Assert.Equal(CliTypeShape.Modified, modified.Shape);
+        Assert.Same(element, modified.ElementType);
+        Assert.Same(modifier, modified.CustomModifier);
+        Assert.False(modified.IsRequiredModifier);
+        Assert.True(required.IsRequiredModifier);
+        Assert.NotEqual(modified, required);
+        Assert.Equal(CliTypeShape.FunctionPointer, pointer.Shape);
+        Assert.Equal(CliValueKind.NativeInt, pointer.StackKind);
+        Assert.Equal(header, pointer.FunctionPointerSignature!.Header);
+        Assert.Equal(1, pointer.FunctionPointerSignature.RequiredParameterCount);
+        Assert.Equal(0, pointer.FunctionPointerSignature.GenericArity);
+        Assert.Equal(modified, pointer.FunctionPointerSignature.Signature.ReturnSignatureType);
+        Assert.Equal(element, Assert.Single(pointer.FunctionPointerSignature.Signature.ParameterSignatureTypes));
+        Assert.NotEqual(CliTypeIdentity.UnmanagedPointer(element), pointer);
     }
 
     [Fact]

@@ -47,6 +47,7 @@ var heap = 16;
 var runtimeInitialized = false;
 var lastException = 0;
 var terminalExceptionTypeId = null;
+var terminalExceptionStackTrace = null;
 var departedExceptionFrame = null;
 var filterSearchFloor = 0;
 var application;
@@ -72,6 +73,7 @@ var stackTraceSymbols = new Map();
 var stackTraceExceptionFieldOffset = null;
 var stackTraceStringTypeId = 0;
 var weakHandles = [];
+var ephemeronHandles = [null];
 var strongHandles = [];
 var gcHandles = [null];
 var zero = () => 0;
@@ -543,6 +545,15 @@ var captureStackTrace = exception => {
   if (memory64) view.setBigUint64(asNumber(slot), traceAddress, true);
   else view.setUint32(asNumber(slot), traceAddress, true);
 };
+var captureStackTraceIfMissing = exception => {
+  if (stackTraceExceptionFieldOffset === null || !exception) return;
+  var slot = plus(exception, stackTraceExceptionFieldOffset);
+  var view = createRefreshableDataView(memory);
+  var trace = memory64
+    ? view.getBigUint64(asNumber(slot), true)
+    : view.getUint32(asNumber(slot), true);
+  if (trace === zeroAddress()) captureStackTrace(exception);
+};
 var dispatchException = exception => {
   lastException = exception;
   var view = createRefreshableDataView(memory);
@@ -636,7 +647,10 @@ var runtimeValues = {
   handle_get(handle) { return strongHandles[handle] ?? zeroAddress(); },
   handle_release(handle) { strongHandles[handle] = zeroAddress(); },
   begin_throw: beginThrow,
-  begin_rethrow: dispatchException,
+  begin_rethrow(exception) {
+    captureStackTraceIfMissing(exception);
+    dispatchException(exception);
+  },
   stack_trace_initialize(exceptionFieldOffset, stringTypeId) {
     if (stackTraceExceptionFieldOffset !== null &&
         (stackTraceExceptionFieldOffset !== exceptionFieldOffset ||
@@ -647,6 +661,7 @@ var runtimeValues = {
     stackTraceStringTypeId = stringTypeId;
   },
   stack_trace_register_symbol(methodId, characters, length) {
+    if (stackTraceSymbols.has(methodId)) return;
     var view = createRefreshableDataView(memory);
     var name = "";
     for (var index = 0; index < length; index++) {
@@ -656,13 +671,20 @@ var runtimeValues = {
     stackTraceSymbols.set(methodId, name);
   },
   stack_trace_frame_enter(methodId) {
-    stackTraceFrames.push(methodId);
+    stackTraceFrames.push({ methodId, symbolId: methodId });
+  },
+  stack_trace_frame_location(methodId, symbolId) {
+    var frame = stackTraceFrames.at(-1);
+    if (frame?.methodId !== methodId) {
+      throw new Error(`stack-trace location has no matching active frame: ${methodId}`);
+    }
+    frame.symbolId = symbolId;
   },
   stack_trace_frame_leave(methodId) {
-    if (stackTraceFrames.at(-1) !== methodId) {
+    if (stackTraceFrames.at(-1)?.methodId !== methodId) {
       throw new Error(
         `unbalanced stack-trace frame: leave=${stackTraceSymbols.get(methodId) ?? methodId}, ` +
-        `frames=${stackTraceFrames.map(id => stackTraceSymbols.get(id) ?? id).join(",")}`);
+        `frames=${stackTraceFrames.map(frame => stackTraceSymbols.get(frame.symbolId) ?? frame.methodId).join(",")}`);
     }
     stackTraceFrames.pop();
   },
@@ -738,6 +760,17 @@ var runtimeValues = {
   weak_handle_get(handle) { return weakHandles[handle] ?? zeroAddress(); },
   weak_handle_set(handle, target) { weakHandles[handle] = target; },
   weak_handle_release(handle) { weakHandles[handle] = zeroAddress(); },
+  ephemeron_handle_new(key, value) {
+    ephemeronHandles.push({ key, value });
+    return ephemeronHandles.length - 1;
+  },
+  ephemeron_handle_get_key(handle) {
+    return ephemeronHandles[handle]?.key ?? zeroAddress();
+  },
+  ephemeron_handle_get_value(handle) {
+    return ephemeronHandles[handle]?.value ?? zeroAddress();
+  },
+  ephemeron_handle_release(handle) { ephemeronHandles[handle] = null; },
   gc_handle_new(target, kind) {
     gcHandles.push({ target, kind });
     return ((gcHandles.length - 1) << 2) | kind;
@@ -785,7 +818,18 @@ var runtime = createDeclaredOracleImports("netwasm.runtime.v1", runtimeValues);
 var host = createDeclaredOracleImports("netwasm.host.v1", {
   write_i32: zero,
   // Report through the oracle observation, not an ignored host callback.
-  report_terminal_exception_v1(typeId) { terminalExceptionTypeId = typeId; },
+  raise_terminal_exception() {},
+  report_terminal_exception_v2(
+    typeId,
+    _messageReference,
+    _messageLength,
+    stackTraceReference,
+    stackTraceLength) {
+    terminalExceptionTypeId = typeId;
+    terminalExceptionStackTrace = readManagedTextPayload(
+      stackTraceReference,
+      stackTraceLength);
+  },
 });
 
 try {
@@ -872,7 +916,7 @@ try {
       reactorPhase = "completed";
       observations.push({
         kind: "value",
-        value,
+        value: typeof value === "bigint" ? { i64: value.toString() } : value,
         exceptionTypeId: null,
         trace: readTrace(),
         traceRecords: readTraceRecords(),
@@ -899,6 +943,7 @@ function resetRuntimeState() {
   runtimeInitialized = false;
   lastException = 0;
   terminalExceptionTypeId = null;
+  terminalExceptionStackTrace = null;
   departedExceptionFrame = null;
   filterSearchFloor = 0;
   typeBases = new Map();
@@ -915,6 +960,7 @@ function resetRuntimeState() {
   stackTraceExceptionFieldOffset = null;
   stackTraceStringTypeId = 0;
   weakHandles = [zeroAddress()];
+  ephemeronHandles = [null];
   strongHandles = [zeroAddress()];
   gcHandles = [null];
   descriptors = new Map();
@@ -970,7 +1016,8 @@ function createException(error) {
     wasiOpenCalls,
     wasiReadCalls,
     managedMessage: readManagedExceptionMessage(),
-    managedStackTrace: readManagedExceptionStackTrace() ?? readActiveStackTrace(),
+    managedStackTrace: terminalExceptionStackTrace ??
+      readManagedExceptionStackTrace() ?? readActiveStackTrace(),
   };
 }
 
@@ -979,8 +1026,8 @@ function readActiveStackTrace() {
 }
 
 function formatStackTrace(frames) {
-  return frames.slice().reverse().map(methodId =>
-    `at ${stackTraceSymbols.get(methodId) ?? `method#${methodId}`}`).join("\n");
+  return frames.slice().reverse().map(frame =>
+    `at ${stackTraceSymbols.get(frame.symbolId) ?? `method#${frame.symbolId}`}`).join("\n");
 }
 
 function readManagedExceptionMessage() {
@@ -1018,6 +1065,17 @@ function readManagedText(text) {
     characters[index] = view.getUint16(characterAddress + index * 2, true);
   }
   return String.fromCharCode(...characters);
+}
+
+function readManagedTextPayload(text, length) {
+  if (!text) return Number(length) === 0 ? null : "<stack trace unavailable>";
+  var count = Number(length);
+  if (!Number.isSafeInteger(count) || count < 0) return "<stack trace unavailable>";
+  var dataOffset = memory64 ? 12 : 8;
+  var units = new Uint16Array(memory.buffer, asNumber(text) + dataOffset, count);
+  var value = "";
+  for (var unit of units) value += String.fromCharCode(unit);
+  return value;
 }
 
 function emit(observation) {

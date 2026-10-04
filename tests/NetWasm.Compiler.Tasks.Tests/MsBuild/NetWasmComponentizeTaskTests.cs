@@ -75,6 +75,35 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Equal("0.2", component.GetMetadata("WasiVersion"));
     }
 
+    [Theory]
+    [InlineData("wasm32")]
+    [InlineData("wasm64")]
+    public void LibraryComponentDoesNotRequireManagedExecutableMetadata(string target)
+    {
+        var sessions = new RecordingSessionFactory();
+        var inputs = new RecordingManifestInputsReader();
+        var manifests = new RecordingManifestWriter();
+        var entries = new RecordingEntryPointReader();
+        var task = CreateTask(sessions, inputs, manifests, entries);
+        task.Target = target;
+        task.World = "worker";
+        task.CompileAsLibrary = true;
+        task.Optimization = "None";
+
+        Assert.True(task.Execute());
+
+        Assert.Null(entries.Path);
+        var request = Assert.IsType<ComponentBuildRequest>(sessions.Session.Request);
+        Assert.Null(request.ManagedExecutableEntryPoint);
+        Assert.Equal(target, request.Target.Width);
+        Assert.Equal("worker", request.World);
+        Assert.Equal("app.wasm", request.CoreModulePath);
+        Assert.Equal(FinalWasmOptimization.None, request.Optimization);
+        Assert.True(sessions.Session.IsDisposed);
+        Assert.Same(sessions.Session.Manifest, manifests.Request!.Manifest);
+        Assert.Single(task.Components);
+    }
+
     [Fact]
     public void ReportsComponentDiagnosticAndDisposesSession()
     {

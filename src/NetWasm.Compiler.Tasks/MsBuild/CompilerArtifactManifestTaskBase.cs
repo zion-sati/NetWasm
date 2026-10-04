@@ -28,6 +28,8 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
     public ITaskItem[] Sources { get; set; } = [];
     public string? GeneratedSourceRoot { get; set; }
     public string? RuntimeAbiManifestPath { get; set; }
+    public string? CompilationIdentityPath { get; set; }
+    public ITaskItem[] WitInputs { get; set; } = [];
     public ITaskItem[] Artifacts { get; set; } = [];
 
     [Output]
@@ -36,7 +38,8 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
     [Output]
     public string SemanticBuildId { get; protected set; } = string.Empty;
 
-    internal CompilerArtifactManifestTaskInput CreateManifestTaskInput() => new(
+    internal CompilerArtifactManifestTaskInput CreateManifestTaskInput(
+        ImmutableArray<CompilerArtifactManifestTaskArtifact> additionalArtifacts = default) => new(
         ArtifactManifestPath,
         ProjectDirectory,
         Profile,
@@ -50,8 +53,12 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
         References.ToImmutableArray(),
         Sources.ToImmutableArray(),
         RuntimeAbiManifestPath,
-        Artifacts.ToImmutableArray(),
-        GeneratedSourceRoot);
+        additionalArtifacts.IsDefaultOrEmpty
+            ? Artifacts.ToImmutableArray()
+            : Artifacts.Concat(additionalArtifacts.Select(CreateInputTaskItem)).ToImmutableArray(),
+        GeneratedSourceRoot,
+        CompilationIdentityPath,
+        WitInputs.ToImmutableArray());
 
     internal void SetResolvedArtifacts(CompilerArtifactManifestBuildResult result)
     {
@@ -61,6 +68,13 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
             .Select(static result => CreateTaskItem(result))
             .ToArray();
     }
+
+    internal static CompilerArtifactManifestTaskArtifact
+        CreateNativeCallbackSupportArtifact(string path) => new(
+            path,
+            CompilerArtifactKinds.NativeCallbackSupportObject,
+            "application/wasm",
+            "Never");
 
     private static TaskItem CreateTaskItem(CompilerArtifactResult result)
     {
@@ -75,7 +89,16 @@ public abstract class CompilerArtifactManifestTaskBase : MsBuildTask
         item.SetMetadata("WasmTarget", artifact.Target);
         item.SetMetadata("Profile", artifact.Profile);
         item.SetMetadata("SemanticBuildId", artifact.SemanticBuildId);
-        item.SetMetadata("CopyToPublishDirectory", "PreserveNewest");
+        item.SetMetadata("CopyToPublishDirectory", result.CopyToPublishDirectory);
+        return item;
+    }
+
+    private static TaskItem CreateInputTaskItem(CompilerArtifactManifestTaskArtifact artifact)
+    {
+        var item = new TaskItem(artifact.Path);
+        item.SetMetadata("Kind", artifact.Kind);
+        item.SetMetadata("MediaType", artifact.MediaType);
+        item.SetMetadata("CopyToPublishDirectory", artifact.CopyToPublishDirectory);
         return item;
     }
 }

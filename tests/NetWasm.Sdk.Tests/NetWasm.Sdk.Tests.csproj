@@ -16,4 +16,10 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../../src/NetWasm.Sdk/Sdk/NetWasm.NativeLibraries.targets"
+          Link="IntegrationAssets/NetWasm.NativeLibraries.targets" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../global.json" Link="IntegrationAssets/global.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

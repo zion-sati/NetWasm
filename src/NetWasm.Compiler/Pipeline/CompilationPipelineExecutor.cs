@@ -214,7 +214,9 @@ internal sealed class CompilationPipelineExecutor(
                         emitted.Result.StaticDataEnd)
                     {
                         FunctionImports = emitted.Result.FunctionImports,
+                        NativeImports = emitted.Result.NativeImports,
                         RuntimeFeatures = emitted.Result.RuntimeFeatures,
+                        NativeCallbackSupport = emitted.Result.NativeCallbackSupport,
                     },
                     emitted.Result.StackTraceSymbols,
                     options);

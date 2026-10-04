@@ -265,7 +265,7 @@ public sealed class EnumIntrinsicBranchTests
     }
 
     [Fact]
-    public void GetValuesTypeBasedFallsBackToTheReferenceArrayLayout()
+    public void GetValuesTypeBasedRejectsMissingExactArrayLayouts()
     {
         var metadata = new EnumMetadataFixture(
             CliTypeIdentity.Primitive("i4", CliValueKind.I4),
@@ -278,10 +278,50 @@ public sealed class EnumIntrinsicBranchTests
             [CliValueKind.ManagedReference, CliValueKind.I4]);
         var code = new RecordingInstructionWriter();
 
-        CreateGetValuesEmitter(metadata)
-            .EmitGetValues(request, code);
+        var error = Assert.Throws<CompilerException>(() => CreateGetValuesEmitter(metadata)
+            .EmitGetValues(request, code));
 
-        Assert.Contains(WasmOpcodes.Call, code.ToArray());
+        Assert.Equal(DiagnosticCode.RuntimeContract, error.Diagnostic.Code);
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void TypeBasedEnumArraysKeepSelectionSeparateFromTheirFillIndex(bool names, WasmTarget target)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4), target: target);
+        var request = Request(names ? "InternalGetNames" : "InternalGetValues",
+            names ? RuntimeIntrinsic.EnumGetNames : RuntimeIntrinsic.EnumGetValues,
+            CliValueKind.ManagedReference,
+            names ? [CliValueKind.ManagedReference] : [CliValueKind.ManagedReference, CliValueKind.I4],
+            names ? [CliValueKind.ManagedReference] : [CliValueKind.ManagedReference, CliValueKind.I4],
+            target: target);
+        var code = new RecordingInstructionWriter();
+
+        if (names)
+            CreateGetNamesEmitter(metadata).EmitGetNames(request, code);
+        else
+            CreateGetValuesEmitter(metadata).EmitGetValues(request, code);
+
+        var selector = (uint)request.Instruction.Context.NumericTemporaryI4Second;
+        var index = (uint)request.Instruction.Context.NumericTemporaryI4;
+        var instructions = code.ToInstructions();
+        Assert.Equal(1, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
+            instruction.Operand.UnsignedValue == selector));
+        Assert.True(instructions.Count(instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
+            instruction.Operand.UnsignedValue == index) >= metadata.EnumMetadata[0].Members.Length);
+        Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Constant &&
+            instruction.Operand.SignedValue == metadata.Layouts.ReferenceArrayTypeId);
+        if (names)
+            Assert.Contains(CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false)),
+                metadata.Layouts.RequestedObjects);
+        else
+        {
+            Assert.Contains(CliTypeIdentity.SzArray(metadata.EnumType), metadata.Layouts.RequestedObjects);
+            Assert.Contains(CliTypeIdentity.SzArray(metadata.Underlying), metadata.Layouts.RequestedObjects);
+        }
     }
 
     [Theory]
@@ -306,6 +346,57 @@ public sealed class EnumIntrinsicBranchTests
             .EmitGetValues(request, code);
 
         Assert.Contains(store, code.ToArray());
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void OpenGetValuesEmitsRejectionAndOnlyUsesUnderlyingArrayStorage(WasmTarget target)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("u2", CliValueKind.I4), target: target);
+        var open = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
+        metadata.MetadataOverride = [metadata.EnumMetadata[0] with { EnumType = open, IsOpenDefinition = true }];
+        metadata.Layouts.ForbiddenTypes.UnionWith([open, CliTypeIdentity.SzArray(open)]);
+        var exceptions = new RecordingExceptions();
+        var emitter = As<IEnumGetValuesEmitter>(new EnumGetValuesEmitter(
+            metadata, metadata, metadata.Layouts, metadata.Layouts, WasmRuntimeImports.CreateCatalog(),
+            metadata.Layouts, new AddressInstructionEmitter(metadata.Layouts), metadata, exceptions));
+        var request = Request("InternalGetValues", RuntimeIntrinsic.EnumGetValues,
+            CliValueKind.ManagedReference, [CliValueKind.ManagedReference, CliValueKind.I4],
+            [CliValueKind.ManagedReference, CliValueKind.I4], target: target);
+
+        emitter.EmitGetValues(request, new RecordingInstructionWriter());
+
+        Assert.Equal(ManagedExceptionKind.NotSupported, Assert.Single(exceptions.Kinds));
+        Assert.Contains(CliTypeIdentity.SzArray(metadata.Underlying), metadata.Layouts.RequestedObjects);
+        Assert.DoesNotContain(open, metadata.Layouts.RequestedValues);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void GenericGetValuesSelectsExactIdentityAmongSiblingInstantiations(WasmTarget target)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4), target: target);
+        var definition = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
+        var selected = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
+        var sibling = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I8)]);
+        var entry = metadata.EnumMetadata[0];
+        metadata.MetadataOverride =
+        [
+            entry with { EnumType = sibling, TypeId = 8 },
+            entry with { EnumType = selected },
+        ];
+        metadata.Layouts.ForbiddenTypes.UnionWith([sibling, CliTypeIdentity.SzArray(sibling)]);
+        var emitter = As<IEnumGetValuesEmitter>(CreateGetValuesEmitter(metadata));
+        var request = Request("InternalGetValues", RuntimeIntrinsic.EnumGetValues,
+            CliValueKind.ManagedReference, [], [], [selected], target: target);
+
+        emitter.EmitGetValues(request, new RecordingInstructionWriter());
+
+        Assert.Equal(selected, Assert.Single(metadata.Layouts.RequestedValues));
+        Assert.Contains(selected, metadata.Layouts.RequestedObjects);
+        Assert.Contains(CliTypeIdentity.SzArray(selected), metadata.Layouts.RequestedObjects);
     }
 
     [Fact]
@@ -372,6 +463,73 @@ public sealed class EnumIntrinsicBranchTests
 
         Assert.Contains(WasmOpcodes.I32Load, code.ToArray());
         Assert.Contains(WasmOpcodes.Call, code.ToArray());
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void GetMetadataSupportsTypeBasedAndExactGenericSiblingSelection(bool generic, WasmTarget target)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4), target: target);
+        var definition = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
+        var selected = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
+        var sibling = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I8)]);
+        var entry = metadata.EnumMetadata[0];
+        metadata.MetadataOverride =
+        [
+            entry with { EnumType = sibling, TypeId = 8, Address = 800 },
+            entry with { EnumType = selected },
+        ];
+        var emitter = As<IRuntimeIntrinsicEmitter>(new EnumGetMetadataIntrinsicEmitter(
+            metadata, metadata, new AddressInstructionEmitter(metadata.Layouts)));
+        var request = Request("InternalGetMetadata", RuntimeIntrinsic.EnumGetMetadata, CliValueKind.NativeInt,
+            generic ? [] : [CliValueKind.ManagedReference], generic ? [] : [CliValueKind.ManagedReference],
+            generic ? [selected] : [], target: target);
+        var code = new RecordingInstructionWriter();
+
+        emitter.Emit(request, code);
+
+        var instructions = code.ToInstructions();
+        var addressOpcode = target == WasmTarget.Wasm64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant;
+        var constants = instructions.Where(instruction => instruction.Opcode == addressOpcode)
+            .Select(instruction => target == WasmTarget.Wasm64
+                ? instruction.Operand.Signed64Value : instruction.Operand.SignedValue).ToArray();
+        Assert.Contains(400, constants);
+        Assert.Equal(generic ? 0 : 1, metadata.TypeValidations.Count);
+        if (generic)
+        {
+            Assert.Equal(400, Assert.Single(constants));
+        }
+        else
+        {
+            Assert.Contains(800, constants);
+            Assert.Equal(2, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Equal));
+            var validation = Assert.Single(metadata.TypeValidations);
+            Assert.Equal(request.Local(0, CliValueKind.ManagedReference), validation.TypeLocal);
+            Assert.Equal(request.Instruction.Context.NumericTemporaryI4, validation.TypeIdLocal);
+        }
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
+            instruction.Operand.UnsignedValue == request.Local(0, CliValueKind.NativeInt));
+    }
+
+    [Fact]
+    public void GetMetadataRejectsAnUnavailableExactGenericIdentity()
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4));
+        var definition = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
+        var missing = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
+        var emitter = As<IRuntimeIntrinsicEmitter>(new EnumGetMetadataIntrinsicEmitter(
+            metadata, metadata, new AddressInstructionEmitter(metadata.Layouts)));
+        var request = Request("InternalGetMetadata", RuntimeIntrinsic.EnumGetMetadata,
+            CliValueKind.NativeInt, [], [], [missing]);
+        var code = new RecordingInstructionWriter();
+
+        Assert.Throws<InvalidOperationException>(() => emitter.Emit(request, code));
+
+        Assert.Empty(code.ToInstructions());
+        Assert.Empty(metadata.TypeValidations);
     }
 
     [Theory]
@@ -741,6 +899,36 @@ public sealed class EnumIntrinsicBranchTests
             .EmitToObject(request, code);
 
         Assert.Contains(WasmOpcodes.Throw, code.ToArray());
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void ToObjectRejectsOpenDefinitionsWithoutUsingOpenValueOrBoxedStorage(WasmTarget target)
+    {
+        var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4), target: target);
+        var open = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
+        var closed = CliTypeIdentity.GenericInstantiation(open, [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
+        var entry = metadata.EnumMetadata[0];
+        metadata.MetadataOverride =
+        [
+            entry with { EnumType = open, IsOpenDefinition = true },
+            entry with { EnumType = closed, TypeId = 8 },
+        ];
+        metadata.Layouts.ForbiddenTypes.Add(open);
+        var exceptions = new RecordingExceptions();
+        var emitter = As<IEnumToObjectEmitter>(new EnumToObjectEmitter(
+            metadata, metadata, metadata, metadata.Layouts, metadata.Layouts, WasmRuntimeImports.CreateCatalog(),
+            exceptions, new AddressInstructionEmitter(metadata.Layouts), metadata.Layouts, metadata));
+        var request = Request("InternalToObject", RuntimeIntrinsic.EnumToObject,
+            CliValueKind.ManagedReference, [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
+            [CliValueKind.ManagedReference, CliValueKind.ManagedReference], target: target);
+
+        emitter.EmitToObject(request, new RecordingInstructionWriter());
+
+        Assert.Equal(2, exceptions.Kinds.Count(kind => kind == ManagedExceptionKind.Argument));
+        Assert.Equal(closed, Assert.Single(metadata.Layouts.RequestedObjects));
+        Assert.DoesNotContain(open, metadata.Layouts.RequestedValues);
     }
 
     [Theory]
@@ -1420,7 +1608,6 @@ public sealed class EnumIntrinsicBranchTests
     private static EnumGetNamesEmitter CreateGetNamesEmitter(
         EnumMetadataFixture metadata) => new(
             metadata,
-            metadata,
             metadata.Layouts,
             WasmRuntimeImports.CreateCatalog(),
             metadata.Layouts,
@@ -1436,7 +1623,8 @@ public sealed class EnumIntrinsicBranchTests
             WasmRuntimeImports.CreateCatalog(),
             metadata.Layouts,
             new AddressInstructionEmitter(metadata.Layouts),
-            CreateTypeArgumentValidator(metadata));
+            CreateTypeArgumentValidator(metadata),
+            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts, 0));
 
     private static EnumGetUnderlyingTypeEmitter CreateGetUnderlyingTypeEmitter(
         EnumMetadataFixture metadata) => new(
@@ -1580,21 +1768,25 @@ public sealed class EnumIntrinsicBranchTests
             true,
             _underlying.StackKind);
         public TestLayouts Layouts { get; }
+        public ImmutableArray<EnumMetadataLayout> MetadataOverride { get; set; }
+        public List<(int TypeLocal, int TypeIdLocal)> TypeValidations { get; } = [];
 
-        public ImmutableArray<EnumMetadataLayout> EnumMetadata =>
+        public ImmutableArray<EnumMetadataLayout> EnumMetadata => MetadataOverride.IsDefault ?
         [
             new(
                 EnumTypeKey,
+                EnumType,
                 7,
                 400,
                 _underlying,
                 _flags,
+                false,
                 [
                     new("Zero", 0, new StringLayout(100, 4, 48)),
                     new("One", 1, new StringLayout(104, 3, 48)),
                     new("Two", 2, new StringLayout(108, 3, 48)),
                 ]),
-        ];
+        ] : MetadataOverride;
 
         public ImmutableArray<TypeDescriptorLayout> TypeDescriptors => _boxedType is null
             ? [
@@ -1612,6 +1804,7 @@ public sealed class EnumIntrinsicBranchTests
             int typeLocal,
             int typeIdLocal)
         {
+            TypeValidations.Add((typeLocal, typeIdLocal));
         }
         public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => [];
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
@@ -1725,6 +1918,9 @@ public sealed class EnumIntrinsicBranchTests
     {
         private readonly bool _fallbackArrayLayout;
         private readonly WasmTargetLayout _target;
+        public List<CliTypeIdentity> RequestedObjects { get; } = [];
+        public List<CliTypeIdentity> RequestedValues { get; } = [];
+        public HashSet<CliTypeIdentity> ForbiddenTypes { get; } = [];
 
         public TestLayouts(
             bool fallbackArrayLayout = false,
@@ -1751,6 +1947,9 @@ public sealed class EnumIntrinsicBranchTests
 
         public ValueLayout GetValueLayout(CliTypeIdentity type)
         {
+            RequestedValues.Add(type);
+            if (ForbiddenTypes.Contains(type))
+                throw new InvalidOperationException("This enum identity has no available value storage.");
             var size = type.CanonicalName switch
             {
                 "primitive:i1" or "primitive:u1" => 1,
@@ -1763,6 +1962,9 @@ public sealed class EnumIntrinsicBranchTests
 
         public ObjectLayout GetObjectLayout(CliTypeIdentity type)
         {
+            RequestedObjects.Add(type);
+            if (ForbiddenTypes.Contains(type))
+                throw new InvalidOperationException("This enum identity has no available object storage.");
             if (_fallbackArrayLayout && type.Shape == CliTypeShape.SzArray)
             {
                 throw new CompilerException(new CompilerDiagnostic(
@@ -1801,12 +2003,19 @@ public sealed class EnumIntrinsicBranchTests
         public ImmutableArray<EnumStorage> Resolve() =>
         [
             new(
-                new TypeDescriptorLayout(EnumTypeKey, 7, 0, 32, 0, 0, null),
+                7,
                 metadata.EnumType,
                 underlying,
                 metadata.Layouts.GetValueLayout(underlying),
                 4),
         ];
+    }
+
+    private sealed class RecordingExceptions : IImplicitExceptionEmitter
+    {
+        public List<ManagedExceptionKind> Kinds { get; } = [];
+
+        public void Emit(IWasmInstructionWriter code, ManagedExceptionKind kind) => Kinds.Add(kind);
     }
 
     private sealed class EmptyStorageResolver : IEnumStorageResolver

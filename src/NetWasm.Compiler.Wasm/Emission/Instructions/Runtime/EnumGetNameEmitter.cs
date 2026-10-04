@@ -28,8 +28,7 @@ internal sealed class EnumGetNameEmitter(
 
         var enumType = request.Method.MethodArguments[0];
         var entry = metadata.EnumMetadata
-            .Where(candidate => candidate.Type.Assembly.Equals(enumType.Assembly))
-            .SingleOrDefault(candidate => types.GetTypeDefinition(candidate.Type).FullName == enumType.FullName);
+            .SingleOrDefault(candidate => candidate.EnumType.Equals(enumType));
         if (entry.TypeId == 0)
             throw new InvalidOperationException($"enum metadata is unavailable for '{enumType.CanonicalName}'");
 

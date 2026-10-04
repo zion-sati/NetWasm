@@ -11,16 +11,132 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 public sealed class MemberExecutionIntrinsicEmitterTests
 {
+    public static TheoryData<bool, bool, CliValueKind> NullableResults
+    {
+        get
+        {
+            var data = new TheoryData<bool, bool, CliValueKind>();
+            foreach (var memory64 in new[] { false, true })
+                foreach (var dispatch in new[] { false, true })
+                    foreach (var kind in new[] { CliValueKind.I4, CliValueKind.I8, CliValueKind.F4, CliValueKind.F8 })
+                        data.Add(memory64, dispatch, kind);
+            return data;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(NullableResults))]
+    public void NullableGettersReceiveReturnStorageBeforeReceiverAndBoxAfterCall(
+        bool memory64, bool dispatch, CliValueKind underlyingKind)
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(memory64);
+        var underlying = CliTypeIdentity.FromStackKind(underlyingKind);
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true), [underlying]);
+        fixture.NullableTypes.Add(nullable, underlying);
+        var descriptor = TypedMethod("Get", nullable, Type("Owner"), false, dispatch);
+        var implementation = TypedMethod("Implementation", nullable, Type("Derived"), false);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod,
+            members: Members(descriptor, dispatch,
+                dispatch ? [new(implementation.DeclaringType, implementation)] : []));
+        var instruction = request.Instruction;
+        request = request with
+        {
+            Call = request.Call with
+            {
+                Instruction = instruction with
+                {
+                    Context = instruction.Context with
+                    {
+                        ValueLayout = instruction.Context.ValueLayout with
+                        {
+                            MemberResultOffsets = ImmutableDictionary<int, int>.Empty.Add(instruction.Instruction.Offset, 32),
+                        }
+                    },
+                }
+            }
+        };
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        Assert.Equal(1, fixture.RootCount);
+        Assert.Equal(2, fixture.ValueAddresses.Count);
+        Assert.All(fixture.ValueAddresses, address =>
+        {
+            Assert.Same(request.Instruction.Context, address.Context);
+            Assert.Equal(32, address.Offset);
+        });
+        var call = fixture.Code.IndexOf(Local(WasmOpcodes.Call, 71));
+        Assert.Equal(call - 2, fixture.ValueAddresses[0].CodeIndex);
+        Assert.Equal(Local(WasmOpcodes.LocalGet, request.Local(1, CliValueKind.ManagedReference)), fixture.Code[call - 1]);
+        Assert.Equal(call + 1, fixture.ValueAddresses[1].CodeIndex);
+        var box = Assert.Single(fixture.NullableBoxes);
+        Assert.Equal(underlying, box.Underlying);
+        Assert.Equal(request.Instruction.Context.ObjectTemporary, box.Source);
+        Assert.Equal(request.Local(0, CliValueKind.ManagedReference), box.Result);
+        Assert.Equal(Local(WasmOpcodes.LocalSet, box.Source), fixture.Code[box.CodeIndex - 1]);
+        Assert.Equal(call + 3, box.CodeIndex);
+        Assert.Equal(dispatch ? implementation : descriptor,
+            Assert.Single(fixture.Functions.Methods, method => method.Definition.Name != "Unsupported"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NullableFieldBoxesItsAddressWithoutLoadingAnAggregate(bool memory64)
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(memory64);
+        var underlying = CliTypeIdentity.FromStackKind(CliValueKind.I8);
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true), [underlying]);
+        fixture.NullableTypes.Add(nullable, underlying);
+        var field = new FieldInstanceModel(new FieldDefinitionModel(EmitterTestSupport.InstanceFieldKey,
+            EmitterTestSupport.TypeKey, "Value", nullable, false), Type(), nullable);
+        var request = fixture.Request(RuntimeIntrinsic.MemberReadField, members: Members(field: field));
+
+        Create(fixture).Emit(request, fixture.Writer);
+
+        var box = Assert.Single(fixture.NullableBoxes);
+        Assert.Equal(underlying, box.Underlying);
+        Assert.Equal(request.Instruction.Context.ObjectTemporary, box.Source);
+        Assert.Equal(request.Local(0, CliValueKind.ManagedReference), box.Result);
+        Assert.Equal(Local(WasmOpcodes.LocalGet, request.Local(1, CliValueKind.ManagedReference)), fixture.Code[box.CodeIndex - 4]);
+        Assert.True(AddressConstantEquals(fixture.Code[box.CodeIndex - 3], fixture.Target, 52));
+        Assert.Equal(memory64 ? WasmOpcodes.I64Add : WasmOpcodes.I32Add, fixture.Code[box.CodeIndex - 2].Opcode);
+        Assert.Equal(Local(WasmOpcodes.LocalSet, box.Source), fixture.Code[box.CodeIndex - 1]);
+        Assert.Empty(fixture.ValueAddresses);
+        Assert.DoesNotContain(fixture.Code, instruction => instruction.Operand?.Offset == 52);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NullableGetterWithoutReturnStorageFailsBeforePublishingRoots(bool memory64)
+    {
+        var fixture = new ExpressionIntrinsicEmissionFixture(memory64);
+        var underlying = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true), [underlying]);
+        fixture.NullableTypes.Add(nullable, underlying);
+        var request = fixture.Request(RuntimeIntrinsic.MemberExecuteMethod,
+            members: Members(TypedMethod("Get", nullable, Type("Owner"), false)));
+
+        var error = Assert.Throws<CompilerException>(() => Create(fixture).Emit(request, fixture.Writer));
+
+        Assert.Equal(DiagnosticCode.RuntimeContract, error.Diagnostic.Code);
+        Assert.Equal(0, fixture.RootCount);
+        Assert.Empty(fixture.Code);
+        Assert.Empty(fixture.NullableBoxes);
+        Assert.Empty(fixture.ValueAddresses);
+    }
+
     public static TheoryData<bool, bool, CliValueKind> Results
     {
         get
         {
             var data = new TheoryData<bool, bool, CliValueKind>();
             foreach (var memory64 in new[] { false, true })
-            foreach (var isField in new[] { false, true })
-            foreach (var kind in new[] { CliValueKind.ManagedReference, CliValueKind.I4,
+                foreach (var isField in new[] { false, true })
+                    foreach (var kind in new[] { CliValueKind.ManagedReference, CliValueKind.I4,
                 CliValueKind.I8, CliValueKind.F4, CliValueKind.F8 })
-                data.Add(memory64, isField, kind);
+                        data.Add(memory64, isField, kind);
             return data;
         }
     }
@@ -38,6 +154,9 @@ public sealed class MemberExecutionIntrinsicEmitterTests
     [InlineData("runtimeImports")]
     [InlineData("exceptions")]
     [InlineData("roots")]
+    [InlineData("nullableTypes")]
+    [InlineData("nullableBoxes")]
+    [InlineData("valueFrames")]
     public void ConstructorRejectsMissingDependency(string dependency)
     {
         var fixture = new ExpressionIntrinsicEmissionFixture(false);
@@ -777,5 +896,8 @@ public sealed class MemberExecutionIntrinsicEmitterTests
         missing == "initialization" ? null! : fixture.Initialization,
         missing == "runtimeImports" ? null! : fixture.Imports,
         missing == "exceptions" ? null! : fixture.Exceptions,
-        missing == "roots" ? null! : fixture.Roots);
+        missing == "roots" ? null! : fixture.Roots,
+        missing == "nullableTypes" ? null! : fixture,
+        missing == "nullableBoxes" ? null! : fixture,
+        missing == "valueFrames" ? null! : fixture);
 }

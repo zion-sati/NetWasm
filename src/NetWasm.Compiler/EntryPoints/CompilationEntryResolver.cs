@@ -24,7 +24,9 @@ internal sealed class CompilationEntryResolver(
         ArgumentNullException.ThrowIfNull(symbols);
         ArgumentNullException.ThrowIfNull(options);
         return new(
-            _entryPoints.Select(metadata, methods, symbols, options),
+            options.EntryPointKind == CompilerEntryPointKind.Library
+                ? null
+                : _entryPoints.Select(metadata, methods, symbols, options),
             _exports.Resolve(metadata, methods, symbols, options));
     }
 }

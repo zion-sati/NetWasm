@@ -50,6 +50,7 @@ public sealed class CompilerArtifactManifestTests
             Assert.Equal(64, artifact.Sha256.Length);
         });
         Assert.Equal(core, result.Artifacts[0].FullPath);
+        Assert.Equal("PreserveNewest", result.Artifacts[0].CopyToPublishDirectory);
     }
 
     [Fact]
@@ -68,6 +69,44 @@ public sealed class CompilerArtifactManifestTests
         Assert.Equal(first with { Inputs = [], Artifacts = [] }, second with { Inputs = [], Artifacts = [] });
         Assert.True(first.Inputs.SequenceEqual(second.Inputs));
         Assert.True(first.Artifacts.SequenceEqual(second.Artifacts));
+    }
+
+    [Fact]
+    public void BuilderPreservesInternalArtifactPublicationPolicyInItsIdentity()
+    {
+        using var directory = new TemporaryDirectory();
+        var input = directory.Write("app.dll", "input");
+        var core = directory.Write("app.core.wasm", "wasm");
+        var layout = directory.Write("runtime-layout.json", "layout");
+        var callback = directory.Write("app.callbacks.o", "object");
+        var request = CreateRequest(directory.Path, input, input, core, layout);
+        var internalRequest = request with
+        {
+            Outputs = request.Outputs.Add(new(
+                "NativeCallbackSupportObject",
+                "application/wasm",
+                callback,
+                "Never")),
+        };
+        var builder = new CompilerArtifactManifestBuilder(
+            new Sha256ArtifactFileDigestCalculator());
+
+        var published = builder.Build(request with
+        {
+            Outputs = request.Outputs.Add(new(
+                "NativeCallbackSupportObject",
+                "application/wasm",
+                callback)),
+        });
+        var internalResult = builder.Build(internalRequest);
+
+        var artifact = Assert.Single(
+            internalResult.Artifacts,
+            static item => item.ManifestArtifact.Kind == "NativeCallbackSupportObject");
+        Assert.Equal("Never", artifact.CopyToPublishDirectory);
+        Assert.NotEqual(
+            published.Manifest.SemanticBuildId,
+            internalResult.Manifest.SemanticBuildId);
     }
 
     [Fact]

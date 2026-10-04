@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis;
@@ -14,7 +15,8 @@ internal sealed class MemberExecutionPlanner(
     ITypeFinder typeFinder,
     IMethodRepository methods,
     IMethodInstanceResolver methodInstances,
-    ISymbolFormatter symbols) : IMemberExecutionPlanner
+    ISymbolFormatter symbols,
+    INullableTypeResolver nullableTypes) : IMemberExecutionPlanner
 {
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
@@ -28,6 +30,8 @@ internal sealed class MemberExecutionPlanner(
         throw new ArgumentNullException(nameof(methodInstances));
     private readonly ISymbolFormatter _symbols = symbols ??
         throw new ArgumentNullException(nameof(symbols));
+    private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
+        throw new ArgumentNullException(nameof(nullableTypes));
 
     public MemberExecutionPlan Plan(
         IEnumerable<MethodInstanceModel> reachableMethods,
@@ -37,16 +41,18 @@ internal sealed class MemberExecutionPlanner(
         ArgumentNullException.ThrowIfNull(reachableMethods);
         ArgumentNullException.ThrowIfNull(methodDescriptors);
         ArgumentNullException.ThrowIfNull(fieldDescriptors);
-        var demand = reachableMethods
-            .Select(method => _intrinsics.TryGetIntrinsic(
+        var demands = reachableMethods
+            .Select(method => (method.Definition.Key, Intrinsic: _intrinsics.TryGetIntrinsic(
                     method.Definition.Key,
                     out var intrinsic)
                 ? intrinsic
-                : (RuntimeIntrinsic?)null)
-            .Where(intrinsic => intrinsic is
+                : (RuntimeIntrinsic?)null))
+            .Where(demand => demand.Intrinsic is
                 RuntimeIntrinsic.MemberExecuteMethod or
+                RuntimeIntrinsic.DelegateDynamicInvoke or
                 RuntimeIntrinsic.MemberReadField)
-            .ToHashSet();
+            .ToArray();
+        var demand = demands.Select(item => item.Intrinsic).ToHashSet();
         if (demand.Count == 0)
         {
             return MemberExecutionPlan.Empty;
@@ -74,7 +80,35 @@ internal sealed class MemberExecutionPlanner(
                     field => field.CanonicalName,
                     StringComparer.Ordinal)
             : ImmutableDictionary<string, FieldInstanceModel>.Empty;
-        return new(plannedMethods, plannedFields, ResolveUnsupportedTarget());
+        var delegateInvocation = demand.Contains(RuntimeIntrinsic.DelegateDynamicInvoke)
+            ? new DelegateDynamicInvokePlan(
+                methodDescriptors
+                    .Where(IsSupportedDelegateInvoke)
+                    .DistinctBy(method => method.CanonicalName)
+                    .OrderBy(method => method.CanonicalName, StringComparer.Ordinal)
+                    .ToImmutableDictionary(
+                        method => method.CanonicalName,
+                        StringComparer.Ordinal),
+                demands
+                    .Where(item => item.Intrinsic == RuntimeIntrinsic.DelegateDynamicInvoke)
+                    .Select(item => item.Key)
+                    .ToImmutableHashSet(),
+                ResolveSupportTarget("ThrowDynamicInvokeUnsupported", 0),
+                ResolveSupportTarget("ThrowDynamicInvokeArgument", 0),
+                ResolveSupportTarget("ThrowDynamicInvokeParameterCount", 0),
+                ResolveSupportTarget("ThrowTargetInvocation", 1))
+            : null;
+        var memberSupport = demand.Contains(RuntimeIntrinsic.MemberExecuteMethod) ||
+            demand.Contains(RuntimeIntrinsic.MemberReadField)
+                ? ResolveSupportTarget("ThrowUnsupported", 0)
+                : null;
+        return new(plannedMethods, plannedFields, memberSupport)
+        {
+            MethodInvokers = demands
+                .Where(item => item.Intrinsic == RuntimeIntrinsic.MemberExecuteMethod)
+                .Select(item => item.Key).ToImmutableHashSet(),
+            DelegateInvocation = delegateInvocation,
+        };
     }
 
     private bool IsSupportedMethod(MethodInstanceModel method) =>
@@ -83,12 +117,66 @@ internal sealed class MemberExecutionPlanner(
         !_delegateTypes.Recognize(method.DeclaringType) &&
         method.Signature.ParameterSignatureTypes.All(IsSupportedValue) &&
         !_intrinsics.TryGetIntrinsic(method.Definition.Key, out _) &&
-        IsSupportedValue(method.Signature.ReturnSignatureType);
+        IsSupportedResult(method.Signature.ReturnSignatureType);
 
-    private static bool IsSupportedField(FieldInstanceModel field) =>
+    private bool IsSupportedField(FieldInstanceModel field) =>
         !field.Definition.IsStatic &&
         !field.DeclaringType.IsValueType &&
-        IsSupportedValue(field.FieldType);
+        IsSupportedResult(field.FieldType);
+
+    private bool IsSupportedDelegateInvoke(MethodInstanceModel method) =>
+        method.Definition.Name == "Invoke" &&
+        !method.Definition.IsStatic &&
+        !method.DeclaringType.ContainsGenericParameters &&
+        _delegateTypes.Recognize(method.DeclaringType) &&
+        IsSupportedDelegateResult(method.Signature.ReturnSignatureType) &&
+        method.Signature.ParameterSignatureTypes.All(IsSupportedDelegateParameter);
+
+    private bool IsSupportedDelegateResult(CliTypeIdentity type)
+    {
+        if (type.StackKind == CliValueKind.Void)
+        {
+            return true;
+        }
+        if (_nullableTypes.Resolve(type) is { } underlying)
+        {
+            return !type.ContainsGenericParameters && underlying.StackKind is
+                CliValueKind.I4 or CliValueKind.I8 or
+                CliValueKind.F4 or CliValueKind.F8 or CliValueKind.NativeInt;
+        }
+        return IsSupportedDynamicValue(type, allowNullable: true);
+    }
+
+    private bool IsSupportedDelegateParameter(CliTypeIdentity type)
+    {
+        if (type.StackKind != CliValueKind.ManagedAddress)
+        {
+            return IsSupportedDynamicValue(type, allowNullable: false);
+        }
+        return type.ElementType is { } element &&
+            IsSupportedDynamicValue(element, allowNullable: false);
+    }
+
+    private bool IsSupportedDynamicValue(
+        CliTypeIdentity type,
+        bool allowNullable) =>
+        !type.ContainsGenericParameters &&
+        (type.StackKind is
+            CliValueKind.ManagedReference or
+            CliValueKind.I4 or CliValueKind.I8 or
+            CliValueKind.F4 or CliValueKind.F8 or
+            CliValueKind.NativeInt or CliValueKind.ValueType) &&
+        (allowNullable || _nullableTypes.Resolve(type) is null);
+
+    private bool IsSupportedResult(CliTypeIdentity type) =>
+        IsSupportedValue(type) ||
+        type.StackKind == CliValueKind.ValueType &&
+        !type.ContainsGenericParameters &&
+        _nullableTypes.Resolve(type) is
+        {
+            StackKind:
+            CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8
+        };
 
     private static bool IsSupportedValue(CliTypeIdentity type) =>
         type.StackKind is
@@ -96,23 +184,23 @@ internal sealed class MemberExecutionPlanner(
             CliValueKind.I4 or CliValueKind.I8 or
             CliValueKind.F4 or CliValueKind.F8;
 
-    private MethodInstanceModel ResolveUnsupportedTarget()
+    private MethodInstanceModel ResolveSupportTarget(string name, int parameterCount)
     {
         var type = _typeFinder.FindType(
             "System.Runtime.CompilerServices.RuntimeMemberExecution");
         var candidates = type.Methods
             .Select(_methods.GetMethod)
             .Where(candidate =>
-                candidate.Name == "ThrowUnsupported" &&
+                candidate.Name == name &&
                 candidate.IsStatic &&
-                candidate.Signature.ParameterSignatureTypes.IsEmpty)
+                candidate.Signature.ParameterSignatureTypes.Length == parameterCount)
             .Take(2)
             .ToArray();
         if (candidates.Length != 1)
         {
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.RuntimeContract,
-                "bounded member execution must define exactly one unsupported target"));
+                $"bounded member execution must define exactly one '{name}' target"));
         }
         var method = candidates[0];
         return _methodInstances.ResolveMethodInstance(

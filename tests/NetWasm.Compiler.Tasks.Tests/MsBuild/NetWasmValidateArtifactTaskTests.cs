@@ -48,6 +48,28 @@ public sealed class NetWasmValidateArtifactTaskTests
     }
 
     [Fact]
+    public void ExecuteReconstructsAnExistingCallbackSupportArtifact()
+    {
+        using var directory = new TemporaryDirectory();
+        var callbackObject = directory.Write("application.callbacks.o", "object");
+        var builder = new RecordingRequestBuilder();
+        var task = new NetWasmValidateArtifactTask(builder, new RecordingValidator())
+        {
+            BuildEngine = new RecordingBuildEngine(),
+            InputAssemblyPath = "app.dll",
+            ArtifactManifestPath = "manifest.json",
+            ProjectDirectory = ".",
+            NativeCallbackObjectPath = callbackObject,
+        };
+
+        Assert.True(task.Execute());
+        var artifact = Assert.Single(builder.Input!.Artifacts);
+        Assert.Equal(callbackObject, artifact.ItemSpec);
+        Assert.Equal("NativeCallbackSupportObject", artifact.GetMetadata("Kind"));
+        Assert.Equal("Never", artifact.GetMetadata("CopyToPublishDirectory"));
+    }
+
+    [Fact]
     public void ConstructorRejectsMissingCapabilities()
     {
         Assert.Throws<ArgumentNullException>(() => new NetWasmValidateArtifactTask(null!, new RecordingValidator()));
@@ -175,4 +197,5 @@ public sealed class NetWasmValidateArtifactTaskTests
 
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
+
 }

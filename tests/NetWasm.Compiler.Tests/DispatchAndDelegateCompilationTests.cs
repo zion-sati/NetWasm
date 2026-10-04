@@ -183,7 +183,7 @@ public sealed class DispatchAndDelegateCompilationTests
             site.TargetType.FullName == "DispatchCompilerFixture.IRead" &&
             site.MatchingTypes.Length == 1 &&
             site.MatchingTypes[0].FullName == "DispatchCompilerFixture.Derived");
-        var entryRoots = result.Program.RootMaps[result.Program.EntryPoint.Key];
+        var entryRoots = result.Program.RootMaps[result.Program.EntryPoint!.Key];
         var allocatingDispatches = result.Program.DispatchCallSites.Values
             .Where(callSite => callSite.Targets.Any(target =>
                 result.Program.AllocatingMethods.Contains(target.Method.Definition.Key)))

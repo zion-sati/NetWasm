@@ -31,7 +31,7 @@ public sealed class RuntimeCoreInitializerTests
     }
 
     [Fact]
-    public void CapacityIncludesConstructedAndValueTypeDescriptors()
+    public void CapacityIncludesConstructedValueAndMetadataTypeDescriptors()
     {
         var imports = WasmRuntimeImports.CreateCatalog();
         var layouts = new RecordingLayoutProvider();
@@ -44,7 +44,7 @@ public sealed class RuntimeCoreInitializerTests
 
         ((IRuntimeCoreInitializer)initializer).Initialize(code, 512);
 
-        Assert.Contains((byte)10, code.Snapshots.Read());
+        Assert.Contains((byte)12, code.Snapshots.Read());
     }
 
     private sealed class FixedDescriptorSource : ITypeDescriptorSource
@@ -62,5 +62,8 @@ public sealed class RuntimeCoreInitializerTests
 
         public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors =>
             [new(ValueType, 9, 4, 4, 0, 0)];
+
+        public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors =>
+            [new(CliTypeIdentity.ScopedGenericParameter("owner", false, 0), 11)];
     }
 }

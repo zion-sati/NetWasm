@@ -3,8 +3,10 @@ import test from "node:test";
 
 import { isInternalImport } from "./internal-import-policy.mjs";
 
-test("recognizes only exact runtime-owned reactor modules", () => {
+test("recognizes only exact runtime-owned modules", () => {
   for (const module of [
+    "netwasm:diagnostics/terminal",
+    "netwasm:diagnostics/terminal@1.0.0",
     "netwasm:runtime/reactor-host",
     "netwasm:runtime/reactor-host@1.0.0",
   ]) {
@@ -15,6 +17,8 @@ test("recognizes only exact runtime-owned reactor modules", () => {
     "netwasm:runtime/reactor-host@1",
     "netwasm:runtime/reactor-hosted@1.0.0",
     "example:runtime/reactor-host@1.0.0",
+    "netwasm:diagnostics/terminal@1",
+    "netwasm:diagnostics/terminal@1.0.1",
   ]) {
     assert.equal(isInternalImport({ module }), false);
   }

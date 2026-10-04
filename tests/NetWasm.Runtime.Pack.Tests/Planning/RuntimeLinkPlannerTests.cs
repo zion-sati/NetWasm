@@ -18,9 +18,10 @@ public sealed class RuntimeLinkPlannerTests
         var systemLibraries = SystemLibraries(target);
         var request = new RuntimeLinkPlanRequest(
             JsonSerializer.Serialize(manifest), targetName, 948, SystemLibraries: systemLibraries);
-        var layout = new RuntimeMemoryLayoutCalculator().Calculate(new(target, manifest.WasmPageSize, 948, null, null));
-        var native = new RuntimeLinkArgumentBuilder().Build(new(
-            manifest, target, layout, request.AssetRoot,
+        var layout = new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(target, manifest.WasmPageSize, 948, null, null));
+        var native = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
+            manifest, target, new RuntimeLinkMemoryLimits(layout.RuntimeGlobalBase, layout.InitialMemorySizeBytes,
+                layout.MaximumMemorySizeBytes), request.AssetRoot,
             systemLibraries.Select(asset => asset.Path).ToImmutableArray(), request.OutputPath)).ToArray();
 
         var actual = RuntimeLinkPlanner.Plan(request);

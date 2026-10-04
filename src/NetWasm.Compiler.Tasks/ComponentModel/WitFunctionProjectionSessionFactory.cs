@@ -30,11 +30,30 @@ internal sealed class WitFunctionProjectionSession(
     private readonly IWitWorldFunctionProjector _functions = functions ??
         throw new ArgumentNullException(nameof(functions));
 
-    public WitWorldFunctionProjection Project(string witPath, string? world)
+    public WitWorldFunctionProjection Project(
+        string witPath,
+        string? world,
+        string? applicationWitPath,
+        string? applicationWorld,
+        string? sourceWorkerWorld)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(witPath);
         var document = _documents.Read(witPath);
-        return _functions.Project(document, document.SelectWorld(world));
+        var packagedWorld = document.SelectWorld(world);
+        if (applicationWitPath is null)
+        {
+            return _functions.Project(
+                document,
+                packagedWorld,
+                applicationWorld is null ? null : document.SelectWorld(applicationWorld));
+        }
+        var applicationDocument = _documents.Read(applicationWitPath);
+        return _functions.Project(
+            document,
+            packagedWorld,
+            applicationDocument,
+            applicationDocument.SelectWorld(applicationWorld),
+            applicationDocument.SelectWorld(sourceWorkerWorld));
     }
 
     public void Dispose() => _services.Dispose();

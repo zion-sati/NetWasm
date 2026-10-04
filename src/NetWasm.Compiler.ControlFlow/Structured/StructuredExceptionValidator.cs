@@ -66,9 +66,9 @@ internal sealed class StructuredExceptionValidator : IStructuredExceptionValidat
     {
         if (clause.HandlerOffset < 0 || clause.HandlerLength <= 0)
             throw new InvalidOperationException("An exception clause has an invalid handler source range.");
-        if (clause.Kind == CilExceptionRegionKind.Catch && clause.CatchType is null)
+        if (clause.Kind == CilExceptionRegionKind.Catch && clause.CatchType is null && clause.CatchTypeIdentity is null)
             throw new InvalidOperationException("A catch clause has no catch type.");
-        if (clause.Kind != CilExceptionRegionKind.Catch && clause.CatchType is not null)
+        if (clause.Kind != CilExceptionRegionKind.Catch && (clause.CatchType is not null || clause.CatchTypeIdentity is not null))
             throw new InvalidOperationException("A non-catch clause carries a catch type.");
         if (!method.Blocks.TryGetValue(clause.HandlerBlock, out var handler) ||
             handler.StartOffset != clause.HandlerOffset)

@@ -200,7 +200,7 @@ public sealed class WitBindingSyntaxFormatter(
         {
             "list" => $"{FormatTypeName(document, kind.Value)}[]",
             "option" => $"WitOption<{FormatTypeName(document, kind.Value)}>",
-            "tuple" => $"({string.Join(", ", kind.Value.GetProperty("types").EnumerateArray().Select(type => FormatTypeName(document, type)))})",
+            "tuple" => FormatTupleType(document, kind.Value),
             "result" => $"WitResult<{ResultType(document, kind.Value, "ok")}, {ResultType(document, kind.Value, "err")}>",
             "handle" => FormatTypeName(document, new WitTypeReference.Defined(
                 kind.Value.EnumerateObject().Single().Value.GetInt32())),
@@ -215,6 +215,18 @@ public sealed class WitBindingSyntaxFormatter(
             reference.ValueKind == JsonValueKind.String
                 ? new WitTypeReference.Primitive(reference.GetString()!)
                 : new WitTypeReference.Defined(reference.GetInt32()));
+
+    private string FormatTupleType(WitDocument document, JsonElement value)
+    {
+        var elements = value.GetProperty("types").EnumerateArray()
+            .Select(type => FormatTypeName(document, type)).ToArray();
+        return elements.Length switch
+        {
+            0 => "ValueTuple",
+            1 => $"ValueTuple<{elements[0]}>",
+            _ => $"({string.Join(", ", elements)})",
+        };
+    }
 
     private string FormatArrayCreation(
         WitDocument document,

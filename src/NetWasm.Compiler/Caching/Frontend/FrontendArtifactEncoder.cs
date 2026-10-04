@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 
 namespace NetWasm.Compiler.Caching.Frontend;
@@ -15,7 +16,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 10;
+    private const ushort SchemaVersion = 16;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -86,6 +87,16 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
             }
             WriteNullableId(writer, value.FullName, String);
             WriteNullableId(writer, value.StackStorageType, Type);
+            WriteNullable(writer, value.FunctionPointerSignature, item =>
+            {
+                writer.Write(item.Header);
+                writer.Write(item.GenericArity);
+                writer.Write(item.RequiredParameterCount);
+                writer.Write(Type(item.Signature.ReturnSignatureType));
+                WriteArray(writer, item.Signature.ParameterSignatureTypes, Type);
+            });
+            WriteNullableId(writer, value.CustomModifier, Type);
+            writer.Write(value.IsRequiredModifier);
         }));
 
         internal int Signature(MethodSignatureModel value) => _signatures.Intern(Entry(writer =>
@@ -132,6 +143,31 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write(String(item.InterfaceName));
                     writer.Write(String(item.FunctionName));
                 });
+                WriteNullable(writer, value.NativeImport, item =>
+                {
+                    writer.Write(String(item.LibraryName));
+                    writer.Write(String(item.EntryPoint));
+                    writer.Write((int)item.Attributes);
+                    writer.Write(item.IsVarArg);
+                    writer.Write(item.HasMarshalling);
+                    writer.Write(item.SuppressesGcTransition);
+                    writer.Write(item.HasCustomCallingConvention);
+                });
+                WriteNullable(writer, value.NativeCallback, item =>
+                {
+                    WriteArray(writer, item.CallingConventions, String);
+                    WriteNullableId(writer, item.EntryPoint, String);
+                    writer.Write(item.IsVarArg);
+                    writer.Write(item.HasUnsupportedNamedArguments);
+                });
+                WriteNullable(writer, value.UnsafeAccessor, item =>
+                {
+                    writer.Write(item.Kind);
+                    WriteNullableId(writer, item.Name, String);
+                    writer.Write(item.NameSpecified);
+                    writer.Write(item.IsMalformed);
+                    writer.Write(item.HasTypeTranslation);
+                });
             }));
 
         internal int MethodInstance(MethodInstanceModel value) =>
@@ -172,6 +208,11 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
         {
             writer.Write(value.Offset);
             writer.Write(value.NextOffset);
+            writer.Write(value.OriginalOffset.HasValue);
+            if (value.OriginalOffset is int originalOffset)
+            {
+                writer.Write(originalOffset);
+            }
             WriteEnum(writer, value.Operation);
             switch (value.Operand)
             {
@@ -459,10 +500,12 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
             });
             WriteArray(analysis.CallableMethods, WriteMethodInstance);
             WriteArray(analysis.CallSites, WriteCallSite);
+            WriteArray(analysis.NativeCallbacks, WriteMethodInstance);
             WriteArray(analysis.MethodDescriptors, WriteMethodInstance);
             WriteArray(analysis.FieldDescriptors, WriteFieldInstance);
             writer.Write(analysis.RequiresTypeFacts);
             writer.Write(analysis.RequiresDelegateInvoke);
+            writer.Write(analysis.RequiresGenericArguments);
             writer.Write(analysis.RequiresMemberNames);
             writer.Write((byte)analysis.TypeNamePayload);
         }
@@ -494,6 +537,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 writer.Write(region.HandlerLength);
                 WriteNullable(region.CatchType, WriteEntityKey);
                 WriteNullable(region.FilterOffset, writer.Write);
+                WriteNullable(region.CatchTypeIdentity, WriteType);
             });
         }
 
@@ -670,6 +714,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 WriteNullable(clause.FilterBody, WriteSequence);
                 writer.Write(clause.HandlerBlock.Value);
                 WriteNullable(clause.FilterBlock, value => writer.Write(value.Value));
+                WriteNullable(clause.CatchTypeIdentity, WriteType);
             });
             WriteArray(group.NormalContinuations, continuation =>
             {

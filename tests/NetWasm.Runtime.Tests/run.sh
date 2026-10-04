@@ -76,6 +76,20 @@ cc \
   -Werror \
   -I"$script_dir/fake_gc" \
   -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "$script_dir/collector_ephemeron_contract.c" \
+  "$workspace_dir/src/NetWasm.Runtime/collector/boehm_ephemeron.c" \
+  -o "$output_dir/collector_ephemeron_contract"
+
+"$output_dir/collector_ephemeron_contract"
+echo "Collector ephemeron contract PASS"
+
+cc \
+  -std=c11 \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -I"$script_dir/fake_gc" \
+  -I"$workspace_dir/src/NetWasm.Runtime/collector" \
   "$script_dir/collector_lifecycle_contract.c" \
   "$workspace_dir/src/NetWasm.Runtime/collector/boehm_lifecycle.c" \
   -o "$output_dir/collector_lifecycle_contract"
@@ -116,11 +130,27 @@ echo "Weak-handle table contract PASS"
 
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$workspace_dir/src/NetWasm.Runtime" \
+  "$script_dir/ephemeron_handle_table_contract.c" \
+  "$workspace_dir/src/NetWasm.Runtime/collector/ephemeron_handle_table.c" \
+  -o "$output_dir/ephemeron_handle_table_contract"
+"$output_dir/ephemeron_handle_table_contract"
+echo "Ephemeron-handle table contract PASS"
+
+cc -std=c11 -Wall -Wextra -Werror \
+  -I"$workspace_dir/src/NetWasm.Runtime" \
   "$script_dir/strong_handle_table_contract.c" \
   "$workspace_dir/src/NetWasm.Runtime/collector/strong_handle_table.c" \
   -o "$output_dir/strong_handle_table_contract"
 "$output_dir/strong_handle_table_contract"
 echo "Strong-handle table contract PASS"
+
+cc -std=c11 -Wall -Wextra -Werror \
+  -I"$workspace_dir/src/NetWasm.Runtime" \
+  "$script_dir/command_diagnostics_contract.c" \
+  -o "$output_dir/command_diagnostics_contract"
+"$output_dir/command_diagnostics_contract"
+echo "Command diagnostics contract PASS"
+
 
 cc -std=c11 -Wall -Wextra -Werror \
   -I"$workspace_dir/src/NetWasm.Runtime" \

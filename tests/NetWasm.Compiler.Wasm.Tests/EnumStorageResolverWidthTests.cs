@@ -7,183 +7,89 @@ namespace NetWasm.Compiler.Wasm.Tests;
 public sealed class EnumStorageResolverWidthTests
 {
     [Theory]
-    [InlineData("i1", CliValueKind.I4, 1, 1, 4)]
-    [InlineData("u1", CliValueKind.I4, 1, 1, 4)]
-    [InlineData("i2", CliValueKind.I4, 2, 2, 4)]
-    [InlineData("u2", CliValueKind.I4, 2, 2, 4)]
-    [InlineData("i4", CliValueKind.I4, 4, 4, 4)]
-    [InlineData("u4", CliValueKind.I4, 4, 4, 4)]
-    [InlineData("i8", CliValueKind.I8, 8, 8, 8)]
-    [InlineData("u8", CliValueKind.I8, 8, 8, 8)]
+    [InlineData("i1", CliValueKind.I4, 1, 1)]
+    [InlineData("u1", CliValueKind.I4, 1, 1)]
+    [InlineData("i2", CliValueKind.I4, 2, 2)]
+    [InlineData("u2", CliValueKind.I4, 2, 2)]
+    [InlineData("char", CliValueKind.I4, 2, 2)]
+    [InlineData("i4", CliValueKind.I4, 4, 4)]
+    [InlineData("u4", CliValueKind.I4, 4, 4)]
+    [InlineData("i8", CliValueKind.I8, 8, 8)]
+    [InlineData("u8", CliValueKind.I8, 8, 8)]
     public void ResolvesEveryEnumStorageWidth(
-        string name,
-        CliValueKind stackKind,
-        int size,
-        int alignment,
-        int payloadOffset)
+        string name, CliValueKind stackKind, int size, int alignment)
     {
         var assembly = new AssemblyIdentity("EnumStorageWidthTests");
-        var enumType = new EntityKey(assembly, 1);
-        var field = new EntityKey(assembly, 2);
+        var enumKey = new EntityKey(assembly, 1);
         var underlying = CliTypeIdentity.Primitive(name, stackKind);
-        var repository = new Repository(
-            [new TypeDefinitionModel(
-                enumType,
-                "Tests",
-                "State",
-                true,
-                [field],
-                []) { IsEnum = true }],
-            [new FieldDefinitionModel(field, enumType, "value__", underlying, false)],
-            [new TypeDescriptorLayout(enumType, 7, 0, 16, 0, 0, null)],
-            new ValueLayout(underlying, size, alignment, []));
+        var enumType = CliTypeIdentity.FromDefinition(new TypeDefinitionModel(
+            enumKey, "Tests", "State", true, [], [])
+        {
+            IsEnum = true,
+            EnumUnderlyingType = underlying,
+        });
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var source = new Layouts(
+                [new(enumKey, enumType, 7, 0, underlying, false, false, [])],
+                new ValueLayout(underlying, size, alignment, []), target);
+            var resolver = ThroughContract(new EnumStorageResolver(source, source, source));
 
-        var result = Assert.Single(((IEnumStorageResolver)new EnumStorageResolver(
-            repository,
-            repository,
-            repository,
-            repository,
-            repository)).Resolve());
+            var result = Assert.Single(resolver.Resolve());
 
-        Assert.Equal(enumType, result.Descriptor.Type);
-        Assert.Equal(
-            CliTypeIdentity.Named(assembly, "Tests", "State", true),
-            result.EnumType);
-        Assert.Equal(underlying, result.UnderlyingType);
-        Assert.Equal(size, result.Layout.Size);
-        Assert.Equal(alignment, result.Layout.Alignment);
-        Assert.Equal(payloadOffset, result.PayloadOffset);
+            Assert.Equal(7, result.TypeId);
+            Assert.Same(enumType, result.EnumType);
+            Assert.Equal(underlying, result.UnderlyingType);
+            Assert.Equal(size, result.Layout.Size);
+            Assert.Equal(alignment, result.Layout.Alignment);
+            Assert.Equal(Math.Max(source.Target.ObjectHeaderSize, alignment), result.PayloadOffset);
+            Assert.Equal([underlying], source.Requests);
+        }
     }
 
     [Fact]
-    public void ReturnsNoStorageWhenNoDescriptorsAreReachable()
+    public void ReturnsNoStorageWhenNoEnumMetadataIsReachable()
     {
-        var repository = new Repository([], [], [], null);
+        var source = new Layouts([], null, WasmTarget.Wasm32);
+        var resolver = ThroughContract(new EnumStorageResolver(source, source, source));
 
-        var result = ((IEnumStorageResolver)new EnumStorageResolver(
-            repository,
-            repository,
-            repository,
-            repository,
-            repository)).Resolve();
-
-        Assert.Empty(result);
+        Assert.Empty(resolver.Resolve());
+        Assert.Empty(source.Requests);
     }
 
     [Fact]
-    public void RejectsAnEnumWithoutValueField()
+    public void PreservesTheUnderlyingLayoutFailure()
     {
         var assembly = new AssemblyIdentity("EnumStorageFailureTests");
-        var enumType = new EntityKey(assembly, 1);
-        var field = new EntityKey(assembly, 2);
-        var repository = new Repository(
-            [new TypeDefinitionModel(
-                enumType,
-                "Tests",
-                "MissingValue",
-                true,
-                [field],
-                []) { IsEnum = true }],
-            [new FieldDefinitionModel(
-                field,
-                enumType,
-                "not_value",
-                CliTypeIdentity.Primitive("i4", CliValueKind.I4),
-                false)],
-            [new TypeDescriptorLayout(enumType, 7, 0, 16, 0, 0, null)],
-            null);
-
-        _ = Assert.Throws<InvalidOperationException>(() =>
-            ((IEnumStorageResolver)new EnumStorageResolver(
-                repository,
-                repository,
-                repository,
-                repository,
-                repository)).Resolve());
-    }
-
-    [Fact]
-    public void RejectsDuplicateValueFields()
-    {
-        var assembly = new AssemblyIdentity("EnumStorageFailureTests");
-        var enumType = new EntityKey(assembly, 1);
-        var first = new EntityKey(assembly, 2);
-        var second = new EntityKey(assembly, 3);
+        var enumKey = new EntityKey(assembly, 1);
+        var enumType = CliTypeIdentity.Named(assembly, "Tests", "State", true);
         var underlying = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
-        var repository = new Repository(
-            [new TypeDefinitionModel(
-                enumType,
-                "Tests",
-                "DuplicateValue",
-                true,
-                [first, second],
-                []) { IsEnum = true }],
-            [
-                new FieldDefinitionModel(first, enumType, "value__", underlying, false),
-                new FieldDefinitionModel(second, enumType, "value__", underlying, false),
-            ],
-            [new TypeDescriptorLayout(enumType, 7, 0, 16, 0, 0, null)],
-            new ValueLayout(underlying, 4, 4, []));
+        var source = new Layouts(
+            [new(enumKey, enumType, 7, 0, underlying, false, false, [])],
+            null, WasmTarget.Wasm32);
+        var resolver = ThroughContract(new EnumStorageResolver(source, source, source));
 
-        _ = Assert.Throws<InvalidOperationException>(() =>
-            ((IEnumStorageResolver)new EnumStorageResolver(
-                repository,
-                repository,
-                repository,
-                repository,
-                repository)).Resolve());
+        var exception = Assert.Throws<InvalidOperationException>(() => resolver.Resolve());
+
+        Assert.Equal($"no value layout for '{underlying}'", exception.Message);
+        Assert.Equal([underlying], source.Requests);
     }
 
-    [Fact]
-    public void RejectsDescriptorWithUnknownType()
+    private static IEnumStorageResolver ThroughContract(IEnumStorageResolver actor) => actor;
+
+    private sealed class Layouts(
+        ImmutableArray<EnumMetadataLayout> metadata,
+        ValueLayout? valueLayout,
+        WasmTarget target) : ITargetLayout, IValueLayoutProvider, IEnumMetadataSource
     {
-        var assembly = new AssemblyIdentity("EnumStorageFailureTests");
-        var missingType = new EntityKey(assembly, 99);
-        var repository = new Repository(
-            [],
-            [],
-            [new TypeDescriptorLayout(missingType, 7, 0, 16, 0, 0, null)],
-            null);
+        public WasmTargetLayout Target => WasmTargetLayout.For(target);
+        public ImmutableArray<EnumMetadataLayout> EnumMetadata => metadata;
+        public List<CliTypeIdentity> Requests { get; } = [];
 
-        Assert.Throws<KeyNotFoundException>(() =>
-            ((IEnumStorageResolver)new EnumStorageResolver(
-                repository,
-                repository,
-                repository,
-                repository,
-                repository)).Resolve());
-    }
-
-    private sealed class Repository(
-        IEnumerable<TypeDefinitionModel> definitions,
-        IEnumerable<FieldDefinitionModel> fields,
-        IEnumerable<TypeDescriptorLayout> descriptors,
-        ValueLayout? valueLayout) :
-        ITypeRepository,
-        IFieldRepository,
-        ITargetLayout,
-        IValueLayoutProvider,
-        ITypeDescriptorSource
-    {
-        private readonly Dictionary<EntityKey, TypeDefinitionModel> _definitions =
-            definitions.ToDictionary(definition => definition.Key);
-        private readonly Dictionary<EntityKey, FieldDefinitionModel> _fields =
-            fields.ToDictionary(field => field.Key);
-
-        public WasmTargetLayout Target => WasmTargetLayout.Wasm32;
-
-        public ImmutableArray<TypeDescriptorLayout> TypeDescriptors =>
-            [.. descriptors];
-
-        public ImmutableArray<ConstructedTypeDescriptorLayout> ConstructedTypeDescriptors => [];
-
-        public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors => [];
-
-        public TypeDefinitionModel GetTypeDefinition(EntityKey key) => _definitions[key];
-
-        public FieldDefinitionModel GetField(EntityKey key) => _fields[key];
-
-        public ValueLayout GetValueLayout(CliTypeIdentity type) => valueLayout ??
-            throw new InvalidOperationException($"no value layout for '{type}'");
+        public ValueLayout GetValueLayout(CliTypeIdentity type)
+        {
+            Requests.Add(type);
+            return valueLayout ?? throw new InvalidOperationException($"no value layout for '{type}'");
+        }
     }
 }

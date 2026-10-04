@@ -51,6 +51,13 @@ const reactor = {
   },
 };
 imports["netwasm:runtime/reactor-host"] = reactor;
+imports["netwasm:diagnostics/terminal"] = Object.freeze({
+  report(typeId, message, stackTrace) {
+    assert.ok(Number.isInteger(typeId) && typeId > 0);
+    assert.ok(message === undefined || message instanceof Uint16Array);
+    assert.ok(stackTrace === undefined || stackTrace instanceof Uint16Array);
+  },
+});
 root = await component.instantiate(
   async name => WebAssembly.compile(await readFile(join(directory, name))), imports);
 assert.equal(root.wasiCliRun, undefined);

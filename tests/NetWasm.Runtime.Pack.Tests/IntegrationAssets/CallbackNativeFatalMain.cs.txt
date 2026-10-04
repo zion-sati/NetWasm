@@ -1,0 +1,4 @@
+internal static class Program
+{
+    public static int Main() => NativeMule.EntryPoint.Run(int.MaxValue);
+}

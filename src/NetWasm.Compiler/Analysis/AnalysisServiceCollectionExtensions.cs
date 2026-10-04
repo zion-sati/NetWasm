@@ -1,10 +1,13 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.Core.Types;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.GarbageCollection;
 using NetWasm.Compiler.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
+using NetWasm.Compiler.Analysis.Attributes;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -15,6 +18,7 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddManagedCallSites();
         services.AddManagedCallSiteAnalysis();
         services.AddDelegateAnalysis();
+        services.AddAttributeAnalysis();
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<INullableTypeResolver, NullableTypeResolver>();
         services.AddSingleton<ICalledMethodResolverFactory,
@@ -39,6 +43,9 @@ internal static class AnalysisServiceCollectionExtensions
             ReachabilityImportClassifierFactory>();
         services.AddSingleton<IEnumMetadataRequirementClassifier,
             EnumMetadataRequirementClassifier>();
+        services.TryAddSingleton<INativeDeclarationValidator, NativeDeclarationValidator>();
+        services.TryAddSingleton<INativeCallbackDeclarationValidator,
+            NativeCallbackDeclarationValidator>();
         services.AddSingleton<ReachableMethodAnalyzerFactory>();
         services.AddSingleton<IReachableMethodAnalyzerFactory>(static provider =>
             provider.GetRequiredService<ReachableMethodAnalyzerFactory>());

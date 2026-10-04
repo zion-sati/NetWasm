@@ -119,6 +119,23 @@ public sealed class RootMapAnalyzer(
         var blocks = graph.Blocks
             .OrderByDescending(block => block.Index)
             .ToArray();
+        var blockByOffset = graph.Blocks.ToDictionary(block => block.StartOffset, block => block.Index);
+        // Filter execution can resume in its handler or continue exception search
+        // through sibling and outer clauses. These are liveness dependencies,
+        // not normal CFG edges: their evaluation-stack entry contracts differ.
+        var filterContinuations = graph.Blocks.ToDictionary(
+            block => block.Index,
+            block => method.Body.ExceptionRegions
+                .Where(region => region.FilterOffset is int filterOffset &&
+                    block.StartOffset >= filterOffset && block.StartOffset < region.HandlerOffset)
+                .SelectMany(filter => method.Body.ExceptionRegions.Where(candidate =>
+                    candidate.TryOffset <= filter.TryOffset &&
+                    candidate.TryOffset + candidate.TryLength >= filter.TryOffset + filter.TryLength))
+                .SelectMany(region => region.FilterOffset is int filterOffset
+                    ? new[] { blockByOffset[filterOffset], blockByOffset[region.HandlerOffset] }
+                    : [blockByOffset[region.HandlerOffset]])
+                .Distinct()
+                .ToImmutableArray());
         bool changed;
         do
         {
@@ -126,6 +143,7 @@ public sealed class RootMapAnalyzer(
             foreach (var block in blocks)
             {
                 var live = graph.Successors[block.Index]
+                    .Concat(filterContinuations[block.Index])
                     .SelectMany(successor => blockLiveIn[successor])
                     .ToImmutableHashSet();
                 var instructions = blockInstructions[block.Index];
@@ -134,7 +152,9 @@ public sealed class RootMapAnalyzer(
                     var instruction = instructions[index];
                     if (CilSafepointClassifier.MayTransferControlExceptionally(instruction))
                     {
+                        // A throwing filter is rejected before later stores run.
                         live = live.Union(graph.ExceptionalSuccessors[block.Index]
+                            .Concat(filterContinuations[block.Index])
                             .SelectMany(successor => blockLiveIn[successor]));
                     }
                     liveAfter[instruction.Offset] = live;

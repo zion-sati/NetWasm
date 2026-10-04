@@ -21,6 +21,31 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
+    <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../../src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="IntegrationAssets/native-mule.c" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/named-callback-mule.c" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/NativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/GeneratedNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/AggregateNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/AggregateProfileNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/ArrayUtf8NativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/SafeHandleNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/CallbackNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/NamedCallbackNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/CallbackOnlyNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/CallbackFailureNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/CallbackCacheNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/UnusedCallbackHello42.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/NativeGenerator.csproj.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/NativeDesktopMain.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/native-mule-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/hello42-dce-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/callback-cache-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
+    <Compile Include="../TestInfrastructure/WasmModuleInspection.cs" Link="WasmModuleInspection.cs" />
   </ItemGroup>
 </Project>

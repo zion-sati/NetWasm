@@ -34,11 +34,11 @@ export function createNetWasmWasiHost({
     reportImmediate:
       managedExceptionReporting.reportImmediate ??
       (event => console.error(
-        `[netwasm:${event.eventId}] managed exception typeId=${event.typeId}: ${event.message}`)),
+        `[netwasm:${event.eventId}] managed exception typeId=${event.typeId}: ${event.message}${event.stackTrace ? `\n${event.stackTrace}` : ""}`)),
     reportEnriched:
       managedExceptionReporting.reportEnriched ??
       (event => console.error(
-        `[netwasm:${event.eventId}] resolved exception type: ${event.typeName}`)),
+        `[netwasm:${event.eventId}] resolved exception type: ${event.typeName}${event.stackTrace ? `\n${event.stackTrace}` : ""}`)),
     loadArtifacts: async () => {
       if (typeof diagnosticArtifacts === "function")
         return diagnosticArtifacts();

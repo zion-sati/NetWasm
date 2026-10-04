@@ -19,6 +19,7 @@ internal static class CallEmissionServiceCollectionExtensions
         services.AddSingleton<JSImportCallEmitter>();
         services.AddSingleton<AsyncJSImportCallEmitter>();
         services.AddSingleton<DirectCallEmitter>();
+        services.AddSingleton<NativeCallEmitter>();
         services.AddSingleton<ICallEmissionKindResolver, CallEmissionKindResolver>();
         services.AddSingleton<CallEmissionRegistration>(provider => new(
             CallEmissionKind.DelegateInvoke,
@@ -38,7 +39,12 @@ internal static class CallEmissionServiceCollectionExtensions
         services.AddSingleton<CallEmissionRegistration>(provider => new(
             CallEmissionKind.Direct,
             provider.GetRequiredService<DirectCallEmitter>()));
+        services.AddSingleton<CallEmissionRegistration>(provider => new(
+            CallEmissionKind.Native,
+            provider.GetRequiredService<NativeCallEmitter>()));
         services.AddSingleton<ICallEmissionRegistry, CallEmissionRegistry>();
+        services.AddSingleton<INativeFunctionAddressEmitter,
+            NativeFunctionAddressEmitter>();
         services.AddSingleton<FunctionLoadEmitter>();
         services.AddSingleton<IFunctionLoader>(provider =>
             provider.GetRequiredService<FunctionLoadEmitter>());

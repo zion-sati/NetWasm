@@ -60,6 +60,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.MemberExecuteMethod =>
                 [NullReference, OutOfMemory, InvalidCast, InvalidOperation],
 
+            RuntimeIntrinsic.DelegateDynamicInvoke => [OutOfMemory, Argument],
+
             RuntimeIntrinsic.MemberReadField => [NullReference, OutOfMemory],
 
             RuntimeIntrinsic.NativeMemoryAlloc or

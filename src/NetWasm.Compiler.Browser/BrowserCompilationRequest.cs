@@ -16,10 +16,26 @@ public sealed record BrowserCompilationRequest
         IReadOnlyDictionary<string, byte[]> inputs,
         IReadOnlyDictionary<string, string> normalizedWitDocuments,
         bool selectManagedExecutableEntryPoint = false)
+        : this(
+            options,
+            inputs,
+            normalizedWitDocuments,
+            ImmutableDictionary<string, string>.Empty,
+            selectManagedExecutableEntryPoint)
+    {
+    }
+
+    public BrowserCompilationRequest(
+        CompilerOptions options,
+        IReadOnlyDictionary<string, byte[]> inputs,
+        IReadOnlyDictionary<string, string> normalizedWitDocuments,
+        IReadOnlyDictionary<string, string> witCoreBindingInventories,
+        bool selectManagedExecutableEntryPoint = false)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(normalizedWitDocuments);
+        ArgumentNullException.ThrowIfNull(witCoreBindingInventories);
         if (options.DiagnosticTracePath is not null || options.DiagnosticLogPath is not null)
         {
             throw new ArgumentException(
@@ -62,6 +78,21 @@ public sealed record BrowserCompilationRequest
         }
 
         NormalizedWitDocuments = documents.ToImmutable();
+        var inventories = ImmutableDictionary.CreateBuilder<string, string>(
+            StringComparer.Ordinal);
+        foreach (var (path, inventory) in witCoreBindingInventories)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            ArgumentException.ThrowIfNullOrWhiteSpace(inventory);
+            if (!NormalizedWitDocuments.ContainsKey(path))
+            {
+                throw new FileNotFoundException(
+                    "A normalized virtual WIT document was not supplied for its core binding inventory.",
+                    path);
+            }
+            inventories.Add(path, inventory);
+        }
+        WitCoreBindingInventories = inventories.ToImmutable();
     }
 
     public CompilerOptions Options { get; }
@@ -77,4 +108,6 @@ public sealed record BrowserCompilationRequest
     public ImmutableDictionary<string, ImmutableArray<byte>> Inputs { get; }
 
     public ImmutableDictionary<string, string> NormalizedWitDocuments { get; }
+
+    public ImmutableDictionary<string, string> WitCoreBindingInventories { get; }
 }

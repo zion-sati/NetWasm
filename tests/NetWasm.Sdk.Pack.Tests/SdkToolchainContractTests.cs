@@ -5,6 +5,22 @@ namespace NetWasm.Sdk.Pack.Tests;
 public sealed class SdkToolchainContractTests
 {
     [Fact]
+    public void CompilerTaskCarriesPathMapIntoStackTraceIdentity()
+    {
+        var targetNamespace = XNamespace.Get(
+            "http://schemas.microsoft.com/developer/msbuild/2003");
+        var document = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        var compile = Assert.Single(document.Descendants(
+            targetNamespace + "NetWasmCompileTask"));
+        Assert.Equal("$(PathMap)", (string?)compile.Attribute("PathMap"));
+        Assert.Contains(document.Descendants(
+                targetNamespace + "_NetWasmCompilationIdentityLine"),
+            line => (string?)line.Attribute("Include") == "pathMap=$(PathMap)");
+    }
+
+    [Fact]
     public void ToolchainTargetExposesThePinnedComponentLifecycleSeams()
     {
         var document = LoadSdkTarget("NetWasm.Toolchain.targets");
@@ -18,6 +34,9 @@ public sealed class SdkToolchainContractTests
         Assert.Contains("NetWasmSdkComponentize", targetNames);
         Assert.Contains("NetWasmSdkPublishPortable", targetNames);
         Assert.Contains("NetWasmSdkPublishBrowser", targetNames);
+        Assert.Contains("NetWasmSdkPublishJsWorker", targetNames);
+        Assert.Contains("NetWasmSdkPublishWitWorker", targetNames);
+        Assert.Contains("NetWasmSdkRejectWorkerRun", targetNames);
         Assert.Contains("NetWasmSdkRejectLibraryLifecycle", targetNames);
         Assert.Contains("NetWasmComponentInput", source, StringComparison.Ordinal);
         Assert.Contains("NetWasmComponentRuntime", source, StringComparison.Ordinal);
@@ -37,6 +56,16 @@ public sealed class SdkToolchainContractTests
         Assert.Contains("NetWasmHostToolsPackageRoot", source, StringComparison.Ordinal);
         Assert.DoesNotContain("$(EMSDK_NODE)", source, StringComparison.Ordinal);
         Assert.Contains("NetWasmTranspileComponentTask", source, StringComparison.Ordinal);
+        Assert.Contains("NetWasmReadHostInteropManifestTask", source, StringComparison.Ordinal);
+        Assert.Contains("NetWasmReadRawBindingManifestTask", source, StringComparison.Ordinal);
+        Assert.Contains("NetWasmWriteWorkerHostEntryTask", source, StringComparison.Ordinal);
+        Assert.Contains("NetWasmWriteWitWorkerHostEntryTask", source, StringComparison.Ordinal);
+        Assert.Contains("NetWasmWriteWorkerClientEntryTask", source, StringComparison.Ordinal);
+        Assert.Contains(".worker-client.d.mts", source, StringComparison.Ordinal);
+        Assert.Contains("exception-type-map", source, StringComparison.Ordinal);
+        Assert.Contains("application/vnd.netwasm.exception-types+json;version=2", source,
+            StringComparison.Ordinal);
+        Assert.Contains("MSBuildProjectDirectory", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -94,6 +123,21 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
+    public void RunArgumentsForwardTheStructuredCommandResultToTheOuterProcess()
+    {
+        var document = LoadSdkTarget("NetWasm.Toolchain.targets");
+        var runArguments = document
+            .Descendants(XName.Get(
+                "RunArguments",
+                "http://schemas.microsoft.com/developer/msbuild/2003"))
+            .Single();
+
+        Assert.Contains("--forward-command-result", runArguments.Value, StringComparison.Ordinal);
+        Assert.Contains("--result", runArguments.Value, StringComparison.Ordinal);
+        Assert.Contains("--replace-result", runArguments.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SdkDiagnosticsUseUniqueCodesAcrossComposedTargets()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -127,7 +171,7 @@ public sealed class SdkToolchainContractTests
     }
 
     [Fact]
-    public void RuntimePackDefersDerivedOutputPathsUntilTargetExecution()
+    public void RuntimePackDefersOutputPathsAndAlwaysRunsContentValidation()
     {
         var repositoryRoot = FindRepositoryRoot();
         var targetNamespace = XNamespace.Get(
@@ -174,23 +218,16 @@ public sealed class SdkToolchainContractTests
         Assert.Contains("NetWasmRuntimePackWriteMaterializationIdentity",
             (string?)materialize.Attribute("DependsOnTargets"),
             StringComparison.Ordinal);
-        Assert.Contains("@(_NetWasmRuntimePackMaterializationInput)",
-            (string?)materialize.Attribute("Inputs"),
-            StringComparison.Ordinal);
-        Assert.Contains("$(NetWasmRuntimeLayoutPath)",
-            (string?)materialize.Attribute("Inputs"),
-            StringComparison.Ordinal);
-        Assert.Equal("$(NetWasmRuntimePackMaterializedPath)",
-            (string?)materialize.Attribute("Outputs"));
-        var inferredRuntime = Assert.Single(materialize.Descendants(
-            targetNamespace + "_NetWasmRuntimePackMaterialization"));
-        Assert.Contains("Exists('$(NetWasmRuntimePackMaterializedPath)')",
-            (string?)inferredRuntime.Parent?.Attribute("Condition"),
-            StringComparison.Ordinal);
-        Assert.Equal("RuntimeModule",
-            (string?)inferredRuntime.Element(targetNamespace + "Kind"));
-        Assert.Equal("$(NetWasmTarget)",
-            (string?)inferredRuntime.Element(targetNamespace + "WasmTarget"));
+        Assert.Null(materialize.Attribute("Inputs"));
+        Assert.Null(materialize.Attribute("Outputs"));
+        var materializer = Assert.Single(materialize.Descendants(
+            targetNamespace + "RuntimeMaterializationTask"));
+        var materializerOutput = Assert.Single(materializer.Elements(
+            targetNamespace + "Output"));
+        Assert.Equal("RuntimeModules",
+            (string?)materializerOutput.Attribute("TaskParameter"));
+        Assert.Equal("_NetWasmRuntimePackMaterialization",
+            (string?)materializerOutput.Attribute("ItemName"));
 
         var clean = Assert.Single(targets.Descendants(
             targetNamespace + "Target"), candidate =>
@@ -283,10 +320,15 @@ public sealed class SdkToolchainContractTests
         Assert.Contains("wasi:http@0.2.11/", source, StringComparison.Ordinal);
         var compilerWorlds = document.Descendants(XName.Get("NetWasmCompilerWitWorld",
             "http://schemas.microsoft.com/developer/msbuild/2003")).ToArray();
-        Assert.Equal("netwasm:platform@1.0.0/async-platform", compilerWorlds[0].Value);
+        var asyncCommandCompilerWorld = Assert.Single(compilerWorlds, world =>
+            ((string?)world.Attribute("Condition"))?.Contains(
+                "'$(NetWasmComponentContract)' == 'async-command'",
+                StringComparison.Ordinal) == true);
+        Assert.Equal("netwasm:platform@1.0.0/async-platform", asyncCommandCompilerWorld.Value);
         Assert.Contains("'$(NetWasmComponentContract)' == 'async-command'",
-            (string?)compilerWorlds[0].Attribute("Condition"), StringComparison.Ordinal);
-        Assert.Equal("netwasm:platform@1.0.0/platform", compilerWorlds[1].Value);
+            (string?)asyncCommandCompilerWorld.Attribute("Condition"), StringComparison.Ordinal);
+        Assert.Contains(compilerWorlds,
+            world => world.Value == "netwasm:platform@1.0.0/platform");
         Assert.Contains("NWSDK025", source, StringComparison.Ordinal);
     }
 
@@ -422,6 +464,29 @@ public sealed class SdkToolchainContractTests
         Assert.Equal(
             "'$(NetWasmPackageCacheRoot)' != ''",
             (string?)packageCachePathMap.Attribute("Condition"));
+    }
+
+    [Fact]
+    public void RepositoryBuildCanonicalizesSourceLinkRepositoryMetadata()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var document = XDocument.Load(Path.Combine(repositoryRoot, "Directory.Build.targets"));
+        var target = Assert.Single(document.Descendants("Target"), element =>
+            (string?)element.Attribute("Name") == "UseCanonicalNetWasmSourceLinkRepository");
+        var repositoryUrl = Assert.Single(target.Descendants("ScmRepositoryUrl"));
+        var sourceRoot = Assert.Single(target.Descendants("SourceRoot"));
+
+        Assert.Equal("$(RepositoryUrl)", repositoryUrl.Value);
+        Assert.Equal("$(RepositoryUrl)", (string?)sourceRoot.Attribute("RepositoryUrl"));
+        Assert.Equal("$(RepositoryUrl)", (string?)sourceRoot.Attribute("ScmRepositoryUrl"));
+        Assert.Contains(
+            "InitializeSourceControlInformationFromSourceControlManager",
+            (string?)target.Attribute("AfterTargets"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "TranslateGitHubUrlsInSourceControlInformation",
+            (string?)target.Attribute("BeforeTargets"),
+            StringComparison.Ordinal);
     }
 
     [Fact]

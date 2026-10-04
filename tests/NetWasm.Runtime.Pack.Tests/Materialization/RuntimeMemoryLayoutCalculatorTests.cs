@@ -17,7 +17,7 @@ public sealed class RuntimeMemoryLayoutCalculatorTests
         long expectedMaximumMemory)
     {
         var calculator = Assert.IsAssignableFrom<IRuntimeMemoryLayoutCalculator>(
-            new RuntimeMemoryLayoutCalculator());
+            new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()));
         var result = calculator.Calculate(new(
             RuntimePackTestData.Target(target),
             65_536,
@@ -34,7 +34,7 @@ public sealed class RuntimeMemoryLayoutCalculatorTests
     [Fact]
     public void AppliesExplicitHeapAndMaximumLimits()
     {
-        var result = new RuntimeMemoryLayoutCalculator().Calculate(new(
+        var result = new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             RuntimePackTestData.Target("wasm32"),
             65_536,
             16,
@@ -60,7 +60,7 @@ public sealed class RuntimeMemoryLayoutCalculatorTests
         long? initialHeap,
         long? maximumMemory)
     {
-        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator().Calculate(new(
+        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             RuntimePackTestData.Target("wasm32"),
             pageSize,
             staticDataEnd,
@@ -70,7 +70,7 @@ public sealed class RuntimeMemoryLayoutCalculatorTests
 
     [Fact]
     public void RejectsMaximumBelowInitialLayout() =>
-        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator().Calculate(new(
+        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             RuntimePackTestData.Target("wasm32"),
             65_536,
             1_000_000,
@@ -79,7 +79,7 @@ public sealed class RuntimeMemoryLayoutCalculatorTests
 
     [Fact]
     public void RejectsOverflowingLayout() =>
-        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator().Calculate(new(
+        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             RuntimePackTestData.Target("wasm64") with { MaximumMemorySizeBytes = long.MaxValue },
             65_536,
             long.MaxValue,
@@ -89,9 +89,55 @@ public sealed class RuntimeMemoryLayoutCalculatorTests
     [Fact]
     public void RejectsNullRequest()
     {
-        var calculator = new RuntimeMemoryLayoutCalculator();
+        var calculator = new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder());
         Assert.Throws<ArgumentNullException>(() => calculator.Calculate(null!));
         Assert.Throws<ArgumentNullException>(() => calculator.Calculate(new(
             null!, 65_536, 0, null, null)));
+    }
+
+    [Fact]
+    public void UsesInjectedPlanAndPropagatesItsFailure()
+    {
+        var request = new RuntimeMemoryLayoutRequest(RuntimePackTestData.Target("wasm32"), 65_536, 0, null, null);
+        var plan = new RuntimeMemoryPlan("wasm32", 4, 65_536, 16, 0, 16, 0, 1_048_576, 65_536);
+        var builder = new RecordingPlanBuilder(plan);
+        var result = new RuntimeMemoryLayoutCalculator(builder).Calculate(request);
+        Assert.Same(request, builder.Request);
+        Assert.Equal(new RuntimeMemoryLayout(16, 91_984, 131_072, 1_048_576), result);
+        var failure = new InvalidOperationException("plan");
+        builder.Failure = failure;
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator(builder).Calculate(request)));
+    }
+
+    [Fact]
+    public void RejectsNegativeFootprintAndOverflowingFootprintCalculation()
+    {
+        var plan = new RuntimeMemoryPlan("wasm64", 8, 65_536, 16, 0, 16, 0, long.MaxValue, 65_536);
+        var builder = new RecordingPlanBuilder(plan);
+        var request = new RuntimeMemoryLayoutRequest(RuntimePackTestData.Target("wasm64"), 65_536, 0, null, null);
+        Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator(builder).Calculate(request with
+        {
+            Target = request.Target with { RuntimeFootprintBytes = -1 },
+        }));
+        var failure = Assert.Throws<InvalidOperationException>(() => new RuntimeMemoryLayoutCalculator(builder).Calculate(request with
+        {
+            Target = request.Target with { RuntimeFootprintBytes = long.MaxValue },
+        }));
+        Assert.IsType<OverflowException>(failure.InnerException);
+        Assert.Throws<ArgumentNullException>(() => new RuntimeMemoryLayoutCalculator(null!));
+    }
+
+    private sealed class RecordingPlanBuilder(RuntimeMemoryPlan plan) : IRuntimeMemoryPlanBuilder
+    {
+        public RuntimeMemoryLayoutRequest? Request { get; private set; }
+        public InvalidOperationException? Failure { get; set; }
+
+        public RuntimeMemoryPlan Build(RuntimeMemoryLayoutRequest request)
+        {
+            Request = request;
+            if (Failure is not null)
+                throw Failure;
+            return plan;
+        }
     }
 }

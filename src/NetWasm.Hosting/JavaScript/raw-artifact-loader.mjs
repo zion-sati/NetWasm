@@ -1,4 +1,5 @@
 import { createRawArtifactPlan } from "./raw-artifact-plan.mjs";
+import { parseStackTraceSymbols } from "./stack-trace-symbol-reader.mjs";
 
 const requestKeys = new Set([
   "artifacts",
@@ -25,6 +26,33 @@ const layoutKeys = [
   "target",
 ];
 const entryPointKeys = ["completionShape", "parameterShape", "returnShape"];
+const nativeLayoutKeys = [...layoutKeys, "nativeImports"].sort();
+const callbackLayoutKeys = [...nativeLayoutKeys, "nativeCallbackSupport"].sort();
+const runtimeFeatureLayoutKeys = [...layoutKeys, "runtimeFeatures"].sort();
+const nativeRuntimeFeatureLayoutKeys = [...nativeLayoutKeys, "runtimeFeatures"].sort();
+const callbackRuntimeFeatureLayoutKeys = [...callbackLayoutKeys, "runtimeFeatures"].sort();
+const nativeImportKeys = ["entryPoint", "libraryName", "parameters", "returnType"];
+const nativeCallbackSupportKeys = [
+  "callbacks",
+  "fileName",
+  "sha256",
+  "temporaryApplicationExports",
+  "temporaryRuntimeExports",
+];
+const nativeCallbackKeys = [
+  "applicationExportName",
+  "nativeSymbol",
+  "parameters",
+  "returnType",
+  "runtimeGetterExportName",
+  "runtimeImportSymbol",
+];
+const nativeValueTypes = new Set(["i32", "i64", "f32", "f64"]);
+const supportedRuntimeFeatures = new Set([
+  "ephemeron-handles",
+  "local-time",
+  "structured-command-diagnostics",
+]);
 const digestPattern = /^[0-9a-f]{64}$/u;
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
@@ -50,6 +78,8 @@ export async function loadRawArtifacts(request = {}) {
   const plannedArtifacts = [
     plan.application,
     plan.adapter,
+    ...(plan.exceptionTypeMap === undefined ? [] : [plan.exceptionTypeMap]),
+    ...(plan.stackTraceSymbols === undefined ? [] : [plan.stackTraceSymbols]),
     plan.runtimeLayout,
     plan.interopManifest,
   ];
@@ -73,9 +103,21 @@ export async function loadRawArtifacts(request = {}) {
   }));
 
   throwIfAborted(signal);
-  const [applicationArtifact, adapterArtifact, layoutArtifact, interopArtifact] = verifiedArtifacts;
+  const byRole = new Map(verifiedArtifacts.map(value => [value.artifact.role, value]));
+  const applicationArtifact = byRole.get("application");
+  const adapterArtifact = byRole.get("raw-adapter");
+  const exceptionTypeMapArtifact = byRole.get("exception-type-map");
+  const layoutArtifact = byRole.get("runtime-layout");
+  const stackTraceSymbolsArtifact = byRole.get("stack-trace-symbols");
+  const interopArtifact = byRole.get("interop-manifest");
   const runtimeLayout = parseRuntimeLayout(layoutArtifact.bytes);
   const interopManifest = parseInteropManifest(interopArtifact.bytes, runtimeLayout.target);
+  const exceptionTypeMap = exceptionTypeMapArtifact === undefined
+    ? undefined
+    : parseExceptionTypeMap(exceptionTypeMapArtifact.bytes);
+  const stackTraceSymbols = stackTraceSymbolsArtifact === undefined
+    ? []
+    : parseStackTraceSymbols(decoder.decode(stackTraceSymbolsArtifact.bytes));
   const loadedValues = await Promise.all([
     compileModule(new Uint8Array(applicationArtifact.bytes), applicationArtifact.artifact),
     importModule(new Uint8Array(adapterArtifact.bytes), adapterArtifact.artifact),
@@ -91,7 +133,28 @@ export async function loadRawArtifacts(request = {}) {
     exports: inventory.exports,
   });
 
-  return Object.freeze({ abi, adapter, interopManifest, module, runtimeLayout });
+  const diagnosticArtifacts = exceptionTypeMapArtifact === undefined
+    ? undefined
+    : Object.freeze({
+      manifest: Object.freeze({
+        schemaVersion: 1,
+        buildId: exceptionTypeMap.buildId,
+        wasmSha256: applicationArtifact.artifact.sha256,
+        exceptionTypeMapSha256: exceptionTypeMapArtifact.artifact.sha256,
+      }),
+      wasmBytes: applicationArtifact.bytes,
+      mapBytes: exceptionTypeMapArtifact.bytes,
+      mapMediaType: exceptionTypeMapArtifact.artifact.mediaType,
+    });
+  return Object.freeze({
+    abi,
+    adapter,
+    diagnosticArtifacts,
+    interopManifest,
+    module,
+    runtimeLayout,
+    stackTraceSymbols,
+  });
 }
 
 function inspectModule(module) {
@@ -156,13 +219,108 @@ function validateAdapterNamespace(namespace) {
 
 function parseRuntimeLayout(bytes) {
   const value = parseJson(bytes, "runtime layout");
-  assertExactDataObject(value, layoutKeys, "raw runtime layout");
-  if (value.schemaVersion !== 2 || value.target !== "wasm32" && value.target !== "wasm64"
+  const hasRuntimeFeatures = value !== null && typeof value === "object"
+    && !Array.isArray(value) && Object.hasOwn(value, "runtimeFeatures");
+  const keys = value?.schemaVersion === 4
+    ? hasRuntimeFeatures ? callbackRuntimeFeatureLayoutKeys : callbackLayoutKeys
+    : value?.schemaVersion === 3
+      ? hasRuntimeFeatures ? nativeRuntimeFeatureLayoutKeys : nativeLayoutKeys
+      : hasRuntimeFeatures ? runtimeFeatureLayoutKeys : layoutKeys;
+  assertExactDataObject(value, keys, "raw runtime layout");
+  if (![2, 3, 4].includes(value.schemaVersion) || value.target !== "wasm32" && value.target !== "wasm64"
       || !Number.isSafeInteger(value.applicationStaticDataEnd) || value.applicationStaticDataEnd < 0) {
     throw new TypeError("raw runtime layout is unsupported");
   }
-  assertExactDataObject(value.managedExecutableEntryPoint, entryPointKeys, "raw entry point");
+  if (value.schemaVersion >= 3) {
+    if (!Array.isArray(value.nativeImports)) throw new TypeError("raw native imports are invalid");
+    for (const nativeImport of value.nativeImports) {
+      assertExactDataObject(nativeImport, nativeImportKeys, "raw native import");
+      if (typeof nativeImport.libraryName !== "string" || nativeImport.libraryName.trim().length === 0
+          || typeof nativeImport.entryPoint !== "string" || nativeImport.entryPoint.trim().length === 0
+          || !Array.isArray(nativeImport.parameters)
+          || nativeImport.parameters.some(type => !nativeValueTypes.has(type))
+          || nativeImport.returnType !== null && !nativeValueTypes.has(nativeImport.returnType)) {
+        throw new TypeError("raw native import signature is invalid");
+      }
+    }
+  }
+  if (hasRuntimeFeatures) validateRuntimeFeatures(value.runtimeFeatures);
+  if (value.schemaVersion === 4) validateNativeCallbackSupport(value.nativeCallbackSupport);
+  if (value.managedExecutableEntryPoint !== null) {
+    assertExactDataObject(value.managedExecutableEntryPoint, entryPointKeys, "raw entry point");
+  }
   return deepFreeze(value);
+}
+
+function validateRuntimeFeatures(features) {
+  if (!Array.isArray(features)) {
+    throw new TypeError("raw runtime features are invalid");
+  }
+  let previous = null;
+  for (const feature of features) {
+    if (!supportedRuntimeFeatures.has(feature)
+        || previous !== null && feature <= previous) {
+      throw new TypeError("raw runtime features are invalid");
+    }
+    previous = feature;
+  }
+}
+
+function validateNativeCallbackSupport(support) {
+  assertExactDataObject(support, nativeCallbackSupportKeys, "raw native callback support");
+  if (typeof support.fileName !== "string" || !support.fileName.endsWith(".o")
+      || support.fileName.includes("/") || support.fileName.includes("\\")
+      || typeof support.sha256 !== "string" || !digestPattern.test(support.sha256)
+      || !Array.isArray(support.callbacks) || support.callbacks.length === 0
+      || !Array.isArray(support.temporaryApplicationExports)
+      || !Array.isArray(support.temporaryRuntimeExports)) {
+    throw new TypeError("raw native callback support is invalid");
+  }
+  for (const callback of support.callbacks) {
+    assertExactDataObject(callback, nativeCallbackKeys, "raw native callback");
+    if (![callback.nativeSymbol, callback.runtimeImportSymbol,
+      callback.applicationExportName].every(isValidNativeName)
+        || callback.runtimeGetterExportName !== null
+          && !isValidNativeName(callback.runtimeGetterExportName)
+        || !Array.isArray(callback.parameters)
+        || callback.parameters.some(type => !nativeValueTypes.has(type))
+        || callback.returnType !== null && !nativeValueTypes.has(callback.returnType)) {
+      throw new TypeError("raw native callback signature is invalid");
+    }
+  }
+  const applicationExports = support.callbacks
+    .filter(callback => callback.nativeSymbol !== callback.applicationExportName)
+    .map(callback => callback.applicationExportName);
+  const applicationIdentities = support.callbacks
+    .map(callback => callback.applicationExportName);
+  const runtimeExports = support.callbacks
+    .map(callback => callback.runtimeGetterExportName)
+    .filter(name => name !== null);
+  const linkerSymbols = support.callbacks.flatMap(callback => [
+    callback.runtimeImportSymbol,
+    ...(callback.nativeSymbol === callback.runtimeImportSymbol
+      ? []
+      : [callback.nativeSymbol]),
+    ...(callback.runtimeGetterExportName === null
+      ? []
+      : [callback.runtimeGetterExportName]),
+  ]);
+  if (!sameUniqueNames(support.temporaryApplicationExports, applicationExports)
+      || !sameUniqueNames(support.temporaryRuntimeExports, runtimeExports)
+      || new Set(applicationIdentities).size !== applicationIdentities.length
+      || new Set(linkerSymbols).size !== linkerSymbols.length) {
+    throw new TypeError("raw native callback support is inconsistent");
+  }
+}
+
+function sameUniqueNames(actual, expected) {
+  return actual.length === expected.length
+    && actual.every((value, index) => isValidNativeName(value) && value === expected[index])
+    && new Set(actual).size === actual.length;
+}
+
+function isValidNativeName(value) {
+  return typeof value === "string" && value.trim().length > 0 && !/[\0\r\n]/u.test(value);
 }
 
 function parseInteropManifest(bytes, target) {
@@ -172,6 +330,17 @@ function parseInteropManifest(bytes, target) {
     throw new TypeError("raw interop manifest does not match the runtime layout");
   }
   return deepFreeze(value);
+}
+
+function parseExceptionTypeMap(bytes) {
+  const value = parseJson(bytes, "exception type map");
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+      || value.schemaVersion !== 2
+      || typeof value.buildId !== "string" || value.buildId.length === 0
+      || !Array.isArray(value.entries)) {
+    throw new TypeError("raw exception type map is invalid");
+  }
+  return value;
 }
 
 function parseJson(bytes, label) {

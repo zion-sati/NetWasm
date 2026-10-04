@@ -291,11 +291,31 @@ public sealed class CoreModelTests
             Size = 8,
             Type = valueType,
         };
-        var finalizer = new EntityKey(Assembly, 0x06000003);
+        var finalizerDefinition = new MethodDefinitionModel(
+            new EntityKey(Assembly, 0x06000003),
+            TypeKey,
+            "Finalize",
+            false,
+            MethodSignatureModel.Create(CliValueKind.Void),
+            1);
+        var finalizer = new MethodInstanceModel(
+            finalizerDefinition,
+            valueType,
+            [],
+            finalizerDefinition.Signature);
+        var constructedFinalizerDefinition = finalizerDefinition with
+        {
+            Key = new EntityKey(Assembly, 0x06000004),
+        };
+        var constructedFinalizer = new MethodInstanceModel(
+            constructedFinalizerDefinition,
+            valueType,
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)],
+            constructedFinalizerDefinition.Signature);
         var descriptor = new TypeDescriptorLayout(
             TypeKey, 10, 9, 24, 100, 3, finalizer);
         var constructed = new ConstructedTypeDescriptorLayout(
-            valueType, 11, 10, 32, 104, 4, "Example.Value::Finalize");
+            valueType, 11, 10, 32, 104, 4, constructedFinalizer);
         var valueDescriptor = new ValueTypeDescriptorLayout(
             valueType, 12, 8, 4, 108, 2);
 
@@ -308,7 +328,7 @@ public sealed class CoreModelTests
         Assert.Equal(32, constructed.ObjectSize);
         Assert.Equal(104, constructed.BitmapAddress);
         Assert.Equal(4, constructed.BitmapBitCount);
-        Assert.Equal("Example.Value::Finalize", constructed.Finalizer);
+        Assert.Equal(constructedFinalizer, constructed.Finalizer);
         Assert.Equal(valueType, valueDescriptor.Type);
         Assert.Equal(12, valueDescriptor.TypeId);
         Assert.Equal(8, valueDescriptor.Size);

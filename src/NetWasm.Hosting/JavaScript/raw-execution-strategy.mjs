@@ -22,7 +22,13 @@ const requiredRequestKeys = Object.freeze([
   "prepareInterop",
   "providers",
 ]);
-const interopKeys = ["bindInstance", "close", "imports"];
+const interopKeys = [
+  "bindInstance",
+  "close",
+  "consumeTerminalEvent",
+  "drainTerminalReports",
+  "imports",
+];
 const supportedContracts = new Set([
   commandExecutionContract,
   processExecutionContract,
@@ -70,8 +76,10 @@ export function createRawExecutionStrategy(loadArtifacts) {
       loaded = Object.freeze({
         abi: product.abi,
         adapter: product.adapter,
+        diagnosticArtifacts: product.diagnosticArtifacts,
         interopManifest: product.interopManifest,
         module: product.module,
+        stackTraceSymbols: product.stackTraceSymbols ?? [],
       });
     } catch {
       return closeCallerScope(signal?.aborted ? callerCancellation() : rawLoadFailure());
@@ -81,11 +89,19 @@ export function createRawExecutionStrategy(loadArtifacts) {
     }
 
     let interop;
+    let completionObserver = () => {};
+    let asyncDeliveryAvailable = true;
     try {
       interop = readInteropPreparation(prepareInterop(Object.freeze({
         abi: loaded.abi,
         adapter: loaded.adapter,
+        diagnosticArtifacts: loaded.diagnosticArtifacts,
         manifest: loaded.interopManifest,
+        observeAsyncCompletion: error => completionObserver(error),
+        stackTraceSymbols: loaded.stackTraceSymbols,
+        assertAsyncDeliveryAvailable() {
+          if (!asyncDeliveryAvailable) throw new Error("raw managed async delivery is unavailable");
+        },
       })));
     } catch {
       return closeCallerScope(rawInteropFailure());
@@ -111,6 +127,12 @@ export function createRawExecutionStrategy(loadArtifacts) {
           return instance;
         },
         bindInstance: interop.bindInstance,
+        consumeTerminalEvent: interop.consumeTerminalEvent,
+        drainTerminalReports: interop.drainTerminalReports,
+        subscribeInteropCompletion(observer) {
+          completionObserver = observer;
+          return () => { asyncDeliveryAvailable = false; completionObserver = () => {}; };
+        },
         signal,
         instanceReleaseActions: [interop.releaseAction],
         releaseActions: [],
@@ -119,13 +141,16 @@ export function createRawExecutionStrategy(loadArtifacts) {
     } catch {
       outcome = await closeInteropScope(rawExecutionFailure());
     }
+    asyncDeliveryAvailable = false;
     return closeCallerScope(outcome);
   });
 }
 
 function readInteropPreparation(value) {
   assertExactDataObject(value, interopKeys, "raw interop preparation");
-  if (typeof value.bindInstance !== "function" || typeof value.close !== "function") {
+  if (typeof value.bindInstance !== "function" || typeof value.close !== "function"
+      || typeof value.consumeTerminalEvent !== "function"
+      || typeof value.drainTerminalReports !== "function") {
     throw new TypeError("raw interop preparation actions are required");
   }
   assertPlainDataObject(value.imports, "raw interop imports");
@@ -133,6 +158,8 @@ function readInteropPreparation(value) {
   return Object.freeze({
     imports: value.imports,
     bindInstance: value.bindInstance.bind(value),
+    consumeTerminalEvent: value.consumeTerminalEvent.bind(value),
+    drainTerminalReports: value.drainTerminalReports.bind(value),
     releaseAction: Object.freeze({
       code: "host.interop-close",
       message: "The execution host could not close managed interop.",

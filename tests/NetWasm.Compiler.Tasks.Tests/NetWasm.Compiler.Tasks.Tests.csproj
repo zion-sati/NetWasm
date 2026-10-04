@@ -21,6 +21,7 @@
     <ProjectReference Include="../../src/NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj" />
+    <ProjectReference Include="../../src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj" />
     <ProjectReference Include="../../src/NetWasm.CoreLib/NetWasm.CoreLib.csproj"
                       ReferenceOutputAssembly="false"
                       AdditionalProperties="Configuration=Release" />
@@ -33,5 +34,9 @@
   <ItemGroup>
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestSupport/TestAssets.cs" />
     <Compile Remove="Fixtures/**/*.cs" />
+    <None Include="IntegrationAssets/NativeRuntimeMetadata.proj" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"
+          Link="IntegrationAssets/NetWasm.Compiler.Tasks.targets" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../global.json" Link="IntegrationAssets/global.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -30,7 +30,7 @@ internal sealed class CompilerDiagnosticTraceFormatter(
         ITypeLayoutProvider typeLayouts,
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         WasmTarget target,
         int staticDataEnd)
     {
@@ -43,11 +43,10 @@ internal sealed class CompilerDiagnosticTraceFormatter(
         ArgumentNullException.ThrowIfNull(typeLayouts);
         ArgumentNullException.ThrowIfNull(instanceFields);
         ArgumentNullException.ThrowIfNull(staticFields);
-        ArgumentNullException.ThrowIfNull(entryPoint);
         var text = new StringBuilder();
         text.AppendLine("NETWASM COMPILER DIAGNOSTIC TRACE v1");
         text.Append("target=").AppendLine(target.ToString());
-        text.Append("entry=").AppendLine(symbols.Format(entryPoint));
+        text.Append("entry=").AppendLine(entryPoint is null ? "none" : symbols.Format(entryPoint));
         text.Append("static-data-end=").AppendLine(
             staticDataEnd.ToString(CultureInfo.InvariantCulture));
         text.AppendLine();

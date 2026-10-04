@@ -43,6 +43,7 @@ internal sealed class StructuredExceptionGroupProjector(
                     ? null
                     : _controlFlow.Project(clause.FilterBody, method, definitions, groupIds, group))
             {
+                CatchTypeIdentity = clause.Region.CatchTypeIdentity,
                 HandlerBlock = new(method.ValidatedGraph.Graph
                     .GetBlockAtOffset(clause.Region.HandlerOffset).Index),
                 FilterBlock = clause.Region.FilterOffset is int filterOffset

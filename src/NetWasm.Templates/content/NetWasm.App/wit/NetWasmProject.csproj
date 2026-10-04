@@ -1,0 +1,17 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <OutputType>WitWebWorker</OutputType>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NetWasmWitPath>$(MSBuildProjectDirectory)/wit</NetWasmWitPath>
+    <NetWasmWorld>netwasm:worker-template@1.0.0/worker</NetWasmWorld>
+    <NetWasmApplicationWorld>netwasm:worker-template@1.0.0/application</NetWasmApplicationWorld>
+  </PropertyGroup>
+  <ItemGroup>
+    <NetWasmApplicationImport Include="notifications.mjs"
+                              Module="netwasm:worker-template/notifications@1.0.0"
+                              ArtifactPath="notifications.mjs" />
+    <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

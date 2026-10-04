@@ -83,14 +83,11 @@ internal sealed class TypeDescriptorBuilder(
             var descriptor = new TypeDescriptorLayout(
                 type,
                 layout.TypeId,
-                _baseTypes.GetBaseType(typeIdentity) is
-                    CliTypeIdentity baseType
-                    ? _objectLayouts.Resolve(baseType).TypeId
-                    : 0,
+                GetBaseTypeId(typeIdentity),
                 layout.Size,
                 bitmapAddress,
                 bitCount,
-                _program.Finalizers.TryGetValue(type, out var finalizer)
+                _program.Finalizers.TryGetValue(typeIdentity, out var finalizer)
                     ? finalizer
                     : null)
             {
@@ -125,6 +122,19 @@ internal sealed class TypeDescriptorBuilder(
                         : null));
             }
         }
+    }
+
+    private int GetBaseTypeId(CliTypeIdentity type)
+    {
+        var baseType = _baseTypes.GetBaseType(type);
+        if (baseType is null || baseType.ContainsGenericParameters)
+        {
+            // Open generic definitions are retained for runtime metadata only. A base such as
+            // Base<T> has no physical object layout until T is closed; closed descendants use
+            // ConstructedTypeDescriptorBuilder and retain their exact constructed base instead.
+            return 0;
+        }
+        return _objectLayouts.Resolve(baseType).TypeId;
     }
 
     private void AddSegment(byte[] data)

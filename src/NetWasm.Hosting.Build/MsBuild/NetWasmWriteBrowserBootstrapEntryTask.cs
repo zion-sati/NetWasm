@@ -20,6 +20,7 @@ public sealed class NetWasmWriteBrowserBootstrapEntryTask : Microsoft.Build.Util
     [Required] public string HostingBrowserModulePath { get; set; } = string.Empty;
     [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputPath { get; set; } = string.Empty;
+    public ITaskItem[] Modules { get; set; } = [];
 
     public override bool Execute()
     {
@@ -28,7 +29,9 @@ public sealed class NetWasmWriteBrowserBootstrapEntryTask : Microsoft.Build.Util
             _writer.Write(new(
                 Path.GetFullPath(HostingBrowserModulePath),
                 Path.GetFullPath(Preview2ShimRoot),
-                Path.GetFullPath(OutputPath)));
+                Path.GetFullPath(OutputPath),
+                [.. Modules.Select(module => new BrowserJavaScriptModule(
+                    module.GetMetadata("Module"), Path.GetFullPath(module.ItemSpec)))]));
             return true;
         }
         catch (Exception exception)

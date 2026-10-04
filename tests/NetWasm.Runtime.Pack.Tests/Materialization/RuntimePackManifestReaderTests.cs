@@ -22,6 +22,15 @@ public sealed class RuntimePackManifestReaderTests
         Assert.Equal([91_968, 114_352], manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
         foreach (var target in manifest.Targets)
         {
+            var profile = Assert.IsType<RuntimeNativeValidationProfile>(target.NativeValidation);
+            Assert.Equal(1, profile.Version);
+            Assert.Equal(RuntimePackTestData.NativeProfile(target.Target).Features.ToArray(), profile.Features.ToArray());
+            var contract = Assert.Single(profile.Imports);
+            Assert.Equal("env", contract.Module);
+            Assert.Equal("emscripten_notify_memory_growth", contract.Name);
+            Assert.Equal(target.PointerSizeBytes == 8 ? (byte)0x7e : (byte)0x7f, Assert.Single(contract.Parameters));
+            Assert.Empty(contract.Results);
+            Assert.True(contract.Required);
             Assert.Contains("libc.a", target.SystemLibraries.Names);
             Assert.Equal($"{target.Target}/libgc.a", target.CollectorArchive.Path);
             Assert.Equal($"{target.Target}/allowed-undefined-symbols.txt",
@@ -29,6 +38,17 @@ public sealed class RuntimePackManifestReaderTests
             Assert.Equal($"{target.Target}/system-libraries/libc.a",
                 Assert.Single(target.SystemLibraries.Assets).Path);
         }
+    }
+
+    [Fact]
+    public void RuntimeOnlySchemaFourPacksNeedNotDeclareNativeValidation()
+    {
+        var source = RuntimePackTestData.Manifest();
+        var manifest = RuntimePackManifestReader.ReadJson(JsonSerializer.Serialize(source with
+        { Targets = [.. source.Targets.Select(target => target with { NativeValidation = null })] }));
+
+        Assert.All(manifest.Targets, target => Assert.Null(target.NativeValidation));
+        Assert.Equal(source.RuntimeAbi, manifest.RuntimeAbi);
     }
 
     [Fact]

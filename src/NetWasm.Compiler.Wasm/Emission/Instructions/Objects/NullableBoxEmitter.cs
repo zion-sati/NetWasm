@@ -1,3 +1,4 @@
+using System;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
@@ -23,22 +24,38 @@ internal sealed class NullableBoxEmitter(
         var slot = request.Stack.Count - 1;
         var sourceLocal = GetStackLocal(request, slot, CliValueKind.ValueType);
         var targetLocal = GetStackLocal(request, slot, CliValueKind.ManagedReference);
-        var underlying = values.GetValueLayout(underlyingType);
-        var boxed = typeLayouts.GetObjectLayout(underlyingType);
-
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)sourceLocal)));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+        Emit(code, underlyingType, request.Context.ObjectTemporary, targetLocal);
+        request.Stack[slot] = CliValueKind.ManagedReference;
+    }
+
+    public void Emit(
+        IWasmInstructionWriter code,
+        CliTypeIdentity underlyingType,
+        int sourceAddressLocal,
+        int targetLocal)
+    {
+        if (sourceAddressLocal == targetLocal)
+        {
+            throw new ArgumentException(
+                "Nullable boxing requires distinct source and target locals.",
+                nameof(targetLocal));
+        }
+
+        var underlying = values.GetValueLayout(underlyingType);
+        var boxed = typeLayouts.GetObjectLayout(underlyingType);
         addresses.Emit(code, 0);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)targetLocal)));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+            WasmInstructionOperand.Unsigned((uint)sourceAddressLocal)));
         ManagedMemoryEmitter.EmitLoadByType(
             code,
             layouts.Target,
@@ -76,7 +93,7 @@ internal sealed class NullableBoxEmitter(
         addresses.Emit(code, AddressOperation.Add);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
-            WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+            WasmInstructionOperand.Unsigned((uint)sourceAddressLocal)));
         addresses.Emit(code, Align(sizeof(byte), underlying.Alignment));
         addresses.Emit(code, AddressOperation.Add);
         if (underlyingType.StackKind == CliValueKind.ValueType)
@@ -105,7 +122,6 @@ internal sealed class NullableBoxEmitter(
                 underlying.Size);
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-        request.Stack[slot] = CliValueKind.ManagedReference;
     }
 
     private int GetStackLocal(

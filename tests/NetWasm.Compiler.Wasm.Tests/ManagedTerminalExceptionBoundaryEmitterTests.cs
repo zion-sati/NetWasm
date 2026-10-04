@@ -29,6 +29,45 @@ public sealed class ManagedTerminalExceptionBoundaryEmitterTests
             EmitTerminalBoundary(WasmTarget.Wasm32, CliValueKind.ValueType));
     }
 
+    [Fact]
+    public void LeanBoundaryCatchesAndTrapsWithoutReporting()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var program = new FakeProgram();
+        var emitter = new ManagedTerminalExceptionBoundaryEmitter(
+            layouts,
+            imports,
+            new ExceptionPayloadBlockEmitter(layouts),
+            new ExceptionObjectStateReader(
+                layouts,
+                layouts,
+                new ExceptionFieldLayoutResolver(
+                    layouts,
+                    program,
+                    program,
+                    layouts)));
+        var buffer = new WasmBinaryBuffer();
+        var code = new WasmInstructionWriter(new WasmBinaryWriter(buffer));
+
+        var trap = new ManagedTerminalTrapBoundaryEmitter(
+            layouts,
+            new ExceptionPayloadBlockEmitter(layouts));
+        trap.Emit(
+            code,
+            CliValueKind.Void,
+            resultLocal: 0,
+            static () => { });
+
+        var body = new WasmBinarySnapshotReader(buffer).Read();
+        Assert.Contains(WasmOpcodes.Drop, body);
+        Assert.Contains(WasmOpcodes.Unreachable, body);
+        Assert.Equal(-1, body.AsSpan().IndexOf(
+            Call(imports, RuntimeImportSymbol.ManagedTerminalExceptionReport)));
+        Assert.Equal(-1, body.AsSpan().IndexOf(
+            Call(imports, RuntimeImportSymbol.ManagedTerminalExceptionRaise)));
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
@@ -60,10 +99,15 @@ public sealed class ManagedTerminalExceptionBoundaryEmitterTests
             typeIdLocal: 2,
             messageLocal: 3,
             messageLengthLocal: 4,
+            stackTraceLocal: 5,
+            stackTraceLengthLocal: 6,
             CliValueKind.Void,
             resultLocal: 0,
             reportFunctionIndex: imports.Resolve(
                 RuntimeImportSymbol.ManagedTerminalExceptionReport,
+                WasmModuleProfile.CoreApplication),
+            raiseFunctionIndex: imports.Resolve(
+                RuntimeImportSymbol.ManagedTerminalExceptionRaise,
                 WasmModuleProfile.CoreApplication),
             () => { });
 
@@ -75,12 +119,14 @@ public sealed class ManagedTerminalExceptionBoundaryEmitterTests
         var rootStore = body.AsSpan(root + 1).IndexOf(rootStoreOpcode) + root + 1;
         var report = body.AsSpan().IndexOf(Call(imports, RuntimeImportSymbol.ManagedTerminalExceptionReport));
         var unroot = body.AsSpan().IndexOf(Call(imports, RuntimeImportSymbol.RootFrameLeave));
-        var terminateOffset = body.AsSpan(unroot + 1).IndexOf(WasmOpcodes.Unreachable);
+        var raise = body.AsSpan().IndexOf(Call(imports, RuntimeImportSymbol.ManagedTerminalExceptionRaise));
+        var terminateOffset = body.AsSpan(raise + 1).IndexOf(WasmOpcodes.Unreachable);
 
         Assert.True(root >= 0);
         Assert.True(rootStore > root);
         Assert.True(report > rootStore);
         Assert.True(unroot > report);
+        Assert.True(raise > unroot);
         Assert.True(terminateOffset >= 0);
     }
 
@@ -114,10 +160,15 @@ public sealed class ManagedTerminalExceptionBoundaryEmitterTests
             typeIdLocal: 2,
             messageLocal: 3,
             messageLengthLocal: 4,
+            stackTraceLocal: 5,
+            stackTraceLengthLocal: 6,
             resultType,
             resultLocal: 5,
             reportFunctionIndex: imports.Resolve(
                 RuntimeImportSymbol.ManagedTerminalExceptionReport,
+                WasmModuleProfile.CoreApplication),
+            raiseFunctionIndex: imports.Resolve(
+                RuntimeImportSymbol.ManagedTerminalExceptionRaise,
                 WasmModuleProfile.CoreApplication),
             static () => { });
 

@@ -16,6 +16,7 @@ import {
 } from "./raw-canonical-import-binding.mjs";
 import { bindRawExecutionInstance } from "./raw-execution-instance-binder.mjs";
 import { composeRawImports } from "./raw-import-composer.mjs";
+import { createTerminalManagedExport } from "./terminal-managed-export.mjs";
 
 const opaqueReactorFailure = Object.freeze({});
 
@@ -32,6 +33,9 @@ export async function executeRaw(request = {}) {
     physicalProviders,
     instantiate,
     bindInstance = () => {},
+    consumeTerminalEvent = () => undefined,
+    drainTerminalReports = async () => {},
+    subscribeInteropCompletion = () => () => {},
     signal = null,
     instanceReleaseActions = [],
     releaseActions = [],
@@ -62,7 +66,14 @@ export async function executeRaw(request = {}) {
   if (typeof bindInstance !== "function") {
     throw new TypeError("raw instance binding action is required");
   }
+  if (typeof consumeTerminalEvent !== "function"
+      || typeof drainTerminalReports !== "function") {
+    throw new TypeError("raw terminal exception actions are required");
+  }
   validateSignal(signal);
+  if (typeof subscribeInteropCompletion !== "function") {
+    throw new TypeError("raw interop completion subscription is required");
+  }
   if (typeof schedule !== "function") {
     throw new TypeError("raw execution scheduler is required");
   }
@@ -79,12 +90,15 @@ export async function executeRaw(request = {}) {
       physicalProviders,
       instantiate,
       bindInstance,
+      consumeTerminalEvent,
+      drainTerminalReports,
       signal,
       closeInstanceScope,
       closeCallerScope,
     });
   }
   return executeRawProcess({
+    subscribeInteropCompletion,
     contractKey,
     abi,
     adapter,
@@ -93,6 +107,7 @@ export async function executeRaw(request = {}) {
     physicalProviders,
     instantiate,
     bindInstance,
+    drainTerminalReports,
     signal,
     closeInstanceScope,
     closeCallerScope,
@@ -109,6 +124,8 @@ async function executeRawCommand({
   physicalProviders,
   instantiate,
   bindInstance,
+  consumeTerminalEvent,
+  drainTerminalReports,
   signal,
   closeInstanceScope,
   closeCallerScope,
@@ -137,8 +154,8 @@ async function executeRawCommand({
   try {
     imports = composeRawImports({
       canonicalBinding,
+      inventory: importInventory(plan),
       physicalProviders,
-      plan,
     });
   } catch {
     return closeScope(rawAbiFailure());
@@ -164,10 +181,24 @@ async function executeRawCommand({
   } catch {
     return closeScope(rawExportFailure());
   }
-  return closeScope(executeCommand({ run: binding.command.run, signal }));
+  const run = createTerminalManagedExport(
+    "run",
+    binding.command.run,
+    consumeTerminalEvent,
+    () => {
+      const clearActiveException = instance.exports.exception_clear_active;
+      if (typeof clearActiveException !== "function") {
+        throw new TypeError("raw managed exception cleanup export is unavailable");
+      }
+      clearActiveException.call(instance.exports);
+    });
+  const outcome = executeCommand({ run, signal });
+  await drainTerminalReports();
+  return closeScope(outcome);
 }
 
 async function executeRawProcess({
+  subscribeInteropCompletion,
   contractKey,
   abi,
   adapter,
@@ -176,6 +207,7 @@ async function executeRawProcess({
   physicalProviders,
   instantiate,
   bindInstance,
+  drainTerminalReports,
   signal,
   closeInstanceScope,
   closeCallerScope,
@@ -241,7 +273,11 @@ async function executeRawProcess({
     closeCallerScope);
   let imports;
   try {
-    imports = composeRawImports({ canonicalBinding, physicalProviders, plan });
+    imports = composeRawImports({
+      canonicalBinding,
+      inventory: importInventory(plan),
+      physicalProviders,
+    });
   } catch {
     return closeScope(rawAbiFailure());
   }
@@ -284,7 +320,8 @@ async function executeRawProcess({
       process: binding.process,
       subscribeWake(observer) {
         observeWake = observer;
-        return () => { observeWake = undefined; };
+        const unsubscribeCompletion = subscribeInteropCompletion(observer);
+        return () => { unsubscribeCompletion(); observeWake = undefined; };
       },
       signal,
     });
@@ -293,6 +330,7 @@ async function executeRawProcess({
   } finally {
     guestEntryEnabled = false;
   }
+  await drainTerminalReports();
   return closeScope(outcome);
 }
 
@@ -302,6 +340,14 @@ function validateSignal(signal) {
       || typeof signal.removeEventListener !== "function")) {
     throw new TypeError("raw signal must be an AbortSignal");
   }
+}
+
+function importInventory(plan) {
+  return Object.freeze({
+    target: plan.target,
+    imports: plan.imports,
+    reactorHostModule: plan.reactorHostModule,
+  });
 }
 
 function rawAbiFailure() {

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
@@ -32,7 +33,10 @@ public sealed class ManagedMethodBodyEmitterTests
         var method = program.GetMethod(ConstructorKey);
         var structured = Structure(program, method, I(0, CilOperation.Return));
         var roots = new MethodRootMap(ConstructorKey, [], []);
-        var target = CreateInstructionModuleTarget(program);
+        var target = CreateInstructionModuleTarget(program) with
+        {
+            MemberExecution = MemberExecutionPlan.Empty with { MethodInvokers = [EntryKey] },
+        };
         var functionIndices = CreateFunctionIndexResolver(program);
         var expectedEnvironment = new FilterEnvironmentLayout(
             8,
@@ -68,6 +72,8 @@ public sealed class ManagedMethodBodyEmitterTests
         Assert.Equal(ConstructorKey.ToString(), result.MethodKey);
         Assert.Same(method, methods.Method);
         Assert.Same(structured, methods.Structured);
+        Assert.Same(target.NativeImports, methods.NativeImports);
+        Assert.Same(target.MemberExecution, methods.MemberExecution);
         Assert.Same(target, sequences.Target);
         Assert.Same(functionIndices, sequences.FunctionIndices);
         Assert.Equal(structured.Body, sequences.Sequence);
@@ -231,6 +237,7 @@ public sealed class ManagedMethodBodyEmitterTests
                 new FilterEnvironmentLayoutPlanner(
                     layouts,
                     layouts,
+                    CreateArgumentTypes(program),
                     types,
                     new ExceptionGroupEnumerator()),
                 new ExceptionGroupEnumerator(),
@@ -253,7 +260,8 @@ public sealed class ManagedMethodBodyEmitterTests
                 new BranchComparisonEmitter(
                     layouts,
                     new NetWasm.Compiler.ControlFlow.StackTypeCompatibilityValidator()),
-                dispatcher),
+                dispatcher,
+                new StackTraceFrameLocationEmitter(imports)),
             new StackTraceMethodIdProvider(),
             heap);
         var method = program.GetMethod(ConstructorKey);
@@ -290,6 +298,10 @@ public sealed class ManagedMethodBodyEmitterTests
 
         public StructuredMethod? Structured { get; private set; }
 
+        public NativeImportPlan? NativeImports { get; private set; }
+
+        public MemberExecutionPlan? MemberExecution { get; private set; }
+
         public ManagedMethodEmission Emit(
 MethodDefinitionModel method,
 ManagedMethodIdentity callerIdentity,
@@ -298,10 +310,14 @@ StructuredMethod structured,
             MethodInstanceModel? methodInstance,
             int stackTraceMethodId,
             RuntimeImportSelection runtimeImportSelection,
-            Action<IWasmInstructionWriter, StructuredMethod, MethodEmissionContext> emitBody)
+            Action<IWasmInstructionWriter, StructuredMethod, MethodEmissionContext> emitBody,
+            NativeImportPlan? nativeImports = null,
+            MemberExecutionPlan? memberExecution = null)
         {
             Method = method;
             Structured = structured;
+            NativeImports = nativeImports;
+            MemberExecution = memberExecution;
             if (invokeBody)
             {
                 emitBody(

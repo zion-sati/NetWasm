@@ -835,9 +835,6 @@ public sealed class TypedStackValidator(
         return body.Instructions[index - 1].Operation == CilOperation.Constrained;
     }
 
-    private static EntityKey GetEntity(CilInstruction instruction) =>
-        ((CilOperand.Entity)instruction.Operand).Key;
-
     private void PopParameters(
         CilMethodBody body,
         CilInstruction instruction,

@@ -8,4 +8,5 @@ public sealed record ComponentCoreModuleLinkRequest(
     string OutputPath,
     ComponentTarget Target,
     ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null,
-    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz);
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
+    bool StructuredDiagnostics = false);

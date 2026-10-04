@@ -46,6 +46,8 @@ internal sealed class HostCallbackFunctionEmitter(
         var typeIdLocal = rootFrameLocal + 1;
         var messageLocal = typeIdLocal + 1;
         var messageLengthLocal = messageLocal + 1;
+        var stackTraceLocal = messageLengthLocal + 1;
+        var stackTraceLengthLocal = stackTraceLocal + 1;
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
             [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedReference,
@@ -53,6 +55,8 @@ internal sealed class HostCallbackFunctionEmitter(
                 .. (hasResult ? [invoke.Signature.ReturnType] : Array.Empty<CliValueKind>()),
                 CliValueKind.ManagedReference,
                 CliValueKind.ManagedAddress,
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4],
@@ -64,10 +68,15 @@ internal sealed class HostCallbackFunctionEmitter(
             typeIdLocal,
             messageLocal,
             messageLengthLocal,
+            stackTraceLocal,
+            stackTraceLengthLocal,
             invoke.Signature.ReturnType,
             resultLocal,
             runtimeImports.Resolve(
                 RuntimeImportSymbol.ManagedTerminalExceptionReport,
+                runtimeImportSelection),
+            runtimeImports.Resolve(
+                RuntimeImportSymbol.ManagedTerminalExceptionRaise,
                 runtimeImportSelection),
             () =>
             {

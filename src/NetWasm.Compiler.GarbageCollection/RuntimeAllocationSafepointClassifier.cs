@@ -23,8 +23,22 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.GCCollectionRuntime", "Collect"),
             ("System.GCFinalizerRuntime", "WaitForPending"),
             ("System.Array", "InternalGetValue"),
+            // Enum intrinsics allocate arrays, boxes and uncached type objects,
+            // or call the allocating formatting helper outside managed CIL.
+            // Wrappers and dispatch callers must inherit those safepoints.
+            ("System.Enum", "InternalGetValues"),
+            ("System.Enum", "InternalGetValuesAsUnderlyingType"),
+            ("System.Enum", "InternalGetNames"),
+            ("System.Enum", "InternalToObject"),
+            ("System.Enum", "InternalGetUnderlyingType"),
+            ("System.Enum", "ToString"),
+            ("System.Enum", "InternalToString"),
+            ("System.Enum", "InternalFormat"),
+            ("System.Enum", "InternalToType"),
+            ("System.Enum", "System.IConvertible.ToType"),
             ("System.Runtime.CompilerServices.ObjectArrayDelegateAdapter", "Create"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod"),
+            ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeDelegate"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField"),
         }.ToFrozenSet();
 

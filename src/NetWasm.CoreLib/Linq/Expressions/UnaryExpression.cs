@@ -32,9 +32,11 @@ namespace System.Linq.Expressions
 
         public MethodInfo? Method { get; }
 
-        public bool IsLifted => false;
+        public bool IsLifted =>
+            _nodeType == ExpressionType.Convert && Method is null &&
+            (Operand.Type.IsNullable || Type.IsNullable);
 
-        public bool IsLiftedToNull => false;
+        public bool IsLiftedToNull => IsLifted && Type.IsNullable;
 
         public UnaryExpression Update(Expression operand) =>
             ReferenceEquals(operand, Operand)
@@ -122,9 +124,7 @@ namespace System.Linq.Expressions
             else if (expression.Type != type &&
                 !type.IsAssignableFrom(expression.Type) &&
                 !expression.Type.IsAssignableFrom(type) &&
-                !(IsNumeric(expression.Type) && IsNumeric(type) &&
-                    expression.Type != typeof(decimal) &&
-                    type != typeof(decimal)))
+                !HasBuiltInNumericOrNullableConversion(expression.Type, type))
             {
                 throw new NotSupportedException(
                     "The requested built-in conversion is outside the NetWasm expression profile.");
@@ -134,6 +134,15 @@ namespace System.Linq.Expressions
                 expression,
                 type,
                 method);
+        }
+
+        private static bool HasBuiltInNumericOrNullableConversion(Type source, Type target)
+        {
+            Type from = Nullable.GetUnderlyingType(source) ?? source;
+            Type to = Nullable.GetUnderlyingType(target) ?? target;
+            return from == to ||
+                IsNumeric(from) && IsNumeric(to) &&
+                from != typeof(decimal) && to != typeof(decimal);
         }
 
         public static UnaryExpression Quote(Expression expression)

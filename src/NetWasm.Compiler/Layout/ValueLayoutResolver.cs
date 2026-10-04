@@ -57,6 +57,12 @@ internal sealed class ValueLayoutResolver(
             return existing;
         }
 
+        if (type.Shape == CliTypeShape.Modified)
+        {
+            var underlying = Resolve(type.ElementType!, activeTypes, suppliedDefinition);
+            return PublishLayout(type, underlying with { Type = type }, hasCachedLayout, existing);
+        }
+
         if (type.Shape is CliTypeShape.GenericTypeParameter or
             CliTypeShape.GenericMethodParameter)
         {
@@ -179,7 +185,7 @@ internal sealed class ValueLayoutResolver(
             CliTypeShape.Primitive => new ValueLayoutSeed(
                 ResolvePrimitive(type),
                 PublishDefinitionFields: false),
-            CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer => new ValueLayoutSeed(
+            CliTypeShape.ManagedByReference or CliTypeShape.UnmanagedPointer or CliTypeShape.FunctionPointer => new ValueLayoutSeed(
                 new ValueLayout(type, _target.AddressSize, _target.AddressSize, type.Shape == CliTypeShape.ManagedByReference ? [0] : [])
                 {
                     ByReferenceOffsets = type.Shape == CliTypeShape.ManagedByReference ? [0] : [],

@@ -22,6 +22,7 @@ internal sealed class NormalLeaveTargetFinder : INormalLeaveTargetFinder
                 checked(region.HandlerOffset + region.HandlerLength)))
             .Prepend((tryOffset, tryEnd))];
         var targets = state.Graph.Blocks
+            .Where(block => state.Graph.ReachableBlocks.Contains(block.Index))
             .Where(block => ranges.Any(range =>
                     block.StartOffset >= range.Start && block.StartOffset < range.End))
             .SelectMany(block => block.Instructions.Select(instruction => (

@@ -6,6 +6,8 @@ public abstract record RawWitImportDeclaration(
     string InterfaceName,
     string DeploymentInterfaceName)
 {
+    public string CoreInterfaceName { get; init; } = InterfaceName;
+
     protected RawWitImportDeclaration(string interfaceName)
         : this(interfaceName, interfaceName)
     {

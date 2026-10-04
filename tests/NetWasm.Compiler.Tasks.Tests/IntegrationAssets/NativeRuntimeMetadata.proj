@@ -1,0 +1,19 @@
+<Project DefaultTargets="Probe">
+  <PropertyGroup>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.Tests.Integration.NativeRuntimeMetadataProducerTask"
+             AssemblyFile="$(ProbeAssembly)" />
+  <Import Project="$(CompilerTargets)" />
+  <Target Name="Produce">
+    <NativeRuntimeMetadataProducerTask Variant="$(Variant)">
+      <Output TaskParameter="RuntimeModules" ItemName="NetWasmComponentRuntime" />
+    </NativeRuntimeMetadataProducerTask>
+  </Target>
+  <Target Name="Probe" DependsOnTargets="Produce;NetWasmWritePackagingIdentity">
+    <WriteLinesToFile File="$(ObservationPath)"
+                      Lines="@(NetWasmComponentRuntime->'%(InternalRuntimeExports)')"
+                      Overwrite="true" />
+  </Target>
+</Project>

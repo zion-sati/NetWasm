@@ -36,7 +36,8 @@ public sealed class StackTraceCompilationTests
                 {
                     var error = Capture(ThrowLeaf);
                     return error.StackTrace is not null &&
-                        error.StackTrace.Contains("method#") ? 0 : -30;
+                        error.StackTrace.Contains("ThrowLeaf") &&
+                        !error.StackTrace.Contains("method#") ? 0 : -30;
                 }
 
                 var nested = Capture(() => Generic<int>.Throw());
@@ -224,7 +225,7 @@ public sealed class StackTraceCompilationTests
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]
-    public void InstrumentedBuildFallsBackToMethodIdsWithoutSidecar(WasmTarget target)
+    public void InstrumentedBuildUsesEmbeddedSymbolsWithoutSidecar(WasmTarget target)
     {
         using var assets = TestAssets.Create();
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
@@ -243,5 +244,312 @@ public sealed class StackTraceCompilationTests
         });
 
         Assert.Equal(0, result);
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    [Trait("Issue", "64")]
+    public void PortablePdbDistinguishesLocationsWithinOneMethodWithoutHostSidecar(
+        bool optimize,
+        WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        const string source = """
+            using System;
+
+            public static class EntryPoint
+            {
+                public static int Run(int location)
+                {
+                    try { ThrowAt(location); }
+                    catch (Exception error)
+                    {
+                        var expected = location == 1 ? 101 : 202;
+                        return error.StackTrace is not null &&
+                            error.StackTrace.Contains("TraceFixture.cs:line " + expected)
+                            ? 0
+                            : -1;
+                    }
+                    return -2;
+                }
+
+                private static void ThrowAt(int location)
+                {
+                    if (location == 1)
+                    {
+            #line 101 "Safe/TraceFixture.cs"
+                        throw new InvalidOperationException("first");
+            #line default
+                    }
+            #line 202 "Safe/TraceFixture.cs"
+                    throw new InvalidOperationException("second");
+            #line default
+                }
+            }
+            """;
+
+        foreach (var location in new[] { 1, 2 })
+        {
+            var result = executor.Execute(new CompilationScenario(
+                $"SourceLine{location}{optimize}{target}",
+                source,
+                "EntryPoint",
+                optimize,
+                target,
+                location,
+                [])
+            {
+                EmitPortablePdb = true,
+                EmitStackTrace = true,
+                LoadStackTraceSymbols = false,
+            });
+
+            Assert.Equal(0, result);
+        }
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    [Trait("Issue", "64")]
+    public void AsyncTaskDispatchPreservesOriginalSourceLocation(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        const string source = """
+            using System;
+            using System.Threading.Tasks;
+            using System.Threading.Tasks.Sources;
+
+            public sealed class Source : IValueTaskSource<int>
+            {
+                private ManualResetValueTaskSourceCore<int> _core;
+                public ValueTask<int> Task => new(this, _core.Version);
+                public void Complete(int value) => _core.SetResult(value);
+                public int GetResult(short token) => _core.GetResult(token);
+                public ValueTaskSourceStatus GetStatus(short token) => _core.GetStatus(token);
+                public void OnCompleted(Action<object?> continuation, object? state,
+                    short token, ValueTaskSourceOnCompletedFlags flags) =>
+                    _core.OnCompleted(continuation, state, token, flags);
+            }
+
+            public static class EntryPoint
+            {
+                private static Task<int>? _pending;
+
+                public static int Run(int input)
+                {
+                    var source = new Source();
+                    _pending = FailAfter<int>(source.Task);
+                    source.Complete(input);
+                    return 0;
+                }
+
+                public static int Observe()
+                {
+                    try { return _pending!.Result; }
+                    catch (InvalidOperationException error)
+                    {
+                        return error.StackTrace is not null &&
+                            error.StackTrace.Contains("AsyncTrace.cs:line 303")
+                            ? 0
+                            : -1;
+                    }
+                }
+
+                private static async Task<int> FailAfter<T>(ValueTask<int> gate)
+                {
+                    await gate;
+            #line 303 "Safe/AsyncTrace.cs"
+                    throw new InvalidOperationException("async failure");
+            #line default
+                }
+            }
+            """;
+
+        var result = executor.Execute(new CompilationScenario(
+            $"AsyncSourceLine{target}",
+            source,
+            "EntryPoint",
+            false,
+            target,
+            1,
+            [])
+        {
+            EmitPortablePdb = true,
+            EmitStackTrace = true,
+            LoadStackTraceSymbols = false,
+            DrainReactor = true,
+            ObserveExportName = "observe",
+            WitPath = Path.Combine(
+                assets.Root,
+                "wit",
+                "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            Exports =
+            [
+                new RequestedExport("run", "EntryPoint", "Run"),
+                new RequestedExport("observe", "EntryPoint", "Observe"),
+            ],
+        });
+
+        Assert.Equal(0, result);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [Trait("Issue", "64")]
+    public void PreservedDispatchCapturesFreshException(int mode)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        const string source = """
+            using System;
+            using System.Runtime.ExceptionServices;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                public static int Run(int mode)
+                {
+                    try
+                    {
+                        var error = new InvalidOperationException("fresh");
+                        if (mode == 1)
+                        {
+                            ExceptionDispatchInfo.Throw(error);
+                        }
+                        return Task.FromException<int>(error).Result;
+                    }
+                    catch (InvalidOperationException error)
+                    {
+                        return error.StackTrace is not null &&
+                            error.StackTrace.Contains("EntryPoint::Run") ? 0 : -1;
+                    }
+                    return -2;
+                }
+            }
+            """;
+
+        var result = executor.Execute(new CompilationScenario(
+            $"FreshPreservedDispatch{mode}",
+            source,
+            "EntryPoint",
+            false,
+            WasmTarget.Wasm32,
+            mode,
+            [])
+        {
+            EmitStackTrace = true,
+            LoadStackTraceSymbols = false,
+            WitPath = Path.Combine(
+                assets.Root,
+                "wit",
+                "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            Exports =
+            [
+                new RequestedExport("run", "EntryPoint", "Run"),
+            ],
+        });
+
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    [Trait("Issue", "64")]
+    public void ConstructedGenericMethodUsesDefinitionSourceLocations()
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        const string source = """
+            using System;
+
+            public static class EntryPoint
+            {
+                public static int Run(int value)
+                {
+                    try { Generic<int>.Throw(value); }
+                    catch (InvalidOperationException error)
+                    {
+                        return error.StackTrace is not null &&
+                            error.StackTrace.Contains("GenericTrace.cs:line 77") ? 0 : -1;
+                    }
+                    return -2;
+                }
+
+                private static class Generic<T>
+                {
+                    public static void Throw(T value)
+                    {
+            #line 77 "Safe/GenericTrace.cs"
+                        throw new InvalidOperationException(value!.ToString());
+            #line default
+                    }
+                }
+            }
+            """;
+
+        var result = executor.Execute(new CompilationScenario(
+            "ConstructedGenericSourceLine",
+            source,
+            "EntryPoint",
+            false,
+            WasmTarget.Wasm32,
+            1,
+            [])
+        {
+            EmitPortablePdb = true,
+            EmitStackTrace = true,
+            LoadStackTraceSymbols = false,
+        });
+
+        Assert.Equal(0, result);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    [Trait("Issue", "64")]
+    public void TerminalDiagnosticsCarryCapturedSourceLocation(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        var error = Assert.ThrowsAny<Exception>(() => executor.Execute(
+            new CompilationScenario(
+                $"TerminalSourceLine{target}",
+                """
+                using System;
+
+                public static class EntryPoint
+                {
+                    public static int Run(int input)
+                    {
+                #line 404 "Safe/TerminalTrace.cs"
+                        throw new FormatException("terminal trace");
+                #line default
+                    }
+                }
+                """,
+                "EntryPoint",
+                false,
+                target,
+                0,
+                [])
+            {
+                EmitPortablePdb = true,
+                EmitStackTrace = true,
+                LoadStackTraceSymbols = false,
+            }));
+
+        Assert.Contains(
+            "EntryPoint::Run in Safe/TerminalTrace.cs:line 404",
+            error.Message,
+            StringComparison.Ordinal);
     }
 }

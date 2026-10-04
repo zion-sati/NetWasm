@@ -11,6 +11,8 @@ internal sealed class CallEmissionKindResolver(
     public CallEmissionKind Resolve(CallEmissionRequest request, IWasmInstructionWriter code)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.Method.Definition.NativeImport is not null)
+            return CallEmissionKind.Native;
         if (types.IsDelegateType(request.Method.Definition.DeclaringType) &&
             request.Method.Definition.Name == "Invoke")
         {

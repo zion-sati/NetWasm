@@ -1,0 +1,19 @@
+package netwasm:worker-template@1.0.0;
+
+interface notifications {
+  report: func(completed: u32, total: u32);
+}
+
+interface work {
+  run: func(total: u32) -> u32;
+}
+
+world application {
+  import notifications;
+  export work;
+}
+
+world worker {
+  include application;
+  include netwasm:platform/async-platform@1.0.0;
+}

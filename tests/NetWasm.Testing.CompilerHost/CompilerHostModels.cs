@@ -26,7 +26,8 @@ internal sealed record CompilationRequest(
     bool EnableFrontendCache = false,
     string? IntermediateOutputPath = null,
     string? RuntimeLayoutPath = null,
-    string? InteropManifestPath = null);
+    string? InteropManifestPath = null,
+    bool StructuredDiagnostics = false);
 
 internal sealed record CompilationResponse(
     ImmutableDictionary<int, string> TypeNames,

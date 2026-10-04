@@ -21,14 +21,16 @@ public sealed class FinalizerDispatcherEmitterTests
     [Fact]
     public void DispatcherCallsFinalizerThroughPlannedFunctionIndex()
     {
-        var descriptor = new TypeDescriptorLayout(
-            TypeKey,
-            9,
-            0,
-            16,
-            128,
-            4,
-            EntryKey);
+        var method = new FakeProgram().GetMethod(EntryKey);
+        var declaringType = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Assembly, "Test", "Type`1", false),
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        var finalizer = new MethodInstanceModel(
+            method,
+            declaringType,
+            [],
+            method.Signature);
+        var descriptor = new FinalizerDispatchPlan(9, finalizer);
 
         var body = CreateEmitter(out var indices).Emit([descriptor], indices);
 
@@ -40,10 +42,18 @@ public sealed class FinalizerDispatcherEmitterTests
         out FunctionIndexResolver indices)
     {
         var layouts = new RecordingLayoutProvider();
-        var map = new FunctionIndexMap(
-            ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(
-                EntryKey, new(30)),
+        var method = new FakeProgram().GetMethod(EntryKey);
+        var finalizer = new MethodInstanceModel(
+            method,
+            CliTypeIdentity.GenericInstantiation(
+                CliTypeIdentity.Named(Assembly, "Test", "Type`1", false),
+                [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]),
             [],
+            method.Signature);
+        var map = new FunctionIndexMap(
+            [],
+            ImmutableDictionary<string, WasmFunctionIndex>.Empty.Add(
+                finalizer.CanonicalName, new(30)),
             [],
             []);
         indices = new FunctionIndexResolver(new FakeProgram(), new FakeProgram(), map);
