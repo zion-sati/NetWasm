@@ -96,6 +96,7 @@ The 82.7 KiB program is the baseline, not the boundary. NetWasm already covers a
 
 - C# 15 when the project selects the .NET 11 SDK, while the default template remains on .NET 10;
 - `dotnet build`, `dotnet run`, `dotnet publish` and `dotnet test`;
+- [C# Web Workers](docs/web-workers.md) with generated JavaScript clients and either a portable WIT or direct JSExport boundary;
 - [TUnit-NetWasm](https://github.com/zion-sati/TUnit-NetWasm) tests through the generic VSTest bridge and ordinary `dotnet test`;
 - independently packaged ports for LINQ, HTTP, JSON, XML, Regex, Hashing and reflection-free dependency injection;
 - dual-target library projects for `netwasm0.1` and desktop `net10.0`.

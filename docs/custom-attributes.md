@@ -1,7 +1,6 @@
 # Bounded custom attribute queries
 
-Status: implemented and qualified in the candidate SDK; not yet released.
-This describes the bounded profile exercised by the candidate qualification.
+Status: available in NetWasm 0.6.0.
 
 NetWasm can resolve a custom attribute query during compilation when its target
 and attribute filter each identify one exact, closed type. The resulting program
@@ -36,7 +35,7 @@ automatic localization.
 
 ## Accepted calls and type provenance
 
-| Call | Candidate contract |
+| Call | Supported contract |
 | --- | --- |
 | `type.IsDefined(typeof(A), inherit)` | Returns existence without constructing attributes. |
 | `type.GetCustomAttribute<A>([inherit])` | Returns one instance or null; multiple matches throw `AmbiguousMatchException`. |

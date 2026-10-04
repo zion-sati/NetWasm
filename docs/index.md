@@ -22,6 +22,8 @@ repository.
 - [Targets and output formats](targets-and-outputs.md) — wasm32/wasm64 core
   modules, Component Model packaging, `cm32p2`/`cm64p2`, and WASI version
   boundaries.
+- [C# Web Workers](web-workers.md) — publish WIT or JSExport workers, call the
+  generated JavaScript client, exchange notifications, and manage worker lifecycle.
 - [Compiler diagnostics](diagnostics.md) — every current
   `NetWasm.Compiler.Core.DiagnosticCode`, including cause, exact scope, and
   corrective action.

@@ -178,7 +178,9 @@ Configuration failures identify the mismatched boundary:
 
 Worker templates select their own worker boundary and do not use the
 `command`/`async-command` properties. Use `dotnet new netwasm-app --worker wit`
-or `--worker jsexport` for those workflows.
+or `--worker jsexport` for those workflows. The
+[C# Web Workers guide](web-workers.md) covers both boundaries, generated clients,
+notifications, failure handling, and worker lifecycle.
 
 An `async-command` remains alive until its managed entry task completes. A
 JavaScript event can invoke a delegate registered through `[JSImport]` and

@@ -160,6 +160,13 @@ profile. The separate library and test packages below are also published.
 | WASI-only HTTP (`System.Net.Http`) | `NetWasm.System.Net.Http` provides the qualified WASI HTTP Preview 2 wasm32 native/browser client profile, with a version-neutral transport seam and no framework `[JSImport]`. wasm64 Component packaging remains externally blocked. |
 | TUnit | The `NetWasm.TUnit.*` packages provide the generated catalog, sequential runner and `dotnet test` integration. A later upstream contribution is a separate decision. |
 
+### Compiler and SDK capability acceptance
+
+| Area | Supported boundary |
+| --- | --- |
+| Bounded custom attribute queries | Type-targeted queries, `DescriptionAttribute`, and user-defined attributes, including closed generics, are available on raw wasm32/wasm64 and component wasm32. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [query profile](custom-attributes.md). |
+| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. The supported profile covers scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, `SafeHandle` inputs, and static scalar/pointer `UnmanagedCallersOnly` callbacks across ordinary app, library, and test consumers on wasm32 and raw wasm64. Dynamic loading, broad runtime/custom marshalling, `SafeHandle` construction, arbitrary unmanaged `calli`, delegate conversion, native threads, and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
+
 ## In progress
 
 The entries in this section describe the current direction only. They are not
@@ -167,8 +174,6 @@ available application dependencies or promises of a future API shape.
 
 | Area | Current boundary |
 | --- | --- |
-| Bounded custom attribute queries | Type-targeted queries, DescriptionAttribute and user-defined attributes, including closed generics, pass source and immutable candidate-SDK qualification on raw wasm32/wasm64 and component wasm32. Release delivery remains pending. Targets and filters must be statically bounded; there is no runtime metadata database or preserve-everything fallback. See the [candidate query profile](custom-attributes.md). |
-| Static native C interop | Ordinary `LibraryImport` and bounded raw `DllImport` declarations link declared Wasm `.a` providers. Source and immutable candidate-package qualification is complete for scalar/pointer/byref calls, by-value structs/unions, counted arrays and input UTF-8, SafeHandle inputs, and static scalar/pointer `UnmanagedCallersOnly` callbacks across ordinary app, library and test consumers on wasm32 and raw wasm64. Public SDK distribution remains pending. Dynamic loading, broad runtime/custom marshalling, SafeHandle construction, arbitrary unmanaged `calli`, delegate conversion, native threads and direct C++ ABI remain excluded. See the [static native profile](corelib-runtime.md#static-native-interop). |
 | Portable diagnostics | DP01–DP06 are implemented and locally qualified for in-process `DiagnosticSource`, `Activity`, propagation and Metrics under the single-reactor contract. Public package/reference-pack distribution remains incomplete. OS tracing, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
 | `System.Uri` | U01/U02 are implemented and locally qualified for the selected portable parsing, resolution, escaping, builder and IDN/IRI profile. Public reference-pack distribution remains incomplete. |
 

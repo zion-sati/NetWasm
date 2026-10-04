@@ -85,11 +85,9 @@ pre-reserved runtime tiers.
 
 ## Static native interop
 
-The bounded static C implementation has completed source and immutable
-candidate-package qualification across ordinary application, library and test
-consumers on wasm32 and raw wasm64. Public SDK distribution remains pending;
-this is not a claim that an already published SDK contains the feature. See the
-[support inventory](support-status.md).
+The bounded static C implementation is available in NetWasm 0.6.0 and has been
+qualified across ordinary application, library and test consumers on wasm32
+and raw wasm64. See the [support inventory](support-status.md).
 
 Use ordinary source-generated `LibraryImport` or supported raw `DllImport`
 declarations on non-generic static methods in non-generic declaring types. The
