@@ -260,10 +260,43 @@ test("accepts schema-three reached native signatures and explicit empty imports"
     { libraryName: "mule", entryPoint: "compute", parameters: ["i32", "i64", "f32", "f64"], returnType: "f64" },
     { libraryName: "__Internal", entryPoint: "reset", parameters: [], returnType: null },
   ]]) {
-    const bytes = encoder.encode(JSON.stringify({ ...layout, schemaVersion: 3, nativeImports }));
+    const runtimeFeatures = [
+      "ephemeron-handles",
+      "local-time",
+      "structured-command-diagnostics",
+    ];
+    const bytes = encoder.encode(JSON.stringify({
+      ...layout,
+      schemaVersion: 3,
+      runtimeFeatures,
+      nativeImports,
+    }));
     const loaded = await loadRawArtifacts(requestWithContent("runtime-layout", bytes));
+    assert.deepEqual(loaded.runtimeLayout.runtimeFeatures, runtimeFeatures);
+    assert.equal(Object.isFrozen(loaded.runtimeLayout.runtimeFeatures), true);
     assert.deepEqual(loaded.runtimeLayout.nativeImports, nativeImports);
     assert.equal(Object.isFrozen(loaded.runtimeLayout.nativeImports), true);
+  }
+});
+
+test("rejects noncanonical runtime feature evidence before loading", async () => {
+  for (const runtimeFeatures of [
+    null,
+    ["future"],
+    ["local-time", "local-time"],
+    ["structured-command-diagnostics", "local-time"],
+  ]) {
+    const request = requestWithContent("runtime-layout", encoder.encode(JSON.stringify({
+      ...layout,
+      schemaVersion: 3,
+      runtimeFeatures,
+      nativeImports: [],
+    })));
+    const calls = [];
+    request.compileModule = async () => { calls.push("compile"); return {}; };
+    request.importModule = async () => { calls.push("import"); return {}; };
+    await assert.rejects(() => loadRawArtifacts(request), /runtime features/);
+    assert.deepEqual(calls, []);
   }
 });
 

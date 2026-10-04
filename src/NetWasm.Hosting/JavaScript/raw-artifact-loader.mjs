@@ -28,6 +28,9 @@ const layoutKeys = [
 const entryPointKeys = ["completionShape", "parameterShape", "returnShape"];
 const nativeLayoutKeys = [...layoutKeys, "nativeImports"].sort();
 const callbackLayoutKeys = [...nativeLayoutKeys, "nativeCallbackSupport"].sort();
+const runtimeFeatureLayoutKeys = [...layoutKeys, "runtimeFeatures"].sort();
+const nativeRuntimeFeatureLayoutKeys = [...nativeLayoutKeys, "runtimeFeatures"].sort();
+const callbackRuntimeFeatureLayoutKeys = [...callbackLayoutKeys, "runtimeFeatures"].sort();
 const nativeImportKeys = ["entryPoint", "libraryName", "parameters", "returnType"];
 const nativeCallbackSupportKeys = [
   "callbacks",
@@ -45,6 +48,11 @@ const nativeCallbackKeys = [
   "runtimeImportSymbol",
 ];
 const nativeValueTypes = new Set(["i32", "i64", "f32", "f64"]);
+const supportedRuntimeFeatures = new Set([
+  "ephemeron-handles",
+  "local-time",
+  "structured-command-diagnostics",
+]);
 const digestPattern = /^[0-9a-f]{64}$/u;
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
@@ -211,9 +219,13 @@ function validateAdapterNamespace(namespace) {
 
 function parseRuntimeLayout(bytes) {
   const value = parseJson(bytes, "runtime layout");
+  const hasRuntimeFeatures = value !== null && typeof value === "object"
+    && !Array.isArray(value) && Object.hasOwn(value, "runtimeFeatures");
   const keys = value?.schemaVersion === 4
-    ? callbackLayoutKeys
-    : value?.schemaVersion === 3 ? nativeLayoutKeys : layoutKeys;
+    ? hasRuntimeFeatures ? callbackRuntimeFeatureLayoutKeys : callbackLayoutKeys
+    : value?.schemaVersion === 3
+      ? hasRuntimeFeatures ? nativeRuntimeFeatureLayoutKeys : nativeLayoutKeys
+      : hasRuntimeFeatures ? runtimeFeatureLayoutKeys : layoutKeys;
   assertExactDataObject(value, keys, "raw runtime layout");
   if (![2, 3, 4].includes(value.schemaVersion) || value.target !== "wasm32" && value.target !== "wasm64"
       || !Number.isSafeInteger(value.applicationStaticDataEnd) || value.applicationStaticDataEnd < 0) {
@@ -232,11 +244,26 @@ function parseRuntimeLayout(bytes) {
       }
     }
   }
+  if (hasRuntimeFeatures) validateRuntimeFeatures(value.runtimeFeatures);
   if (value.schemaVersion === 4) validateNativeCallbackSupport(value.nativeCallbackSupport);
   if (value.managedExecutableEntryPoint !== null) {
     assertExactDataObject(value.managedExecutableEntryPoint, entryPointKeys, "raw entry point");
   }
   return deepFreeze(value);
+}
+
+function validateRuntimeFeatures(features) {
+  if (!Array.isArray(features)) {
+    throw new TypeError("raw runtime features are invalid");
+  }
+  let previous = null;
+  for (const feature of features) {
+    if (!supportedRuntimeFeatures.has(feature)
+        || previous !== null && feature <= previous) {
+      throw new TypeError("raw runtime features are invalid");
+    }
+    previous = feature;
+  }
 }
 
 function validateNativeCallbackSupport(support) {
