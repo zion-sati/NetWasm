@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Delegates;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Tests;
@@ -13,7 +14,8 @@ internal sealed class ExecutionPlannerFixture :
     ITypeDefinitionResolver,
     IMethodRepository,
     IMethodInstanceResolver,
-    ISymbolFormatter
+    ISymbolFormatter,
+    INullableTypeResolver
 {
     internal static readonly AssemblyIdentity Assembly = new("ExecutionPlannerTests");
     internal static readonly CliTypeIdentity Scalar = CliTypeIdentity.FromStackKind(CliValueKind.I4);
@@ -21,6 +23,7 @@ internal sealed class ExecutionPlannerFixture :
     internal readonly HashSet<CliTypeIdentity> Delegates = [];
     internal readonly Dictionary<string, TypeDefinitionModel> Types = [];
     internal readonly Dictionary<CliTypeIdentity, TypeDefinitionModel> Definitions = [];
+    internal readonly Dictionary<CliTypeIdentity, CliTypeIdentity> NullableTypes = [];
     internal readonly Dictionary<EntityKey, MethodInstanceModel> Methods = [];
     internal readonly List<string> Lookups = [];
     internal readonly List<(EntityKey Key, CliGenericContext? Context)> Resolutions = [];
@@ -31,7 +34,9 @@ internal sealed class ExecutionPlannerFixture :
         this, this, this, this, this, this, this);
 
     internal IMemberExecutionPlanner MemberPlanner() => new MemberExecutionPlanner(
-        this, this, this, this, this, this);
+        this, this, this, this, this, this, this);
+
+    public CliTypeIdentity? Resolve(CliTypeIdentity type) => NullableTypes.GetValueOrDefault(type);
 
     internal static CliTypeIdentity Type(string name, bool valueType = false) =>
         CliTypeIdentity.Named(Assembly, "Fixture", name, valueType);

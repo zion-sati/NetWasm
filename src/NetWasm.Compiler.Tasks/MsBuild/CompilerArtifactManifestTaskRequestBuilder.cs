@@ -23,11 +23,21 @@ internal sealed class CompilerArtifactManifestTaskRequestBuilder : ICompilerArti
             inputs.Add(new("RuntimeAbiManifest", input.RuntimeAbiManifestPath));
         }
 
+        if (!string.IsNullOrWhiteSpace(input.CompilationIdentityPath))
+        {
+            inputs.Add(new("CompilationIdentity", input.CompilationIdentityPath));
+        }
+        if (!input.WitInputs.IsDefault)
+        {
+            AddInputs(inputs, "Wit", input.WitInputs);
+        }
+
         var outputs = input.Artifacts
             .Select(item => new CompilerArtifactOutputRequest(
                 GetMetadata(item, "Kind", "Unknown"),
                 GetMetadata(item, "MediaType", "application/octet-stream"),
-                item.ItemSpec))
+                item.ItemSpec,
+                GetMetadata(item, "CopyToPublishDirectory", "PreserveNewest")))
             .ToImmutableArray();
 
         return new CompilerArtifactManifestBuildRequest(

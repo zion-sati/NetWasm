@@ -266,3 +266,32 @@ function artifact(relativePath, role, mediaType, bytes) {
 }
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+
+test("keeps generated application modules distinct from declared provider modules", async () => {
+  const module = "example:worker/provider@1.0.0";
+  const provider = encoder.encode("export function notify() {}");
+  const artifacts = [
+    artifact("app.wasm", "application", "application/wasm", rawApplication),
+    artifact("app.raw-adapter.mjs", "raw-adapter", "text/javascript", rawAdapter),
+    artifact("app.runtime-layout.json", "runtime-layout", "application/json", runtimeLayout),
+    artifact("app.interop.json", "interop-manifest", "application/json", interopManifest),
+    artifact("provider.mjs", "application-import", "text/javascript", provider),
+  ];
+  const manifest = { ...deployment("raw", artifacts), requiredImportModules: [module],
+    requiredImports: [{ interface: module, name: "notify", parameters: [], results: [] }] };
+  const manifestBytes = encoder.encode(JSON.stringify(manifest));
+  for (const duplicate of [false, true]) {
+    const fixture = browserPlatform(manifestBytes, new Map([
+      ["app.wasm", rawApplication], ["app.raw-adapter.mjs", rawAdapter],
+      ["app.runtime-layout.json", runtimeLayout], ["app.interop.json", interopManifest], ["provider.mjs", provider],
+    ]));
+    const execute = createBrowserRawNetWasmExecution({ manifestUrl, platform: fixture.platform },
+      { [duplicate ? module : "generated-worker-client"]: {} });
+    const request = { ...executionRequest(sha256(manifestBytes)),
+      applicationImports: [{ module, artifactPath: "provider.mjs", sha256: sha256(provider) }] };
+    const outcome = await execute({ request, signal: null, stderr: sink, stdout: sink });
+    if (duplicate) assert.equal(outcome.primaryFailure.code, "host.interop-prepare");
+    else assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 37]);
+    assert.ok(fixture.fetches.includes("https://example.test/deploy/provider.mjs"));
+  }
+});

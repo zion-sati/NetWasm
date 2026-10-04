@@ -13,6 +13,20 @@ using static EmitterTestSupport;
 public sealed class CallEmissionKindResolverTests
 {
     [Fact]
+    public void ResolvesNativeDeclarationsToTheirDedicatedStrategy()
+    {
+        var program = new FakeProgram();
+        var definition = program.GetMethod(EntryKey) with
+        {
+            NativeImport = new("mule", "run", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
+                false, false, false, false),
+        };
+        var request = CreateRequest(definition, CliTypeIdentity.Named(Assembly, "Test", "Native", false));
+        var resolver = Assert.IsAssignableFrom<ICallEmissionKindResolver>(
+            new CallEmissionKindResolver(program, new FakeIntrinsics()));
+        Assert.Equal(CallEmissionKind.Native, resolver.Resolve(request, new RecordingInstructionWriter()));
+    }
+    [Fact]
     public void ResolvesDelegateInvokeBeforeOtherCallKinds()
     {
         var program = new FakeProgram();

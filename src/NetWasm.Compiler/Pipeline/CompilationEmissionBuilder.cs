@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Emission;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Metadata;
+using NetWasm.Compiler.StackTraces;
 using NetWasm.Compiler.Validation;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -29,7 +31,9 @@ internal sealed class CompilationEmissionBuilder(
     IInstanceFieldLayoutProviderFactory instanceFields,
     IStaticFieldLayoutProviderFactory staticFields,
     IStaticDataLayoutProviderFactory staticData,
-    IManagedExceptionObjectProviderFactory exceptionObjects) : ICompilationEmissionBuilder
+    IMemberDescriptorLayoutProviderFactory memberDescriptors,
+    IManagedExceptionObjectProviderFactory exceptionObjects,
+    IStackTraceSourceLocationReader stackTraceSourceLocations) : ICompilationEmissionBuilder
 {
     private readonly IManagedWasmEmitterFactory _emitters = emitters ??
         throw new ArgumentNullException(nameof(emitters));
@@ -65,8 +69,13 @@ internal sealed class CompilationEmissionBuilder(
         throw new ArgumentNullException(nameof(staticFields));
     private readonly IStaticDataLayoutProviderFactory _staticData = staticData ??
         throw new ArgumentNullException(nameof(staticData));
+    private readonly IMemberDescriptorLayoutProviderFactory _memberDescriptors = memberDescriptors ??
+        throw new ArgumentNullException(nameof(memberDescriptors));
     private readonly IManagedExceptionObjectProviderFactory _exceptionObjects =
         exceptionObjects ?? throw new ArgumentNullException(nameof(exceptionObjects));
+    private readonly IStackTraceSourceLocationReader _stackTraceSourceLocations =
+        stackTraceSourceLocations ??
+        throw new ArgumentNullException(nameof(stackTraceSourceLocations));
 
     public CompilationEmission Emit(
         MetadataCompilationSnapshot metadata,
@@ -97,6 +106,7 @@ internal sealed class CompilationEmissionBuilder(
         var instanceFieldLayouts = _instanceFields.Create(layouts.Snapshot);
         var staticFieldLayouts = _staticFields.Create(layouts.Snapshot);
         var staticDataLayout = _staticData.Create(layouts.Snapshot);
+        var memberDescriptorLayout = _memberDescriptors.Create(layouts.Snapshot);
         var exceptionObjectLayouts = _exceptionObjects.Create(layouts.Snapshot);
         var runtimeIntrinsics = _intrinsics.Create(symbols, metadata.Methods);
         var lowering = _methodProgram.Build(
@@ -118,7 +128,7 @@ internal sealed class CompilationEmissionBuilder(
             instanceFieldLayouts,
             staticFieldLayouts,
             staticDataLayout,
-            staticDataLayout,
+            memberDescriptorLayout,
             layouts.Snapshot,
             exceptionObjectLayouts,
             layouts.Snapshot);
@@ -147,10 +157,21 @@ internal sealed class CompilationEmissionBuilder(
             options.WitPath is null
                 ? WasmModuleProfile.CoreApplication
                 : WasmModuleProfile.ComponentCoreModule,
-            options.WitPath is null ||
+            options.EntryPointKind == CompilerEntryPointKind.Library
+                ? WasmEntryPointProfile.None
+                : options.WitPath is null ||
             options.EntryPointKind == CompilerEntryPointKind.ManagedExecutable
                 ? WasmEntryPointProfile.Process
                 : WasmEntryPointProfile.Internal);
+        var addressedNativeCallbacks = analysis.Program.NativeCallbacks.Keys
+            .ToImmutableHashSet(StringComparer.Ordinal);
+        var nativeCallbacks = analysis.Program.NativeCallbacks.Values
+            .Concat(analysis.Program.MethodInstances.Values.Where(method =>
+                method.Definition.NativeCallback?.EntryPoint is not null))
+            .DistinctBy(method => method.CanonicalName)
+            .ToImmutableDictionary(
+                method => method.CanonicalName,
+                StringComparer.Ordinal);
         request = request with
         {
             ModuleInitializers = analysis.Program.ModuleInitializers,
@@ -158,8 +179,14 @@ internal sealed class CompilationEmissionBuilder(
             DelegateBindings = analysis.Program.DelegateBindings,
             ObjectArrayDelegateAdapters = analysis.Program.ObjectArrayDelegateAdapters,
             MemberExecution = analysis.Program.MemberExecution,
+            NativeCallbacks = nativeCallbacks,
+            AddressedNativeCallbacks = addressedNativeCallbacks,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
             CollectManagedMethodMemoryMetrics = options.DiagnosticTracePath is not null,
+            UseJavaScriptExportBoundary =
+                options.UseJavaScriptExportBoundary || options.WitPath is null,
+            StructuredDiagnostics = options.StructuredDiagnostics,
+            SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
         var emission = emitter.Emit(request);
         _invariants.Validate(emission.Module, options.Target);

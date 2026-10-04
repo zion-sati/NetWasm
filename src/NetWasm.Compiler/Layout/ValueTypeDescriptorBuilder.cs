@@ -29,9 +29,11 @@ internal sealed class ValueTypeDescriptorBuilder(
 
     public void Build()
     {
+        // Generic definitions retain type metadata but cannot have a boxed value payload.
+        // ConstructedObjects below owns descriptors for their closed instantiations.
         foreach (var (key, boxed) in _types.Objects
                      .Where(pair =>
-                         _typeRepository.GetTypeDefinition(pair.Key).IsValueType &&
+                         _typeRepository.GetTypeDefinition(pair.Key) is { IsValueType: true, GenericArity: 0 } &&
                          _identities.GetTypeIdentity(pair.Key).HasRuntimeStorage)
                      .OrderBy(pair => pair.Value.TypeId))
         {

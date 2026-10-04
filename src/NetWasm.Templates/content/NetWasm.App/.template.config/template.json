@@ -5,8 +5,57 @@
   "identity": "NetWasm.Templates.App",
   "name": "NetWasm Application",
   "shortName": "netwasm-app",
-  "sourceName": "NetWasmApp",
+  "sourceName": "NetWasmProject",
   "preferNameDirectory": true,
+  "symbols": {
+    "worker": {
+      "type": "parameter",
+      "datatype": "choice",
+      "displayName": "Worker output",
+      "description": "Create a browser Web Worker using WIT or JSExport.",
+      "defaultValue": "none",
+      "choices": [
+        {
+          "choice": "none",
+          "description": "Create the standard NetWasm application."
+        },
+        {
+          "choice": "wit",
+          "description": "Create a portable WIT Web Worker."
+        },
+        {
+          "choice": "jsexport",
+          "description": "Create a JavaScript interop Web Worker."
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "source": "base",
+      "target": "."
+    },
+    {
+      "source": "console",
+      "target": ".",
+      "condition": "(worker == \"none\")"
+    },
+    {
+      "source": "worker-common",
+      "target": ".",
+      "condition": "(worker != \"none\")"
+    },
+    {
+      "source": "wit",
+      "target": ".",
+      "condition": "(worker == \"wit\")"
+    },
+    {
+      "source": "jsexport",
+      "target": ".",
+      "condition": "(worker == \"jsexport\")"
+    }
+  ],
   "tags": {
     "language": "C#",
     "type": "project"

@@ -12,6 +12,7 @@ public sealed class RawModuleLinkInputValidatorTests
     {
         var inputs = new RecordingInputs();
         var request = new RawModuleLinkRequest("application", "runtime", "output", new(width, "0.2", "utf8"));
+        request = request with { InternalRuntimeExports = [new("native", 0), new("__heap_base", 3)] };
         var validator = CreateValidator(inputs);
 
         validator.Validate(request);
@@ -79,6 +80,29 @@ public sealed class RawModuleLinkInputValidatorTests
 
     private static IRawModuleLinkInputValidator CreateValidator(RecordingInputs inputs) =>
         Assert.IsAssignableFrom<IRawModuleLinkInputValidator>(new RawModuleLinkInputValidator(inputs));
+
+    [Fact]
+    public void InvalidExportFactsRejectBeforeAccessingInputFiles()
+    {
+        var inputs = new RecordingInputs();
+        var validator = CreateValidator(inputs);
+        var request = new RawModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm32Wasi02);
+        foreach (var exports in new System.Collections.Immutable.ImmutableArray<WasmInternalExport>[]
+        {
+            default, [null!], [new(" ", 0)], [new("n\0", 0)], [new("n\r", 0)], [new("n\n", 0)],
+            [new("n", 2)], [new("n", 0), new("n", 0)],
+        }) Assert.Throws<CompilerException>(() => validator.Validate(request with { InternalRuntimeExports = exports }));
+        Assert.Throws<CompilerException>(() => validator.Validate(request with
+        {
+            InternalApplicationExports = default,
+        }));
+        Assert.Throws<CompilerException>(() => validator.Validate(request with
+        {
+            InternalRuntimeExports = [new("same", 0)],
+            InternalApplicationExports = [new("same", 0)],
+        }));
+        Assert.Null(inputs.Request);
+    }
 
     private sealed class RecordingInputs : IComponentCoreModuleInputValidator
     {

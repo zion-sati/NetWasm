@@ -241,10 +241,14 @@ public sealed class HostCallbackFunctionEmitterTests
             int typeIdLocal,
             int messageLocal,
             int messageLengthLocal,
+            int stackTraceLocal,
+            int stackTraceLengthLocal,
             CliValueKind resultType,
             int resultLocal,
             int reportFunctionIndex,
-            Action emitBody)
+            int? raiseFunctionIndex,
+            Action emitBody,
+            Action? emitCatchCleanup = null)
         {
             ReportFunctionIndex = reportFunctionIndex;
             emitBody();

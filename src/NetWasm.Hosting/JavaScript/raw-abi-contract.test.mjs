@@ -63,8 +63,12 @@ function prepareRawContract({ contractKey, abi, providers: physicalProviders, re
   });
   const imports = composeRawImports({
     canonicalBinding,
+    inventory: Object.freeze({
+      target: plan.target,
+      imports: plan.imports,
+      reactorHostModule: plan.reactorHostModule,
+    }),
     physicalProviders,
-    plan,
   });
   return Object.freeze({
     contractKey: plan.contractKey,

@@ -26,7 +26,8 @@ internal sealed class ReachabilityInvariantValidator(
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(program);
         ArgumentNullException.ThrowIfNull(intrinsics);
-        if (!program.Methods.ContainsKey(program.EntryPoint.Key))
+        if (program.EntryPoint is { } entryPoint &&
+            !program.Methods.ContainsKey(entryPoint.Key))
         {
             throw exceptions.Create(
                 "entry point is absent from the reachable method set");
@@ -67,16 +68,7 @@ internal sealed class ReachabilityInvariantValidator(
         {
             foreach (var target in pair.Value.Targets)
             {
-                var reachable = target.Method.IsConstructed
-                    ? program.ConstructedMethods.ContainsKey(target.Method.CanonicalName)
-                    : program.Methods.ContainsKey(target.Method.Definition.Key) ||
-                      intrinsics.TryGetIntrinsic(
-                          target.Method.Definition.Key,
-                          out _) ||
-                      program.JSImportMethods.Any(method =>
-                          method.Key == target.Method.Definition.Key) ||
-                      program.WitImportMethods.Any(method =>
-                          method.Key == target.Method.Definition.Key);
+                var reachable = IsResolvable(program, target.Method, intrinsics);
                 if (!reachable)
                 {
                     throw exceptions.Create(
@@ -144,6 +136,16 @@ internal sealed class ReachabilityInvariantValidator(
                     continue;
                 }
                 if (instruction.Operation is CilOperation.LoadFunction &&
+                    target.Definition.NativeCallback is not null &&
+                    !program.NativeCallbacks.ContainsKey(target.CanonicalName))
+                {
+                    throw exceptions.Create(
+                        $"function load omits native callback target '{target.CanonicalName}'",
+                        caller,
+                        instruction.Offset);
+                }
+                if (instruction.Operation is CilOperation.LoadFunction &&
+                    target.Definition.NativeCallback is null &&
                     !program.CallableMethods.ContainsKey(target.CanonicalName))
                 {
                     throw exceptions.Create(
@@ -194,11 +196,19 @@ internal sealed class ReachabilityInvariantValidator(
         }
         foreach (var finalizer in program.Finalizers)
         {
-            if (!program.Types.Contains(finalizer.Key) ||
-                !program.Methods.ContainsKey(finalizer.Value))
+            var method = finalizer.Value;
+            var allocatedTypeIsReachable = program.ConstructedTypes.Contains(finalizer.Key) ||
+                program.MethodInstances.Values.Any(instance =>
+                    instance.DeclaringType.Equals(finalizer.Key));
+            var methodIsReachable = method.IsConstructed
+                ? program.ConstructedMethods.ContainsKey(method.CanonicalName)
+                : program.Methods.ContainsKey(method.Definition.Key);
+            if (!allocatedTypeIsReachable || !methodIsReachable ||
+                !program.MethodInstances.TryGetValue(method.CanonicalName, out var instance) ||
+                instance != method)
             {
                 throw exceptions.Create(
-                    $"finalizer '{finalizer.Value}' or its declaring type is unreachable");
+                    $"finalizer '{method.CanonicalName}' or its allocated type is unreachable");
             }
         }
         foreach (var pair in program.DispatchCallSites)
@@ -250,6 +260,9 @@ internal sealed class ReachabilityInvariantValidator(
         MethodInstanceModel method,
         IRuntimeIntrinsicRegistry intrinsics) =>
         intrinsics.TryGetIntrinsic(method.Definition.Key, out _) ||
+        method.Definition.NativeImport is not null &&
+        program.MethodInstances.TryGetValue(method.CanonicalName, out var native) &&
+        native.HasEquivalentDescriptorFacts(method) ||
         program.JSImportMethods.Any(candidate =>
             candidate.Key == method.Definition.Key) ||
         program.WitImportMethods.Any(candidate =>

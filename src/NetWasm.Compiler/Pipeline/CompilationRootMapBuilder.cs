@@ -21,7 +21,8 @@ internal sealed class CompilationRootMapBuilder(
     IValueLayoutProviderFactory valueProviders,
     IManagedLayoutForkSourceFactory forks,
     IIndexedWorkExecutor work,
-    CompilerParallelism parallelism) : ICompilationRootMapBuilder
+    CompilerParallelism parallelism,
+    ITypeClassifierFactory typeClassifiers) : ICompilationRootMapBuilder
 {
     private readonly IRootMapAnalyzerFactory _analyzers = analyzers ??
         throw new ArgumentNullException(nameof(analyzers));
@@ -46,6 +47,9 @@ internal sealed class CompilationRootMapBuilder(
     private readonly CompilerParallelism _parallelism = parallelism ??
         throw new ArgumentNullException(nameof(parallelism));
 
+    private readonly ITypeClassifierFactory _typeClassifiers = typeClassifiers ??
+        throw new ArgumentNullException(nameof(typeClassifiers));
+
     public ReachableProgram Analyze(
         MetadataCompilationSnapshot metadata,
         CompilationLayouts layouts,
@@ -58,6 +62,7 @@ internal sealed class CompilationRootMapBuilder(
         var fields = _fieldRepositories.Create(metadata);
         var methods = _methodRepositories.Create(metadata);
         var typeDefinitions = _typeDefinitions.Create(metadata);
+        var typeClassifier = _typeClassifiers.Create(metadata);
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(fields);
         ArgumentNullException.ThrowIfNull(methods);
@@ -70,7 +75,7 @@ internal sealed class CompilationRootMapBuilder(
                 layouts.Snapshot.TypeLayouts.ValueLayoutState);
             var values = _valueProviders.Create(valueResolver);
             var analyzer = _analyzers.Create(
-                types, fields, methods, values, program.DispatchCallSites);
+                types, fields, methods, values, program.DispatchCallSites, typeClassifier);
             var serial = program with
             {
                 RootMaps = program.Methods.ToImmutableDictionary(
@@ -87,7 +92,7 @@ internal sealed class CompilationRootMapBuilder(
                         program.ConstructedAllocatingMethods)),
                     StringComparer.Ordinal),
             };
-            _invariants.Validate(types, fields, methods, serial);
+            _invariants.Validate(types, fields, methods, serial, typeClassifier);
             return serial;
         }
 
@@ -100,7 +105,7 @@ internal sealed class CompilationRootMapBuilder(
                 _parallelism.WorkerCount, Math.Max(1, bodies.Length)));
         var analyzers = forkSet.Workers.Select(fork => _analyzers.Create(
             types, fields, methods, fork.Values,
-            program.DispatchCallSites)).ToArray();
+            program.DispatchCallSites, typeClassifier)).ToArray();
         var results = _work.Execute(analyzers, bodies.Length,
             (analyzer, index) => analyzer.Analyze(new RootMapAnalysisRequest(
                 bodies[index], program.AllocatingMethods,
@@ -119,7 +124,7 @@ internal sealed class CompilationRootMapBuilder(
             RootMaps = ordinaryMaps.ToImmutable(),
             ConstructedRootMaps = constructedMaps.ToImmutable(),
         };
-        _invariants.Validate(types, fields, methods, updated);
+        _invariants.Validate(types, fields, methods, updated, typeClassifier);
         forkSet.Publisher.Publish();
         return updated;
     }

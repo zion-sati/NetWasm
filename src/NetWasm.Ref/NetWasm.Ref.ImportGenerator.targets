@@ -1,0 +1,85 @@
+<Project>
+  <!-- Use normal FrameworkReference resolution against the exact NuGet pack,
+       rather than a potentially differently signed installed SDK copy. The
+       stock SDK owns PackageDownload and Analyzer discovery. -->
+  <PropertyGroup>
+    <PrunePackageTargetingPackRoots Condition="'$(PrunePackageTargetingPackRoots)' == ''">$(NetCoreTargetingPackRoot)</PrunePackageTargetingPackRoots>
+    <NetCoreTargetingPackRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'import-generator-targeting-packs'))</NetCoreTargetingPackRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <_NetWasmRefGeneratorReferencePack Include="@(KnownFrameworkReference->WithMetadataValue('Identity', 'Microsoft.NETCore.App')->WithMetadataValue('TargetFramework', '$(TargetFramework)'))" />
+  </ItemGroup>
+
+  <Target Name="NetWasmRefValidateGeneratorReferencePack"
+          BeforeTargets="ProcessFrameworkReferences;CollectPackageDownloads">
+    <Error Condition="'@(_NetWasmRefGeneratorReferencePack->Count())' != '1' OR '@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackName)')' != 'Microsoft.NETCore.App.Ref' OR '@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')' == ''"
+           Code="NWRF002"
+           Text="The Ref producer requires exactly one SDK-selected .NET targeting pack for its import generator." />
+  </Target>
+
+  <Target Name="NetWasmRefResolveImportGeneratorAssets"
+          DependsOnTargets="NetWasmRefValidateGeneratorReferencePack;ResolveReferences">
+    <ItemGroup>
+      <_NetWasmRefResolvedImportAnalyzer Include="@(Analyzer)"
+        Condition="'%(Analyzer.Filename)' == 'Microsoft.Interop.LibraryImportGenerator' OR '%(Analyzer.Filename)' == 'Microsoft.Interop.SourceGeneration'" />
+    </ItemGroup>
+    <Error Condition="'@(_NetWasmRefResolvedImportAnalyzer->Count())' != '2' OR '@(_NetWasmRefResolvedImportAnalyzer->'%(Filename)'->Distinct()->Count())' != '2' OR '@(_NetWasmRefResolvedImportAnalyzer->'%(RootDir)%(Directory)'->Distinct()->Count())' != '1'"
+           Code="NWRF003"
+           Text="The Ref producer did not resolve the stock import generator and its support assembly from one targeting pack." />
+    <PropertyGroup>
+      <_NetWasmRefGeneratorPackVersion>@(_NetWasmRefGeneratorReferencePack->'%(TargetingPackVersion)')</_NetWasmRefGeneratorPackVersion>
+      <_NetWasmRefGeneratorArchive>$([MSBuild]::NormalizePath('$(NuGetPackageRoot)', 'microsoft.netcore.app.ref', '$(_NetWasmRefGeneratorPackVersion)', 'microsoft.netcore.app.ref.$(_NetWasmRefGeneratorPackVersion).nupkg'))</_NetWasmRefGeneratorArchive>
+      <_NetWasmRefGeneratorArchiveRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'import-generator', '$(_NetWasmRefGeneratorPackVersion)'))</_NetWasmRefGeneratorArchiveRoot>
+      <_NetWasmRefResolvedGeneratorRoot>@(_NetWasmRefResolvedImportAnalyzer->'%(RootDir)%(Directory)'->Distinct())</_NetWasmRefResolvedGeneratorRoot>
+      <_NetWasmRefGeneratorProvenancePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'import-generator.provenance.json'))</_NetWasmRefGeneratorProvenancePath>
+    </PropertyGroup>
+    <Error Condition="'$(NuGetPackageRoot)' == '' OR !Exists('$(_NetWasmRefGeneratorArchive)')"
+           Code="NWRF004"
+           Text="The SDK-selected import-generator targeting-pack archive was not restored." />
+    <!-- Hash the archive itself, and use its freshly extracted bytes as the
+         expected-hash authority. SDK-resolved files are the package sources;
+         the existing canonical pack task rejects any mismatch before writing. -->
+    <GetFileHash Files="$(_NetWasmRefGeneratorArchive)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_NetWasmRefGeneratorArchiveHash" />
+    </GetFileHash>
+    <!-- This directory is producer-owned. A fresh extraction prevents stale
+         resource files from becoming part of the archive's hash authority. -->
+    <RemoveDir Directories="$(_NetWasmRefGeneratorArchiveRoot)" />
+    <Unzip SourceFiles="$(_NetWasmRefGeneratorArchive)"
+           DestinationFolder="$(_NetWasmRefGeneratorArchiveRoot)"
+           SkipUnchangedFiles="false" />
+    <ItemGroup>
+      <_NetWasmRefUpstreamGeneratorFile Include="$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/Microsoft.Interop.LibraryImportGenerator.dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/Microsoft.Interop.SourceGeneration.dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/**/Microsoft.Interop.LibraryImportGenerator.resources.dll;$(_NetWasmRefGeneratorArchiveRoot)analyzers/dotnet/cs/**/Microsoft.Interop.SourceGeneration.resources.dll" />
+      <_NetWasmRefUpstreamGeneratorNotice Include="$(_NetWasmRefGeneratorArchiveRoot)LICENSE.TXT;$(_NetWasmRefGeneratorArchiveRoot)THIRD-PARTY-NOTICES.TXT" />
+    </ItemGroup>
+    <ItemGroup>
+      <_NetWasmRefUpstreamGeneratorFile Update="@(_NetWasmRefUpstreamGeneratorFile)">
+        <SourcePath>$(_NetWasmRefResolvedGeneratorRoot)%(_NetWasmRefUpstreamGeneratorFile.RecursiveDir)%(_NetWasmRefUpstreamGeneratorFile.Filename)%(_NetWasmRefUpstreamGeneratorFile.Extension)</SourcePath>
+        <PackagePath>analyzers/dotnet/cs/$([System.String]::Copy('%(_NetWasmRefUpstreamGeneratorFile.RecursiveDir)').Replace('\', '/'))%(_NetWasmRefUpstreamGeneratorFile.Filename)%(_NetWasmRefUpstreamGeneratorFile.Extension)</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmRefUpstreamGeneratorFile>
+      <_NetWasmRefUpstreamGeneratorNotice Update="@(_NetWasmRefUpstreamGeneratorNotice)">
+        <SourcePath>%(_NetWasmRefUpstreamGeneratorNotice.FullPath)</SourcePath>
+        <PackagePath>licenses/Microsoft.NETCore.App.Ref/%(_NetWasmRefUpstreamGeneratorNotice.Filename)%(_NetWasmRefUpstreamGeneratorNotice.Extension)</PackagePath>
+        <PackKind>License</PackKind>
+      </_NetWasmRefUpstreamGeneratorNotice>
+    </ItemGroup>
+    <GetFileHash Files="@(_NetWasmRefUpstreamGeneratorFile);@(_NetWasmRefUpstreamGeneratorNotice)" Algorithm="SHA256" MetadataName="ExpectedSha256">
+      <Output TaskParameter="Items" ItemName="_NetWasmRefGeneratorPackageFile" />
+    </GetFileHash>
+    <PropertyGroup>
+      <_NetWasmRefGeneratorProvenance>{&quot;schemaVersion&quot;:1,&quot;sdkVersion&quot;:&quot;$(NETCoreSdkVersion)&quot;,&quot;packageId&quot;:&quot;Microsoft.NETCore.App.Ref&quot;,&quot;packageVersion&quot;:&quot;$(_NetWasmRefGeneratorPackVersion)&quot;,&quot;archiveSha256&quot;:&quot;$(_NetWasmRefGeneratorArchiveHash)&quot;,&quot;files&quot;:[@(_NetWasmRefGeneratorPackageFile->'{&quot;path&quot;:&quot;%(PackagePath)&quot;,&quot;sha256&quot;:&quot;%(ExpectedSha256)&quot;}', ',')]}</_NetWasmRefGeneratorProvenance>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_NetWasmRefGeneratorProvenancePath)"
+                      Lines="$(_NetWasmRefGeneratorProvenance)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <_NetWasmRefGeneratorPackageFile Include="$(_NetWasmRefGeneratorProvenancePath)">
+        <SourcePath>$(_NetWasmRefGeneratorProvenancePath)</SourcePath>
+        <PackagePath>provenance/import-generator.json</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmRefGeneratorPackageFile>
+      <FileWrites Include="$(_NetWasmRefGeneratorProvenancePath);$(_NetWasmRefGeneratorArchiveRoot)**/*" />
+    </ItemGroup>
+  </Target>
+</Project>

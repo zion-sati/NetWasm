@@ -54,6 +54,41 @@ internal sealed class WasmModulePlanInvariantValidator :
             }
             RequireIndex(groupIndex, groupIndex, indices, "canonical import");
         }
+        var expectedNativeMethods = request.MethodInstances.Values
+            .Where(method => method.Definition.NativeImport is not null)
+            .DistinctBy(method => method.Definition.Key)
+            .OrderBy(method => method.CanonicalName, StringComparer.Ordinal)
+            .ToArray();
+        if (!plan.NativeImports.Methods.Select(import => import.Method).SequenceEqual(expectedNativeMethods))
+            throw Invalid("native imports do not match reached native methods in canonical order");
+        foreach (var import in plan.NativeImports.Methods)
+        {
+            if (!plan.FunctionIndices.ImportedMethods.TryGetValue(import.Method.Definition.Key, out var index))
+                throw Invalid("native import has no function index");
+            RequireIndex(index.Value, expected++, indices, "native import");
+        }
+        var expectedCallbacks = request.NativeCallbacks.Values
+            .OrderBy(method => method.CanonicalName, StringComparer.Ordinal)
+            .ToArray();
+        if (!plan.NativeCallbacks.Methods
+            .Select(callback => callback.Method)
+            .SequenceEqual(expectedCallbacks))
+        {
+            throw Invalid(
+                "native callbacks do not match reached callback methods in canonical order");
+        }
+        foreach (var callback in plan.NativeCallbacks.Methods)
+        {
+            if (callback.IsAddressTaken !=
+                request.AddressedNativeCallbacks.Contains(callback.Method.CanonicalName))
+            {
+                throw Invalid("native callback address ownership does not match reachability");
+            }
+            if (callback.GetterIndex is { } getterIndex)
+            {
+                RequireIndex(getterIndex.Value, expected++, indices, "callback getter");
+            }
+        }
         var constructedIdentities = request.ConstructedMethods.Keys
             .ToHashSet(StringComparer.Ordinal);
         var expectedMethods = methodEmissions
@@ -107,7 +142,7 @@ internal sealed class WasmModulePlanInvariantValidator :
             plan.FunctionIndices.DelegateInvokeHelpers.Count !=
                 plan.DelegateInvokes.Length ||
             plan.FunctionIndices.ImportedMethods.Count !=
-                request.JSImportMethods.Length + request.WitImportMethods.Length)
+                request.JSImportMethods.Length + request.WitImportMethods.Length + plan.NativeImports.Methods.Length)
         {
             throw Invalid("function-index maps contain an omitted or unplanned entry");
         }

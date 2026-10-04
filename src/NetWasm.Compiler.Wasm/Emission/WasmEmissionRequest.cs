@@ -19,11 +19,12 @@ public enum WasmModuleProfile
 public enum WasmEntryPointProfile
 {
     Internal,
-    Process
+    Process,
+    None
 }
 
 public sealed record WasmEmissionRequest(
-    MethodDefinitionModel EntryPoint,
+    MethodDefinitionModel? EntryPoint,
     IReadOnlyDictionary<EntityKey, StructuredMethod> Methods,
     IReadOnlyDictionary<EntityKey, MethodRootMap> RootMaps,
     IReadOnlyList<EntityKey> StaticInitializers,
@@ -63,8 +64,23 @@ public sealed record WasmEmissionRequest(
 
     public bool CollectManagedMethodMemoryMetrics { get; init; }
 
+    public IReadOnlyDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
+    public IReadOnlySet<string> AddressedNativeCallbacks { get; init; } =
+        ImmutableHashSet<string>.Empty;
+
+    public bool UseJavaScriptExportBoundary { get; init; }
+
+    public bool StructuredDiagnostics { get; init; }
+
+    public ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>
+        SourceLocations
+    { get; init; } =
+        ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>.Empty;
+
     public static WasmEmissionRequest Create(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         IReadOnlyDictionary<EntityKey, StructuredMethod> methods,
         IReadOnlyDictionary<EntityKey, MethodRootMap> rootMaps,
         IReadOnlyList<EntityKey> staticInitializers,
@@ -86,7 +102,14 @@ public sealed record WasmEmissionRequest(
         WasmModuleProfile moduleProfile = WasmModuleProfile.CoreApplication,
         WasmEntryPointProfile entryPointProfile = WasmEntryPointProfile.Process)
     {
-        ArgumentNullException.ThrowIfNull(entryPoint);
+        if (entryPointProfile != WasmEntryPointProfile.None)
+        {
+            ArgumentNullException.ThrowIfNull(entryPoint);
+        }
+        else if (entryPoint is not null)
+        {
+            throw new ArgumentException("Library modules cannot declare an entry point.", nameof(entryPoint));
+        }
         ArgumentNullException.ThrowIfNull(methods);
         ArgumentNullException.ThrowIfNull(rootMaps);
         ArgumentNullException.ThrowIfNull(staticInitializers);

@@ -15,7 +15,7 @@ internal sealed class ReachableProgramBuilder(
     IReachableProgramBuilder
 {
     public ReachableProgram Build(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         ImmutableArray<ProgramExport> exports,
         ReachabilityLedgerSnapshot state,
         IDelegateTypeRecognizer delegateTypes,
@@ -59,7 +59,8 @@ internal sealed class ReachableProgramBuilder(
                 site.Target.Definition.Name == "Invoke" &&
                 delegateTypes.Recognize(site.Target.DeclaringType))
             .Select(site => site.Target)
-            .Concat(state.HostCallbacks.Select(callback => callback.Invoke));
+            .Concat(state.HostCallbacks.Select(callback => callback.Invoke))
+            .Concat(state.MemberExecution.DelegateInvocation?.Methods.Values ?? []);
         var plannedDelegateBindings = delegateBindings.Plan(
             delegateInvokeMethods,
             state.CallableMethods.Values);
@@ -103,6 +104,7 @@ internal sealed class ReachableProgramBuilder(
             NamedMemberDescriptors = state.NamedMemberDescriptors,
             RequiresTypeFacts = state.RequiresTypeFacts,
             RequiresDelegateInvoke = state.RequiresDelegateInvoke,
+            RequiresGenericArguments = state.RequiresGenericArguments,
             TypeNamePayload = state.TypeNamePayload,
             ConstructedStaticInitializers = [
                 ..state.ConstructedStaticInitializers
@@ -111,6 +113,7 @@ internal sealed class ReachableProgramBuilder(
             DispatchCallSites = dispatchCallSites,
             TypeTestSites = typeTestSites,
             CallableMethods = state.CallableMethods,
+            NativeCallbacks = state.NativeCallbacks,
             JSImportMethods = [.. state.JavaScriptImports.Values
                 .OrderBy(method => method.JSImport!.ModuleName ?? RuntimeAbi.HostModule,
                     StringComparer.Ordinal)

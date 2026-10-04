@@ -18,4 +18,12 @@ internal sealed record CompilerArtifactManifestTaskInput(
     ImmutableArray<ITaskItem> Sources,
     string? RuntimeAbiManifestPath,
     ImmutableArray<ITaskItem> Artifacts,
-    string? GeneratedSourceRoot = null);
+    string? GeneratedSourceRoot = null,
+    string? CompilationIdentityPath = null,
+    ImmutableArray<ITaskItem> WitInputs = default);
+
+internal sealed record CompilerArtifactManifestTaskArtifact(
+    string Path,
+    string Kind,
+    string MediaType,
+    string CopyToPublishDirectory);

@@ -32,6 +32,7 @@ public static class ToolchainPlatformAssetIds
     public const string JcoClosureIntegrity = "jco.closure-integrity";
     public const string JcoNotices = "jco.notices";
     public const string JcoClosurePolicy = "jco.closure-policy";
+    public const string JcoBindgenPatch = "jco.bindgen-patch";
     public const string HostingBundleCommand = "hosting-bundle.command";
     public const string RolldownPackage = "rolldown.package";
     public const string RolldownEntryPoint = "rolldown.entrypoint";
@@ -84,6 +85,7 @@ public static class ToolchainPlatformAssetIds
         JcoClosureIntegrity,
         JcoNotices,
         JcoClosurePolicy,
+        JcoBindgenPatch,
     ];
 
     public static ImmutableArray<string> HostingBundleClosure { get; } =

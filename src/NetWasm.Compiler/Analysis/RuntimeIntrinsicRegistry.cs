@@ -39,6 +39,14 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.WeakReferenceRuntime", "Get") => RuntimeIntrinsic.WeakHandleGet,
                 ("System.WeakReferenceRuntime", "Set") => RuntimeIntrinsic.WeakHandleSet,
                 ("System.WeakReferenceRuntime", "Release") => RuntimeIntrinsic.WeakHandleRelease,
+                ("System.Runtime.CompilerServices.ConditionalWeakTableRuntime", "Create") =>
+                    RuntimeIntrinsic.EphemeronHandleCreate,
+                ("System.Runtime.CompilerServices.ConditionalWeakTableRuntime", "GetKey") =>
+                    RuntimeIntrinsic.EphemeronHandleGetKey,
+                ("System.Runtime.CompilerServices.ConditionalWeakTableRuntime", "GetValue") =>
+                    RuntimeIntrinsic.EphemeronHandleGetValue,
+                ("System.Runtime.CompilerServices.ConditionalWeakTableRuntime", "Release") =>
+                    RuntimeIntrinsic.EphemeronHandleRelease,
                 ("System.GCHandleRuntime", "Create") => RuntimeIntrinsic.GcHandleCreate,
                 ("System.GCHandleRuntime", "Get") => RuntimeIntrinsic.GcHandleGet,
                 ("System.GCHandleRuntime", "Set") => RuntimeIntrinsic.GcHandleSet,
@@ -52,8 +60,10 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.ValueType", "Equals") => RuntimeIntrinsic.ValueTypeEquals,
                 ("System.ValueType", "GetHashCode") =>
                     RuntimeIntrinsic.ValueTypeGetHashCode,
-                ("System.Threading.Tasks.TaskDiagnostics", "ReportUnobservedException") =>
+                ("System.Threading.Tasks.TaskDiagnostics", "ReportUnobservedExceptionCore") =>
                     RuntimeIntrinsic.ReportUnobservedTaskException,
+                ("System.Runtime.ExceptionServices.ExceptionDispatchInfo", "InternalThrow") =>
+                    RuntimeIntrinsic.ExceptionDispatchPreserved,
                 ("System.Runtime.InteropServices.JavaScript.JSObject", "Dispose") =>
                     RuntimeIntrinsic.JSObjectDispose,
                 ("System.Runtime.InteropServices.JavaScript.JSSubscription", "Dispose") =>
@@ -121,6 +131,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate,
                 ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod") =>
                     RuntimeIntrinsic.MemberExecuteMethod,
+                ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeDelegate") =>
+                    RuntimeIntrinsic.DelegateDynamicInvoke,
                 ("System.Runtime.CompilerServices.RuntimeMemberExecution", "ReadField") =>
                     RuntimeIntrinsic.MemberReadField,
                 ("System.Enum", "Equals") => RuntimeIntrinsic.EnumEquals,

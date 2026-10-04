@@ -1,0 +1,16 @@
+package netwasm:diagnostics@1.0.0;
+
+interface command {
+  record terminal-event {
+    type-id: u32,
+    message: option<list<u16>>,
+    stack-trace: option<list<u16>>,
+  }
+
+  variant completion {
+    exited(s32),
+    failed(terminal-event),
+  }
+
+  run: func() -> completion;
+}

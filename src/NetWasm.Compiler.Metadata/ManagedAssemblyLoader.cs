@@ -6,11 +6,17 @@ using System;
 
 public sealed class ManagedAssemblyLoader(
     IManagedAssemblyImageReader images,
-    IValueTypeDefinitionStackKindResolver stackKinds) : IManagedAssemblyLoader
+    IValueTypeDefinitionStackKindResolver stackKinds,
+    INativeImportDeclarationReader nativeImports,
+    INativeCallbackDeclarationReader nativeCallbacks) : IManagedAssemblyLoader
 {
     private readonly IManagedAssemblyImageReader _images = images ??
         throw new ArgumentNullException(nameof(images));
     private readonly IValueTypeDefinitionStackKindResolver _stackKinds = stackKinds ?? throw new ArgumentNullException(nameof(stackKinds));
+    private readonly INativeImportDeclarationReader _nativeImports = nativeImports ??
+        throw new ArgumentNullException(nameof(nativeImports));
+    private readonly INativeCallbackDeclarationReader _nativeCallbacks = nativeCallbacks ??
+        throw new ArgumentNullException(nameof(nativeCallbacks));
 
     public ManagedAssembly Load(string path) =>
         Load(path, ImmutableDictionary<string, string>.Empty);
@@ -21,5 +27,8 @@ public sealed class ManagedAssemblyLoader(
         ManagedAssembly.Parse(
             path,
             _images.Read(path),
-            new AssemblyIdentityAliases(referenceAssemblyAliases), _stackKinds);
+            new AssemblyIdentityAliases(referenceAssemblyAliases),
+            _stackKinds,
+            _nativeImports,
+            _nativeCallbacks);
 }

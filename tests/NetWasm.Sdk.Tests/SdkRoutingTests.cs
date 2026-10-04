@@ -5,6 +5,144 @@ namespace NetWasm.Sdk.Tests;
 
 public sealed class SdkRoutingTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void BrowserPublishUsesAnAbsoluteProjectPathAndPreservesAnExplicitDestination(
+        bool absolutePublishDirectory, bool explicitBrowserDirectory)
+    {
+        var publishDirectory = absolutePublishDirectory
+            ? Path.Combine(Path.GetTempPath(), "netwasm explicit publish")
+            : "bin/Debug/netwasm0.1/publish/";
+        var browserDirectory = Path.Combine(Path.GetTempPath(), "netwasm browser override");
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>Exe</OutputType>
+            <PublishDir>{publishDirectory}</PublishDir>
+            {(explicitBrowserDirectory ? $"<NetWasmBrowserPublishDir>{browserDirectory}</NetWasmBrowserPublishDir>" : string.Empty)}
+            """);
+
+        var actual = project.Property("NetWasmBrowserPublishDir");
+        var expected = explicitBrowserDirectory ? browserDirectory
+            : Path.GetFullPath(Path.Combine(project.ProjectDirectory, publishDirectory, "browser"));
+        Assert.True(Path.IsPathFullyQualified(actual));
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("WitWebWorker", "wit")]
+    [InlineData("JsWebWorker", "jsexport")]
+    public void WorkerOutputCompilesAsALibraryAndRestoresHostTools(
+        string outputType,
+        string workerKind)
+    {
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>{outputType}</OutputType>
+            """);
+
+        Assert.Equal("Library", project.Property("OutputType"));
+        Assert.Equal(workerKind, project.Property("_NetWasmWorkerKind"));
+        Assert.Equal("true", project.Property("_NetWasmCompileAsLibrary"));
+        Assert.Equal(workerKind == "jsexport" ? "true" : "false", project.Property("NetWasmRawWasm"));
+        Assert.Empty(project.Property("NetWasmComponentContract"));
+        Assert.Empty(project.Property("NetWasmExecutionContract"));
+        Assert.NotEqual("true", project.Property("_IsExecutable"));
+        Assert.NotEqual("true", project.Property("HasRuntimeOutput"));
+        Assert.Equal("true", project.Property("NetWasmRequiresHostTools"));
+        Assert.Contains(project.Items("PackageReference"),
+            package => package.StartsWith("NetWasm.HostTools.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WitWorkerKeepsApplicationAndWorkerWorldSelectionsSeparate()
+    {
+        using var project = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>WitWebWorker</OutputType>
+            <NetWasmWitPath>/application/worker.wit.wasm</NetWasmWitPath>
+            <NetWasmWorld>example:worker@1.0.0/worker</NetWasmWorld>
+            <NetWasmApplicationWorld>example:worker@1.0.0/application</NetWasmApplicationWorld>
+            """);
+
+        Assert.Equal("/application/worker.wit.wasm", project.Property("NetWasmCompilerWitPath"));
+        Assert.Equal("example:worker@1.0.0/worker", project.Property("NetWasmCompilerWitWorld"));
+        Assert.Equal(
+            "example:worker@1.0.0/application",
+            project.Property("NetWasmApplicationWorld"));
+        Assert.Equal(project.Property("NetWasmWitPath"), project.Property("NetWasmCompilerWitPath"));
+        Assert.Empty(project.Property("NetWasmExecutionContract"));
+    }
+
+    [Fact]
+    public void WitWorkerPackageIsPreparedBeforeIncrementalIdentities()
+    {
+        var targets = XDocument.Load(Path.Combine(
+            RepositoryRoot(),
+            "src/NetWasm.Sdk/Sdk/NetWasm.Toolchain.targets"));
+        var target = Assert.Single(targets.Descendants(), element =>
+            element.Name.LocalName == "Target"
+            && (string?)element.Attribute("Name") == "NetWasmSdkPrepareWitWorkerPackage");
+        var beforeTargets = ((string?)target.Attribute("BeforeTargets") ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Contains("NetWasmWriteCompilationIdentity", beforeTargets);
+        Assert.Contains("NetWasmWritePackagingIdentity", beforeTargets);
+        Assert.Contains("CoreCompile", beforeTargets);
+        Assert.Contains("Publish", beforeTargets);
+    }
+
+    [Theory]
+    [InlineData("Exe", false)]
+    [InlineData("Exe", true)]
+    [InlineData("JsWebWorker", true)]
+    [InlineData("WitWebWorker", false)]
+    public void EffectiveWitPathsFollowSdkDefaultsAfterCompilerTargetsImport(
+        string outputType,
+        bool raw)
+    {
+        var authoredWit = outputType == "WitWebWorker"
+            ? "<NetWasmWitPath>/application/worker.wit.wasm</NetWasmWitPath>"
+            : string.Empty;
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>{outputType}</OutputType>
+            <NetWasmRawWasm>{raw.ToString().ToLowerInvariant()}</NetWasmRawWasm>
+            <NetWasmToolchainCompilerWitPackagePath>/toolchain/compiler.wit.wasm</NetWasmToolchainCompilerWitPackagePath>
+            <NetWasmToolchainWitPackagePath>/toolchain/command.wit.wasm</NetWasmToolchainWitPackagePath>
+            {authoredWit}
+            """, compilerTargetsBeforeSdk: true);
+
+        Assert.NotEmpty(project.Property("_NetWasmCompilerWitPath"));
+        Assert.Equal(
+            project.Property("NetWasmCompilerWitPath"),
+            project.Property("_NetWasmCompilerWitPath"));
+        if (outputType != "JsWebWorker")
+        {
+            Assert.NotEmpty(project.Property("_NetWasmComponentWitPath"));
+            Assert.Equal(
+                project.Property("NetWasmWitPath"),
+                project.Property("_NetWasmComponentWitPath"));
+        }
+    }
+
+    [Fact]
+    public void OrdinaryLibraryDoesNotRestoreWorkerHostTools()
+    {
+        using var project = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>Library</OutputType>
+            """);
+
+        Assert.Equal("Library", project.Property("OutputType"));
+        Assert.Empty(project.Property("_NetWasmWorkerKind"));
+        Assert.NotEqual("true", project.Property("NetWasmRequiresHostTools"));
+        Assert.DoesNotContain(project.Items("PackageReference"),
+            package => package.StartsWith("NetWasm.HostTools.", StringComparison.Ordinal));
+    }
+
     private static string RepositoryRoot()
     {
         var root = Directory.GetCurrentDirectory();
@@ -131,7 +269,7 @@ public sealed class SdkRoutingTests
         Assert.Contains("<PropertyGroup Condition=\"'$(TargetFramework)' == 'netwasm0.1'\">", tfmProps, StringComparison.Ordinal);
         Assert.Contains("<DisableStandardFrameworkResolution>true</DisableStandardFrameworkResolution>", tfmProps, StringComparison.Ordinal);
         Assert.Contains("<PackageReference Include=\"$(NetWasmRefPackageId)\"", tfmProps, StringComparison.Ordinal);
-        Assert.Contains("IncludeAssets=\"compile\"", tfmProps, StringComparison.Ordinal);
+        Assert.Contains("IncludeAssets=\"compile;analyzers\"", tfmProps, StringComparison.Ordinal);
         Assert.Contains("PrivateAssets=\"all\"", tfmProps, StringComparison.Ordinal);
         Assert.DoesNotContain("NetWasmRefPackageFolder", tfmProps, StringComparison.Ordinal);
         Assert.DoesNotContain("NetWasmRefAssemblyPath", tfmProps, StringComparison.Ordinal);
@@ -276,6 +414,14 @@ public sealed class SdkRoutingTests
             compilerTargets,
             StringComparison.Ordinal);
         Assert.Contains(
+            "<NetWasmStructuredDiagnostics Condition=\"'$(NetWasmStructuredDiagnostics)' == '' AND '$(Configuration)' == 'Debug'\">true</NetWasmStructuredDiagnostics>",
+            compilerTargets,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<NetWasmStructuredDiagnostics Condition=\"'$(NetWasmStructuredDiagnostics)' == ''\">false</NetWasmStructuredDiagnostics>",
+            compilerTargets,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "NoLogo=\"$(NoLogo)\"",
             compilerTargets,
             StringComparison.Ordinal);
@@ -287,6 +433,33 @@ public sealed class SdkRoutingTests
         Assert.Equal("allowAll", project.Property("NetWasmNetworkPolicy"));
         Assert.Equal("true", project.Property("NetWasmRandomness"));
         Assert.Equal(project.ProjectDirectory, project.Property("RunWorkingDirectory"));
+    }
+
+    [Fact]
+    public void ManagedExceptionDiagnosticsArePublishedForEveryDeploymentMode()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var toolchainTargets = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src/NetWasm.Sdk/Sdk/NetWasm.Toolchain.targets"));
+        var compilerTargets = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        const string mediaType =
+            "application/vnd.netwasm.stack-trace-symbols+json;version=1";
+
+        Assert.Equal(4,
+            toolchainTargets.Split("<Role>stack-trace-symbols</Role>",
+                StringSplitOptions.None).Length - 1);
+        Assert.Equal(4,
+            toolchainTargets.Split($"<MediaType>{mediaType}</MediaType>",
+                StringSplitOptions.None).Length - 1);
+        Assert.Contains($"<MediaType>{mediaType}</MediaType>",
+            compilerTargets,
+            StringComparison.Ordinal);
+        Assert.Equal(4,
+            toolchainTargets.Split("<Role>exception-type-map</Role>",
+                StringSplitOptions.None).Length - 1);
     }
 
     [Fact]
@@ -330,6 +503,34 @@ public sealed class SdkRoutingTests
     }
 
     [Fact]
+    public void StructuredDiagnosticsDefaultToDebugAndAllowExplicitOverrides()
+    {
+        using var debug = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>",
+            configuration: "Debug",
+            includeCompilerTargets: true);
+        using var release = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>",
+            includeCompilerTargets: true);
+        using var debugOptOut = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmStructuredDiagnostics>false</NetWasmStructuredDiagnostics>",
+            configuration: "Debug",
+            includeCompilerTargets: true);
+        using var releaseOptIn = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmStructuredDiagnostics>true</NetWasmStructuredDiagnostics>",
+            includeCompilerTargets: true);
+
+        Assert.Equal("true", debug.Property("NetWasmStructuredDiagnostics"));
+        Assert.Equal("false", release.Property("NetWasmStructuredDiagnostics"));
+        Assert.Equal("false", debugOptOut.Property("NetWasmStructuredDiagnostics"));
+        Assert.Equal("true", releaseOptIn.Property("NetWasmStructuredDiagnostics"));
+        Assert.Equal(
+            "netwasm:component/diagnostic-command@1.0.0",
+            debug.Property("NetWasmWorld"));
+        Assert.Equal("command", release.Property("NetWasmWorld"));
+    }
+
+    [Fact]
     public void FinalWasmOptimizationDefaultsToOzAndAllowsExplicitNone()
     {
         using var defaultPolicy = EvaluationProject.Create(
@@ -366,7 +567,8 @@ public sealed class SdkRoutingTests
                      "packagingPolicyRevision=2",
                      "$(NetWasmTarget)",
                      "$(NetWasmWorld)",
-                     "$(NetWasmWitPath)",
+                     "$(_NetWasmComponentWitPath)",
+                     "$(NetWasmApplicationWorld)",
                      "$(NetWasmJcoVersion)",
                      "$(NetWasmPreview2ShimVersion)",
                      "$(NetWasmNodePath)",
@@ -412,7 +614,7 @@ public sealed class SdkRoutingTests
             "Example.Package|netwasm0.1|NetWasm,Version=v0.1|[1.0.0]|compile|runtime|all",
             project.Items("NetWasmSdkInnerPackageDependency"));
         Assert.Contains(
-            $"NetWasm.Ref|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmRefPackageVersion")}|compile|none|all",
+            $"NetWasm.Ref|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmRefPackageVersion")}|compile;analyzers|none|all",
             project.Items("NetWasmSdkInnerPackageDependency"));
     }
 
@@ -428,7 +630,7 @@ public sealed class SdkRoutingTests
             "Example.Package|netwasm0.1|NetWasm,Version=v0.1|[1.0.0]|compile|runtime|all",
             project.Items("NetWasmSdkInnerPackageDependency"));
         Assert.Contains(
-            $"NetWasm.Ref|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmRefPackageVersion")}|compile|none|all",
+            $"NetWasm.Ref|netwasm0.1|NetWasm,Version=v0.1|{project.Property("NetWasmRefPackageVersion")}|compile;analyzers|none|all",
             project.Items("NetWasmSdkInnerPackageDependency"));
         Assert.Contains(
             "Example.Package|net10.0|net10.0|[1.0.0]|compile|runtime|all",
@@ -512,6 +714,7 @@ public sealed class SdkRoutingTests
 
     private sealed class EvaluationProject : IDisposable
     {
+        private const string ItemSeparator = "||#||";
         private readonly string root;
         private readonly Dictionary<string, string> properties;
         private readonly Dictionary<string, string[]> items;
@@ -531,7 +734,8 @@ public sealed class SdkRoutingTests
             bool collectPackEvidence = false,
             bool includeStockProjectReference = false,
             string configuration = "Release",
-            bool includeCompilerTargets = false)
+            bool includeCompilerTargets = false,
+            bool compilerTargetsBeforeSdk = false)
         {
             var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "netwasm-sdk-evaluation", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -583,9 +787,28 @@ public sealed class SdkRoutingTests
                   </PropertyGroup>
                   {(includePackageReference ? "<ItemGroup><PackageReference Include=\"Example.Package\" Version=\"[1.0.0]\" PrivateAssets=\"all\" IncludeAssets=\"compile\" ExcludeAssets=\"runtime\" /></ItemGroup>" : string.Empty)}
                   {(includeProjectReference || includeStockProjectReference ? "<ItemGroup><ProjectReference Include=\"Referenced.csproj\" PrivateAssets=\"all\" IncludeAssets=\"compile\" ExcludeAssets=\"runtime\" /></ItemGroup>" : string.Empty)}
+                  {(compilerTargetsBeforeSdk ? $"<Import Project=\"{Escape(compilerTargetsPath)}\" />" : string.Empty)}
                   <Import Project="{Escape(sdkRoot)}/Sdk.targets" />
                   {(includeCompilerTargets ? $"<Import Project=\"{Escape(compilerTargetsPath)}\" />" : string.Empty)}
                   <Target Name="PrintNetWasmRouting" DependsOnTargets="$(NetWasmSdkPackRouteProbeDependsOn);NetWasmSdkCollectInnerPackageReferences{(collectPackEvidence ? ";NetWasmCollectPackEvidence" : string.Empty)}">
+                    <Message Importance="High" Text="__NETWASM_PROP__OutputType=$(OutputType)" />
+                    <Message Importance="High" Text="__NETWASM_PROP___NetWasmWorkerKind=$(_NetWasmWorkerKind)" />
+                    <Message Importance="High" Text="__NETWASM_PROP___NetWasmCompileAsLibrary=$(_NetWasmCompileAsLibrary)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmRawWasm=$(NetWasmRawWasm)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmComponentContract=$(NetWasmComponentContract)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmExecutionContract=$(NetWasmExecutionContract)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmCompilerWitPath=$(NetWasmCompilerWitPath)" />
+                    <Message Importance="High" Text="__NETWASM_PROP___NetWasmCompilerWitPath=$(_NetWasmCompilerWitPath)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmCompilerWitWorld=$(NetWasmCompilerWitWorld)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmWitPath=$(NetWasmWitPath)" />
+                    <Message Importance="High" Text="__NETWASM_PROP___NetWasmComponentWitPath=$(_NetWasmComponentWitPath)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmWorld=$(NetWasmWorld)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmApplicationWorld=$(NetWasmApplicationWorld)" />
+                    <Message Importance="High" Text="__NETWASM_PROP___IsExecutable=$(_IsExecutable)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__HasRuntimeOutput=$(HasRuntimeOutput)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmRequiresHostTools=$(NetWasmRequiresHostTools)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmBrowserPublishDir=$(NetWasmBrowserPublishDir)" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__PackageReference=@(PackageReference, '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_PROP__TargetFrameworkIdentifier=$(TargetFrameworkIdentifier)" />
                     <Message Importance="High" Text="__NETWASM_PROP__TargetFrameworkVersion=$(TargetFrameworkVersion)" />
                     <Message Importance="High" Text="__NETWASM_PROP__TargetFrameworkMoniker=$(TargetFrameworkMoniker)" />
@@ -603,14 +826,15 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRandomness=$(NetWasmRandomness)" />
                     <Message Importance="High" Text="__NETWASM_PROP__RunWorkingDirectory=$(RunWorkingDirectory)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedStackTrace=$(NetWasmManagedStackTrace)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmStructuredDiagnostics=$(NetWasmStructuredDiagnostics)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimization=$(NetWasmOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
-                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)')" />
-                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkPackRoute=@(NetWasmSdkPackRoute)" />
-                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerPackageDependency=@(_NetWasmSdkInnerPackageDependency->'%(Identity)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Version)|%(IncludeAssets)|%(ExcludeAssets)|%(PrivateAssets)')" />
-                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerProjectDependency=@(_NetWasmSdkInnerProjectDependency->'%(Identity)|%(ProjectPath)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Version)|%(IncludeAssets)|%(ExcludeAssets)|%(PrivateAssets)')" />
-                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerProjectDependencyResolution=@(_NetWasmSdkInnerProjectDependency->'%(ProjectReferenceResolution)|%(ProjectPath)|%(ProjectReferenceTargetFramework)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Configuration)|%(Platform)|%(RuntimeIdentifier)|%(PrivateAssets)')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkPackRoute=@(NetWasmSdkPackRoute, '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerPackageDependency=@(_NetWasmSdkInnerPackageDependency->'%(Identity)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Version)|%(IncludeAssets)|%(ExcludeAssets)|%(PrivateAssets)', '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerProjectDependency=@(_NetWasmSdkInnerProjectDependency->'%(Identity)|%(ProjectPath)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Version)|%(IncludeAssets)|%(ExcludeAssets)|%(PrivateAssets)', '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkInnerProjectDependencyResolution=@(_NetWasmSdkInnerProjectDependency->'%(ProjectReferenceResolution)|%(ProjectPath)|%(ProjectReferenceTargetFramework)|%(TargetFrameworkAlias)|%(TargetFramework)|%(Configuration)|%(Platform)|%(RuntimeIdentifier)|%(PrivateAssets)', '{ItemSeparator}')" />
                   </Target>
                 </Project>
                 """);
@@ -672,7 +896,7 @@ public sealed class SdkRoutingTests
                         var value = line[(separator + 1)..];
                         parsedItems[line["__NETWASM_ITEM__".Length..separator]] = string.IsNullOrEmpty(value)
                             ? []
-                            : value.Split(';', StringSplitOptions.RemoveEmptyEntries);
+                            : value.Split(ItemSeparator, StringSplitOptions.RemoveEmptyEntries);
                     }
                 }
             }

@@ -1,7 +1,7 @@
 <svg role="img" aria-labelledby="chart-title chart-description"
      xmlns="http://www.w3.org/2000/svg" width="960" height="548" viewBox="0 0 960 548">
   <title id="chart-title">AOT Wasm payload: NetWasm is 181 times smaller</title>
-  <desc id="chart-description">Zero-based linear scale in megabytes, using 1024 bytes per kilobyte and 1024 kilobytes per megabyte. NetWasm is 82.5 kilobytes. Blazor .NET 10 is 11.71 megabytes. Blazor .NET 11 RC1 is 14.58 megabytes. All measurements are uncompressed.</desc>
+  <desc id="chart-description">Zero-based linear scale in megabytes, using 1024 bytes per kilobyte and 1024 kilobytes per megabyte. NetWasm is 82.7 kilobytes. Blazor .NET 10 is 11.71 megabytes. Blazor .NET 11 RC1 is 14.58 megabytes. All measurements are uncompressed.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="960" y2="548" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#080b10"/>
@@ -51,7 +51,7 @@
   </g>
 
   <text x="90" y="205" fill="#38d9ea" font-size="18" font-weight="750">NetWasm</text>
-  <text x="870" y="205" fill="#67e8f9" class="value">82.5 KB</text>
+  <text x="870" y="205" fill="#67e8f9" class="value">82.7 KB</text>
   <rect x="90" y="219" width="4" height="42" rx="2" fill="url(#netwasm-bar)" stroke="#67e8f9" filter="url(#bar-shadow)"/>
 
   <text x="90" y="300" class="label">Blazor  /  .NET 10</text>

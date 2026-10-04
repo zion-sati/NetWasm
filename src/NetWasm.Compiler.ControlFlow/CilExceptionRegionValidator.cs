@@ -32,7 +32,7 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
             switch (region.Kind)
             {
                 case CilExceptionRegionKind.Catch:
-                    if (region.CatchType is null || region.FilterOffset is not null)
+                    if (region.CatchType is null && region.CatchTypeIdentity is null || region.FilterOffset is not null)
                     {
                         throw Invalid(
                             body,
@@ -45,7 +45,7 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
                     break;
                 case CilExceptionRegionKind.Finally:
                 case CilExceptionRegionKind.Fault:
-                    if (region.CatchType is not null || region.FilterOffset is not null)
+                    if (region.CatchType is not null || region.CatchTypeIdentity is not null || region.FilterOffset is not null)
                     {
                         throw Invalid(
                             body,
@@ -64,7 +64,7 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
 
         void ValidateFilter(CilExceptionRegion region)
         {
-            if (region.CatchType is not null || region.FilterOffset is not int filterOffset)
+            if (region.CatchType is not null || region.CatchTypeIdentity is not null || region.FilterOffset is not int filterOffset)
             {
                 throw Invalid(
                     body,

@@ -24,10 +24,13 @@ public sealed class WasmModuleTargetFactoryTests
                 program,
                 program,
                 program,
+                new FakeIntrinsics(),
                 new InteropImportPlanner(),
                 WasmRuntimeImports.CreateCatalog(),
             new DisabledStackTraceMethodPlanBuilder(),
-                new WasmModulePlanInvariantValidator()),
+                new WasmModulePlanInvariantValidator(),
+                new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
+                NativeAbiTestSupport.CallbackPlanner()),
             new ModuleDataPlanner(
                 layouts,
                 layouts,
@@ -41,6 +44,7 @@ public sealed class WasmModuleTargetFactoryTests
         Assert.Same(request, target.Request);
         Assert.Equal(target.Plan.FunctionIndices, target.Instructions.FunctionIndices);
         Assert.Equal(target.ModuleData, target.Instructions.ModuleData);
+        Assert.Same(target.Plan.NativeImports, target.Instructions.NativeImports);
     }
 
     [Fact]
@@ -62,10 +66,13 @@ public sealed class WasmModuleTargetFactoryTests
                 program,
                 program,
                 program,
+                new FakeIntrinsics(),
                 new InteropImportPlanner(),
                 WasmRuntimeImports.CreateCatalog(),
             new DisabledStackTraceMethodPlanBuilder(),
-                new WasmModulePlanInvariantValidator()),
+                new WasmModulePlanInvariantValidator(),
+                new NativeImportPlanner(NativeAbiTestSupport.ScalarPlanner()),
+                NativeAbiTestSupport.CallbackPlanner()),
             new ModuleDataPlanner(
                 layouts,
                 layouts,
@@ -82,7 +89,7 @@ public sealed class WasmModuleTargetFactoryTests
     }
     private static WasmEmissionRequest WithEntryPointCallable(WasmEmissionRequest request)
     {
-        var method = request.EntryPoint;
+        var method = request.EntryPoint!;
         var instance = new MethodInstanceModel(
             method,
             new TestCilTypeIdentityResolver().Resolve(method.DeclaringType),

@@ -9,4 +9,12 @@ internal interface INullableBoxEmitter
         InstructionEmissionRequest request,
         IWasmInstructionWriter code,
         CliTypeIdentity underlyingType);
+
+    // The caller keeps source storage alive across allocation. Source and target
+    // must be distinct address-width locals; the source local is preserved.
+    void Emit(
+        IWasmInstructionWriter code,
+        CliTypeIdentity underlyingType,
+        int sourceAddressLocal,
+        int targetLocal);
 }

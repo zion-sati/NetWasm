@@ -26,16 +26,6 @@ internal sealed class ManagedStaticDataBuilderFactory(
     {
     }
 
-    internal ManagedStaticDataBuilderFactory(
-        IExceptionTypeNameResolver exceptionTypeNames,
-        IAssignableTypeMetadataBuilderFactory assignableTypeMetadata) :
-        this(
-            exceptionTypeNames,
-            assignableTypeMetadata,
-            new AssemblyIdentityFormatterFactory())
-    {
-    }
-
     public IManagedStaticDataBuilder Create(
         MetadataCompilationSnapshot metadata,
         ITypeRepository typeRepository,
@@ -89,7 +79,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 program.RequiresTypeFacts,
                 program.TypeNamePayload,
                 assemblyNames,
-                program.DelegateInvokeDescriptors),
+                program.DelegateInvokeDescriptors,
+                program.Finalizers),
             new ValueTypeDescriptorBuilder(
                 typeRepository,
                 identities,
@@ -97,6 +88,9 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 bitmaps),
+            new RuntimeGenericArgumentMetadataBuilder(
+                program,
+                state),
             new MemberDescriptorDataBuilder(
                 typeFinder,
                 typeDefinitions,
@@ -118,7 +112,8 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 _exceptionTypeNames),
-            new EnumMetadataCollector(typeRepository, types, program.EnumMetadataRequirements, state),
+            new EnumMetadataCollector(
+                typeDefinitions, identities, types, program.EnumMetadataRequirements, state),
             new EnumMetadataBuilder(state, types.Target));
     }
 }

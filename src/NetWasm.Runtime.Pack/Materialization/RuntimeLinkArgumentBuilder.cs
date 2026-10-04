@@ -2,14 +2,26 @@ using System;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 
 namespace NetWasm.Runtime.Pack.Materialization;
 
-internal sealed class RuntimeLinkArgumentBuilder : IRuntimeLinkArgumentBuilder
+internal sealed class RuntimeLinkArgumentBuilder(IRuntimeLinkExportPlanBuilder exports) : IRuntimeLinkArgumentBuilder
 {
+    private readonly IRuntimeLinkExportPlanBuilder _exports = exports ?? throw new ArgumentNullException(nameof(exports));
     public ImmutableArray<string> Build(RuntimeLinkRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Manifest);
+        ArgumentNullException.ThrowIfNull(request.Target);
+        ArgumentNullException.ThrowIfNull(request.Layout);
+        var hasCallbacks = request.NativeCallbackSupport is not null;
+        if (request.NativeBindings.IsDefault ||
+            hasCallbacks != !string.IsNullOrWhiteSpace(request.NativeCallbackObjectPath) ||
+            hasCallbacks != !string.IsNullOrWhiteSpace(request.NativeCallbackAllowedUndefinedPath) ||
+            request.NativeBindings.IsEmpty && !hasCallbacks &&
+            request.Layout.InitialMemorySizeBytes is null)
+            throw new InvalidOperationException("A native layout probe requires selected native symbol bindings.");
         var arguments = ImmutableArray.CreateBuilder<string>();
         arguments.Add(request.Target.Target == "wasm64" ? "-mwasm64" : "-mwasm32");
         arguments.Add("-Bstatic");
@@ -19,34 +31,46 @@ internal sealed class RuntimeLinkArgumentBuilder : IRuntimeLinkArgumentBuilder
         arguments.Add(ResolveAsset(request.AssetRoot, request.Target.RuntimeArchive.Path));
         arguments.Add("--no-whole-archive");
         arguments.Add(ResolveAsset(request.AssetRoot, request.Target.CollectorArchive.Path));
+        if (hasCallbacks)
+        {
+            arguments.Add(Path.GetFullPath(request.NativeCallbackObjectPath!));
+        }
+        foreach (var path in request.NativeBindings.Select(binding => binding.Provider.Path).Distinct(StringComparer.Ordinal))
+            arguments.Add(Path.GetFullPath(path));
         foreach (var input in request.SystemLibraryPaths)
         {
             arguments.Add(Path.GetFullPath(input));
         }
 
-        arguments.Add($"--allow-undefined-file={ResolveAsset(
-            request.AssetRoot, request.Target.AllowedUndefinedSymbols.Path)}");
+        var allowedUndefinedPath = hasCallbacks
+            ? Path.GetFullPath(request.NativeCallbackAllowedUndefinedPath!)
+            : ResolveAsset(
+                request.AssetRoot,
+                request.Target.AllowedUndefinedSymbols.Path);
+        arguments.Add($"--allow-undefined-file={allowedUndefinedPath}");
         arguments.Add("--no-entry");
         arguments.Add("--gc-sections");
         arguments.Add("--no-stack-first");
         arguments.Add($"--global-base={Format(request.Layout.RuntimeGlobalBase)}");
         arguments.Add("-z");
         arguments.Add($"stack-size={Format(request.Target.NativeStackSizeBytes)}");
-        arguments.Add($"--initial-memory={Format(request.Layout.InitialMemorySizeBytes)}");
+        if (request.Layout.InitialMemorySizeBytes is { } initialMemory)
+            arguments.Add($"--initial-memory={Format(initialMemory)}");
         arguments.Add($"--max-memory={Format(request.Layout.MaximumMemorySizeBytes)}");
         arguments.Add("--export-memory");
         arguments.Add("--export-table");
-        arguments.Add("--export=emscripten_stack_get_current");
-        arguments.Add("--export=_emscripten_stack_restore");
-        arguments.Add("--export-if-defined=__start_em_asm");
-        arguments.Add("--export-if-defined=__stop_em_asm");
-        arguments.Add("--export-if-defined=__start_em_lib_deps");
-        arguments.Add("--export-if-defined=__stop_em_lib_deps");
-        arguments.Add("--export-if-defined=__start_em_js");
-        arguments.Add("--export-if-defined=__stop_em_js");
-        foreach (var export in request.Manifest.Exports)
+        var exportPlan = _exports.Build(new(request.Manifest.Exports, request.NativeBindings)
         {
-            arguments.Add($"--export={export}");
+            NativeCallbackSupport = request.NativeCallbackSupport,
+        });
+        arguments.AddRange(exportPlan.Arguments);
+        if (!request.NativeBindings.IsEmpty)
+        {
+            foreach (var binding in request.NativeBindings)
+            {
+                arguments.Add($"--undefined={binding.Import.EntryPoint}");
+                arguments.Add($"--trace-symbol={binding.Import.EntryPoint}");
+            }
         }
 
         arguments.Add("-mllvm");

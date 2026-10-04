@@ -17,8 +17,16 @@ internal static class LinkingServiceCollectionExtensions
             WasmCoreModuleExportEditor>();
         services.AddSingleton<IComponentCoreModuleOptimizer,
             ComponentCoreModuleOptimizer>();
-        services.AddSingleton<INetWasmHostComponentShimWriter,
-            NetWasmHostComponentShimWriter>();
+        services.AddSingleton<INetWasmHostComponentShimWriter>(provider =>
+            new NetWasmHostComponentShimWriter(
+            [
+                new(ManagedExecutableCompletionShape.Synchronous,
+                    new PortableCommandHostComponentShimWriter(
+                        provider.GetRequiredService<IWasmTextModuleWriter>())),
+                new(ManagedExecutableCompletionShape.Asynchronous,
+                    new HostedNetWasmHostComponentShimWriter(
+                        provider.GetRequiredService<IWasmTextModuleWriter>())),
+            ]));
         services.AddSingleton<IManagedExecutableComponentAdapterWriter>(provider =>
             new ManagedExecutableComponentAdapterWriter(
             [

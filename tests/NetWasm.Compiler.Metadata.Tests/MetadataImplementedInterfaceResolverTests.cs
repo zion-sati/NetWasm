@@ -7,6 +7,56 @@ namespace NetWasm.Compiler.Metadata.Tests;
 
 public sealed class MetadataImplementedInterfaceResolverTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConcurrentColdQueriesPreserveClosedInterfaceResults(bool sameType)
+    {
+        var definition = new TypeDefinitionModel(new(new("Test"), 0x02000001),
+            "Test", "Container`1", false, [], [])
+        { GenericArity = 1 };
+        var firstArgument = CliTypeIdentity.Named(new("Test"), "Test", "IFirst", false);
+        var secondArgument = sameType ? firstArgument :
+            CliTypeIdentity.Named(new("Test"), "Test", "ISecond", false);
+        var firstType = CliTypeIdentity.GenericInstantiation(Identity(definition), [firstArgument]);
+        var secondType = CliTypeIdentity.GenericInstantiation(Identity(definition), [secondArgument]);
+        using var overlap = new Barrier(2);
+        var signatures = new OverlappingSignatureTypeResolver(overlap);
+        var resolver = Create(definition,
+            Snapshot(definition, [MetadataTokens.EntityHandle(0x01000001)]), signatures);
+
+        var first = Task.Factory.StartNew(
+            () => ((IImplementedInterfaceResolver)resolver).GetInterfaces(firstType),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var second = Task.Factory.StartNew(
+            () => ((IImplementedInterfaceResolver)resolver).GetInterfaces(secondType),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var results = await Task.WhenAll(first, second);
+
+        Assert.Equal(firstArgument, Assert.Single(results[0]));
+        Assert.Equal(secondArgument, Assert.Single(results[1]));
+        Assert.Equal(results[0], ((IImplementedInterfaceResolver)resolver).GetInterfaces(firstType));
+        Assert.Equal(results[1], ((IImplementedInterfaceResolver)resolver).GetInterfaces(secondType));
+        Assert.Equal(2, signatures.Calls);
+    }
+
+    private sealed class OverlappingSignatureTypeResolver(Barrier overlap) : IMetadataSignatureTypeResolver
+    {
+        private int _calls;
+        internal int Calls => _calls;
+
+        public CliTypeIdentity Resolve(MetadataAssemblySnapshot source, EntityHandle handle,
+            CliGenericContext? genericContext = null)
+        {
+            if (Interlocked.Increment(ref _calls) <= 2 &&
+                !overlap.SignalAndWait(TimeSpan.FromSeconds(10)))
+            {
+                throw new TimeoutException("Concurrent requests did not overlap.");
+            }
+            return genericContext!.Value.TypeArguments[0];
+        }
+    }
+
     [Fact]
     public void GetInterfacesResolvesEveryHandleWithClosedTypeArguments()
     {

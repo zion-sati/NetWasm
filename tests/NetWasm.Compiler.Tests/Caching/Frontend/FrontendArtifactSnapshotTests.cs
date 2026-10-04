@@ -169,7 +169,13 @@ public sealed class FrontendArtifactSnapshotTests
         Assert.Throws<InvalidDataException>(() => decoder.Decode([.. payload[..^1]]));
     }
 
-    internal static FrontendArtifact CreateArtifact()
+    internal static FrontendArtifact CreateArtifact() => CreateArtifact(null);
+
+    internal static FrontendArtifact CreateConstructedCatchArtifact(
+        CliTypeIdentity catchTypeIdentity) =>
+        CreateArtifact(catchTypeIdentity ?? throw new ArgumentNullException(nameof(catchTypeIdentity)));
+
+    private static FrontendArtifact CreateArtifact(CliTypeIdentity? catchTypeIdentity)
     {
         var assembly = new AssemblyIdentity("Dependency");
         var type = new EntityKey(assembly, 0x02000001);
@@ -185,13 +191,35 @@ public sealed class FrontendArtifactSnapshotTests
             CliTypeIdentity.Named(assembly, "Fixture", "Program", false),
             [],
             definition.Signature);
-        var body = new CilMethodBody(
-            definition,
-            1,
-            [],
-            [new CilInstruction(0, 1, CilOperation.Return, new CilOperand.None())])
+        ImmutableArray<CilInstruction> instructions = catchTypeIdentity is null
+            ? [new CilInstruction(0, 1, CilOperation.Return, new CilOperand.None())]
+            :
+            [
+                new CilInstruction(0, 1, CilOperation.Nop, new CilOperand.None()),
+                new CilInstruction(1, 2, CilOperation.Leave, new CilOperand.BranchTarget(4)),
+                new CilInstruction(2, 3, CilOperation.Pop, new CilOperand.None()),
+                new CilInstruction(3, 4, CilOperation.Leave, new CilOperand.BranchTarget(4)),
+                new CilInstruction(4, 5, CilOperation.Return, new CilOperand.None()),
+            ];
+        var body = new CilMethodBody(definition, 1, [], instructions)
         {
             MethodInstance = instance,
+            ExceptionRegions = catchTypeIdentity is null
+                ? []
+                :
+                [
+                    new CilExceptionRegion(
+                        CilExceptionRegionKind.Catch,
+                        0,
+                        2,
+                        2,
+                        2,
+                        null,
+                        null)
+                    {
+                        CatchTypeIdentity = catchTypeIdentity,
+                    },
+                ],
         };
         var graph = new ControlFlowGraphBuilderFactory().Create().Build(body);
         var entryStacks = graph.Blocks.ToImmutableDictionary(

@@ -32,7 +32,10 @@ internal sealed record RuntimePackTarget(
     RuntimePackAsset RuntimeArchive,
     RuntimePackAsset CollectorArchive,
     RuntimePackAsset AllowedUndefinedSymbols,
-    RuntimePackSystemLibraries SystemLibraries);
+    RuntimePackSystemLibraries SystemLibraries)
+{
+    public RuntimeNativeValidationProfile? NativeValidation { get; init; }
+}
 
 internal sealed record RuntimePackSystemLibraries(
     ImmutableArray<string> Names,
@@ -45,7 +48,26 @@ internal sealed record RuntimePackAsset(
 internal sealed record RuntimeLayout(
     int SchemaVersion,
     string Target,
-    long ApplicationStaticDataEnd);
+    long ApplicationStaticDataEnd)
+{
+    public ImmutableArray<RuntimeNativeImport> NativeImports { get; init; } = [];
+    public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
+}
+
+internal sealed record RuntimeNativeCallbackDescriptor(
+    string NativeSymbol,
+    string RuntimeImportSymbol,
+    string ApplicationExportName,
+    string? RuntimeGetterExportName,
+    ImmutableArray<RuntimeNativeValueType> Parameters,
+    RuntimeNativeValueType? ReturnType);
+
+internal sealed record RuntimeNativeCallbackSupport(
+    string FileName,
+    string Sha256,
+    ImmutableArray<RuntimeNativeCallbackDescriptor> Callbacks,
+    ImmutableArray<string> TemporaryApplicationExports,
+    ImmutableArray<string> TemporaryRuntimeExports);
 
 internal sealed record RuntimeMemoryLayoutRequest(
     RuntimePackTarget Target,
@@ -63,10 +85,16 @@ internal sealed record RuntimeMemoryLayout(
 internal sealed record RuntimeLinkRequest(
     RuntimePackManifest Manifest,
     RuntimePackTarget Target,
-    RuntimeMemoryLayout Layout,
+    RuntimeLinkMemoryLimits Layout,
     string AssetRoot,
     ImmutableArray<string> SystemLibraryPaths,
-    string OutputPath);
+    string OutputPath)
+{
+    public ImmutableArray<RuntimeNativeBinding> NativeBindings { get; init; } = [];
+    public string? NativeCallbackObjectPath { get; init; }
+    public string? NativeCallbackAllowedUndefinedPath { get; init; }
+    public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
+}
 
 internal sealed record RuntimeOptimizationRequest(
     RuntimePackTarget Target,
@@ -106,7 +134,11 @@ internal sealed record RuntimeMaterializationRequest(
     RuntimeWasmOptimization Optimization,
     long? InitialHeapSizeBytes,
     long? MaximumMemorySizeBytes,
-    RuntimeBuildIdentity BuildIdentity);
+    RuntimeBuildIdentity BuildIdentity)
+{
+    public ImmutableArray<RuntimeNativeLibraryDescriptor> NativeLibraries { get; init; } = [];
+    public string? NativeCallbackObjectPath { get; init; }
+}
 
 internal sealed record RuntimeMaterializationCacheKeyRequest(
     RuntimeBuildIdentity BuildIdentity,
@@ -138,7 +170,27 @@ internal enum RuntimeMaterializationCacheOutcome
 internal sealed record RuntimeMaterializationCacheRead(
     RuntimeMaterializationCacheOutcome Outcome,
     byte[]? Bytes,
-    string? Sha256);
+    string? Sha256)
+{
+    public RuntimeNativeCacheEvidence? NativeEvidence { get; init; }
+}
+
+internal sealed record RuntimeNativeMaterializationCacheKeyRequest(
+    RuntimeBuildIdentity BuildIdentity,
+    RuntimePackManifest Manifest,
+    RuntimePackTarget Target,
+    RuntimeMemoryPlan Plan,
+    ImmutableArray<RuntimeNativeBinding> Bindings,
+    RuntimeWasmOptimization Optimization,
+    ImmutableArray<string> LinkArguments,
+    ImmutableArray<string> OptimizationArguments,
+    string AssetRoot,
+    string OutputPath)
+{
+    public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
+    public string? NativeCallbackObjectPath { get; init; }
+    public string? NativeCallbackAllowedUndefinedPath { get; init; }
+}
 
 internal sealed record RuntimeMaterializationCacheMetrics(
     string Stage,
@@ -160,4 +212,8 @@ internal sealed record RuntimeMaterialization(
     long HeapBase,
     long InitialMemorySizeBytes,
     long MaximumMemorySizeBytes,
-    RuntimeMaterializationCacheMetrics CacheMetrics);
+    RuntimeMaterializationCacheMetrics CacheMetrics)
+{
+    public ImmutableArray<RuntimeLinkExport> InternalRuntimeExports { get; init; } = [];
+    public ImmutableArray<RuntimeLinkExport> InternalApplicationExports { get; init; } = [];
+}

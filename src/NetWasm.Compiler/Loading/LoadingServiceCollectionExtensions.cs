@@ -11,6 +11,9 @@ internal static class LoadingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IManagedAssemblyImageReader, ManagedAssemblyImageReader>();
         services.AddSingleton<IManagedAssemblyLoader, ManagedAssemblyLoader>();
+        services.AddSingleton<INativeImportDeclarationReader, NativeImportDeclarationReader>();
+        services.AddSingleton<INativeCallbackDeclarationReader,
+            NativeCallbackDeclarationReader>();
         services.AddSingleton<IValueTypeDefinitionStackKindResolver, ValueTypeDefinitionStackKindResolver>();
         services.AddSingleton<IMetadataCompilationMaterializationFactory,
             MetadataCompilationMaterializationFactory>();

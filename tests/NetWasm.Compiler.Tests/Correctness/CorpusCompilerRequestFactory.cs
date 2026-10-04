@@ -19,7 +19,8 @@ internal sealed record CorpusCompilerRequest(
     bool EmitStackTrace,
     string? StackTraceSymbolsPath,
     string? RuntimeLayoutPath,
-    string? InteropManifestPath);
+    string? InteropManifestPath,
+    bool StructuredDiagnostics = false);
 
 internal interface ICorpusCompilerRequestFactory
 {
@@ -72,6 +73,7 @@ internal sealed class CorpusCompilerRequestFactory(
                 ? "netwasm:platform@1.0.0/async-platform"
                 : null,
             modulePath, compilation.Fixture.EmitStackTrace, stackTraceSymbolsPath,
-            runtimeLayoutPath, interopManifestPath);
+            runtimeLayoutPath, interopManifestPath,
+            StructuredDiagnostics: true);
     }
 }

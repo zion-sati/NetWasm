@@ -135,7 +135,16 @@ internal sealed class InteropDeclarationValidator(
             method.Signature.ReturnSignatureType);
         if (!asyncReturn.IsAsync)
         {
-            ValidateScalarSignature(symbols, method, "JSExport");
+            if (method.Signature.ParameterSignatureTypes.Any(type =>
+                    !IsHostScalar(type) && !IsString(type) && !IsByteArray(type)) ||
+                method.Signature.ReturnType != CliValueKind.Void &&
+                !IsHostScalar(method.Signature.ReturnSignatureType) &&
+                !IsString(method.Signature.ReturnSignatureType) &&
+                !IsByteArray(method.Signature.ReturnSignatureType))
+            {
+                throw Invalid(symbols, method,
+                    "JSExport currently supports primitive scalars, string, byte[], or void results and primitive scalar, string, or byte[] parameters");
+            }
             return;
         }
         ValidateAsyncResult(symbols, method, asyncReturn, "JSExport");

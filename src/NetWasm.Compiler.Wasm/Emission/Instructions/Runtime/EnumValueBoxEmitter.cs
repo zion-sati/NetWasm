@@ -19,7 +19,7 @@ internal sealed class EnumValueBoxEmitter(
         int resultLocal)
     {
         var valueLayout = values.GetValueLayout(entry.UnderlyingType);
-        var objectLayout = typeLayouts.GetObjectLayout(entry.Type);
+        var objectLayout = typeLayouts.GetObjectLayout(entry.EnumType);
         var payload = WasmTargetLayout.Align(
             layouts.Target.ObjectHeaderSize,
             valueLayout.Alignment);

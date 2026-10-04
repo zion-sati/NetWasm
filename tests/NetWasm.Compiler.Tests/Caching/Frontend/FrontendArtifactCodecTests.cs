@@ -4,6 +4,9 @@ using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Caching.Frontend;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
+using NetWasm.Compiler.Core.UnsafeAccessors;
+using System.Reflection;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 
@@ -12,6 +15,260 @@ namespace NetWasm.Compiler.Tests.Caching.Frontend;
 public sealed class FrontendArtifactCodecTests
 {
     private static readonly AssemblyIdentity Assembly = new("Dependency");
+
+    [Fact]
+    public void RoundTripKeepsConstructedCatchTypesInBodiesAndStructuredClauses()
+    {
+        var snapshot = CreateStressSnapshot();
+        var identity = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Assembly, "Fixture", "Exception`1", false),
+            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]);
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Body = snapshot.Analysis.Body with
+                {
+                    ExceptionRegions = [snapshot.Analysis.Body.ExceptionRegions[0] with
+                    {
+                        Kind = CilExceptionRegionKind.Catch,
+                        FilterOffset = null,
+                        CatchTypeIdentity = identity,
+                    }],
+                },
+            },
+            StructuredMethod = snapshot.StructuredMethod with
+            {
+                ExceptionGroups = snapshot.StructuredMethod.ExceptionGroups.ToImmutableDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value with
+                    {
+                        Clauses = [.. pair.Value.Clauses.Select(clause => clause with
+                        {
+                            Kind = CilExceptionRegionKind.Catch,
+                            FilterOffset = null,
+                            FilterBlock = null,
+                            FilterBody = null,
+                            CatchTypeIdentity = identity,
+                        })],
+                    }),
+            },
+        };
+        var encoder = Assert.IsAssignableFrom<IFrontendArtifactEncoder>(new FrontendArtifactEncoder());
+        var decoder = Assert.IsAssignableFrom<IFrontendArtifactDecoder>(new FrontendArtifactDecoder());
+        var payload = encoder.Encode(snapshot);
+        var restored = decoder.Decode(payload);
+
+        Assert.Equal(identity, Assert.Single(restored.Analysis.Body.ExceptionRegions).CatchTypeIdentity);
+        Assert.All(restored.StructuredMethod.ExceptionGroups.Values.SelectMany(group => group.Clauses),
+            clause => Assert.Equal(identity, clause.CatchTypeIdentity));
+        Assert.Equal(payload.ToArray(), encoder.Encode(restored).ToArray());
+    }
+
+    [Theory]
+    [InlineData("absent")]
+    [InlineData("kind")]
+    [InlineData("name")]
+    [InlineData("specified")]
+    [InlineData("malformed")]
+    [InlineData("translated")]
+    public void ChangedAccessorFactsInvalidateEquivalentMethodDescriptors(string change)
+    {
+        var declaration = new UnsafeAccessorDeclaration(1, "Target", true, false, false);
+        var original = CreateStressSnapshot().Analysis.Method;
+        original = original with { Definition = original.Definition with { UnsafeAccessor = declaration } };
+        var changed = original with
+        {
+            Definition = original.Definition with
+            {
+                UnsafeAccessor = change switch
+                {
+                    "absent" => null,
+                    "kind" => declaration with { Kind = 2 },
+                    "name" => declaration with { Name = "Other" },
+                    "specified" => declaration with { NameSpecified = false },
+                    "malformed" => declaration with { IsMalformed = true },
+                    "translated" => declaration with { HasTypeTranslation = true },
+                    _ => throw new ArgumentOutOfRangeException(nameof(change)),
+                },
+            },
+        };
+
+        Assert.False(original.HasEquivalentDescriptorFacts(changed));
+        Assert.False(changed.HasEquivalentDescriptorFacts(original));
+    }
+
+    [Theory]
+    [InlineData(false, false, null)]
+    [InlineData(true, false, null)]
+    [InlineData(true, true, null)]
+    [InlineData(true, true, "")]
+    [InlineData(true, true, "Field")]
+    public void RoundTripPreservesAccessorFactsAndManagedBodyClassification(bool present, bool named, string? name)
+    {
+        var snapshot = CreateStressSnapshot();
+        var declaration = present ? new UnsafeAccessorDeclaration(3, name, named, named, named) : null;
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Method = snapshot.Analysis.Method with
+                {
+                    Definition = snapshot.Analysis.Method.Definition with
+                    {
+                        RelativeVirtualAddress = 0,
+                        UnsafeAccessor = declaration,
+                    },
+                },
+            },
+        };
+        var encoder = Assert.IsAssignableFrom<IFrontendArtifactEncoder>(new FrontendArtifactEncoder());
+        var decoder = Assert.IsAssignableFrom<IFrontendArtifactDecoder>(new FrontendArtifactDecoder());
+        var encoded = encoder.Encode(snapshot);
+        var decoded = decoder.Decode(encoded);
+
+        Assert.Equal(declaration, decoded.Analysis.Method.Definition.UnsafeAccessor);
+        Assert.False(decoded.Analysis.Method.Definition.HasBody);
+        Assert.Equal(present, decoded.Analysis.Method.Definition.HasManagedBody);
+        Assert.True(snapshot.Analysis.Method.HasEquivalentDescriptorFacts(decoded.Analysis.Method));
+        Assert.Equal(encoded.ToArray(), encoder.Encode(decoded).ToArray());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(71)]
+    public void RoundTripPreservesInstructionSourceOffsets(int? originalOffset)
+    {
+        var snapshot = CreateStressSnapshot();
+        var instruction = snapshot.Analysis.Body.Instructions[1] with
+        {
+            OriginalOffset = originalOffset,
+        };
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Body = snapshot.Analysis.Body with
+                {
+                    Instructions = snapshot.Analysis.Body.Instructions.SetItem(1, instruction),
+                },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+        var decoded = new FrontendArtifactDecoder().Decode(payload);
+        var actual = decoded.Analysis.Body.Instructions[1];
+
+        Assert.Equal(instruction, actual);
+        Assert.Equal(originalOffset, actual.OriginalOffset);
+        Assert.Equal(originalOffset ?? instruction.Offset, actual.SourceOffset);
+        Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoundTripPreservesFunctionPointerSignatureAndConventionModifiers(bool isRequired)
+    {
+        var snapshot = CreateStressSnapshot();
+        var modifier = CliTypeIdentity.Named(Assembly,
+            "System.Runtime.CompilerServices", "CallConvCdecl", false);
+        var result = CliTypeIdentity.Modified(CliTypeIdentity.FromStackKind(CliValueKind.I4), modifier, isRequired);
+        var pointer = CliTypeIdentity.FunctionPointer(new(9, 1, 1, new(result,
+            [CliTypeIdentity.GenericParameter(true, 0), CliTypeIdentity.UnmanagedPointer(result)])));
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Method = snapshot.Analysis.Method with
+                {
+                    Signature = MethodSignatureModel.Create(pointer, pointer),
+                },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+        var decoded = new FrontendArtifactDecoder().Decode(payload);
+        var actual = decoded.Analysis.Method.Signature.ReturnSignatureType;
+
+        Assert.Equal(pointer, actual);
+        Assert.Equal(pointer, Assert.Single(decoded.Analysis.Method.Signature.ParameterSignatureTypes));
+        Assert.Equal((byte)9, actual.FunctionPointerSignature!.Header);
+        Assert.Equal(1, actual.FunctionPointerSignature.GenericArity);
+        Assert.Equal(1, actual.FunctionPointerSignature.RequiredParameterCount);
+        Assert.Equal(isRequired, actual.FunctionPointerSignature.Signature.ReturnSignatureType.IsRequiredModifier);
+        Assert.Equal(modifier, actual.FunctionPointerSignature.Signature.ReturnSignatureType.CustomModifier);
+        Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoundTripPreservesNativeDeclarationFacts(bool enabled)
+    {
+        var snapshot = CreateStressSnapshot();
+        var import = new NativeImportDeclaration("logical-library", "actual_symbol",
+            MethodImportAttributes.CallingConventionCDecl | MethodImportAttributes.ExactSpelling,
+            enabled, enabled, enabled, enabled);
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Method = snapshot.Analysis.Method with
+                {
+                    Definition = snapshot.Analysis.Method.Definition with
+                    {
+                        NativeImport = import,
+                    }
+                },
+            }
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var encoded = encoder.Encode(snapshot);
+        var decoded = new FrontendArtifactDecoder().Decode(encoded);
+
+        Assert.Equal(import, decoded.Analysis.Method.Definition.NativeImport);
+        Assert.Equal(encoded.ToArray(), encoder.Encode(decoded).ToArray());
+    }
+
+    [Fact]
+    public void RoundTripPreservesNativeCallbackDeclarationFacts()
+    {
+        var snapshot = CreateStressSnapshot();
+        var declaration = new NativeCallbackDeclaration(
+            ["System.Runtime.CompilerServices.CallConvCdecl"],
+            "native_entry",
+            IsVarArg: true,
+            HasUnsupportedNamedArguments: true);
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Method = snapshot.Analysis.Method with
+                {
+                    Definition = snapshot.Analysis.Method.Definition with
+                    {
+                        NativeCallback = declaration,
+                    },
+                },
+                Instructions = snapshot.Analysis.Instructions with
+                {
+                    NativeCallbacks = [snapshot.Analysis.Method],
+                },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var encoded = encoder.Encode(snapshot);
+        var decoded = new FrontendArtifactDecoder().Decode(encoded);
+
+        Assert.True(declaration.HasEquivalentFacts(
+            decoded.Analysis.Method.Definition.NativeCallback));
+        Assert.Equal(
+            snapshot.Analysis.Method.CanonicalName,
+            Assert.Single(decoded.Analysis.Instructions.NativeCallbacks).CanonicalName);
+        Assert.Equal(encoded.ToArray(), encoder.Encode(decoded).ToArray());
+    }
 
     [Theory]
     [InlineData(null)]
@@ -79,6 +336,7 @@ public sealed class FrontendArtifactCodecTests
         Assert.Single(decoded.Analysis.Instructions.FieldDescriptors);
         Assert.True(decoded.Analysis.Instructions.RequiresTypeFacts);
         Assert.True(decoded.Analysis.Instructions.RequiresDelegateInvoke);
+        Assert.True(decoded.Analysis.Instructions.RequiresGenericArguments);
         Assert.True(decoded.Analysis.Instructions.RequiresMemberNames);
         Assert.Equal(
             RuntimeTypeNamePayload.Name |
@@ -138,6 +396,20 @@ public sealed class FrontendArtifactCodecTests
 
         Assert.Throws<InvalidDataException>(() =>
             new FrontendArtifactDecoder().Decode([.. payload]));
+    }
+
+    [Fact]
+    public void DecoderRejectsFunctionPointerIdentityWithoutItsSignature()
+    {
+        var payload = ((IFrontendArtifactEncoder)new FrontendArtifactEncoder())
+            .Encode(CreateStressSnapshot()).ToArray();
+        var entry = FindTypeEntry(payload, CliTypeShape.Primitive);
+        BitConverter.GetBytes((int)CliTypeShape.FunctionPointer).CopyTo(payload, entry.Offset);
+
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ((IFrontendArtifactDecoder)new FrontendArtifactDecoder()).Decode([.. payload]));
+
+        Assert.Equal("The function-pointer signature is missing.", error.Message);
     }
 
     [Fact]
@@ -298,8 +570,12 @@ public sealed class FrontendArtifactCodecTests
             _ => throw new InvalidOperationException(),
         };
 
-        Assert.Throws<InvalidDataException>(() =>
+        var exception = Assert.Throws<InvalidDataException>(() =>
             new FrontendArtifactDecoder().Decode([.. malformed]));
+        if (corruption == 4)
+        {
+            Assert.Contains("operand tag", exception.Message, StringComparison.Ordinal);
+        }
     }
 
     private static FrontendArtifactSnapshot CreateStressSnapshot()
@@ -383,6 +659,7 @@ public sealed class FrontendArtifactCodecTests
             FieldDescriptors = [field],
             RequiresTypeFacts = true,
             RequiresDelegateInvoke = true,
+            RequiresGenericArguments = true,
             RequiresMemberNames = true,
             TypeNamePayload = RuntimeTypeNamePayload.Name |
                 RuntimeTypeNamePayload.Namespace |
@@ -635,7 +912,8 @@ public sealed class FrontendArtifactCodecTests
     {
         var copy = payload.ToArray();
         var entry = TableEntry(copy, 5, 0);
-        copy[entry.Offset + 12] = 0xff;
+        var hasOriginalOffset = copy[entry.Offset + 8] != 0;
+        copy[entry.Offset + 13 + (hasOriginalOffset ? sizeof(int) : 0)] = 0xff;
         return copy;
     }
 

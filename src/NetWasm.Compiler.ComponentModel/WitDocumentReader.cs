@@ -8,6 +8,8 @@ namespace NetWasm.Compiler.ComponentModel;
 public interface IWitDocumentReader
 {
     WitDocument Read(string witPath);
+
+    WitDocument Read(string witPath, string? world) => Read(witPath);
 }
 
 public interface IWitDocumentJsonReader
@@ -19,16 +21,28 @@ public sealed class WitDocumentReader : IWitDocumentReader
 {
     private readonly IWasmTools _tools;
     private readonly IWitDocumentJsonReader _json;
+    private readonly IWitCoreBindingResolver _coreBindings;
 
     public WitDocumentReader(IWasmTools tools)
-        : this(tools, new WitDocumentJsonReader())
+        : this(tools, new WitDocumentJsonReader(),
+            new WitCoreBindingResolver(tools, new Worlds.WitWorldSpecifierFormatter()))
     {
     }
 
     public WitDocumentReader(IWasmTools tools, IWitDocumentJsonReader json)
+        : this(tools, json,
+            new WitCoreBindingResolver(tools, new Worlds.WitWorldSpecifierFormatter()))
+    {
+    }
+
+    public WitDocumentReader(
+        IWasmTools tools,
+        IWitDocumentJsonReader json,
+        IWitCoreBindingResolver coreBindings)
     {
         _tools = tools ?? throw new ArgumentNullException(nameof(tools));
         _json = json ?? throw new ArgumentNullException(nameof(json));
+        _coreBindings = coreBindings ?? throw new ArgumentNullException(nameof(coreBindings));
     }
 
     public WitDocument Read(string witPath)
@@ -42,6 +56,12 @@ public sealed class WitDocumentReader : IWitDocumentReader
         }
 
         return _json.Read(result.StandardOutput);
+    }
+
+    public WitDocument Read(string witPath, string? world)
+    {
+        var document = Read(witPath);
+        return _coreBindings.Resolve(witPath, document, document.SelectWorld(world));
     }
 
     private static string NormalizeError(string error)

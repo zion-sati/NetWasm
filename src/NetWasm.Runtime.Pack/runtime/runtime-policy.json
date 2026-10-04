@@ -4,6 +4,22 @@
   "wasmPageSize": 65536,
   "nativeStackSizeBytes": 65536,
   "defaultInitialHeapSizeBytes": 65536,
+  "staticNative": {
+    "version": 1,
+    "features": ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory"],
+    "imports": [
+      { "module": "netwasm.application.v1", "name": "netwasm.filter", "parameters": ["i32", "ptr", "ptr"], "results": ["i32"], "required": true },
+      { "module": "netwasm.application.v1", "name": "netwasm.finalize", "parameters": ["ptr", "i32"], "results": ["i32"], "required": true },
+      { "module": "env", "name": "emscripten_notify_memory_growth", "parameters": ["ptr"], "results": [], "required": true },
+      { "module": "{prefix}|wasi:cli/environment@0.2", "name": "get-environment", "parameters": ["ptr"], "results": [], "required": true },
+      { "module": "{prefix}|wasi:cli/stdout@0.2", "name": "get-stdout", "parameters": [], "results": ["i32"], "required": false },
+      { "module": "{prefix}|wasi:cli/stderr@0.2", "name": "get-stderr", "parameters": [], "results": ["i32"], "required": false },
+      { "module": "{prefix}|wasi:io/streams@0.2", "name": "[method]output-stream.blocking-write-and-flush", "parameters": ["i32", "ptr", "ptr", "ptr"], "results": [], "required": false },
+      { "module": "{prefix}|wasi:io/streams@0.2", "name": "output-stream_drop", "parameters": ["i32"], "results": [], "required": false },
+      { "module": "{prefix}|wasi:io/error@0.2", "name": "error_drop", "parameters": ["i32"], "results": [], "required": false },
+      { "module": "{prefix}|wasi:cli/exit@0.2", "name": "exit", "parameters": ["i32"], "results": [], "required": false }
+    ]
+  },
   "targets": {
     "wasm32": {
       "pointerSizeBytes": 4,

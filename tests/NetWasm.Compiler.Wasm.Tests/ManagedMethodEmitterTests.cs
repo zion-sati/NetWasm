@@ -3,9 +3,11 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Tests;
@@ -14,6 +16,48 @@ using static EmitterTestSupport;
 
 public sealed class ManagedMethodEmitterTests
 {
+    [Fact]
+    public void MemberExecutionPlanReachesFramePlanningAndPreservesItsResultOffsets()
+    {
+        var program = new FakeProgram();
+        var method = program.GetMethod(EntryKey);
+        var structured = Structure(program, method,
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.Return));
+        var plan = MemberExecutionPlan.Empty with { MethodInvokers = [EntryKey] };
+        var expectedLayout = new ValueFrameLayout(32, [], [], [], [])
+        {
+            MemberResultOffsets = ImmutableDictionary<int, int>.Empty.Add(7, 8),
+        };
+        var valueFrames = new RecordingValueFramePlanner(expectedLayout);
+        var emitter = ThroughContract(CreateEmitter(program, valueFrames));
+        MethodEmissionContext? emittedContext = null;
+
+        var emission = emitter.Emit(
+            method,
+            new ManagedMethodIdentity("Tests.Caller"),
+            structured,
+            new MethodRootMap(EntryKey, [], []),
+            null,
+            0,
+            new RuntimeImportSelection(WasmModuleProfile.CoreApplication,
+                IncludeTerminalExceptionReporter: true),
+            (code, _, context) =>
+            {
+                emittedContext = context;
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+            },
+            memberExecution: plan);
+
+        Assert.Same(plan, valueFrames.MemberExecution);
+        Assert.Equal(structured.Header, valueFrames.Header);
+        Assert.NotNull(emittedContext);
+        Assert.Equal(expectedLayout, emittedContext.ValueLayout);
+        Assert.Equal(8, emittedContext.ValueLayout.MemberResultOffsets[7]);
+        Assert.Equal(32, emittedContext.ValueLayout.Size);
+        Assert.NotEmpty(emission.Body);
+    }
+
     [Fact]
     public void SeparateEmissionsUseSeparateMethodContextsAndStableBytes()
     {
@@ -157,7 +201,11 @@ public sealed class ManagedMethodEmitterTests
         Assert.Equal(1, calls);
     }
 
-    private static ManagedMethodEmitter CreateEmitter(FakeProgram program)
+    private static IManagedMethodEmitter ThroughContract(IManagedMethodEmitter emitter) => emitter;
+
+    private static ManagedMethodEmitter CreateEmitter(
+        FakeProgram program,
+        IValueFrameLayoutPlanner? valueFrames = null)
     {
         var layouts = new RecordingLayoutProvider();
         var imports = WasmRuntimeImports.CreateCatalog();
@@ -167,10 +215,11 @@ public sealed class ManagedMethodEmitterTests
         return new ManagedMethodEmitter(
             layouts,
             new ManagedMethodFunctionTypeResolver(),
-            CreateValueFrameLayoutPlanner(program, layouts),
+            valueFrames ?? CreateValueFrameLayoutPlanner(program, layouts),
             new FilterEnvironmentLayoutPlanner(
                 layouts,
                 layouts,
+                CreateArgumentTypes(program),
                 types,
                 new ExceptionGroupEnumerator()),
             new ExceptionGroupEnumerator(),
@@ -180,6 +229,22 @@ public sealed class ManagedMethodEmitterTests
                 frameExit),
             new GeneratedFunctionWriterFactory(),
             new InstructionCountingWriterFactory());
+    }
+
+    private sealed class RecordingValueFramePlanner(ValueFrameLayout result) : IValueFrameLayoutPlanner
+    {
+        public MemberExecutionPlan? MemberExecution { get; private set; }
+        public StructuredMethodHeader? Header { get; private set; }
+
+        public ValueFrameLayout Create(
+            StructuredMethodHeader header,
+            NativeImportPlan? nativeImports = null,
+            MemberExecutionPlan? memberExecution = null)
+        {
+            Header = header;
+            MemberExecution = memberExecution;
+            return result;
+        }
     }
 
     private delegate ManagedMethodEmission MethodEmitterCall(

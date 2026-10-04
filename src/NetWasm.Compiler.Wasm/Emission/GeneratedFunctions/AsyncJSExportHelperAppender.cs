@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 internal sealed class AsyncJSExportHelperAppender(
     IAsyncJSExportStatusEmitter statuses,
     IAsyncJSExportResultEmitter results,
-    IAsyncJSExportCompletionEmitter completions,
+    IAsyncTaskCompletionEmitter completions,
     IAsyncJSExportResultTypeResolver resultTypes,
     IManagedBoundaryPlanBuilder boundaries) : IAsyncJSExportHelperAppender
 {
@@ -18,7 +18,8 @@ internal sealed class AsyncJSExportHelperAppender(
         JavaScriptAsyncMethodBinding binding,
         ManagedAsyncBoundaryNames names,
         ManagedAsyncBoundaryKinds kinds,
-        ICollection<ManagedBoundaryPlanEntry> boundaryEntries)
+        ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
+        AsyncTaskCompletionPlan completion)
     {
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentOutOfRangeException.ThrowIfNegative(importCount);
@@ -27,6 +28,14 @@ internal sealed class AsyncJSExportHelperAppender(
         ArgumentNullException.ThrowIfNull(names);
         ArgumentNullException.ThrowIfNull(kinds);
         ArgumentNullException.ThrowIfNull(boundaryEntries);
+        ArgumentNullException.ThrowIfNull(completion);
+        ArgumentOutOfRangeException.ThrowIfNegative(completion.ObserveFunctionIndex);
+        if (completion.DeliverFunctionIndex is { } deliverFunctionIndex)
+            ArgumentOutOfRangeException.ThrowIfNegative(deliverFunctionIndex);
+        var expectedResult = kinds.Completion == ManagedBoundaryKind.AsynchronousProcessCompletion
+            ? CliValueKind.Void : CliValueKind.I4;
+        if (completion.ResultKind != expectedResult)
+            throw new ArgumentException("Task completion result does not match its boundary.", nameof(completion));
 
         var statusName = names.Status;
         indices.Add(statusName, importCount + functions.Count);
@@ -65,8 +74,8 @@ internal sealed class AsyncJSExportHelperAppender(
         var completeIndex = importCount + functions.Count;
         functions.Add(new WasmFunctionDefinition(
             completeName,
-            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4),
-            completions.Emit()));
+            WasmFunctionType.Create(completion.ResultKind, CliValueKind.I4),
+            completions.Emit(binding, completion)));
         boundaryEntries.Add(boundaries.Build(new(
             [.. functions],
             importCount,

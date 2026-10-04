@@ -51,11 +51,31 @@ internal static class WasmRuntimeImports
     private static RuntimeImportBinding[] CreateBindings() =>
     [
         .. CreateLegacyBindings(),
-        new(RuntimeImportSymbol.ManagedTerminalExceptionReport, new WasmFunctionImport(RuntimeAbi.HostModule, RuntimeAbi.RuntimeReportTerminalException, WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4))),
+        new(RuntimeImportSymbol.ManagedTerminalExceptionReport, new WasmFunctionImport(
+            RuntimeAbi.HostModule,
+            RuntimeAbi.RuntimeReportTerminalException,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.I4,
+                CliValueKind.NativeInt,
+                CliValueKind.I4,
+                CliValueKind.NativeInt,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.ManagedTerminalExceptionRaise, new WasmFunctionImport(
+            RuntimeAbi.HostModule,
+            RuntimeAbi.RuntimeRaiseTerminalException,
+            WasmFunctionType.Create(CliValueKind.Void))),
         new(RuntimeImportSymbol.StackTraceFrameEnter, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeStackTraceFrameEnter,
             WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4))),
+        new(RuntimeImportSymbol.StackTraceFrameLocation, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeStackTraceFrameLocation,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.I4,
+                CliValueKind.I4))),
         new(RuntimeImportSymbol.StackTraceFrameLeave, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeStackTraceFrameLeave,
@@ -67,6 +87,38 @@ internal static class WasmRuntimeImports
                 CliValueKind.Void,
                 CliValueKind.I4,
                 CliValueKind.I4))),
+        new(RuntimeImportSymbol.StackTraceRegisterSymbol, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeStackTraceRegisterSymbol,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.I4,
+                CliValueKind.NativeInt,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.ManagedExceptionCapture, new WasmFunctionImport(
+            RuntimeAbi.HostModule,
+            RuntimeAbi.RuntimeCaptureManagedException,
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4,
+                CliValueKind.NativeInt, CliValueKind.I4, CliValueKind.NativeInt, CliValueKind.I4))),
+        new(RuntimeImportSymbol.EphemeronHandleCreate, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeEphemeronHandleCreate,
+            WasmFunctionType.Create(
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.ManagedReference))),
+        new(RuntimeImportSymbol.EphemeronHandleGetKey, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeEphemeronHandleGetKey,
+            WasmFunctionType.Create(CliValueKind.ManagedReference, CliValueKind.I4))),
+        new(RuntimeImportSymbol.EphemeronHandleGetValue, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeEphemeronHandleGetValue,
+            WasmFunctionType.Create(CliValueKind.ManagedReference, CliValueKind.I4))),
+        new(RuntimeImportSymbol.EphemeronHandleRelease, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeEphemeronHandleRelease,
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>
@@ -161,7 +213,11 @@ internal static class WasmRuntimeImports
         new(RuntimeImportSymbol.ReportUnobservedTaskException, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeReportUnobservedTaskException,
-            WasmFunctionType.Create(CliValueKind.Void))),
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.ManagedReference,
+                CliValueKind.ManagedReference,
+                CliValueKind.ManagedReference))),
         new(RuntimeImportSymbol.IsAssignable, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeIsAssignable,

@@ -33,7 +33,8 @@ public sealed class ComponentPackageExecution(
                 workspace.LinkedModulePath,
                 request.Target,
                 request.ManagedExecutableEntryPoint,
-                request.Optimization));
+                request.Optimization,
+                request.StructuredDiagnostics));
             componentCoreModule = workspace.LinkedModulePath;
         }
         var embedArguments = new List<string>

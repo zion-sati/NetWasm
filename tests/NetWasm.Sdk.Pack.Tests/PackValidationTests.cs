@@ -115,7 +115,7 @@ public sealed class PackValidationTests
     [Theory]
     [InlineData("Dependency", "not a range", "NetWasm,Version=v0.1", "none", false, NetWasmPackErrorCode.NWPK006)]
     [InlineData("Dependency", "[1.0.0]", "net10.0", "none", false, NetWasmPackErrorCode.NWPK006)]
-    [InlineData("Dependency", "[1.0.0]", "NetWasm,Version=v0.1", "compile", false, NetWasmPackErrorCode.NWPK007)]
+    [InlineData("Dependency", "[1.0.0]", "NetWasm,Version=v0.1", "all", false, NetWasmPackErrorCode.NWPK007)]
     [InlineData("Dependency", "[1.0.0]", "NetWasm,Version=v0.1", "none", true, NetWasmPackErrorCode.NWPK007)]
     public void DependencyPolicyRejectsUnrepresentableEdges(string id, string range, string framework, string privateAssets, bool development, NetWasmPackErrorCode expected)
     {

@@ -4,5 +4,5 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.EntryPoints;
 
 public sealed record CompilationEntry(
-    MethodDefinitionModel EntryPoint,
+    MethodDefinitionModel? EntryPoint,
     ImmutableArray<ProgramExport> Exports);

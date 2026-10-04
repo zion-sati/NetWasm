@@ -17,6 +17,26 @@ public sealed record WasmManagedMethodEmissionMetric(
 
 public sealed record WasmStackTraceSymbol(int Id, string Name);
 
+public sealed record WasmSourceLocation(
+    int Offset,
+    string? Document,
+    int StartLine);
+
+public sealed record WasmNativeCallbackDescriptor(
+    string NativeSymbol,
+    string RuntimeImportSymbol,
+    string ApplicationExportName,
+    string? RuntimeGetterExportName,
+    ImmutableArray<WasmValueType> Parameters,
+    WasmValueType? ReturnType);
+
+public sealed record WasmNativeCallbackSupportArtifact(
+    byte[] ObjectBytes,
+    string Sha256,
+    ImmutableArray<WasmNativeCallbackDescriptor> Callbacks,
+    ImmutableArray<string> TemporaryApplicationExports,
+    ImmutableArray<string> TemporaryRuntimeExports);
+
 public sealed record WasmModuleEmissionResult(
     byte[] Module,
     int StaticDataEnd,
@@ -24,7 +44,9 @@ public sealed record WasmModuleEmissionResult(
     ImmutableArray<WasmStackTraceSymbol> StackTraceSymbols = default)
 {
     public ImmutableArray<WasmFunctionImport> FunctionImports { get; init; } = [];
+    public ImmutableArray<WasmNativeImport> NativeImports { get; init; } = [];
     public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
+    public WasmNativeCallbackSupportArtifact? NativeCallbackSupport { get; init; }
 }
 
 internal interface IWasmModuleEmitter

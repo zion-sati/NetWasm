@@ -1,0 +1,150 @@
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
+
+namespace NativeMule;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct Pair
+{
+    public int Integer;
+    public double Real;
+}
+
+public static unsafe partial class EntryPoint
+{
+    [LibraryImport("mule", EntryPoint = "native_mule_probe")]
+    private static partial int Probe();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_data_end")]
+    private static partial nuint DataEnd();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_array_input_bytes")]
+    private static partial int InputBytes(
+        [MarshalUsing(CountElementName = nameof(count))] byte[]? values,
+        nuint count,
+        nuint capacity);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_array_input_ints")]
+    private static partial int InputInts(
+        [MarshalUsing(CountElementName = nameof(count))] int[]? values,
+        nuint count,
+        nuint capacity);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_array_output_ints")]
+    private static partial int OutputInts(
+        [Out, MarshalUsing(CountElementName = nameof(count))] int[]? values,
+        nuint count,
+        nuint capacity);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_array_in_out_pairs")]
+    private static partial int InOutPairs(
+        [In, Out, MarshalUsing(CountElementName = nameof(count))] Pair[]? values,
+        nuint count,
+        nuint capacity);
+
+    [LibraryImport(
+        "mule",
+        EntryPoint = "native_mule_utf8_profile",
+        StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int Utf8(string? value, nuint byteCount, int scenario);
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180 || DataEnd() <= 2 * 1024 * 1024)
+        {
+            return -1;
+        }
+
+        if (InputBytes([3, 7, 11, 19, 99], 4, 5) != 40 ||
+            InputBytes([], 0, 0) != 0 ||
+            InputBytes(null, 0, 0) != 0 ||
+            InputBytes([1, 2], 3, 2) != -7)
+        {
+            return -2;
+        }
+
+        var integers = new[] { 10, 20, 12, 999 };
+        if (InputInts(integers, 3, (nuint)integers.Length) != 42 || integers[3] != 999 ||
+            InputInts(integers, 5, (nuint)integers.Length) != -7)
+        {
+            return -3;
+        }
+
+        var output = new[] { 99, 99, 99, 99 };
+        if (OutputInts(output, 3, (nuint)output.Length) != 42 ||
+            output[0] != 10 || output[1] != 20 || output[2] != 12 || output[3] != 99)
+        {
+            return -4;
+        }
+
+        var rejectedOutput = new[] { 97, 98 };
+        if (OutputInts(rejectedOutput, 3, (nuint)rejectedOutput.Length) != -7 ||
+            rejectedOutput[0] != 97 || rejectedOutput[1] != 98 ||
+            OutputInts([], 0, 0) != 42 || OutputInts(null, 0, 0) != 42)
+        {
+            return -5;
+        }
+
+        var pairs = new[]
+        {
+            new Pair { Integer = 19, Real = 1.25 },
+            new Pair { Integer = 20, Real = -2.5 },
+            new Pair { Integer = 123, Real = 7.0 },
+        };
+        if (InOutPairs(pairs, 2, (nuint)pairs.Length) != 42 ||
+            pairs[0].Integer != 20 || pairs[0].Real != -2.5 ||
+            pairs[1].Integer != 22 || pairs[1].Real != 5.0 ||
+            pairs[2].Integer != 123 || pairs[2].Real != 7.0)
+        {
+            return -6;
+        }
+
+        var rejectedPairs = new[] { new Pair { Integer = 41, Real = 2.0 } };
+        if (InOutPairs(rejectedPairs, 2, 1) != -7 ||
+            rejectedPairs[0].Integer != 41 || rejectedPairs[0].Real != 2.0 ||
+            InOutPairs([], 0, 0) != 42 || InOutPairs(null, 0, 0) != 42)
+        {
+            return -7;
+        }
+
+        if (Utf8(null, 0, 0) != 42 || Utf8(string.Empty, 0, 0) != 42 ||
+            Utf8("Müle 🦀", 10, 1) != 42 || Utf8("A\0B", 3, 2) != 42)
+        {
+            return -8;
+        }
+
+        var longText = new string('x', 300);
+        for (var iteration = 0; iteration < 16; iteration++)
+        {
+            if (Utf8(longText, 300, 3) != 42)
+            {
+                return -9;
+            }
+        }
+
+        var grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            if ((nuint)grown < DataEnd())
+            {
+                return -10;
+            }
+
+            grown[0] = 3;
+            grown[6 * 1024 * 1024 - 1] = 71;
+            if (InputInts(integers, 3, (nuint)integers.Length) != 42 ||
+                Utf8(longText, 300, 3) != 42 ||
+                grown[0] != 3 || grown[6 * 1024 * 1024 - 1] != 71)
+            {
+                return -11;
+            }
+        }
+        finally
+        {
+            NativeMemory.Free(grown);
+        }
+
+        return 42;
+    }
+}

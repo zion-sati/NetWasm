@@ -31,6 +31,7 @@ public sealed class ExpressionTreeRoslynContractTests
         var reader = peReader.GetMetadataReader();
 
         AssertFactoryShape(peReader, reader, "Arithmetic", "Add");
+        AssertFactoryShape(peReader, reader, "Equality", "Equal");
         AssertFactoryShape(peReader, reader, "Conditional", "Condition", "AndAlso");
         AssertMemberShape(peReader, reader, "Property", "Property", "MethodBase", "GetMethodFromHandle", HandleKind.MethodDefinition);
         AssertMemberShape(peReader, reader, "Field", "Field", "FieldInfo", "GetFieldFromHandle", HandleKind.FieldDefinition);
@@ -127,6 +128,7 @@ public sealed class ExpressionTreeRoslynContractTests
         var call = $"static<0> {Node("MethodCallExpression")}({expression},{methodInfo},{expression}[])";
 
         AssertSignature("Arithmetic", "Add", binary);
+        AssertSignature("Equality", "Equal", binary);
         AssertSignature("Conditional", "GreaterThan", binary);
         AssertSignature("Conditional", "LessThan", binary);
         AssertSignature("Conditional", "AndAlso", binary);
@@ -172,6 +174,7 @@ public sealed class ExpressionTreeRoslynContractTests
             {
                 "Property" or "Field" or "InstanceMethod" or "Conversion" =>
                     (model, "primitive:i4"),
+                "Equality" => (model, "primitive:bool"),
                 "Constructor" => ("primitive:i4", model),
                 "Operator" => (model, model),
                 _ => ("primitive:i4", "primitive:i4"),
@@ -540,6 +543,7 @@ public sealed class ExpressionTreeRoslynContractTests
     private static readonly string[] FactoryMethodNames =
     [
         "Arithmetic",
+        "Equality",
         "Conditional",
         "Property",
         "Field",
@@ -578,6 +582,8 @@ public sealed class ExpressionTreeRoslynContractTests
 
             public int Property => Field;
 
+            public string Name => Field == 42 ? "Ada" : "Grace";
+
             public int Add(int value) => Field + value;
 
             public static Model operator +(Model value, int increment) =>
@@ -600,6 +606,9 @@ public sealed class ExpressionTreeRoslynContractTests
         {
             public static Expression<Func<int, int>> Arithmetic() =>
                 value => value + 1;
+
+            public static Expression<Func<Model, bool>> Equality() =>
+                model => model.Name == "Ada";
 
             public static Expression<Func<int, int>> Conditional() =>
                 value => value > 0 && value < 10 ? value : -value;
@@ -640,6 +649,8 @@ public sealed class ExpressionTreeRoslynContractTests
             public static int RunAll(bool preferInterpretation)
             {
                 if (Arithmetic().Compile(preferInterpretation)(41) != 42) return 1;
+                if (!Equality().Compile(preferInterpretation)(new Model(42))) return 16;
+                if (Equality().Compile(preferInterpretation)(new Model(41))) return 17;
                 if (Conditional().Compile(preferInterpretation)(5) != 5) return 2;
                 if (Conditional().Compile(preferInterpretation)(-5) != 5) return 3;
                 if (Property().Compile(preferInterpretation)(new Model(42)) != 42) return 4;

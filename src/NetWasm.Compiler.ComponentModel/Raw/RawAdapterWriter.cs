@@ -421,9 +421,19 @@ public sealed class RawAdapterWriter(
         }
         else
         {
-            writer.WriteStringValue(CanonicalAbiNames.Export(
+            var destructor = new CanonicalAbiFunction(
                 intrinsic.Declaration.InterfaceName,
                 $"[resource-dtor]{intrinsic.Declaration.Definition.Name}",
+                default,
+                [],
+                null)
+            {
+                CoreInterfaceName = intrinsic.Declaration.CoreInterfaceName,
+                Kind = CanonicalAbiFunctionKind.ExportedResourceDestructor,
+                ResourceName = intrinsic.Declaration.Definition.Name,
+            };
+            writer.WriteStringValue(CanonicalAbiNames.Export(
+                destructor,
                 intrinsic.Target));
         }
         writer.WriteEndObject();

@@ -10,4 +10,8 @@ internal sealed record ModuleImportCollectionRequest(
     IReadOnlyList<WasmFunctionImport> InteropImports,
     WasmTarget Target,
     ImmutableDictionary<(EntityKey Method, int ParameterIndex), HostCallbackDeclaration>
-        HostCallbacks);
+        HostCallbacks)
+{
+    public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
+    public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
+}

@@ -332,9 +332,13 @@ public sealed class WitCanonicalMarshallingTypeSectionWriter(
             ["f64"] = () => writer.Line($"CanonicalAbi.WriteDouble({address}, {offset}, {value});"),
             ["string"] = () =>
             {
+                writer.Line("{");
+                writer.Indent();
                 writer.Line($"var __text = CanonicalAbi.LowerString({value});");
                 writer.Line($"CanonicalAbi.WriteAddress({address}, {offset}, __text.Address);");
                 writer.Line($"CanonicalAbi.WriteAddress({address}, {Add(offset, "(nuint)UIntPtr.Size")}, __text.Length);");
+                writer.Unindent();
+                writer.Line("}");
             },
         };
         operations[name]();
@@ -698,7 +702,11 @@ public sealed class WitCanonicalMarshallingTypeSectionWriter(
         var fields = tuple.GetProperty("types").EnumerateArray().ToArray();
         var layout32 = _layouts.Plan(_types.Resolve(document, reference), WasmTarget.Wasm32);
         var layout64 = _layouts.Plan(_types.Resolve(document, reference), WasmTarget.Wasm64);
-        return $"({string.Join(", ", fields.Select((field, index) => LiftValue(document, Reference(field), address, Add(offset, Width(layout32.Fields[index].Offset, layout64.Fields[index].Offset)), exportBoundary)))})";
+        var values = string.Join(", ", fields.Select((field, index) => LiftValue(document, Reference(field), address,
+            Add(offset, Width(layout32.Fields[index].Offset, layout64.Fields[index].Offset)), exportBoundary)));
+        return fields.Length < 2
+            ? $"new {_syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference))}({values})"
+            : $"({values})";
     }
 
     private string LiftOption(

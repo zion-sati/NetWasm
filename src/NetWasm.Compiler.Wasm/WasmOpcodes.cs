@@ -9,6 +9,7 @@ internal static class WasmOpcodes
     internal const byte Else = 0x05;
     internal const byte End = 0x0b;
     internal const byte Throw = 0x08;
+    internal const byte ThrowRef = 0x0a;
     internal const byte Branch = 0x0c;
     internal const byte BranchIf = 0x0d;
     internal const byte Return = 0x0f;

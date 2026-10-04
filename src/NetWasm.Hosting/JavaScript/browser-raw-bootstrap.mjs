@@ -1,8 +1,8 @@
 import { createBrowserBootstrapComposition } from "./browser-bootstrap-composition.mjs";
 import { createBrowserRawNetWasmExecution } from "./browser-raw-execution-root.mjs";
 
-export function createBrowserNetWasmBootstrap(options) {
+export function createBrowserNetWasmBootstrap(options, consumerModules = {}) {
   return createBrowserBootstrapComposition(
     options,
-    createBrowserRawNetWasmExecution);
+    value => createBrowserRawNetWasmExecution(value, consumerModules));
 }

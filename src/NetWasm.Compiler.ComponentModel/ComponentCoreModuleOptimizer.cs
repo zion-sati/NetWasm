@@ -46,16 +46,21 @@ public sealed class ComponentCoreModuleOptimizer(
         ComponentTarget target,
         FinalWasmOptimization optimization)
     {
-        RequireFile(inputPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         ArgumentNullException.ThrowIfNull(target);
+        if (target.Width is not ("wasm32" or "wasm64"))
+        {
+            throw new ArgumentOutOfRangeException(nameof(target));
+        }
         if (!Enum.IsDefined(optimization))
         {
             throw new ArgumentOutOfRangeException(nameof(optimization));
         }
+        RequireFile(inputPath);
         if (optimization == FinalWasmOptimization.None)
         {
-            _validator.Validate(inputPath);
+            _validator.Validate(inputPath, target);
             _copies.Copy(inputPath, outputPath);
             return;
         }
@@ -68,6 +73,8 @@ public sealed class ComponentCoreModuleOptimizer(
             "--strip-debug",
             "--enable-multimemory",
             "--enable-exception-handling",
+            // Preserve exnref cleanup blocks when optimizing async process completion.
+            "--enable-reference-types",
             "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
         };
@@ -80,6 +87,7 @@ public sealed class ComponentCoreModuleOptimizer(
         var result = _tools.Run(BinaryenToolIds.WasmOpt, [.. arguments]);
         if (result.ExitCode == 0)
         {
+            _validator.Validate(outputPath, target);
             return;
         }
         var error = result.StandardError.Replace('\r', ' ')

@@ -6,6 +6,10 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 internal interface IFinalizerDispatcherEmitter
 {
     byte[] Emit(
-        TypeDescriptorLayout[] finalizableTypes,
+        FinalizerDispatchPlan[] finalizableTypes,
         IFunctionIndexResolver functionIndices);
 }
+
+internal sealed record FinalizerDispatchPlan(
+    int TypeId,
+    MethodInstanceModel Finalizer);

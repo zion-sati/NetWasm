@@ -26,10 +26,15 @@ internal static class ComponentModelServiceCollectionExtensions
         services.AddCompilerRawBindings();
         services.AddSingleton<Functions.IWitCanonicalFunctionBuilder, Functions.WitCanonicalFunctionBuilder>();
         services.AddSingleton<IWitDocumentJsonReader, WitDocumentJsonReader>();
+        services.AddSingleton<IWitCoreBindingResolver, WitCoreBindingResolver>();
         services.AddSingleton<IWitDocumentReader, WitDocumentReader>();
         services.AddSingleton<IWitCanonicalTypeResolver, WitCanonicalTypeResolver>();
         services.AddSingleton<IWitInterfaceSpecifierFormatter, WitInterfaceSpecifierFormatter>();
         services.AddSingleton<IWitTypeIdentityFormatter, WitTypeIdentityFormatter>();
+        services.AddSingleton<IWitJavaScriptNameFormatter, WitJavaScriptNameFormatter>();
+        services.AddSingleton<IWitWorkerTypeReferenceReader>(static _ =>
+            new WitWorkerTypeReferenceReader(WitWorkerReferenceComposition.CreateReaders()));
+        services.AddSingleton<IWitWorkerTypeProjector, WitWorkerTypeProjector>();
         services.AddSingleton<IWitInterfaceCatalogBuilder, WitInterfaceCatalogBuilder>();
         services.AddSingleton<IWitWorldFunctionProjector, WitWorldFunctionProjector>();
         services.AddSingleton<ICanonicalAbiTypeFlattener, CanonicalAbiTypeFlattener>();

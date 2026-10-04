@@ -9,6 +9,7 @@ internal sealed class EntryPointEmitter(
     IRuntimeImportResolver runtimeImports,
     IRuntimeStateInitializer runtimeInitialization,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
+    IManagedTerminalTrapBoundaryEmitter terminalTraps,
     IGeneratedFunctionWriterFactory writers) : IEntryPointEmitter
 {
     public byte[] Emit(
@@ -29,6 +30,8 @@ internal sealed class EntryPointEmitter(
         var typeIdLocal = rootFrameLocal + 1;
         var messageLocal = typeIdLocal + 1;
         var messageLengthLocal = messageLocal + 1;
+        var stackTraceLocal = messageLengthLocal + 1;
+        var stackTraceLengthLocal = stackTraceLocal + 1;
         var locals = hasResult
             ? new[]
             {
@@ -38,11 +41,15 @@ internal sealed class EntryPointEmitter(
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4,
+                CliValueKind.ManagedReference,
+                CliValueKind.I4,
             }
             : new[]
             {
                 CliValueKind.ManagedReference,
                 CliValueKind.ManagedAddress,
+                CliValueKind.I4,
+                CliValueKind.ManagedReference,
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4,
@@ -100,19 +107,37 @@ internal sealed class EntryPointEmitter(
 
         if (reportTerminalExceptions)
         {
-            terminalExceptions.Emit(
-                code.Instructions,
-                exceptionLocal,
-                rootFrameLocal,
-                typeIdLocal,
-                messageLocal,
-                messageLengthLocal,
-                entryPoint.Signature.ReturnType,
-                resultLocal,
-                runtimeImports.Resolve(
-                    RuntimeImportSymbol.ManagedTerminalExceptionReport,
-                    initialization.RuntimeImportSelection),
-                EmitBody);
+            if (initialization.RuntimeImportSelection.IncludeTerminalExceptionReporter)
+            {
+                terminalExceptions.Emit(
+                    code.Instructions,
+                    exceptionLocal,
+                    rootFrameLocal,
+                    typeIdLocal,
+                    messageLocal,
+                    messageLengthLocal,
+                    stackTraceLocal,
+                    stackTraceLengthLocal,
+                    entryPoint.Signature.ReturnType,
+                    resultLocal,
+                    runtimeImports.Resolve(
+                        RuntimeImportSymbol.ManagedTerminalExceptionReport,
+                        initialization.RuntimeImportSelection),
+                    initialization.RuntimeImportSelection.IncludeTerminalExceptionRaise
+                        ? runtimeImports.Resolve(
+                            RuntimeImportSymbol.ManagedTerminalExceptionRaise,
+                            initialization.RuntimeImportSelection)
+                        : null,
+                    EmitBody);
+            }
+            else
+            {
+                terminalTraps.Emit(
+                    code.Instructions,
+                    entryPoint.Signature.ReturnType,
+                    resultLocal,
+                    EmitBody);
+            }
         }
         else
         {

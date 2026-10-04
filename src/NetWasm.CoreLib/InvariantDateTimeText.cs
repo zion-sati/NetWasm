@@ -6,6 +6,8 @@ namespace System
 {
     internal static class InvariantDateTimeText
     {
+        internal const string Rfc3339Format = "yyyy-MM-ddTHH:mm:ss.FFFFFFFK";
+
         internal static bool TryReadDigits(string value, int offset, int count, out int result)
         {
             result = 0;
@@ -94,6 +96,16 @@ namespace System
             }
             return "." + fraction.ToString().PadLeft(7, '0');
         }
+
+        internal static string FormatRfc3339(DateTime value, string suffix) =>
+            FourDigits(value.Year) + "-"
+            + TwoDigits(value.Month) + "-"
+            + TwoDigits(value.Day) + "T"
+            + TwoDigits(value.Hour) + ":"
+            + TwoDigits(value.Minute) + ":"
+            + TwoDigits(value.Second)
+            + Fraction(value.Ticks)
+            + suffix;
 
         internal static bool HasSeparator(string value, int offset, char separator) =>
             (uint)offset < (uint)value.Length && value[offset] == separator;

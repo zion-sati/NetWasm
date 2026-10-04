@@ -11,19 +11,25 @@ namespace System.Linq.Expressions
     {
         private readonly ExpressionType _nodeType;
         private readonly Type _type;
+        private readonly bool _isLifted;
+        private readonly bool _isLiftedToNull;
 
         internal BinaryExpression(
             ExpressionType nodeType,
             Expression left,
             Expression right,
             Type type,
-            MethodInfo? method)
+            MethodInfo? method,
+            bool isLifted = false,
+            bool isLiftedToNull = false)
         {
             _nodeType = nodeType;
             Left = left;
             Right = right;
             _type = type;
             Method = method;
+            _isLifted = isLifted;
+            _isLiftedToNull = isLiftedToNull;
         }
 
         public override ExpressionType NodeType => _nodeType;
@@ -38,9 +44,9 @@ namespace System.Linq.Expressions
 
         public LambdaExpression? Conversion => null;
 
-        public bool IsLifted => false;
+        public bool IsLifted => _isLifted;
 
-        public bool IsLiftedToNull => false;
+        public bool IsLiftedToNull => _isLiftedToNull;
 
         public BinaryExpression Update(
             Expression left,
@@ -54,7 +60,12 @@ namespace System.Linq.Expressions
             }
             return ReferenceEquals(left, Left) && ReferenceEquals(right, Right)
                 ? this
-                : MakeBinary(_nodeType, left, right, Method);
+                : MakeBinary(
+                    _nodeType,
+                    left,
+                    right,
+                    Method,
+                    _isLiftedToNull);
         }
 
         protected internal override Expression Accept(ExpressionVisitor visitor) =>
@@ -71,6 +82,32 @@ namespace System.Linq.Expressions
             Expression right,
             MethodInfo? method) =>
             MakeBinary(ExpressionType.Add, left, right, method);
+
+        public static BinaryExpression Equal(Expression left, Expression right) =>
+            Equal(left, right, liftToNull: false, method: null);
+
+        public static BinaryExpression Equal(
+            Expression left,
+            Expression right,
+            bool liftToNull,
+            MethodInfo? method)
+        {
+            ArgumentNullException.ThrowIfNull(left);
+            ArgumentNullException.ThrowIfNull(right);
+            ExpressionValidation.RequiresCanRead(left, nameof(left));
+            ExpressionValidation.RequiresCanRead(right, nameof(right));
+            if (method is not null && liftToNull)
+            {
+                throw new NotSupportedException(
+                    "Lifted method-backed equality is outside the NetWasm expression profile.");
+            }
+            return MakeBinary(
+                ExpressionType.Equal,
+                left,
+                right,
+                method,
+                liftToNull);
+        }
 
         public static BinaryExpression GreaterThan(
             Expression left,
@@ -147,7 +184,8 @@ namespace System.Linq.Expressions
             ExpressionType nodeType,
             Expression left,
             Expression right,
-            MethodInfo? method)
+            MethodInfo? method,
+            bool liftToNull = false)
         {
             ArgumentNullException.ThrowIfNull(left);
             ArgumentNullException.ThrowIfNull(right);
@@ -166,10 +204,12 @@ namespace System.Linq.Expressions
                 ExpressionValidation.RequiresCanRead(right, nameof(right));
                 ValidateOperatorMethod(method, [left, right]);
                 Type resultType = nodeType is
+                    ExpressionType.Equal or
                     ExpressionType.GreaterThan or ExpressionType.LessThan
                         ? typeof(bool)
                         : method.ReturnType;
-                if (nodeType is ExpressionType.GreaterThan or ExpressionType.LessThan &&
+                if (nodeType is ExpressionType.Equal or
+                        ExpressionType.GreaterThan or ExpressionType.LessThan &&
                     method.ReturnType != typeof(bool))
                 {
                     throw new ArgumentException(
@@ -203,6 +243,27 @@ namespace System.Linq.Expressions
                     right,
                     typeof(bool),
                     method: null);
+            }
+            if (nodeType == ExpressionType.Equal)
+            {
+                if (!IsEqualityCompatible(left.Type))
+                {
+                    throw new NotSupportedException(
+                        "This built-in equality operand type is outside the NetWasm expression profile.");
+                }
+                if (liftToNull && !left.Type.IsNullable)
+                {
+                    throw new ArgumentException(
+                        "Lifted-to-null equality requires nullable operands.");
+                }
+                return new BinaryExpression(
+                    nodeType,
+                    left,
+                    right,
+                    liftToNull ? typeof(bool?) : typeof(bool),
+                    method: null,
+                    isLifted: left.Type.IsNullable,
+                    isLiftedToNull: liftToNull);
             }
             if (!IsArithmetic(left.Type))
             {
@@ -251,6 +312,17 @@ namespace System.Linq.Expressions
                 TypeCode.Int64 or TypeCode.UInt64 or
                 TypeCode.Single or TypeCode.Double or TypeCode.Decimal;
         }
+
+        private static bool IsEqualityCompatible(Type type) =>
+            type.IsNullable ||
+            !type.IsValueType ||
+            !type.IsEnum && Type.GetTypeCode(type) is
+                TypeCode.Boolean or TypeCode.Char or
+                TypeCode.SByte or TypeCode.Byte or
+                TypeCode.Int16 or TypeCode.UInt16 or
+                TypeCode.Int32 or TypeCode.UInt32 or
+                TypeCode.Int64 or TypeCode.UInt64 or
+                TypeCode.Single or TypeCode.Double;
 
         internal static bool IsArithmetic(Type type)
         {

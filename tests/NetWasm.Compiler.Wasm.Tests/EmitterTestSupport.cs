@@ -586,6 +586,22 @@ internal static class EmitterTestSupport
             CilOperation.Call,
             values,
             maxStack: Math.Max(values.Length, 1));
+        if (intrinsic is RuntimeIntrinsic.EphemeronHandleCreate or
+            RuntimeIntrinsic.EphemeronHandleGetKey or
+            RuntimeIntrinsic.EphemeronHandleGetValue or
+            RuntimeIntrinsic.EphemeronHandleRelease)
+        {
+            instruction = instruction with
+            {
+                Target = instruction.Target with
+                {
+                    RuntimeImportSelection = instruction.Target.RuntimeImportSelection with
+                    {
+                        IncludeEphemeronHandles = true,
+                    },
+                },
+            };
+        }
         var method = program.GetMethod(EntryKey);
         var instance = new MethodInstanceModel(
             method,
@@ -803,13 +819,13 @@ internal sealed class RecordingLayoutProvider(
         return new StringLayout(220, 1, StringDataOffset);
     }
 
-    public int GetMethodDescriptorAddress(MethodInstanceModel method)
+    public int GetDescriptorAddress(MethodInstanceModel method)
     {
         MethodDescriptorRequest = method;
         return 224;
     }
 
-    public int GetFieldDescriptorAddress(FieldInstanceModel field)
+    public int GetDescriptorAddress(FieldInstanceModel field)
     {
         FieldDescriptorRequest = field;
         return 228;

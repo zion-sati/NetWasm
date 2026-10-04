@@ -4,6 +4,6 @@ namespace NetWasm.Compiler.Layout;
 
 internal sealed class StaticDataLayoutProviderFactory : IStaticDataLayoutProviderFactory
 {
-    public IManagedStaticDataLayout Create(ManagedLayoutSnapshot snapshot) =>
+    public IStaticDataLayout Create(ManagedLayoutSnapshot snapshot) =>
         new StaticDataLayoutProvider(snapshot);
 }

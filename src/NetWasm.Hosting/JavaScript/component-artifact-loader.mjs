@@ -1,4 +1,5 @@
 import { createComponentArtifactPlan } from "./component-artifact-plan.mjs";
+import { parseStackTraceSymbols } from "./stack-trace-symbol-reader.mjs";
 
 const requestKeys = new Set([
   "artifacts",
@@ -20,6 +21,7 @@ const requiredRequestKeys = Object.freeze([
 const adapterNamespaceKeys = ["contractKey", "createAdapter"];
 const adapterKeys = ["contractKey", "instantiate"];
 const digestPattern = /^[0-9a-f]{64}$/u;
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export async function loadComponentArtifacts(request = {}) {
   assertRequest(request);
@@ -40,8 +42,15 @@ export async function loadComponentArtifacts(request = {}) {
   const plan = createComponentArtifactPlan({ deploymentKind, artifacts });
   throwIfAborted(signal);
 
-  const executableArtifacts = [plan.adapter, plan.generatedModule, ...plan.coreModules];
-  const verifiedArtifacts = await Promise.all(executableArtifacts.map(async artifact => {
+  const loadedArtifacts = [
+    ...(plan.exceptionTypeMap === undefined ? [] : [plan.application]),
+    ...(plan.exceptionTypeMap === undefined ? [] : [plan.exceptionTypeMap]),
+    ...(plan.stackTraceSymbols === undefined ? [] : [plan.stackTraceSymbols]),
+    plan.adapter,
+    plan.generatedModule,
+    ...plan.coreModules,
+  ];
+  const verifiedArtifacts = await Promise.all(loadedArtifacts.map(async artifact => {
     throwIfAborted(signal);
     const transportBytes = await readArtifact(artifact, signal);
     throwIfAborted(signal);
@@ -61,7 +70,24 @@ export async function loadComponentArtifacts(request = {}) {
   }));
 
   throwIfAborted(signal);
-  const [adapterArtifact, generatedArtifact, ...coreArtifacts] = verifiedArtifacts;
+  const applicationArtifact = verifiedArtifacts.find(
+    value => value.artifact.role === "application");
+  const exceptionTypeMapArtifact = verifiedArtifacts.find(
+    value => value.artifact.role === "exception-type-map");
+  const adapterArtifact = verifiedArtifacts.find(
+    value => value.artifact.role === "component-adapter");
+  const generatedArtifact = verifiedArtifacts.find(
+    value => value.artifact.role === "component-javascript");
+  const stackTraceSymbolsArtifact = verifiedArtifacts.find(
+    value => value.artifact.role === "stack-trace-symbols");
+  const coreArtifacts = verifiedArtifacts.filter(
+    value => value.artifact.role === "component-core-module");
+  const exceptionTypeMap = exceptionTypeMapArtifact === undefined
+    ? undefined
+    : parseExceptionTypeMap(exceptionTypeMapArtifact.bytes);
+  const stackTraceSymbols = stackTraceSymbolsArtifact === undefined
+    ? []
+    : parseStackTraceSymbols(decoder.decode(stackTraceSymbolsArtifact.bytes));
   const loadedValues = await Promise.all([
     importModule(new Uint8Array(adapterArtifact.bytes), adapterArtifact.artifact),
     importModule(new Uint8Array(generatedArtifact.bytes), generatedArtifact.artifact),
@@ -86,11 +112,41 @@ export async function loadComponentArtifacts(request = {}) {
 
   return Object.freeze({
     adapter,
+    diagnosticArtifacts: exceptionTypeMapArtifact === undefined
+      ? undefined
+      : Object.freeze({
+        manifest: Object.freeze({
+          schemaVersion: 1,
+          buildId: exceptionTypeMap.buildId,
+          wasmSha256: applicationArtifact.artifact.sha256,
+          exceptionTypeMapSha256: exceptionTypeMapArtifact.artifact.sha256,
+        }),
+        wasmBytes: applicationArtifact.bytes,
+        mapBytes: exceptionTypeMapArtifact.bytes,
+        mapMediaType: exceptionTypeMapArtifact.artifact.mediaType,
+      }),
     loadCoreModule(name) {
       const artifact = plan.resolveCoreModule(name);
       return coreModulesByPath.get(artifact.relativePath);
     },
+    stackTraceSymbols,
   });
+}
+
+function parseExceptionTypeMap(bytes) {
+  let value;
+  try {
+    value = JSON.parse(decoder.decode(bytes));
+  } catch {
+    throw new TypeError("component exception type map JSON is invalid");
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+      || value.schemaVersion !== 2
+      || typeof value.buildId !== "string" || value.buildId.length === 0
+      || !Array.isArray(value.entries)) {
+    throw new TypeError("component exception type map is invalid");
+  }
+  return value;
 }
 
 function assertRequest(request) {

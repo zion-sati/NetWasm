@@ -45,7 +45,7 @@ public sealed class RawDeploymentFunctionProjector(
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentException.ThrowIfNullOrWhiteSpace(runtimeWitPath);
 
-        var runtimeDocument = _documents.Read(runtimeWitPath);
+        var runtimeDocument = _documents.Read(runtimeWitPath, runtimeWorld);
         ArgumentNullException.ThrowIfNull(runtimeDocument);
         var runtimeCatalog = _catalogs.Build(
             runtimeDocument,

@@ -26,9 +26,11 @@ public sealed class EnumValueBoxEmitterTests
         var underlying = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
         var entry = new EnumMetadataLayout(
             new EntityKey(new AssemblyIdentity("EnumValueBoxTests"), 0x02000001),
+            CliTypeIdentity.Named(new AssemblyIdentity("EnumValueBoxTests"), "Tests", "Value", true),
             7,
             64,
             underlying,
+            false,
             false,
             []);
         var code = new EmitterTestSupport.RecordingInstructionWriter();
@@ -37,6 +39,6 @@ public sealed class EnumValueBoxEmitterTests
 
         Assert.Contains(WasmOpcodes.Call, code.ToArray());
         Assert.Contains(expectedStore, code.ToArray());
-        Assert.Equal(entry.Type, layouts.ObjectRequest);
+        Assert.Equal(entry.EnumType, layouts.ObjectIdentityRequest);
     }
 }

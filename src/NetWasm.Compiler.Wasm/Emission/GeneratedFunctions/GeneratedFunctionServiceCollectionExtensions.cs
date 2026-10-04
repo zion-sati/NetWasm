@@ -46,6 +46,10 @@ internal static class GeneratedFunctionServiceCollectionExtensions
         services.AddSingleton<IHostCallbackFunctionAppender,
             HostCallbackFunctionAppender>();
         services.AddSingleton<IHostCallbackSetAppender, HostCallbackSetAppender>();
+        services.AddSingleton<INativeCallbackThunkEmitter,
+            NativeCallbackThunkEmitter>();
+        services.AddSingleton<INativeCallbackFunctionAppender,
+            NativeCallbackFunctionAppender>();
         services.AddSingleton<IAsyncJSImportResolveEmitter,
             AsyncJSImportResolveEmitter>();
         services.AddSingleton<IAsyncJSImportRejectEmitter,
@@ -63,14 +67,18 @@ internal static class GeneratedFunctionServiceCollectionExtensions
             AsyncJSExportStatusEmitter>();
         services.AddSingleton<IAsyncJSExportResultEmitter,
             AsyncJSExportResultEmitter>();
-        services.AddSingleton<IAsyncJSExportCompletionEmitter,
-            AsyncJSExportCompletionEmitter>();
+        services.AddSingleton<IAsyncTaskCompletionEmitter,
+            AsyncTaskCompletionEmitter>();
         services.AddSingleton<IAsyncJSExportResultTypeResolver,
             AsyncJSExportResultTypeResolver>();
         services.AddSingleton<IAsyncJSExportHelperAppender,
             AsyncJSExportHelperAppender>();
         services.AddSingleton<IOutwardMethodFunctionAppender,
             OutwardMethodFunctionAppender>();
+        services.AddSingleton<ISynchronousJSExportEmitter,
+            SynchronousJSExportEmitter>();
+        services.AddSingleton<ISynchronousJSExportFunctionTypeResolver,
+            SynchronousJSExportFunctionTypeResolver>();
         services.AddSingleton<IRequestedExportFunctionAppender,
             RequestedExportFunctionAppender>();
         services.AddSingleton<IRequestedExportSetAppender,

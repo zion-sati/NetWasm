@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Interop;
 using NetWasm.Compiler.Metadata;
 
@@ -16,15 +17,33 @@ internal sealed class ReachabilityImportClassifier(
     IJavaScriptAsyncBindingResolver javaScriptAsyncBindings,
     IRuntimeIntrinsicRegistry intrinsics,
     ISymbolFormatter symbols,
-    IEnumMetadataRequirementClassifier enumMetadataRequirements) : IReachabilityImportClassifier
+    IEnumMetadataRequirementClassifier enumMetadataRequirements,
+    INativeDeclarationValidator nativeDeclarations) : IReachabilityImportClassifier
 {
     private readonly IEnumMetadataRequirementClassifier _enumMetadataRequirements =
         enumMetadataRequirements ?? throw new ArgumentNullException(nameof(enumMetadataRequirements));
+    private readonly INativeDeclarationValidator _nativeDeclarations =
+        nativeDeclarations ?? throw new ArgumentNullException(nameof(nativeDeclarations));
 
     public ReachabilityImportAnalysis Classify(ReachabilityImportRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         var method = request.Method.Definition;
+        if (method.NativeImport is not null)
+        {
+            _nativeDeclarations.Validate(request.Method);
+            var layoutTypes = request.Method.Signature.ParameterSignatureTypes
+                .Prepend(request.Method.Signature.ReturnSignatureType)
+                .Where(type => type.IsValueType &&
+                    type.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation)
+                .Distinct()
+                .ToImmutableArray();
+            return new(true,
+                [.. layoutTypes.Where(type => type.Shape == CliTypeShape.GenericInstantiation)],
+                [],
+                [.. layoutTypes.Select(type => typeDefinitions.ResolveTypeIdentity(type).Key).Distinct()],
+                [], [], [], null, null, [], null);
+        }
         var constructedTypes = ImmutableArray.CreateBuilder<CliTypeIdentity>();
         var allocatedTypes = ImmutableArray.CreateBuilder<CliTypeIdentity>();
         var types = ImmutableArray.CreateBuilder<EntityKey>();
@@ -43,6 +62,11 @@ internal sealed class ReachabilityImportClassifier(
             constructedTypes.Add(asyncBinding.TaskType);
             allocatedTypes.Add(asyncBinding.TaskType);
             fields.Add(asyncBinding.StatusField);
+            if (request.IsProcessEntryPoint || isAsyncExportBoundary)
+            {
+                enqueuedMethods.Add(asyncBinding.GetVoidResult ??
+                    throw new InvalidOperationException("An asynchronous boundary requires task fault observation."));
+            }
             if (asyncBinding.ResultField is not null)
             {
                 fields.Add(asyncBinding.ResultField);
@@ -102,15 +126,6 @@ internal sealed class ReachabilityImportClassifier(
                     allocatedTypes.Add(stringType);
                 }
             }
-            if (symbols.Format(method.DeclaringType) == "System.Enum" &&
-                method.Name == "InternalGetValuesAsUnderlyingType" &&
-                request.Method.MethodArguments.Length == 1)
-            {
-                var enumDefinition = typeDefinitions.ResolveTypeIdentity(
-                    request.Method.MethodArguments[0]);
-                constructedTypes.Add(CliTypeIdentity.SzArray(
-                    enumDefinition.EnumUnderlyingType));
-            }
             if (intrinsic is RuntimeIntrinsic.EnumCompareTo or
                 RuntimeIntrinsic.EnumToObject)
             {
@@ -121,6 +136,10 @@ internal sealed class ReachabilityImportClassifier(
                 exceptions.Add(new(
                     ManagedExceptionKind.ArgumentNull,
                     "System.ArgumentNullException"));
+            }
+            if (intrinsic == RuntimeIntrinsic.EnumGetValues && request.Method.MethodArguments.IsEmpty)
+            {
+                exceptions.Add(new(ManagedExceptionKind.NotSupported, "System.NotSupportedException"));
             }
             if (intrinsic == RuntimeIntrinsic.EnumConvert)
             {
@@ -177,7 +196,7 @@ internal sealed class ReachabilityImportClassifier(
                 exceptions.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
             }
             AddByteArrayReturn(method, types, allocatedTypes, constructedTypes, exceptions);
-            AddHostObjectReturn(method, types, exceptions);
+            AddHostObjectReturn(method, types, allocatedTypes, exceptions);
             return new(
                 true,
                 constructedTypes.ToImmutable(),
@@ -206,7 +225,7 @@ internal sealed class ReachabilityImportClassifier(
                 hostCallbacks.ToImmutable(),
                 asyncBinding);
         }
-        if (!method.HasBody)
+        if (!method.HasManagedBody)
         {
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.UnsupportedMetadata,
@@ -303,7 +322,8 @@ internal sealed class ReachabilityImportClassifier(
     {
         foreach (var argument in methodArguments)
         {
-            if (argument.Shape != CliTypeShape.Named)
+            if (argument.ContainsGenericParameters ||
+                argument.Shape is not (CliTypeShape.Named or CliTypeShape.GenericInstantiation))
             {
                 continue;
             }
@@ -386,18 +406,20 @@ internal sealed class ReachabilityImportClassifier(
     private void AddHostObjectReturn(
         MethodDefinitionModel method,
         ImmutableArray<EntityKey>.Builder types,
+        ImmutableArray<CliTypeIdentity>.Builder allocatedTypes,
         ImmutableArray<ReachabilityExceptionRequirement>.Builder exceptions)
     {
-        if (!IsHostObject(method.Signature.ReturnSignatureType) &&
-            !method.Signature.ParameterSignatureTypes.Any(IsHostObject))
+        var returnType = method.Signature.ReturnSignatureType;
+        if (!IsHostObject(returnType))
         {
             return;
         }
-        if (IsHostObject(method.Signature.ReturnSignatureType))
-        {
-            types.Add(typeDefinitions.ResolveTypeIdentity(method.Signature.ReturnSignatureType).Key);
-            exceptions.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
-        }
+        types.Add(typeDefinitions.ResolveTypeIdentity(returnType).Key);
+        // The import adapter allocates these wrappers without a CIL newobj.
+        // Register the runtime producer too, so interface dispatch can discover
+        // their implementations. Parameter-only references allocate nothing.
+        allocatedTypes.Add(returnType);
+        exceptions.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
     }
 
     private static bool IsByteArray(CliTypeIdentity type) =>

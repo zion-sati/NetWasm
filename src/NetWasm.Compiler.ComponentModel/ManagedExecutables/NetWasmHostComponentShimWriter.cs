@@ -1,24 +1,45 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using NetWasm.Compiler.Core.ManagedExecutables;
 
 namespace NetWasm.Compiler.ComponentModel.ManagedExecutables;
 
-public sealed class NetWasmHostComponentShimWriter(
-    IWasmTextModuleWriter modules) : INetWasmHostComponentShimWriter
+public sealed class NetWasmHostComponentShimWriter : INetWasmHostComponentShimWriter
 {
-    private readonly IWasmTextModuleWriter _modules = modules ??
-        throw new ArgumentNullException(nameof(modules));
+    private readonly ImmutableDictionary<ManagedExecutableCompletionShape,
+        INetWasmHostComponentShimWriter> _writers;
+
+    public NetWasmHostComponentShimWriter(
+        IEnumerable<KeyValuePair<ManagedExecutableCompletionShape,
+            INetWasmHostComponentShimWriter>> writers)
+    {
+        ArgumentNullException.ThrowIfNull(writers);
+        var registry = ImmutableDictionary.CreateBuilder<ManagedExecutableCompletionShape,
+            INetWasmHostComponentShimWriter>();
+        foreach (var (shape, writer) in writers)
+        {
+            ArgumentNullException.ThrowIfNull(writer);
+            if (!Enum.IsDefined(shape) || !registry.TryAdd(shape, writer))
+            {
+                throw new ArgumentException("Adapter registrations must have unique, supported completion shapes.", nameof(writers));
+            }
+        }
+        if (registry.Count != Enum.GetValues<ManagedExecutableCompletionShape>().Length)
+        {
+            throw new ArgumentException("Every managed completion shape requires an adapter.", nameof(writers));
+        }
+        _writers = registry.ToImmutable();
+    }
 
     public void Write(NetWasmHostComponentShimRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.OutputPath);
-        ArgumentNullException.ThrowIfNull(request.Target);
-        var addressType = request.Target.Width == "wasm64" ? "i64" : "i32";
-        _modules.Write(
-            "(module " +
-            "(func (export \"write_i32\") (param i32)) " +
-            "(func (export \"report_terminal_exception_v1\") " +
-            $"(param i32 {addressType} i32) unreachable))",
-            request.OutputPath);
+        if (!_writers.TryGetValue(request.CompletionShape, out var writer))
+        {
+            throw new ArgumentOutOfRangeException(nameof(request),
+                request.CompletionShape, "Unsupported managed completion shape.");
+        }
+        writer.Write(request);
     }
 }

@@ -11,7 +11,7 @@ namespace NetWasm.Compiler;
 public sealed record ProgramExport(string Name, EntityKey Method);
 
 public sealed record ReachableProgram(
-    MethodDefinitionModel EntryPoint,
+    MethodDefinitionModel? EntryPoint,
     ImmutableDictionary<EntityKey, ManagedMethodBody> Methods,
     ImmutableHashSet<EntityKey> Types,
     ImmutableHashSet<EntityKey> Fields,
@@ -20,7 +20,7 @@ public sealed record ReachableProgram(
     ImmutableArray<ProgramExport> Exports,
     ImmutableHashSet<EntityKey> AllocatingMethods,
     ImmutableDictionary<EntityKey, MethodRootMap> RootMaps,
-    ImmutableDictionary<EntityKey, EntityKey> Finalizers,
+    ImmutableDictionary<CliTypeIdentity, MethodInstanceModel> Finalizers,
     ImmutableHashSet<ManagedExceptionKind> ImplicitExceptions)
 {
     public ImmutableHashSet<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
@@ -77,6 +77,8 @@ public sealed record ReachableProgram(
 
     public bool RequiresDelegateInvoke { get; init; }
 
+    public bool RequiresGenericArguments { get; init; }
+
     public RuntimeTypeNamePayload TypeNamePayload { get; init; }
 
     public ImmutableArray<string> ConstructedStaticInitializers { get; init; } = [];
@@ -88,6 +90,9 @@ public sealed record ReachableProgram(
         [];
 
     public ImmutableDictionary<string, MethodInstanceModel> CallableMethods { get; init; } =
+        [];
+
+    public ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
         [];
 
     public ImmutableArray<CliTypeIdentity> DelegateTypes { get; init; } = [];

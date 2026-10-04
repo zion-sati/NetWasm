@@ -52,6 +52,7 @@ test("copies UTF-16 synchronously, including unpaired surrogates", () => {
 test("reports immediately and enriches lazily with one cached artifact load", async () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
   new Uint16Array(memory.buffer, 40, 2).set([0x68, 0x69]);
+  new Uint16Array(memory.buffer, 56, 2).set([0x61, 0x74]);
   const wasmBytes = Uint8Array.from([0, 97, 115, 109]);
   const mapBytes = new TextEncoder().encode(JSON.stringify({ schemaVersion: 2, buildId: "build", entries: [{ typeId: 7, displayName: "BoomException", canonicalIdentity: "BoomException, App", assemblyIdentity: "App" }] }));
   const digest = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -75,13 +76,112 @@ test("reports immediately and enriches lazily with one cached artifact load", as
     },
   });
 
-  reporter.reportTerminalException(7, 32, 2);
-  reporter.reportTerminalException(7, 32, 2);
+  reporter.reportTerminalException(7, 32, 2, 48, 2);
+  reporter.reportTerminalException(7, 32, 2, 48, 2);
   assert.deepEqual(immediate.map(event => event.message), ["hi", "hi"]);
+  assert.deepEqual(immediate.map(event => event.stackTrace), ["at", "at"]);
   assert.deepEqual(immediate.map(event => event.eventId), [1, 2]);
   await enrichments;
   assert.equal(loads, 1);
   assert.deepEqual(enriched.map(event => event.typeName), ["BoomException", "BoomException"]);
+  assert.deepEqual(enriched.map(event => event.stackTrace), ["at", "at"]);
+});
+
+test("supports the v1 import while preserving null stack-trace semantics", async () => {
+  const reports = [];
+  const reporter = createManagedExceptionReporter({
+    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+    stringDataOffset: 8,
+    reportImmediate: report => reports.push(report),
+    reportEnriched() {},
+    loadArtifacts: async () => { throw new Error("not deployed"); },
+  });
+
+  reporter.importObject.report_terminal_exception_v1(7, 0, 0);
+
+  assert.equal(reports[0].typeId, 7);
+  assert.equal(reports[0].message, null);
+  assert.equal(reports[0].stackTrace, null);
+  await reporter.drain();
+});
+
+test("resolves exact numeric frames from the deployed symbol sidecar", async () => {
+  const immediate = [];
+  const enriched = [];
+  const reporter = createManagedExceptionReporter({
+    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+    stringDataOffset: 8,
+    reportImmediate: event => immediate.push(event),
+    reportEnriched: event => enriched.push(event),
+    stackTraceSymbols: [{
+      id: 7,
+      name: "EntryPoint.Run in Program.cs:line 12",
+    }],
+    crypto: webcrypto,
+    loadArtifacts: async () => {
+      throw new Error("not deployed");
+    },
+  });
+
+  reporter.reportTerminalEvent(
+    7,
+    "invalid format",
+    "at method#7\nat method#8\nnot a managed frame");
+  await reporter.drain();
+
+  const expected =
+    "at EntryPoint.Run in Program.cs:line 12\nat method#8\nnot a managed frame";
+  assert.equal(immediate[0].stackTrace, expected);
+  assert.equal(enriched[0].stackTrace, expected);
+});
+
+test("rejects malformed stack-trace symbol inputs before reporting", () => {
+  for (const stackTraceSymbols of [null, {}, [{ id: 0, name: "A" }],
+    [{ id: 1, name: "" }], [{ id: 1, name: "A" }, { id: 1, name: "B" }]]) {
+    assert.throws(() => createManagedExceptionReporter({
+      getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+      stringDataOffset: 8,
+      reportImmediate() {},
+      reportEnriched() {},
+      stackTraceSymbols,
+      loadArtifacts: async () => null,
+    }), /stack-trace symbol/u);
+  }
+});
+
+test("drains every scheduled enrichment before host finalization", async () => {
+  let resolveArtifacts;
+  const artifactsReady = new Promise(resolve => { resolveArtifacts = resolve; });
+  const enriched = [];
+  const artifacts = diagnosticArtifacts({
+    schemaVersion: 2,
+    buildId: "build",
+    entries: [{
+      typeId: 7,
+      displayName: "System.FormatException",
+      canonicalIdentity: "System.FormatException, System.Private.CoreLib",
+      assemblyIdentity: "System.Private.CoreLib",
+    }],
+  });
+  const reporter = createManagedExceptionReporter({
+    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+    stringDataOffset: 8,
+    reportImmediate: () => {},
+    reportEnriched: event => enriched.push(event),
+    crypto: webcrypto,
+    loadArtifacts: () => artifactsReady,
+  });
+
+  reporter.reportTerminalException(7, 0, 0);
+  let drained = false;
+  const drain = reporter.drain().then(() => { drained = true; });
+  await Promise.resolve();
+  assert.equal(drained, false);
+  resolveArtifacts(artifacts);
+  await drain;
+
+  assert.equal(drained, true);
+  assert.equal(enriched[0].typeName, "System.FormatException");
 });
 
 test("invalid references preserve the type report", () => {
@@ -238,6 +338,21 @@ test("rejects invalid type IDs before host logging", () => {
   assert.deepEqual(immediate, []);
 });
 
+test("rejects invalid event text before host logging", () => {
+  const immediate = [];
+  const reporter = createManagedExceptionReporter({
+    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+    stringDataOffset: 8,
+    reportImmediate: event => immediate.push(event),
+    reportEnriched() {},
+    loadArtifacts: () => new Promise(() => {}),
+  });
+
+  assert.throws(() => reporter.reportTerminalEvent(7, 42), /message/);
+  assert.throws(() => reporter.reportTerminalEvent(7, "message", 42), /stack trace/);
+  assert.deepEqual(immediate, []);
+});
+
 test("copies before allowing host callbacks to re-enter the reporter", () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
   new Uint16Array(memory.buffer, 24, 1)[0] = 0x41;
@@ -344,6 +459,25 @@ test("keeps host reporting failures distinct from managed terminal failures", ()
   });
 
   assert.throws(() => reporter.reportTerminalException(3, 0, 0), error => error === hostFailure);
+});
+
+test("drain preserves an enrichment output failure", async () => {
+  const hostFailure = new Error("host enrichment output failed");
+  const reporter = createManagedExceptionReporter({
+    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+    stringDataOffset: 8,
+    reportImmediate() {},
+    reportEnriched: () => { throw hostFailure; },
+    loadArtifacts: async () => diagnosticArtifacts({
+      schemaVersion: 2,
+      buildId: "build",
+      entries: [],
+    }),
+    crypto: webcrypto,
+  });
+
+  reporter.reportTerminalEvent(7, "message");
+  await assert.rejects(() => reporter.drain(), error => error === hostFailure);
 });
 
 test("rejects every invalid reporter dependency before accepting reports", () => {
@@ -461,4 +595,19 @@ test("enriches an unknown valid exception type without fabricating identity", as
   assert.equal(outcome.canonicalIdentity, undefined);
   assert.equal(outcome.assemblyIdentity, undefined);
   assert.equal(outcome.buildId, "build");
+});
+
+test("returns from the raw raise hook so the emitter produces the terminal trap", async () => {
+  const reporter = createManagedExceptionReporter({
+    getMemory: () => new WebAssembly.Memory({ initial: 1 }),
+    stringDataOffset: 8,
+    reportImmediate() {},
+    reportEnriched() {},
+    loadArtifacts: async () => { throw new Error("no artifacts"); },
+  });
+  reporter.importObject.report_terminal_exception_v2(7, 0, 0, 0, 0);
+  assert.equal(reporter.importObject.raise_terminal_exception(), undefined);
+  assert.equal(reporter.consumeTerminalEvent().typeId, 7);
+  assert.equal(reporter.consumeTerminalEvent(), undefined);
+  await reporter.drain();
 });

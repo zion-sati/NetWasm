@@ -5,6 +5,7 @@ import {
   createManagedExports,
   createManagedInteropExport,
 } from "./managed-interop-export.mjs";
+import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { NetWasmHostError, NetWasmManagedError } from "./managed-errors.mjs";
 
 const minimalModule = new Uint8Array([
@@ -19,10 +20,23 @@ const reporter = (event = null) => ({ consumeTerminalEvent: () => event });
 const descriptor = (overrides = {}) => ({
   name: "run", parameters: [], result: "i32", ...overrides,
 });
+const memory = new WebAssembly.Memory({ initial: 1 });
+const targetLayout = {
+  managedReferenceSize: 4,
+  stringLengthOffset: 4,
+  stringDataOffset: 8,
+  arrayLengthOffset: 4,
+  arrayDataPointerOffset: 8,
+};
 const request = (overrides = {}) => ({
   descriptor: descriptor(),
   exceptionReporter: reporter(),
+  getMemory: () => memory,
+  handles: createInteropHandleTable(),
   instance: { exports: { run: () => 7 } },
+  target: "wasm32",
+  targetLayout,
+  consumeExceptionPayload(handle) { assert.equal(handle, 0); return null; },
   ...overrides,
 });
 
@@ -50,6 +64,100 @@ test("adapts synchronous scalar and void managed exports", () => {
     instance: { exports: { run: () => 99 } },
   }));
   assert.equal(voidExport(), undefined);
+});
+
+test("copies synchronous strings after memory growth and releases argument handles", () => {
+  const exportMemory = new WebAssembly.Memory({ initial: 1 });
+  const handles = createInteropHandleTable();
+  const result = "copied:\ud800Ω";
+  const reference = 65_536;
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["string"], result: "string" }),
+    getMemory: () => exportMemory,
+    handles,
+    instance: { exports: {
+      run(handle) {
+        assert.equal(handles.get(handle), "input\0\udc00");
+        exportMemory.grow(1);
+        const view = new DataView(exportMemory.buffer);
+        view.setInt32(reference + targetLayout.stringLengthOffset, result.length, true);
+        for (let index = 0; index < result.length; index++) {
+          view.setUint16(
+            reference + targetLayout.stringDataOffset + index * 2,
+            result.charCodeAt(index),
+            true);
+        }
+        return reference;
+      },
+    } },
+  }));
+  assert.equal(invoke("input\0\udc00"), result);
+  assert.equal(handles.count, 0);
+
+  const failing = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["string"] }),
+    handles,
+    instance: { exports: {
+      run() { throw new Error("failure"); },
+      exception_get_active: () => 0,
+    } },
+  }));
+  assert.throws(() => failing("temporary"), NetWasmManagedError);
+  assert.equal(handles.count, 0);
+  assert.throws(() => invoke(42), /string or null/);
+});
+
+test("copies synchronous byte arrays in both directions and releases argument handles", () => {
+  const exportMemory = new WebAssembly.Memory({ initial: 1 });
+  const handles = createInteropHandleTable();
+  const reference = 256;
+  const dataAddress = 512;
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["bytes"], result: "bytes" }),
+    getMemory: () => exportMemory,
+    handles,
+    instance: { exports: {
+      run(handle) {
+        assert.deepEqual(handles.get(handle), Uint8Array.of(1, 2, 255));
+        const view = new DataView(exportMemory.buffer);
+        view.setInt32(reference + targetLayout.arrayLengthOffset, 3, true);
+        view.setUint32(reference + targetLayout.arrayDataPointerOffset, dataAddress, true);
+        new Uint8Array(exportMemory.buffer, dataAddress, 3).set([9, 8, 7]);
+        return reference;
+      },
+    } },
+  }));
+
+  const input = Uint8Array.of(1, 2, 255);
+  const result = invoke(input);
+  assert.deepEqual(result, Uint8Array.of(9, 8, 7));
+  assert.notEqual(result.buffer, exportMemory.buffer);
+  new Uint8Array(exportMemory.buffer, dataAddress, 3).fill(0);
+  assert.deepEqual(result, Uint8Array.of(9, 8, 7));
+  assert.equal(handles.count, 0);
+  assert.throws(() => invoke([1, 2, 3]), /Uint8Array or null/);
+});
+
+test("passes null buffers without acquiring handles and surfaces release failures", () => {
+  for (const type of ["string", "bytes"]) {
+    const handles = createInteropHandleTable();
+    const invoke = createManagedInteropExport(request({
+      descriptor: descriptor({ parameters: [type] }), handles,
+      instance: { exports: { run(handle) { assert.equal(handle, 0); return 42; } } },
+    }));
+    assert.equal(invoke(null), 42);
+    assert.equal(handles.count, 0);
+  }
+  const failure = new Error("handle release failed");
+  let released = 0;
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["string"] }),
+    handles: { acquire: () => 7, release(handle) {
+      assert.equal(handle, 7); released++; throw failure;
+    } },
+  }));
+  assert.throws(() => invoke("temporary"), error => error === failure);
+  assert.equal(released, 1);
 });
 
 test("converts low-level WebAssembly exceptions and preserves unrelated failures", () => {
@@ -130,11 +238,11 @@ test("observes every managed async completion state and completes once", async (
         return state === "success" || state === "void" ? 1 : state === "cancelled" ? 3 : 2;
       },
       result: () => 37,
-      complete(handle) { assert.equal(handle, 5); completed++; },
+      complete(handle) { assert.equal(handle, 5); completed++; return 0; },
     };
     const invoke = createManagedInteropExport(request({
       descriptor: descriptor({
-        asyncReturn: "task", statusExport: "status", completeExport: "complete",
+        asyncReturn: "task", statusExport: "status", completeExport: "complete", completionResult: "exception-handle-v1",
         resultExport: "result", result: state === "void" ? "void" : "i32",
       }),
       instance: { exports },
@@ -176,4 +284,42 @@ test("rejects malformed managed-export composition", () => {
       ...valid, exceptionReporter,
     }), /reporter/);
   }
+  for (const key of ["assertAvailable", "observeAsyncExport"]) {
+    assert.throws(() => createManagedInteropExport({ ...valid, [key]: null }), /lifetime actions/);
+  }
+  for (const services of [
+    { getMemory: null }, { handles: null }, { handles: 1 },
+    { handles: {} }, { handles: { acquire() {}, release: null } },
+  ]) {
+    assert.throws(() => createManagedInteropExport({ ...valid, ...services }), /memory services/);
+  }
+  assert.throws(() => createManagedInteropExport(request({
+    descriptor: descriptor({ asyncReturn: "task" }), consumeExceptionPayload: null,
+  })), /payload consumer/);
+});
+
+test("delegates async observation through the injected lifetime capability", async () => {
+  let checked = 0;
+  let completed = 0;
+  const invoke = createManagedInteropExport(request({
+    descriptor: descriptor({
+      asyncReturn: "task", statusExport: "status", resultExport: "result", completeExport: "complete", completionResult: "exception-handle-v1",
+    }),
+    instance: { exports: {
+      run: () => 5, status: handle => { assert.equal(handle, 5); return 1; },
+      result: handle => { assert.equal(handle, 5); return 42; },
+      complete: handle => { assert.equal(handle, 5); completed++; return 0; },
+    } },
+    assertAvailable() { checked++; },
+    observeAsyncExport(operation) {
+      assert.equal(operation.name, "run");
+      assert.equal(operation.readStatus(), 1);
+      const result = operation.readResult();
+      operation.complete();
+      return Promise.resolve(result);
+    },
+  }));
+  assert.equal(await invoke(), 42);
+  assert.equal(checked, 1);
+  assert.equal(completed, 1);
 });

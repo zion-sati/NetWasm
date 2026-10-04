@@ -16,7 +16,8 @@ internal sealed class EnumGetValuesEmitter(
     IRuntimeImportResolver runtimeImports,
     ITargetLayout layouts,
     IAddressInstructionEmitter addresses,
-    IEnumTypeArgumentValidator typeArguments) : IEnumGetValuesEmitter
+    IEnumTypeArgumentValidator typeArguments,
+    IImplicitExceptionEmitter exceptions) : IEnumGetValuesEmitter
 {
     public void EmitGetValues(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -29,8 +30,7 @@ internal sealed class EnumGetValuesEmitter(
             throw new InvalidOperationException("enum get-values intrinsic requires one enum type argument");
         var enumType = request.Method.MethodArguments[0];
         var entry = metadata.EnumMetadata
-            .Where(candidate => candidate.Type.Assembly.Equals(enumType.Assembly))
-            .SingleOrDefault(candidate => types.GetTypeDefinition(candidate.Type).FullName == enumType.FullName);
+            .SingleOrDefault(candidate => candidate.EnumType.Equals(enumType));
         if (entry.TypeId == 0)
             throw new InvalidOperationException($"enum metadata is unavailable for '{enumType.CanonicalName}'");
 
@@ -86,8 +86,11 @@ internal sealed class EnumGetValuesEmitter(
         var type = request.Local(0, CliValueKind.ManagedReference);
         var underlyingType = request.Local(1, CliValueKind.I4);
         var result = request.Local(0, CliValueKind.ManagedReference);
+        // Filling an array mutates its index. Keep the validated type id intact
+        // while later enum cases compare it, including enums sharing a definition.
+        var typeId = request.Instruction.Context.NumericTemporaryI4Second;
         var temporary = request.Instruction.Context.NumericTemporaryI4;
-        typeArguments.Validate(code, type, temporary);
+        typeArguments.Validate(code, type, typeId);
         addresses.Emit(code, 0);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
@@ -99,7 +102,7 @@ internal sealed class EnumGetValuesEmitter(
             var elementLayout = values.GetValueLayout(element);
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)temporary)));
+                WasmInstructionOperand.Unsigned((uint)typeId)));
             WriteI32(code, entry.TypeId);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(
@@ -118,20 +121,27 @@ internal sealed class EnumGetValuesEmitter(
                 entry,
                 element,
                 elementLayout,
-                GetArrayTypeId(element),
+                typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(element)).TypeId,
                 typeLayouts.GetObjectLayout(element).TypeId);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-            var enumType = EnumType(entry);
-            var enumLayout = values.GetValueLayout(enumType);
-            EmitArray(
-                code,
-                result,
-                temporary,
-                entry,
-                enumType,
-                enumLayout,
-                typeLayouts.ReferenceArrayTypeId,
-                entry.TypeId);
+            if (entry.IsOpenDefinition)
+            {
+                exceptions.Emit(code, ManagedExceptionKind.NotSupported);
+            }
+            else
+            {
+                var enumType = entry.EnumType;
+                var enumLayout = values.GetValueLayout(enumType);
+                EmitArray(
+                    code,
+                    result,
+                    temporary,
+                    entry,
+                    enumType,
+                    enumLayout,
+                    typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(enumType)).TypeId,
+                    entry.TypeId);
+            }
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
@@ -186,30 +196,4 @@ internal sealed class EnumGetValuesEmitter(
     private static void WriteI32(IWasmInstructionWriter code, int value) => code.Write(
         WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
 
-    private CliTypeIdentity EnumType(EnumMetadataLayout entry)
-    {
-        var definition = types.GetTypeDefinition(entry.Type);
-        return CliTypeIdentity.Named(
-            entry.Type.Assembly,
-            definition.Namespace,
-            definition.Name,
-            isValueType: true,
-            definition.EnumUnderlyingType.StackKind);
-    }
-
-    private int GetArrayTypeId(CliTypeIdentity element)
-    {
-        try
-        {
-            return typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(element)).TypeId;
-        }
-        catch (CompilerException exception) when (
-            exception.Diagnostic.Code == DiagnosticCode.RuntimeContract)
-        {
-            // Type-based Enum.GetValues returns Array. If a particular closed
-            // array identity is not otherwise reachable, the base Array
-            // descriptor is sufficient for that uncast branch.
-            return typeLayouts.ReferenceArrayTypeId;
-        }
-    }
 }

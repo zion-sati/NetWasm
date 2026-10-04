@@ -11,7 +11,7 @@ public sealed class RuntimeSupportIntrinsicEmitterTests
     [InlineData(RuntimeIntrinsic.GcCollect, 0)]
     [InlineData(RuntimeIntrinsic.SuppressFinalize, 1)]
     [InlineData(RuntimeIntrinsic.ReRegisterForFinalize, 1)]
-    [InlineData(RuntimeIntrinsic.ReportUnobservedTaskException, 0)]
+    [InlineData(RuntimeIntrinsic.ReportUnobservedTaskException, 3)]
     [InlineData(RuntimeIntrinsic.IsReferenceOrContainsReferences, 1)]
     [InlineData(RuntimeIntrinsic.GetArrayDataReference, 1)]
     [InlineData(RuntimeIntrinsic.NativeIntegerSize, 0)]
@@ -27,7 +27,11 @@ public sealed class RuntimeSupportIntrinsicEmitterTests
         var layouts = new RecordingLayoutProvider();
         var emitter = CreateEmitter(intrinsic, layouts);
         var stack = Enumerable.Repeat(CliValueKind.I4, argumentCount).ToArray();
-        if (intrinsic is RuntimeIntrinsic.SuppressFinalize or
+        if (intrinsic is RuntimeIntrinsic.ReportUnobservedTaskException)
+        {
+            Array.Fill(stack, CliValueKind.ManagedReference);
+        }
+        else if (intrinsic is RuntimeIntrinsic.SuppressFinalize or
             RuntimeIntrinsic.ReRegisterForFinalize or
             RuntimeIntrinsic.GetArrayDataReference or
             RuntimeIntrinsic.ComponentResourceHandleCreate)

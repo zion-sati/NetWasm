@@ -221,6 +221,7 @@ public sealed class CallableLoadingEmitterTests
         return new FunctionLoadEmitter(
             new RecordingLayoutProvider(),
             CreateMethodOperands(program),
+            new NativeFunctionAddressEmitter(),
             new InstructionCommandFactory());
     }
 

@@ -12,7 +12,7 @@ internal interface IRuntimeFunctionAppender
         int importCount,
         ImmutableArray<FilterFunclet> filters,
         IReadOnlyDictionary<int, int> filterIndices,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         RuntimeInitializationPlan initialization,
         WasmEntryPointProfile entryPointProfile,
         JavaScriptAsyncMethodBinding? asyncBinding,

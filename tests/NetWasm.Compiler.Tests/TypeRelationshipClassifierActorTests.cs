@@ -12,6 +12,55 @@ public sealed class TypeRelationshipClassifierActorTests
     private static readonly CliTypeIdentity StringType = Named("String");
     private static readonly CliTypeIdentity ValueType = Named("Value", true);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConcurrentColdQueriesPreserveRelationshipAndInterfaceResults(bool sameTarget)
+    {
+        var candidate = Named("Candidate");
+        var target = Named("ITarget");
+        var unrelated = Named("IUnrelated");
+        using var overlap = new Barrier(2);
+        var classifier = new TypeRelationshipClassifier(
+            new ArrayTypeFinder(),
+            new DefinitionResolver(Definition(candidate, 1), Definition(target, 2),
+                Definition(unrelated, 3)),
+            new ArrayTypeIdentityResolver(),
+            new OverlappingInterfaceResolver(candidate, target, overlap),
+            new BaseResolver());
+        var secondTarget = sameTarget ? target : unrelated;
+
+        var first = Task.Factory.StartNew(
+            () => ((ITypeRelationshipClassifier)classifier).Classify(candidate, target),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var second = Task.Factory.StartNew(
+            () => ((ITypeRelationshipClassifier)classifier).Classify(candidate, secondTarget),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var results = await Task.WhenAll(first, second);
+
+        Assert.True(results[0].IsHierarchyAssignable);
+        Assert.Equal(sameTarget, results[1].IsHierarchyAssignable);
+        Assert.Equal(results[0], ((ITypeRelationshipClassifier)classifier).Classify(candidate, target));
+        Assert.Equal(results[1], ((ITypeRelationshipClassifier)classifier).Classify(candidate, secondTarget));
+    }
+
+    private sealed class OverlappingInterfaceResolver(
+        CliTypeIdentity candidate, CliTypeIdentity target, Barrier overlap) : IImplementedInterfaceResolver
+    {
+        private int _calls;
+
+        public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type)
+        {
+            if (!type.Equals(candidate)) return [];
+            if (Interlocked.Increment(ref _calls) <= 2 &&
+                !overlap.SignalAndWait(TimeSpan.FromSeconds(10)))
+            {
+                throw new TimeoutException("Concurrent requests did not overlap.");
+            }
+            return [target];
+        }
+    }
+
     [Fact]
     public void GenericVarianceRequiresCompatibleReferenceTypeArguments()
     {

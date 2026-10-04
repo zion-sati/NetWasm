@@ -9,5 +9,7 @@ internal interface IExceptionObjectStateReader
         int exceptionLocal,
         int typeIdLocal,
         int messageLocal,
-        int messageLengthLocal);
+        int messageLengthLocal,
+        int stackTraceLocal,
+        int stackTraceLengthLocal);
 }

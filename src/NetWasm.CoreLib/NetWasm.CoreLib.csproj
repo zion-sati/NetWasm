@@ -13,6 +13,11 @@
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- The reference contract follows System.Private.CoreLib's assembly-level
+         CLS declaration. CLS diagnostics are consumer-facing; focused consumer
+         tests retain genuine violations without failing this platform
+         assembly's own build. -->
+    <NoWarn>$(NoWarn);CS3001;CS3002;CS3003;CS3008;CS3015</NoWarn>
   </PropertyGroup>
 
   <!-- Keep declaration order stable: metadata tokens are part of deterministic compiler output. -->
@@ -20,10 +25,19 @@
     <Compile Include="Runtime/CompilerServices/InternalsVisibleToAttribute.cs" />
     <Compile Include="Runtime/CompilerServices/MetadataAttributes.cs" />
     <Compile Include="Runtime/CompilerServices/IntrinsicAttribute.cs" />
+    <Compile Include="Runtime/CompilerServices/RuntimeCustomAttributes.cs" />
+    <Compile Include="Runtime/CompilerServices/ConditionalWeakTableRuntime.cs" />
+    <Compile Include="Runtime/CompilerServices/ConditionalWeakTable.cs" />
+    <Compile Include="Reflection/CustomAttributeFormatException.cs" />
+    <Compile Include="Reflection/TargetInvocationException.cs" />
+    <Compile Include="Reflection/TargetParameterCountException.cs" />
+    <Compile Include="Runtime/CompilerServices/CallConv.cs" />
     <Compile Include="AssemblyInfo.cs" />
     <Compile Include="CompilerContracts.cs" />
     <Compile Include="Obsoletions.cs" />
     <Compile Include="ComponentModel/DefaultValueAttribute.cs" />
+    <Compile Include="ComponentModel/DescriptionAttribute.cs" />
+    <Compile Include="ComponentModel/InvalidEnumArgumentException.cs" />
     <Compile Include="SerializableAttributes.cs" />
     <Compile Include="Configuration/Assemblies/MetadataEnums.cs" />
     <Compile Include="CodeDom/Compiler/GeneratedCodeAttribute.cs" />
@@ -83,6 +97,7 @@
     <Compile Include="Reflection/AssemblyMetadataAttribute.cs" />
     <Compile Include="Reflection/MetadataAttributes.cs" />
     <Compile Include="Reflection/UnsupportedReflectionContracts.cs" />
+    <Compile Include="Reflection/CustomAttributeExtensions.cs" />
     <Compile Include="Globalization/UnicodeCategory.cs" />
     <Compile Include="Globalization/CharUnicodeInfo.cs" />
     <Compile Include="Globalization/CharUnicodeInfoData.cs" />
@@ -638,6 +653,7 @@
     <Compile Include="Collections/Immutable/SortedInt32KeyNode.Enumerator.cs" />
     <Compile Include="Collections/Generic/ValueListBuilder.cs" />
     <Compile Include="Collections/Generic/ValueListBuilder.Pop.cs" />
+    <Compile Include="Collections/Concurrent/ConcurrentDictionary.cs" />
     <Compile Include="Collections/HashtableExtensions.cs" />
     <Compile Include="Collections/HashtableHashHelpers.cs" />
     <Compile Include="Collections/CompatibleComparer.cs" />
@@ -698,12 +714,21 @@
     <Compile Include="Threading/Cancellation.cs" />
     <Compile Include="Threading/Interlocked.cs" />
     <Compile Include="Threading/Volatile.cs" />
+    <Compile Include="Threading/Timeout.cs" />
+    <Compile Include="Threading/ThreadLocal.cs" />
+    <Compile Include="Threading/Tasks/TaskScheduler.cs" />
+    <Compile Include="Threading/Tasks/Task.Continuations.cs" />
+    <Compile Include="Threading/Tasks/TaskSchedulerException.cs" />
     <Compile Include="Threading/Monitor.cs" />
+    <Compile Include="Threading/SynchronizationLockException.cs" />
     <Compile Include="Threading/SynchronizationContext.cs" />
     <Compile Include="Runtime/CompilerServices/Unsafe.cs" />
     <Compile Include="Runtime/InteropServices/MemoryMarshal.cs" />
     <Compile Include="Runtime/InteropServices/CollectionsMarshal.cs" />
     <Compile Include="Runtime/InteropServices/NativeMemory.cs" />
+    <Compile Include="Runtime/InteropServices/ExternalException.cs" />
+    <Compile Include="Runtime/InteropServices/Marshal.cs" />
+    <Compile Include="Runtime/InteropServices/SafeHandle.cs" />
     <Compile Include="Linq/Expressions/ExpressionType.cs" />
     <Compile Include="Linq/Expressions/Expression.cs" />
     <Compile Include="Linq/Expressions/ParameterExpression.cs" />
@@ -734,6 +759,8 @@
     <Compile Include="Linq/Expressions/Interpreter/LocalVariables.cs" />
     <Compile Include="Linq/Expressions/Interpreter/InstructionList.cs" />
     <Compile Include="Linq/Expressions/Interpreter/NumericInstructions.cs" />
+    <Compile Include="Linq/Expressions/Interpreter/NullableValueInstruction.cs" />
+    <Compile Include="Linq/Expressions/Interpreter/EqualInstruction.cs" />
     <Compile Include="Linq/Expressions/Interpreter/LightLambda.cs" />
     <Compile Include="Linq/Expressions/Interpreter/LightCompiler.cs" />
   </ItemGroup>
@@ -741,5 +768,21 @@
     <Compile Include="EnvironmentVariableTarget.cs" />
     <Compile Include="EnumMetadataView.cs" />
     <Compile Include="EnumAlgorithms.cs" />
+    <Compile Include="Runtime/InteropServices/DllImportAttribute.cs" />
+    <Compile Include="Runtime/InteropServices/CallingConvention.cs" />
+    <Compile Include="Runtime/InteropServices/LibraryImportAttribute.cs" />
+    <Compile Include="Runtime/InteropServices/StringMarshalling.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/MarshalMode.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/CustomMarshallerAttribute.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/ContiguousCollectionMarshallerAttribute.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/MarshalUsingAttribute.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/ArrayMarshaller.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/Utf8StringMarshaller.cs" />
+    <Compile Include="Runtime/InteropServices/Marshalling/SafeHandleMarshaller.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Security/Cryptography/RandomNumberGenerator.cs" />
+    <Compile Include="Security/Cryptography/RandomNumberGeneratorImplementation.cs" />
+    <Compile Include="Security/Cryptography/RandomNumberGeneratorImplementation.NetWasm.cs" />
   </ItemGroup>
 </Project>

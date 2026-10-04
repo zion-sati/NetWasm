@@ -5,5 +5,7 @@ internal static class ManagedAssemblyTestFactory
     internal static ManagedAssembly Load(string path) =>
         new ManagedAssemblyLoader(
             new ManagedAssemblyImageReader(),
-            new ValueTypeDefinitionStackKindResolver()).Load(path);
+            new ValueTypeDefinitionStackKindResolver(),
+            new NativeImportDeclarationReader(),
+            new NativeCallbackDeclarationReader()).Load(path);
 }

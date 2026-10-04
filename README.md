@@ -6,7 +6,7 @@ components.
 
 Write C#. Deploy like C++. Target WebAssembly and WASI.
 
-A clean Release build of `Console.WriteLine(42)` produces an **84,513-byte
+A clean Release build of `Console.WriteLine(42)` produces an **84,653-byte
 final Wasm artifact, runtime and precise garbage collection included.**
 
 [![Star NetWasm on GitHub](https://img.shields.io/github/stars/zion-sati/NetWasm?style=for-the-badge&logo=github&label=Star%20NetWasm)](https://github.com/zion-sati/NetWasm)
@@ -26,10 +26,10 @@ memory. Deploy the compiled program to a compatible WASI host.
 
 ## AOT vs AOT: printing `42`
 
-**82.5 KB with NetWasm. 14.58 MB with .NET 11 Blazor WebAssembly AOT.**
+**82.7 KB with NetWasm. 14.58 MB with .NET 11 Blazor WebAssembly AOT.**
 Using the exact byte counts, NetWasm is **181× smaller**.
 
-![AOT Wasm size comparison, lower is better: NetWasm 82.5 KB, Blazor .NET 10 11.71 MB, Blazor .NET 11 RC1 14.58 MB. NetWasm is 181 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size.svg)
+![AOT Wasm size comparison, lower is better: NetWasm 82.7 KB, Blazor .NET 10 11.71 MB, Blazor .NET 11 RC1 14.58 MB. NetWasm is 181 times smaller than the .NET 11 build by exact bytes.](docs/images/aot-console42-size.svg)
 
 We published an empty-UI Blazor WebAssembly app that calls
 `Console.WriteLine(42)`, with AOT, full managed trimming, IL stripping, invariant
@@ -38,7 +38,7 @@ globalization and size-focused native compilation/linking enabled. Both the
 
 | AOT build | Uncompressed Wasm | Size relative to NetWasm |
 | --- | ---: | ---: |
-| **NetWasm** | **84,513 bytes (82.5 KB)** | **1x** |
+| **NetWasm** | **84,653 bytes (82.7 KB)** | **1x** |
 | Blazor WebAssembly, .NET 10 | 12,276,684 bytes (11.71 MB) | 145x |
 | Blazor WebAssembly, .NET 11 RC1 | 15,289,241 bytes (14.58 MB) | 181x |
 
@@ -92,7 +92,7 @@ For Windows host support, browser publishing and dual-target libraries, follow t
 
 ## More than Hello World
 
-The 82.5 KiB program is the baseline, not the boundary. NetWasm already covers a practical .NET development loop:
+The 82.7 KiB program is the baseline, not the boundary. NetWasm already covers a practical .NET development loop:
 
 - C# 15 when the project selects the .NET 11 SDK, while the default template remains on .NET 10;
 - `dotnet build`, `dotnet run`, `dotnet publish` and `dotnet test`;
@@ -141,7 +141,7 @@ possible.
 - **Debugging is a build choice.** Debug enables managed stack traces;
   Release omits their instrumentation and symbol sidecar unless requested.
 
-The 84,513-byte figure is the uncompressed final component, not a compressed
+The 84,653-byte figure is the uncompressed final component, not a compressed
 download or the size of a complete JavaScript-host deployment. A WASI host is
 still required. [The measurement notes](docs/size-and-methodology.md) make that
 boundary explicit.

@@ -87,10 +87,7 @@ internal sealed class ComponentBoundaryEmitter(
             var type = _canonicalTypes.Plan(
                 function,
                 CanonicalAbiDirection.LiftedExport).PostReturnType;
-            var postReturnName = CanonicalAbiNames.PostReturn(
-                function.InterfaceName,
-                function.FunctionName,
-                target);
+            var postReturnName = CanonicalAbiNames.PostReturn(function, target);
             if (managedExportIndices.ContainsKey(postReturnName))
             {
                 continue;

@@ -28,8 +28,10 @@ internal sealed class ValueTypeLayoutResolver(
 
     public void Resolve()
     {
+        // Generic definition entries describe runtime type identity, not value storage.
+        // Closed instantiations resolve their substituted layouts on their own paths.
         foreach (var key in _state.Objects.Keys.Where(key =>
-                     _typeRepository.GetTypeDefinition(key).IsValueType
+                     _typeRepository.GetTypeDefinition(key) is { IsValueType: true, GenericArity: 0 }
             && _identities.GetTypeIdentity(key).HasRuntimeStorage))
         {
             _valueLayouts.Resolve(_identities.GetTypeIdentity(key));

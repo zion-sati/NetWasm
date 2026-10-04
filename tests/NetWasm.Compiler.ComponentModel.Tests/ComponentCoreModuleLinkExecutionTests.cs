@@ -112,10 +112,10 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             if (MergeFailure is not null) throw MergeFailure;
         }
 
-        public void RetainComponentExports(string inputPath, string outputPath, string prefix)
+        public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
         {
             Calls.Add("exports");
-            Exports = (inputPath, outputPath, prefix);
+            Exports = (inputPath, outputPath, selection.ComponentPrefix!);
         }
 
         public void Optimize(

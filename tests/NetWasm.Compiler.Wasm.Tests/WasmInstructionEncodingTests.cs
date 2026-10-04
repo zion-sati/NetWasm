@@ -70,6 +70,11 @@ public sealed class WasmInstructionEncodingTests
             [0x0f, 0x40, 0x01, 0x00, 0x03, 0x04]
         },
         {
+            WasmInstruction.WithOperand(0x1f,
+                WasmInstructionOperand.TryTableCatchAllRef(0x40, 128)),
+            [0x1f, 0x40, 0x01, 0x03, 0x80, 0x01]
+        },
+        {
             WasmInstruction.WithOperand(0x10, WasmInstructionOperand.Byte(0x2a)),
             [0x10, 0x2a]
         },

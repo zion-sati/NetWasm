@@ -12,5 +12,6 @@ internal interface IAsyncJSExportHelperAppender
         JavaScriptAsyncMethodBinding binding,
         ManagedAsyncBoundaryNames names,
         ManagedAsyncBoundaryKinds kinds,
-        ICollection<ManagedBoundaryPlanEntry> boundaryEntries);
+        ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
+        AsyncTaskCompletionPlan completion);
 }

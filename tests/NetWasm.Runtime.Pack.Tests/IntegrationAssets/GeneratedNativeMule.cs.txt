@@ -1,0 +1,71 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+public static unsafe partial class EntryPoint
+{
+    [LibraryImport("mule", EntryPoint = "native_mule_probe")]
+    private static partial int Probe();
+    [LibraryImport("mule", EntryPoint = "native_mule_data_end")]
+    private static partial nuint DataEnd();
+    [LibraryImport("mule", EntryPoint = "native_mule_sum")]
+    private static partial int Sum(int left, int right);
+    [LibraryImport("mule", EntryPoint = "native_mule_unsigned32")]
+    private static partial uint Unsigned32(uint value);
+    [LibraryImport("mule", EntryPoint = "native_mule_signed_pointer")]
+    private static partial nint SignedPointer(nint value);
+    [LibraryImport("mule", EntryPoint = "native_mule_signed")]
+    private static partial long Signed(long value);
+    [LibraryImport("mule", EntryPoint = "native_mule_unsigned")]
+    private static partial ulong Unsigned(ulong value);
+    [LibraryImport("mule", EntryPoint = "native_mule_single")]
+    private static partial float Single(float value);
+    [LibraryImport("mule", EntryPoint = "native_mule_double")]
+    private static partial double Double(double value);
+    [LibraryImport("mule", EntryPoint = "native_mule_pointer")]
+    private static partial byte* Pointer(byte* value);
+    [LibraryImport("mule", EntryPoint = "native_mule_buffer")]
+    private static partial int Buffer(byte* bytes, nuint count);
+    [LibraryImport("mule", EntryPoint = "native_mule_ref")]
+    private static partial void Ref(ref int value);
+    [LibraryImport("mule", EntryPoint = "native_mule_out")]
+    private static partial void Out(out long value);
+    [LibraryImport("mule", EntryPoint = "native_mule_status")]
+    private static partial int Status(int value, int* result);
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180 || DataEnd() <= 2 * 1024 * 1024) return -1;
+        if (Sum(int.MinValue + 100, 23) != int.MinValue + 123) return -2;
+        if (Signed(long.MinValue + 42) != long.MinValue + 42) return -3;
+        if (Unsigned(ulong.MaxValue - 42) != ulong.MaxValue - 42) return -4;
+        if (Single(1.25f) != 1.25f || Single(float.PositiveInfinity) != float.PositiveInfinity ||
+            !float.IsNaN(Single(float.NaN)) || BitConverter.SingleToInt32Bits(Single(-0.0f)) != int.MinValue) return -5;
+        if (Double(1.25) != 1.25 || Double(double.NegativeInfinity) != double.NegativeInfinity ||
+            !double.IsNaN(Double(double.NaN)) || BitConverter.DoubleToInt64Bits(Double(-0.0)) != long.MinValue) return -6;
+        byte* bytes = stackalloc byte[4];
+        bytes[0] = 3; bytes[1] = 7; bytes[2] = 11; bytes[3] = 19;
+        if (Pointer(bytes) != bytes || Buffer(bytes, 4) != 40 || Buffer(bytes, 0) != 0) return -7;
+        var value = input;
+        Ref(ref value);
+        if (value != input + 7) return -8;
+        Out(out var wide);
+        if (wide != 0x123456789abcdef0L) return -9;
+        var result = 99;
+        if (Status(-1, &result) != -7 || result != 99) return -10;
+        if (Status(41, &result) != 0 || result != 42) return -11;
+        if (Probe() != 180) return -12;
+        if (Unsigned32(uint.MaxValue - 42) != uint.MaxValue - 42 || SignedPointer(-42) != -42) return -13;
+        byte* grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            if ((nuint)grown < DataEnd()) return -14;
+            grown[0] = 3; grown[1] = 7; grown[2] = 11; grown[3] = 19;
+            grown[6 * 1024 * 1024 - 1] = 71;
+            if (Pointer(grown) != grown || Buffer(grown, 4) != 40 || grown[6 * 1024 * 1024 - 1] != 71) return -15;
+        }
+        finally { NativeMemory.Free(grown); }
+        return 42;
+    }
+}

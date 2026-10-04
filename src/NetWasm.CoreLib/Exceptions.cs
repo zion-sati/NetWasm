@@ -3,6 +3,8 @@
 // dotnet/runtime commit 811225a482702af7ecc35d817966bc70b88a3a23.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
+using System.Runtime.CompilerServices;
+
 namespace System
 {
     internal static class ExceptionHResults
@@ -443,7 +445,9 @@ namespace System
                 : base.Message + " (Parameter '" + ParamName + "')";
         }
 
-        public static void ThrowIfNullOrEmpty(string? argument, string? paramName = null)
+        // Preserve upstream caller-expression metadata so ported callers that
+        // omit paramName still report the offending argument, including RNG.
+        public static void ThrowIfNullOrEmpty(string? argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
         {
             if (string.IsNullOrEmpty(argument))
             {
@@ -452,7 +456,7 @@ namespace System
             }
         }
 
-        public static void ThrowIfNullOrWhiteSpace(string? argument, string? paramName = null)
+        public static void ThrowIfNullOrWhiteSpace(string? argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
         {
             if (argument is null || IsWhiteSpace(argument))
             {
@@ -479,12 +483,12 @@ namespace System
         public ArgumentNullException(string? paramName, string? message) : base(message, paramName) => HResult = ExceptionHResults.Pointer;
         public ArgumentNullException(string? paramName, Exception? innerException) : base(null, paramName, innerException) => HResult = ExceptionHResults.Pointer;
 
-        public static void ThrowIfNull(object? argument, string? paramName = null)
+        public static void ThrowIfNull(object? argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
         {
             if (argument is null) throw new ArgumentNullException(paramName);
         }
 
-        public static unsafe void ThrowIfNull(void* argument, string? paramName = null)
+        public static unsafe void ThrowIfNull(void* argument, [CallerArgumentExpression(nameof(argument))] string? paramName = null)
         {
             if (argument is null) throw new ArgumentNullException(paramName);
         }
@@ -508,51 +512,51 @@ namespace System
 
         public ArgumentOutOfRangeException(string? message, Exception? innerException) : base(message, innerException) => HResult = ExceptionHResults.ArgumentOutOfRange;
 
-        public static void ThrowIfEqual<T>(T value, T other, string? paramName = null)
+        public static void ThrowIfEqual<T>(T value, T other, [CallerArgumentExpression(nameof(value))] string? paramName = null)
         {
             if (object.Equals(value, other)) throw new ArgumentOutOfRangeException(paramName, value, "The value must not be equal to the other value.");
         }
 
-        public static void ThrowIfNotEqual<T>(T value, T other, string? paramName = null)
+        public static void ThrowIfNotEqual<T>(T value, T other, [CallerArgumentExpression(nameof(value))] string? paramName = null)
         {
             if (!object.Equals(value, other)) throw new ArgumentOutOfRangeException(paramName, value, "The value must be equal to the other value.");
         }
 
-        public static void ThrowIfGreaterThan<T>(T value, T other, string? paramName = null) where T : IComparable<T>
+        public static void ThrowIfGreaterThan<T>(T value, T other, [CallerArgumentExpression(nameof(value))] string? paramName = null) where T : IComparable<T>
         {
             if (value.CompareTo(other) > 0) throw new ArgumentOutOfRangeException(paramName, value, "The value must be less than or equal to the other value.");
         }
 
-        public static void ThrowIfGreaterThanOrEqual<T>(T value, T other, string? paramName = null) where T : IComparable<T>
+        public static void ThrowIfGreaterThanOrEqual<T>(T value, T other, [CallerArgumentExpression(nameof(value))] string? paramName = null) where T : IComparable<T>
         {
             if (value.CompareTo(other) >= 0) throw new ArgumentOutOfRangeException(paramName, value, "The value must be less than the other value.");
         }
 
-        public static void ThrowIfLessThan<T>(T value, T other, string? paramName = null) where T : IComparable<T>
+        public static void ThrowIfLessThan<T>(T value, T other, [CallerArgumentExpression(nameof(value))] string? paramName = null) where T : IComparable<T>
         {
             if (value.CompareTo(other) < 0) throw new ArgumentOutOfRangeException(paramName, value, "The value must be greater than or equal to the other value.");
         }
 
-        public static void ThrowIfLessThanOrEqual<T>(T value, T other, string? paramName = null) where T : IComparable<T>
+        public static void ThrowIfLessThanOrEqual<T>(T value, T other, [CallerArgumentExpression(nameof(value))] string? paramName = null) where T : IComparable<T>
         {
             if (value.CompareTo(other) <= 0) throw new ArgumentOutOfRangeException(paramName, value, "The value must be greater than the other value.");
         }
 
-        public static void ThrowIfNegativeOrZero<T>(T value, string? paramName = null)
+        public static void ThrowIfNegativeOrZero<T>(T value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
             where T : Numerics.INumberBase<T>
         {
             if (T.IsNegative(value) || T.IsZero(value))
                 throw new ArgumentOutOfRangeException(paramName, value, "The value must be positive.");
         }
 
-        public static void ThrowIfNegative<T>(T value, string? paramName = null)
+        public static void ThrowIfNegative<T>(T value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
             where T : Numerics.INumberBase<T>
         {
             if (T.IsNegative(value))
                 throw new ArgumentOutOfRangeException(paramName, value, "The value must be non-negative.");
         }
 
-        public static void ThrowIfZero<T>(T value, string? paramName = null)
+        public static void ThrowIfZero<T>(T value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
             where T : Numerics.INumberBase<T>
         {
             if (T.IsZero(value))
@@ -822,8 +826,14 @@ namespace System.Runtime.ExceptionServices
         }
         public static ExceptionDispatchInfo Capture(System.Exception sourceException) =>
             sourceException is null ? throw new System.ArgumentNullException(nameof(sourceException)) : new(sourceException);
-        public void Throw() => throw _sourceException;
-        public static void Throw(System.Exception sourceException) => throw sourceException;
+        public void Throw() => InternalThrow(_sourceException);
+        public static void Throw(System.Exception sourceException) =>
+            InternalThrow(sourceException ?? throw new System.ArgumentNullException(
+                nameof(sourceException)));
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.InternalCall)]
+        private static extern void InternalThrow(System.Exception sourceException);
     }
 }
 

@@ -38,6 +38,116 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
         return new(Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
     }
 
+    public RuntimeMaterializationCacheKey Build(RuntimeNativeMaterializationCacheKeyRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Plan);
+        ArgumentNullException.ThrowIfNull(request.Target.NativeValidation);
+        var hasCallbacks = request.NativeCallbackSupport is not null;
+        if (request.Bindings.IsDefault ||
+            request.Bindings.IsEmpty && !hasCallbacks ||
+            hasCallbacks != !string.IsNullOrWhiteSpace(request.NativeCallbackObjectPath) ||
+            hasCallbacks != !string.IsNullOrWhiteSpace(
+                request.NativeCallbackAllowedUndefinedPath))
+            throw new InvalidOperationException(
+                "A native materialization cache key requires selected bindings or callback support.");
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Append(hash, "schema", SchemaVersion);
+        Append(hash, "mode", "static-native-scalar-v1");
+        var profile = request.Target.NativeValidation;
+        Append(hash, "validation.version", profile.Version);
+        Append(hash, "validation.features.count", profile.Features.Length);
+        for (var index = 0; index < profile.Features.Length; index++)
+            Append(hash, $"validation.feature.{index}", profile.Features[index]);
+        Append(hash, "validation.imports.count", profile.Imports.Length);
+        for (var index = 0; index < profile.Imports.Length; index++)
+        {
+            var import = profile.Imports[index];
+            var prefix = $"validation.import.{index}";
+            Append(hash, prefix + ".module", import.Module);
+            Append(hash, prefix + ".name", import.Name);
+            Append(hash, prefix + ".required", import.Required ? 1 : 0);
+            Append(hash, prefix + ".parameters", Convert.ToHexString(import.Parameters.AsSpan()));
+            Append(hash, prefix + ".results", Convert.ToHexString(import.Results.AsSpan()));
+        }
+        AppendIdentity(hash, request.BuildIdentity);
+        AppendManifest(hash, request.Manifest);
+        AppendTarget(hash, request.Target);
+        var plan = request.Plan;
+        Append(hash, "plan.target", plan.Target);
+        Append(hash, "plan.pointerSize", plan.PointerSizeBytes);
+        Append(hash, "plan.pageSize", plan.WasmPageSize);
+        Append(hash, "plan.alignment", plan.Alignment);
+        Append(hash, "plan.applicationEnd", plan.ApplicationStaticDataEnd);
+        Append(hash, "plan.globalBase", plan.RuntimeGlobalBase);
+        Append(hash, "plan.initialHeap", plan.InitialHeapSizeBytes);
+        Append(hash, "plan.maximumMemory", plan.MaximumMemorySizeBytes);
+        Append(hash, "plan.nativeStack", plan.NativeStackSizeBytes);
+        Append(hash, "native.count", request.Bindings.Length);
+        for (var index = 0; index < request.Bindings.Length; index++)
+        {
+            var binding = request.Bindings[index];
+            var prefix = $"native.{index}";
+            Append(hash, prefix + ".library", binding.Import.LibraryName);
+            Append(hash, prefix + ".entry", binding.Import.EntryPoint);
+            Append(hash, prefix + ".target", binding.Provider.Target);
+            Append(hash, prefix + ".path", binding.Provider.Path);
+            Append(hash, prefix + ".digest", binding.Provider.Sha256);
+            Append(hash, prefix + ".parameters", binding.Import.Parameters.Length);
+            for (var parameter = 0; parameter < binding.Import.Parameters.Length; parameter++)
+                Append(hash, prefix + $".parameter.{parameter}", binding.Import.Parameters[parameter].ToString());
+            Append(hash, prefix + ".return", binding.Import.ReturnType?.ToString() ?? "void");
+        }
+        AppendCallbacks(hash, request.NativeCallbackSupport);
+        Append(hash, "optimization", request.Optimization.ToString());
+        AppendArguments(
+            hash,
+            "link",
+            request.LinkArguments,
+            request.AssetRoot,
+            request.OutputPath,
+            request.NativeCallbackObjectPath,
+            request.NativeCallbackAllowedUndefinedPath);
+        AppendArguments(hash, "optimization", request.OptimizationArguments, request.AssetRoot, request.OutputPath);
+        return new(Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
+    }
+
+    private static void AppendCallbacks(
+        IncrementalHash hash,
+        RuntimeNativeCallbackSupport? support)
+    {
+        Append(hash, "callbacks.present", support is null ? 0 : 1);
+        if (support is null)
+            return;
+        Append(hash, "callbacks.file", support.FileName);
+        Append(hash, "callbacks.digest", support.Sha256);
+        Append(hash, "callbacks.count", support.Callbacks.Length);
+        for (var index = 0; index < support.Callbacks.Length; index++)
+        {
+            var callback = support.Callbacks[index];
+            var prefix = $"callbacks.{index}";
+            Append(hash, prefix + ".native", callback.NativeSymbol);
+            Append(hash, prefix + ".runtimeImport", callback.RuntimeImportSymbol);
+            Append(hash, prefix + ".application", callback.ApplicationExportName);
+            Append(hash, prefix + ".getter", callback.RuntimeGetterExportName ?? "none");
+            Append(hash, prefix + ".parameters", callback.Parameters.Length);
+            for (var parameter = 0; parameter < callback.Parameters.Length; parameter++)
+                Append(hash, prefix + $".parameter.{parameter}",
+                    callback.Parameters[parameter].ToString());
+            Append(hash, prefix + ".return", callback.ReturnType?.ToString() ?? "void");
+        }
+        Append(hash, "callbacks.applicationExports.count",
+            support.TemporaryApplicationExports.Length);
+        for (var index = 0; index < support.TemporaryApplicationExports.Length; index++)
+            Append(hash, $"callbacks.applicationExports.{index}",
+                support.TemporaryApplicationExports[index]);
+        Append(hash, "callbacks.runtimeExports.count",
+            support.TemporaryRuntimeExports.Length);
+        for (var index = 0; index < support.TemporaryRuntimeExports.Length; index++)
+            Append(hash, $"callbacks.runtimeExports.{index}",
+                support.TemporaryRuntimeExports[index]);
+    }
+
     private static void AppendIdentity(IncrementalHash hash, RuntimeBuildIdentity identity)
     {
         ArgumentNullException.ThrowIfNull(identity);
@@ -104,7 +214,9 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
         string name,
         ImmutableArray<string> arguments,
         string assetRoot,
-        string outputPath)
+        string outputPath,
+        string? callbackObjectPath = null,
+        string? callbackAllowedUndefinedPath = null)
     {
         Append(hash, $"arguments.{name}.count", arguments.Length);
         for (var index = 0; index < arguments.Length; index++)
@@ -112,20 +224,40 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
             Append(
                 hash,
                 $"arguments.{name}.{index}",
-                NormalizeArgument(arguments[index], assetRoot, outputPath));
+                NormalizeArgument(
+                    arguments[index],
+                    assetRoot,
+                    outputPath,
+                    callbackObjectPath,
+                    callbackAllowedUndefinedPath));
         }
     }
 
-    private static string NormalizeArgument(string argument, string assetRoot, string outputPath)
+    private static string NormalizeArgument(
+        string argument,
+        string assetRoot,
+        string outputPath,
+        string? callbackObjectPath = null,
+        string? callbackAllowedUndefinedPath = null)
     {
         var fullOutputPath = Path.GetFullPath(outputPath);
         var fullAssetRoot = Path.GetFullPath(assetRoot)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var assetPrefix = fullAssetRoot + Path.DirectorySeparatorChar;
-        return argument
+        var normalized = argument
             .Replace(fullOutputPath, "$output", StringComparison.Ordinal)
-            .Replace(assetPrefix, "$assets/", StringComparison.Ordinal)
-            .Replace('\\', '/');
+            .Replace(assetPrefix, "$assets/", StringComparison.Ordinal);
+        if (!string.IsNullOrWhiteSpace(callbackObjectPath))
+            normalized = normalized.Replace(
+                Path.GetFullPath(callbackObjectPath),
+                "$callback-object",
+                StringComparison.Ordinal);
+        if (!string.IsNullOrWhiteSpace(callbackAllowedUndefinedPath))
+            normalized = normalized.Replace(
+                Path.GetFullPath(callbackAllowedUndefinedPath),
+                "$callback-undefined",
+                StringComparison.Ordinal);
+        return normalized.Replace('\\', '/');
     }
 
     private static void Append(IncrementalHash hash, string name, int value) =>

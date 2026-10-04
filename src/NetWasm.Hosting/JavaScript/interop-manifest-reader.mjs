@@ -108,15 +108,20 @@ function validateExportDescriptor(descriptor) {
       || typeof descriptor.name !== "string" || descriptor.name.length === 0
       || !Array.isArray(descriptor.parameters)
       || !isAbiType(descriptor.result)
-      || descriptor.parameters.some(type => !isScalarAbiType(type))
-      || descriptor.result !== "void" && !isScalarAbiType(descriptor.result)) {
+      || descriptor.parameters.some(type => !isScalarAbiType(type)
+        && type !== "string" && type !== "bytes")
+      || descriptor.result !== "void" && !isScalarAbiType(descriptor.result)
+        && descriptor.result !== "string" && descriptor.result !== "bytes") {
     throw new NetWasmHostError(
       "interop manifest contains an invalid export descriptor");
   }
   if (descriptor.asyncReturn != null
       && (descriptor.asyncReturn !== "task" && descriptor.asyncReturn !== "value-task"
+        || descriptor.parameters.some(type => type === "string" || type === "bytes")
+        || descriptor.result === "string" || descriptor.result === "bytes"
         || typeof descriptor.statusExport !== "string" || descriptor.statusExport.length === 0
         || typeof descriptor.completeExport !== "string" || descriptor.completeExport.length === 0
+        || descriptor.completionResult !== "exception-handle-v1"
         || descriptor.result !== "void"
           && (typeof descriptor.resultExport !== "string"
             || descriptor.resultExport.length === 0))) {

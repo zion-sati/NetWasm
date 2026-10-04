@@ -52,6 +52,46 @@ public sealed class ExceptionGroupStructurerCoverageTests
         Assert.Equal(targetAfterBoundary, parent.ContinuationJoinBlock is null);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OnlyProtectedRegionsInTheLoopBodyUseLoopContinuations(bool entryInsideBody)
+    {
+        var regions = ImmutableArray.Create(
+            new CilExceptionRegion(CilExceptionRegionKind.Finally, 0, 1, 1, 1, null, null));
+        var state = CreateState(regions);
+        var loop = new LoopRegion(3, 3, 3, 2, 5,
+            [3], entryInsideBody ? [0, 3] : [3], entryInsideBody ? [2] : [0, 2]);
+        state.LoopsByHeader.Add(loop.Header, loop);
+        var loopContinuations = new RecordingLoopContinuationBuilder();
+        var dispatchers = new RecordingContinuationDispatcherBuilder();
+        var structurer = new ExceptionGroupStructurer(
+            new ExceptionScopeFinder(),
+            dispatchers,
+            loopContinuations,
+            new NonNestedFlowClassifier(),
+            new EmptyBlockRangeStructurer(),
+            new FixedNormalLeaveTargetFinder([2, 5]));
+
+        var group = Assert.Single(structurer.Structure(state, regions));
+
+        if (entryInsideBody)
+        {
+            Assert.Equal([5], loopContinuations.Targets);
+            Assert.Null(group.ContinuationDispatcher);
+            Assert.Empty(group.NormalContinuations[0].Body.Regions);
+            Assert.IsType<StructuredLoopBreakDraft>(
+                Assert.Single(group.NormalContinuations[1].Body.Regions));
+        }
+        else
+        {
+            Assert.Empty(loopContinuations.Targets);
+            Assert.NotNull(group.ContinuationDispatcher);
+            Assert.Equal([2, 5], dispatchers.Targets);
+            Assert.All(group.NormalContinuations, continuation => Assert.Empty(continuation.Body.Regions));
+        }
+    }
+
     private static ControlFlowStructuringState CreateState(
         ImmutableArray<CilExceptionRegion> regions)
     {
@@ -106,6 +146,18 @@ public sealed class ExceptionGroupStructurerCoverageTests
         {
             Targets = targets.ToArray();
             return new StructuredDispatcherDraft(null, [], []);
+        }
+    }
+
+    private sealed class RecordingLoopContinuationBuilder : ILoopContinuationBuilder
+    {
+        public List<int> Targets { get; } = [];
+
+        public StructuredSequenceDraft Build(
+            ControlFlowStructuringState state, int offset, int length, LoopRegion loop)
+        {
+            Targets.Add(offset);
+            return new StructuredSequenceDraft([new StructuredLoopBreakDraft()]);
         }
     }
 

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Methods;
@@ -20,7 +21,13 @@ public sealed class FilterFunctionAppenderTests
         var sequences = new RecordingSequenceEmitter();
         var filters = new InvokingFilterEmitter();
         var merger = new RecordingCountMerger();
-        var target = EmitterTestSupport.CreateInstructionModuleTarget(new FakeProgram());
+        var target = EmitterTestSupport.CreateInstructionModuleTarget(new FakeProgram()) with
+        {
+            MemberExecution = MemberExecutionPlan.Empty with
+            {
+                MethodInvokers = [EmitterTestSupport.EntryKey],
+            },
+        };
         var functionIndices = new FixedFunctionIndexResolver();
         var emissions = new List<ManagedMethodEmissionRecord>();
         IFilterFunctionAppender appender = new[]
@@ -45,6 +52,7 @@ public sealed class FilterFunctionAppenderTests
         Assert.Equal("filter.9", Assert.Single(functions).Name);
         Assert.Equal([7], functions[0].Body);
         Assert.Same(target, sequences.Target);
+        Assert.Same(target.MemberExecution, filters.MemberExecution);
         Assert.Same(functionIndices, sequences.FunctionIndices);
         Assert.Same(filter.Method, merger.Method);
         Assert.Equal(3, merger.Counts[1]);
@@ -139,11 +147,15 @@ public sealed class FilterFunctionAppenderTests
 
     private sealed class InvokingFilterEmitter : IFilterFuncletEmitter
     {
+        public MemberExecutionPlan? MemberExecution { get; private set; }
+
         public FilterFuncletEmission Emit(
             FilterFunclet filter,
             FilterEnvironmentLayout environment,
-            IFilterSequenceEmitter emitSequence)
+            IFilterSequenceEmitter emitSequence,
+            MemberExecutionPlan? memberExecution = null)
         {
+            MemberExecution = memberExecution;
             var emission = emitSequence.Emit(
                 new EmitterTestSupport.RecordingInstructionWriter(),
                 filter.Method,

@@ -9,6 +9,7 @@ using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
 namespace NetWasm.Compiler.Metadata;
 
@@ -44,10 +45,15 @@ public sealed class ManagedAssembly : IDisposable
         };
 
     private ManagedAssembly(
+            string path,
             byte[] image,
             AssemblyIdentityAliases assemblyIdentityAliases,
-            IValueTypeDefinitionStackKindResolver stackKinds)
+            IValueTypeDefinitionStackKindResolver stackKinds,
+            INativeImportDeclarationReader nativeImports,
+            INativeCallbackDeclarationReader nativeCallbacks,
+            IUnsafeAccessorDeclarationReader unsafeAccessors)
     {
+        Path = path;
         _image = image;
         _stream = new MemoryStream(image, writable: false);
         _peReader = new PEReader(_stream);
@@ -56,7 +62,10 @@ public sealed class ManagedAssembly : IDisposable
         Identity = new AssemblyIdentity(Reader.GetString(definition.Name));
         (_types, _fields, _methods, _properties) = ReadDefinitions(
             assemblyIdentityAliases,
-            stackKinds);
+            stackKinds,
+            nativeImports,
+            nativeCallbacks,
+            unsafeAccessors);
         _baseTypes = _types.ToDictionary(
             pair => pair.Key,
             pair => Reader.GetTypeDefinition(
@@ -88,6 +97,7 @@ public sealed class ManagedAssembly : IDisposable
     }
 
     public AssemblyIdentity Identity { get; }
+    public string Path { get; }
     public MetadataReader Reader { get; }
     public ImmutableArray<string> References { get; }
     public IReadOnlyDictionary<int, TypeDefinitionModel> Types => _types;
@@ -110,14 +120,38 @@ public sealed class ManagedAssembly : IDisposable
             string path,
             byte[] image,
             AssemblyIdentityAliases assemblyIdentityAliases,
-            IValueTypeDefinitionStackKindResolver stackKinds)
+            IValueTypeDefinitionStackKindResolver stackKinds,
+            INativeImportDeclarationReader nativeImports) =>
+        Parse(
+            path,
+            image,
+            assemblyIdentityAliases,
+            stackKinds,
+            nativeImports,
+            new NativeCallbackDeclarationReader());
+
+    internal static ManagedAssembly Parse(
+            string path,
+            byte[] image,
+            AssemblyIdentityAliases assemblyIdentityAliases,
+            IValueTypeDefinitionStackKindResolver stackKinds,
+            INativeImportDeclarationReader nativeImports,
+            INativeCallbackDeclarationReader nativeCallbacks)
     {
         ArgumentNullException.ThrowIfNull(stackKinds);
+        ArgumentNullException.ThrowIfNull(nativeImports);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(image);
         try
         {
-            return new ManagedAssembly(image, assemblyIdentityAliases, stackKinds);
+            return new ManagedAssembly(
+                path,
+                image,
+                assemblyIdentityAliases,
+                stackKinds,
+                nativeImports,
+                nativeCallbacks,
+                new UnsafeAccessorDeclarationReader(new CustomAttributeTypeNameProvider()));
         }
         catch (BadImageFormatException exception)
         {
@@ -145,7 +179,10 @@ public sealed class ManagedAssembly : IDisposable
         Dictionary<int, MethodDefinitionModel> Methods,
         Dictionary<int, PropertyDefinitionModel> Properties) ReadDefinitions(
         AssemblyIdentityAliases assemblyIdentityAliases,
-        IValueTypeDefinitionStackKindResolver stackKinds)
+        IValueTypeDefinitionStackKindResolver stackKinds,
+        INativeImportDeclarationReader nativeImports,
+        INativeCallbackDeclarationReader nativeCallbacks,
+        IUnsafeAccessorDeclarationReader unsafeAccessors)
     {
         var types = new Dictionary<int, TypeDefinitionModel>();
         var fields = new Dictionary<int, FieldDefinitionModel>();
@@ -220,6 +257,9 @@ public sealed class ManagedAssembly : IDisposable
                         WitImport = WitImport,
                         WitExport = WitExport,
                         WitPostReturn = WitPostReturn,
+                        NativeImport = nativeImports.Read(Reader, method),
+                        NativeCallback = nativeCallbacks.Read(Reader, method),
+                        UnsafeAccessor = unsafeAccessors.Read(Reader, method),
                         GenericArity = method.GetGenericParameters().Count,
                         IsPublic = (method.Attributes & MethodAttributes.MemberAccessMask) ==
                             MethodAttributes.Public,
@@ -620,6 +660,16 @@ public sealed class ManagedAssembly : IDisposable
         if (constructor.Kind == HandleKind.TypeReference)
         {
             return GetTypeReferenceName((TypeReferenceHandle)constructor);
+        }
+        if (constructor.Kind == HandleKind.TypeDefinition)
+        {
+            return GetTypeDefinitionFullName((TypeDefinitionHandle)constructor);
+        }
+        if (constructor.Kind == HandleKind.TypeSpecification)
+        {
+            // Compiler declaration attributes are non-generic. A constructed
+            // user attribute cannot match any of those declarations.
+            return null;
         }
         var method = Reader.GetMethodDefinition((MethodDefinitionHandle)constructor);
         return GetTypeDefinitionFullName(method.GetDeclaringType());

@@ -170,7 +170,12 @@ public sealed record CilInstruction(
     int Offset,
     int NextOffset,
     CilOperation Operation,
-    CilOperand Operand);
+    CilOperand Operand)
+{
+    public int? OriginalOffset { get; init; }
+
+    public int SourceOffset => OriginalOffset ?? Offset;
+}
 
 public sealed record CilMethodBody(
     MethodDefinitionModel Method,
@@ -201,7 +206,11 @@ public sealed record CilExceptionRegion(
     int HandlerOffset,
     int HandlerLength,
     EntityKey? CatchType,
-    int? FilterOffset);
+    int? FilterOffset)
+{
+    // Definition keys alone cannot distinguish constructed exception types.
+    public CliTypeIdentity? CatchTypeIdentity { get; init; }
+}
 
 public static class SupportedCil
 {

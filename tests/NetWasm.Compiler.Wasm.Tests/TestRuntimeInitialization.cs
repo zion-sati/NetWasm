@@ -22,6 +22,8 @@ internal sealed class DisabledStackTraceMethodPlanBuilder : IStackTraceMethodPla
     public StackTraceMethodPlan Build(
         bool enabled,
         ImmutableArray<EntityKey> directMethods,
-        ImmutableArray<string> constructedMethods) =>
+        ImmutableArray<StackTraceConstructedMethod> constructedMethods,
+        ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>
+            sourceLocations) =>
         StackTraceMethodPlan.Disabled;
 }

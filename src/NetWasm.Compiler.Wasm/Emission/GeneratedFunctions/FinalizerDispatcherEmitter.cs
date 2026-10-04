@@ -10,7 +10,7 @@ internal sealed class FinalizerDispatcherEmitter(
     IGeneratedFunctionWriterFactory writers) : IFinalizerDispatcherEmitter
 {
     public byte[] Emit(
-        TypeDescriptorLayout[] finalizableTypes,
+        FinalizerDispatchPlan[] finalizableTypes,
         IFunctionIndexResolver functionIndices)
     {
         if (finalizableTypes.Length == 0)
@@ -63,7 +63,7 @@ internal sealed class FinalizerDispatcherEmitter(
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
-                    descriptor.Finalizer!.Value))));
+                    descriptor.Finalizer))));
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Constant,
                 WasmInstructionOperand.Signed(0)));

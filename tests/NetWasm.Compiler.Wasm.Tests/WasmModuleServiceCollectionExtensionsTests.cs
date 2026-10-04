@@ -79,6 +79,8 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
             provider.GetRequiredService<IModuleDataPlanner>());
         Assert.IsType<ManagedBoundaryPlanBuilder>(
             provider.GetRequiredService<IManagedBoundaryPlanBuilder>());
+        Assert.IsType<ModuleExportValidator>(
+            provider.GetRequiredService<IModuleExportValidator>());
         Assert.IsType<ManagedMethodEmitter>(
             provider.GetRequiredService<IManagedMethodEmitter>());
         Assert.IsType<CanonicalAbiTypeFlattener>(
@@ -124,8 +126,8 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
             provider.GetRequiredService<IAsyncJSExportStatusEmitter>());
         Assert.IsType<AsyncJSExportResultEmitter>(
             provider.GetRequiredService<IAsyncJSExportResultEmitter>());
-        Assert.IsType<AsyncJSExportCompletionEmitter>(
-            provider.GetRequiredService<IAsyncJSExportCompletionEmitter>());
+        Assert.IsType<AsyncTaskCompletionEmitter>(
+            provider.GetRequiredService<IAsyncTaskCompletionEmitter>());
         Assert.IsType<AsyncJSExportResultTypeResolver>(
             provider.GetRequiredService<IAsyncJSExportResultTypeResolver>());
         Assert.IsType<FilterFuncletEmitter>(

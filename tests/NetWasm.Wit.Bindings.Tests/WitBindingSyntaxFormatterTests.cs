@@ -86,6 +86,8 @@ public sealed class WitBindingSyntaxFormatterTests
                 Type(7, null, "{\"mystery\":\"u32\"}"),
                 Type(8, null, "{\"list\":0}"),
                 Type(9, null, "{\"option\":0}"),
+                Type(10, null, "{\"tuple\":{\"types\":[]}}"),
+                Type(11, null, "{\"tuple\":{\"types\":[\"u32\"]}}"),
             ],
             "{}");
         var formatter = new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier());
@@ -119,6 +121,10 @@ public sealed class WitBindingSyntaxFormatterTests
             document, new WitTypeReference.Defined(2))));
         Assert.Equal("WitResult<uint, WitUnit>", formatter.Format(new WitBindingSyntaxRequest.TypeName(
             document, new WitTypeReference.Defined(3))));
+        Assert.Equal("ValueTuple", formatter.Format(new WitBindingSyntaxRequest.TypeName(
+            document, new WitTypeReference.Defined(10))));
+        Assert.Equal("ValueTuple<uint>", formatter.Format(new WitBindingSyntaxRequest.TypeName(
+            document, new WitTypeReference.Defined(11))));
         Assert.Equal("Resource", formatter.Format(new WitBindingSyntaxRequest.TypeName(
             document, new WitTypeReference.Defined(4))));
         Assert.Equal("uint", formatter.Format(new WitBindingSyntaxRequest.TypeName(

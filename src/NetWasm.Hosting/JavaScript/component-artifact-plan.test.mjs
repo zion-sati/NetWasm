@@ -17,6 +17,10 @@ const artifacts = () => [
   artifact("publish/program-component.js", "component-javascript", "text/javascript", digest("4")),
   artifact("publish/program-component.core2.wasm", "component-core-module", "application/wasm", digest("5")),
   artifact("publish/program-component.core.wasm", "component-core-module", "application/wasm", digest("6")),
+  artifact("publish/My App.exceptions.json", "exception-type-map",
+    "application/vnd.netwasm.exception-types+json;version=2", digest("7"), 2),
+  artifact("publish/My App.netwasm.stacktrace.json", "stack-trace-symbols",
+    "application/vnd.netwasm.stack-trace-symbols+json;version=1", digest("8"), 1),
 ];
 
 test("builds one immutable exact component artifact plan", () => {
@@ -27,6 +31,8 @@ test("builds one immutable exact component artifact plan", () => {
   assert.equal(Object.isFrozen(plan.application), true);
   assert.equal(Object.isFrozen(plan.adapter), true);
   assert.equal(Object.isFrozen(plan.generatedModule), true);
+  assert.equal(Object.isFrozen(plan.exceptionTypeMap), true);
+  assert.equal(Object.isFrozen(plan.stackTraceSymbols), true);
   assert.equal(Object.isFrozen(plan.coreModules), true);
   assert.equal(plan.application.relativePath, "publish/My App.wasm");
   assert.equal(plan.adapter.relativePath, "publish/My App.wasm.adapter.mjs");
@@ -72,7 +78,11 @@ test("rejects non-component deployment kinds and invalid plan requests", () => {
 });
 
 test("requires the exact role cardinalities", () => {
-  for (const role of ["application", "component-adapter", "component-javascript"]) {
+  for (const role of [
+    "application",
+    "component-adapter",
+    "component-javascript",
+  ]) {
     const missing = artifacts().filter(value => value.role !== role);
     assert.throws(() => createComponentArtifactPlan({ deploymentKind: "component", artifacts: missing }), new RegExp(role));
     const duplicate = artifacts();
@@ -81,10 +91,41 @@ test("requires the exact role cardinalities", () => {
   }
   const withoutCore = artifacts().filter(value => value.role !== "component-core-module");
   assert.throws(() => createComponentArtifactPlan({ deploymentKind: "component", artifacts: withoutCore }), /at least one core/);
+
+  const withoutMap = artifacts().filter(value => value.role !== "exception-type-map");
+  assert.equal(createComponentArtifactPlan({
+    deploymentKind: "component",
+    artifacts: withoutMap,
+  }).exceptionTypeMap, undefined);
+  const duplicateMap = artifacts();
+  duplicateMap.push({
+    ...duplicateMap.find(value => value.role === "exception-type-map"),
+    relativePath: "publish/duplicate.exceptions.json",
+  });
+  assert.throws(() => createComponentArtifactPlan({
+    deploymentKind: "component",
+    artifacts: duplicateMap,
+  }), /exception-type-map/u);
+  const duplicateSymbols = artifacts();
+  duplicateSymbols.push({
+    ...duplicateSymbols.find(value => value.role === "stack-trace-symbols"),
+    relativePath: "publish/duplicate.stacktrace.json",
+  });
+  assert.throws(() => createComponentArtifactPlan({
+    deploymentKind: "component",
+    artifacts: duplicateSymbols,
+  }), /stack-trace-symbols/u);
 });
 
 test("requires exact media types for every runtime role", () => {
-  for (const role of ["application", "component-adapter", "component-javascript", "component-core-module"]) {
+  for (const role of [
+    "application",
+    "component-adapter",
+    "component-javascript",
+    "component-core-module",
+    "exception-type-map",
+    "stack-trace-symbols",
+  ]) {
     const values = artifacts();
     values.find(value => value.role === role).mediaType = "application/octet-stream";
     assert.throws(() => createComponentArtifactPlan({ deploymentKind: "component", artifacts: values }), new RegExp(role));

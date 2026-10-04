@@ -4,12 +4,18 @@ import {
   processComponentContract,
 } from "./canonical-component-binder.mjs";
 import { executeCommand } from "./command-executor.mjs";
+import {
+  componentDiagnosticsModule,
+  createComponentManagedExceptionHost,
+} from "./component-managed-exception-host.mjs";
 import { prepareComponentExecution } from "./component-execution-preparation.mjs";
+import { createDiagnosticCommandExport } from "./diagnostic-command-export.mjs";
 import { createExecutionScopeCloser } from "./execution-scope-closer.mjs";
 import { failedExecutionResult } from "./execution-result.mjs";
 import { createGuestWakeNotifier } from "./guest-wake-notifier.mjs";
 import { observeManagedProcess } from "./managed-process-observer.mjs";
 import { createPollableReactor } from "./pollable-reactor.mjs";
+import { createTerminalManagedExport } from "./terminal-managed-export.mjs";
 
 const reactorHostModule = "netwasm:runtime/reactor-host";
 const adapterKeys = ["contractKey", "instantiate"];
@@ -25,6 +31,9 @@ export async function executeComponent(request = {}) {
     imports,
     loadCoreModule,
     instantiateCore,
+    diagnosticArtifacts,
+    stackTraceSymbols = [],
+    managedExceptionReporting = {},
     signal = null,
     releaseActions = [],
     schedule = globalThis.queueMicrotask?.bind(globalThis),
@@ -41,6 +50,15 @@ export async function executeComponent(request = {}) {
     releaseActions,
     schedule,
   });
+  const diagnostics = createComponentManagedExceptionHost({
+    diagnosticArtifacts,
+    managedExceptionReporting,
+    stackTraceSymbols,
+  });
+  const projectedImports = Object.freeze(Object.assign(
+    Object.create(null),
+    prepared.imports,
+    { [componentDiagnosticsModule]: diagnostics.imports }));
 
   if (adapter.contractKey !== contractKey) {
     return prepared.closeCallerScope(failedExecutionResult(
@@ -60,7 +78,8 @@ export async function executeComponent(request = {}) {
   if (contractKey === commandComponentContract) {
     return executeCommandComponent({
       adapter,
-      projectedImports: prepared.imports,
+      projectedImports,
+      diagnostics,
       loadCoreModule,
       instantiateCore: prepared.instantiateCore,
       signal: prepared.signal,
@@ -69,7 +88,8 @@ export async function executeComponent(request = {}) {
   }
   return executeProcessComponent({
     adapter,
-    projectedImports: prepared.imports,
+    projectedImports,
+    diagnostics,
     loadCoreModule,
     instantiateCore: prepared.instantiateCore,
     signal: prepared.signal,
@@ -81,6 +101,7 @@ export async function executeComponent(request = {}) {
 async function executeCommandComponent({
   adapter,
   projectedImports,
+  diagnostics,
   loadCoreModule,
   instantiateCore,
   signal,
@@ -106,12 +127,22 @@ async function executeCommandComponent({
   } catch {
     return closeScope(componentBindingFailure());
   }
-  return closeScope(executeCommand({ run: binding.command.run, signal }));
+  const run = binding.diagnosticCommand === undefined
+    ? createTerminalManagedExport(
+      "run",
+      binding.command.run,
+      diagnostics.consumeTerminalEvent,
+      () => {})
+    : createDiagnosticCommandExport(binding.diagnosticCommand.run, diagnostics.imports.report);
+  const outcome = executeCommand({ run, signal });
+  await diagnostics.drain();
+  return closeScope(outcome);
 }
 
 async function executeProcessComponent({
   adapter,
   projectedImports,
+  diagnostics,
   loadCoreModule,
   instantiateCore,
   signal,
@@ -199,6 +230,7 @@ async function executeProcessComponent({
   } finally {
     guestEntryEnabled = false;
   }
+  await diagnostics.drain();
   return closeScope(outcome);
 }
 

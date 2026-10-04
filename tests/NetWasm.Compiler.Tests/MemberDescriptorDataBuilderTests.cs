@@ -780,50 +780,6 @@ public sealed class MemberDescriptorDataBuilderTests
             new ManagedStaticDataBuildState()).Build());
     }
 
-    [Fact]
-    public void StaticDataProviderPublishesDescriptorAddressesAndRejectsMissingOnes()
-    {
-        var declaringType = DeclaringType();
-        var method = Instance(Method(0x06000001, "Run"), declaringType);
-        var fieldDefinition = new FieldDefinitionModel(
-            Key(0x04000001),
-            DeclaringTypeKey,
-            "Value",
-            CliValueKind.I4,
-            IsStatic: false);
-        var field = new FieldInstanceModel(
-            fieldDefinition,
-            declaringType,
-            fieldDefinition.SignatureType);
-        var data = new ManagedStaticData(256, [], [], [], [], [], [], [], [], [])
-        {
-            MethodDescriptors = ImmutableDictionary<string, int>.Empty.Add(
-                method.CanonicalName,
-                64),
-            FieldDescriptors = ImmutableDictionary<string, int>.Empty.Add(
-                field.CanonicalName,
-                80),
-            MemberDescriptorDeclaringTypeIdOffset = 4,
-            MemberDescriptorRequiresDeclaringTypeOffset = 8,
-        };
-        var provider = new StaticDataLayoutProvider(
-            new ManagedLayoutSnapshot(Layouts(WasmTargetLayout.Wasm32), data));
-
-        Assert.Equal(64, provider.GetMethodDescriptorAddress(method));
-        Assert.Equal(80, provider.GetFieldDescriptorAddress(field));
-        Assert.Equal(4, provider.DeclaringTypeIdOffset);
-        Assert.Equal(8, provider.RequiresDeclaringTypeOffset);
-
-        var missingMethod = Instance(Method(0x06000002, "Missing"), declaringType);
-        var missingFieldDefinition = fieldDefinition with { Key = Key(0x04000002) };
-        var missingField = new FieldInstanceModel(
-            missingFieldDefinition,
-            declaringType,
-            missingFieldDefinition.SignatureType);
-        AssertRuntimeContract(() => provider.GetMethodDescriptorAddress(missingMethod));
-        AssertRuntimeContract(() => provider.GetFieldDescriptorAddress(missingField));
-    }
-
     private static ReachableProgram Program()
     {
         var entry = Method(0x06000010, "Entry");

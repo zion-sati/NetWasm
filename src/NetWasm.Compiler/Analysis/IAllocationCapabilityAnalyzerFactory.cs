@@ -8,5 +8,6 @@ internal interface IAllocationCapabilityAnalyzerFactory
     IAllocationCapabilityAnalyzer Create(
         ITypeRepository types,
         IFieldRepository fields,
-        IMethodRepository methods);
+        IMethodRepository methods,
+        ITypeClassifier typeClassifier);
 }

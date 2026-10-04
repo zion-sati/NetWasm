@@ -17,7 +17,7 @@ test("composes selected generated and supplied built-in services", async () => {
   const builtins = createInteropBuiltinServiceModule(fixture.request);
 
   assert.equal(builtins.custom(), 17);
-  assert.equal(builtins.report_terminal_exception_v1(), 19);
+  assert.equal(builtins.report_terminal_exception_v2(), 19);
   assert.notEqual(builtins.interop_string_length, fixture.overriddenStringLength);
   assert.deepEqual(fixture.statusDescriptors, ["queue_microtask"]);
 
@@ -132,7 +132,7 @@ function createFixture() {
         statusDescriptors.push(descriptor.name);
         return service;
       },
-      exceptionReporter: { importObject: { report_terminal_exception_v1: () => 19 } },
+      exceptionReporter: { importObject: { report_terminal_exception_v2: () => 19 } },
       handles,
       readMemory: () => memory,
     },

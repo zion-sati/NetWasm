@@ -25,7 +25,7 @@ public static class RuntimeLinkPlanner
         }
         var target = manifest.Targets.SingleOrDefault(item => item.Target == request.Target)
             ?? throw new InvalidOperationException("The requested NetWasm runtime target is unavailable.");
-        var layout = new RuntimeMemoryLayoutCalculator().Calculate(new(
+        var layout = new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             target, manifest.WasmPageSize, request.ApplicationStaticDataEnd,
             request.InitialHeapSizeBytes, request.MaximumMemorySizeBytes));
         if (request.SystemLibraries.IsDefault ||
@@ -48,8 +48,9 @@ public static class RuntimeLinkPlanner
 
         var systemLibraryPaths = request.SystemLibraries.Select(asset => asset.Path).ToImmutableArray();
         var link = new RuntimeLinkRequest(
-            manifest, target, layout, request.AssetRoot, systemLibraryPaths, request.OutputPath);
-        var arguments = new RuntimeLinkArgumentBuilder().Build(link);
+            manifest, target, new RuntimeLinkMemoryLimits(layout.RuntimeGlobalBase, layout.InitialMemorySizeBytes,
+                layout.MaximumMemorySizeBytes), request.AssetRoot, systemLibraryPaths, request.OutputPath);
+        var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(link);
         var runtimeInput = new RuntimeLinkPlanAsset(
             request.AssetRoot.TrimEnd('/') + "/" + target.RuntimeArchive.Path.Replace('\\', '/'),
             target.RuntimeArchive.Sha256);

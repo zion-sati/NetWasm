@@ -78,6 +78,9 @@ namespace System.Linq.Expressions.Interpreter
                 case ExpressionType.LessThan:
                     CompileComparison((BinaryExpression)expression);
                     break;
+                case ExpressionType.Equal:
+                    CompileEqual((BinaryExpression)expression);
+                    break;
                 case ExpressionType.AndAlso:
                     CompileAndAlso((BinaryExpression)expression);
                     break;
@@ -233,6 +236,24 @@ namespace System.Linq.Expressions.Interpreter
             }
         }
 
+        private void CompileEqual(BinaryExpression expression)
+        {
+            Compile(expression.Left, asVoid: false);
+            Compile(expression.Right, asVoid: false);
+            if (expression.Method is not null)
+            {
+                if (!expression.Method.IsExpressionExecutable)
+                {
+                    throw Unsupported();
+                }
+                _instructions.EmitCall(expression.Method, argumentCount: 2);
+                return;
+            }
+            _instructions.EmitEqual(
+                expression.Left.Type,
+                expression.IsLiftedToNull);
+        }
+
         private void CompileAndAlso(BinaryExpression expression)
         {
             if (expression.Method is not null ||
@@ -266,19 +287,32 @@ namespace System.Linq.Expressions.Interpreter
 
         private void CompileConvert(UnaryExpression expression)
         {
-            if (expression.Method is not null ||
-                !IsPrimitiveNumeric(expression.Operand.Type) ||
-                !IsPrimitiveNumeric(expression.Type))
+            if (expression.Method is not null)
+            {
+                throw Unsupported();
+            }
+            Type source = expression.Operand.Type;
+            Type target = expression.Type;
+            Type fromType = Nullable.GetUnderlyingType(source) ?? source;
+            Type toType = Nullable.GetUnderlyingType(target) ?? target;
+            if (fromType != toType &&
+                (!IsPrimitiveNumeric(fromType) || !IsPrimitiveNumeric(toType)))
             {
                 throw Unsupported();
             }
             Compile(expression.Operand, asVoid: false);
-            var from = Type.GetTypeCode(expression.Operand.Type);
-            var to = Type.GetTypeCode(expression.Type);
-            if (from != to)
+            // The interpreter stores a nullable as null or its boxed underlying value.
+            // Wrapping is therefore an identity operation; unwrapping must still check null.
+            if (fromType == toType)
             {
-                _instructions.EmitNumericConvert(from, to);
+                if (source.IsNullable && !target.IsNullable)
+                {
+                    _instructions.EmitNullableValue();
+                }
+                return;
             }
+            _instructions.EmitNumericConvert(
+                Type.GetTypeCode(fromType), Type.GetTypeCode(toType), target.IsNullable);
         }
 
         private void CompileAssign(BinaryExpression expression, bool asVoid)
@@ -365,13 +399,17 @@ namespace System.Linq.Expressions.Interpreter
 
         private static bool IsSupportedValue(Type type)
         {
+            if (type.IsNullable)
+            {
+                return true;
+            }
             if (!type.IsValueType)
             {
                 return !type.IsPointer;
             }
             if (type.IsEnum)
             {
-                return false;
+                return true;
             }
             return Type.GetTypeCode(type) is
                 TypeCode.Boolean or TypeCode.Char or
@@ -404,9 +442,17 @@ namespace System.Linq.Expressions.Interpreter
 
         private static object? GetDefaultValue(Type type)
         {
+            if (type.IsNullable)
+            {
+                return null;
+            }
             if (!type.IsValueType)
             {
                 return null;
+            }
+            if (type.IsEnum)
+            {
+                return Enum.ToObject(type, 0);
             }
             return Type.GetTypeCode(type) switch
             {

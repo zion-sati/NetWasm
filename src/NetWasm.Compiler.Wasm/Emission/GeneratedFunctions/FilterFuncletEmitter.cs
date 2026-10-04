@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -10,13 +11,15 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class FilterFuncletEmitter(
 ITargetLayout layouts,
+    IValueFrameLayoutPlanner valueFrames,
     IExceptionPayloadBlockEmitter exceptions,
     IGeneratedFunctionWriterFactory writers) : IFilterFuncletEmitter
 {
     public FilterFuncletEmission Emit(
         FilterFunclet filter,
         FilterEnvironmentLayout environment,
-        IFilterSequenceEmitter emitSequence)
+        IFilterSequenceEmitter emitSequence,
+        MemberExecutionPlan? memberExecution = null)
     {
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(environment);
@@ -38,6 +41,10 @@ ITargetLayout layouts,
         var interopHandle = checked(interopResult + 1);
         var numericTemporaryI4 = checked(interopHandle + 1);
         var numericTemporaryI8 = checked(numericTemporaryI4 + 1);
+        var valueLayout = valueFrames.Create(header, memberExecution: memberExecution) with
+        {
+            Size = environment.Size,
+        };
         var emptyRootMap = new MethodRootMap(
             header.Method.Key,
             [],
@@ -53,12 +60,7 @@ ITargetLayout layouts,
             ImmutableDictionary<StructuredExceptionGroupId, int>.Empty,
             ImmutableDictionary<StructuredExceptionGroupId, int>.Empty,
             1,
-            new ValueFrameLayout(
-                environment.Size,
-                [],
-                [],
-                [],
-                []),
+            valueLayout,
             filterRootFrame,
             environment,
             0,

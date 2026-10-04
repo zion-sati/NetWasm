@@ -29,6 +29,8 @@ namespace System
 
         public static void WriteLine(string? value) => Out.WriteLine(value);
 
+        public static void WriteLine(bool value) => Out.WriteLine(value);
+
         private static class StandardOutput
         {
             internal static readonly IO.TextWriter Writer =

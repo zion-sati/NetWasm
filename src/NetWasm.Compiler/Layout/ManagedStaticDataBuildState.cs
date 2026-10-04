@@ -23,7 +23,9 @@ internal sealed class ManagedStaticDataBuildState
             ImmutableArray.CreateBuilder<ConstructedTypeDescriptorLayout>();
     public ImmutableArray<ValueTypeDescriptorLayout>.Builder ValueTypeDescriptors { get; } =
         ImmutableArray.CreateBuilder<ValueTypeDescriptorLayout>();
-    public Dictionary<EntityKey, PendingEnumMetadata> PendingEnumMetadata { get; } = [];
+    public ImmutableArray<MetadataTypeDescriptorLayout>.Builder MetadataTypeDescriptors { get; } =
+        ImmutableArray.CreateBuilder<MetadataTypeDescriptorLayout>();
+    public Dictionary<CliTypeIdentity, PendingEnumMetadata> PendingEnumMetadata { get; } = [];
     public ImmutableArray<EnumMetadataLayout>.Builder EnumMetadata { get; } =
         ImmutableArray.CreateBuilder<EnumMetadataLayout>();
     public Dictionary<string, int> MethodDescriptors { get; } =

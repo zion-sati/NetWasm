@@ -1,8 +1,10 @@
 using System;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Encoding;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 
@@ -18,5 +20,7 @@ internal interface IManagedMethodEmitter
         MethodInstanceModel? methodInstance,
         int stackTraceMethodId,
         RuntimeImportSelection runtimeImportSelection,
-        Action<IWasmInstructionWriter, StructuredMethod, MethodEmissionContext> emitBody);
+        Action<IWasmInstructionWriter, StructuredMethod, MethodEmissionContext> emitBody,
+        NativeImportPlan? nativeImports = null,
+        MemberExecutionPlan? memberExecution = null);
 }

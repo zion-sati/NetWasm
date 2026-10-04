@@ -12,6 +12,152 @@ public sealed class ExpressionTreeCompilationTests
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm32)]
     [InlineData(true, WasmTarget.Wasm64)]
+    public void EnumValuesFlowThroughPropertyAccessorsAndDefaults(bool optimized, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        const string source = """
+            using System;
+            using System.Linq.Expressions;
+            namespace EnumExpressionValues;
+            [Flags] public enum Access : long { None = 0, Read = 1, High = 1L << 40 }
+            public sealed class Model { public Access Value { get; set; } }
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Expression<Func<Model, Access>> property = model => model.Value;
+                    var get = property.Compile();
+                    if (get(new Model { Value = Access.Read | Access.High }) != (Access.Read | Access.High)) return 1;
+                    Expression<Func<Access, Access>> identity = value => value;
+                    if (identity.Compile()(Access.High) != Access.High) return 2;
+                    var unused = Expression.Parameter(typeof(int), "unused");
+                    var defaultValue = Expression.Lambda<Func<int, Access>>(
+                        Expression.Default(typeof(Access)), unused).Compile();
+                    if (defaultValue(input) != Access.None) return 3;
+                    return 42;
+                }
+            }
+            """;
+        var assembly = optimized ? assets.CompileOptimizedSource("EnumExpressionValues", source) :
+            assets.CompileSource("EnumExpressionValues", source);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib],
+            "EnumExpressionValues.EntryPoint", "Run", [], Target: target));
+        Assert.Equal(42, ExecuteWithStandardWasiNode(compilation.ApplicationModule,
+            assets.Directory, 41, target, compilation.StaticDataEnd));
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void EqualityExpressionsExecuteWithDesktopSemantics(
+        bool optimized,
+        WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithCompiler(
+            "ExpressionEqualityFixture",
+            """
+            using System;
+            using System.Linq.Expressions;
+
+            namespace ExpressionEqualityFixture;
+
+            public sealed class Model
+            {
+                public Model(string name, int identity)
+                {
+                    Name = name;
+                    Identity = identity;
+                }
+
+                public string Name { get; }
+
+                public int Identity { get; }
+
+                public static bool operator ==(Model? left, Model? right) =>
+                    ReferenceEquals(left, right) ||
+                    left is not null && right is not null &&
+                    left.Identity == right.Identity;
+
+                public static bool operator !=(Model? left, Model? right) =>
+                    !(left == right);
+
+                public override bool Equals(object? value) =>
+                    value is Model other && this == other;
+
+                public override int GetHashCode() => Identity;
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Expression<Func<Model, bool>> stringEquality =
+                        model => model.Name == "Ada";
+                    var stringPredicate = stringEquality.Compile();
+                    if (!stringPredicate(new Model("Ada", input)) ||
+                        stringPredicate(new Model("Grace", input)))
+                        return 1;
+
+                    Expression<Func<int, bool>> primitiveEquality =
+                        value => value == input;
+                    var primitivePredicate = primitiveEquality.Compile();
+                    if (!primitivePredicate(input) || primitivePredicate(input + 1))
+                        return 2;
+
+                    object same = new Model("same", input);
+                    Expression<Func<object, bool>> referenceEquality =
+                        value => value == same;
+                    var referencePredicate = referenceEquality.Compile();
+                    if (!referencePredicate(same) ||
+                        referencePredicate(new Model("same", input)))
+                        return 3;
+
+                    var equivalent = new Model("equivalent", input);
+                    Expression<Func<Model, bool>> overloadedEquality =
+                        value => value == equivalent;
+                    var overloadedPredicate = overloadedEquality.Compile();
+                    if (!overloadedPredicate(new Model("other", input)) ||
+                        overloadedPredicate(new Model("other", input + 1)))
+                        return 4;
+
+                    var value = Expression.Parameter(typeof(int), "value");
+                    var programmatic = Expression.Lambda<Func<int, bool>>(
+                        Expression.Equal(value, Expression.Constant(input)),
+                        value).Compile(preferInterpretation: true);
+                    if (!programmatic(input) || programmatic(input + 1))
+                        return 5;
+
+                    return 42;
+                }
+            }
+            """,
+            "10.0.401",
+            "latest",
+            optimized);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "ExpressionEqualityFixture.EntryPoint",
+            "Run",
+            [],
+            Target: target));
+
+        Assert.Equal(42, ExecuteWithStandardWasiNode(
+            compilation.ApplicationModule,
+            assets.Directory,
+            41,
+            target,
+            compilation.StaticDataEnd));
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
     public void MemberInfoEqualitySupportsNullIdentityAndVirtualOverrides(
         bool optimized,
         WasmTarget target)

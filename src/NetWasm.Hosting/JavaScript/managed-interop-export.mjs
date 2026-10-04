@@ -4,11 +4,19 @@ import {
 } from "./managed-errors.mjs";
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
 import {
+  readManagedInteropBytes,
+  readManagedInteropString,
+} from "./managed-interop-memory-codec.mjs";
+import {
   liftInteropScalar,
   lowerInteropScalar,
 } from "./interop-scalar-codec.mjs";
+import { observeManagedAsyncExport } from "./managed-async-export-observer.mjs";
 
-const requestKeys = ["descriptor", "exceptionReporter", "instance"];
+const requestKeys = [
+  "descriptor", "exceptionReporter", "getMemory", "handles", "instance", "target", "targetLayout",
+];
+const optionalRequestKeys = new Set(["assertAvailable", "observeAsyncExport", "consumeExceptionPayload"]);
 
 export function createManagedExports(instance, exportNames) {
   if (!(instance instanceof WebAssembly.Instance)) {
@@ -29,10 +37,27 @@ export function createManagedExports(instance, exportNames) {
 
 export function createManagedInteropExport(request) {
   assertExactDataObject(request, requestKeys, "managed interop export request");
-  const { descriptor, exceptionReporter, instance } = request;
+  const {
+    descriptor,
+    exceptionReporter,
+    getMemory,
+    handles,
+    instance,
+    target,
+    targetLayout,
+    assertAvailable = () => {},
+    observeAsyncExport = observeManagedAsyncExport,
+    consumeExceptionPayload,
+  } = request;
+  if (typeof assertAvailable !== "function" || typeof observeAsyncExport !== "function") {
+    throw new TypeError("managed interop export lifetime actions are invalid");
+  }
   if (descriptor === null || typeof descriptor !== "object" || Array.isArray(descriptor)
       || !Array.isArray(descriptor.parameters) || typeof descriptor.name !== "string") {
     throw new TypeError("managed interop export descriptor is invalid");
+  }
+  if (descriptor.asyncReturn != null && typeof consumeExceptionPayload !== "function") {
+    throw new TypeError("managed async export payload consumer is required");
   }
   if (instance === null || typeof instance !== "object" || Array.isArray(instance)
       || instance.exports === null || typeof instance.exports !== "object") {
@@ -42,25 +67,39 @@ export function createManagedInteropExport(request) {
       || typeof exceptionReporter.consumeTerminalEvent !== "function") {
     throw new TypeError("managed interop exception reporter is invalid");
   }
+  if (typeof getMemory !== "function" || handles === null || typeof handles !== "object"
+      || typeof handles.acquire !== "function" || typeof handles.release !== "function") {
+    throw new TypeError("managed interop export memory services are invalid");
+  }
   const invoke = createLowLevelManagedExport(instance, descriptor.name);
   return Object.freeze((...arguments_) => {
+    assertAvailable();
     if (arguments_.length !== descriptor.parameters.length) {
       throw new NetWasmHostError(
         `managed export ${descriptor.name} received an invalid argument count`);
     }
+    const argumentHandles = [];
+    let result;
     try {
-      const wasmArguments = arguments_.map((value, index) => lowerInteropScalar({
-        type: descriptor.parameters[index], value,
-      }));
+      const wasmArguments = arguments_.map((value, index) => lowerArgument(
+        descriptor.parameters[index], value, handles, argumentHandles));
+      const value = invoke(...wasmArguments);
       if (descriptor.asyncReturn != null) {
-        const handle = invoke(...wasmArguments);
-        return observeManagedAsyncExport(
-          descriptor, instance, normalizeInteropHandle(handle));
+        const normalizedHandle = normalizeInteropHandle(value);
+        result = observeAsyncExport({
+          name: descriptor.name,
+          readStatus: () => instance.exports[descriptor.statusExport](normalizedHandle),
+          readResult: () => descriptor.result === "void" ? undefined : liftInteropScalar({
+            type: descriptor.result,
+            value: instance.exports[descriptor.resultExport](normalizedHandle),
+          }),
+          complete: () => consumeExceptionPayload(instance.exports[descriptor.completeExport](normalizedHandle)),
+        });
+      } else {
+        result = descriptor.result === "void"
+          ? undefined
+          : liftResult(descriptor.result, value, getMemory, target, targetLayout);
       }
-      const result = invoke(...wasmArguments);
-      return descriptor.result === "void"
-        ? undefined
-        : liftInteropScalar({ type: descriptor.result, value: result });
     } catch (cause) {
       if (cause instanceof NetWasmHostError || cause instanceof NetWasmManagedError) {
         throw cause;
@@ -76,10 +115,40 @@ export function createManagedInteropExport(request) {
         throw cause;
       }
       const managedFailure = new NetWasmManagedError(descriptor.name, { cause });
-      if (descriptor.asyncReturn != null) return Promise.reject(managedFailure);
-      throw managedFailure;
+      if (descriptor.asyncReturn != null) result = Promise.reject(managedFailure);
+      else throw managedFailure;
+    } finally {
+      for (const handle of argumentHandles) handles.release(handle);
     }
+    return result;
   });
+}
+
+function lowerArgument(type, value, handles, argumentHandles) {
+  if (type !== "string" && type !== "bytes") return lowerInteropScalar({ type, value });
+  if (value === null) return 0;
+  if (type === "string" && typeof value !== "string") {
+    throw new NetWasmHostError("string value must be a string or null");
+  }
+  if (type === "bytes" && !(value instanceof Uint8Array)) {
+    throw new NetWasmHostError("byte-array value must be Uint8Array or null");
+  }
+  const handle = handles.acquire(value);
+  argumentHandles.push(handle);
+  return handle;
+}
+
+function liftResult(type, value, getMemory, target, targetLayout) {
+  if (type !== "string" && type !== "bytes") return liftInteropScalar({ type, value });
+  const request = {
+    memory: getMemory(),
+    reference: value,
+    target,
+    targetLayout,
+  };
+  return type === "string"
+    ? readManagedInteropString(request)
+    : readManagedInteropBytes(request);
 }
 
 function createLowLevelManagedExport(instance, name) {
@@ -102,43 +171,6 @@ function createLowLevelManagedExport(instance, name) {
   };
 }
 
-function observeManagedAsyncExport(descriptor, instance, handle) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = () => {
-      try {
-        const status = instance.exports[descriptor.statusExport](handle);
-        if (status === 0) {
-          globalThis.setTimeout(finish, 0);
-          return;
-        }
-        settled = true;
-        if (status === 1) {
-          const value = descriptor.result === "void"
-            ? undefined
-            : liftInteropScalar({
-                type: descriptor.result,
-                value: instance.exports[descriptor.resultExport](handle),
-              });
-          resolve(value);
-        } else if (status === 3) {
-          reject(new DOMException("managed operation was canceled", "AbortError"));
-        } else {
-          reject(new NetWasmManagedError(descriptor.name));
-        }
-      } catch (cause) {
-        settled = true;
-        reject(cause instanceof WebAssembly.RuntimeError
-          ? cause
-          : new NetWasmManagedError(descriptor.name, { cause }));
-      } finally {
-        if (settled) instance.exports[descriptor.completeExport](handle);
-      }
-    };
-    globalThis.queueMicrotask(finish);
-  });
-}
-
 function assertExactDataObject(value, keys, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)
       || Object.getOwnPropertySymbols(value).length !== 0) {
@@ -146,8 +178,8 @@ function assertExactDataObject(value, keys, label) {
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const actualKeys = Object.keys(descriptors).sort();
-  if (actualKeys.length !== keys.length
-      || actualKeys.some((key, index) => key !== keys[index])
+  if (keys.some(key => !Object.hasOwn(descriptors, key))
+      || actualKeys.some(key => !keys.includes(key) && !optionalRequestKeys.has(key))
       || Object.values(descriptors).some(
         descriptor => !descriptor.enumerable || !("value" in descriptor))) {
     throw new TypeError(`${label} shape is invalid`);

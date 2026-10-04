@@ -24,7 +24,7 @@ internal sealed class CompilerEntryDiagnosticArtifactWriter(
         {
             _json.WriteJson(path, new
             {
-                EntryPoint = symbols.Format(entry.EntryPoint),
+                EntryPoint = entry.EntryPoint is { } entryPoint ? symbols.Format(entryPoint) : null,
                 Exports = entry.Exports.OrderBy(export => export.Name, StringComparer.Ordinal),
             });
         }

@@ -83,12 +83,24 @@ try {
   process.exit(1);
 }
 if (!layout || typeof layout !== "object" || Array.isArray(layout) ||
-    layout.schemaVersion !== 2 || layout.target !== requestedTarget ||
+    ![2, 3, 4].includes(layout.schemaVersion) ||
+    (layout.schemaVersion >= 3 && !Array.isArray(layout.nativeImports)) ||
+    layout.target !== requestedTarget ||
     !Number.isSafeInteger(layout.applicationStaticDataEnd) ||
     layout.applicationStaticDataEnd < 0 ||
     Object.prototype.hasOwnProperty.call(layout, "runtimeGlobalBase")) {
   process.stderr.write(
-    "runtime layout must contain schemaVersion 2, matching target, and applicationStaticDataEnd\n");
+    "runtime layout must contain schemaVersion 2, 3 or 4, matching target, and applicationStaticDataEnd\n");
+  process.exit(1);
+}
+
+if (layout.runtimeFeatures !== undefined &&
+    (!Array.isArray(layout.runtimeFeatures) ||
+     layout.runtimeFeatures.some(feature => typeof feature !== "string") ||
+     new Set(layout.runtimeFeatures).size !== layout.runtimeFeatures.length ||
+     [...layout.runtimeFeatures].sort().some((feature, index) =>
+       feature !== layout.runtimeFeatures[index]))) {
+  process.stderr.write("runtime layout features must be a canonical string array\n");
   process.exit(1);
 }
 
@@ -104,12 +116,25 @@ if (!Number.isSafeInteger(runtimeGlobalBase)) {
   process.stderr.write("runtime layout base exceeds the supported integer range\n");
   process.exit(1);
 }
-process.stdout.write(`${layout.target}\n${runtimeGlobalBase}`);
+// Layouts written before runtime feature evidence was introduced retain the
+// complete source runtime for compatibility. Current compiler layouts opt into
+// ephemeron code only when ConditionalWeakTable is reachable.
+const includeEphemerons = layout.runtimeFeatures === undefined ||
+  layout.runtimeFeatures.includes("ephemeron-handles");
+const includeStructuredCommandDiagnostics = layout.runtimeFeatures === undefined ||
+  layout.runtimeFeatures.includes("structured-command-diagnostics");
+process.stdout.write(`${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}`);
 NODE
 )"
 runtime_target="${runtime_layout_values%%$'\n'*}"
-runtime_global_base="${runtime_layout_values#*$'\n'}"
-[[ "$runtime_target" = "$target" && "$runtime_global_base" =~ ^[0-9]+$ ]] || {
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+runtime_global_base="${runtime_layout_values%%$'\n'*}"
+include_ephemerons="${runtime_layout_values#*$'\n'}"
+include_structured_command_diagnostics="${include_ephemerons#*$'\n'}"
+include_ephemerons="${include_ephemerons%%$'\n'*}"
+[[ "$runtime_target" = "$target" && "$runtime_global_base" =~ ^[0-9]+$ &&
+   "$include_ephemerons" =~ ^[01]$ &&
+   "$include_structured_command_diagnostics" =~ ^[01]$ ]] || {
     echo "runtime layout contract validation failed" >&2
     exit 1
 }
@@ -266,6 +291,9 @@ if [[ "$configuration" = debug ]]; then
     optimization=(-O0)
     configuration_defines=(-DNETWASM_GC_DIAGNOSTICS)
 fi
+if [[ "$include_structured_command_diagnostics" = 1 ]]; then
+    configuration_defines+=("-DNETWASM_STRUCTURED_COMMAND_DIAGNOSTICS")
+fi
 # NetWasm does not currently publish DWARF. Keep this explicit because recent
 # Emscripten builds can otherwise retain native-runtime DWARF in -O0 output.
 debug_information=(-g0)
@@ -319,6 +347,13 @@ runtime_sources=(
   "$repo_root/src/NetWasm.Runtime/collector/boehm_reference_store.c" \
   "$repo_root/src/NetWasm.Runtime/collector/boehm_pinning.c"
 )
+if [[ "$include_ephemerons" = 1 ]]; then
+    runtime_sources+=(
+      "$repo_root/src/NetWasm.Runtime/ephemeron_runtime.c"
+      "$repo_root/src/NetWasm.Runtime/collector/boehm_ephemeron.c"
+      "$repo_root/src/NetWasm.Runtime/collector/ephemeron_handle_table.c"
+    )
+fi
 runtime_sources+=("${additional_sources[@]}")
 libc_internal_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/src/internal"
 libc_arch_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/arch/emscripten"

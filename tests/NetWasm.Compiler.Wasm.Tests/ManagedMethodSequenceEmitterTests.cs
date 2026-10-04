@@ -13,6 +13,36 @@ using static EmitterTestSupport;
 
 public sealed class ManagedMethodSequenceEmitterTests
 {
+    [Theory]
+    [InlineData(null, 100)]
+    [InlineData(71, 102)]
+    public void StackTraceLocationsUseOriginalOffsetsAfterInstructionExpansion(int? originalOffset, int expectedSymbol)
+    {
+        var program = new FakeProgram();
+        var instruction = I(0, CilOperation.Nop) with { OriginalOffset = originalOffset };
+        var method = CreateMethod(program,
+            new StructuredTerminalExit(I(1, CilOperation.Return)), instruction, I(1, CilOperation.Return));
+        var blocks = new RecordingControlFlowEmitter { Blocks = [(Block(0), false, true)] };
+        var locations = new RecordingStackTraceFrameLocationEmitter();
+        var target = CreateInstructionModuleTarget(program) with
+        {
+            StackTraceMethods = StackTraceMethodPlan.Disabled with
+            {
+                LocationSymbols = ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty
+                    .Add(9, [new(0, 100), new(20, 101), new(70, 102)]),
+            },
+        };
+
+        AsEmitter(CreateEmitter(blocks, locations: locations)).Emit(
+            new RecordingInstructionWriter(), method, StructuredSequence.Empty,
+            CreateMethodEmissionContext() with { StackTraceMethodId = 9 }, target,
+            CreateFunctionIndexResolver(program));
+
+        Assert.Equal((9, expectedSymbol), locations.Updates[0]);
+        Assert.Equal((9, 100), locations.Updates[1]);
+        Assert.Equal(2, locations.Updates.Count);
+    }
+
     [Fact]
     public void SyntheticLeaveRoutingCopiesDoNotRepeatProtectedBlockBodies()
     {
@@ -331,7 +361,8 @@ public sealed class ManagedMethodSequenceEmitterTests
         RecordingExceptionRegionEmitter? exceptions = null,
         RecordingLeaveEmitter? leaves = null,
         RecordingBranchComparisonEmitter? branchComparisons = null,
-        RecordingInstructionDispatcher? dispatcher = null)
+        RecordingInstructionDispatcher? dispatcher = null,
+        RecordingStackTraceFrameLocationEmitter? locations = null)
     {
         var layouts = new RecordingLayoutProvider();
         return new ManagedMethodSequenceEmitter(
@@ -340,7 +371,8 @@ public sealed class ManagedMethodSequenceEmitterTests
             controlFlow,
             leaves ?? new RecordingLeaveEmitter(),
             branchComparisons ?? new RecordingBranchComparisonEmitter(),
-            dispatcher ?? new RecordingInstructionDispatcher());
+            dispatcher ?? new RecordingInstructionDispatcher(),
+            locations ?? new RecordingStackTraceFrameLocationEmitter());
     }
 
     private static IManagedMethodSequenceEmitter AsEmitter(
@@ -554,5 +586,18 @@ public sealed class ManagedMethodSequenceEmitterTests
             InstructionEmissionRequest request,
             IWasmInstructionWriter code,
             IFunctionIndexResolver functionIndices) => Operations.Add(request.Instruction.Operation);
+    }
+
+    private sealed class RecordingStackTraceFrameLocationEmitter :
+        IStackTraceFrameLocationEmitter
+    {
+        public List<(int Method, int Symbol)> Updates { get; } = [];
+
+        public void Update(
+            IWasmInstructionWriter code,
+            int methodId,
+            int symbolId,
+            RuntimeImportSelection runtimeImportSelection)
+            => Updates.Add((methodId, symbolId));
     }
 }

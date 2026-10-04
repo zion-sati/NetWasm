@@ -11,7 +11,12 @@ public sealed record RawBuildImportValidationRequest(
     string? World,
     WasmTarget Target,
     RawModuleInspectionRequest RuntimeInspection,
-    RawModuleInspectionRequest FinalInspection);
+    RawModuleInspectionRequest FinalInspection)
+{
+    public string RuntimeWitPath { get; init; } = WitPath;
+
+    public string? RuntimeWorld { get; init; } = World;
+}
 
 public sealed record RawBuildImportSourceValidationRequest(
     RawCompilerImportSource Source,
@@ -54,7 +59,11 @@ public sealed class RawBuildImportValidator(
             request.World,
             request.Target,
             request.RuntimeInspection,
-            request.FinalInspection));
+            request.FinalInspection)
+        {
+            RuntimeWitPath = request.RuntimeWitPath,
+            RuntimeWorld = request.RuntimeWorld,
+        });
     }
 }
 
@@ -65,7 +74,7 @@ public sealed class RawBuildImportSourceValidator(
     IRawModuleImportSignatureReader modules,
     IRawWitBindingPlanBuilder plans,
     IRawFinalImportSignatureValidator signatures,
-    IRawCliCoreSignatureProjector projector) : IRawBuildImportSourceValidator
+    IRawCoreRuntimeImportDeclarationBuilder runtimeDeclarations) : IRawBuildImportSourceValidator
 {
     private readonly IWitDocumentReader _documents = documents ??
         throw new ArgumentNullException(nameof(documents));
@@ -79,8 +88,8 @@ public sealed class RawBuildImportSourceValidator(
         throw new ArgumentNullException(nameof(plans));
     private readonly IRawFinalImportSignatureValidator _signatures = signatures ??
         throw new ArgumentNullException(nameof(signatures));
-    private readonly IRawCliCoreSignatureProjector _projector = projector ??
-        throw new ArgumentNullException(nameof(projector));
+    private readonly IRawCoreRuntimeImportDeclarationBuilder _runtimeDeclarations = runtimeDeclarations ??
+        throw new ArgumentNullException(nameof(runtimeDeclarations));
 
     public RawValidatedBindingPlan Validate(RawBuildImportSourceValidationRequest request)
     {
@@ -89,18 +98,25 @@ public sealed class RawBuildImportSourceValidator(
         ArgumentNullException.ThrowIfNull(request.RuntimeInspection);
         ArgumentNullException.ThrowIfNull(request.FinalInspection);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WitPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.RuntimeWitPath);
         if (request.Target is not (WasmTarget.Wasm32 or WasmTarget.Wasm64))
         {
             throw new ArgumentOutOfRangeException(nameof(request));
         }
 
-        var document = _documents.Read(request.WitPath);
+        var document = _documents.Read(request.WitPath, request.World);
         ArgumentNullException.ThrowIfNull(document);
         var catalog = _catalogs.Build(
             document,
             document.SelectWorld(request.World),
             request.Target);
         var declared = _declarations.Build(new(request.Source, catalog));
+        var runtimeDocument = _documents.Read(request.RuntimeWitPath);
+        ArgumentNullException.ThrowIfNull(runtimeDocument);
+        var runtimeCatalog = _catalogs.Build(
+            runtimeDocument,
+            runtimeDocument.SelectWorld(request.RuntimeWorld),
+            request.Target);
         var runtimeImports = _modules.Read(request.RuntimeInspection);
         if (runtimeImports.IsDefault)
         {
@@ -111,10 +127,9 @@ public sealed class RawBuildImportSourceValidator(
         {
             throw Invalid("observed raw imports must be explicit");
         }
-        var coreRuntime = BuildCoreRuntimeDeclarations(
-            runtimeImports,
-            catalog,
-            declared);
+        var coreRuntime = _runtimeDeclarations.Build(new(
+            catalog, runtimeCatalog, declared, runtimeImports,
+            [.. observed.Select(import => import.Identity)]));
         var plan = _plans.Build(new(
             catalog,
             [.. observed.Select(import => import.Identity)],
@@ -133,45 +148,6 @@ public sealed class RawBuildImportSourceValidator(
                 plan.Selection.RuntimeImports,
                 coreRuntime),
         });
-    }
-
-    private ImmutableDictionary<RawCanonicalImportIdentity, RawCoreFunctionImportSignature>
-        BuildCoreRuntimeDeclarations(
-            ImmutableArray<RawCoreFunctionImportSignature> runtimeImports,
-            RawWitImportCatalog catalog,
-            RawCompilerImportDeclarations declarations)
-    {
-        var coreRuntime = ImmutableDictionary.CreateBuilder<
-            RawCanonicalImportIdentity,
-            RawCoreFunctionImportSignature>();
-        foreach (var import in runtimeImports)
-        {
-            ArgumentNullException.ThrowIfNull(import);
-            ArgumentNullException.ThrowIfNull(import.Identity);
-            if (catalog.Imports.ContainsKey(import.Identity))
-            {
-                continue;
-            }
-            if (declarations.JavaScriptImports.ContainsKey(import.Identity))
-            {
-                throw Invalid("runtime module import has a JavaScript owner");
-            }
-            if (coreRuntime.ContainsKey(import.Identity))
-            {
-                throw Invalid("runtime module imports contain duplicate physical identities");
-            }
-            coreRuntime.Add(import.Identity, import);
-            if (declarations.RuntimeImports.TryGetValue(import.Identity, out var compilerImport))
-            {
-                var projected = _projector.Project(compilerImport, catalog.Target);
-                if (!projected.Parameters.SequenceEqual(import.Parameters)
-                    || !projected.Results.SequenceEqual(import.Results))
-                {
-                    throw Invalid("compiler and runtime module import signatures disagree");
-                }
-            }
-        }
-        return coreRuntime.ToImmutable();
     }
 
     private static ImmutableArray<RawCliFunctionImportSignature> SelectDeclarations(

@@ -1,0 +1,5 @@
+package netwasm:diagnostics@1.0.0;
+
+interface terminal {
+    report: func(type-id: u32, message: option<list<u16>>, stack-trace: option<list<u16>>);
+}

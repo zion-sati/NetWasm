@@ -121,7 +121,7 @@ internal sealed class CilDecoder(
             .Select(type => type.StackKind)
             .ToImmutableArray();
         var exceptionRegions = body.ExceptionRegions.Select(region =>
-            DecodeExceptionRegion(assembly, region)).ToImmutableArray();
+            DecodeExceptionRegion(assembly, region, genericContext)).ToImmutableArray();
         var lowered = switches.Lower(
             instructions.ToImmutable(),
             exceptionRegions);
@@ -409,12 +409,19 @@ internal sealed class CilDecoder(
 
     private CilExceptionRegion DecodeExceptionRegion(
         ManagedAssembly assembly,
-        ExceptionRegion region)
+        ExceptionRegion region,
+        CliGenericContext genericContext)
     {
         var kind = ExceptionRegionKinds[region.Kind];
-        EntityKey? catchType = region.CatchType.IsNil
+        // Catch TypeSpecs use the same context as instructions and locals.
+        // Keep an open signature during definition-only inspection; executable
+        // analysis decodes the constructed method and requires a closed type.
+        var catchIdentity = region.CatchType.IsNil
             ? null
-            : _typeEntities.Resolve(assembly.Metadata, region.CatchType);
+            : _typeSignatures.Resolve(assembly.Metadata, MetadataTokens.GetToken(region.CatchType), genericContext);
+        EntityKey? catchType = catchIdentity is null || catchIdentity.ContainsGenericParameters
+            ? null
+            : _typeEntities.Resolve(assembly.Metadata, region.CatchType, genericContext);
         return new CilExceptionRegion(
             kind,
             region.TryOffset,
@@ -422,7 +429,10 @@ internal sealed class CilDecoder(
             region.HandlerOffset,
             region.HandlerLength,
             catchType,
-            region.FilterOffset < 0 ? null : region.FilterOffset);
+            region.FilterOffset < 0 ? null : region.FilterOffset)
+        {
+            CatchTypeIdentity = catchIdentity,
+        };
     }
 
     private CilOperand.MethodInstance ReadMethod(

@@ -1,0 +1,43 @@
+{
+  "build": {
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "command": "cargo xtask build release",
+    "node": "v26.7.0",
+    "pathRemapping": {
+      "cargoHome": "/_/cargo",
+      "checkout": "/_/jco"
+    },
+    "pnpm": "10.17.1",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "builder": {
+    "assetName": "jco-bindgen-1.28.1-netwasm.2.1.zip",
+    "recipePath": "eng/jco-bindgen.json",
+    "releaseTag": "jco-bindgen-v1.28.1-netwasm.2.1",
+    "repository": "https://github.com/zion-sati/NetWasm.NativeTools.git",
+    "revision": "10ebb838c6119514ff107ac65fa3966002f9de38"
+  },
+  "description": "Preserve exact component export names and identify genuine declared-result errors in generated worker bindings.",
+  "effectiveVersion": "1.28.1+netwasm.2",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "licensePath": "LICENSE.upstream",
+  "licenseSha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5",
+  "originalSha256": "b34a84120a4e25c1e824fa909cd76a8193c05171324031b5f6205c9010f2f1ed",
+  "replacement": {
+    "path": "js-component-bindgen-component.core.wasm",
+    "sha256": "4e859c7e534a053ced6649dc0a5351a8f6e463e211291d5cc7032cb749683b8f"
+  },
+  "schemaVersion": 1,
+  "sourcePatch": {
+    "path": "jco-worker-bindings.patch",
+    "sha256": "3b5382cdfbea87e96f4821ea7cbb557a4129d6f5c8bf8a35d34ad5413f3d42da"
+  },
+  "targetPath": "node_modules/@bytecodealliance/jco-transpile/vendor/js-component-bindgen-component.core.wasm",
+  "upstream": {
+    "jcoTranspileVersion": "0.7.0",
+    "jcoVersion": "1.28.1",
+    "repository": "https://github.com/bytecodealliance/jco",
+    "revision": "e3ed4ca01e13a2f9ee6d0b44abec46c8da662791",
+    "tag": "jco-v1.28.1"
+  }
+}

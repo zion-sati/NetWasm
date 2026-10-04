@@ -12,6 +12,34 @@ public sealed class RuntimeMaterializationCacheStoreTests
         new("wasm32", RuntimeWasmOptimization.Oz);
 
     [Fact]
+    public void RoundTripsIntegrityBoundNativeLayoutAndProviderEvidence()
+    {
+        using var directory = new TemporaryDirectory();
+        var bytes = new byte[] { 1, 2, 3 };
+        var evidence = new RuntimeNativeCacheEvidence(
+            new("wasm32", 65_552, 100_000, 100_000, 165_536, 165_536, 262_144, 2_147_483_648),
+            [new("sum", "/native/libmule.a", RuntimePackTestData.Digest, "mule.o")]);
+
+        new RuntimeMaterializationCacheWriter().Write(directory.Path, Slot, Key, bytes, Digest(bytes), evidence);
+        var result = new RuntimeMaterializationCacheReader().Read(directory.Path, Slot, Key);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Hit, result.Outcome);
+        Assert.Equal(bytes, result.Bytes);
+        Assert.Equal(evidence.Layout, result.NativeEvidence!.Layout);
+        Assert.Equal(evidence.Bindings.ToArray(), result.NativeEvidence.Bindings.ToArray());
+        var path = RuntimeMaterializationCachePaths.Entry(directory.Path, Slot);
+        var envelope = File.ReadAllBytes(path);
+        var marker = System.Text.Encoding.UTF8.GetBytes("mule.o");
+        var position = envelope.AsSpan().IndexOf(marker);
+        Assert.True(position >= 0);
+        envelope[position] ^= 1;
+        File.WriteAllBytes(path, envelope);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Corrupt,
+            new RuntimeMaterializationCacheReader().Read(directory.Path, Slot, Key).Outcome);
+    }
+
+    [Fact]
     public void MissingEntryIsAMiss()
     {
         using var directory = new TemporaryDirectory();
@@ -20,6 +48,56 @@ public sealed class RuntimeMaterializationCacheStoreTests
 
         Assert.Equal(RuntimeMaterializationCacheOutcome.Miss, result.Outcome);
         Assert.Null(result.Bytes);
+    }
+
+    [Fact]
+    public void StoredKeyCannotBeReplacedWithoutInvalidatingTheWholeEnvelope()
+    {
+        using var directory = new TemporaryDirectory();
+        var bytes = new byte[] { 42 };
+        new RuntimeMaterializationCacheWriter().Write(directory.Path, Slot, Key, bytes, Digest(bytes));
+        var path = RuntimeMaterializationCachePaths.Entry(directory.Path, Slot);
+        var envelope = File.ReadAllBytes(path);
+        var offset = envelope.AsSpan().IndexOf(System.Text.Encoding.UTF8.GetBytes(Key.Value));
+        Assert.True(offset >= 0);
+        System.Text.Encoding.UTF8.GetBytes(new string('b', 64)).CopyTo(envelope.AsSpan(offset, 64));
+        File.WriteAllBytes(path, envelope);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Corrupt, new RuntimeMaterializationCacheReader().Read(
+            directory.Path, Slot, new(new string('b', 64))).Outcome);
+    }
+
+    [Fact]
+    public void ValidEvidenceAndModuleChecksumsCannotQualifyASplicedEnvelope()
+    {
+        using var directory = new TemporaryDirectory();
+        var first = new byte[] { 1, 2, 3 };
+        var replacement = new byte[] { 4, 5, 6 };
+        var evidence = new RuntimeNativeCacheEvidence(
+            new("wasm32", 65_552, 100_000, 100_000, 165_536, 165_536, 262_144, 2_147_483_648), []);
+        new RuntimeMaterializationCacheWriter().Write(directory.Path, Slot, Key, first, Digest(first), evidence);
+        var path = RuntimeMaterializationCachePaths.Entry(directory.Path, Slot);
+        var envelope = File.ReadAllBytes(path);
+        using (var stream = new MemoryStream(envelope))
+        using (var reader = new BinaryReader(stream))
+        {
+            reader.ReadBytes(8);
+            reader.ReadInt32();
+            reader.ReadString();
+            reader.ReadInt64();
+            var digestOffset = checked((int)stream.Position + 1); // The 64-byte string uses a one-byte length prefix.
+            Assert.Equal(Digest(first), reader.ReadString());
+            var evidenceLength = reader.ReadInt32();
+            reader.ReadString();
+            reader.ReadBytes(evidenceLength);
+            var moduleOffset = checked((int)stream.Position);
+            System.Text.Encoding.UTF8.GetBytes(Digest(replacement)).CopyTo(envelope.AsSpan(digestOffset, 64));
+            replacement.CopyTo(envelope.AsSpan(moduleOffset, replacement.Length));
+        }
+        File.WriteAllBytes(path, envelope);
+
+        Assert.Equal(RuntimeMaterializationCacheOutcome.Corrupt,
+            new RuntimeMaterializationCacheReader().Read(directory.Path, Slot, Key).Outcome);
     }
 
     [Fact]
@@ -136,7 +214,7 @@ public sealed class RuntimeMaterializationCacheStoreTests
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write("NWRCACHE"u8.ToArray());
-            writer.Write(1);
+            writer.Write(3);
             writer.Write(new byte[] { 0x80, 0x80, 0x80, 0x80, 0x80 });
         }
 
@@ -157,7 +235,7 @@ public sealed class RuntimeMaterializationCacheStoreTests
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write("NWRCACHE"u8.ToArray());
-            writer.Write(1);
+            writer.Write(3);
             writer.Write(storedKey);
         }
 
@@ -180,7 +258,7 @@ public sealed class RuntimeMaterializationCacheStoreTests
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write("NWRCACHE"u8.ToArray());
-            writer.Write(1);
+            writer.Write(3);
             writer.Write(Key.Value);
             writer.Write(invalid switch
             {
@@ -209,7 +287,8 @@ public sealed class RuntimeMaterializationCacheStoreTests
         new RuntimeMaterializationCacheWriter().Write(directory.Path, Slot, Key, bytes, Digest(bytes));
         var path = RuntimeMaterializationCachePaths.Entry(directory.Path, Slot);
         var entry = File.ReadAllBytes(path);
-        entry[^1] ^= 0xff;
+        // Corrupt a module byte, not the separate envelope digest trailer.
+        entry[^(SHA256.HashSizeInBytes + 1)] ^= 0xff;
         File.WriteAllBytes(path, entry);
 
         var result = new RuntimeMaterializationCacheReader().Read(directory.Path, Slot, Key);

@@ -52,6 +52,10 @@ public sealed class NetWasmBuildRawBindingsTaskTests
         Assert.True(session.IsDisposed);
         Assert.Equal("adapter.mjs", artifacts.Path);
         Assert.Equal([1, 2, 3], artifacts.Bytes);
+        var manifest = Assert.Single(artifacts.Writes, write => write.Path == "raw-bindings.json");
+        var manifestJson = System.Text.Encoding.UTF8.GetString(manifest.Bytes);
+        Assert.Contains("\"target\":\"" + target + "\"", manifestJson, StringComparison.Ordinal);
+        Assert.Contains("\"requiredImports\"", manifestJson, StringComparison.Ordinal);
         Assert.Equal("RawAdapter", Assert.Single(task.Adapters).GetMetadata("Kind"));
         Assert.Collection(
             task.RequiredImports,
@@ -195,6 +199,7 @@ public sealed class NetWasmBuildRawBindingsTaskTests
             InspectionScriptPath = "inspect.mjs",
             BinaryenPath = "binaryen.js",
             AdapterPath = "adapter.mjs",
+            BindingManifestPath = "raw-bindings.json",
         };
 
     private sealed class RecordingCompilerMetadataReader(string target) :
@@ -263,13 +268,13 @@ public sealed class NetWasmBuildRawBindingsTaskTests
 
     private sealed class RecordingByteWriter : IByteArtifactWriter
     {
-        public string? Path { get; private set; }
-        public byte[]? Bytes { get; private set; }
+        public string? Path => Writes.FirstOrDefault().Path;
+        public byte[]? Bytes => Writes.FirstOrDefault().Bytes;
+        public List<(string Path, byte[] Bytes)> Writes { get; } = [];
 
         public void Write(string path, byte[] bytes)
         {
-            Path = path;
-            Bytes = bytes;
+            Writes.Add((path, bytes));
         }
     }
 

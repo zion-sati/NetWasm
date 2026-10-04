@@ -41,7 +41,8 @@ public sealed class RequestedExportFunctionAppenderTests
                     asyncHelpers,
                     entries,
                     new FixedFunctionTypeResolver(),
-                    new FixedBoundaryBuilder())),
+                    new FixedBoundaryBuilder(),
+                    WasmRuntimeImports.CreateCatalog())),
         }.Cast<IRequestedExportFunctionAppender>().Single();
         var functions = new List<WasmFunctionDefinition>();
         var indices = new Dictionary<string, int>();
@@ -62,10 +63,11 @@ public sealed class RequestedExportFunctionAppenderTests
             "run",
             methodInstance,
             bindings,
-            TestRuntimeInitialization.Create(256),
+            TestRuntimeInitialization.Create(256, new(profile, false, IncludeExceptionCapture: asynchronous)),
             true,
             profile,
             new FixedFunctionIndexResolver(),
+            EmptyInteropImports(),
             boundaries);
 
         Assert.Equal(3, indices["run"]);
@@ -82,6 +84,45 @@ public sealed class RequestedExportFunctionAppenderTests
     }
 
     [Fact]
+    public void JavaScriptBoundaryOverridesComponentModuleExportBoundary()
+    {
+        var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
+        var entries = new RecordingEntryPointEmitter();
+        var appender = new RequestedExportFunctionAppender(
+            new OutwardMethodFunctionAppender(
+                new RecordingAsyncWrapperEmitter(),
+                new RecordingAsyncHelperAppender(),
+                entries,
+                new FixedFunctionTypeResolver(),
+                new FixedBoundaryBuilder(),
+                WasmRuntimeImports.CreateCatalog()));
+        var boundaries = new List<ManagedBoundaryPlanEntry>();
+        var interop = EmptyInteropImports() with
+        {
+            UseJavaScriptExportBoundary = true,
+        };
+
+        appender.Append(
+            [],
+            0,
+            new Dictionary<string, int>(),
+            new Dictionary<string, int>(),
+            "run",
+            CreateInstance(method),
+            ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty,
+            TestRuntimeInitialization.Create(0),
+            false,
+            WasmModuleProfile.ComponentCoreModule,
+            new FixedFunctionIndexResolver(),
+            interop,
+            boundaries);
+
+        Assert.Equal(ManagedBoundaryKind.SynchronousExport,
+            Assert.Single(boundaries).Kind);
+        Assert.True(entries.ReportTerminalExceptions);
+    }
+
+    [Fact]
     public void RejectsMissingInputsInvalidNameAndNegativeValues()
     {
         var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
@@ -92,38 +133,43 @@ public sealed class RequestedExportFunctionAppenderTests
         var helpers = new Dictionary<string, int>();
         var bindings = ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty;
         var functionIndices = new FixedFunctionIndexResolver();
+        var interopImports = EmptyInteropImports();
         var boundaries = new List<ManagedBoundaryPlanEntry>();
 
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             null!, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentOutOfRangeException>(() => appender.Append(
             functions, -1, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             functions, 0, null!, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             functions, 0, indices, null!, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentException>(() => appender.Append(
             functions, 0, indices, helpers, " ", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             functions, 0, indices, helpers, "run", null!, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             functions, 0, indices, helpers, "run", methodInstance, null!, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentOutOfRangeException>(() => appender.Append(
             functions, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(-1), false,
-            WasmModuleProfile.CoreApplication, functionIndices, boundaries));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             functions, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, null!, boundaries));
+            WasmModuleProfile.CoreApplication, null!, interopImports, boundaries));
+        Assert.Throws<ArgumentNullException>(() => appender.Append(
+            functions, 0, indices, helpers, "run", methodInstance, bindings,
+            TestRuntimeInitialization.Create(0), false,
+            WasmModuleProfile.CoreApplication, functionIndices, null!, boundaries));
         Assert.Throws<ArgumentNullException>(() => appender.Append(
             functions, 0, indices, helpers, "run", methodInstance, bindings, TestRuntimeInitialization.Create(0), false,
-            WasmModuleProfile.CoreApplication, functionIndices, null!));
+            WasmModuleProfile.CoreApplication, functionIndices, interopImports, null!));
     }
 
     private static IRequestedExportFunctionAppender CreateAppender(
@@ -135,8 +181,18 @@ public sealed class RequestedExportFunctionAppenderTests
                 new RecordingAsyncHelperAppender(),
                 new RecordingEntryPointEmitter(),
                 new FixedFunctionTypeResolver(),
-                new FixedBoundaryBuilder())),
+                new FixedBoundaryBuilder(),
+                WasmRuntimeImports.CreateCatalog())),
     }.Cast<IRequestedExportFunctionAppender>().Single();
+
+    private static InteropImportPlan EmptyInteropImports() => new(
+        [],
+        OptionalFunctionIndex.Missing,
+        OptionalFunctionIndex.Missing,
+        OptionalFunctionIndex.Missing,
+        OptionalFunctionIndex.Missing,
+        OptionalFunctionIndex.Missing,
+        OptionalFunctionIndex.Missing);
 
     private static MethodInstanceModel CreateInstance(MethodDefinitionModel method) =>
         new(
@@ -167,7 +223,8 @@ public sealed class RequestedExportFunctionAppenderTests
             instance.DeclaringType,
             instance,
             instance,
-            instance);
+            instance)
+        { GetVoidResult = instance };
     }
 
     private sealed class RecordingAsyncWrapperEmitter : IAsyncJSExportWrapperEmitter
@@ -198,7 +255,8 @@ public sealed class RequestedExportFunctionAppenderTests
             JavaScriptAsyncMethodBinding binding,
             ManagedAsyncBoundaryNames names,
             ManagedAsyncBoundaryKinds kinds,
-            ICollection<ManagedBoundaryPlanEntry> boundaryEntries) => Count++;
+            ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
+            AsyncTaskCompletionPlan completion) => Count++;
     }
 
     private sealed class RecordingEntryPointEmitter : IEntryPointEmitter

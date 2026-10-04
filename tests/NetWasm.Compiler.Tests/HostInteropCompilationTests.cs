@@ -94,7 +94,8 @@ public sealed class HostInteropCompilationTests
                 assembly,
                 "EntryPoint",
                 "Run",
-                target));
+                target) with
+            { UseJavaScriptExportBoundary = true });
 
             CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
 
@@ -108,6 +109,7 @@ public sealed class HostInteropCompilationTests
                     Assert.NotNull(export.StatusExport);
                     Assert.NotNull(export.ResultExport);
                     Assert.NotNull(export.CompleteExport);
+                    Assert.Equal("exception-handle-v1", export.CompletionResult);
                 },
                 export =>
                 {
@@ -117,6 +119,7 @@ public sealed class HostInteropCompilationTests
                     Assert.NotNull(export.StatusExport);
                     Assert.NotNull(export.ResultExport);
                     Assert.NotNull(export.CompleteExport);
+                    Assert.Equal("exception-handle-v1", export.CompletionResult);
                 });
         }
     }
@@ -345,11 +348,11 @@ public sealed class HostInteropCompilationTests
     }
 
     [Fact]
-    public void CompilerRejectsNonScalarJSExport()
+    public void CompilerBuildsSynchronousStringJSExport()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource(
-            "InvalidHostExportSignatureFixture",
+            "StringHostExportSignatureFixture",
             """
             using System.Runtime.InteropServices.JavaScript;
 
@@ -357,15 +360,81 @@ public sealed class HostInteropCompilationTests
             {
                 public static int Run(int input) => input;
 
-                [JSExport("bad")]
-                public static string Bad(string input) => input;
+                [JSExport("echo")]
+                public static string Echo(string left, string right) => left + right;
+
+                [JSExport("value")]
+                public static string Value() => "result";
             }
             """);
 
-        var exception = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
-            new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [])));
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(new CompilerOptions(
+                assembly,
+                [assets.CoreLib],
+                "EntryPoint",
+                "Run",
+                [],
+                target));
 
-        Assert.Contains("JSExport currently supports only primitive scalar", exception.Message);
+            var export = Assert.Single(result.InteropManifest.Exports,
+                candidate => candidate.Name == "echo");
+            Assert.Equal("echo", export.Name);
+            Assert.Equal(["string", "string"], export.Parameters.ToArray());
+            Assert.Equal("string", export.Result);
+            var resultOnly = Assert.Single(result.InteropManifest.Exports,
+                candidate => candidate.Name == "value");
+            Assert.Empty(resultOnly.Parameters);
+            Assert.Equal("string", resultOnly.Result);
+            Assert.Contains(result.FunctionImports,
+                import => import.Module == "netwasm.host.v1" &&
+                    import.Name == "interop_string_length");
+            Assert.Contains(result.FunctionImports,
+                import => import.Module == "netwasm.host.v1" &&
+                    import.Name == "interop_copy_string_utf16");
+        }
+    }
+
+    [Fact]
+    public void CompilerEmitsByteArrayJavaScriptExportBoundary()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ByteArrayHostExportSignatureFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("echo_bytes")]
+                public static byte[] EchoBytes(byte[] input) => input;
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(new CompilerOptions(
+                assembly,
+                [assets.CoreLib],
+                "EntryPoint",
+                "Run",
+                [],
+                target));
+
+            var export = Assert.Single(result.InteropManifest.Exports,
+                candidate => candidate.Name == "echo_bytes");
+            Assert.Equal(["bytes"], export.Parameters.ToArray());
+            Assert.Equal("bytes", export.Result);
+            Assert.Contains(result.FunctionImports,
+                import => import.Module == "netwasm.host.v1" &&
+                    import.Name == "interop_byte_length");
+            Assert.Contains(result.FunctionImports,
+                import => import.Module == "netwasm.host.v1" &&
+                    import.Name == "interop_copy_bytes");
+        }
     }
 
     [Fact]

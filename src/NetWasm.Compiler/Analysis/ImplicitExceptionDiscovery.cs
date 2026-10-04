@@ -61,6 +61,7 @@ internal sealed class ImplicitExceptionDiscovery(
             case CilOperation.LoadField:
             case CilOperation.StoreField:
             case CilOperation.LoadArrayLength:
+            case CilOperation.CompareExchange:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));
                 break;
             case CilOperation.CallVirtual:

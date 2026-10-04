@@ -27,4 +27,10 @@ internal sealed record RuntimeInitializationPlan
     public RuntimeImportSelection RuntimeImportSelection { get; }
 
     public ImmutableArray<ModuleInitializerCall> ModuleInitializers { get; init; } = [];
+
+    public int? NativeCallbackReadinessAddress { get; init; }
+
+    public int? StackTraceSymbolRegistrationGuardAddress { get; init; }
+
+    public ImmutableArray<StackTraceSymbolData> StackTraceSymbols { get; init; } = [];
 }

@@ -51,6 +51,16 @@ for (const { environment, disabled: requestedDisabled, earlyAllocation } of star
     assert.notEqual(pointer, address(0));
     return Number(pointer);
   }
+  function allocateDiagnosticString(character, length) {
+    const stringDataOffset = addressSize + 4;
+    const pointer = allocate(stringDataOffset + length * 2, addressSize);
+    const view = new DataView(instance.exports.memory.buffer);
+    view.setUint32(pointer + addressSize, length, true);
+    for (let index = 0; index < length; ++index) {
+      view.setUint16(pointer + stringDataOffset + index * 2, character, true);
+    }
+    return address(pointer);
+  }
   instance = await WebAssembly.instantiate(module, {
     'netwasm.application.v1': {
       'netwasm.filter': unexpected,
@@ -142,10 +152,16 @@ for (const { environment, disabled: requestedDisabled, earlyAllocation } of star
   }
   instance.exports.initialize(staticDataEnd, 1, 1);
   assert.equal(valueReads, 1);
-  instance.exports.report_unobserved_task_exception();
-  instance.exports.report_unobserved_task_exception();
+  instance.exports.report_unobserved_task_exception(address(0), address(0), address(0));
+  instance.exports.report_unobserved_task_exception(address(0), address(0), address(0));
+  const exceptionType = allocateDiagnosticString('E'.charCodeAt(0), 1);
+  const exceptionMessage = allocateDiagnosticString('M'.charCodeAt(0), 3);
+  const stackTrace = allocateDiagnosticString('S'.charCodeAt(0), 4);
+  instance.exports.report_unobserved_task_exception(
+    exceptionType, exceptionMessage, stackTrace);
   assert.equal(stderrReads, 1);
-  assert.deepEqual(output, Array(2).fill(
-    'NetWasm: an unobserved managed Task exception was finalized\n'));
+  assert.equal(output.join(''),
+    'NetWasm: an unobserved managed Task exception was finalized\n'.repeat(3) +
+    'E: MMM\nSSSS\n');
 }
 console.log(JSON.stringify({ target, collectionMode, passed: startupCases.length, failed: 0 }));

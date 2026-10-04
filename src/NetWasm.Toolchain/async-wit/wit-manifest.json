@@ -3,25 +3,26 @@
   "package": "netwasm:component@1.0.0",
   "world": "async-command",
   "worlds": [
+    "diagnostic-command",
     "async-command",
     "async-http-command"
   ],
   "main": "world.wit",
   "provenance": {
     "sourceKind": "netwasm-composed-world",
-    "closurePolicy": "official-wasi-cli-imports-with-optional-wasi-http-plus-versioned-netwasm-reactor-and-process-interfaces"
+    "closurePolicy": "official-wasi-cli-imports-with-sync-diagnostics-and-optional-wasi-http-plus-versioned-netwasm-reactor-process-and-terminal-diagnostics-interfaces"
   },
   "files": [
     {
       "path": "world.wit",
-      "sha256": "97fe6dd8bc27f70bc76f4c10a12e46818464fd7c25c12932c23b876ff576e6d3"
+      "sha256": "23da2f56adda61a29c7a5c833ccbdeff9babdb1b2bd4c11075de7e52a3415fc6"
     }
   ],
   "dependencies": [
     {
       "package": "wasi:cli@0.2.11",
       "sourceManifest": "../wit/wit-manifest.json",
-      "sourceManifestSha256": "64a662667f1c6613b7f5cff0a030df674dec626932877b29f454b16edc08cf4b"
+      "sourceManifestSha256": "a650f4b54bfbb05c186a5f212810cc18aff250075be6ec7d6fb086d191779e8a"
     },
     {
       "package": "wasi:http@0.2.11",

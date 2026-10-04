@@ -6,7 +6,7 @@ namespace NetWasm.Compiler.Analysis;
 public interface IWholeProgramAnalyzer
 {
     ReachableProgram Analyze(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         IEnumerable<ProgramExport> requestedExports,
         ReachabilityRoots? roots = null);
 }

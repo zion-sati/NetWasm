@@ -45,6 +45,7 @@ public sealed class RawResourceIntrinsicLayoutPlanner(
         var function = new CanonicalAbiFunction(declaration.InterfaceName, declaration.Definition.Name, default,
             [new("handle", handle)], returnsHandle ? handle : null)
         {
+            CoreInterfaceName = declaration.CoreInterfaceName,
             Kind = declaration.Kind,
             ResourceName = declaration.Definition.Name,
         };

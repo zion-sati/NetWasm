@@ -10,12 +10,15 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
     private readonly AssemblyIdentity _sourceAssembly;
     private readonly MetadataReader? _owningReader;
     private readonly AssemblyIdentityAliases _assemblyIdentityAliases;
+    private readonly bool _preserveCustomModifiers;
 
     internal SignatureTypeProvider(
         AssemblyIdentity sourceAssembly,
         MetadataReader? owningReader = null,
-        AssemblyIdentityAliases? assemblyIdentityAliases = null)
+        AssemblyIdentityAliases? assemblyIdentityAliases = null,
+        bool preserveCustomModifiers = false)
     {
+        _preserveCustomModifiers = preserveCustomModifiers;
         _assemblyIdentityAliases = assemblyIdentityAliases ?? AssemblyIdentityAliases.Empty;
         _sourceAssembly = _assemblyIdentityAliases.Canonicalize(sourceAssembly);
         _owningReader = owningReader;
@@ -27,8 +30,11 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
         CliTypeIdentity.ManagedByReference(elementType);
 
     public CliTypeIdentity GetFunctionPointerType(MethodSignature<CliTypeIdentity> signature) =>
-        CliTypeIdentity.UnmanagedPointer(
-            CliTypeIdentity.Primitive("void", CliValueKind.Void));
+        CliTypeIdentity.FunctionPointer(new(
+            signature.Header.RawValue,
+            signature.GenericParameterCount,
+            signature.RequiredParameterCount,
+            new(signature.ReturnType, signature.ParameterTypes)));
 
     public CliTypeIdentity GetGenericInstantiation(
         CliTypeIdentity genericType,
@@ -46,7 +52,11 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
     public CliTypeIdentity GetModifiedType(
         CliTypeIdentity modifier,
         CliTypeIdentity unmodifiedType,
-        bool isRequired) => unmodifiedType;
+        bool isRequired) =>
+        _preserveCustomModifiers ||
+        modifier.FullName?.StartsWith("System.Runtime.CompilerServices.CallConv", System.StringComparison.Ordinal) == true
+            ? CliTypeIdentity.Modified(unmodifiedType, modifier, isRequired)
+            : unmodifiedType;
 
     public CliTypeIdentity GetPinnedType(CliTypeIdentity elementType) => elementType;
 

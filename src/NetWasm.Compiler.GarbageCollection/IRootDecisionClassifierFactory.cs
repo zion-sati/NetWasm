@@ -9,5 +9,6 @@ public interface IRootDecisionClassifierFactory
         ITypeRepository types,
         IFieldRepository fields,
         IMethodRepository methods,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites);
+        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        ITypeClassifier typeClassifier);
 }

@@ -39,6 +39,30 @@ public sealed class BrowserCompilationRequestTests
     }
 
     [Fact]
+    public void SnapshotsOptionalCoreBindingInventoriesForNormalizedWitDocuments()
+    {
+        var path = "contract.wit.wasm";
+        var inventories = new Dictionary<string, string>
+        {
+            [path] = "(module)",
+        };
+        var request = new BrowserCompilationRequest(
+            CreateOptions(),
+            new Dictionary<string, byte[]> { [path] = [] },
+            new Dictionary<string, string> { [path] = "{}" },
+            inventories);
+
+        inventories[path] = "changed";
+
+        Assert.Equal("(module)", request.WitCoreBindingInventories[path]);
+        Assert.Throws<FileNotFoundException>(() => new BrowserCompilationRequest(
+            CreateOptions(),
+            new Dictionary<string, byte[]>(),
+            new Dictionary<string, string>(),
+            new Dictionary<string, string> { [path] = "(module)" }));
+    }
+
+    [Fact]
     public void RequiresOriginalWitBytesForEveryNormalizedDocument()
     {
         var failure = Assert.Throws<FileNotFoundException>(() => new BrowserCompilationRequest(

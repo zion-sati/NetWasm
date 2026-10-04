@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 using NetWasm.Compiler.Analysis.ManagedCallSites;
@@ -39,7 +40,9 @@ internal sealed class ReachabilityClosureBuilder(
     IMemberDescriptorPlanner memberDescriptors,
     IObjectArrayDelegateAdapterPlanner objectArrayDelegateAdapters,
     IMemberExecutionPlanner memberExecutions,
-    IBaseTypeResolver baseTypes) : IReachabilityClosureBuilder
+    IBaseTypeResolver baseTypes,
+    IFinalizerResolver finalizerResolver,
+    INullableTypeResolver nullableTypes) : IReachabilityClosureBuilder
 {
     private readonly IReachabilityClosureObserver _closureObserver =
         closureObserver ?? throw new ArgumentNullException(nameof(closureObserver));
@@ -76,20 +79,26 @@ internal sealed class ReachabilityClosureBuilder(
         throw new ArgumentNullException(nameof(memberExecutions));
     private readonly IBaseTypeResolver _baseTypes =
         baseTypes ?? throw new ArgumentNullException(nameof(baseTypes));
+    private readonly IFinalizerResolver _finalizerResolver =
+        finalizerResolver ?? throw new ArgumentNullException(nameof(finalizerResolver));
+    private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
+        throw new ArgumentNullException(nameof(nullableTypes));
 
     public ReachableProgram Build(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         IEnumerable<ProgramExport> requestedExports,
         ReachabilityRoots? roots = null)
     {
-        ArgumentNullException.ThrowIfNull(entryPoint);
         ArgumentNullException.ThrowIfNull(requestedExports);
         roots ??= ReachabilityRoots.Empty;
         var exports = requestedExports.ToArray();
         var outwardBoundaries = exports
             .Select(export => export.Method)
-            .Append(entryPoint.Key)
             .ToHashSet();
+        if (entryPoint is not null)
+        {
+            outwardBoundaries.Add(entryPoint.Key);
+        }
         var state = _ledgers.Create();
         var methodInstances = state.MethodInstances;
         var constructedTypes = state.ConstructedTypes;
@@ -111,7 +120,10 @@ internal sealed class ReachabilityClosureBuilder(
         var callableMethods = state.CallableMethods;
         var dispatchCandidates = _dispatchCandidateIndexes.Create();
 
-        RejectOpenRoot(entryPoint, "entry point");
+        if (entryPoint is not null)
+        {
+            RejectOpenRoot(entryPoint, "entry point");
+        }
         foreach (var type in roots.Types)
         {
             types.Add(type);
@@ -126,11 +138,39 @@ internal sealed class ReachabilityClosureBuilder(
             RejectOpenRoot(rootedMethod, "method root");
             Enqueue(rootedMethod);
         }
-        Enqueue(entryPoint);
+        foreach (var method in roots.InvokedMethods)
+        {
+            VisitInvokedRoot(_methodRepository.GetMethod(method), "invoked method root");
+        }
+        if (entryPoint is not null)
+        {
+            Enqueue(entryPoint);
+        }
         foreach (var export in exports)
         {
             var exportedMethod = _methodRepository.GetMethod(export.Method);
             RejectOpenRoot(exportedMethod, "export");
+            var javaScriptBoundaryParameters = exportedMethod.Signature
+                .ParameterSignatureTypes
+                .Where(type =>
+                    type.CanonicalName == "primitive:string" ||
+                    IsByteArray(type))
+                .ToArray();
+            if (exportedMethod.JSExport is not null &&
+                javaScriptBoundaryParameters.Length != 0)
+            {
+                AddImplicit(ManagedExceptionKind.JSException, "System.JSException");
+                AddImplicit(
+                    ManagedExceptionKind.OutOfMemory,
+                    "System.OutOfMemoryException");
+                foreach (var byteArray in javaScriptBoundaryParameters.Where(IsByteArray))
+                {
+                    AddConstructedType(byteArray);
+                    AddAllocatedType(byteArray);
+                    types.Add(_typeFinder.FindType("System.Array").Key);
+                    types.Add(_typeFinder.FindType("System.Byte").Key);
+                }
+            }
             Enqueue(exportedMethod);
         }
 
@@ -162,6 +202,16 @@ internal sealed class ReachabilityClosureBuilder(
             EnqueueInstance(DirectInstance(method));
         }
 
+        void VisitInvokedRoot(MethodDefinitionModel method, string role)
+        {
+            RejectOpenRoot(method, role);
+            VisitMethod(CilOperation.Call, DirectInstance(method));
+        }
+
+        static bool IsByteArray(CliTypeIdentity type) =>
+            type.Shape == CliTypeShape.SzArray &&
+            type.ElementType!.CanonicalName == "primitive:u1";
+
         void DrainReachabilityQueues()
         {
             while (pending.Count != 0 || pendingDispatches.Count != 0)
@@ -179,7 +229,8 @@ internal sealed class ReachabilityClosureBuilder(
                     types.Add(method.DeclaringType);
                     var import = _importClassifier.Classify(new ReachabilityImportRequest(
                         methodInstance,
-                        outwardBoundaries.Contains(method.Key)));
+                        outwardBoundaries.Contains(method.Key),
+                        entryPoint?.Key == method.Key));
                     ApplyImport(import);
                     if (import.IsHandled)
                     {
@@ -243,11 +294,17 @@ internal sealed class ReachabilityClosureBuilder(
                 AddImplicit(ManagedExceptionKind.Argument, "System.ArgumentException");
                 AddImplicit(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException");
             }
-            foreach (var type in _runtimeIntrinsicTypeRoots.Plan(
-                         methodInstances.Values,
-                         constructedTypes))
+            var intrinsicRoots = _runtimeIntrinsicTypeRoots.Plan(
+                methodInstances.Values,
+                types.Select(_typeIdentities.GetTypeIdentity).Concat(constructedTypes));
+            foreach (var type in intrinsicRoots.RuntimeTypes)
             {
                 AddRuntimeType(type);
+                AddConstructedType(type);
+            }
+            foreach (var type in intrinsicRoots.AllocatedTypes)
+            {
+                AddAllocatedType(type);
             }
             foreach (var pair in _objectArrayDelegateAdapters.Plan(
                          methodInstances.Values))
@@ -304,6 +361,24 @@ internal sealed class ReachabilityClosureBuilder(
             {
                 EnqueueInstance(memberExecution.UnsupportedTarget);
             }
+            if (memberExecution.DelegateInvocation is { } delegateInvocation)
+            {
+                EnqueueInstance(delegateInvocation.UnsupportedTarget);
+                EnqueueInstance(delegateInvocation.ArgumentTarget);
+                EnqueueInstance(delegateInvocation.ParameterCountTarget);
+                EnqueueInstance(delegateInvocation.InvocationTarget);
+                foreach (var method in delegateInvocation.Methods.Values)
+                {
+                    foreach (var parameter in method.Signature.ParameterSignatureTypes)
+                    {
+                        AddMemberExecutionValue(
+                            parameter.StackKind == CliValueKind.ManagedAddress
+                                ? parameter.ElementType!
+                                : parameter);
+                    }
+                    AddMemberExecutionValue(method.Signature.ReturnSignatureType);
+                }
+            }
             var plannedExecutions = memberExecution.Methods.ToBuilder();
             foreach (var pair in memberExecution.Methods)
             {
@@ -352,6 +427,10 @@ internal sealed class ReachabilityClosureBuilder(
             {
                 state.RequiresTypeFacts = true;
             }
+            if (state.RequiresGenericArguments)
+            {
+                state.RequiresTypeFacts = true;
+            }
             if (state.RequiresTypeFacts)
             {
                 AddTypeFactsClosure();
@@ -371,9 +450,12 @@ internal sealed class ReachabilityClosureBuilder(
             int MemberExecutionMethodCount,
             int MemberExecutionFieldCount,
             int MemberExecutionDispatchTargetCount,
+            int DynamicInvokeMethodCount,
             bool HasMemberExecutionDemand,
+            bool HasDynamicInvokeDemand,
             bool RequiresTypeFacts,
             bool RequiresDelegateInvoke,
+            bool RequiresGenericArguments,
             bool RequiresMemberNames,
             RuntimeTypeNamePayload TypeNamePayload)
             CaptureClosureStamp() => (
@@ -390,9 +472,12 @@ internal sealed class ReachabilityClosureBuilder(
             state.MemberExecution.Fields.Count,
             state.MemberExecution.Methods.Values.Sum(
                 execution => execution.Targets.Length),
+            state.MemberExecution.DelegateInvocation?.Methods.Count ?? 0,
             state.MemberExecution.UnsupportedTarget is not null,
+            state.MemberExecution.DelegateInvocation is not null,
             state.RequiresTypeFacts,
             state.RequiresDelegateInvoke,
+            state.RequiresGenericArguments,
             state.RequiresMemberNames,
             state.TypeNamePayload);
 
@@ -418,6 +503,16 @@ internal sealed class ReachabilityClosureBuilder(
             {
                 types.Add(catchType);
             }
+            foreach (var region in analysis.Body.Body.ExceptionRegions)
+            {
+                if (region.CatchTypeIdentity is not { } identity)
+                    continue;
+                if (identity.ContainsGenericParameters)
+                    throw new CompilerException(new CompilerDiagnostic(
+                        DiagnosticCode.UnsupportedMetadata, "An executable catch type must be closed."));
+                AddRuntimeType(identity);
+                AddConstructedType(identity);
+            }
             if (analysis.Method.IsConstructed)
             {
                 state.ConstructedMethods.Add(analysis.Method.CanonicalName, analysis.Body);
@@ -433,6 +528,7 @@ internal sealed class ReachabilityClosureBuilder(
         {
             state.RequiresTypeFacts |= analysis.RequiresTypeFacts;
             state.RequiresDelegateInvoke |= analysis.RequiresDelegateInvoke;
+            state.RequiresGenericArguments |= analysis.RequiresGenericArguments;
             state.RequiresMemberNames |= analysis.RequiresMemberNames;
             state.TypeNamePayload |= analysis.TypeNamePayload;
             foreach (var type in analysis.RuntimeTypes)
@@ -482,6 +578,10 @@ internal sealed class ReachabilityClosureBuilder(
             foreach (var callable in analysis.CallableMethods)
             {
                 state.CallableMethods.TryAdd(callable.CanonicalName, callable);
+            }
+            foreach (var callback in analysis.NativeCallbacks)
+            {
+                state.NativeCallbacks.TryAdd(callback.CanonicalName, callback);
             }
         }
 
@@ -731,20 +831,11 @@ internal sealed class ReachabilityClosureBuilder(
                 return;
             }
 
-            var finalizer = _typeRepository
-                .GetTypeDefinition(target.Definition.DeclaringType)
-                .Methods
-                .Select(_methodRepository.GetMethod)
-                .SingleOrDefault(candidate =>
-                    candidate.Name == "Finalize" &&
-                    !candidate.IsStatic &&
-                    candidate.Signature.ReturnType == CliValueKind.Void &&
-                    candidate.Signature.ParameterTypes.IsEmpty);
-            if (finalizer is not null &&
-                _symbols.Format(target.Definition.DeclaringType) != "System.Object")
+            var finalizer = _finalizerResolver.Resolve(target.DeclaringType);
+            if (finalizer is not null)
             {
-                finalizers[target.Definition.DeclaringType] = finalizer.Key;
-                Enqueue(finalizer);
+                finalizers[target.DeclaringType] = finalizer;
+                EnqueueInstance(finalizer);
             }
         }
 
@@ -843,7 +934,7 @@ internal sealed class ReachabilityClosureBuilder(
         {
             if (type.StackKind != CliValueKind.ManagedReference)
             {
-                AddAllocatedType(type);
+                AddAllocatedType(_nullableTypes.Resolve(type) ?? type);
             }
         }
 
@@ -1038,7 +1129,7 @@ internal sealed class WholeProgramAnalyzer(
         closureBuilder ?? throw new ArgumentNullException(nameof(closureBuilder));
 
     public ReachableProgram Analyze(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         IEnumerable<ProgramExport> requestedExports,
         ReachabilityRoots? roots = null) =>
         _closureBuilder.Build(entryPoint, requestedExports, roots);

@@ -1,4 +1,31 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Worker projects compile as ordinary libraries. Normalize before stock
+       SDK evaluation derives executable metadata from OutputType. -->
+  <PropertyGroup Condition="'$(OutputType)' == 'WitWebWorker'">
+    <_NetWasmWorkerKind>wit</_NetWasmWorkerKind>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OutputType)' == 'JsWebWorker'">
+    <_NetWasmWorkerKind>jsexport</_NetWasmWorkerKind>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <PropertyGroup>
+    <_NetWasmCompileAsLibrary Condition="'$(_NetWasmWorkerKind)' != ''">true</_NetWasmCompileAsLibrary>
+    <_NetWasmCompileAsLibrary Condition="'$(_NetWasmCompileAsLibrary)' == ''">false</_NetWasmCompileAsLibrary>
+    <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == '' AND '$(_NetWasmWorkerKind)' == 'jsexport'">true</NetWasmRawWasm>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <_NetWasmWorkerReference Include="@(ProjectReference->WithMetadataValue('NetWasmWorker', 'true'))" />
+    <ProjectReference Update="@(_NetWasmWorkerReference)">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+    <!-- Roslyn analyzers execute on the build host.  The custom guest TFM
+         must not be forwarded to a conventional analyzer project. -->
+    <ProjectReference Update="@(ProjectReference)">
+      <SetTargetFramework Condition="'%(OutputItemType)' == 'Analyzer' AND '%(SetTargetFramework)' == ''">TargetFramework=netstandard2.0</SetTargetFramework>
+      <SkipGetTargetFrameworkProperties Condition="'%(OutputItemType)' == 'Analyzer' AND '%(SetTargetFramework)' == 'TargetFramework=netstandard2.0'">true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
+  </ItemGroup>
   <!--
     The mapping file is imported by Microsoft.NET.Sdk immediately before its
     normal TFM inference.  This is the evaluation seam used by restore,
@@ -23,6 +50,8 @@
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
+    <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmStructuredDiagnostics>
+    <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == ''">false</NetWasmStructuredDiagnostics>
     <!-- Raw mode emits core and materialized runtime modules while leaving
          componentization to an external linker or qualification harness. -->
     <NetWasmRawWasm Condition="'$(NetWasmRawWasm)' == ''">false</NetWasmRawWasm>
@@ -37,6 +66,28 @@
           Condition="'$(TargetFramework)' == '' AND '$(TargetFrameworks)' != ''" />
 
   <Import Project="$(MSBuildSDKsPath)/Microsoft.NET.Sdk/Sdk/Sdk.targets" />
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(ImplicitUsings)' == 'enable' OR '$(ImplicitUsings)' == 'true')">
+    <!-- Preserve the user's removals and item metadata before withholding the
+         optional namespaces from the base profile. Resolve their availability
+         from compile assets, including transitive packages and project references. -->
+    <_NetWasmOptionalImplicitUsing Include="@(Using->WithMetadataValue('Identity', 'System.Linq'));@(Using->WithMetadataValue('Identity', 'System.Net.Http'))" />
+    <Using Remove="System.Linq;System.Net.Http" />
+  </ItemGroup>
+
+  <Target Name="NetWasmSdkResolveOptionalImplicitUsings"
+          BeforeTargets="GenerateGlobalUsings"
+          DependsOnTargets="ResolveReferences"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(ImplicitUsings)' == 'enable' OR '$(ImplicitUsings)' == 'true')">
+    <ItemGroup>
+      <_NetWasmLinqCompileReference Include="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'System.Linq'" />
+      <_NetWasmHttpCompileReference Include="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'System.Net.Http'" />
+      <Using Include="@(_NetWasmOptionalImplicitUsing)"
+             Condition="('%(_NetWasmOptionalImplicitUsing.Identity)' == 'System.Linq' AND '@(_NetWasmLinqCompileReference)' != '') OR ('%(_NetWasmOptionalImplicitUsing.Identity)' == 'System.Net.Http' AND '@(_NetWasmHttpCompileReference)' != '')" />
+    </ItemGroup>
+  </Target>
+
+  <Import Project="$(MSBuildThisFileDirectory)NetWasm.NativeLibraries.targets" />
 
   <!-- Resolve only restored, pinned toolchain assets and expose the
        component/runtime input contract after stock target evaluation. -->
@@ -73,6 +124,23 @@
            Text="NetWasmTarget must be 'wasm32' or 'wasm64'." />
   </Target>
 
+  <Target Name="NetWasmSdkValidateWorkerOutput"
+          BeforeTargets="Restore;CoreCompile;Publish;NetWasmSdkResolveBuildEnvironment"
+          Condition="'$(_NetWasmWorkerKind)' != ''">
+    <Error Code="NWSDK053"
+           Condition="'$(OutputType)' != 'Library'"
+           Text="Declare WitWebWorker or JsWebWorker in the project file. A global OutputType override cannot be normalized for worker compilation." />
+    <Error Code="NWSDK054"
+           Condition="'$(TargetFramework)' != '' AND '$(TargetFramework)' != 'netwasm0.1'"
+           Text="Web Worker output is supported only for netwasm0.1. Use Library for a desktop target." />
+    <Error Code="NWSDK055"
+           Condition="('$(_NetWasmWorkerKind)' == 'wit' AND '$(NetWasmRawWasm)' == 'true') OR ('$(_NetWasmWorkerKind)' == 'jsexport' AND '$(NetWasmRawWasm)' != 'true')"
+           Text="WitWebWorker requires component output; JsWebWorker requires raw WebAssembly output. Remove the conflicting NetWasmRawWasm setting." />
+    <Error Code="NWSDK056"
+           Condition="'$(NetWasmComponentContract)' != ''"
+           Text="Web worker outputs do not use command or async-command contracts. Remove NetWasmComponentContract and select the application NetWasmWitPath/NetWasmWorld for a WIT worker." />
+  </Target>
+
   <Target Name="NetWasmSdkRequireReferenceContract"
           BeforeTargets="CoreCompile"
           DependsOnTargets="ResolvePackageAssets"
@@ -97,23 +165,35 @@
   <Target Name="NetWasmSdkCollectInnerPackageReferences"
           Condition="'$(TargetFramework)' != ''"
           Returns="@(_NetWasmSdkInnerPackageDependency)">
+    <JoinItems Left="@(PackageReference)"
+               Right="@(PackageVersion)"
+               LeftMetadata="*"
+               RightMetadata="Version"
+               ItemSpecToUse="Left"
+               Condition="'$(ManagePackageVersionsCentrally)' == 'true'">
+      <Output TaskParameter="JoinResult" ItemName="_NetWasmSdkCentrallyVersionedPackageReference" />
+    </JoinItems>
     <ItemGroup>
-      <_NetWasmSdkInnerPackageDependency Include="@(PackageReference)">
+      <_NetWasmSdkEvaluatedPackageReference Include="@(PackageReference)" />
+      <_NetWasmSdkEvaluatedPackageReference Remove="@(_NetWasmSdkCentrallyVersionedPackageReference)" />
+      <_NetWasmSdkEvaluatedPackageReference Include="@(_NetWasmSdkCentrallyVersionedPackageReference)" />
+      <_NetWasmSdkInnerPackageDependency Include="@(_NetWasmSdkEvaluatedPackageReference)">
         <TargetFrameworkAlias Condition="'$(NetWasmSdkTargetFrameworkAlias)' != ''">$(NetWasmSdkTargetFrameworkAlias)</TargetFrameworkAlias>
         <TargetFrameworkAlias Condition="'$(NetWasmSdkTargetFrameworkAlias)' == ''">$(TargetFramework)</TargetFrameworkAlias>
         <TargetFramework Condition="'$(NetWasmSdkCanonicalTargetFramework)' != ''">$(NetWasmSdkCanonicalTargetFramework)</TargetFramework>
         <TargetFramework Condition="'$(NetWasmSdkCanonicalTargetFramework)' == ''">$(TargetFramework)</TargetFramework>
         <TargetFrameworkIdentifier>$(TargetFrameworkIdentifier)</TargetFrameworkIdentifier>
         <TargetFrameworkVersion>$(TargetFrameworkVersion)</TargetFrameworkVersion>
-        <Version>%(PackageReference.Version)</Version>
-        <VersionRange>%(PackageReference.VersionRange)</VersionRange>
-        <IncludeAssets Condition="'%(PackageReference.IncludeAssets)' != ''">%(PackageReference.IncludeAssets)</IncludeAssets>
-        <IncludeAssets Condition="'%(PackageReference.IncludeAssets)' == ''">all</IncludeAssets>
-        <ExcludeAssets Condition="'%(PackageReference.ExcludeAssets)' != ''">%(PackageReference.ExcludeAssets)</ExcludeAssets>
-        <ExcludeAssets Condition="'%(PackageReference.ExcludeAssets)' == ''">none</ExcludeAssets>
-        <PrivateAssets Condition="'%(PackageReference.PrivateAssets)' != ''">%(PackageReference.PrivateAssets)</PrivateAssets>
-        <PrivateAssets Condition="'%(PackageReference.PrivateAssets)' == ''">none</PrivateAssets>
-        <DevelopmentDependency>%(PackageReference.DevelopmentDependency)</DevelopmentDependency>
+        <Version Condition="'%(_NetWasmSdkEvaluatedPackageReference.VersionOverride)' != ''">%(_NetWasmSdkEvaluatedPackageReference.VersionOverride)</Version>
+        <Version Condition="'%(_NetWasmSdkEvaluatedPackageReference.VersionOverride)' == ''">%(_NetWasmSdkEvaluatedPackageReference.Version)</Version>
+        <VersionRange>%(_NetWasmSdkEvaluatedPackageReference.VersionRange)</VersionRange>
+        <IncludeAssets Condition="'%(_NetWasmSdkEvaluatedPackageReference.IncludeAssets)' != ''">%(_NetWasmSdkEvaluatedPackageReference.IncludeAssets)</IncludeAssets>
+        <IncludeAssets Condition="'%(_NetWasmSdkEvaluatedPackageReference.IncludeAssets)' == ''">all</IncludeAssets>
+        <ExcludeAssets Condition="'%(_NetWasmSdkEvaluatedPackageReference.ExcludeAssets)' != ''">%(_NetWasmSdkEvaluatedPackageReference.ExcludeAssets)</ExcludeAssets>
+        <ExcludeAssets Condition="'%(_NetWasmSdkEvaluatedPackageReference.ExcludeAssets)' == ''">none</ExcludeAssets>
+        <PrivateAssets Condition="'%(_NetWasmSdkEvaluatedPackageReference.PrivateAssets)' != ''">%(_NetWasmSdkEvaluatedPackageReference.PrivateAssets)</PrivateAssets>
+        <PrivateAssets Condition="'%(_NetWasmSdkEvaluatedPackageReference.PrivateAssets)' == ''">contentFiles;analyzers;build</PrivateAssets>
+        <DevelopmentDependency>%(_NetWasmSdkEvaluatedPackageReference.DevelopmentDependency)</DevelopmentDependency>
       </_NetWasmSdkInnerPackageDependency>
     </ItemGroup>
   </Target>

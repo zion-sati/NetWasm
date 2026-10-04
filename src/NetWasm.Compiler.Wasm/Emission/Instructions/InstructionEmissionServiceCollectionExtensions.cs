@@ -34,6 +34,8 @@ internal static class InstructionEmissionServiceCollectionExtensions
         services.AddSingleton<IExceptionObjectStateReader, ExceptionObjectStateReader>();
         services.AddSingleton<IManagedTerminalExceptionBoundaryEmitter,
             ManagedTerminalExceptionBoundaryEmitter>();
+        services.AddSingleton<IManagedTerminalTrapBoundaryEmitter,
+            ManagedTerminalTrapBoundaryEmitter>();
         services.AddSingleton<IInstructionCommandFactory,
             InstructionCommandFactory>();
         services.AddSingleton<ICheckedBinaryEmitter, CheckedBinaryEmitter>();

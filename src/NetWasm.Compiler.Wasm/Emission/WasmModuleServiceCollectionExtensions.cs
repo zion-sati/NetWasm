@@ -10,6 +10,7 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Emission.Methods;
+using NetWasm.Compiler.Wasm.Emission.NativeInterop;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Results;
 using NetWasm.Compiler.Wasm.Emission.Support;
@@ -72,6 +73,7 @@ internal static class WasmModuleServiceCollectionExtensions
 
         services
             .AddWasmEmissionSupport()
+            .AddWasmNativeInteropEmission()
             .AddWasmPlanning()
             .AddWasmMethodEmission()
             .AddWasmEmissionResults()

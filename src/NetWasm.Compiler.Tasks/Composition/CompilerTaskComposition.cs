@@ -8,11 +8,13 @@ using NetWasm.Compiler.Tasks.Artifacts;
 using NetWasm.Compiler.Tasks.ComponentModel;
 using NetWasm.Compiler.Tasks.Compilation;
 using NetWasm.Compiler.Tasks.MsBuild;
+using NetWasm.Compiler.Wasm.Emission.NativeInterop;
 
 namespace NetWasm.Compiler.Tasks.Composition;
 
 internal static class CompilerTaskComposition
 {
+    public static IInternalRuntimeExportReader CreateInternalRuntimeExportReader() => new InternalRuntimeExportReader();
     private const string DisableExperimentalWarningOption =
         "--disable-warning=ExperimentalWarning";
 
@@ -26,7 +28,7 @@ internal static class CompilerTaskComposition
     }
 
     public static ICompilerArtifactWriter CreateArtifactWriter() =>
-        new CompilerArtifactWriter();
+        new CompilerArtifactWriter(new NativeCallbackSupportArtifactValidator());
 
     public static ICompilerArtifactManifestTaskRequestBuilder CreateArtifactManifestTaskRequestBuilder() =>
         new CompilerArtifactManifestTaskRequestBuilder();
@@ -37,10 +39,13 @@ internal static class CompilerTaskComposition
     public static ICompilerArtifactManifestWriter CreateArtifactManifestWriter() =>
         new CompilerArtifactManifestWriter();
 
+    public static ICompilerArtifactManifestReader CreateArtifactManifestReader() =>
+        new CompilerArtifactManifestReader();
+
     public static ICompilerArtifactManifestValidator CreateArtifactManifestValidator() =>
         new CompilerArtifactManifestValidator(
             CreateArtifactManifestBuilder(),
-            new CompilerArtifactManifestReader());
+            CreateArtifactManifestReader());
 
     public static IComponentBuildSessionFactory CreateComponentBuildSessionFactory() =>
         new ComponentBuildSessionFactory(CreateComponentBuildSession);
@@ -57,6 +62,9 @@ internal static class CompilerTaskComposition
 
     public static IByteArtifactWriter CreateByteArtifactWriter() =>
         new ByteArtifactWriter();
+
+    public static IWitWorkerContractWriter CreateWitWorkerContractWriter() =>
+        new WitWorkerContractWriter(CreateByteArtifactWriter());
 
     public static IComponentManifestInputsReader CreateComponentManifestInputsReader() =>
         new ComponentManifestInputsReader(CreateHostInteropManifestReader());

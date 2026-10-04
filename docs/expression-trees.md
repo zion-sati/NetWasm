@@ -130,5 +130,5 @@ localization machinery. It does not add managed threading, broad reflection,
 or a package-specific compiler path.
 
 The optimized source-adapted consumer is 402,808 bytes after final `-Oz`.
-The same qualified tree still produces the byte-identical 84,513-byte Hello42
+The same qualified tree still produces the byte-identical 84,653-byte Hello42
 component when expression trees are unused.

@@ -12,7 +12,8 @@ public sealed class RootDecisionClassifier(
     IFieldRepository fields,
     IMethodRepository methods,
     IReadOnlyDictionary<string, DispatchCallSiteModel>? dispatchCallSites,
-    IRuntimeAllocationSafepointClassifier runtimeSafepoints) :
+    IRuntimeAllocationSafepointClassifier runtimeSafepoints,
+    ITypeClassifier typeClassifier) :
     IRootDecisionClassifier
 {
     private readonly ITypeRepository _types =
@@ -25,6 +26,9 @@ public sealed class RootDecisionClassifier(
         dispatchCallSites ?? ImmutableDictionary<string, DispatchCallSiteModel>.Empty;
     private readonly IRuntimeAllocationSafepointClassifier _runtimeSafepoints =
         runtimeSafepoints ?? throw new ArgumentNullException(nameof(runtimeSafepoints));
+
+    private readonly ITypeClassifier _typeClassifier = typeClassifier ??
+        throw new ArgumentNullException(nameof(typeClassifier));
 
     public bool Decide(RootDecisionRequest request)
     {
@@ -50,36 +54,58 @@ public sealed class RootDecisionClassifier(
         }
         if (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual))
             return false;
+        var calledMethod = instruction.Operand switch
+        {
+            CilOperand.Entity entityCall => _methods.GetMethod(entityCall.Key),
+            CilOperand.MethodInstance instanceCall => instanceCall.Value.Definition,
+            _ => null,
+        };
+        // Delegate helpers may invoke any reachable target, including one that
+        // collects. Their declaration has no managed body or ordinary dispatch
+        // target whose allocation capability can establish this boundary.
+        if (calledMethod is { IsStatic: false, Name: "Invoke" } &&
+            _typeClassifier.IsDelegateType(calledMethod.DeclaringType))
+        {
+            return true;
+        }
+        // Keep the publication boundary aligned with intrinsic-first emission
+        // and allocation propagation, including bodyless dispatch targets.
+        var runtimeSafepoint = instruction.Operand switch
+        {
+            CilOperand.Entity => _runtimeSafepoints.Classify(calledMethod!, _types),
+            CilOperand.MethodInstance instance => _runtimeSafepoints.Classify(instance.Value),
+            _ => false,
+        };
+        if (runtimeSafepoint)
+            return true;
         var caller = request.Method.Method.CanonicalName;
         var dispatchKey = $"{caller}@{instruction.Offset:x8}";
         if (_dispatchCallSites.TryGetValue(dispatchKey, out var dispatch))
         {
-            return dispatch.Targets.Any(target => target.Method.IsConstructed
-                ? request.AllocatingConstructedMethods.Contains(target.Method.CanonicalName)
-                : request.AllocatingMethods.Contains(target.Method.Definition.Key));
+            return dispatch.Targets.Any(target => _runtimeSafepoints.Classify(target.Method) ||
+                (target.Method.IsConstructed
+                    ? request.AllocatingConstructedMethods.Contains(target.Method.CanonicalName)
+                    : request.AllocatingMethods.Contains(target.Method.Definition.Key)));
         }
         return instruction.Operand switch
         {
             CilOperand.Entity target =>
-                IsRuntimeSafepoint(_methods.GetMethod(target.Key)) ||
                 IsAllocatingStaticCall(_methods.GetMethod(target.Key), null, request) ||
                 _methods.GetMethod(target.Key).JSImport is not null ||
+                _methods.GetMethod(target.Key).NativeImport is not null ||
                 request.AllocatingMethods.Contains(target.Key) &&
-                _methods.GetMethod(target.Key).HasBody,
+                _methods.GetMethod(target.Key).HasManagedBody,
             CilOperand.MethodInstance target =>
-                _runtimeSafepoints.Classify(target.Value) ||
                 IsAllocatingStaticCall(target.Value.Definition, target.Value.DeclaringType, request) ||
                 target.Value.Definition.JSImport is not null ||
+                target.Value.Definition.NativeImport is not null ||
                 (target.Value.IsConstructed
                     ? request.AllocatingConstructedMethods.Contains(target.Value.CanonicalName)
                     : request.AllocatingMethods.Contains(target.Value.Definition.Key)) &&
-                target.Value.Definition.HasBody,
+                target.Value.Definition.HasManagedBody,
             _ => false,
         };
     }
-
-    private bool IsRuntimeSafepoint(MethodDefinitionModel method) =>
-        _runtimeSafepoints.Classify(method, _types);
 
     private bool IsAllocatingStaticInitialization(
         CilInstruction instruction,

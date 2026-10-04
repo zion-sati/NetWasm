@@ -93,6 +93,9 @@ internal sealed class JavaScriptAsyncBindingResolver(
         {
             StatusField = statusField,
             ResultField = resultField,
+            GetVoidResult = Resolve(commonMethods.Single(candidate =>
+                candidate.Name == "GetVoidResult" &&
+                candidate.Signature.ParameterSignatureTypes.IsEmpty), []),
         };
         if (asyncReturn.Kind != JavaScriptAsyncReturnKind.ValueTask)
         {

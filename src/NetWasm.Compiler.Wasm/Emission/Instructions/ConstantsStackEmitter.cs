@@ -67,14 +67,14 @@ internal sealed class ConstantsStackEmitter(
         EmitNativeIntConstant(
             request,
             code,
-            memberDescriptors.GetFieldDescriptorAddress(
+            memberDescriptors.GetDescriptorAddress(
                 ((CilOperand.FieldInstance)request.Instruction.Operand).Value));
 
     private void EmitMethodToken(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
         EmitNativeIntConstant(
             request,
             code,
-            memberDescriptors.GetMethodDescriptorAddress(
+            memberDescriptors.GetDescriptorAddress(
                 ((CilOperand.MethodInstance)request.Instruction.Operand).Value));
 
     private void EmitDuplicate(InstructionEmissionRequest request, IWasmInstructionWriter code)

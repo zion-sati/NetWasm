@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 
 namespace NetWasm.Compiler.ComponentModel.Raw;
 
@@ -21,6 +22,14 @@ public sealed class RawModuleLinkInputValidator(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ApplicationModulePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.RuntimeModulePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.OutputPath);
+        if (InvalidExports(request.InternalRuntimeExports) ||
+            InvalidExports(request.InternalApplicationExports) ||
+            request.InternalRuntimeExports.Select(export => export.Name)
+                .Intersect(
+                    request.InternalApplicationExports.Select(export => export.Name),
+                    StringComparer.Ordinal)
+                .Any())
+            throw ComponentException.Invalid("raw linking requires complete and unique internal export facts");
         if (request.Target.Width is not ("wasm32" or "wasm64") ||
             request.Target.WasiVersion != "0.2" ||
             request.Target.CanonicalStringEncoding != "utf8")
@@ -43,4 +52,15 @@ public sealed class RawModuleLinkInputValidator(
             request.OutputPath,
             request.Target));
     }
+
+    private static bool InvalidExports(
+        System.Collections.Immutable.ImmutableArray<WasmInternalExport> exports) =>
+        exports.IsDefault ||
+        exports.Any(export =>
+            export is null ||
+            string.IsNullOrWhiteSpace(export.Name) ||
+            export.Name.IndexOfAny(['\0', '\r', '\n']) >= 0 ||
+            export.Kind is not (0 or 3)) ||
+        exports.Select(export => export.Name)
+            .Distinct(StringComparer.Ordinal).Count() != exports.Length;
 }

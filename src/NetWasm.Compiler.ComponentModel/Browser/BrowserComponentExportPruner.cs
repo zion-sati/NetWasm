@@ -12,7 +12,7 @@ internal static class BrowserComponentExportPruner
         var reader = new VirtualModuleReader(module.ToArray());
         var writer = new VirtualModuleWriter();
         new WasmCoreModuleExportEditor(new VirtualModuleExistence(), reader, writer)
-            .RetainComponentExports(InputPath, OutputPath, prefix);
+            .Rewrite(InputPath, OutputPath, new(prefix, []));
         return writer.Module;
     }
 

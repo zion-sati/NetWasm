@@ -87,6 +87,123 @@ generate the new host file, then review and remove the old file. To keep a
 deliberate custom name, set `NuGetLockFilePath` explicitly; one explicit lock
 file shared across different hosts must be regenerated for each host.
 
+### Choose the entry contract and output kind
+
+The entry contract and the output kind answer different questions:
+
+- `NetWasmComponentContract` selects how the host starts and completes the
+  application.
+- `NetWasmRawWasm` selects a raw linked Wasm module instead of the default WASI
+  component.
+
+The default `command` contract is appropriate for a synchronous `Main`. When
+`Main` returns `Task` or `Task<int>` and may suspend, select `async-command`:
+
+```xml
+<PropertyGroup>
+  <NetWasmComponentContract>async-command</NetWasmComponentContract>
+</PropertyGroup>
+```
+
+`dotnet run` supports `async-command` with either the default component output
+or raw output. Async code alone is not a reason to set `NetWasmRawWasm=true`.
+
+| Application boundary | Required project setting | Output kind |
+| --- | --- | --- |
+| Synchronous `Main` | Default `command` contract | Component by default; raw is optional |
+| Suspending `Task Main` or `Task<int> Main` | `NetWasmComponentContract=async-command` | Component by default; raw is optional |
+| Reachable application-owned `[JSImport]` | Contract chosen from the entry point, plus `NetWasmRawWasm=true` | Raw |
+
+For example, a suspending entry point that directly imports an application
+JavaScript module uses both settings for separate reasons:
+
+```xml
+<PropertyGroup>
+  <NetWasmComponentContract>async-command</NetWasmComponentContract>
+  <NetWasmRawWasm>true</NetWasmRawWasm>
+</PropertyGroup>
+```
+
+```csharp
+using System.Runtime.InteropServices.JavaScript;
+
+internal static class Host
+{
+    [JSImport("report", "app.host")]
+    internal static extern void Report(int value);
+}
+```
+
+The raw host must receive JavaScript functions for the exact module name
+(`app.host` above). Selecting raw output supplies the compatible ABI; it does
+not invent or globally discover that JavaScript module. For a browser page,
+declare the module file in the application project:
+
+```xml
+<ItemGroup>
+  <NetWasmWorkerJavaScriptModule Include="page-host.mjs" Module="app.host" />
+</ItemGroup>
+```
+
+Despite its name, this item also applies to ordinary raw browser applications.
+The SDK bundles the module into the generated browser bootstrap. Plain names
+such as `app.host` work here; this route does not require a versioned application
+provider or a copied bootstrap. When the bootstrap runs on the page, the module
+runs in that page's realm and can access its DOM:
+
+```js
+// page-host.mjs
+export function report(value) {
+  document.querySelector("#result").textContent = String(value);
+}
+```
+
+Publish with `NetWasmPublishTarget=browser`, serve the publish directory over
+HTTP, and import `executeNetWasm` from `./browser/netwasm.browser.mjs` in the
+page's module script. This is an authored module binding; the host does not read
+a global module registry. Custom hosts can instead use their declared
+application-provider contracts. WASI-backed
+APIs supplied by NetWasm, including the supported HTTP profile, do not become
+application-owned `[JSImport]` modules
+and do not require raw output for this reason.
+
+Configuration failures identify the mismatched boundary:
+
+- `NW1009` means reached imports are outside the selected WIT world. A
+  suspending entry point using the default `command` world is one common cause.
+- `NW1010` rejects a requested component boundary that cannot represent the
+  reached application-owned JavaScript imports.
+- An entry point whose return shape does not match `command` or
+  `async-command` is rejected rather than invoked through a guessed ABI.
+
+Worker templates select their own worker boundary and do not use the
+`command`/`async-command` properties. Use `dotnet new netwasm-app --worker wit`
+or `--worker jsexport` for those workflows.
+
+An `async-command` remains alive until its managed entry task completes. A
+JavaScript event can invoke a delegate registered through `[JSImport]` and
+complete that task. A service returning `JSSubscription` must return an object
+with a `dispose()` method, such as `{ dispose() { /* remove the listener */ } }`.
+Release the subscription in a managed `finally` block. Output sinks passed to
+`executeNetWasm` must be frozen objects with a synchronous `write(bytes)` method.
+
+Command execution returns an execution outcome, not a live export table. The
+`jsexport` worker template generates a `*.worker-client.mjs` module:
+`await createWorker({ onNotification })` waits for readiness and returns named
+Promise-based export methods. Worker code uses notifications to request DOM
+updates on the page. `dispose()` drains accepted calls before closing;
+`terminate()` stops the worker and rejects pending calls. Calls after either
+closure are rejected. This worker boundary does not expose exports from an
+already-running page `async-command`.
+
+When a `Task` or `ValueTask` export faults, its rejected promise preserves the
+managed message in `error.message`. The worker error's `managed` property also
+contains `typeId`, `typeName`, `message` and `stackTrace`. Debug traces include
+available source files and line numbers. Optional diagnostic metadata can be
+unavailable, in which case `typeName` is null and the numeric type ID remains.
+The managed trace is separate from the JavaScript stack. Catching that rejection
+leaves the worker available for later calls.
+
 ### Host capabilities
 
 Only reachable APIs retain managed code, Wasm imports and JavaScript providers.

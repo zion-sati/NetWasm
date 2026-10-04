@@ -32,7 +32,7 @@ internal sealed class FilterFunctionAppender(
 
         indices.Add(filter.Id, importCount + functions.Count);
         var sequence = sequenceEmitters.Create(target, functionIndices);
-        var emission = filters.Emit(filter, environment, sequence);
+        var emission = filters.Emit(filter, environment, sequence, target.MemberExecution);
         functions.Add(new WasmFunctionDefinition(
             $"filter.{filter.Id}",
             WasmFunctionType.Create(

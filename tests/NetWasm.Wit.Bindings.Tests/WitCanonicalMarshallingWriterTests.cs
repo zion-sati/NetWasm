@@ -133,6 +133,45 @@ public sealed class WitCanonicalMarshallingWriterTests
         Assert.Contains("FreeType1(CanonicalAbi.ReadAddress", source);
     }
 
+    [Fact]
+    public void ScopesEachLoweredStringTemporaryInAnAggregate()
+    {
+        var pair = Type(
+            0,
+            "text-pair",
+            """{"record":{"fields":[{"name":"first","type":"string"},{"name":"second","type":"string"}]}}""");
+        var function = new WitFunction(
+            "round-trip",
+            [new WitParameter("value", new WitTypeReference.Defined(0))],
+            new WitTypeReference.Defined(0),
+            new WitFunctionKind("freestanding"));
+        var @interface = new WitInterface(
+            0,
+            "api",
+            "example:test@1.0.0",
+            ImmutableDictionary<string, int>.Empty.Add("text-pair", 0),
+            [function]);
+        var world = new WitWorld(
+            0,
+            "test",
+            "example:test@1.0.0",
+            [new WitWorldItem("api", 0, null)],
+            []);
+        var document = new WitDocument([], [@interface], [world], [pair], "{}");
+
+        var source = WitCanonicalMarshallingWriterFixture.Create()
+            .Generate(document, world);
+
+        Assert.Contains(
+            "{\n            var __text = CanonicalAbi.LowerString(value.First);",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "{\n            var __text = CanonicalAbi.LowerString(value.Second);",
+            source,
+            StringComparison.Ordinal);
+    }
+
     private static WitTypeDefinition Type(
         int id,
         string? name,

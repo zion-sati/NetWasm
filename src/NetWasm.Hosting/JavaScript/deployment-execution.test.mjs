@@ -112,9 +112,11 @@ test("executes a component through validated providers and owned resources", asy
   assert.notEqual(providerRequest.stderr, stderr);
   const strategyRequest = f.calls.find(([name]) => name === "strategy")[1];
   assert.deepEqual(Object.keys(strategyRequest).sort(), [
-    "artifacts", "contractKey", "imports", "signal",
+    "artifacts", "contractKey", "imports", "managedExceptionReporting", "signal",
   ]);
   assert.equal(strategyRequest.imports, componentImports);
+  assert.equal(typeof strategyRequest.managedExceptionReporting.reportImmediate, "function");
+  assert.equal(typeof strategyRequest.managedExceptionReporting.reportEnriched, "function");
 });
 
 test("derives raw interop from the root and never from the public request", async () => {

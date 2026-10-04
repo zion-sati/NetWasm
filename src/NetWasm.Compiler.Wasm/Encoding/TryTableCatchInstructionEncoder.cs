@@ -17,8 +17,9 @@ public sealed class TryTableCatchInstructionEncoder : IWasmInstructionEncoder
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(instruction);
         writer.Write([instruction.Opcode, instruction.Operand.BlockTypeValue]);
-        writer.Write([1, 0]);
-        _operandEncoder.Encode(writer, instruction.Operand.TagIndex);
+        writer.Write([1, instruction.Operand.ByteValue]);
+        if (instruction.Operand.ByteValue == 0)
+            _operandEncoder.Encode(writer, instruction.Operand.TagIndex);
         _operandEncoder.Encode(writer, instruction.Operand.LabelDepth);
     }
 }

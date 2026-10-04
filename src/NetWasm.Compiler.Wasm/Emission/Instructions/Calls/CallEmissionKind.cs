@@ -8,4 +8,5 @@ internal enum CallEmissionKind
     AsyncJSImport,
     JavaScriptImport,
     Direct,
+    Native,
 }

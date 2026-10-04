@@ -39,7 +39,7 @@
 
   <Target Name="NetWasmRuntimePackWriteMaterializationIdentity"
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
     <WriteLinesToFile File="$(NetWasmRuntimePackMaterializationIdentityPath)"
                       Lines="target=$(NetWasmTarget);optimization=$(_NetWasmCanonicalOptimization);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);wasmOpt=$(NetWasmNativeBinaryenWasmOptPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath);sdk=$(NetWasmSdkVersion);compiler=$(NetWasmCompilerVersion);runtime=$(NetWasmRuntimeVersion);runtimePack=$(NetWasmRuntimePackPackageVersion);hostTools=$(NetWasmHostToolsPackageId)@$(NetWasmHostToolsPackageVersion);wasmLdVersion=$(NetWasmWasmLdVersion);wasmOptVersion=$(NetWasmNativeBinaryenWasmOptVersion);wasmToolsVersion=$(NetWasmWasmToolsVersion);nodeVersion=$(NetWasmNodeVersion)"
                       Overwrite="true"
@@ -50,15 +50,18 @@
           DependsOnTargets="NetWasmRuntimePackWriteMaterializationIdentity"
           AfterTargets="NetWasmCompileCoreModule"
           BeforeTargets="NetWasmSdkComponentize;NetWasmSdkValidateFinalArtifactForNoBuild"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmRuntimeModulePath)' == '' AND '@(NetWasmComponentRuntime)' == ''"
-          Inputs="@(_NetWasmRuntimePackMaterializationInput);$(NetWasmRuntimeLayoutPath);$(NetWasmWasmLdPath);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmRuntimePackMaterializationIdentityPath)"
-          Outputs="$(NetWasmRuntimePackMaterializedPath)">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmRuntimeModulePath)' == '' AND '@(NetWasmComponentRuntime)' == ''">
+    <!-- The materializer's content cache is authoritative. Timestamp-only target
+         skipping cannot detect a replaced archive whose timestamp is preserved. -->
     <Error Code="NWPACK002"
            Condition="'$(NetWasmWasmLdPath)' == '' OR !Exists('$(NetWasmWasmLdPath)')"
            Text="The pinned NetWasm wasm-ld executable is unavailable." />
     <Error Code="NWPACK003"
            Condition="'$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
            Text="The pinned platform-neutral NetWasm wasm-tools command is unavailable." />
+    <ItemGroup>
+      <_NetWasmRuntimePackMaterialization Remove="@(_NetWasmRuntimePackMaterialization)" />
+    </ItemGroup>
     <RuntimeMaterializationTask ManifestPath="$(NetWasmRuntimePackManifestPath)"
                                 RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
                                 AssetRoot="$(NetWasmRuntimePackRoot)"
@@ -74,6 +77,8 @@
                                 Optimization="$(_NetWasmCanonicalOptimization)"
                                 InitialHeapSizeBytes="$(NetWasmInitialHeapSizeBytes)"
                                 MaximumMemorySizeBytes="$(NetWasmMaximumMemorySizeBytes)"
+                                NativeLibraries="@(NativeLibrary)"
+                                NativeCallbackObjectPath="$(NetWasmNativeCallbackObjectPath)"
                                 SdkVersion="$(NetWasmSdkVersion)"
                                 CompilerVersion="$(NetWasmCompilerVersion)"
                                 RuntimeVersion="$(NetWasmRuntimeVersion)"
@@ -86,12 +91,6 @@
                                 NodeVersion="$(NetWasmNodeVersion)">
       <Output TaskParameter="RuntimeModules" ItemName="_NetWasmRuntimePackMaterialization" />
     </RuntimeMaterializationTask>
-    <ItemGroup Condition="'@(_NetWasmRuntimePackMaterialization)' == '' AND Exists('$(NetWasmRuntimePackMaterializedPath)')">
-      <_NetWasmRuntimePackMaterialization Include="$(NetWasmRuntimePackMaterializedPath)">
-        <Kind>RuntimeModule</Kind>
-        <WasmTarget>$(NetWasmTarget)</WasmTarget>
-      </_NetWasmRuntimePackMaterialization>
-    </ItemGroup>
     <Error Code="NWPACK004"
            Condition="'@(_NetWasmRuntimePackMaterialization)' == ''"
            Text="The NetWasm runtime pack did not materialize a runtime module." />

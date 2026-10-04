@@ -24,6 +24,7 @@
     <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../../src/NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="NetWasm.Wit.Bindings.Tests" />
     <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
                       ReferenceOutputAssembly="false"
                       BuildReference="true"
@@ -31,6 +32,7 @@
     <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
     <ProjectReference Include="../../src/NetWasm.Toolchain/NetWasm.Toolchain.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../../src/NetWasm.Hosting/NetWasm.Hosting.csproj" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../LICENSES/LicenseRef-NetWasm-Community-1.0.txt"

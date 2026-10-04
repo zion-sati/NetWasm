@@ -10,6 +10,28 @@ namespace System.Diagnostics;
 // and deterministically when their DEBUG-conditional call sites are retained.
 public static class Debug
 {
+    // Without an attached debugger, retained debug output uses stderr. Delegate
+    // directly to the writer: chaining Conditional methods would erase these
+    // calls when CoreLib itself is built in Release, even for DEBUG consumers.
+    [Conditional("DEBUG")]
+    public static void WriteLine(string? message) => Console.Error.WriteLine(message);
+
+    [Conditional("DEBUG")]
+    public static void WriteLine(object? value) => Console.Error.WriteLine(value?.ToString());
+
+    [Conditional("DEBUG")]
+    public static void WriteLine(string? message, string? category) =>
+        Console.Error.WriteLine(category is null ? message : category + ": " + message);
+
+    [Conditional("DEBUG")]
+    public static void WriteLine(object? value, string? category) =>
+        Console.Error.WriteLine(category is null ? value?.ToString() : category + ": " + value?.ToString());
+
+    [Conditional("DEBUG")]
+    public static void WriteLine(
+        [StringSyntax(StringSyntaxAttribute.CompositeFormat)] string format,
+        params object?[] args) => Console.Error.WriteLine(string.Format(null, format, args));
+
     [Conditional("DEBUG")]
     [OverloadResolutionPriority(-1)]
     public static void Assert([DoesNotReturnIf(false)] bool condition)

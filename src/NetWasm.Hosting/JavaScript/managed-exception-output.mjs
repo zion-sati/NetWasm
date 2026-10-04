@@ -7,7 +7,8 @@ export function createManagedExceptionOutput(stderr) {
   return Object.freeze({
     reportImmediate(event) {
       stderr.write(encoder.encode(
-        `Managed exception #${event.typeId}: ${event.message ?? "<no stored message>"}\n`));
+        `Managed exception #${event.typeId}: ${event.message ?? "<no stored message>"}` +
+        `${event.stackTrace ? `\n${event.stackTrace}` : ""}\n`));
     },
     reportEnriched(event) {
       stderr.write(encoder.encode(

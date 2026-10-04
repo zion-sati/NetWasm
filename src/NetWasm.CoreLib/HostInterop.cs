@@ -10,13 +10,18 @@ namespace System
 
 namespace System.Runtime.InteropServices.JavaScript
 {
-    public sealed class JSObject
+    public sealed class JSObject : IDisposable
     {
         private int _handle;
 
         internal JSObject()
         {
         }
+
+        // Interface dispatch needs an ordinary CIL body. Public Dispose is a
+        // direct-call compiler intrinsic; its placeholder body does not release
+        // the host handle. Keep this forwarding method separate from it.
+        void IDisposable.Dispose() => Dispose();
 
         public void Dispose()
         {
@@ -27,7 +32,7 @@ namespace System.Runtime.InteropServices.JavaScript
         }
     }
 
-    public sealed class JSSubscription
+    public sealed class JSSubscription : IDisposable
     {
         private int _handle;
         private int _callbackHandle;
@@ -35,6 +40,10 @@ namespace System.Runtime.InteropServices.JavaScript
         internal JSSubscription()
         {
         }
+
+        // Route using/interface/generic disposal through the same intrinsic as
+        // direct calls, including host subscription and callback-root release.
+        void IDisposable.Dispose() => Dispose();
 
         public void Dispose()
         {

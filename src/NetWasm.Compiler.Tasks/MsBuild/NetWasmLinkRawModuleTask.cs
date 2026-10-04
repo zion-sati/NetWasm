@@ -12,15 +12,17 @@ namespace NetWasm.Compiler.Tasks.MsBuild;
 public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
 {
     private readonly IRawModuleLinkSessionFactory _sessions;
+    private readonly IInternalRuntimeExportReader _exports;
 
     public NetWasmLinkRawModuleTask()
-        : this(CompilerTaskComposition.CreateRawModuleLinkSessionFactory())
+        : this(CompilerTaskComposition.CreateRawModuleLinkSessionFactory(), CompilerTaskComposition.CreateInternalRuntimeExportReader())
     {
     }
 
-    internal NetWasmLinkRawModuleTask(IRawModuleLinkSessionFactory sessions)
+    internal NetWasmLinkRawModuleTask(IRawModuleLinkSessionFactory sessions, IInternalRuntimeExportReader exports)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        _exports = exports ?? throw new ArgumentNullException(nameof(exports));
     }
 
     [Required]
@@ -55,6 +57,8 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
     public string Target { get; set; } = string.Empty;
 
     public string Optimization { get; set; } = "Oz";
+    public string InternalRuntimeExports { get; set; } = string.Empty;
+    public string InternalApplicationExports { get; set; } = string.Empty;
 
     [Output]
     public ITaskItem[] Modules { get; private set; } = [];
@@ -72,6 +76,9 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                     "The NetWasm raw-module target must be wasm32 or wasm64."),
             };
             var optimization = ParseOptimization();
+            var internalExports = _exports.Read(InternalRuntimeExports);
+            var internalApplicationExports = _exports.Read(
+                InternalApplicationExports);
             using var session = _sessions.Create(
                 CompilerTaskComposition.CreateWasmToolsCommand(
                     WasmToolsNodePath,
@@ -88,7 +95,11 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                 RuntimeModulePath,
                 OutputPath,
                 componentTarget,
-                optimization));
+                optimization)
+            {
+                InternalRuntimeExports = internalExports,
+                InternalApplicationExports = internalApplicationExports,
+            });
             Modules = [CreateModuleItem()];
             return true;
         }

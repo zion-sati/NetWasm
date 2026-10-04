@@ -17,6 +17,7 @@ public sealed class ManagedBoundaryFailurePolicyTests
     [InlineData(ManagedBoundaryKind.ProcessEntryPoint)]
     [InlineData(ManagedBoundaryKind.SynchronousExport)]
     [InlineData(ManagedBoundaryKind.HostCallback)]
+    [InlineData(ManagedBoundaryKind.NativeCallback)]
     public void OutwardSynchronousBoundariesReportAndTerminate(ManagedBoundaryKind kind)
     {
         var policy = EmitterTestSupport.CreateBoundaryFailureDispositions();

@@ -35,7 +35,7 @@ internal static class RuntimePackTestData
             Asset("wasm64/libnetwasm-runtime.a"),
             Asset("wasm64/libgc.a"),
             Asset("wasm64/allowed-undefined-symbols.txt"),
-            new(["libc.a"], [Asset("wasm64/system-libraries/libc.a")]))
+            new(["libc.a"], [Asset("wasm64/system-libraries/libc.a")])) { NativeValidation = NativeProfile(target) }
         : new(
             target,
             4,
@@ -48,11 +48,40 @@ internal static class RuntimePackTestData
             Asset("wasm32/libnetwasm-runtime.a"),
             Asset("wasm32/libgc.a"),
             Asset("wasm32/allowed-undefined-symbols.txt"),
-            new(["libc.a"], [Asset("wasm32/system-libraries/libc.a")]));
+            new(["libc.a"], [Asset("wasm32/system-libraries/libc.a")])) { NativeValidation = NativeProfile(target) };
+
+    public static RuntimeNativeValidationProfile NativeProfile(string target = "wasm32") => new(1,
+        ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory",
+            .. target == "wasm64" ? ImmutableArray.Create("memory64") : []],
+        [new("env", "emscripten_notify_memory_growth", [target == "wasm64" ? (byte)0x7e : (byte)0x7f], [], true)]);
 
     public static RuntimePackAsset Asset(string path) => new(path, Digest);
+
+    public static RuntimeNativeCallbackSupport CallbackSupport(
+        string target = "wasm32",
+        string digest = Digest) => new(
+        "application.callbacks.o",
+        digest,
+        [new(
+            "__netwasm_native_callback_0",
+            "__netwasm_native_callback_0",
+            "__netwasm_application_callback_0",
+            "__netwasm_callback_address_0",
+            [RuntimeNativeValueType.I32,
+                target == "wasm64"
+                    ? RuntimeNativeValueType.I64
+                    : RuntimeNativeValueType.I32],
+            RuntimeNativeValueType.I32)],
+        ["__netwasm_application_callback_0"],
+        ["__netwasm_callback_address_0"]);
 
     public static RuntimeMemoryLayout Layout(string target = "wasm32") => target == "wasm64"
         ? new(65_552, 179_904, 262_144, 8_589_934_592)
         : new(65_552, 157_520, 262_144, 2_147_483_648);
+
+    public static RuntimeLinkMemoryLimits LinkLimits(string target = "wasm32")
+    {
+        var layout = Layout(target);
+        return new(layout.RuntimeGlobalBase, layout.InitialMemorySizeBytes, layout.MaximumMemorySizeBytes);
+    }
 }

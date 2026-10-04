@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Metadata;
@@ -16,7 +17,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
     IDispatchSiteKeyBuilder dispatchSiteKeys,
     IDelegateMethodClassifier delegateMethods,
     INullableTypeResolver nullableTypes,
-    IManagedCallSiteFactory managedCallSites) : IReachabilityInstructionAnalyzer
+    IManagedCallSiteFactory managedCallSites,
+    INativeCallbackDeclarationValidator nativeCallbacks) : IReachabilityInstructionAnalyzer
 {
     public ReachabilityInstructionAnalysis Analyze(ReachabilityInstructionRequest request)
     {
@@ -33,9 +35,11 @@ internal sealed class ReachabilityInstructionAnalyzer(
         var fieldDescriptors = ImmutableArray.CreateBuilder<FieldInstanceModel>();
         var dispatches = ImmutableArray.CreateBuilder<ReachabilityDispatch>();
         var callableMethods = ImmutableArray.CreateBuilder<MethodInstanceModel>();
+        var reachedNativeCallbacks = ImmutableArray.CreateBuilder<MethodInstanceModel>();
         var callSites = ImmutableArray.CreateBuilder<ManagedCallSite>();
         var requiresTypeFacts = false;
         var requiresDelegateInvoke = false;
+        var requiresGenericArguments = false;
         var requiresMemberNames = false;
         var typeNamePayload = RuntimeTypeNamePayload.None;
         var instructions = request.Body.Instructions;
@@ -62,6 +66,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 {
                     requiresDelegateInvoke |=
                         calledMethod.Definition.Name == "GetDelegateInvokeMethod";
+                    requiresGenericArguments |=
+                        calledMethod.Definition.Name == "GetGenericArguments";
                     typeNamePayload |= calledMethod.Definition.Name switch
                     {
                         "GetRuntimeName" => RuntimeTypeNamePayload.Name,
@@ -163,9 +169,23 @@ internal sealed class ReachabilityInstructionAnalyzer(
             }
             if (instruction.Operation == CilOperation.LoadFunction && calledMethod is not null)
             {
+                if (calledMethod.Definition.NativeCallback is not null)
+                {
+                    nativeCallbacks.ValidateAddressTarget(calledMethod);
+                    reachedNativeCallbacks.Add(calledMethod);
+                    methods.Add(new(CilOperation.Call, calledMethod));
+                    continue;
+                }
                 callableMethods.Add(calledMethod);
                 methods.Add(new(CilOperation.Call, calledMethod));
                 continue;
+            }
+            if (calledMethod?.Definition.NativeCallback is not null)
+            {
+                throw new CompilerException(new(
+                    DiagnosticCode.NativeInterop,
+                    "An UnmanagedCallersOnly method cannot be invoked directly from managed code.",
+                    calledMethod.CanonicalName));
             }
             if (instruction.Operation == CilOperation.CallVirtual &&
                 calledMethod is not null &&
@@ -269,8 +289,10 @@ internal sealed class ReachabilityInstructionAnalyzer(
             FieldDescriptors = fieldDescriptors.ToImmutable(),
             RequiresTypeFacts = requiresTypeFacts,
             RequiresDelegateInvoke = requiresDelegateInvoke,
+            RequiresGenericArguments = requiresGenericArguments,
             RequiresMemberNames = requiresMemberNames,
             TypeNamePayload = typeNamePayload,
+            NativeCallbacks = reachedNativeCallbacks.ToImmutable(),
         };
 
     }

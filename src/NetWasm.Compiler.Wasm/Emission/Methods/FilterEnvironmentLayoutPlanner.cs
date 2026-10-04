@@ -10,6 +10,7 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 internal sealed class FilterEnvironmentLayoutPlanner(
     ITargetLayout layouts,
     IValueLayoutProvider values,
+    IArgumentTypeResolver argumentTypes,
     IArgumentSignatureTypeResolver types,
     IExceptionGroupEnumerator exceptionGroups) : IFilterEnvironmentLayoutPlanner
 {
@@ -68,6 +69,11 @@ internal sealed class FilterEnvironmentLayoutPlanner(
             var type = slot.IsArgument
                 ? types.Resolve(header, slot.Index)
                 : header.LocalSignatureTypes[slot.Index];
+            if (slot.IsArgument &&
+                argumentTypes.Resolve(header, slot.Index) == CliValueKind.ManagedAddress)
+            {
+                type = CliTypeIdentity.FromStackKind(CliValueKind.ManagedAddress);
+            }
             int offset;
             if (!slot.IsArgument && type.StackKind == CliValueKind.ValueType)
             {

@@ -16,7 +16,7 @@ public sealed class StructuredMethodEmissionPlannerTests
     public void PlanPreservesDefinitionAndConstructedMethodIdentities()
     {
         var baseline = EmitterTestSupport.CreateEmissionRequest();
-        var definition = baseline.EntryPoint;
+        var definition = Assert.IsType<MethodDefinitionModel>(baseline.EntryPoint);
         var secondDefinition = definition with
         {
             Key = new EntityKey(definition.Key.Assembly, definition.Key.MetadataToken + 1),
@@ -93,7 +93,7 @@ public sealed class StructuredMethodEmissionPlannerTests
     public void PlanRejectsMissingAndMismatchedConstructedMethodIdentities()
     {
         var baseline = EmitterTestSupport.CreateEmissionRequest();
-        var definition = baseline.EntryPoint;
+        var definition = Assert.IsType<MethodDefinitionModel>(baseline.EntryPoint);
         var structured = baseline.Methods[definition.Key];
         var typeIdentities = new TestCilTypeIdentityResolver();
         var identities = new ManagedMethodIdentityFactory();
@@ -138,7 +138,7 @@ public sealed class StructuredMethodEmissionPlannerTests
     public void PlanPreservesTheStructuredMethodInstanceAsTheDirectCallerIdentity()
     {
         var baseline = EmitterTestSupport.CreateEmissionRequest();
-        var definition = baseline.EntryPoint;
+        var definition = Assert.IsType<MethodDefinitionModel>(baseline.EntryPoint);
         var structured = baseline.Methods[definition.Key];
         var declaringType = CliTypeIdentity.Named(
             definition.Key.Assembly,
@@ -190,7 +190,7 @@ public sealed class StructuredMethodEmissionPlannerTests
     public void PlanLogsEveryExcludedOpenDefinitionWhenTraceIsEnabled()
     {
         var baseline = EmitterTestSupport.CreateEmissionRequest();
-        var definition = baseline.EntryPoint;
+        var definition = Assert.IsType<MethodDefinitionModel>(baseline.EntryPoint);
         var structured = baseline.Methods[definition.Key];
         var firstOpenDefinition = definition with
         {

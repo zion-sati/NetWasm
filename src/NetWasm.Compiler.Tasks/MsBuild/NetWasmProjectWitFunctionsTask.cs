@@ -16,16 +16,22 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
     private readonly IWitFunctionProjectionSessionFactory _sessions;
+    private readonly IWitWorkerContractWriter _workerContracts;
 
     public NetWasmProjectWitFunctionsTask()
-        : this(CompilerTaskComposition.CreateWitFunctionProjectionSessionFactory())
+        : this(
+            CompilerTaskComposition.CreateWitFunctionProjectionSessionFactory(),
+            CompilerTaskComposition.CreateWitWorkerContractWriter())
     {
     }
 
     internal NetWasmProjectWitFunctionsTask(
-        IWitFunctionProjectionSessionFactory sessions)
+        IWitFunctionProjectionSessionFactory sessions,
+        IWitWorkerContractWriter workerContracts)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        _workerContracts = workerContracts ??
+            throw new ArgumentNullException(nameof(workerContracts));
     }
 
     [Required] public string WasmToolsNodePath { get; set; } = string.Empty;
@@ -33,16 +39,22 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
     [Required] public string WasmToolsModulePath { get; set; } = string.Empty;
     [Required] public string WitPath { get; set; } = string.Empty;
     public string World { get; set; } = string.Empty;
+    public string ApplicationWitPath { get; set; } = string.Empty;
+    public string ApplicationWorld { get; set; } = string.Empty;
+    public string SourceWorkerWorld { get; set; } = string.Empty;
+    public string WorkerContractPath { get; set; } = string.Empty;
 
     [Output] public ITaskItem[] RequiredImports { get; private set; } = [];
     [Output] public ITaskItem[] RequiredImportModules { get; private set; } = [];
     [Output] public ITaskItem[] Exports { get; private set; } = [];
+    [Output] public ITaskItem[] WorkerExports { get; private set; } = [];
 
     public override bool Execute()
     {
         RequiredImports = [];
         RequiredImportModules = [];
         Exports = [];
+        WorkerExports = [];
         try
         {
             using var session = _sessions.Create(
@@ -50,7 +62,20 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
                 WasmToolsNodePath,
                 WasmToolsCommandPath,
                 WasmToolsModulePath));
-            var result = session.Project(WitPath, NullIfEmpty(World));
+            var result = session.Project(
+                WitPath,
+                NullIfEmpty(World),
+                NullIfEmpty(ApplicationWitPath),
+                NullIfEmpty(ApplicationWorld),
+                NullIfEmpty(SourceWorkerWorld));
+            if (!string.IsNullOrWhiteSpace(WorkerContractPath))
+            {
+                _workerContracts.Write(
+                    Path.GetFullPath(WorkerContractPath),
+                    result.WorkerContract);
+                WorkerExports = [.. result.WorkerContract.Exports.Select(
+                    CreateWorkerFunctionItem)];
+            }
             RequiredImports = [.. result.Imports.Select(CreateFunctionItem)];
             RequiredImportModules = [.. result.ImportModules.Select(module =>
                 new TaskItem(module))];
@@ -80,6 +105,13 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
         item.SetMetadata("Results", JsonSerializer.Serialize(
             function.Results,
             MetadataJsonOptions));
+        return item;
+    }
+
+    private static TaskItem CreateWorkerFunctionItem(WitWorkerExport function)
+    {
+        var item = new TaskItem(function.Operation);
+        item.SetMetadata("Name", function.Operation);
         return item;
     }
 

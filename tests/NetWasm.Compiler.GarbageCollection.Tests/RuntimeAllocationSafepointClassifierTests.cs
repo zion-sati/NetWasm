@@ -28,6 +28,16 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.GCHandleRuntime", "Set")]
     [InlineData("System.GCCollectionRuntime", "Collect")]
     [InlineData("System.GCFinalizerRuntime", "WaitForPending")]
+    [InlineData("System.Enum", "InternalGetValues")]
+    [InlineData("System.Enum", "InternalGetValuesAsUnderlyingType")]
+    [InlineData("System.Enum", "InternalGetNames")]
+    [InlineData("System.Enum", "InternalToObject")]
+    [InlineData("System.Enum", "InternalGetUnderlyingType")]
+    [InlineData("System.Enum", "ToString")]
+    [InlineData("System.Enum", "InternalToString")]
+    [InlineData("System.Enum", "InternalFormat")]
+    [InlineData("System.Enum", "InternalToType")]
+    [InlineData("System.Enum", "System.IConvertible.ToType")]
     public void ClassifyRecognizesEveryRuntimeAllocationBoundary(
         string typeName,
         string methodName)
@@ -45,6 +55,9 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.Runtime.InteropServices.NativeMemory", "Free")]
     [InlineData("System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "Free")]
     [InlineData("Example.NativeMemory", "Alloc")]
+    [InlineData("System.Enum", "InternalGetMetadata")]
+    [InlineData("System.Enum", "InternalToInt32")]
+    [InlineData("Example.Enum", "InternalGetValues")]
     public void ClassifyRejectsNonAllocatingAndUnrelatedMethods(
         string typeName,
         string methodName)

@@ -6,5 +6,6 @@ public sealed class JcoClosureIntegrityVerifier : IJcoClosureIntegrityVerifier
         JavaScriptClosureIntegrityVerifier.Verify(
             packageRoot,
             manifestRelativePath,
-            allowBundleCommand: false);
+            allowBundleCommand: false,
+            allowJcoPatchProvenance: true);
 }

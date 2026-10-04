@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   commandComponentContract,
@@ -39,6 +40,67 @@ test("executes one exact command adapter and closes its caller scope", async () 
   assert.equal(result.completionKind, "normal");
   assert.equal(result.exitCode, 23);
   assert.deepEqual(calls, ["instantiate", "run", "release"]);
+});
+
+test("reports and classifies a terminal managed command failure", async () => {
+  const encoder = new TextEncoder();
+  const wasmBytes = Uint8Array.of(0, 97, 115, 109);
+  const mapBytes = encoder.encode(JSON.stringify({
+    schemaVersion: 2,
+    buildId: "build",
+    entries: [{
+      typeId: 7,
+      displayName: "System.FormatException",
+      canonicalIdentity: "System.FormatException, System.Private.CoreLib",
+      assemblyIdentity: "System.Private.CoreLib",
+    }],
+  }));
+  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+  const immediate = [];
+  const enriched = [];
+  const result = await executeComponent({
+    contractKey: commandComponentContract,
+    adapter: adapter(commandComponentContract, ({ imports }) => ({
+      command: {
+        run() {
+          imports["netwasm:diagnostics/terminal"].report(
+            7,
+            Uint16Array.from([..."invalid format"].map(value => value.charCodeAt(0))),
+            Uint16Array.from([..."at method#7"]
+              .map(value => value.charCodeAt(0))));
+          throw new WebAssembly.RuntimeError("terminal trap");
+        },
+      },
+    })),
+    imports: {},
+    loadCoreModule,
+    diagnosticArtifacts: {
+      manifest: {
+        schemaVersion: 1,
+        buildId: "build",
+        wasmSha256: digest(wasmBytes),
+        exceptionTypeMapSha256: digest(mapBytes),
+      },
+      wasmBytes,
+      mapBytes,
+      mapMediaType: "application/vnd.netwasm.exception-types+json;version=2",
+    },
+    managedExceptionReporting: {
+      reportImmediate: event => immediate.push(event),
+      reportEnriched: event => enriched.push(event),
+    },
+    stackTraceSymbols: [{
+      id: 7,
+      name: "EntryPoint.Run in Program.cs:line 12",
+    }],
+  });
+
+  assert.equal(result.completionKind, "managedFailure");
+  assert.equal(result.primaryFailure.code, "managed.failure");
+  assert.equal(immediate[0].message, "invalid format");
+  assert.equal(immediate[0].stackTrace, "at EntryPoint.Run in Program.cs:line 12");
+  assert.equal(enriched[0].typeName, "System.FormatException");
+  assert.equal(enriched[0].stackTrace, "at EntryPoint.Run in Program.cs:line 12");
 });
 
 test("rejects adapter mismatch and pre-cancellation before instantiation", async () => {
@@ -325,4 +387,34 @@ test("maps unexpected process observation errors and closes pending pollables fi
   assert.equal(result.primaryFailure.code, "host.process-status");
   assert.deepEqual(calls, ["complete", "reactor-release", "caller-release"]);
   assert.doesNotMatch(JSON.stringify(result), /private/);
+});
+
+test("prefers typed command completion and preserves reporting without custom imports", async () => {
+  const reports = [];
+  let standardInvocations = 0;
+  const result = await executeComponent({
+    contractKey: commandComponentContract,
+    adapter: adapter(commandComponentContract, () => ({
+      command: { run() { standardInvocations++; return 0; } },
+      diagnosticCommand: { run() {
+        return { tag: "failed", val: {
+          typeId: 7,
+          message: Uint16Array.of(0x41, 0xd800, 0x42),
+          stackTrace: undefined,
+        } };
+      } },
+    })),
+    imports: {},
+    loadCoreModule,
+    managedExceptionReporting: {
+      reportImmediate: event => reports.push(event),
+      reportEnriched() {},
+    },
+  });
+  assert.equal(standardInvocations, 0);
+  assert.equal(result.completionKind, "managedFailure");
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].typeId, 7);
+  assert.equal(reports[0].message, "A\ud800B");
+  assert.equal(reports[0].stackTrace, null);
 });

@@ -79,6 +79,7 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
 
         var jcoPackage = resolved[ToolchainPlatformAssetIds.JcoPackage];
         var jcoEntryPoint = resolved[ToolchainPlatformAssetIds.JcoEntryPoint];
+        var jcoBindgenPatch = resolved[ToolchainPlatformAssetIds.JcoBindgenPatch];
         if (!string.Equals(jcoPackage.Version, jcoEntryPoint.Version, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -94,7 +95,7 @@ public sealed class JcoToolchainPathResolver : IJcoToolchainPathResolver
         return new(
             packageId!,
             packageVersion!,
-            resolved[ToolchainPlatformAssetIds.JcoPackage].Version,
+            jcoBindgenPatch.Version,
             resolved[ToolchainPlatformAssetIds.Preview2ShimPackage].Version,
             nodeExecutable.AbsolutePath,
             nodeCompatibility.Version,

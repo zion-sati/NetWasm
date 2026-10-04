@@ -293,7 +293,10 @@ internal sealed class ExceptionGroupStructurer(
             var targetBlock = state.Graph.GetBlockAtOffset(target).Index;
             return state.LoopsByHeader.Values
                 .Where(loop =>
-                    loop.Component.Contains(tryEntry) &&
+                    // The condition-exit extension executes after leaving the
+                    // loop. Only protected regions in the body can route their
+                    // continuations through this loop's break/continue labels.
+                    loop.BodyComponent.Contains(tryEntry) &&
                     (loop.Component.Contains(targetBlock) ||
                         loop.Exit == targetBlock))
                 .OrderBy(loop => loop.Component.Count)

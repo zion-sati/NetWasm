@@ -4,6 +4,7 @@ using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.StackTraces;
 using NetWasm.Compiler.Tasks.Compilation;
 using NetWasm.Compiler.Wasm;
+using NetWasm.Compiler.Wasm.Emission;
 
 namespace NetWasm.Compiler.Tasks.Tests.TestSupport;
 
@@ -14,7 +15,9 @@ internal static class CompilerTaskTestData
         StackTraceSymbolArtifact? symbols = null,
         ManagedExecutableEntryPointAbi? entryPoint = null,
         ImmutableArray<string> runtimeFeatures = default,
-        ImmutableArray<WasmFunctionImport> functionImports = default) => new(
+        ImmutableArray<WasmFunctionImport> functionImports = default,
+        ImmutableArray<WasmNativeImport> nativeImports = default,
+        WasmNativeCallbackSupportArtifact? nativeCallbackSupport = null) => new(
         [0, 97, 115, 109],
         65_537,
         new HostInteropManifest(
@@ -28,5 +31,9 @@ internal static class CompilerTaskTestData
         target,
         entryPoint,
         runtimeFeatures,
-        functionImports);
+        functionImports)
+        {
+            NativeImports = nativeImports.IsDefault ? [] : nativeImports,
+            NativeCallbackSupport = nativeCallbackSupport,
+        };
 }

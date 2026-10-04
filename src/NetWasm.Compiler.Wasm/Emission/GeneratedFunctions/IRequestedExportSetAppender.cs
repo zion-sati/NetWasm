@@ -14,5 +14,6 @@ internal interface IRequestedExportSetAppender
         RuntimeInitializationPlan initialization, bool hasFinalizers,
         WasmModuleProfile profile,
         IFunctionIndexResolver functionIndices,
+        InteropImportPlan interopImports,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries);
 }

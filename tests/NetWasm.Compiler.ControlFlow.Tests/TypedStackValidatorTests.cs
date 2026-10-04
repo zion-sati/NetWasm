@@ -9,6 +9,31 @@ using static NetWasm.Compiler.ControlFlow.Tests.ControlFlowTestSupport;
 
 public sealed class TypedStackValidatorTests
 {
+    [Fact]
+    public void TypeFactsConsumesSemanticTypeIdAndProducesNativeAddress()
+    {
+        var body = Body(
+            CliValueKind.NativeInt,
+            1,
+            [],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(1, CilOperation.GetTypeFacts),
+            I(2, CilOperation.Return));
+
+        var validated = Validate(body);
+
+        Assert.Same(body, validated.Graph.MethodBody);
+        Assert.Equal(CliValueKind.I4, Assert.Single(validated.InstructionEntryStacks[1]));
+        Assert.Equal(CliValueKind.NativeInt, Assert.Single(validated.InstructionEntryStacks[2]));
+        AssertDiagnostic(() => Validate(body with
+        {
+            Instructions = [
+                I(0, CilOperation.LoadNull),
+                I(1, CilOperation.GetTypeFacts),
+                I(2, CilOperation.Return)],
+        }), "expected I4");
+    }
+
     [Theory]
     [InlineData(CilOperation.LoadMethodToken, CilOperation.MaterializeMethod)]
     [InlineData(CilOperation.LoadFieldToken, CilOperation.MaterializeField)]

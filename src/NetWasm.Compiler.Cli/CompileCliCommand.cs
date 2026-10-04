@@ -1,22 +1,27 @@
 using System;
 using System.Text.Json;
-using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Cli;
 
 internal sealed class CompileCliCommand(
     INetWasmCompiler compiler,
+    ICompileCliArtifactPlanner artifacts,
     IBinaryFileWriter binaryFiles,
-    ITextFileWriter textFiles) : ICompilerCliCommand
+    ITextFileWriter textFiles,
+    IFileDeleter files) : ICompilerCliCommand
 {
     internal const string CommandName = "";
 
     private readonly INetWasmCompiler _compiler = compiler ??
         throw new ArgumentNullException(nameof(compiler));
+    private readonly ICompileCliArtifactPlanner _artifacts = artifacts ??
+        throw new ArgumentNullException(nameof(artifacts));
     private readonly IBinaryFileWriter _binaryFiles = binaryFiles ??
         throw new ArgumentNullException(nameof(binaryFiles));
     private readonly ITextFileWriter _textFiles = textFiles ??
         throw new ArgumentNullException(nameof(textFiles));
+    private readonly IFileDeleter _files = files ??
+        throw new ArgumentNullException(nameof(files));
 
     public string Name => CommandName;
 
@@ -35,61 +40,25 @@ internal sealed class CompileCliCommand(
             options.Wit,
             options.World,
             options.Sources,
-            EmitStackTrace: options.StackTraceSymbols is not null));
-        _binaryFiles.Write(options.Output, result.ApplicationModule);
-        WriteRuntimeLayout(options, result, _textFiles);
-        WriteStackTraceSymbols(options, result, _binaryFiles);
-        WriteInteropManifest(options, result, _textFiles);
+            EmitStackTrace: options.StackTraceSymbols is not null,
+            EntryPointKind: options.EntryPointKind,
+            UseJavaScriptExportBoundary: options.UseJavaScriptExportBoundary));
+        var artifacts = _artifacts.Plan(options, result);
+        if (artifacts.DeleteNativeCallbackObject)
+        {
+            _files.Delete(artifacts.NativeCallbackObjectPath);
+        }
+        foreach (var artifact in artifacts.BinarySidecars)
+        {
+            _binaryFiles.Write(artifact.Path, artifact.Content);
+        }
+        foreach (var artifact in artifacts.TextSidecars)
+        {
+            _textFiles.Write(artifact.Path, artifact.Content);
+        }
+        _binaryFiles.Write(artifacts.OutputPath, artifacts.ApplicationModule);
         return 0;
     }
-
-    private static void WriteStackTraceSymbols(
-        CompileCliOptions options,
-        CompilationResult result,
-        IBinaryFileWriter files)
-    {
-        if (options.StackTraceSymbols is null)
-        {
-            return;
-        }
-        var artifact = result.StackTraceSymbols ??
-            throw new InvalidOperationException(
-                "stack-trace instrumentation did not produce a symbol sidecar");
-        files.Write(options.StackTraceSymbols, artifact.Bytes);
-    }
-
-    private static void WriteRuntimeLayout(
-        CompileCliOptions options,
-        CompilationResult result,
-        ITextFileWriter textFiles)
-    {
-        if (options.RuntimeLayout is null)
-        {
-            return;
-        }
-        textFiles.Write(
-            options.RuntimeLayout,
-            CliJson.Serialize(new
-            {
-                schemaVersion = 2,
-                target = options.Target == WasmTarget.Wasm64 ? "wasm64" : "wasm32",
-                applicationStaticDataEnd = result.StaticDataEnd,
-            }));
-    }
-
-    private static void WriteInteropManifest(
-        CompileCliOptions options,
-        CompilationResult result,
-        ITextFileWriter textFiles)
-    {
-        if (options.InteropManifest is not null)
-        {
-            textFiles.Write(
-                options.InteropManifest,
-                CliJson.Serialize(result.InteropManifest));
-        }
-    }
-
 }
 
 internal static class CliJson

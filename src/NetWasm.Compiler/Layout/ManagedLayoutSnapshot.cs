@@ -59,6 +59,8 @@ public sealed class ManagedLayoutSnapshot :
         StaticData.ConstructedTypeDescriptors;
     public ImmutableArray<ValueTypeDescriptorLayout> ValueTypeDescriptors =>
         StaticData.ValueTypeDescriptors;
+    public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors =>
+        StaticData.MetadataTypeDescriptors;
     public ImmutableArray<EnumMetadataLayout> EnumMetadata => StaticData.EnumMetadata;
     public ImmutableArray<int> StaticRootAddresses => StaticData.StaticRootAddresses;
     public IReadOnlyDictionary<EntityKey, ObjectLayout> ObjectLayouts =>

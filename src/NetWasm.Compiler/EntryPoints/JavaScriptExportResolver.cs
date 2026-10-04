@@ -17,6 +17,14 @@ internal sealed class JavaScriptExportResolver : ICompilationExportResolver
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(methods);
         ArgumentNullException.ThrowIfNull(options);
+        // WIT components expose canonical exports. Rooting otherwise-unused
+        // JavaScript exports retains helpers and host imports that the component
+        // cannot expose. Raw JavaScript sessions may still select a WIT world
+        // for their imports, so preserve their explicit boundary override.
+        if (options.WitPath is not null && !options.UseJavaScriptExportBoundary)
+        {
+            return [];
+        }
         return metadata.EntryAssemblyMethods
             .Where(method => method.JSExport is not null)
             .OrderBy(

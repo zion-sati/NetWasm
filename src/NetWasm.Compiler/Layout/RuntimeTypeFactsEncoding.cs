@@ -21,6 +21,7 @@ internal enum RuntimeTypeFactsFlags
     Class = 1 << 10,
     Sealed = 1 << 11,
     Nullable = 1 << 12,
+    Abstract = 1 << 13,
 }
 
 internal static class RuntimeTypeFactsEncoding
@@ -43,8 +44,16 @@ internal static class RuntimeTypeFactsEncoding
     internal static int NameFactsOffset(WasmTargetLayout target) =>
         DelegateInvokeOffset(target) + target.AddressSize;
 
-    internal static int Size(WasmTargetLayout target) =>
+    internal static int GenericArgumentCountOffset(WasmTargetLayout target) =>
         NameFactsOffset(target) + target.AddressSize;
+
+    internal static int GenericArgumentTypeIdsOffset(WasmTargetLayout target) =>
+        ManagedTypeLayoutCompiler.Align(
+            GenericArgumentCountOffset(target) + sizeof(int),
+            target.AddressSize);
+
+    internal static int Size(WasmTargetLayout target) =>
+        GenericArgumentTypeIdsOffset(target) + target.AddressSize;
 
     internal const int NamePayloadOffset = 0;
 
@@ -110,14 +119,31 @@ internal static class RuntimeTypeFactsEncoding
         ManagedStaticDataBuildState state,
         WasmTargetLayout target,
         CliTypeIdentity identity,
-        TypeDefinitionModel definition,
+        TypeDefinitionModel? definition,
         int typeId,
         int baseTypeId,
         int assignableTypeIdsAddress,
         int assignableTypeIdCount,
         int delegateInvokeAddress = 0,
-        int nameFactsAddress = 0)
+        int nameFactsAddress = 0,
+        int genericArgumentTypeIdsAddress = 0,
+        int genericArgumentCount = 0)
     {
+        if (definition is null && identity.Shape is not (
+                CliTypeShape.GenericTypeParameter or
+                CliTypeShape.GenericMethodParameter))
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.RuntimeContract,
+                $"runtime type facts for '{identity}' require a type definition"));
+        }
+        if (genericArgumentCount < 0 ||
+            (genericArgumentCount == 0) != (genericArgumentTypeIdsAddress == 0))
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.RuntimeContract,
+                "runtime generic-argument metadata is inconsistent"));
+        }
         state.Cursor = ManagedTypeLayoutCompiler.Align(
             state.Cursor,
             target.AddressSize);
@@ -147,6 +173,13 @@ internal static class RuntimeTypeFactsEncoding
             bytes.AsSpan(NameFactsOffset(target)),
             target,
             nameFactsAddress);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(GenericArgumentCountOffset(target)),
+            genericArgumentCount);
+        WriteAddress(
+            bytes.AsSpan(GenericArgumentTypeIdsOffset(target)),
+            target,
+            genericArgumentTypeIdsAddress);
         if (!state.TypeFacts.TryAdd(typeId, address))
         {
             throw new CompilerException(new CompilerDiagnostic(
@@ -159,7 +192,7 @@ internal static class RuntimeTypeFactsEncoding
 
     private static RuntimeTypeFactsFlags Flags(
         CliTypeIdentity identity,
-        TypeDefinitionModel definition)
+        TypeDefinitionModel? definition)
     {
         var flags = RuntimeTypeFactsFlags.None;
         var hasDefinitionSemantics = identity.Shape is
@@ -171,11 +204,11 @@ internal static class RuntimeTypeFactsEncoding
         {
             flags |= RuntimeTypeFactsFlags.ValueType;
         }
-        if (hasDefinitionSemantics && definition.IsEnum)
+        if (hasDefinitionSemantics && definition!.IsEnum)
         {
             flags |= RuntimeTypeFactsFlags.Enum;
         }
-        if (hasDefinitionSemantics && definition.IsInterface)
+        if (hasDefinitionSemantics && definition!.IsInterface)
         {
             flags |= RuntimeTypeFactsFlags.Interface;
         }
@@ -188,16 +221,16 @@ internal static class RuntimeTypeFactsEncoding
             flags |= RuntimeTypeFactsFlags.Pointer;
         }
         if (identity.ContainsGenericParameters ||
-            identity.Shape == CliTypeShape.Named && definition.GenericArity != 0)
+            identity.Shape == CliTypeShape.Named && definition!.GenericArity != 0)
         {
             flags |= RuntimeTypeFactsFlags.ContainsGenericParameters;
         }
-        if (identity.Shape == CliTypeShape.Named && definition.GenericArity != 0)
+        if (identity.Shape == CliTypeShape.Named && definition!.GenericArity != 0)
         {
             flags |= RuntimeTypeFactsFlags.GenericTypeDefinition;
         }
         if (identity.Shape == CliTypeShape.GenericInstantiation ||
-            identity.Shape == CliTypeShape.Named && definition.GenericArity != 0)
+            identity.Shape == CliTypeShape.Named && definition!.GenericArity != 0)
         {
             flags |= RuntimeTypeFactsFlags.GenericType;
         }
@@ -207,24 +240,28 @@ internal static class RuntimeTypeFactsEncoding
                 RuntimeTypeFactsFlags.Class |
                 RuntimeTypeFactsFlags.Sealed;
         }
-        else if (!isRuntimeValueType &&
-                 (isElementModifier || !definition.IsInterface) &&
-                 identity.Shape is not (
+        else if (identity.Shape is not (
                      CliTypeShape.GenericTypeParameter or
-                     CliTypeShape.GenericMethodParameter))
+                     CliTypeShape.GenericMethodParameter) &&
+                 !isRuntimeValueType &&
+                 (isElementModifier || !definition!.IsInterface))
         {
             flags |= RuntimeTypeFactsFlags.Class;
         }
-        if (definition.IsSealed && !isElementModifier)
+        if (definition is { IsSealed: true } && !isElementModifier)
         {
             flags |= RuntimeTypeFactsFlags.Sealed;
+        }
+        if (hasDefinitionSemantics && definition!.IsAbstract)
+        {
+            flags |= RuntimeTypeFactsFlags.Abstract;
         }
         if (identity.Shape == CliTypeShape.SzArray)
         {
             flags |= RuntimeTypeFactsFlags.SzArray;
         }
         if (identity.Shape == CliTypeShape.GenericInstantiation &&
-            definition.FullName == "System.Nullable`1")
+            definition!.FullName == "System.Nullable`1")
         {
             flags |= RuntimeTypeFactsFlags.Nullable;
         }
@@ -233,11 +270,11 @@ internal static class RuntimeTypeFactsEncoding
 
     private static int TypeCode(
         CliTypeIdentity identity,
-        TypeDefinitionModel definition)
+        TypeDefinitionModel? definition)
     {
         if (identity.Shape is (
                 CliTypeShape.Named or CliTypeShape.GenericInstantiation) &&
-            definition.IsEnum)
+            definition!.IsEnum)
         {
             return PrimitiveTypeCode(definition.EnumUnderlyingType);
         }

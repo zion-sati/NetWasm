@@ -64,6 +64,10 @@ internal sealed class ConstrainedCallRewriter(
                 methodArguments));
             var directOperation = call.Operation switch
             {
+                // Resolving a sealed reference target does not prove its receiver
+                // non-null. Keep callvirt so emission checks the loaded reference,
+                // even when the target body never dereferences this.
+                CilOperation.CallVirtual when !concreteType.IsValueType => CilOperation.CallVirtual,
                 CilOperation.Call or CilOperation.CallVirtual => CilOperation.Call,
                 _ => CilOperation.LoadFunction,
             };

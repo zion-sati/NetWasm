@@ -67,9 +67,17 @@ internal enum RuntimeImportSymbol
     ComponentReallocate,
     ComponentFree,
     ManagedTerminalExceptionReport,
+    ManagedTerminalExceptionRaise,
     StackTraceFrameEnter,
+    StackTraceFrameLocation,
     StackTraceFrameLeave,
     StackTraceInitialize,
+    StackTraceRegisterSymbol,
+    ManagedExceptionCapture,
+    EphemeronHandleCreate,
+    EphemeronHandleGetKey,
+    EphemeronHandleGetValue,
+    EphemeronHandleRelease,
 }
 
 internal readonly record struct RuntimeImportBinding(
@@ -151,10 +159,20 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
     private static bool IsIncluded(
         RuntimeImportSymbol symbol,
         RuntimeImportSelection selection) =>
+        (selection.IncludeExceptionCapture || symbol != RuntimeImportSymbol.ManagedExceptionCapture) &&
         (selection.IncludeStackTrace || symbol is not
             (RuntimeImportSymbol.StackTraceFrameEnter or
+             RuntimeImportSymbol.StackTraceFrameLocation or
              RuntimeImportSymbol.StackTraceFrameLeave or
-             RuntimeImportSymbol.StackTraceInitialize)) &&
+             RuntimeImportSymbol.StackTraceInitialize or
+             RuntimeImportSymbol.StackTraceRegisterSymbol)) &&
+        (selection.IncludeEphemeronHandles || symbol is not
+            (RuntimeImportSymbol.EphemeronHandleCreate or
+             RuntimeImportSymbol.EphemeronHandleGetKey or
+             RuntimeImportSymbol.EphemeronHandleGetValue or
+             RuntimeImportSymbol.EphemeronHandleRelease)) &&
+        (selection.IncludeTerminalExceptionRaise ||
+            symbol != RuntimeImportSymbol.ManagedTerminalExceptionRaise) &&
         (selection.ModuleProfile == WasmModuleProfile.ComponentCoreModule
             ? symbol != RuntimeImportSymbol.ManagedTerminalExceptionReport ||
               selection.IncludeTerminalExceptionReporter

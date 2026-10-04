@@ -10,12 +10,14 @@ public sealed class NetWasmTranspileComponentTask : Microsoft.Build.Utilities.Ta
 {
     private readonly IComponentTranspiler _transpiler;
     private readonly ICanonicalComponentAdapterWriter _adapters;
+    private readonly IWitWorkerComponentAdapterWriter _witWorkerAdapters;
     private readonly IBuildArtifactStore _artifacts;
 
     public NetWasmTranspileComponentTask()
         : this(
             new ComponentTranspiler(),
             new CanonicalComponentAdapterWriter(),
+            new WitWorkerComponentAdapterWriter(WitWorkerContractComposition.CreateReader(), new WitWorkerValueLayoutPlanner()),
             new BuildArtifactStore())
     {
     }
@@ -23,10 +25,13 @@ public sealed class NetWasmTranspileComponentTask : Microsoft.Build.Utilities.Ta
     internal NetWasmTranspileComponentTask(
         IComponentTranspiler transpiler,
         ICanonicalComponentAdapterWriter adapters,
+        IWitWorkerComponentAdapterWriter witWorkerAdapters,
         IBuildArtifactStore artifacts)
     {
         _transpiler = transpiler ?? throw new ArgumentNullException(nameof(transpiler));
         _adapters = adapters ?? throw new ArgumentNullException(nameof(adapters));
+        _witWorkerAdapters = witWorkerAdapters ??
+            throw new ArgumentNullException(nameof(witWorkerAdapters));
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
     }
 
@@ -37,7 +42,8 @@ public sealed class NetWasmTranspileComponentTask : Microsoft.Build.Utilities.Ta
     [Required] public string OutputDirectory { get; set; } = string.Empty;
     [Required] public string BaseName { get; set; } = string.Empty;
     [Required] public string AdapterPath { get; set; } = string.Empty;
-    [Required] public string ExecutionContract { get; set; } = string.Empty;
+    public string ExecutionContract { get; set; } = string.Empty;
+    public string WorkerContractPath { get; set; } = string.Empty;
     public string RelativeDirectory { get; set; } = string.Empty;
 
     [Output] public ITaskItem[] Artifacts { get; private set; } = [];
@@ -55,7 +61,13 @@ public sealed class NetWasmTranspileComponentTask : Microsoft.Build.Utilities.Ta
                 BaseName));
             _artifacts.Write(
                 Path.GetFullPath(AdapterPath),
-                _adapters.Write(new(ExecutionContract, JcoVersion)));
+                string.IsNullOrWhiteSpace(WorkerContractPath)
+                    ? _adapters.Write(new(ExecutionContract, JcoVersion))
+                    : _witWorkerAdapters.Write(new(
+                        _artifacts.Read(Path.GetFullPath(WorkerContractPath)),
+                        JcoVersion,
+                        [.. result.RootExports.Select(value =>
+                            new WitWorkerRootExport(value.Name, value.Kind))])));
             Artifacts =
             [
                 CreateArtifact(AdapterPath, "component-adapter", "text/javascript"),

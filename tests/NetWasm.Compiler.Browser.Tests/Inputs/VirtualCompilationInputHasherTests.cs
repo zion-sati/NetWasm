@@ -48,11 +48,41 @@ public sealed class VirtualCompilationInputHasherTests
     }
 
     [Fact]
+    public void IncludesSuppliedCoreBindingInventoryInWitSemanticIdentity()
+    {
+        const string path = "contract.wit.wasm";
+        var inputs = ImmutableDictionary<string, ImmutableArray<byte>>.Empty
+            .Add(path, [97, 98, 99]);
+        var first = new VirtualCompilationInputHasher(
+            inputs,
+            ImmutableDictionary<string, string>.Empty.Add(
+                path,
+                "(module (export \"cm32p2|first|run\" (func 0)))"));
+        var same = new VirtualCompilationInputHasher(
+            inputs,
+            ImmutableDictionary<string, string>.Empty.Add(
+                path,
+                "(module (export \"cm32p2|first|run\" (func 0)))"));
+        var changed = new VirtualCompilationInputHasher(
+            inputs,
+            ImmutableDictionary<string, string>.Empty.Add(
+                path,
+                "(module (export \"cm32p2|second|run\" (func 0)))"));
+
+        Assert.Equal(first.Hash(path), same.Hash(path));
+        Assert.NotEqual(first.Hash(path), changed.Hash(path));
+    }
+
+    [Fact]
     public void RequiresExactSuppliedPathsAndInitializedInputs()
     {
         Assert.Throws<ArgumentNullException>(() => CreateHasher(null!));
         Assert.Throws<ArgumentNullException>(() => new VirtualCompilationInputHasher(
             (IBrowserCompilationRequestResolver)null!));
+        Assert.Throws<ArgumentNullException>(() => new VirtualCompilationInputHasher(
+            null!, ImmutableDictionary<string, string>.Empty));
+        Assert.Throws<ArgumentNullException>(() => new VirtualCompilationInputHasher(
+            ImmutableDictionary<string, ImmutableArray<byte>>.Empty, null!));
         var hasher = CreateHasher(ImmutableDictionary<string, ImmutableArray<byte>>.Empty.Add("folder/input", [1]));
         var missing = Assert.Throws<FileNotFoundException>(() => hasher.Hash("input"));
         Assert.Equal("input", missing.FileName);

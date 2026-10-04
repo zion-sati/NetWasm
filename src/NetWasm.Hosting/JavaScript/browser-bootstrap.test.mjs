@@ -82,12 +82,15 @@ function request(deploymentManifestSha256) {
   });
 }
 
-function fixture() {
+function fixture(imports = []) {
+  const selectedInteropManifest = encoder.encode(JSON.stringify({
+    ...JSON.parse(new TextDecoder().decode(interopManifest)), imports,
+  }));
   const artifacts = [
     artifact("app.wasm", "application", "application/wasm", application),
     artifact("app.raw-adapter.mjs", "raw-adapter", "text/javascript", rawAdapter),
     artifact("app.runtime-layout.json", "runtime-layout", "application/json", runtimeLayout),
-    artifact("app.interop.json", "interop-manifest", "application/json", interopManifest),
+    artifact("app.interop.json", "interop-manifest", "application/json", selectedInteropManifest),
   ];
   const manifestBytes = encoder.encode(JSON.stringify(deployment(artifacts)));
   const files = new Map([
@@ -95,7 +98,7 @@ function fixture() {
     [new URL("app.wasm", manifestUrl).href, application],
     [new URL("app.raw-adapter.mjs", manifestUrl).href, rawAdapter],
     [new URL("app.runtime-layout.json", manifestUrl).href, runtimeLayout],
-    [new URL("app.interop.json", manifestUrl).href, interopManifest],
+    [new URL("app.interop.json", manifestUrl).href, selectedInteropManifest],
   ]);
   const modules = new Map();
   let sequence = 0;
@@ -165,6 +168,17 @@ test("browser bootstrap composes selected Preview 2 and Web mechanisms", async (
     assert.deepEqual([outcome.completionKind, outcome.exitCode], ["normal", 37]);
   }
   assert.equal(typeof createComponentBootstrap(fixture().options), "function");
+});
+
+test("raw browser bootstrap binds application modules without a worker caller", async () => {
+  const imported = { module: "netwasm:worker/calculator", name: "read", parameters: [], result: "i32" };
+  for (const supplied of [true, false]) {
+    const value = fixture([imported]);
+    const modules = supplied ? { [imported.module]: { read: () => 42 } } : {};
+    const execute = createRawBootstrap(value.options, modules);
+    const outcome = await execute({ request: request(sha256(value.manifestBytes)), signal: null, stderr: sink, stdout: sink });
+    assert.equal(outcome.completionKind, supplied ? "normal" : "hostFailure");
+  }
 });
 
 test("browser bootstrap validates its exact three-part composition", () => {

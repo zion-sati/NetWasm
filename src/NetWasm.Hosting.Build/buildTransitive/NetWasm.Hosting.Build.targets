@@ -13,4 +13,12 @@
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
   <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteExecutionRequestTask"
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteWorkerHostEntryTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteWitWorkerHostEntryTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteWorkerClientEntryTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteWitWorkerClientEntryTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
 </Project>

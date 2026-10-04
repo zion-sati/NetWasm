@@ -31,6 +31,8 @@ internal static class LayoutServiceCollectionExtensions
             StaticFieldLayoutProviderFactory>();
         services.AddSingleton<IStaticDataLayoutProviderFactory,
             StaticDataLayoutProviderFactory>();
+        services.AddSingleton<IMemberDescriptorLayoutProviderFactory,
+            MemberDescriptorLayoutProviderFactory>();
         services.AddSingleton<IManagedExceptionObjectProviderFactory,
             ManagedExceptionObjectProviderFactory>();
         return services;

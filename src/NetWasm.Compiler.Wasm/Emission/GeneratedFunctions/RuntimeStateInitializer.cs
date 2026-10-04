@@ -1,3 +1,4 @@
+using System;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Support;
@@ -31,6 +32,41 @@ internal sealed class RuntimeStateInitializer(
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                     RuntimeImportSymbol.StackTraceInitialize,
                     plan.RuntimeImportSelection))));
+            var guardAddress = plan.StackTraceSymbolRegistrationGuardAddress ??
+                throw new InvalidOperationException(
+                    "Stack-trace symbol registration requires a guard address.");
+            addresses.Emit(code.Instructions, guardAddress);
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Load,
+                WasmInstructionOperand.Memory(2, 0)));
+            code.Instructions.Write(WasmInstruction.NoOperand(
+                WasmOpcodes.I32EqualZero));
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.If,
+                WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            foreach (var symbol in plan.StackTraceSymbols)
+            {
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.I32Constant,
+                    WasmInstructionOperand.Signed(symbol.Id)));
+                addresses.Emit(code.Instructions, symbol.Address);
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.I32Constant,
+                    WasmInstructionOperand.Signed(symbol.Length)));
+                code.Instructions.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.Call,
+                    WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+                        RuntimeImportSymbol.StackTraceRegisterSymbol,
+                        plan.RuntimeImportSelection))));
+            }
+            addresses.Emit(code.Instructions, guardAddress);
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(1)));
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Store,
+                WasmInstructionOperand.Memory(2, 0)));
+            code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
         foreach (var descriptor in descriptors.TypeDescriptors)
         {
@@ -60,6 +96,23 @@ internal sealed class RuntimeStateInitializer(
                 descriptor.Finalizer is not null,
                 descriptor.IsInterface);
         }
+        foreach (var descriptor in descriptors.MetadataTypeDescriptors)
+        {
+            // Metadata-only identities can be materialized as System.Type objects but
+            // are never valid allocation types. A zero-sized descriptor registers the
+            // semantic ID without adding a managed object layout.
+            EmitTypeDescriptor(
+                code,
+                descriptor.TypeId,
+                baseTypeId: 0,
+                objectSize: 0,
+                bitmapAddress: 0,
+                bitmapBitCount: 0,
+                assignableTypeIdsAddress: 0,
+                assignableTypeIdCount: 0,
+                hasFinalizer: false,
+                isInterface: false);
+        }
         foreach (var descriptor in descriptors.ValueTypeDescriptors)
         {
             code.Instructions.Write(WasmInstruction.WithOperand(
@@ -83,6 +136,16 @@ internal sealed class RuntimeStateInitializer(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                     RuntimeImportSymbol.RegisterStaticRoot))));
+        }
+        if (plan.NativeCallbackReadinessAddress is int readinessAddress)
+        {
+            addresses.Emit(code.Instructions, readinessAddress);
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(1)));
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Store,
+                WasmInstructionOperand.Memory(2, 0)));
         }
         foreach (var initializer in plan.ModuleInitializers)
         {

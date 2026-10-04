@@ -22,7 +22,7 @@ public sealed class MalformedEnumMetadataTests
             "char-enum.dll",
             image,
             AssemblyIdentityAliases.Empty,
-            new ValueTypeDefinitionStackKindResolver());
+            new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader());
 
         var definition = assembly.Types.Values.Single(type => type.Name == "Probe");
         Assert.Equal("primitive:char", definition.EnumUnderlyingType.CanonicalName);
@@ -40,7 +40,7 @@ public sealed class MalformedEnumMetadataTests
                 "float-enum.dll",
                 image,
                 AssemblyIdentityAliases.Empty,
-                new ValueTypeDefinitionStackKindResolver()));
+                new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader()));
 
         Assert.Contains("enum has unsupported underlying type 'primitive:f4'", exception.Message);
     }
@@ -55,7 +55,7 @@ public sealed class MalformedEnumMetadataTests
                 "trailing-enum.dll",
                 trailing,
                 AssemblyIdentityAliases.Empty,
-                new ValueTypeDefinitionStackKindResolver()));
+                new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader()));
 
         var truncated = CompileEnumImage();
         ReplaceUnique(truncated, LiteralBlob, 0, 3);
@@ -64,7 +64,7 @@ public sealed class MalformedEnumMetadataTests
                 "truncated-enum.dll",
                 truncated,
                 AssemblyIdentityAliases.Empty,
-                new ValueTypeDefinitionStackKindResolver()));
+                new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader()));
 
         Assert.Contains("trailing literal bytes", trailingException.Message);
         Assert.Contains("truncated metadata constant", truncatedException.Message);
@@ -78,7 +78,7 @@ public sealed class MalformedEnumMetadataTests
                 "missing-enum-constant.dll",
                 BuildMissingConstantImage(),
                 AssemblyIdentityAliases.Empty,
-                new ValueTypeDefinitionStackKindResolver()));
+                new ValueTypeDefinitionStackKindResolver(), new NativeImportDeclarationReader()));
 
         Assert.Contains("enum member 'Missing' has no metadata constant", exception.Message);
     }

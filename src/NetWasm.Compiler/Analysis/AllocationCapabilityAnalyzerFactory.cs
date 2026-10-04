@@ -14,10 +14,12 @@ internal sealed class AllocationCapabilityAnalyzerFactory(
     public IAllocationCapabilityAnalyzer Create(
         ITypeRepository types,
         IFieldRepository fields,
-        IMethodRepository methods) =>
+        IMethodRepository methods,
+        ITypeClassifier typeClassifier) =>
         new AllocationCapabilityAnalyzer(
             types,
             fields,
             methods,
-            _runtimeSafepoints);
+            _runtimeSafepoints,
+            typeClassifier);
 }

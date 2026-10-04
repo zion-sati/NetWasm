@@ -1,0 +1,50 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+public static class EntryPoint
+{
+    [DllImport("mule", EntryPoint = "native_mule_invoke_named", ExactSpelling = true,
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int InvokeNamed(int value);
+
+    internal static int InvokeNamedFromStartup(int value) => InvokeNamed(value);
+
+    public static int Run(int input) =>
+        StartupState.InitializationCount == 1 && StartupState.CallbackResult == 41
+            ? InvokeNamed(input - 1)
+            : -999;
+}
+
+internal static class Startup
+{
+    [ModuleInitializer]
+    internal static void Initialize()
+    {
+        StartupState.InitializationCount++;
+        StartupState.CallbackResult = EntryPoint.InvokeNamedFromStartup(40);
+    }
+}
+
+internal static class ManagedCallbacks
+{
+    static ManagedCallbacks() => CallbackState.Offset++;
+
+    [UnmanagedCallersOnly(EntryPoint = "native_mule_managed_entry",
+        CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int Named(int value) => value + CallbackState.ReadOffset();
+}
+
+internal static class CallbackState
+{
+    internal static int Offset;
+
+    internal static int ReadOffset() => Offset;
+}
+
+internal static class StartupState
+{
+    internal static int InitializationCount;
+    internal static int CallbackResult;
+}

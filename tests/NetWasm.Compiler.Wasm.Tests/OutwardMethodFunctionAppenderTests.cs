@@ -8,6 +8,87 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 public sealed class OutwardMethodFunctionAppenderTests
 {
+    [Fact]
+    public void AsyncExportCapturesItsFaultWithoutTerminalReporting()
+    {
+        var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
+        var binding = CreateBinding(method);
+        var selection = new RuntimeImportSelection(WasmModuleProfile.CoreApplication, false,
+            IncludeExceptionCapture: true);
+        var helpers = new RecordingAsyncHelperAppender();
+        var appender = new OutwardMethodFunctionAppender(
+            new RecordingAsyncWrapperEmitter(), helpers, new RecordingEntryPointEmitter(),
+            new FixedFunctionTypeResolver(), new RecordingBoundaryBuilder(),
+            WasmRuntimeImports.CreateCatalog());
+        var request = CreateRequest(method) with
+        {
+            AsyncBinding = binding,
+            AsyncNames = ManagedAsyncBoundaryNames.ForExport(binding),
+            AsyncKinds = ManagedAsyncBoundaryKinds.Export,
+            Initialization = TestRuntimeInitialization.Create(64, selection),
+        };
+
+        appender.Append(request);
+
+        Assert.Single(request.Functions);
+        Assert.Equal(1, helpers.Count);
+        Assert.Same(ManagedAsyncBoundaryKinds.Export, helpers.Kinds);
+        Assert.Equal(new AsyncTaskCompletionPlan(0,
+            WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.ManagedExceptionCapture, selection),
+            CliValueKind.I4), helpers.Completion);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void SynchronousManagedBuffersUseTheJavaScriptMarshaller(bool returnsBuffer, bool byteArray)
+    {
+        var bufferType = byteArray
+            ? CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("u1", CliValueKind.I4))
+            : CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference);
+        var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey) with
+        {
+            Signature = returnsBuffer
+                ? MethodSignatureModel.Create(bufferType)
+                : MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), bufferType),
+        };
+        var marshaller = new RecordingSynchronousExporter();
+        var appender = Assert.IsAssignableFrom<IOutwardMethodFunctionAppender>(new OutwardMethodFunctionAppender(
+            new RecordingAsyncWrapperEmitter(), new RecordingAsyncHelperAppender(),
+            new RecordingEntryPointEmitter(), new FixedFunctionTypeResolver(),
+            new RecordingBoundaryBuilder(), WasmRuntimeImports.CreateCatalog(), marshaller,
+            marshaller));
+        var interop = new InteropImportPlan([], OptionalFunctionIndex.Missing,
+            OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
+            OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing);
+        var request = CreateRequest(method) with { InteropImports = interop };
+
+        appender.Append(request);
+
+        var function = Assert.Single(request.Functions);
+        Assert.Equal(new byte[] { 42 }, function.Body);
+        Assert.Same(marshaller.Type, function.Type);
+        Assert.Same(method, marshaller.Method);
+        Assert.Same(interop, marshaller.Interop);
+        var rejected = request with { Functions = [] };
+        Assert.Throws<InvalidOperationException>(() => CreateAppender().Append(rejected));
+        Assert.Empty(rejected.Functions);
+        var typesOnly = new OutwardMethodFunctionAppender(
+            new RecordingAsyncWrapperEmitter(),
+            new RecordingAsyncHelperAppender(),
+            new RecordingEntryPointEmitter(),
+            new FixedFunctionTypeResolver(),
+            new RecordingBoundaryBuilder(),
+            WasmRuntimeImports.CreateCatalog(),
+            synchronousJSExportTypes: marshaller);
+        var missingEmitter = request with { Functions = [] };
+        Assert.Throws<InvalidOperationException>(() =>
+            typesOnly.Append(missingEmitter));
+        Assert.Empty(missingEmitter.Functions);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -25,7 +106,8 @@ public sealed class OutwardMethodFunctionAppenderTests
                 helpers,
                 entries,
                 new FixedFunctionTypeResolver(),
-                boundaries),
+                boundaries,
+                WasmRuntimeImports.CreateCatalog()),
         }.Cast<IOutwardMethodFunctionAppender>().Single();
         var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
         var binding = asynchronous ? CreateBinding(method) : null;
@@ -68,6 +150,8 @@ public sealed class OutwardMethodFunctionAppenderTests
         {
             Assert.Same(names, helpers.Names);
             Assert.Same(kinds, helpers.Kinds);
+            Assert.Equal(new AsyncTaskCompletionPlan(0, null, CliValueKind.Void),
+                helpers.Completion);
             Assert.Equal(CliValueKind.I4, functions[0].Type.Result);
         }
         else
@@ -133,6 +217,20 @@ public sealed class OutwardMethodFunctionAppenderTests
             AsyncNames = ManagedAsyncBoundaryNames.ForProcess(binding),
             AsyncKinds = null,
         }));
+        Assert.Throws<InvalidOperationException>(() => appender.Append(valid with
+        {
+            AsyncBinding = binding with { GetVoidResult = null },
+            AsyncNames = ManagedAsyncBoundaryNames.ForProcess(binding),
+            AsyncKinds = ManagedAsyncBoundaryKinds.Process,
+        }));
+        Assert.Empty(valid.Functions);
+        Assert.Throws<InvalidOperationException>(() => appender.Append(valid with
+        {
+            AsyncBinding = binding with { GetVoidResult = null },
+            AsyncNames = ManagedAsyncBoundaryNames.ForExport(binding),
+            AsyncKinds = ManagedAsyncBoundaryKinds.Export,
+        }));
+        Assert.Empty(valid.Functions);
     }
 
     [Theory]
@@ -148,7 +246,8 @@ public sealed class OutwardMethodFunctionAppenderTests
             new RecordingAsyncHelperAppender(),
             entries,
             new ParameterizedFunctionTypeResolver(),
-            new RecordingBoundaryBuilder());
+            new RecordingBoundaryBuilder(),
+            WasmRuntimeImports.CreateCatalog());
         var method = new FakeProgram().GetMethod(EmitterTestSupport.EntryKey);
         var binding = asynchronous ? CreateBinding(method) : null;
         var request = CreateRequest(method) with
@@ -174,7 +273,8 @@ public sealed class OutwardMethodFunctionAppenderTests
         new RecordingAsyncHelperAppender(),
         new RecordingEntryPointEmitter(),
         new FixedFunctionTypeResolver(),
-        new RecordingBoundaryBuilder());
+        new RecordingBoundaryBuilder(),
+        WasmRuntimeImports.CreateCatalog());
 
     private static OutwardMethodFunctionAppendRequest CreateRequest(
         MethodDefinitionModel method) => new(
@@ -214,7 +314,8 @@ public sealed class OutwardMethodFunctionAppenderTests
             instance.DeclaringType,
             instance,
             instance,
-            instance);
+            instance)
+        { GetVoidResult = instance };
     }
 
     private sealed class RecordingAsyncWrapperEmitter :
@@ -237,12 +338,29 @@ public sealed class OutwardMethodFunctionAppenderTests
         }
     }
 
+    private sealed class RecordingSynchronousExporter : ISynchronousJSExportEmitter,
+        ISynchronousJSExportFunctionTypeResolver
+    {
+        public WasmFunctionType Type { get; } = WasmFunctionType.Create(CliValueKind.I4, CliValueKind.I4);
+        public MethodDefinitionModel? Method { get; private set; }
+        public InteropImportPlan? Interop { get; private set; }
+        public WasmFunctionType Resolve(MethodDefinitionModel method) => Type;
+        public byte[] Emit(MethodDefinitionModel method, RuntimeInitializationPlan initialization,
+            bool hasFinalizers, IFunctionIndexResolver functionIndices, InteropImportPlan interopImports)
+        {
+            Method = method;
+            Interop = interopImports;
+            return [42];
+        }
+    }
+
     private sealed class RecordingAsyncHelperAppender :
         IAsyncJSExportHelperAppender
     {
         public int Count { get; private set; }
         public ManagedAsyncBoundaryNames? Names { get; private set; }
         public ManagedAsyncBoundaryKinds? Kinds { get; private set; }
+        public AsyncTaskCompletionPlan? Completion { get; private set; }
 
         public void Append(
             IList<WasmFunctionDefinition> functions,
@@ -251,11 +369,13 @@ public sealed class OutwardMethodFunctionAppenderTests
             JavaScriptAsyncMethodBinding binding,
             ManagedAsyncBoundaryNames names,
             ManagedAsyncBoundaryKinds kinds,
-            ICollection<ManagedBoundaryPlanEntry> boundaryEntries)
+            ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
+            AsyncTaskCompletionPlan completion)
         {
             Count++;
             Names = names;
             Kinds = kinds;
+            Completion = completion;
         }
     }
 

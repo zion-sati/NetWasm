@@ -8,6 +8,8 @@ using NetWasm.Compiler.Tasks.Compilation;
 using NetWasm.Compiler.Tasks.Composition;
 using NetWasm.Compiler.Tasks.MsBuild;
 using NetWasm.Compiler.Tasks.Tests.TestSupport;
+using NetWasm.Compiler.Wasm;
+using NetWasm.Compiler.Wasm.Emission;
 
 namespace NetWasm.Compiler.Tasks.Tests.MsBuild;
 
@@ -21,8 +23,10 @@ public sealed class NetWasmCompileTaskTests
         Assert.Equal("wasm32", Assert.IsType<NetWasmCompileTask>(task).Target);
     }
 
-    [Fact]
-    public void ExecuteDelegatesCompilationAndArtifactWriting()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExecuteDelegatesCompilationAndArtifactWriting(bool compileAsLibrary)
     {
         var compilation = CompilerTaskTestData.CreateCompilation("wasm64");
         var compiler = new RecordingCompiler(compilation);
@@ -33,10 +37,14 @@ public sealed class NetWasmCompileTaskTests
         var task = CreateTask(compilers, artifacts, messages: messages);
         task.BuildEngine = build;
         task.InputAssemblyPath = "application.dll";
+        task.CompileAsLibrary = compileAsLibrary;
+        task.UseJavaScriptExportBoundary = true;
         task.CoreModulePath = "application.core.wasm";
         task.RuntimeLayoutPath = "runtime-layout.json";
         task.InteropManifestPath = "interop.json";
         task.CompilerMetadataPath = "compiler-metadata.json";
+        task.NativeCallbackObjectPath = "application.callbacks.o";
+        task.ExceptionTypeMapPath = "application.exceptions.json";
         task.Target = "wasm64";
         task.References = [new TaskItem("library.dll"), new TaskItem("corelib.dll")];
         task.Sources = [new TaskItem("Program.cs")];
@@ -45,7 +53,9 @@ public sealed class NetWasmCompileTaskTests
         task.WitPath = "compiler-wit";
         task.WitWorld = "netwasm:platform@1.0.0/platform";
         task.EmitStackTrace = true;
+        task.StructuredDiagnostics = true;
         task.StackTraceSymbolsPath = "application.stacktrace.json";
+        task.PathMap = "/source=/mapped";
 
         Assert.True(task.Execute());
         Assert.Empty(build.Errors);
@@ -60,6 +70,8 @@ public sealed class NetWasmCompileTaskTests
         Assert.True(compilers.Session?.IsDisposed);
         var request = Assert.IsType<ManagedModuleCompileRequest>(compiler.Request);
         Assert.Equal(task.InputAssemblyPath, request.InputAssemblyPath);
+        Assert.Equal(compileAsLibrary, request.CompileAsLibrary);
+        Assert.True(request.UseJavaScriptExportBoundary);
         Assert.Equal(["library.dll", "corelib.dll"], request.ReferencePaths.ToArray());
         Assert.Equal(["Program.cs"], request.SourcePaths.ToArray());
         Assert.Equal(task.Target, request.Target);
@@ -68,6 +80,8 @@ public sealed class NetWasmCompileTaskTests
         Assert.Equal(task.WitPath, request.WitPath);
         Assert.Equal(task.WitWorld, request.WitWorld);
         Assert.True(request.EmitStackTrace);
+        Assert.True(request.StructuredDiagnostics);
+        Assert.Equal(task.PathMap, request.PathMap);
         Assert.Equal(
             [
                 "NetWasm Compiler version unknown",
@@ -82,6 +96,8 @@ public sealed class NetWasmCompileTaskTests
         Assert.Equal(task.RuntimeLayoutPath, write.RuntimeLayoutPath);
         Assert.Equal(task.InteropManifestPath, write.InteropManifestPath);
         Assert.Equal(task.CompilerMetadataPath, write.CompilerMetadataPath);
+        Assert.Equal(task.NativeCallbackObjectPath, write.NativeCallbackObjectPath);
+        Assert.Equal(task.ExceptionTypeMapPath, write.ExceptionTypeMapPath);
         Assert.Equal(task.StackTraceSymbolsPath, write.StackTraceSymbolsPath);
     }
 
@@ -154,6 +170,50 @@ public sealed class NetWasmCompileTaskTests
         Assert.Equal("digest", resolved.GetMetadata("Digest"));
         Assert.Equal("build-id", resolved.GetMetadata("SemanticBuildId"));
         Assert.Equal("PreserveNewest", resolved.GetMetadata("CopyToPublishDirectory"));
+    }
+
+    [Fact]
+    public void ExecuteAddsCallbackSupportToTheManifestAsAnInternalArtifact()
+    {
+        var support = new WasmNativeCallbackSupportArtifact(
+            [0],
+            new string('0', 64),
+            [new(
+                "callback",
+                "callback",
+                "callback_thunk",
+                "callback_address",
+                [WasmValueType.I32],
+                WasmValueType.I32)],
+            ["callback_thunk"],
+            ["callback_address"]);
+        var compilation = CompilerTaskTestData.CreateCompilation(
+            nativeCallbackSupport: support);
+        var requests = new RecordingManifestRequestBuilder();
+        var result = new CompilerArtifactManifestBuildResult(
+            new(1, "build", "profile", "wasm32", "none", "sdk", "compiler", "abi", "runtime", [], []),
+            []);
+        var task = CreateTask(
+            new RecordingCompilationSessionFactory(new RecordingCompiler(compilation)),
+            new RecordingArtifactWriter(),
+            requests,
+            new RecordingManifestBuilder(result),
+            new RecordingManifestWriter());
+        task.InputAssemblyPath = "application.dll";
+        task.CoreModulePath = "application.core.wasm";
+        task.RuntimeLayoutPath = "runtime-layout.json";
+        task.InteropManifestPath = "interop.json";
+        task.CompilerMetadataPath = "compiler-metadata.json";
+        task.NativeCallbackObjectPath = "application.callbacks.o";
+        task.ArtifactManifestPath = "manifest.json";
+        task.ProjectDirectory = ".";
+
+        Assert.True(task.Execute());
+        var artifact = Assert.Single(requests.Input!.Artifacts);
+        Assert.Equal(task.NativeCallbackObjectPath, artifact.ItemSpec);
+        Assert.Equal("NativeCallbackSupportObject", artifact.GetMetadata("Kind"));
+        Assert.Equal("application/wasm", artifact.GetMetadata("MediaType"));
+        Assert.Equal("Never", artifact.GetMetadata("CopyToPublishDirectory"));
     }
 
     [Fact]
@@ -292,18 +352,24 @@ public sealed class NetWasmCompileTaskTests
 
     private sealed class RecordingManifestRequestBuilder : ICompilerArtifactManifestTaskRequestBuilder
     {
-        public CompilerArtifactManifestBuildRequest Build(CompilerArtifactManifestTaskInput input) => new(
-            input.ManifestPath,
-            input.ProjectDirectory,
-            input.Profile,
-            input.Target,
-            input.FeatureSet,
-            input.SdkVersion,
-            input.CompilerVersion,
-            input.RuntimeAbiVersion,
-            input.RuntimeVersion,
-            [],
-            []);
+        public CompilerArtifactManifestTaskInput? Input { get; private set; }
+
+        public CompilerArtifactManifestBuildRequest Build(CompilerArtifactManifestTaskInput input)
+        {
+            Input = input;
+            return new(
+                input.ManifestPath,
+                input.ProjectDirectory,
+                input.Profile,
+                input.Target,
+                input.FeatureSet,
+                input.SdkVersion,
+                input.CompilerVersion,
+                input.RuntimeAbiVersion,
+                input.RuntimeVersion,
+                [],
+                []);
+        }
     }
 
     private sealed class RecordingManifestBuilder(CompilerArtifactManifestBuildResult result) : ICompilerArtifactManifestBuilder

@@ -1,0 +1,61 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct Singleton
+{
+    public int Value;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct Pair
+{
+    public int Integer;
+    public double Real;
+}
+
+public static unsafe partial class EntryPoint
+{
+    [LibraryImport("mule", EntryPoint = "native_mule_probe")]
+    private static partial int Probe();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_data_end")]
+    private static partial nuint DataEnd();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_int")]
+    private static partial Singleton Single(Singleton value);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_aggregate_pair")]
+    private static partial Pair Aggregate(Pair value, int delta);
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180 || DataEnd() <= 2 * 1024 * 1024) return -1;
+        if (sizeof(Singleton) != 4 || sizeof(Pair) != 16) return -2;
+        var single = new Singleton { Value = input };
+        var changed = Single(single);
+        if (single.Value != input || changed.Value != input + 3) return -3;
+        var pair = new Pair { Integer = 39, Real = 1.25 };
+        var result = Aggregate(pair, 3);
+        if (pair.Integer != 39 || pair.Real != 1.25 || result.Integer != 42 || result.Real != -1.25) return -4;
+        result = Aggregate(result, -3);
+        if (result.Integer != 39 || result.Real != 1.25 || pair.Integer != 39 || pair.Real != 1.25) return -5;
+        var grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            if ((nuint)grown < DataEnd()) return -6;
+            grown[0] = 3;
+            grown[6 * 1024 * 1024 - 1] = 71;
+            if (grown[0] != 3 || grown[6 * 1024 * 1024 - 1] != 71) return -7;
+            result = Aggregate(pair, 3);
+            if (result.Integer != 42 || result.Real != -1.25 || pair.Integer != 39 || pair.Real != 1.25) return -8;
+        }
+        finally
+        {
+            NativeMemory.Free(grown);
+        }
+        return 42;
+    }
+}

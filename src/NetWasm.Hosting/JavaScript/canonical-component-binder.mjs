@@ -36,9 +36,17 @@ function bindCommand(instance) {
   if (command === null || typeof command !== "object" || typeof command.run !== "function") {
     throw new TypeError("canonical command component is incomplete");
   }
+  const diagnosticCommand = instance.diagnosticCommand;
+  if (diagnosticCommand !== undefined && (diagnosticCommand === null
+      || typeof diagnosticCommand !== "object" || typeof diagnosticCommand.run !== "function")) {
+    throw new TypeError("canonical diagnostic command component is incomplete");
+  }
   return Object.freeze({
     contractKey: commandComponentContract,
     command: Object.freeze({ run: command.run.bind(command) }),
+    ...(diagnosticCommand === undefined ? {} : {
+      diagnosticCommand: Object.freeze({ run: diagnosticCommand.run.bind(diagnosticCommand) }),
+    }),
   });
 }
 

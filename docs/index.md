@@ -10,7 +10,7 @@ repository.
 ## Start here
 
 - [Size measurements and methodology](size-and-methodology.md) — reproduce the
-  84,513-byte C# component and read the Rust comparison and JSON scenario limits.
+  84,653-byte C# component and read the Rust comparison and JSON scenario limits.
 - [NetWasm SDK quickstart](sdk-quickstart.md) — create an app or dual-target
   library, restore the pinned host tools through NuGet, then build, run and
   publish with ordinary `dotnet` commands.
@@ -40,6 +40,8 @@ repository.
 
 ## Concepts and reference
 
+- [Bounded custom attribute queries](custom-attributes.md): candidate API shapes,
+  static type provenance, user-defined attributes, retention and diagnostics.
 - [Manual source-build walkthrough](../QUICKSTART.md) — a complete low-level
   raw-core and Component Model example, not the package-consumer quickstart.
 - [Compiler architecture](ARCHITECTURE.md) — compiler composition,

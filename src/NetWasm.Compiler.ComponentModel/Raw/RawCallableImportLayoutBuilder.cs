@@ -13,6 +13,11 @@ public sealed class RawCallableImportLayoutBuilder(IRawWitFunctionLayoutBuilder 
         {
             throw ComponentException.Invalid("callable layout builder requires a callable declaration");
         }
-        return new RawWitImportLayout.Callable(_functions.Build(request.Document, callable.InterfaceName, callable.Definition, request.Target));
+        return new RawWitImportLayout.Callable(_functions.Build(
+            request.Document,
+            callable.InterfaceName,
+            callable.CoreInterfaceName,
+            callable.Definition,
+            request.Target));
     }
 }

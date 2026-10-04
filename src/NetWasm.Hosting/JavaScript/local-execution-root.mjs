@@ -12,10 +12,14 @@ export function createLocalNetWasmExecution(options) {
       });
       return kind => registry.resolve(kind);
     },
-    ({ consumerModules, manifest, stderr }) => prepareRawNetWasmInterop({
+    ({ consumerModules, diagnosticArtifacts, manifest, stackTraceSymbols, stderr, observeAsyncCompletion, assertAsyncDeliveryAvailable }) => prepareRawNetWasmInterop({
+      observeAsyncCompletion,
+      assertAsyncDeliveryAvailable,
       consumerModules,
+      diagnosticArtifacts,
       manifest,
       runtimeModules: Object.freeze(Object.create(null)),
+      stackTraceSymbols,
       managedExceptionReporting: createManagedExceptionOutput(stderr),
     }));
 }

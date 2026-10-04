@@ -39,9 +39,13 @@ internal sealed record ReachabilityInstructionAnalysis(
 
     public ImmutableArray<FieldInstanceModel> FieldDescriptors { get; init; } = [];
 
+    public ImmutableArray<MethodInstanceModel> NativeCallbacks { get; init; } = [];
+
     public bool RequiresTypeFacts { get; init; }
 
     public bool RequiresDelegateInvoke { get; init; }
+
+    public bool RequiresGenericArguments { get; init; }
 
     public bool RequiresMemberNames { get; init; }
 

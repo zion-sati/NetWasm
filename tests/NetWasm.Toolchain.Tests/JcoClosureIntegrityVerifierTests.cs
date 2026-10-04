@@ -309,6 +309,29 @@ public sealed class JcoClosureIntegrityVerifierTests
     }
 
     [Fact]
+    public void JcoAllowsItsHashPinnedPatchProvenanceButBundlerRejectsIt()
+    {
+        using var directory = new TemporaryDirectory();
+        var assetPath = directory.Write("tools/closure/node_modules/asset", "actual");
+        var digest = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assetPath)));
+        directory.Write("tools/closure/patch-provenance.json", "{}");
+        directory.Write(
+            "tools/closure/closure-integrity.json",
+            JsonSerializer.Serialize(new
+            {
+                schemaVersion = "1",
+                files = new[] { new { path = "node_modules/asset", sha256 = digest } },
+            }));
+
+        CreateVerifier().Verify(directory.Path, "tools/closure/closure-integrity.json");
+
+        var bundler = new HostingBundleClosureIntegrityVerifier();
+        Assert.Throws<InvalidDataException>(() => bundler.Verify(
+            directory.Path,
+            "tools/closure/closure-integrity.json"));
+    }
+
+    [Fact]
     public void VerifyRejectsNullEntriesAndNonPortablePaths()
     {
         using var directory = new TemporaryDirectory();

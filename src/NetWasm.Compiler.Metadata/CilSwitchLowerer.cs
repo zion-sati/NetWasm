@@ -47,23 +47,26 @@ internal sealed class CilSwitchLowerer : ICilSwitchLowerer
                     result.Count,
                     result.Count + 1,
                     instruction.Operation,
-                    RewriteOperand(instruction.Operand, starts)));
+                    RewriteOperand(instruction.Operand, starts))
+                {
+                    OriginalOffset = instruction.SourceOffset,
+                });
                 continue;
             }
 
             for (var index = 0; index < targets.Offsets.Length; index++)
             {
-                Add(CilOperation.Duplicate, new CilOperand.None());
-                Add(CilOperation.LoadInt32, new CilOperand.ConstantI4(index));
+                Add(CilOperation.Duplicate, new CilOperand.None(), instruction.SourceOffset);
+                Add(CilOperation.LoadInt32, new CilOperand.ConstantI4(index), instruction.SourceOffset);
                 Add(
                     CilOperation.BranchIfNotEqual,
-                    new CilOperand.BranchTarget(result.Count + 3));
-                Add(CilOperation.Pop, new CilOperand.None());
+                    new CilOperand.BranchTarget(result.Count + 3), instruction.SourceOffset);
+                Add(CilOperation.Pop, new CilOperand.None(), instruction.SourceOffset);
                 Add(
                     CilOperation.Branch,
-                    new CilOperand.BranchTarget(starts[targets.Offsets[index]]));
+                    new CilOperand.BranchTarget(starts[targets.Offsets[index]]), instruction.SourceOffset);
             }
-            Add(CilOperation.Pop, new CilOperand.None());
+            Add(CilOperation.Pop, new CilOperand.None(), instruction.SourceOffset);
         }
 
         return new LoweredSwitchBody(
@@ -72,8 +75,11 @@ internal sealed class CilSwitchLowerer : ICilSwitchLowerer
             Changed: true,
             AdditionalMaxStack: 2);
 
-        void Add(CilOperation operation, CilOperand operand) => result.Add(
-            new CilInstruction(result.Count, result.Count + 1, operation, operand));
+        void Add(CilOperation operation, CilOperand operand, int sourceOffset) => result.Add(
+            new CilInstruction(result.Count, result.Count + 1, operation, operand)
+            {
+                OriginalOffset = sourceOffset,
+            });
     }
 
     private static int ExpandedLength(CilInstruction instruction) =>

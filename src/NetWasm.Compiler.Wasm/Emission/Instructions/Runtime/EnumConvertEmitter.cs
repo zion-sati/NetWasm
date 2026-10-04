@@ -45,7 +45,7 @@ internal sealed class EnumConvertEmitter(
                 WasmInstructionOperand.Unsigned((uint)receiver)));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load,
                 WasmInstructionOperand.Memory(2, 0)));
-            WriteI32(code, storage.Descriptor.TypeId);
+            WriteI32(code, storage.TypeId);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
                 WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -93,7 +93,7 @@ internal sealed class EnumConvertEmitter(
         foreach (var storage in storages.Resolve())
         {
             EmitTypeId(code, receiverTemporary);
-            WriteI32(code, storage.Descriptor.TypeId);
+            WriteI32(code, storage.TypeId);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.If,

@@ -1,0 +1,55 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+public static class EntryPoint
+{
+    public static int Run(int initialize)
+    {
+        var caught = 0;
+        if (initialize != 0)
+        {
+            try
+            {
+                _ = FailingCallbacks.Touch();
+            }
+            catch (Exception)
+            {
+                caught++;
+            }
+            try
+            {
+                _ = FailingCallbacks.Touch();
+            }
+            catch (Exception)
+            {
+                caught++;
+            }
+        }
+        return FailureState.Attempts * 100 + caught;
+    }
+}
+
+internal static class FailingCallbacks
+{
+    static FailingCallbacks()
+    {
+        var attempt = ++FailureState.Attempts;
+        throw new InvalidOperationException(attempt == 1
+            ? "callback initializer first attempt"
+            : "callback initializer repeated attempt");
+    }
+
+    internal static int Touch() => 12345;
+
+    [UnmanagedCallersOnly(EntryPoint = "native_mule_callback_failure",
+        CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int Invoke(int value) => value + 777;
+}
+
+internal static class FailureState
+{
+    internal static int Attempts;
+}

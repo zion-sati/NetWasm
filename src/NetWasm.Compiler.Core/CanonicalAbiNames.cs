@@ -16,8 +16,8 @@ public static class CanonicalAbiNames
             CanonicalAbiFunctionKind.ExportedResourceNew or
             CanonicalAbiFunctionKind.ExportedResourceRep or
             CanonicalAbiFunctionKind.ExportedResourceDrop
-                ? $"{Prefix(target)}|_ex_{VersionedInterface(function.InterfaceName)}"
-                : ImportModule(function.InterfaceName, target);
+                ? $"{Prefix(target)}|_ex_{PhysicalInterfaceName(function)}"
+                : ImportCoreModule(PhysicalInterfaceName(function), target);
 
     public static string ImportName(CanonicalAbiFunction function) =>
         function.Kind switch
@@ -34,15 +34,25 @@ public static class CanonicalAbiNames
         };
 
     public static string Export(string interfaceName, string functionName, WasmTarget target) =>
-        ExportCore(interfaceName, ExportFunctionName(functionName), target);
+        ExportCore(
+            interfaceName.Length == 0 ? string.Empty : VersionedInterface(interfaceName),
+            ExportFunctionName(functionName),
+            target);
 
     public static string Export(CanonicalAbiFunction function, WasmTarget target) =>
         ExportCore(
-            function.InterfaceName,
+            PhysicalInterfaceName(function),
             function.Kind == CanonicalAbiFunctionKind.ExportedResourceDestructor
                 ? $"{function.ResourceName}_dtor"
                 : function.FunctionName,
             target);
+
+    public static string PostReturn(
+        CanonicalAbiFunction function,
+        WasmTarget target) => $"{Export(function, target)}_post";
+
+    public static string CoreInterfaceName(string interfaceName) =>
+        VersionedInterface(interfaceName);
 
     public static string PostReturn(
         string interfaceName,
@@ -64,12 +74,35 @@ public static class CanonicalAbiNames
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, null),
     };
 
+    private static string ImportCoreModule(string coreInterfaceName, WasmTarget target) =>
+        coreInterfaceName.Length == 0
+            ? Prefix(target)
+            : $"{Prefix(target)}|{coreInterfaceName}";
+
+    private static string PhysicalInterfaceName(CanonicalAbiFunction function) =>
+        string.Equals(function.CoreInterfaceName, function.InterfaceName,
+            StringComparison.Ordinal)
+            ? SemanticInterfaceName(function.InterfaceName)
+            : ValidatePhysicalInterfaceName(function);
+
+    private static string ValidatePhysicalInterfaceName(
+        CanonicalAbiFunction function)
+    {
+        _ = SemanticInterfaceName(function.InterfaceName);
+        return function.CoreInterfaceName;
+    }
+
+    private static string SemanticInterfaceName(string interfaceName) =>
+        interfaceName.Length == 0
+            ? string.Empty
+            : VersionedInterface(interfaceName);
+
     private static string ExportCore(
-        string interfaceName,
+        string coreInterfaceName,
         string functionName,
-        WasmTarget target) => interfaceName.Length == 0
+        WasmTarget target) => coreInterfaceName.Length == 0
             ? $"{Prefix(target)}||{functionName}"
-            : $"{Prefix(target)}|{VersionedInterface(interfaceName)}|{functionName}";
+            : $"{Prefix(target)}|{coreInterfaceName}|{functionName}";
 
     private static string ExportFunctionName(string functionName)
     {

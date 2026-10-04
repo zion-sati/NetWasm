@@ -4,4 +4,5 @@ namespace NetWasm.Compiler.Analysis;
 
 internal sealed record ReachabilityImportRequest(
     MethodInstanceModel Method,
-    bool IsOutwardBoundary = false);
+    bool IsOutwardBoundary = false,
+    bool IsProcessEntryPoint = false);

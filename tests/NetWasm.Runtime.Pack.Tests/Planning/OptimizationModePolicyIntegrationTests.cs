@@ -64,12 +64,19 @@ public sealed class OptimizationModePolicyIntegrationTests
         {
             Assert.Equal(BinaryenToolIds.WasmOpt, toolId);
             Arguments = arguments;
+            var output = arguments.IndexOf("--output");
+            Assert.True(output >= 0);
+            File.Copy(arguments[0], arguments[output + 1]);
             return new(0, string.Empty, string.Empty);
         }
     }
 
     private sealed class RecordingValidator : IWasmCoreModuleValidator
     {
-        public void Validate(string path) => Assert.True(File.Exists(path));
+        public void Validate(string path, ComponentTarget target)
+        {
+            Assert.True(File.Exists(path));
+            Assert.Equal(ComponentTarget.Wasm32Wasi02, target);
+        }
     }
 }

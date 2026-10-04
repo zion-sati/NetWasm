@@ -53,6 +53,7 @@ internal sealed class ReachabilityLedger
         ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
     internal bool RequiresTypeFacts { get; set; }
     internal bool RequiresDelegateInvoke { get; set; }
+    internal bool RequiresGenericArguments { get; set; }
     internal bool RequiresMemberNames { get; set; }
     internal RuntimeTypeNamePayload TypeNamePayload { get; set; }
     internal ImmutableHashSet<EntityKey>.Builder Types { get; } =
@@ -67,8 +68,8 @@ internal sealed class ReachabilityLedger
         ImmutableHashSet.CreateBuilder<EntityKey>();
     internal ImmutableHashSet<string>.Builder ConstructedStaticInitializers { get; } =
         ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
-    internal ImmutableDictionary<EntityKey, EntityKey>.Builder Finalizers { get; } =
-        ImmutableDictionary.CreateBuilder<EntityKey, EntityKey>();
+    internal ImmutableDictionary<CliTypeIdentity, MethodInstanceModel>.Builder Finalizers
+    { get; } = ImmutableDictionary.CreateBuilder<CliTypeIdentity, MethodInstanceModel>();
     internal ImmutableHashSet<ManagedExceptionKind>.Builder ImplicitExceptions { get; } =
         ImmutableHashSet.CreateBuilder<ManagedExceptionKind>();
     internal Queue<MethodInstanceModel> Pending { get; } = new();
@@ -83,6 +84,8 @@ internal sealed class ReachabilityLedger
     internal Dictionary<string, Dictionary<string, DispatchTargetModel>> DispatchTargets
     { get; } = new(StringComparer.Ordinal);
     internal ImmutableDictionary<string, MethodInstanceModel>.Builder CallableMethods { get; } =
+        ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+    internal ImmutableDictionary<string, MethodInstanceModel>.Builder NativeCallbacks { get; } =
         ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
     internal ImmutableDictionary<EntityKey, MethodDefinitionModel>.Builder JavaScriptImports { get; } =
         ImmutableDictionary.CreateBuilder<EntityKey, MethodDefinitionModel>();

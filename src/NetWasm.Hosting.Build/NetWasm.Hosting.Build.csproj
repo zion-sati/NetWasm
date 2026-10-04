@@ -51,6 +51,11 @@
     <None Include="buildTransitive/NetWasm.Hosting.Build.targets"
           Pack="true"
           PackagePath="buildTransitive/NetWasm.Hosting.Build.targets" />
+    <None Include="JavaScript/run-jco-transpile.mjs"
+          Link="run-jco-transpile.mjs"
+          CopyToOutputDirectory="PreserveNewest"
+          Pack="true"
+          PackagePath="$(BuildOutputTargetFolder)/$(TargetFramework)/run-jco-transpile.mjs" />
     <None Include="$(TargetDir)$(AssemblyName).deps.json"
           Pack="true"
           PackagePath="$(BuildOutputTargetFolder)/$(TargetFramework)/" />

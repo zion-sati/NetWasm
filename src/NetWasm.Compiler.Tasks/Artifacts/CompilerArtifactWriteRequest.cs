@@ -8,4 +8,8 @@ internal sealed record CompilerArtifactWriteRequest(
     string RuntimeLayoutPath,
     string InteropManifestPath,
     string CompilerMetadataPath,
-    string? StackTraceSymbolsPath);
+    string NativeCallbackObjectPath,
+    string? StackTraceSymbolsPath)
+{
+    public string? ExceptionTypeMapPath { get; init; }
+}

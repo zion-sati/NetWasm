@@ -162,6 +162,8 @@ public sealed record StructuredExceptionClause(
     StructuredSequence HandlerBody,
     StructuredSequence? FilterBody)
 {
+    public CliTypeIdentity? CatchTypeIdentity { get; init; }
+
     public required StructuredBlockId HandlerBlock { get; init; }
 
     public StructuredBlockId? FilterBlock { get; init; }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Text;
 
@@ -7,8 +8,12 @@ namespace NetWasm.Compiler.ComponentModel;
 
 public interface IWasmCoreModuleExportEditor
 {
-    void RetainComponentExports(string inputPath, string outputPath, string prefix);
+    void Rewrite(string inputPath, string outputPath, WasmExportSelection selection);
 }
+
+public sealed record WasmInternalExport(string Name, byte Kind);
+
+public sealed record WasmExportSelection(string? ComponentPrefix, ImmutableArray<WasmInternalExport> RemovedExports);
 
 public sealed class WasmCoreModuleExportEditor(
     IFileExistence files,
@@ -22,11 +27,26 @@ public sealed class WasmCoreModuleExportEditor(
     private readonly IByteFileWriter _writer = writer ??
         throw new ArgumentNullException(nameof(writer));
 
-    public void RetainComponentExports(string inputPath, string outputPath, string prefix)
+    public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
     {
-        RequireFile(inputPath);
+        ArgumentNullException.ThrowIfNull(selection);
+        if (selection.RemovedExports.IsDefault)
+            throw ComponentException.Invalid("core module export selection is uninitialized");
+        if (selection.ComponentPrefix is { } prefix)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+            if (!selection.RemovedExports.IsEmpty)
+                throw ComponentException.Invalid("core module export selection combines incompatible policies");
+        }
+        var removed = new Dictionary<string, byte>(StringComparer.Ordinal);
+        foreach (var export in selection.RemovedExports)
+        {
+            if (export is null || string.IsNullOrWhiteSpace(export.Name) || export.Kind > 4 ||
+                !removed.TryAdd(export.Name, export.Kind))
+                throw ComponentException.Invalid("core module internal export selection is invalid");
+        }
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+        RequireFile(inputPath);
 
         var module = _reader.Read(inputPath);
         var reader = new BinaryReader(module);
@@ -34,36 +54,40 @@ public sealed class WasmCoreModuleExportEditor(
         using var output = new MemoryStream(module.Length);
         output.Write(WasmBinaryFormat.Header);
         var memoryExports = 0;
+        var matched = new HashSet<string>(StringComparer.Ordinal);
         while (!reader.IsAtEnd)
         {
+            var sectionStart = reader.Offset;
             var sectionId = reader.ReadByte();
             var sectionSize = reader.ReadUnsigned();
             var section = reader.ReadBytes(sectionSize);
             if (sectionId != WasmBinaryFormat.ExportSection)
             {
-                output.WriteByte(sectionId);
-                WriteUnsigned(output, sectionSize);
-                output.Write(section);
+                output.Write(module.AsSpan(sectionStart, reader.Offset - sectionStart));
                 continue;
             }
 
-            var rewritten = RewriteExportSection(section, prefix, ref memoryExports);
+            var rewritten = RewriteExportSection(section, selection.ComponentPrefix, removed, matched, ref memoryExports);
             output.WriteByte(sectionId);
             WriteUnsigned(output, (uint)rewritten.Length);
             output.Write(rewritten);
         }
 
-        if (memoryExports != 1)
+        if (selection.ComponentPrefix is not null && memoryExports != 1)
         {
             throw ComponentException.Invalid(
-                $"core module must export exactly one memory named '{prefix}_memory'");
+                $"core module must export exactly one memory named '{selection.ComponentPrefix}_memory'");
         }
+        if (matched.Count != removed.Count)
+            throw ComponentException.Invalid("core module is missing a required internal export");
         _writer.Write(outputPath, output.ToArray());
     }
 
     private static byte[] RewriteExportSection(
         ReadOnlySpan<byte> section,
-        string prefix,
+        string? prefix,
+        Dictionary<string, byte> removed,
+        HashSet<string> matched,
         ref int memoryExports)
     {
         var reader = new BinaryReader(section);
@@ -76,12 +100,17 @@ public sealed class WasmCoreModuleExportEditor(
             var kind = reader.ReadByte();
             reader.ReadUnsigned();
             var entry = section[start..reader.Offset].ToArray();
-            if (string.Equals(name, prefix + "_memory", StringComparison.Ordinal) &&
+            if (prefix is not null && string.Equals(name, prefix + "_memory", StringComparison.Ordinal) &&
                 kind == WasmBinaryFormat.MemoryExternalKind)
             {
                 memoryExports++;
             }
-            if (IsComponentExport(name, prefix))
+            if (removed.TryGetValue(name, out var expectedKind))
+            {
+                if (kind != expectedKind || !matched.Add(name))
+                    throw ComponentException.Invalid("core module internal export has a conflicting kind or identity");
+            }
+            else if (prefix is null || IsComponentExport(name, prefix))
             {
                 retained.Add(entry);
             }

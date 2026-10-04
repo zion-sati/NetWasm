@@ -43,6 +43,9 @@ for (const target of ['wasm32', 'wasm64']) {
       ...allowed, { ...allowed[0], kind: 'memory' },
     ], target), { message: 'Unexpected runtime import: netwasm.application.v1.netwasm.filter (memory)' });
   });
+  test(`${target}: rejects duplicate physical imports`, () => {
+    assert.throws(() => validateRuntimeImports([...allowed, allowed[0]], target), /Duplicate runtime import/);
+  });
   test(`${target}: rejects canonical imports for the other address width`, () => {
     const other = target === 'wasm32' ? 'wasm64' : 'wasm32';
     assert.throws(() => validateRuntimeImports(importsFor(other), target), /Unexpected runtime import/);

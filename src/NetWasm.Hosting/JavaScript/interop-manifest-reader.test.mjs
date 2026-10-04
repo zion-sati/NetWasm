@@ -157,8 +157,6 @@ test("parseInteropManifest validates export descriptors and uniqueness", () => {
     { ...base, name: "" },
     { ...base, parameters: null },
     { ...base, result: "bogus" },
-    { ...base, parameters: ["string"] },
-    { ...base, result: "string" },
   ]) {
     const manifest = createManifest();
     manifest.exports = [descriptor];
@@ -168,6 +166,17 @@ test("parseInteropManifest validates export descriptors and uniqueness", () => {
   const manifest = createManifest();
   manifest.exports = [base, { ...base }];
   expectInvalid(manifest, /duplicate managed export call/i);
+
+  for (const descriptor of [
+    { ...base, parameters: ["string"] },
+    { ...base, result: "string" },
+    { ...base, parameters: ["bytes"] },
+    { ...base, result: "bytes" },
+  ]) {
+    const stringManifest = createManifest();
+    stringManifest.exports = [descriptor];
+    assert.strictEqual(parseInteropManifest(stringManifest), stringManifest);
+  }
 });
 
 test("parseInteropManifest validates asynchronous export descriptors", () => {
@@ -177,7 +186,7 @@ test("parseInteropManifest validates asynchronous export descriptors", () => {
     result: "i32",
     asyncReturn: "task",
     statusExport: "status",
-    completeExport: "complete",
+    completeExport: "complete", completionResult: "exception-handle-v1",
     resultExport: "result",
   };
   for (const descriptor of [
@@ -187,7 +196,13 @@ test("parseInteropManifest validates asynchronous export descriptors", () => {
     { ...base, completeExport: 1 },
     { ...base, completeExport: "" },
     { ...base, resultExport: 1 },
+    { ...base, completionResult: undefined },
+    { ...base, completionResult: "void" },
     { ...base, resultExport: "" },
+    { ...base, parameters: ["string"] },
+    { ...base, result: "string" },
+    { ...base, parameters: ["bytes"] },
+    { ...base, result: "bytes" },
   ]) {
     const manifest = createManifest();
     manifest.exports = [descriptor];

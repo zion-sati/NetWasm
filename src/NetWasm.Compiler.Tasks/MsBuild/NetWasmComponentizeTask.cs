@@ -56,6 +56,8 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
 
     public string World { get; set; } = string.Empty;
 
+    public bool CompileAsLibrary { get; set; }
+
     public ITaskItem[] WitWorldVariants { get; set; } = [];
 
     [Required]
@@ -95,6 +97,8 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
 
     public string Optimization { get; set; } = "Oz";
 
+    public bool StructuredDiagnostics { get; set; }
+
     [Output]
     public ITaskItem[] Components { get; private set; } = [];
 
@@ -131,7 +135,7 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
                 inputs.WitImports));
             SelectedWitPath = wit.Path;
             SelectedWorld = wit.World ?? string.Empty;
-            var entryPoint = _entryPoints.Read(InputAssemblyPath);
+            var entryPoint = CompileAsLibrary ? null : _entryPoints.Read(InputAssemblyPath);
             using var session = _sessions.Create(
                 CreateWasmToolsCommand(),
                 CreateBinaryenConfiguration());
@@ -143,8 +147,9 @@ public sealed class NetWasmComponentizeTask : Microsoft.Build.Utilities.Task
                 OutputPath,
                 componentTarget,
                 inputs,
-                entryPoint.Abi,
-                optimization));
+                entryPoint?.Abi,
+                optimization,
+                StructuredDiagnostics));
             _manifests.Write(new(ComponentManifestPath, manifest));
             Components = [CreateComponentItem(manifest)];
             return true;

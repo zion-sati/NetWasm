@@ -1,0 +1,21 @@
+<Project>
+  <Target Name="UseCanonicalNetWasmSourceLinkRepository"
+          AfterTargets="InitializeSourceControlInformationFromSourceControlManager"
+          BeforeTargets="TranslateGitHubUrlsInSourceControlInformation"
+          Condition="'@(SourceRoot)' != ''">
+    <!--
+      SourceLink initializes SourceRoot metadata from the checkout's Git remote,
+      even when RepositoryUrl is already pinned for the package. Normalize both
+      inputs before the GitHub provider generates its document map so portable
+      PDBs are independent of a developer or CI clone URL.
+    -->
+    <PropertyGroup>
+      <ScmRepositoryUrl>$(RepositoryUrl)</ScmRepositoryUrl>
+    </PropertyGroup>
+    <ItemGroup>
+      <SourceRoot Update="@(SourceRoot)"
+                  RepositoryUrl="$(RepositoryUrl)"
+                  ScmRepositoryUrl="$(RepositoryUrl)" />
+    </ItemGroup>
+  </Target>
+</Project>

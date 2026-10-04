@@ -34,7 +34,11 @@ internal sealed record WasmModuleTarget(
         Request.ManagedCallSites,
         Request.ObjectArrayDelegateAdapters,
         Request.MemberExecution,
-        Request.CollectManagedMethodMemoryMetrics);
+        Request.CollectManagedMethodMemoryMetrics)
+    {
+        NativeImports = Plan.NativeImports,
+        NativeCallbacks = Plan.NativeCallbacks,
+    };
 }
 
 internal sealed record InstructionModuleTarget(
@@ -56,7 +60,11 @@ internal sealed record InstructionModuleTarget(
     ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
         ObjectArrayDelegateAdapters,
     MemberExecutionPlan MemberExecution,
-    bool CollectManagedMethodMemoryMetrics = false);
+    bool CollectManagedMethodMemoryMetrics = false)
+{
+    public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
+    public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
+}
 
 internal interface IWasmModuleTargetFactory
 {
@@ -76,7 +84,9 @@ IStaticInitializerFunctionPlanner staticInitializers) : IWasmModuleTargetFactory
         var moduleData = staticInitializers.Build(request, plan, moduleDataPlanner.Build(
             plannedMethods,
             request.StaticInitializers,
-            request.ConstructedStaticInitializers));
+            request.ConstructedStaticInitializers,
+            request.NativeCallbacks.Count != 0,
+            plan.StackTraceMethods));
         return new(
             request,
             plan,

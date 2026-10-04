@@ -51,7 +51,7 @@ internal sealed class EnumHasFlagEmitter(
         foreach (var storage in storages.Resolve())
         {
             EmitTypeId(code, receiver);
-            EmitConstant(code, storage.Descriptor.TypeId);
+            EmitConstant(code, storage.TypeId);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.If,
@@ -97,7 +97,7 @@ internal sealed class EnumHasFlagEmitter(
         SetLocal(code, temporaryI4);
 
         EmitTypeId(code, flag);
-        EmitConstant(code, storage.Descriptor.TypeId);
+        EmitConstant(code, storage.TypeId);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.If,

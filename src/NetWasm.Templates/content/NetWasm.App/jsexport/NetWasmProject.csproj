@@ -1,0 +1,13 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <OutputType>JsWebWorker</OutputType>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <NetWasmWorkerJavaScriptModule Include="notifications.mjs"
+                                   Module="netwasm:worker-template/notifications@1.0.0" />
+    <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

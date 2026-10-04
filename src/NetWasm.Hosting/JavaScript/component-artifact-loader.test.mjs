@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadComponentArtifacts } from "./component-artifact-loader.mjs";
 
+const encoder = new TextEncoder();
 const digest = character => character.repeat(64);
+const mapBytes = encoder.encode(JSON.stringify({
+  schemaVersion: 2,
+  buildId: "build",
+  entries: [],
+}));
+const stackTraceSymbolBytes = encoder.encode(JSON.stringify({
+  schemaVersion: 1,
+  methods: [{ id: 7, name: "EntryPoint.Run in Program.cs:line 12" }],
+}));
 const artifact = (relativePath, role, mediaType, sha256, schemaVersion = null) => ({
   relativePath,
   role,
@@ -16,8 +26,19 @@ const artifacts = () => [
   artifact("publish/app-component.js", "component-javascript", "text/javascript", digest("3")),
   artifact("publish/app-component.core2.wasm", "component-core-module", "application/wasm", digest("4")),
   artifact("publish/app-component.core.wasm", "component-core-module", "application/wasm", digest("5")),
+  artifact("publish/app.exceptions.json", "exception-type-map",
+    "application/vnd.netwasm.exception-types+json;version=2", digest("6"), 2),
+  artifact("publish/app.netwasm.stacktrace.json", "stack-trace-symbols",
+    "application/vnd.netwasm.stack-trace-symbols+json;version=1", digest("6"), 1),
 ];
-const markerDigests = new Map([[2, digest("2")], [3, digest("3")], [4, digest("4")], [5, digest("5")]]);
+const markerDigests = new Map([
+  [1, digest("1")],
+  [2, digest("2")],
+  [3, digest("3")],
+  [4, digest("4")],
+  [5, digest("5")],
+  [mapBytes[0], digest("6")],
+]);
 
 test("verifies the complete closure before importing and compiling exact owned bytes", async () => {
   const calls = [];
@@ -29,7 +50,11 @@ test("verifies the complete closure before importing and compiling exact owned b
     async readArtifact(value, signal) {
       assert.equal(signal, null);
       const marker = Number(value.sha256[0]);
-      const bytes = Uint8Array.of(marker, 9);
+      const bytes = value.role === "exception-type-map"
+        ? new Uint8Array(mapBytes)
+        : value.role === "stack-trace-symbols"
+          ? new Uint8Array(stackTraceSymbolBytes)
+        : Uint8Array.of(marker, 9);
       transportBuffers.set(value.relativePath, bytes);
       calls.push(`read:${marker}`);
       return bytes;
@@ -64,11 +89,17 @@ test("verifies the complete closure before importing and compiling exact owned b
 
   assert.equal(Object.isFrozen(loaded), true);
   assert.equal(loaded.adapter, adapter);
+  assert.equal(loaded.diagnosticArtifacts.manifest.buildId, "build");
+  assert.equal(loaded.diagnosticArtifacts.manifest.wasmSha256, digest("1"));
+  assert.equal(loaded.diagnosticArtifacts.manifest.exceptionTypeMapSha256, digest("6"));
+  assert.deepEqual(loaded.stackTraceSymbols, [
+    { id: 7, name: "EntryPoint.Run in Program.cs:line 12" },
+  ]);
   assert.deepEqual(loaded.loadCoreModule("app-component.core.wasm"), { marker: 5 });
   assert.deepEqual(loaded.loadCoreModule("app-component.core2.wasm"), { marker: 4 });
   assert.throws(() => loaded.loadCoreModule("APP-component.core.wasm"), /unavailable/);
   const firstUse = calls.findIndex(value => value.startsWith("import:") || value.startsWith("compile:"));
-  assert.equal(calls.slice(0, firstUse).filter(value => value.startsWith("hash:")).length, 4);
+  assert.equal(calls.slice(0, firstUse).filter(value => value.startsWith("hash:")).length, 7);
   assert.equal(calls.slice(firstUse).some(value => value.startsWith("hash:")), false);
   for (const bytes of transportBuffers.values()) assert.notEqual(bytes[0], 255);
 });
@@ -76,6 +107,57 @@ test("verifies the complete closure before importing and compiling exact owned b
 test("loads browser artifacts through the identical shared contract", async () => {
   const loaded = await loadComponentArtifacts(createRequest({ deploymentKind: "browser" }));
   assert.equal(loaded.adapter.contractKey, "wasi-command@0.2.11");
+});
+
+test("loads an older component closure without diagnostic artifacts", async () => {
+  const request = createRequest();
+  request.artifacts = request.artifacts.filter(
+    value => value.role !== "exception-type-map" && value.role !== "stack-trace-symbols");
+  const loaded = await loadComponentArtifacts(request);
+  assert.equal(loaded.diagnosticArtifacts, undefined);
+  assert.deepEqual(loaded.stackTraceSymbols, []);
+});
+
+test("rejects a malformed stack-trace sidecar", async () => {
+  const request = createRequest({
+    readArtifact: async value => value.role === "stack-trace-symbols"
+      ? encoder.encode(JSON.stringify({
+        schemaVersion: 2,
+        methods: [],
+      }))
+      : value.role === "exception-type-map"
+        ? new Uint8Array(mapBytes)
+        : Uint8Array.of(Number(value.sha256[0]), 9),
+  });
+  await assert.rejects(() => loadComponentArtifacts(request),
+    /stack-trace symbol sidecar schema/u);
+});
+
+test("rejects malformed component exception type maps before module use", async () => {
+  for (const bytes of [
+    encoder.encode("{"),
+    encoder.encode("null"),
+    encoder.encode("[]"),
+    encoder.encode(JSON.stringify({ schemaVersion: 1, buildId: "build", entries: [] })),
+    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: 7, entries: [] })),
+    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: "", entries: [] })),
+    encoder.encode(JSON.stringify({ schemaVersion: 2, buildId: "build", entries: null })),
+  ]) {
+    const calls = [];
+    const request = createRequest({
+      readArtifact: async value => value.role === "exception-type-map"
+        ? bytes
+        : value.role === "stack-trace-symbols"
+          ? new Uint8Array(stackTraceSymbolBytes)
+          : Uint8Array.of(Number(value.sha256[0]), 9),
+      hashBytes: async value => markerDigests.get(value[0]) ?? digest("6"),
+      importModule: async () => { calls.push("import"); return {}; },
+      compileCoreModule: async () => { calls.push("compile"); return {}; },
+    });
+
+    await assert.rejects(() => loadComponentArtifacts(request), /exception type map/);
+    assert.deepEqual(calls, []);
+  }
 });
 
 test("rejects integrity failures before importing or compiling", async () => {
@@ -180,7 +262,11 @@ function createRequest(overrides = {}) {
   return {
     deploymentKind: "component",
     artifacts: artifacts(),
-    readArtifact: async value => Uint8Array.of(Number(value.sha256[0]), 9),
+    readArtifact: async value => value.role === "exception-type-map"
+      ? new Uint8Array(mapBytes)
+      : value.role === "stack-trace-symbols"
+        ? new Uint8Array(stackTraceSymbolBytes)
+      : Uint8Array.of(Number(value.sha256[0]), 9),
     hashBytes: async bytes => markerDigests.get(bytes[0]),
     importModule: async (_bytes, value) => value.role === "component-adapter"
       ? {

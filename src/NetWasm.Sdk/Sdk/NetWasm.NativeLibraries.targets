@@ -1,0 +1,41 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Source libraries return requirements only. Archive selection, validation,
+       hashing and linking remain owned by executable-root materialization. -->
+  <Target Name="NetWasmCollectNativeLibraries"
+          DependsOnTargets="PrepareProjectReferences"
+          Condition="'$(TargetFramework)' != ''">
+    <ItemGroup>
+      <!-- The SDK promotes transitive references to synthetic direct edges.
+           Recurse only through original edges so shortcuts cannot bypass an
+           excluded ancestor or amplify its native requirement contributions. -->
+      <_NetWasmNativeSourceReference Include="@(_MSBuildProjectReferenceExistent)" />
+      <_NetWasmNativeSourceReference Remove="@(_TransitiveProjectReferences)"
+                                     MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+    </ItemGroup>
+    <MSBuild Projects="@(_NetWasmNativeSourceReference)"
+             Targets="NetWasmGetNativeLibraries"
+             BuildInParallel="$(BuildInParallel)"
+             Properties="%(_NetWasmNativeSourceReference.SetConfiguration);%(_NetWasmNativeSourceReference.SetPlatform);%(_NetWasmNativeSourceReference.SetTargetFramework);NetWasmTarget=$(NetWasmTarget)"
+             RemoveProperties="%(_NetWasmNativeSourceReference.GlobalPropertiesToRemove);$(_GlobalPropertiesToRemoveFromProjectReferences)"
+             Condition="'@(_NetWasmNativeSourceReference)' != '' AND '%(_NetWasmNativeSourceReference.ReferenceOutputAssembly)' != 'false' AND '%(_NetWasmNativeSourceReference.BuildReference)' != 'false'"
+             SkipNonexistentTargets="true">
+      <Output TaskParameter="TargetOutputs" ItemName="NativeLibrary" />
+    </MSBuild>
+  </Target>
+
+  <!-- BeforeTargets customization executes after the collection dependency.
+       Use that seam for ordinary root Remove/Update of returned source assets. -->
+  <Target Name="NetWasmGetNativeLibraries"
+          DependsOnTargets="NetWasmCollectNativeLibraries"
+          BeforeTargets="NetWasmRuntimePackMaterialize"
+          Condition="'$(TargetFramework)' != ''"
+          Returns="@(_NetWasmResolvedNativeLibrary)"
+          KeepDuplicateOutputs="true">
+    <ItemGroup>
+      <_NetWasmResolvedNativeLibrary Remove="@(_NetWasmResolvedNativeLibrary)" />
+      <_NetWasmResolvedNativeLibrary Include="@(NativeLibrary->'%(FullPath)')" KeepDuplicates="true" />
+      <NativeLibrary Remove="@(NativeLibrary)" />
+      <NativeLibrary Include="@(_NetWasmResolvedNativeLibrary)" KeepDuplicates="true" />
+    </ItemGroup>
+  </Target>
+</Project>

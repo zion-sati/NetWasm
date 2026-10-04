@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using NetWasm.Compiler.Core;
 
@@ -10,7 +10,7 @@ internal sealed class MetadataImplementedInterfaceResolver(
     IMetadataAssemblyResolver assemblies,
     IMetadataSignatureTypeResolver signatureTypes) : IImplementedInterfaceResolver
 {
-    private readonly Dictionary<CliTypeIdentity, ImmutableArray<CliTypeIdentity>> _interfaces = [];
+    private readonly ConcurrentDictionary<CliTypeIdentity, ImmutableArray<CliTypeIdentity>> _interfaces = [];
 
     public ImmutableArray<CliTypeIdentity> GetInterfaces(CliTypeIdentity type)
     {
@@ -20,8 +20,7 @@ internal sealed class MetadataImplementedInterfaceResolver(
         }
 
         interfaces = GetInterfacesUncached(type);
-        _interfaces.Add(type, interfaces);
-        return interfaces;
+        return _interfaces.GetOrAdd(type, interfaces);
     }
 
     private ImmutableArray<CliTypeIdentity> GetInterfacesUncached(CliTypeIdentity type)

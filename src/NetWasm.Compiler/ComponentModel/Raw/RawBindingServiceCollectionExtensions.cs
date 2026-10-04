@@ -29,6 +29,7 @@ internal static class RawBindingServiceCollectionExtensions
         services.AddSingleton<IRawModuleInspectionProtocolReader, RawModuleInspectionProtocolReader>();
         services.AddSingleton<IRawModuleImportSignatureReader, RawModuleImportSignatureReader>();
         services.AddSingleton<IRawCompilerImportDeclarationBuilder, RawCompilerImportDeclarationBuilder>();
+        services.AddSingleton<IRawCoreRuntimeImportDeclarationBuilder, RawCoreRuntimeImportDeclarationBuilder>();
         services.AddSingleton<IRawBuildImportSourceValidator,
             RawBuildImportSourceValidator>();
         services.AddSingleton<IRawBuildImportValidator, RawBuildImportValidator>();

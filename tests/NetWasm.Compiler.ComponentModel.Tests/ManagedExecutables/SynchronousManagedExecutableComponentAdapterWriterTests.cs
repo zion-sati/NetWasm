@@ -56,6 +56,38 @@ public sealed class SynchronousManagedExecutableComponentAdapterWriterTests
             $"(export \"{canonicalPrefix}|wasi:cli/run@0.2|run\")",
             modules.Source);
         Assert.DoesNotContain($"{canonicalPrefix}_memory", modules.Source);
+        Assert.DoesNotContain("terminal_exception", modules.Source);
+        Assert.DoesNotContain("$entered", modules.Source);
+        Assert.DoesNotContain("netwasm:diagnostics", modules.Source);
+        Assert.DoesNotContain("command_exception_", modules.Source);
+    }
+
+    [Theory]
+    [InlineData("wasm32", "i32", "cm32p2")]
+    [InlineData("wasm64", "i64", "cm64p2")]
+    public void StructuredModeWritesTypedCompletionAdapter(
+        string width,
+        string addressType,
+        string canonicalPrefix)
+    {
+        var modules = new RecordingWasmTextModuleWriter();
+        var writer = new SynchronousManagedExecutableComponentAdapterWriter(modules);
+
+        writer.Write(new(
+            "managed-executable.wasm",
+            new ComponentTarget(width, "0.2", "utf8"),
+            new(
+                ManagedExecutableParameterShape.None,
+                ManagedExecutableReturnShape.ExitCode),
+            StructuredDiagnostics: true));
+
+        Assert.Contains("(catch $terminal $failed)", modules.Source);
+        Assert.Contains("global.get $entered if unreachable end", modules.Source);
+        Assert.Contains($"(export \"{canonicalPrefix}|netwasm:diagnostics/command@1|run\")", modules.Source);
+        Assert.Contains($"(export \"{canonicalPrefix}|netwasm:diagnostics/command@1|run_post\")", modules.Source);
+        Assert.Contains($"(func $completion (param i32) (result {addressType}))", modules.Source);
+        Assert.Contains("if call $write i32.const 1 return end local.get $status", modules.Source);
+        Assert.Contains("call $execute call $completion", modules.Source);
     }
 
     [Fact]

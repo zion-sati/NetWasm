@@ -5,4 +5,5 @@ namespace NetWasm.Compiler.ComponentModel.ManagedExecutables;
 public sealed record ManagedExecutableComponentAdapterRequest(
     string OutputPath,
     ComponentTarget Target,
-    ManagedExecutableEntryPointAbi EntryPoint);
+    ManagedExecutableEntryPointAbi EntryPoint,
+    bool StructuredDiagnostics = false);

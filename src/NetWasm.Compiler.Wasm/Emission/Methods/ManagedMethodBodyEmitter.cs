@@ -57,7 +57,9 @@ internal sealed class ManagedMethodBodyEmitter(
                     emittedMethod.Body,
                     context,
                     target,
-                    functionIndices));
+                    functionIndices),
+            target.NativeImports,
+            target.MemberExecution);
         return new ManagedMethodBodyEmission(
             emission.Body,
             emission.WasmInstructionCount,

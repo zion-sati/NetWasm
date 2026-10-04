@@ -35,6 +35,7 @@ internal sealed class FrontendArtifactEligibilityClassifier :
             Any(instructions.Dispatches, item => References(item.Declaration, entry)) ||
             Any(instructions.CallableMethods, method => References(method, entry)) ||
             Any(instructions.CallSites, site => References(site, entry)) ||
+            Any(instructions.NativeCallbacks, method => References(method, entry)) ||
             Any(instructions.MethodDescriptors, method => References(method, entry)) ||
             Any(instructions.FieldDescriptors, field => References(field, entry)) ||
             References(request.StructuredMethod, entry);
@@ -53,7 +54,8 @@ internal sealed class FrontendArtifactEligibilityClassifier :
             block.Instructions.Any(instruction => References(instruction, entry)) ||
             block.Exit is StructuredTerminalExit terminal && References(terminal.Instruction, entry)) ||
         method.ExceptionGroups.Values.Any(group => group.Clauses.Any(clause =>
-            clause.CatchType is EntityKey catchType && References(catchType, entry)));
+            clause.CatchType is EntityKey catchType && References(catchType, entry) ||
+            clause.CatchTypeIdentity is { } identity && References(identity, entry)));
 
     private static bool References(CilMethodBody body, AssemblyIdentity entry) =>
         References(body.Method, entry) ||
@@ -61,7 +63,8 @@ internal sealed class FrontendArtifactEligibilityClassifier :
         body.LocalSignatureTypes.Any(type => References(type, entry)) ||
         body.Instructions.Any(instruction => References(instruction, entry)) ||
         body.ExceptionRegions.Any(region =>
-            region.CatchType is EntityKey catchType && References(catchType, entry));
+            region.CatchType is EntityKey catchType && References(catchType, entry) ||
+            region.CatchTypeIdentity is { } identity && References(identity, entry));
 
     private static bool References(CilInstruction instruction, AssemblyIdentity entry) =>
         instruction.Operand switch

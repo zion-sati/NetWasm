@@ -11,6 +11,7 @@ dotnet test "$repo_root/NetWasm.slnx" --no-restore --nologo --maxcpucount:1
 "$repo_root/tests/end-to-end/host-interop/javascript/run.sh"
 
 "$repo_root/tests/end-to-end/component-model/run-component-diagnostics.sh"
+"$repo_root/tests/end-to-end/component-model/run-command-diagnostics.sh"
 "$repo_root/tests/end-to-end/component-model/run-jco-browser.sh"
 "$repo_root/tests/end-to-end/component-model/run-string-component.sh"
 "$repo_root/tests/end-to-end/component-model/run-resource-component.sh"

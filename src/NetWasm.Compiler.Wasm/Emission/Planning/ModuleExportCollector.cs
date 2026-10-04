@@ -9,19 +9,24 @@ internal sealed class ModuleExportCollector : IModuleExportCollector
 {
     public IReadOnlyList<WasmExport> Collect(
         WasmEntryPointProfile entryPointProfile,
-        int entryPointIndex,
+        int? entryPointIndex,
         int filterDispatcherIndex,
         int finalizerDispatcherIndex,
         IReadOnlyDictionary<string, int> requestedExports,
         IReadOnlyDictionary<string, int> hostCallbacks,
+        IReadOnlyDictionary<string, int> nativeCallbacks,
         IReadOnlyDictionary<string, int> asyncImports,
         IReadOnlyDictionary<string, int> asyncExportHelpers)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(entryPointIndex);
+        if (entryPointIndex is { } entryIndex)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(entryIndex);
+        }
         ArgumentOutOfRangeException.ThrowIfNegative(filterDispatcherIndex);
         ArgumentOutOfRangeException.ThrowIfNegative(finalizerDispatcherIndex);
         ArgumentNullException.ThrowIfNull(requestedExports);
         ArgumentNullException.ThrowIfNull(hostCallbacks);
+        ArgumentNullException.ThrowIfNull(nativeCallbacks);
         ArgumentNullException.ThrowIfNull(asyncImports);
         ArgumentNullException.ThrowIfNull(asyncExportHelpers);
 
@@ -32,10 +37,12 @@ internal sealed class ModuleExportCollector : IModuleExportCollector
         };
         if (entryPointProfile == WasmEntryPointProfile.Process)
         {
-            exports.Insert(0, new("run", entryPointIndex));
+            exports.Insert(0, new("run", entryPointIndex ?? throw new ArgumentException(
+                "Process modules require an entry-point function index.", nameof(entryPointIndex))));
         }
         AddOrdered(exports, requestedExports);
         AddOrdered(exports, hostCallbacks);
+        AddOrdered(exports, nativeCallbacks);
         AddOrdered(exports, asyncImports);
         AddOrdered(exports, asyncExportHelpers);
         return exports;

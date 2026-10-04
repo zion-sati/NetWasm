@@ -15,7 +15,7 @@ internal interface ICompilationDiagnosticTraceStage
         ReachableProgram program,
         WasmMethodLoweringResult lowering,
         CompilationLayouts layouts,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         WasmTarget target,
         int staticDataEnd);
 }
@@ -53,7 +53,7 @@ internal sealed class CompilationDiagnosticTraceStage(
         ReachableProgram program,
         WasmMethodLoweringResult lowering,
         CompilationLayouts layouts,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         WasmTarget target,
         int staticDataEnd)
     {

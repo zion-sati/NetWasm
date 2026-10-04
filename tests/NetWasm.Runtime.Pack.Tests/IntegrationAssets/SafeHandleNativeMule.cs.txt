@@ -1,0 +1,314 @@
+using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
+
+namespace NativeMule;
+
+internal sealed class MuleSafeHandle : SafeHandle
+{
+    private readonly bool _disposeDuringRelease;
+
+    private MuleSafeHandle() : base(IntPtr.Zero, ownsHandle: true)
+    {
+    }
+
+    internal MuleSafeHandle(nint value, bool ownsHandle, bool disposeDuringRelease = false)
+        : base(IntPtr.Zero, ownsHandle)
+    {
+        SetHandle(value);
+        _disposeDuringRelease = disposeDuringRelease;
+    }
+
+    public override bool IsInvalid => handle == IntPtr.Zero;
+
+    protected override bool ReleaseHandle()
+    {
+        if (_disposeDuringRelease)
+        {
+            Dispose();
+        }
+
+        return Native.ReleaseHandle(handle) == 42;
+    }
+}
+
+internal static partial class Native
+{
+    [LibraryImport("mule", EntryPoint = "native_mule_handle_reset")]
+    internal static partial void ResetHandles();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_handle_borrow")]
+    internal static partial int BorrowHandle(MuleSafeHandle handle);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_handle_release")]
+    internal static partial int ReleaseHandle(nint handle);
+
+    [LibraryImport("mule", EntryPoint = "native_mule_handle_borrow_count")]
+    internal static partial int BorrowCount();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_handle_release_count")]
+    internal static partial int ReleaseCount();
+}
+
+public static unsafe partial class EntryPoint
+{
+    private const int HandleValue = 0x1234;
+
+    [LibraryImport("mule", EntryPoint = "native_mule_probe")]
+    private static partial int Probe();
+
+    [LibraryImport("mule", EntryPoint = "native_mule_data_end")]
+    private static partial nuint DataEnd();
+
+    public static int Run(int input)
+    {
+        if (Probe() != 180 || DataEnd() <= 2 * 1024 * 1024)
+        {
+            return -1;
+        }
+
+        if (!GeneratedBorrowAndRepeatedDispose())
+        {
+            return -2;
+        }
+
+        if (!NestedBorrowDefersRelease())
+        {
+            return -3;
+        }
+
+        if (!ManagedFailureBalancesBorrow())
+        {
+            return -4;
+        }
+
+        if (!ClosedAndNullHandlesRejectBeforeNativeCall())
+        {
+            return -5;
+        }
+
+        if (!InvalidNonOwningAndInvalidatedHandlesDoNotRelease())
+        {
+            return -6;
+        }
+
+        if (!ReentrantReleaseOccursOnce())
+        {
+            return -7;
+        }
+
+        var finalization = FinalizationReleasesExactlyOnce();
+        if (finalization != 0)
+        {
+            return -80 - finalization;
+        }
+
+        if (!BorrowKeepsHandleAliveAcrossCollection())
+        {
+            return -9;
+        }
+
+        if (!BorrowingSurvivesMemoryGrowth())
+        {
+            return -10;
+        }
+
+        return 42;
+    }
+
+    private static bool GeneratedBorrowAndRepeatedDispose()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        if (Native.BorrowHandle(handle) != 42 || Native.BorrowCount() != 1 || Native.ReleaseCount() != 0)
+        {
+            return false;
+        }
+
+        handle.Dispose();
+        handle.Dispose();
+        return handle.IsClosed && Native.ReleaseCount() == 1;
+    }
+
+    private static bool NestedBorrowDefersRelease()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        var first = new SafeHandleMarshaller<MuleSafeHandle>.ManagedToUnmanagedIn();
+        var second = new SafeHandleMarshaller<MuleSafeHandle>.ManagedToUnmanagedIn();
+        first.FromManaged(handle);
+        second.FromManaged(handle);
+        if (first.ToUnmanaged() != HandleValue || second.ToUnmanaged() != HandleValue)
+        {
+            return false;
+        }
+
+        handle.Dispose();
+        if (Native.ReleaseCount() != 0)
+        {
+            return false;
+        }
+
+        first.Free();
+        if (Native.ReleaseCount() != 0)
+        {
+            return false;
+        }
+
+        second.Free();
+        return Native.ReleaseCount() == 1;
+    }
+
+    private static bool ManagedFailureBalancesBorrow()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        var marshaller = new SafeHandleMarshaller<MuleSafeHandle>.ManagedToUnmanagedIn();
+        try
+        {
+            marshaller.FromManaged(handle);
+            handle.Dispose();
+            throw new InvalidOperationException();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        finally
+        {
+            marshaller.Free();
+        }
+
+        return Native.ReleaseCount() == 1;
+    }
+
+    private static bool ClosedAndNullHandlesRejectBeforeNativeCall()
+    {
+        Native.ResetHandles();
+        var closed = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        closed.Dispose();
+        var rejectedClosed = false;
+        try
+        {
+            Native.BorrowHandle(closed);
+        }
+        catch (ObjectDisposedException)
+        {
+            rejectedClosed = true;
+        }
+
+        var rejectedNull = false;
+        try
+        {
+            Native.BorrowHandle(null!);
+        }
+        catch (NullReferenceException)
+        {
+            rejectedNull = true;
+        }
+
+        return rejectedClosed && rejectedNull && Native.BorrowCount() == 0 && Native.ReleaseCount() == 1;
+    }
+
+    private static bool InvalidNonOwningAndInvalidatedHandlesDoNotRelease()
+    {
+        Native.ResetHandles();
+        var invalid = new MuleSafeHandle(0, ownsHandle: true);
+        invalid.Dispose();
+
+        var nonOwning = new MuleSafeHandle(HandleValue, ownsHandle: false);
+        nonOwning.Dispose();
+
+        var invalidated = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        invalidated.SetHandleAsInvalid();
+        invalidated.Dispose();
+
+        return invalid.IsClosed && nonOwning.IsClosed && invalidated.IsClosed && Native.ReleaseCount() == 0;
+    }
+
+    private static bool ReentrantReleaseOccursOnce()
+    {
+        Native.ResetHandles();
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true, disposeDuringRelease: true);
+        handle.Dispose();
+        handle.Dispose();
+        return Native.ReleaseCount() == 1;
+    }
+
+    private static int FinalizationReleasesExactlyOnce()
+    {
+        Native.ResetHandles();
+        CreateUnreachableHandle(dispose: false);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        if (Native.ReleaseCount() != 1)
+        {
+            return 1;
+        }
+
+        Native.ResetHandles();
+        CreateUnreachableHandle(dispose: true);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        return Native.ReleaseCount() == 1 ? 0 : 2;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CreateUnreachableHandle(bool dispose)
+    {
+        var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+        if (dispose)
+        {
+            handle.Dispose();
+        }
+    }
+
+    private static bool BorrowKeepsHandleAliveAcrossCollection()
+    {
+        Native.ResetHandles();
+        BorrowAcrossCollection();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        return Native.ReleaseCount() == 1;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void BorrowAcrossCollection()
+    {
+        var marshaller = new SafeHandleMarshaller<MuleSafeHandle>.ManagedToUnmanagedIn();
+        marshaller.FromManaged(new MuleSafeHandle(HandleValue, ownsHandle: true));
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        if (Native.ReleaseCount() != 0)
+        {
+            throw new InvalidOperationException();
+        }
+
+        marshaller.Free();
+    }
+
+    private static bool BorrowingSurvivesMemoryGrowth()
+    {
+        var grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
+        try
+        {
+            if ((nuint)grown < DataEnd())
+            {
+                return false;
+            }
+
+            grown[0] = 3;
+            grown[6 * 1024 * 1024 - 1] = 71;
+            Native.ResetHandles();
+            var handle = new MuleSafeHandle(HandleValue, ownsHandle: true);
+            var borrowed = Native.BorrowHandle(handle) == 42;
+            handle.Dispose();
+            return borrowed && Native.ReleaseCount() == 1 &&
+                grown[0] == 3 && grown[6 * 1024 * 1024 - 1] == 71;
+        }
+        finally
+        {
+            NativeMemory.Free(grown);
+        }
+    }
+}

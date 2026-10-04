@@ -149,4 +149,28 @@ public sealed class CliTypeIdentityFactoryTests
     {
         Assert.Throws<ArgumentNullException>(() => CliTypeIdentity.FromDefinition(null!));
     }
+
+    [Fact]
+    public void ScopedGenericParametersPreserveShapeAndOwnerIdentity()
+    {
+        var first = CliTypeIdentity.ScopedGenericParameter("first", false, 0);
+        var second = CliTypeIdentity.ScopedGenericParameter("second", false, 0);
+        var method = CliTypeIdentity.ScopedGenericParameter("first", true, 1);
+
+        Assert.Equal(CliTypeShape.GenericTypeParameter, first.Shape);
+        Assert.Equal(0, first.GenericParameterIndex);
+        Assert.True(first.ContainsGenericParameters);
+        Assert.NotEqual(first, second);
+        Assert.Equal(CliTypeShape.GenericMethodParameter, method.Shape);
+        Assert.Equal(1, method.GenericParameterIndex);
+    }
+
+    [Fact]
+    public void ScopedGenericParametersValidateTheirScopeAndIndex()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            CliTypeIdentity.ScopedGenericParameter("", false, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CliTypeIdentity.ScopedGenericParameter("owner", false, -1));
+    }
 }

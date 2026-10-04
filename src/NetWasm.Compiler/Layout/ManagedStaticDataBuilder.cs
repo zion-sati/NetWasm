@@ -15,6 +15,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
     private readonly ITypeDescriptorBuilder _typeDescriptors;
     private readonly IConstructedTypeDescriptorBuilder _constructedTypeDescriptors;
     private readonly IValueTypeDescriptorBuilder _valueTypeDescriptors;
+    private readonly IRuntimeGenericArgumentMetadataBuilder _genericArguments;
     private readonly IMemberDescriptorDataBuilder _memberDescriptors;
     private readonly IStringDataBuilder _strings;
     private readonly IExceptionObjectBuilder _exceptionObjects;
@@ -33,6 +34,35 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         IStringDataBuilder strings,
         IExceptionObjectBuilder exceptionObjects,
         IEnumMetadataCollector enumMetadataCollector,
+        IEnumMetadataBuilder enumMetadata) :
+        this(
+            types,
+            state,
+            staticFields,
+            typeDescriptors,
+            constructedTypeDescriptors,
+            valueTypeDescriptors,
+            EmptyRuntimeGenericArgumentMetadataBuilder.Instance,
+            memberDescriptors,
+            strings,
+            exceptionObjects,
+            enumMetadataCollector,
+            enumMetadata)
+    {
+    }
+
+    internal ManagedStaticDataBuilder(
+        ManagedTypeLayouts types,
+        ManagedStaticDataBuildState state,
+        IStaticFieldStorageBuilder staticFields,
+        ITypeDescriptorBuilder typeDescriptors,
+        IConstructedTypeDescriptorBuilder constructedTypeDescriptors,
+        IValueTypeDescriptorBuilder valueTypeDescriptors,
+        IRuntimeGenericArgumentMetadataBuilder genericArguments,
+        IMemberDescriptorDataBuilder memberDescriptors,
+        IStringDataBuilder strings,
+        IExceptionObjectBuilder exceptionObjects,
+        IEnumMetadataCollector enumMetadataCollector,
         IEnumMetadataBuilder enumMetadata)
     {
         _types = types ?? throw new ArgumentNullException(nameof(types));
@@ -45,6 +75,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
             throw new ArgumentNullException(nameof(constructedTypeDescriptors));
         _valueTypeDescriptors = valueTypeDescriptors ??
             throw new ArgumentNullException(nameof(valueTypeDescriptors));
+        _genericArguments = genericArguments ??
+            throw new ArgumentNullException(nameof(genericArguments));
         _memberDescriptors = memberDescriptors ??
             throw new ArgumentNullException(nameof(memberDescriptors));
         _strings = strings ?? throw new ArgumentNullException(nameof(strings));
@@ -61,6 +93,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         _typeDescriptors.Build();
         _constructedTypeDescriptors.Build();
         _valueTypeDescriptors.Build();
+        _genericArguments.Build();
         _enumMetadataCollector.Collect();
         _strings.Build();
         _memberDescriptors.Build();
@@ -82,6 +115,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
             _state.ValueTypeDescriptors.ToImmutable(),
             [.. _state.StaticRoots.Order()])
         {
+            MetadataTypeDescriptors = _state.MetadataTypeDescriptors.ToImmutable(),
             EnumMetadata = _state.EnumMetadata.ToImmutable(),
             MethodDescriptors = _state.MethodDescriptors.ToImmutableDictionary(
                 StringComparer.Ordinal),
@@ -105,6 +139,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
             var names = facts.Names is null
                 ? 0
                 : RuntimeTypeFactsEncoding.AddNames(_state, _target, facts.Names);
+            var genericArgumentTypeIds = AddGenericArgumentTypeIds(
+                facts.GenericArgumentTypeIds);
             RuntimeTypeFactsEncoding.Add(
                 _state,
                 _target,
@@ -115,9 +151,32 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
                 facts.AssignableTypeIdsAddress,
                 facts.AssignableTypeIdCount,
                 GetDelegateInvokeAddress(facts),
-                names);
+                names,
+                genericArgumentTypeIds,
+                facts.GenericArgumentTypeIds.Length);
         }
         BuildTypeFactsTable();
+    }
+
+    private int AddGenericArgumentTypeIds(ImmutableArray<int> typeIds)
+    {
+        if (typeIds.IsEmpty)
+        {
+            return 0;
+        }
+
+        _state.Cursor = ManagedTypeLayoutCompiler.Align(_state.Cursor, sizeof(int));
+        var address = _state.Cursor;
+        var bytes = new byte[checked(typeIds.Length * sizeof(int))];
+        for (int index = 0; index < typeIds.Length; index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                bytes.AsSpan(index * sizeof(int)),
+                typeIds[index]);
+        }
+        _state.Segments.Add(new DataSegment(address, [.. bytes]));
+        _state.Cursor += bytes.Length;
+        return address;
     }
 
     private int GetDelegateInvokeAddress(PendingRuntimeTypeFacts facts)
@@ -145,6 +204,8 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         var descriptorTypeIds = _state.TypeDescriptors
             .Select(descriptor => descriptor.TypeId)
             .Concat(_state.ConstructedTypeDescriptors.Select(descriptor =>
+                descriptor.TypeId))
+            .Concat(_state.MetadataTypeDescriptors.Select(descriptor =>
                 descriptor.TypeId))
             .ToHashSet();
         if (!descriptorTypeIds.SetEquals(_state.TypeFacts.Keys))

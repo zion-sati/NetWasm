@@ -8,5 +8,6 @@ internal interface IRootMapInvariantValidator
         ITypeRepository types,
         IFieldRepository fields,
         IMethodRepository methods,
-        ReachableProgram program);
+        ReachableProgram program,
+        ITypeClassifier typeClassifier);
 }

@@ -174,6 +174,7 @@ internal static class CompilerTestSupport
             $"const memory=new WebAssembly.Memory({memoryDescriptorText});" +
             "let heap=16;let initialized=false;let environmentReads=0;" +
             "let lastException=0;" +
+            "let terminalExceptionType=0;let terminalExceptionMessage=null;" +
             "let departedExceptionFrame=null;" +
             "let filterSearchFloor=0;let application=null;" +
             "let nextPollable=1;const watchedTokens=[];const weakHandles=[0];const gcHandles=[null];const canceledTokens=new Set();" +
@@ -360,7 +361,13 @@ internal static class CompilerTestSupport
             "const view=new DataView(memory.buffer);view.setUint32(result,0,true);" +
             "view.setUint32(result+4,0,true);}};" +
             "const unusedWasiFilesystem=new Proxy({}, {get:()=>z});" +
-            "const host=new Proxy({ write_i32: z, report_terminal_exception_v1: (typeId, messageReference, messageLength) => { let message = null; if (messageReference !== 0 && messageReference !== 0n) { const characters = new Uint16Array(memory.buffer, Number(messageReference) + 8, Number(messageLength)); message = String.fromCharCode(...characters); } throw new Error('terminal exception type=' + typeId + ' message=' + message); } }, {get:(target,name)=>target[name]||z});" +
+            "const host=new Proxy({write_i32:z,raise_terminal_exception:z," +
+            "report_terminal_exception_v2:(typeId,messageReference,messageLength)=>{" +
+            "let message=null;if(messageReference!==0&&messageReference!==0n){" +
+            "const characters=new Uint16Array(memory.buffer,Number(messageReference)+8," +
+            "Number(messageLength));message=String.fromCharCode(...characters);}" +
+            "terminalExceptionType=typeId;terminalExceptionMessage=message;}}," +
+            "{get:(target,name)=>target[name]||z});" +
             "WebAssembly.instantiate(fs.readFileSync(process.argv[1]),{" +
             "'netwasm.runtime.v1':runtime,'netwasm.host.v1':host," +
             "'cm32p2|wasi:clocks/wall-clock@0.2':wasiWallClock," +
@@ -387,7 +394,8 @@ internal static class CompilerTestSupport
             "result=x.instance.exports[" + observeExportText + "](" + inputText + ");}" +
             "process.stdout.write(String(result));})" +
             ".catch(e=>{const type=lastException?new DataView(memory.buffer).getInt32(lastException,true):0;" +
-            "process.stderr.write(`managed exception pointer=${lastException} type=${type}\\n${e.stack}\\n`);" +
+            "const terminalWasmTrap=e instanceof WebAssembly.RuntimeError;" +
+            "process.stderr.write(`terminal exception type=${terminalExceptionType} message=${terminalExceptionMessage}\\nterminal wasm trap=${terminalWasmTrap}\\nmanaged exception pointer=${lastException} type=${type}\\n${e.stack}\\n`);" +
             "process.exitCode=1;});";
         var start = new ProcessStartInfo("node")
         {
@@ -445,6 +453,69 @@ internal static class CompilerTestSupport
         bool observeAsyncProcess = false,
         int expectedEnvironmentReads = 1,
         int expectedPreopenReads = 1,
+        int entryInvocationCount = 1) =>
+        ExecuteWithStandardWasiNodeCore(
+            module,
+            directory,
+            input.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            target,
+            staticDataEnd,
+            environment,
+            timeZoneAssetPath,
+            stackTraceSymbols,
+            drainReactor,
+            observeExportName,
+            entryExportName,
+            observeAsyncProcess,
+            expectedEnvironmentReads,
+            expectedPreopenReads,
+            entryInvocationCount).GetProperty("value").GetInt32();
+
+    internal static long ExecuteWithStandardWasiNode(
+        byte[] module,
+        string directory,
+        long input,
+        WasmTarget target,
+        int staticDataEnd,
+        string entryExportName)
+    {
+        var inputPath = Path.Combine(directory, $"wasi-input-i64-{target}.json");
+        File.WriteAllText(inputPath, System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new { i64 = input.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+        }));
+        var observation = ExecuteWithStandardWasiNodeCore(
+            module,
+            directory,
+            "@" + inputPath,
+            target,
+            staticDataEnd,
+            ImmutableDictionary<string, string>.Empty,
+            null,
+            entryExportName: entryExportName);
+        var value = observation.GetProperty("value");
+        var descriptor = Assert.Single(value.EnumerateObject());
+        Assert.Equal("i64", descriptor.Name);
+        Assert.Equal(System.Text.Json.JsonValueKind.String, descriptor.Value.ValueKind);
+        return long.Parse(descriptor.Value.GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static System.Text.Json.JsonElement ExecuteWithStandardWasiNodeCore(
+        byte[] module,
+        string directory,
+        string inputText,
+        WasmTarget target,
+        int staticDataEnd,
+        IReadOnlyDictionary<string, string> environment,
+        string? timeZoneAssetPath,
+        byte[]? stackTraceSymbols = null,
+        bool drainReactor = false,
+        string? observeExportName = null,
+        string? entryExportName = null,
+        bool observeAsyncProcess = false,
+        int expectedEnvironmentReads = 1,
+        int expectedPreopenReads = 1,
         int entryInvocationCount = 1)
     {
         var modulePath = Path.Combine(directory, $"application-{target}.wasm");
@@ -479,8 +550,7 @@ internal static class CompilerTestSupport
         };
         start.ArgumentList.Add(oraclePath);
         start.ArgumentList.Add(modulePath);
-        start.ArgumentList.Add(input.ToString(
-            System.Globalization.CultureInfo.InvariantCulture));
+        start.ArgumentList.Add(inputText);
         start.ArgumentList.Add(target == WasmTarget.Wasm64 ? "wasm64" : "wasm32");
         start.ArgumentList.Add(staticDataEnd.ToString(
             System.Globalization.CultureInfo.InvariantCulture));
@@ -492,7 +562,13 @@ internal static class CompilerTestSupport
         process.WaitForExit();
         Assert.True(process.ExitCode == 0, error);
         using var observation = System.Text.Json.JsonDocument.Parse(output);
-        var root = observation.RootElement;
+        var batched = inputText.StartsWith('@');
+        Assert.Equal(
+            batched ? System.Text.Json.JsonValueKind.Array : System.Text.Json.JsonValueKind.Object,
+            observation.RootElement.ValueKind);
+        var root = batched
+            ? Assert.Single(observation.RootElement.EnumerateArray())
+            : observation.RootElement;
         Assert.True(
             root.GetProperty("kind").GetString() == "value",
             root.TryGetProperty("message", out var message)
@@ -505,7 +581,7 @@ internal static class CompilerTestSupport
                 root.GetProperty("wasiPreopenReads").GetInt32() == expectedPreopenReads,
                 output);
         }
-        return root.GetProperty("value").GetInt32();
+        return root.Clone();
     }
 
     internal static void ValidateWithNode(byte[] module, string directory)

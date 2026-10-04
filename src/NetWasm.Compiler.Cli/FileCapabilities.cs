@@ -32,3 +32,13 @@ internal sealed class SystemBinaryFileWriter : IBinaryFileWriter
 {
     public void Write(string path, byte[] content) => File.WriteAllBytes(path, content);
 }
+
+internal interface IFileDeleter
+{
+    void Delete(string path);
+}
+
+internal sealed class SystemFileDeleter : IFileDeleter
+{
+    public void Delete(string path) => File.Delete(path);
+}

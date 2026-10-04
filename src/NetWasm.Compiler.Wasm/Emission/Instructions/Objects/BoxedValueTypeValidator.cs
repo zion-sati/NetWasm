@@ -13,7 +13,8 @@ internal sealed class BoxedValueTypeValidator(
     public void Validate(
         IWasmInstructionWriter code,
         int objectLocal,
-        CliTypeIdentity targetType)
+        CliTypeIdentity targetType,
+        ManagedExceptionKind mismatchException = ManagedExceptionKind.InvalidCast)
     {
         var targetTypeId = typeLayouts.GetObjectLayout(targetType).TypeId;
         var storages = enumStorages.Resolve();
@@ -22,7 +23,7 @@ internal sealed class BoxedValueTypeValidator(
         var underlyingType = targetStorage?.UnderlyingType ?? targetType;
         var compatibleTypeIds = storages
             .Where(storage => storage.UnderlyingType.Equals(underlyingType))
-            .Select(storage => storage.Descriptor.TypeId)
+            .Select(storage => storage.TypeId)
             .Append(targetTypeId);
 
         if (targetStorage is not null &&
@@ -51,7 +52,7 @@ internal sealed class BoxedValueTypeValidator(
                 WasmInstructionOperand.Unsigned(0)));
         }
 
-        exceptions.Emit(code, ManagedExceptionKind.InvalidCast);
+        exceptions.Emit(code, mismatchException);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 }

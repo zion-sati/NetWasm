@@ -44,7 +44,8 @@ var instance = await WebAssembly.instantiate(module, {
   ...createRuntimeContractImports(target, () => instance.exports.memory),
   "netwasm.host.v1": {
     write_i32() {},
-    report_terminal_exception_v1(typeId) {
+    raise_terminal_exception() {},
+    report_terminal_exception_v2(typeId) {
       throw new Error(`unexpected managed terminal exception type ${typeId}`);
     },
   },

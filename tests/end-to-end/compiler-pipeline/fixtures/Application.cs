@@ -1,4 +1,5 @@
 using NetWasm.Fixtures.Library;
+using System.Runtime.InteropServices.JavaScript;
 
 namespace NetWasm.Fixtures.Application
 {
@@ -26,6 +27,9 @@ namespace NetWasm.Fixtures.Application
     {
         private static int _seed = 7;
 
+        public static int Main() => Run(3);
+
+        [JSExport("run_case")]
         public static int Run(int input)
         {
             Counter counter = new Counter(SharedMath.Adjust(input) + _seed);
@@ -64,11 +68,13 @@ namespace NetWasm.Fixtures.Application
             return value + unused.Length + 987654318;
         }
 
+        [JSExport("helper")]
         public static int ExportedOnly(int value)
         {
             return SharedMath.ExportedDependency(value);
         }
 
+        [JSExport("index_at")]
         public static int IndexAt(int index)
         {
             return "a"[index];
@@ -83,5 +89,11 @@ namespace NetWasm.Fixtures.Application
         {
             return value[index];
         }
+
+        [JSExport("length_of")]
+        public static int NullLength() => LengthOf(null);
+
+        [JSExport("char_at")]
+        public static int NullChar(int index) => CharAt(null, index);
     }
 }

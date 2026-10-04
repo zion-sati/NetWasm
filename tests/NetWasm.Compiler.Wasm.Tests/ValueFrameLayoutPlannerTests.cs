@@ -1,8 +1,12 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -10,6 +14,260 @@ using static EmitterTestSupport;
 
 public sealed class ValueFrameLayoutPlannerTests
 {
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void MemberCallsReserveDistinctAlignedScratchForTheirLargestResult(WasmTarget target)
+    {
+        var fixture = new PlannerFixture();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var small = NullableType(CliTypeIdentity.Primitive("i4", CliValueKind.I4));
+        var large = NullableType(CliTypeIdentity.Primitive("i8", CliValueKind.I8));
+        var values = new MemberValueLayouts(
+            new ValueLayout(small, 8, 4, []), new ValueLayout(large, 16, 8, []));
+        var invoker = MemberMethod(0x06000070, CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference));
+        fixture.AddMethod(invoker.Definition);
+        var plan = MemberPlan(invoker, large, small, small);
+        var planner = new ValueFrameLayoutPlanner(
+            fixture, fixture, layouts, values, fixture.TypeOperands, fixture.TypeIdentities,
+            fixture.ArgumentTypes, fixture.ArgumentSignatures);
+        var body = new CilMethodBody(fixture.BodyMethod, 1, [],
+        [
+            I(0, CilOperation.LocalAllocate),
+            I(3, CilOperation.Call, new CilOperand.MethodInstance(invoker)),
+            I(7, CilOperation.Call, new CilOperand.Entity(invoker.Definition.Key)),
+            I(11, CilOperation.Call, new CilOperand.MethodInstance(fixture.ReferenceInstance)),
+        ]);
+
+        var frame = ThroughContract(planner).Create(Header(body), memberExecution: plan);
+
+        Assert.Equal(2, frame.MemberResultOffsets.Count);
+        Assert.Equal(8, frame.MemberResultOffsets[3]);
+        Assert.Equal(24, frame.MemberResultOffsets[7]);
+        Assert.Equal(40, frame.Size);
+        Assert.Equal(2, values.Requests.Count(type => type.Equals(small)));
+        Assert.Equal(2, values.Requests.Count(type => type.Equals(large)));
+        Assert.Empty(frame.TemporaryOffsets);
+        Assert.Empty(frame.NativeArgumentOffsets);
+        Assert.Empty(frame.LocalOffsets);
+        Assert.Empty(frame.ArgumentOffsets);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void MemberScratchRequiresBothAnInvokerCallAndAnAggregateResult(int scenario)
+    {
+        var fixture = new PlannerFixture();
+        var nullable = NullableType(CliTypeIdentity.Primitive("i4", CliValueKind.I4));
+        var values = new MemberValueLayouts(new ValueLayout(nullable, 8, 4, []));
+        var invoker = MemberMethod(0x06000070, CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference));
+        var populated = MemberPlan(invoker, nullable);
+        MemberExecutionPlan? plan = scenario switch
+        {
+            0 => null,
+            1 => MemberExecutionPlan.Empty,
+            2 => populated with { MethodInvokers = [] },
+            3 => populated with { Methods = ImmutableDictionary<string, MemberMethodExecutionPlan>.Empty },
+            4 => MemberPlan(invoker, CliTypeIdentity.Primitive("i4", CliValueKind.I4)),
+            _ => populated,
+        };
+        var body = new CilMethodBody(fixture.BodyMethod, 1, [], scenario == 5
+            ? []
+            : [I(3, CilOperation.Call, new CilOperand.MethodInstance(invoker))]);
+        var planner = new ValueFrameLayoutPlanner(
+            fixture, fixture, fixture.Layouts, values, fixture.TypeOperands, fixture.TypeIdentities,
+            fixture.ArgumentTypes, fixture.ArgumentSignatures);
+
+        var frame = ThroughContract(planner).Create(Header(body), memberExecution: plan);
+
+        Assert.Equal(0, frame.Size);
+        Assert.Empty(frame.MemberResultOffsets);
+        Assert.Empty(frame.TemporaryOffsets);
+        Assert.Empty(values.Requests);
+    }
+
+    [Fact]
+    public void MemberScratchRejectsResultsThatWouldRequireManagedRoots()
+    {
+        var fixture = new PlannerFixture();
+        var nullable = NullableType(CliTypeIdentity.Named(Assembly, "Test", "ReferenceValue", true));
+        var values = new MemberValueLayouts(new ValueLayout(nullable, 16, 8, [8]));
+        var invoker = MemberMethod(0x06000070, CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference));
+        var body = new CilMethodBody(fixture.BodyMethod, 1, [],
+            [I(19, CilOperation.Call, new CilOperand.MethodInstance(invoker))]);
+        var planner = new ValueFrameLayoutPlanner(
+            fixture, fixture, fixture.Layouts, values, fixture.TypeOperands, fixture.TypeIdentities,
+            fixture.ArgumentTypes, fixture.ArgumentSignatures);
+
+        var error = Assert.Throws<CompilerException>(() => ThroughContract(planner).Create(
+            Header(body), memberExecution: MemberPlan(invoker, nullable)));
+
+        Assert.Equal(DiagnosticCode.RuntimeContract, error.Diagnostic.Code);
+        Assert.Contains("managed references", error.Diagnostic.Message);
+        Assert.Equal(invoker.Definition.Name, error.Diagnostic.Method);
+        Assert.Equal(19, error.Diagnostic.IlOffset);
+        Assert.Equal([nullable], values.Requests);
+    }
+
+    private static CliTypeIdentity NullableType(CliTypeIdentity underlying) =>
+        CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(Assembly, "System", "Nullable`1", true), [underlying]);
+
+    private static MethodInstanceModel MemberMethod(int token, CliTypeIdentity result)
+    {
+        var signature = MethodSignatureModel.Create(result);
+        var definition = new MethodDefinitionModel(Key(token), TypeKey, $"Member{token}", true, signature, 1);
+        return new(definition, CliTypeIdentity.Named(Assembly, "Test", "Members", false), [], signature);
+    }
+
+    private static MemberExecutionPlan MemberPlan(MethodInstanceModel invoker, params CliTypeIdentity[] results) =>
+        new(results.Select((type, index) => MemberMethod(0x06000080 + index, type))
+                .ToImmutableDictionary(method => method.CanonicalName,
+                    method => new MemberMethodExecutionPlan(method, false, [])),
+            ImmutableDictionary<string, FieldInstanceModel>.Empty, null)
+        {
+            MethodInvokers = [invoker.Definition.Key],
+        };
+
+    private sealed class MemberValueLayouts(params ValueLayout[] layouts) : IValueLayoutProvider
+    {
+        public List<CliTypeIdentity> Requests { get; } = [];
+
+        public ValueLayout GetValueLayout(CliTypeIdentity type)
+        {
+            Requests.Add(type);
+            return layouts.Single(layout => layout.Type.Equals(type));
+        }
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void NativeCallsReserveDistinctAlignedCopiesAndResultsFromThePublishedPlan(WasmTarget target)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var valueType = CliTypeIdentity.Named(Assembly, "Test", "NativePair", true);
+        var pointer = CliTypeIdentity.FromStackKind(CliValueKind.NativeInt);
+        var logical = MethodSignatureModel.Create(valueType, valueType, valueType);
+        var method = NativeMethod(logical);
+        var parameter = new NativeAbiValuePlan(NativeAbiValueKind.IndirectAggregate, valueType, pointer, 12, 4);
+        var result = parameter with { Size = 16, Alignment = 16 };
+        var abi = new NativeAbiPlan(method.Definition.NativeImport!, new(logical,
+            MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.NativeInt,
+                CliValueKind.NativeInt, CliValueKind.NativeInt),
+            [new(0, 1, parameter), new(1, 2, parameter)], result, 0));
+        var imports = new NativeImportPlan([new(method, abi,
+            new(RuntimeAbi.RuntimeModule, "aggregate", new(abi.Signature.ParameterTypes, abi.Signature.ReturnType)))]);
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 2, [],
+        [
+            I(0, CilOperation.LocalAllocate),
+            I(3, CilOperation.Call, new CilOperand.MethodInstance(method)),
+            I(7, CilOperation.Call, new CilOperand.MethodInstance(method)),
+        ]);
+
+        var frame = ThroughContract(CreateValueFrameLayoutPlanner(program, layouts)).Create(Header(body), imports);
+
+        Assert.Equal(4, frame.NativeArgumentOffsets[(3, 0)]);
+        Assert.Equal(16, frame.NativeArgumentOffsets[(3, 1)]);
+        Assert.Equal(32, frame.TemporaryOffsets[3]);
+        Assert.Equal(48, frame.NativeArgumentOffsets[(7, 0)]);
+        Assert.Equal(60, frame.NativeArgumentOffsets[(7, 1)]);
+        Assert.Equal(80, frame.TemporaryOffsets[7]);
+        Assert.Equal(96, frame.Size);
+        Assert.Empty(frame.LocalOffsets);
+        Assert.Empty(frame.ArgumentOffsets);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, NativeAbiValueKind.ScalarizedAggregate, 2, 2)]
+    [InlineData(WasmTarget.Wasm64, NativeAbiValueKind.ScalarizedAggregate, 2, 2)]
+    [InlineData(WasmTarget.Wasm32, NativeAbiValueKind.IgnoredAggregate, 1, 1)]
+    [InlineData(WasmTarget.Wasm64, NativeAbiValueKind.IgnoredAggregate, 1, 1)]
+    public void DirectAndIgnoredAggregateResultsStillHaveManagedStorage(
+        WasmTarget target, NativeAbiValueKind kind, int size, int alignment)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var valueType = CliTypeIdentity.Named(Assembly, "Test", "NativeValue", true);
+        var scalar = CliTypeIdentity.Primitive("i2", CliValueKind.I4);
+        var logical = MethodSignatureModel.Create(valueType, valueType);
+        var method = NativeMethod(logical);
+        var value = new NativeAbiValuePlan(kind, valueType,
+            kind == NativeAbiValueKind.IgnoredAggregate ? null : scalar, size, alignment, scalar);
+        var physical = kind == NativeAbiValueKind.IgnoredAggregate
+            ? MethodSignatureModel.Create(CliValueKind.Void) : MethodSignatureModel.Create(scalar, scalar);
+        var abi = new NativeAbiPlan(method.Definition.NativeImport!,
+            new(logical, physical, [new(0, kind == NativeAbiValueKind.IgnoredAggregate ? null : 0, value)], value, null));
+        var imports = new NativeImportPlan([new(method, abi,
+            new(RuntimeAbi.RuntimeModule, "aggregate", new(physical.ParameterTypes, physical.ReturnType)))]);
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 1, [],
+            [I(3, CilOperation.Call, new CilOperand.MethodInstance(method))]);
+
+        var frame = ThroughContract(CreateValueFrameLayoutPlanner(program, layouts)).Create(Header(body), imports);
+
+        Assert.Equal(0, Assert.Single(frame.TemporaryOffsets).Value);
+        Assert.Equal(layouts.Target.ObjectReferenceAlignment, frame.Size);
+        Assert.Empty(frame.NativeArgumentOffsets);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(4, 0)]
+    [InlineData(4, 3)]
+    [InlineData(32, 32)]
+    public void InvalidNativeStorageFailsWithoutPublishingAFrame(int size, int alignment)
+    {
+        var program = new FakeProgram();
+        var layouts = new RecordingLayoutProvider();
+        var valueType = CliTypeIdentity.Named(Assembly, "Test", "NativeValue", true);
+        var logical = MethodSignatureModel.Create(valueType);
+        var method = NativeMethod(logical);
+        var physical = MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.NativeInt);
+        var abi = new NativeAbiPlan(method.Definition.NativeImport!, new(logical, physical, [],
+            new(NativeAbiValueKind.IndirectAggregate, valueType,
+                CliTypeIdentity.FromStackKind(CliValueKind.NativeInt), size, alignment), 0));
+        var imports = new NativeImportPlan([new(method, abi,
+            new(RuntimeAbi.RuntimeModule, "aggregate", new(physical.ParameterTypes, physical.ReturnType)))]);
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 0, [],
+            [I(3, CilOperation.Call, new CilOperand.MethodInstance(method))]);
+
+        var error = Assert.Throws<CompilerException>(() =>
+            ThroughContract(CreateValueFrameLayoutPlanner(program, layouts)).Create(Header(body), imports));
+
+        Assert.Equal(DiagnosticCode.CompilerInvariant, error.Diagnostic.Code);
+    }
+
+    [Fact]
+    public void NativeCallWithoutPublishedPlanRejects()
+    {
+        var program = new FakeProgram();
+        var method = NativeMethod(MethodSignatureModel.Create(CliValueKind.Void));
+        var body = new CilMethodBody(program.GetMethod(EntryKey), 0, [],
+            [I(3, CilOperation.Call, new CilOperand.MethodInstance(method))]);
+        var planner = ThroughContract(CreateValueFrameLayoutPlanner(program, new RecordingLayoutProvider()));
+
+        Assert.Equal(DiagnosticCode.CompilerInvariant,
+            Assert.Throws<CompilerException>(() => planner.Create(Header(body))).Diagnostic.Code);
+        Assert.Equal(DiagnosticCode.CompilerInvariant,
+            Assert.Throws<CompilerException>(() => planner.Create(Header(body), NativeImportPlan.Empty)).Diagnostic.Code);
+    }
+
+    private static MethodInstanceModel NativeMethod(MethodSignatureModel signature)
+    {
+        var definition = new MethodDefinitionModel(Key(0x0600007f), TypeKey, "Native", true, signature, 0)
+        {
+            NativeImport = new("mule", "aggregate", System.Reflection.MethodImportAttributes.CallingConventionCDecl,
+                false, false, false, false),
+        };
+        return new(definition, CliTypeIdentity.Named(Assembly, "Test", "Native", false), [], signature);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, 0)]
     [InlineData(WasmTarget.Wasm64, 0)]
@@ -488,6 +746,7 @@ public sealed class ValueFrameLayoutPlannerTests
             ArgumentSignatures);
 
         public FieldDefinitionModel GetField(EntityKey key) => _fields[key];
+        public void AddMethod(MethodDefinitionModel method) => _methods.Add(method.Key, method);
         public MethodDefinitionModel GetMethod(EntityKey key) => _methods[key];
         public CliTypeIdentity Resolve(EntityKey key) => _types[key];
         public CliTypeIdentity Resolve(CilInstruction instruction, MethodInstanceModel? methodInstance) =>

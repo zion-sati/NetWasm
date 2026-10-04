@@ -25,6 +25,7 @@ internal sealed class WasmModuleEmitter(
     IManagedDefinitionSetAppender managedDefinitions,
     IConstructedMethodSetAppender constructedMethods,
     IDelegateFunctionAppender delegateFunctions,
+    INativeCallbackFunctionAppender nativeCallbacks,
     IHostCallbackSetAppender hostCallbacks,
     IAsyncJSImportSetAppender asyncJSImportFunctions,
     IFilterFunctionSetAppender filterFunctions,
@@ -33,6 +34,7 @@ internal sealed class WasmModuleEmitter(
     IComponentFunctionAppender componentFunctions,
     IFunctionIndexResolverFactory functionIndexResolvers,
     IModuleExportCollector moduleExports,
+    IModuleExportValidator moduleExportValidator,
     IModuleImportCollector moduleImports,
     IEntryPointValidator entryPoints,
     IManagedBoundaryPlanValidator boundaryPlans,
@@ -51,6 +53,7 @@ internal sealed class WasmModuleEmitter(
     private readonly IConstructedMethodSetAppender _constructedMethods =
         constructedMethods;
     private readonly IDelegateFunctionAppender _delegateFunctions = delegateFunctions;
+    private readonly INativeCallbackFunctionAppender _nativeCallbacks = nativeCallbacks;
     private readonly IHostCallbackSetAppender _hostCallbacks = hostCallbacks;
     private readonly IAsyncJSImportSetAppender _asyncJSImportFunctions =
         asyncJSImportFunctions;
@@ -60,6 +63,8 @@ internal sealed class WasmModuleEmitter(
     private readonly IFunctionIndexResolverFactory _functionIndexResolvers =
         functionIndexResolvers;
     private readonly IModuleExportCollector _moduleExports = moduleExports;
+    private readonly IModuleExportValidator _moduleExportValidator =
+        moduleExportValidator;
     private readonly IModuleImportCollector _moduleImports = moduleImports;
     private readonly IEntryPointValidator _entryPoints = entryPoints;
     private readonly IManagedBoundaryPlanValidator _boundaryPlans = boundaryPlans;
@@ -82,7 +87,10 @@ internal sealed class WasmModuleEmitter(
             request.MethodInstances;
         var constructedRootMaps =
             request.ConstructedRootMaps;
-        _entryPoints.Validate(entryPoint);
+        if (entryPoint is not null)
+        {
+            _entryPoints.Validate(entryPoint);
+        }
         var plan = target.Plan;
         var functionIndices = _functionIndexResolvers.Create(
             _methods,
@@ -100,7 +108,11 @@ internal sealed class WasmModuleEmitter(
             plan.RuntimeImports,
             plan.InteropImports.Imports,
             _layouts.Target.Target,
-            target.HostCallbacks));
+            target.HostCallbacks)
+        {
+            NativeImports = plan.NativeImports,
+            NativeCallbacks = plan.NativeCallbacks,
+        });
         var functions = new List<WasmFunctionDefinition>(
             orderedMethods.Length + orderedConstructedMethods.Length + 1);
         var boundaryEntries = new List<ManagedBoundaryPlanEntry>();
@@ -120,11 +132,28 @@ internal sealed class WasmModuleEmitter(
             plan.DelegateEqualityHelperIndex, delegateInvokeTarget, functionIndices);
         staticInitializers.Append(functions, moduleData.StaticInitializerFunctions);
 
+        var nativeCallbackIndices = ImmutableDictionary.CreateBuilder<string, int>(
+            StringComparer.Ordinal);
+        _nativeCallbacks.Append(
+            functions,
+            imports.Length,
+            nativeCallbackIndices,
+            plan.NativeCallbacks,
+            moduleData,
+            plan.RuntimeImportSelection,
+            functionIndices,
+            boundaryEntries);
+
         var initialization = new RuntimeInitializationPlan(
             moduleData.StaticDataEnd,
             plan.StackTraceMethods,
             plan.RuntimeImportSelection)
         {
+            NativeCallbackReadinessAddress =
+                moduleData.NativeCallbackReadinessAddress,
+            StackTraceSymbolRegistrationGuardAddress =
+                moduleData.StackTraceSymbolRegistrationGuardAddress,
+            StackTraceSymbols = moduleData.StackTraceSymbols,
             ModuleInitializers = [
                 .. request.ModuleInitializers.Select(initializer =>
                 {
@@ -154,9 +183,11 @@ internal sealed class WasmModuleEmitter(
         var plannedFilterIndices = filterIndices.ToImmutable();
         var asyncExportHelperIndices = ImmutableDictionary.CreateBuilder<string, int>(
             StringComparer.Ordinal);
-        request.JavaScriptAsyncBindings.TryGetValue(
-            entryPoint.Key,
-            out var entryPointAsyncBinding);
+        JavaScriptAsyncMethodBinding? entryPointAsyncBinding = null;
+        if (entryPoint is not null)
+        {
+            request.JavaScriptAsyncBindings.TryGetValue(entryPoint.Key, out entryPointAsyncBinding);
+        }
         var runtimeFunctions = _runtimeFunctions.Append(
             functions,
             imports.Length,
@@ -176,7 +207,7 @@ internal sealed class WasmModuleEmitter(
             asyncExportHelperIndices, selectedRequestedExports,
             request.JavaScriptAsyncBindings, initialization,
             runtimeFunctions.HasFinalizers, request.ModuleProfile, functionIndices,
-            boundaryEntries);
+            plan.InteropImports, boundaryEntries);
         var exports = _moduleExports.Collect(
             request.EntryPointProfile,
             runtimeFunctions.EntryPointIndex,
@@ -184,10 +215,11 @@ internal sealed class WasmModuleEmitter(
             runtimeFunctions.FinalizerDispatcherIndex,
             requestedExportIndices,
             callbackIndices,
+            nativeCallbackIndices,
             asyncImportIndices,
             asyncExportHelperIndices).ToList();
 
-        var runtimeFeatures = _componentFunctions.Append(
+        var componentRuntimeFeatures = _componentFunctions.Append(
             functions,
             exports,
             boundaryEntries,
@@ -197,7 +229,22 @@ internal sealed class WasmModuleEmitter(
             imports.Length,
             requestedExportIndices,
             functionIndices);
+        var runtimeFeatures = componentRuntimeFeatures;
+        if (plan.RuntimeImportSelection.IncludeEphemeronHandles)
+        {
+            runtimeFeatures = [.. componentRuntimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.EphemeronHandles)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (request.StructuredDiagnostics)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.StructuredCommandDiagnostics)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
 
+        _moduleExportValidator.Validate(exports, nativeCallbackIndices);
         _boundaryPlans.Validate(functions, exports, imports.Length, boundaryEntries);
 
         return _results.Build(new(
@@ -214,7 +261,11 @@ internal sealed class WasmModuleEmitter(
             moduleData.StaticDataEnd,
             managedMethodEmissions,
             plan.StackTraceMethods.Symbols,
-            runtimeFeatures));
+            runtimeFeatures)
+        {
+            NativeImports = plan.NativeImports,
+            NativeCallbacks = plan.NativeCallbacks,
+        });
     }
 
 }

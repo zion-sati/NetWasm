@@ -19,7 +19,8 @@ internal sealed class RuntimeModuleMaterializer(
     IRuntimeMaterializationCacheWriter cacheWriter,
     IRuntimeArtifactPublisher artifactPublisher,
     ICommandInvoker commands,
-    IArtifactDigestCalculator artifactDigests) : IRuntimeModuleMaterializer
+    IArtifactDigestCalculator artifactDigests,
+    IRuntimeNativeModuleMaterializer nativeModules) : IRuntimeModuleMaterializer
 {
     private const string DisableExperimentalWarningOption =
         "--disable-warning=ExperimentalWarning";
@@ -43,6 +44,9 @@ internal sealed class RuntimeModuleMaterializer(
             .Select(asset => ResolveAsset(request.AssetRoot, asset.Path))
             .ToImmutableArray();
         VerifyAssets(request.AssetRoot, target);
+        if (!sourceLayout.NativeImports.IsEmpty ||
+            sourceLayout.NativeCallbackSupport is not null)
+            return nativeModules.Materialize(new(request, manifest, target, sourceLayout, systemLibraryPaths));
         var memoryLayout = memoryLayouts.Calculate(new(
             target,
             manifest.WasmPageSize,
@@ -52,14 +56,14 @@ internal sealed class RuntimeModuleMaterializer(
         var arguments = linkArguments.Build(new(
             manifest,
             target,
-            memoryLayout,
+            new RuntimeLinkMemoryLimits(memoryLayout.RuntimeGlobalBase, memoryLayout.InitialMemorySizeBytes, memoryLayout.MaximumMemorySizeBytes),
             request.AssetRoot,
             systemLibraryPaths,
             request.OutputPath));
         var optimizeArguments = request.Optimization == RuntimeWasmOptimization.None
             ? ImmutableArray<string>.Empty
             : optimizationArguments.Build(new(target, request.OutputPath, request.Optimization));
-        var cacheKey = cacheKeys.Build(new(
+        var cacheKey = cacheKeys.Build(new RuntimeMaterializationCacheKeyRequest(
             request.BuildIdentity,
             manifest,
             target,

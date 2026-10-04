@@ -10,4 +10,5 @@ public sealed record ComponentPackageRequest(
     ComponentTarget Target,
     string? RuntimeModulePath = null,
     ManagedExecutableEntryPointAbi? ManagedExecutableEntryPoint = null,
-    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz);
+    FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
+    bool StructuredDiagnostics = false);

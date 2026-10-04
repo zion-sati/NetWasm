@@ -8,15 +8,218 @@ namespace NetWasm.Compiler.Tests;
 public sealed class MemberExecutionPlannerTests
 {
     [Fact]
+    public void DynamicInvokePlansClosedDelegateDescriptorsAndDedicatedSupport()
+    {
+        var f = new ExecutionPlannerFixture();
+        var demand = f.Demand(1, RuntimeIntrinsic.DelegateDynamicInvoke);
+        var delegateType = Type("Callback");
+        f.Delegates.Add(delegateType);
+        var invoke = f.Method(
+            2,
+            "Invoke",
+            delegateType,
+            result: Type("Result", valueType: true),
+            parameters: [Scalar, CliTypeIdentity.ManagedByReference(Type("Text"))]);
+        var unsupported = f.Method(100, "ThrowDynamicInvokeUnsupported", isStatic: true);
+        var argument = f.Method(101, "ThrowDynamicInvokeArgument", isStatic: true);
+        var count = f.Method(102, "ThrowDynamicInvokeParameterCount", isStatic: true);
+        var invocation = f.Method(
+            103,
+            "ThrowTargetInvocation",
+            isStatic: true,
+            parameters: [Type("Exception")]);
+        f.RegisterType(
+            "System.Runtime.CompilerServices.RuntimeMemberExecution",
+            unsupported,
+            argument,
+            count,
+            invocation);
+
+        var plan = f.MemberPlanner().Plan([demand], [invoke, invoke], NeverEnumerate<FieldInstanceModel>());
+
+        Assert.Empty(plan.Methods);
+        Assert.Empty(plan.Fields);
+        Assert.Null(plan.UnsupportedTarget);
+        var dynamic = Assert.IsType<DelegateDynamicInvokePlan>(plan.DelegateInvocation);
+        Assert.Same(invoke, Assert.Single(dynamic.Methods).Value);
+        Assert.Equal(demand.Definition.Key, Assert.Single(dynamic.Invokers));
+        Assert.Same(unsupported, dynamic.UnsupportedTarget);
+        Assert.Same(argument, dynamic.ArgumentTarget);
+        Assert.Same(count, dynamic.ParameterCountTarget);
+        Assert.Same(invocation, dynamic.InvocationTarget);
+        Assert.Equal(4, f.Resolutions.Count);
+    }
+
+    [Fact]
+    public void DynamicInvokeExcludesOpenAndUnsupportedDelegateSignatures()
+    {
+        var f = new ExecutionPlannerFixture();
+        var demand = f.Demand(1, RuntimeIntrinsic.DelegateDynamicInvoke);
+        var delegateType = Type("Callback");
+        var openDelegate = CliTypeIdentity.GenericInstantiation(
+            Type("OpenCallback`1"),
+            [CliTypeIdentity.GenericParameter(false, 0)]);
+        f.Delegates.UnionWith([delegateType, openDelegate]);
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true), [Scalar]);
+        f.NullableTypes.Add(nullable, Scalar);
+        var nullableReference = CliTypeIdentity.GenericInstantiation(
+            Type("NullableReference`1", true),
+            [Type("Reference")]);
+        f.NullableTypes.Add(nullableReference, Type("Reference"));
+        var nullableValue = CliTypeIdentity.GenericInstantiation(
+            Type("NullableValue`1", true),
+            [Type("Value", valueType: true)]);
+        f.NullableTypes.Add(nullableValue, Type("Value", valueType: true));
+        var ordinary = f.Method(2, "Other", delegateType);
+        var staticInvoke = f.Method(3, "Invoke", delegateType, isStatic: true);
+        var openInvoke = f.Method(4, "Invoke", openDelegate);
+        var nullableArgument = f.Method(5, "Invoke", delegateType, parameters: [nullable]);
+        var unsupportedParameter = f.Method(
+            6,
+            "Invoke",
+            delegateType,
+            parameters: [CliTypeIdentity.FromStackKind(CliValueKind.Void)]);
+        var nullableReferenceResult = f.Method(
+            7,
+            "Invoke",
+            delegateType,
+            result: nullableReference);
+        var nullableValueResult = f.Method(
+            8,
+            "Invoke",
+            delegateType,
+            result: nullableValue);
+        var malformedByReferenceParameter = f.Method(
+            9,
+            "Invoke",
+            delegateType,
+            parameters:
+            [
+                CliTypeIdentity.Primitive(
+                    "byref-without-element",
+                    CliValueKind.ManagedAddress),
+            ]);
+        RegisterDynamicSupport(f);
+
+        var plan = f.MemberPlanner().Plan(
+            [demand],
+            [
+                ordinary,
+                staticInvoke,
+                openInvoke,
+                nullableArgument,
+                unsupportedParameter,
+                nullableReferenceResult,
+                nullableValueResult,
+                malformedByReferenceParameter,
+            ],
+            []);
+
+        Assert.Empty(Assert.IsType<DelegateDynamicInvokePlan>(plan.DelegateInvocation).Methods);
+    }
+
+    [Fact]
+    public void DynamicInvokeSupportsVoidAndRejectsOpenNullableResults()
+    {
+        var f = new ExecutionPlannerFixture();
+        var demand = f.Demand(1, RuntimeIntrinsic.DelegateDynamicInvoke);
+        var delegateType = Type("Callback");
+        f.Delegates.Add(delegateType);
+        var voidInvoke = f.Method(
+            2,
+            "Invoke",
+            delegateType,
+            result: CliTypeIdentity.FromStackKind(CliValueKind.Void));
+        var openNullable = CliTypeIdentity.GenericInstantiation(
+            Type("Nullable`1", valueType: true),
+            [CliTypeIdentity.GenericParameter(method: false, index: 0)]);
+        f.NullableTypes.Add(openNullable, Scalar);
+        var openNullableInvoke = f.Method(
+            3,
+            "Invoke",
+            delegateType,
+            result: openNullable);
+        var closedNullable = CliTypeIdentity.GenericInstantiation(
+            Type("Nullable`1", valueType: true),
+            [Scalar]);
+        f.NullableTypes.Add(closedNullable, Scalar);
+        var closedNullableInvoke = f.Method(
+            4,
+            "Invoke",
+            delegateType,
+            result: closedNullable);
+        RegisterDynamicSupport(f);
+
+        var plan = f.MemberPlanner().Plan(
+            [demand],
+            [voidInvoke, openNullableInvoke, closedNullableInvoke],
+            []);
+
+        var methods = Assert.IsType<DelegateDynamicInvokePlan>(
+            plan.DelegateInvocation).Methods;
+        Assert.Same(voidInvoke, methods[voidInvoke.CanonicalName]);
+        Assert.Same(
+            closedNullableInvoke,
+            methods[closedNullableInvoke.CanonicalName]);
+        Assert.Equal(2, methods.Count);
+    }
+
+    [Theory]
+    [InlineData(CliValueKind.I4, true)]
+    [InlineData(CliValueKind.I8, true)]
+    [InlineData(CliValueKind.F4, true)]
+    [InlineData(CliValueKind.F8, true)]
+    [InlineData(CliValueKind.ManagedReference, false)]
+    [InlineData(CliValueKind.ValueType, false)]
+    public void NullableScalarResultsAreSupportedWithoutEnablingNullableArguments(
+        CliValueKind underlyingKind, bool supported)
+    {
+        var f = new ExecutionPlannerFixture();
+        var underlying = CliTypeIdentity.FromStackKind(underlyingKind);
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true), [underlying]);
+        f.NullableTypes.Add(nullable, underlying);
+        var invoke = f.Demand(1, RuntimeIntrinsic.MemberExecuteMethod);
+        var read = f.Demand(2, RuntimeIntrinsic.MemberReadField);
+        var getter = f.Method(3, "Get", result: nullable);
+        var acceptsNullable = f.Method(4, "Consume", parameters: [nullable]);
+        var field = Field(1, nullable);
+        f.UnsupportedSupport(member: true);
+
+        var plan = f.MemberPlanner().Plan([invoke, read], [getter, acceptsNullable], [field]);
+
+        Assert.Equal(supported, plan.Methods.ContainsKey(getter.CanonicalName));
+        Assert.Equal(supported, plan.Fields.ContainsKey(field.CanonicalName));
+        Assert.False(plan.Methods.ContainsKey(acceptsNullable.CanonicalName));
+        Assert.Equal(invoke.Definition.Key, Assert.Single(plan.MethodInvokers));
+    }
+
+    [Fact]
+    public void OpenNullableResultsRemainUnsupported()
+    {
+        var f = new ExecutionPlannerFixture();
+        var nullable = CliTypeIdentity.GenericInstantiation(Type("Nullable`1", true),
+            [CliTypeIdentity.GenericParameter(false, 0)]);
+        f.NullableTypes.Add(nullable, Scalar);
+        var invoke = f.Demand(1, RuntimeIntrinsic.MemberExecuteMethod);
+        var getter = f.Method(2, "Get", result: nullable);
+        f.UnsupportedSupport(member: true);
+
+        var plan = f.MemberPlanner().Plan([invoke], [getter], []);
+
+        Assert.Empty(plan.Methods);
+    }
+
+    [Fact]
     public void PlanRejectsNullDependenciesAndInputs()
     {
         var f = new ExecutionPlannerFixture();
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(null!, f, f, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, null!, f, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, null!, f, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, null!, f, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, null!, f));
-        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, null!));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(null!, f, f, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, null!, f, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, null!, f, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, null!, f, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, null!, f, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, null!, f));
+        Assert.Throws<ArgumentNullException>(() => new MemberExecutionPlanner(f, f, f, f, f, f, null!));
         var planner = f.MemberPlanner();
         Assert.Throws<ArgumentNullException>(() => planner.Plan(null!, [], []));
         Assert.Throws<ArgumentNullException>(() => planner.Plan([], null!, []));
@@ -235,4 +438,22 @@ public sealed class MemberExecutionPlannerTests
     private static IEnumerable<T> NeverEnumerate<T>() =>
         Enumerable.Range(0, 1).Select<int, T>(_ =>
             throw new InvalidOperationException("Undemanded descriptors must not be enumerated."));
+
+    private static void RegisterDynamicSupport(ExecutionPlannerFixture f)
+    {
+        var unsupported = f.Method(100, "ThrowDynamicInvokeUnsupported", isStatic: true);
+        var argument = f.Method(101, "ThrowDynamicInvokeArgument", isStatic: true);
+        var count = f.Method(102, "ThrowDynamicInvokeParameterCount", isStatic: true);
+        var invocation = f.Method(
+            103,
+            "ThrowTargetInvocation",
+            isStatic: true,
+            parameters: [Type("Exception")]);
+        f.RegisterType(
+            "System.Runtime.CompilerServices.RuntimeMemberExecution",
+            unsupported,
+            argument,
+            count,
+            invocation);
+    }
 }

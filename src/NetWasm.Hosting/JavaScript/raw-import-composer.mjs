@@ -1,15 +1,5 @@
-import {
-  commandExecutionContract,
-  processExecutionContract,
-} from "./execution-contracts.mjs";
-
-const planKeys = [
-  "contractKey",
-  "entryPoint",
-  "exports",
+const inventoryKeys = [
   "imports",
-  "invocationArguments",
-  "reactorGuestExport",
   "reactorHostModule",
   "target",
 ];
@@ -17,16 +7,16 @@ const planKeys = [
 export function composeRawImports(request = {}) {
   assertExactObject(
     request,
-    ["canonicalBinding", "physicalProviders", "plan"],
+    ["canonicalBinding", "inventory", "physicalProviders"],
     "raw import composition request");
-  const { canonicalBinding, physicalProviders, plan } = request;
-  validatePlan(plan);
-  const canonical = readCanonicalBinding(canonicalBinding, plan.target);
+  const { canonicalBinding, inventory, physicalProviders } = request;
+  validateInventory(inventory);
+  const canonical = readCanonicalBinding(canonicalBinding, inventory.target);
   assertPlainObject(physicalProviders, "raw physical providers");
-  if (Object.hasOwn(physicalProviders, plan.reactorHostModule)) {
+  if (Object.hasOwn(physicalProviders, inventory.reactorHostModule)) {
     throw new TypeError("raw reactor host is reserved by the executor");
   }
-  const descriptors = new Map(plan.imports.map(descriptor => [
+  const descriptors = new Map(inventory.imports.map(descriptor => [
     identityKey(descriptor.module, descriptor.name),
     descriptor,
   ]));
@@ -42,7 +32,7 @@ export function composeRawImports(request = {}) {
   }
 
   const projection = Object.create(null);
-  for (const descriptor of plan.imports) {
+  for (const descriptor of inventory.imports) {
     const identity = identityKey(descriptor.module, descriptor.name);
     let value = canonical.get(identity);
     if (value === undefined) {
@@ -66,13 +56,13 @@ export function composeRawImports(request = {}) {
   return Object.freeze(projection);
 }
 
-function validatePlan(plan) {
-  assertExactObject(plan, planKeys, "raw ABI plan");
-  if (plan.contractKey !== commandExecutionContract && plan.contractKey !== processExecutionContract
-      || plan.target !== "wasm32" && plan.target !== "wasm64"
-      || !Array.isArray(plan.imports)
-      || typeof plan.reactorHostModule !== "string") {
-    throw new TypeError("raw ABI plan is invalid");
+function validateInventory(inventory) {
+  assertExactObject(inventory, inventoryKeys, "raw import inventory");
+  if (inventory.target !== "wasm32" && inventory.target !== "wasm64"
+      || !Array.isArray(inventory.imports)
+      || typeof inventory.reactorHostModule !== "string"
+      || inventory.reactorHostModule.length === 0) {
+    throw new TypeError("raw import inventory is invalid");
   }
 }
 

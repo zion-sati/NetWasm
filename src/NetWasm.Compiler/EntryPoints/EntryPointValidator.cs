@@ -35,7 +35,7 @@ internal sealed class EntryPointValidator : IEntryPointValidator
 
         foreach (var kind in Enum.GetValues<CompilerEntryPointKind>())
         {
-            if (!entries.ContainsKey(kind))
+            if (kind != CompilerEntryPointKind.Library && !entries.ContainsKey(kind))
             {
                 throw new InvalidOperationException(
                     $"entry-point validator '{kind}' is not registered");

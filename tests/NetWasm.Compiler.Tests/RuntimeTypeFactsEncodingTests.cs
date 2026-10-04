@@ -68,6 +68,125 @@ public sealed class RuntimeTypeFactsEncodingTests
         Assert.Equal(
             0,
             ReadAddress(data, RuntimeTypeFactsEncoding.NameFactsOffset(target), target));
+        Assert.Equal(
+            0,
+            ReadInt32(data, RuntimeTypeFactsEncoding.GenericArgumentCountOffset(target)));
+        Assert.Equal(
+            0,
+            ReadAddress(
+                data,
+                RuntimeTypeFactsEncoding.GenericArgumentTypeIdsOffset(target),
+                target));
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void EncodesGenericArgumentMetadataAtTargetWidth(WasmTarget targetKind)
+    {
+        var target = WasmTargetLayout.For(targetKind);
+        var state = new ManagedStaticDataBuildState();
+        var identity = CliTypeIdentity.Named(
+            Assembly,
+            "Fixtures",
+            "Box`1",
+            isValueType: false);
+        var definition = new TypeDefinitionModel(
+            new EntityKey(Assembly, 1),
+            "Fixtures",
+            "Box`1",
+            IsValueType: false,
+            [],
+            []);
+
+        RuntimeTypeFactsEncoding.Add(
+            state,
+            target,
+            identity,
+            definition,
+            typeId: 7,
+            baseTypeId: 3,
+            assignableTypeIdsAddress: 0,
+            assignableTypeIdCount: 0,
+            genericArgumentTypeIdsAddress: 96,
+            genericArgumentCount: 2);
+
+        var data = Assert.Single(state.Segments).Data;
+        Assert.Equal(
+            2,
+            ReadInt32(data, RuntimeTypeFactsEncoding.GenericArgumentCountOffset(target)));
+        Assert.Equal(
+            96,
+            ReadAddress(
+                data,
+                RuntimeTypeFactsEncoding.GenericArgumentTypeIdsOffset(target),
+                target));
+    }
+
+    [Fact]
+    public void EncodesMetadataOnlyGenericParameterWithoutDefinitionFlags()
+    {
+        var state = new ManagedStaticDataBuildState();
+
+        RuntimeTypeFactsEncoding.Add(
+            state,
+            WasmTargetLayout.Wasm32,
+            CliTypeIdentity.ScopedGenericParameter("owner", method: false, index: 0),
+            definition: null,
+            typeId: 7,
+            baseTypeId: 0,
+            assignableTypeIdsAddress: 0,
+            assignableTypeIdCount: 0);
+
+        var flags = (RuntimeTypeFactsFlags)ReadInt32(
+            Assert.Single(state.Segments).Data,
+            RuntimeTypeFactsEncoding.FlagsOffset);
+        Assert.Equal(RuntimeTypeFactsFlags.ContainsGenericParameters, flags);
+    }
+
+    [Theory]
+    [InlineData(0, 96)]
+    [InlineData(1, 0)]
+    [InlineData(-1, 0)]
+    public void RejectsInconsistentGenericArgumentMetadata(int count, int address)
+    {
+        var exception = Assert.Throws<CompilerException>(() =>
+            RuntimeTypeFactsEncoding.Add(
+                new ManagedStaticDataBuildState(),
+                WasmTargetLayout.Wasm32,
+                CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false),
+                new TypeDefinitionModel(
+                    new EntityKey(Assembly, 1),
+                    "Fixtures",
+                    "Box`1",
+                    IsValueType: false,
+                    [],
+                    []),
+                typeId: 7,
+                baseTypeId: 0,
+                assignableTypeIdsAddress: 0,
+                assignableTypeIdCount: 0,
+                genericArgumentTypeIdsAddress: address,
+                genericArgumentCount: count));
+
+        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
+    }
+
+    [Fact]
+    public void RejectsMissingDefinitionForDefinitionBackedIdentity()
+    {
+        var exception = Assert.Throws<CompilerException>(() =>
+            RuntimeTypeFactsEncoding.Add(
+                new ManagedStaticDataBuildState(),
+                WasmTargetLayout.Wasm32,
+                CliTypeIdentity.Named(Assembly, "Fixtures", "Box`1", false),
+                definition: null,
+                typeId: 7,
+                baseTypeId: 0,
+                assignableTypeIdsAddress: 0,
+                assignableTypeIdCount: 0));
+
+        Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
     }
 
     [Theory]
@@ -211,6 +330,45 @@ public sealed class RuntimeTypeFactsEncodingTests
             ReadInt32(
                 Assert.Single(state.Segments).Data,
                 RuntimeTypeFactsEncoding.FlagsOffset));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void EncodesAbstractOnlyForDefinitionBackedIdentities(
+        bool abstractDefinition,
+        bool expected)
+    {
+        var state = new ManagedStaticDataBuildState();
+        var definition = new TypeDefinitionModel(
+            new EntityKey(Assembly, 1),
+            "Fixtures",
+            "Base",
+            IsValueType: false,
+            [],
+            [])
+        {
+            IsAbstract = abstractDefinition,
+        };
+
+        RuntimeTypeFactsEncoding.Add(
+            state,
+            WasmTargetLayout.Wasm32,
+            CliTypeIdentity.Named(
+                Assembly,
+                definition.Namespace,
+                definition.Name,
+                isValueType: false),
+            definition,
+            typeId: 7,
+            baseTypeId: 3,
+            assignableTypeIdsAddress: 0,
+            assignableTypeIdCount: 0);
+
+        var flags = (RuntimeTypeFactsFlags)ReadInt32(
+            Assert.Single(state.Segments).Data,
+            RuntimeTypeFactsEncoding.FlagsOffset);
+        Assert.Equal(expected, (flags & RuntimeTypeFactsFlags.Abstract) != 0);
     }
 
     [Fact]

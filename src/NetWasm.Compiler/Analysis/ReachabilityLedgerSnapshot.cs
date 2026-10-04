@@ -23,7 +23,7 @@ internal sealed record ReachabilityLedgerSnapshot(
     ImmutableHashSet<string> Strings,
     ImmutableHashSet<EntityKey> StaticInitializers,
     ImmutableHashSet<string> ConstructedStaticInitializers,
-    ImmutableDictionary<EntityKey, EntityKey> Finalizers,
+    ImmutableDictionary<CliTypeIdentity, MethodInstanceModel> Finalizers,
     ImmutableHashSet<ManagedExceptionKind> ImplicitExceptions,
     ImmutableHashSet<CliTypeIdentity> AllocatedTypes,
     ImmutableDictionary<string, DispatchDeclaration> DispatchDeclarations,
@@ -64,7 +64,12 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal bool RequiresDelegateInvoke { get; init; }
 
+    internal bool RequiresGenericArguments { get; init; }
+
     internal RuntimeTypeNamePayload TypeNamePayload { get; init; }
+
+    internal ImmutableDictionary<string, MethodInstanceModel> NativeCallbacks { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
 
     internal static ReachabilityLedgerSnapshot From(ReachabilityLedger ledger) => new(
         ledger.Methods.ToImmutable(),
@@ -107,6 +112,8 @@ internal sealed record ReachabilityLedgerSnapshot(
         NamedMemberDescriptors = ledger.NamedMemberDescriptors.ToImmutable(),
         RequiresTypeFacts = ledger.RequiresTypeFacts,
         RequiresDelegateInvoke = ledger.RequiresDelegateInvoke,
+        RequiresGenericArguments = ledger.RequiresGenericArguments,
         TypeNamePayload = ledger.TypeNamePayload,
+        NativeCallbacks = ledger.NativeCallbacks.ToImmutable(),
     };
 }

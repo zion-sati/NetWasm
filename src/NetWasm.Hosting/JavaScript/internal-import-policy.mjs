@@ -1,5 +1,7 @@
 const requestKeys = ["module"];
 const internalModules = new Set([
+  "netwasm:diagnostics/terminal",
+  "netwasm:diagnostics/terminal@1.0.0",
   "netwasm:runtime/reactor-host",
   "netwasm:runtime/reactor-host@1.0.0",
 ]);

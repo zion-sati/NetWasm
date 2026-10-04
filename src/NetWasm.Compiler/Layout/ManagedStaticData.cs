@@ -17,6 +17,8 @@ internal sealed partial record ManagedStaticData(
 
 internal sealed partial record ManagedStaticData
 {
+    public ImmutableArray<MetadataTypeDescriptorLayout> MetadataTypeDescriptors { get; init; } = [];
+
     public ImmutableArray<EnumMetadataLayout> EnumMetadata { get; init; } = [];
 
     public ImmutableDictionary<string, int> MethodDescriptors { get; init; } =

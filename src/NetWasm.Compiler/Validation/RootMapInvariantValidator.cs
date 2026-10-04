@@ -20,12 +20,14 @@ internal sealed class RootMapInvariantValidator(
         ITypeRepository types,
         IFieldRepository fields,
         IMethodRepository methods,
-        ReachableProgram program)
+        ReachableProgram program,
+        ITypeClassifier typeClassifier)
     {
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(fields);
         ArgumentNullException.ThrowIfNull(methods);
         ArgumentNullException.ThrowIfNull(program);
+        ArgumentNullException.ThrowIfNull(typeClassifier);
         if (!program.RootMaps.Keys.ToHashSet().SetEquals(program.Methods.Keys))
         {
             throw exceptions.Create(
@@ -45,7 +47,8 @@ internal sealed class RootMapInvariantValidator(
                 methods,
                 program,
                 pair.Value,
-                program.RootMaps[pair.Key]);
+                program.RootMaps[pair.Key],
+                typeClassifier);
         }
         foreach (var pair in program.ConstructedMethods)
         {
@@ -55,7 +58,8 @@ internal sealed class RootMapInvariantValidator(
                 methods,
                 program,
                 pair.Value,
-                program.ConstructedRootMaps[pair.Key]);
+                program.ConstructedRootMaps[pair.Key],
+                typeClassifier);
         }
     }
 
@@ -65,7 +69,8 @@ internal sealed class RootMapInvariantValidator(
         IMethodRepository methods,
         ReachableProgram program,
         ManagedMethodBody method,
-        MethodRootMap roots)
+        MethodRootMap roots,
+        ITypeClassifier typeClassifier)
     {
         var body = method.Body;
         var displayName = method.Method.CanonicalName;
@@ -123,7 +128,8 @@ internal sealed class RootMapInvariantValidator(
             types,
             fields,
             methods,
-            program.DispatchCallSites);
+            program.DispatchCallSites,
+            typeClassifier);
         foreach (var block in method.ControlFlow.Graph.Blocks)
         {
             foreach (var instruction in block.Instructions.Where(instruction =>

@@ -22,7 +22,7 @@ internal sealed class RuntimeFunctionAppender(
         int importCount,
         ImmutableArray<FilterFunclet> filterFunclets,
         IReadOnlyDictionary<int, int> filterIndices,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         RuntimeInitializationPlan initialization,
         WasmEntryPointProfile entryPointProfile,
         JavaScriptAsyncMethodBinding? asyncBinding,
@@ -34,7 +34,14 @@ internal sealed class RuntimeFunctionAppender(
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentOutOfRangeException.ThrowIfNegative(importCount);
         ArgumentNullException.ThrowIfNull(filterIndices);
-        ArgumentNullException.ThrowIfNull(entryPoint);
+        if (entryPointProfile != WasmEntryPointProfile.None)
+        {
+            ArgumentNullException.ThrowIfNull(entryPoint);
+        }
+        else if (entryPoint is not null)
+        {
+            throw new ArgumentException("Library modules cannot declare an entry point.", nameof(entryPoint));
+        }
         ArgumentNullException.ThrowIfNull(initialization);
         ArgumentNullException.ThrowIfNull(asyncHelperIndices);
         ArgumentNullException.ThrowIfNull(functionIndices);
@@ -60,6 +67,14 @@ internal sealed class RuntimeFunctionAppender(
 
         var finalizableTypes = descriptors.TypeDescriptors
             .Where(descriptor => descriptor.Finalizer is not null)
+            .Select(descriptor => new FinalizerDispatchPlan(
+                descriptor.TypeId,
+                descriptor.Finalizer!))
+            .Concat(descriptors.ConstructedTypeDescriptors
+                .Where(descriptor => descriptor.Finalizer is not null)
+                .Select(descriptor => new FinalizerDispatchPlan(
+                    descriptor.TypeId,
+                    descriptor.Finalizer!)))
             .OrderBy(descriptor => descriptor.TypeId)
             .ToArray();
         var finalizerDispatcherIndex = importCount + functions.Count;
@@ -78,6 +93,12 @@ internal sealed class RuntimeFunctionAppender(
             ManagedBoundaryKind.InternalRuntimeDispatch,
             false,
             boundaryEntries);
+
+        if (entryPoint is null)
+        {
+            return new(filterDispatcherIndex, finalizerDispatcherIndex, null,
+                finalizableTypes.Length != 0);
+        }
 
         int entryPointIndex;
         if (entryPointProfile == WasmEntryPointProfile.Process)

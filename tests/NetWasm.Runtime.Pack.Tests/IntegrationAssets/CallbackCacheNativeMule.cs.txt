@@ -1,0 +1,30 @@
+using System.Runtime.InteropServices;
+
+namespace NativeMule;
+
+internal static class CallbackState
+{
+    internal static int Initializers;
+    internal static int Bodies;
+}
+
+internal static class CallbackOwner
+{
+    static CallbackOwner()
+    {
+        CallbackState.Initializers++;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "native_mule_callback_first")]
+    public static int Invoke(int value)
+    {
+        CallbackState.Bodies++;
+        return value + 31;
+    }
+}
+
+public static class EntryPoint
+{
+    public static int Run(int value) =>
+        CallbackState.Initializers * 100 + CallbackState.Bodies + value;
+}

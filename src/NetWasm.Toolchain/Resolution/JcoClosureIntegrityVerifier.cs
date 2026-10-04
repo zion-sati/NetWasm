@@ -19,7 +19,8 @@ internal static class JavaScriptClosureIntegrityVerifier
     public static void Verify(
         string packageRoot,
         string manifestRelativePath,
-        bool allowBundleCommand)
+        bool allowBundleCommand,
+        bool allowJcoPatchProvenance)
     {
         if (!Path.IsPathFullyQualified(packageRoot))
         {
@@ -119,7 +120,10 @@ internal static class JavaScriptClosureIntegrityVerifier
             }
 
             var relativePath = NormalizeManifestPath(Path.GetRelativePath(closureRoot, path));
-            if (IsControlFile(relativePath, allowBundleCommand))
+            if (IsControlFile(
+                    relativePath,
+                    allowBundleCommand,
+                    allowJcoPatchProvenance))
             {
                 continue;
             }
@@ -217,12 +221,20 @@ internal static class JavaScriptClosureIntegrityVerifier
             && (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0;
     }
 
-    private static bool IsControlFile(string relativePath, bool allowBundleCommand)
+    private static bool IsControlFile(
+        string relativePath,
+        bool allowBundleCommand,
+        bool allowJcoPatchProvenance)
     {
         return string.Equals(relativePath, "package-lock.json", StringComparison.Ordinal)
             || string.Equals(relativePath, "notices.json", StringComparison.Ordinal)
             || string.Equals(relativePath, "closure-pack-items.props", StringComparison.Ordinal)
             || string.Equals(relativePath, "closure-policy.json", StringComparison.Ordinal)
+            || (allowJcoPatchProvenance
+                && string.Equals(
+                    relativePath,
+                    "patch-provenance.json",
+                    StringComparison.Ordinal))
             || (allowBundleCommand
                 && string.Equals(
                     relativePath,

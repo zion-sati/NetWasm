@@ -17,10 +17,13 @@ test("parseStackTraceSymbols accepts absent and valid immutable symbol data", ()
   };
   const parsedObject = parseStackTraceSymbols(source);
   const parsedJson = parseStackTraceSymbols(JSON.stringify(source));
+  const parsedMethods = parseStackTraceSymbols(source.methods);
 
   assert.deepEqual(parsedObject, source.methods);
   assert.deepEqual(parsedJson, source.methods);
+  assert.deepEqual(parsedMethods, source.methods);
   assert.notStrictEqual(parsedObject[0], source.methods[0]);
+  assert.notStrictEqual(parsedMethods[0], source.methods[0]);
   assert.equal(Object.isFrozen(parsedObject[0]), true);
 });
 
@@ -55,7 +58,10 @@ test("parseStackTraceSymbols rejects invalid and duplicate methods", () => {
     { id: 1, name: "" },
   ]) {
     assert.throws(
-      () => parseStackTraceSymbols({ schemaVersion: 1, methods: [method] }),
+      () => parseStackTraceSymbols({
+        schemaVersion: 1,
+        methods: [method],
+      }),
       error => error instanceof NetWasmHostError && /index 0/i.test(error.message));
   }
 

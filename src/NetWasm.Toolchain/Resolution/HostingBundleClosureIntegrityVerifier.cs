@@ -7,5 +7,6 @@ public sealed class HostingBundleClosureIntegrityVerifier :
         JavaScriptClosureIntegrityVerifier.Verify(
             packageRoot,
             manifestRelativePath,
-            allowBundleCommand: true);
+            allowBundleCommand: true,
+            allowJcoPatchProvenance: false);
 }

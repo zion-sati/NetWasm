@@ -11,7 +11,7 @@
       "package": "wasi:cli@0.2.11",
       "world": "command",
       "sourceManifest": "../wit/wit-manifest.json",
-      "sourceManifestSha256": "f10e1568b44ad72b0e21d79ad2526d4722f67bf12e42fee61f36ca9cfb5c611e",
+      "sourceManifestSha256": "a650f4b54bfbb05c186a5f212810cc18aff250075be6ec7d6fb086d191779e8a",
       "file": "command.wit.wasm",
       "sha256": "624c67b287c812050a207dfd28a401f798838adbff330d702df0ccc711743293"
     },
@@ -20,9 +20,9 @@
       "package": "netwasm:component@1.0.0",
       "world": "async-command",
       "sourceManifest": "../async-wit/wit-manifest.json",
-      "sourceManifestSha256": "4e833f9b72a72a5b3037367d9064134efeac48ff9b1ba1291d121011928bed75",
+      "sourceManifestSha256": "5ca16414bd88cea43f1f4d3a1d72aaaf81de99c0932f0d939d0576d49b3f9edf",
       "file": "async-command.wit.wasm",
-      "sha256": "c299d92ee7136b7c1efda87c97d69b312e532285482a80c8d73e0fcd03154fe7"
+      "sha256": "2d9f6e646bf37da0299cb3c9aa4988ee139300540dc4f14aea5d29d45f16fa37"
     },
     {
       "name": "compiler",

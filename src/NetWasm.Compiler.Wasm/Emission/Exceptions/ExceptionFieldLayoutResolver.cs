@@ -23,7 +23,7 @@ internal sealed class ExceptionFieldLayoutResolver(
 
         var field = exception.Fields
             .Select(fields.GetField)
-            .Single(candidate => candidate.Name == fieldName);
-        return layouts.GetFieldLayout(field.Key).Offset;
+            .SingleOrDefault(candidate => candidate.Name == fieldName);
+        return field is null ? null : layouts.GetFieldLayout(field.Key).Offset;
     }
 }

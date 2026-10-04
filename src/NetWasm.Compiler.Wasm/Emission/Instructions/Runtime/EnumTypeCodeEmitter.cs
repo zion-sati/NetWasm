@@ -68,7 +68,7 @@ internal sealed class EnumTypeCodeEmitter(
                 WasmInstructionOperand.Memory(2, 0)));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(storage.Descriptor.TypeId)));
+                WasmInstructionOperand.Signed(storage.TypeId)));
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.If,

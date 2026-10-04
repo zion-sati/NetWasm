@@ -25,7 +25,7 @@ internal sealed class CompilerDiagnosticTraceWriter(
         ITypeLayoutProvider typeLayouts,
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         WasmTarget target,
         int staticDataEnd)
     {

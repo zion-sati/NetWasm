@@ -2,6 +2,7 @@ import {
   failedExecutionResult,
   normalExecutionResult,
 } from "./execution-result.mjs";
+import { managedExceptionBrand } from "./managed-errors.mjs";
 
 const minSignedInt32 = -0x80000000;
 const maxSignedInt32 = 0x7fffffff;
@@ -30,7 +31,14 @@ export function executeCommand(request = {}) {
   let exitCode;
   try {
     exitCode = run();
-  } catch {
+  } catch (cause) {
+    if (cause?.[managedExceptionBrand] === true) {
+      return failedExecutionResult(
+        "managedFailure",
+        "execution",
+        "managed.failure",
+        "The managed command failed.");
+    }
     return failedExecutionResult(
       "hostFailure",
       "execution",

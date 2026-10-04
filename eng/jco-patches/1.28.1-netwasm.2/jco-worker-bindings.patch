@@ -1,0 +1,313 @@
+diff --git a/crates/js-component-bindgen/src/esm_bindgen.rs b/crates/js-component-bindgen/src/esm_bindgen.rs
+index 3c312d14..c5e67b83 100644
+--- a/crates/js-component-bindgen/src/esm_bindgen.rs
++++ b/crates/js-component-bindgen/src/esm_bindgen.rs
+@@ -22,10 +22,22 @@ enum ImportBinding {
+ }
+ 
+ enum ExportBinding {
+-    Interface(BTreeMap<String, ExportBinding>),
++    Interface {
++        component_name: String,
++        members: BTreeMap<String, ExportBinding>,
++    },
+     Local(LocalName, WasmFuncName),
+ }
+ 
++impl ExportBinding {
++    fn component_name(&self) -> &str {
++        match self {
++            Self::Interface { component_name, .. } => component_name,
++            Self::Local(_, wasm_func_name) => wasm_func_name,
++        }
++    }
++}
++
+ #[derive(Default)]
+ pub struct EsmBindgen {
+     imports: BTreeMap<String, ImportBinding>,
+@@ -102,22 +114,35 @@ impl EsmBindgen {
+             return;
+         };
+ 
++        let component_name = iface_id_or_kebab.to_string();
+         // convert kebab names to camel case, leave ids as-is
+-        let iface_id_or_kebab = if iface_id_or_kebab.contains(':') {
+-            iface_id_or_kebab.to_string()
++        let js_name = if iface_id_or_kebab.contains(':') {
++            component_name.clone()
+         } else {
+             iface_id_or_kebab.to_lower_camel_case()
+         };
+ 
+-        if !iface.contains_key(&iface_id_or_kebab) {
++        if !iface.contains_key(&js_name) {
+             iface.insert(
+-                iface_id_or_kebab.to_string(),
+-                ExportBinding::Interface(BTreeMap::new()),
++                js_name.clone(),
++                ExportBinding::Interface {
++                    component_name,
++                    members: BTreeMap::new(),
++                },
+             );
+         }
+ 
+-        iface = match iface.get_mut(&iface_id_or_kebab).unwrap() {
+-            ExportBinding::Interface(iface) => iface,
++        iface = match iface.get_mut(&js_name).unwrap() {
++            ExportBinding::Interface {
++                component_name: existing_component_name,
++                members,
++            } if existing_component_name == iface_id_or_kebab => members,
++            ExportBinding::Interface {
++                component_name: existing_component_name,
++                ..
++            } => panic!(
++                "Exported interfaces {existing_component_name} and {iface_id_or_kebab} normalize to the same JavaScript name {js_name}"
++            ),
+             ExportBinding::Local(_, _) => panic!(
+                 "Exported interface {iface_id_or_kebab} cannot be both a function and an interface"
+             ),
+@@ -157,16 +182,12 @@ impl EsmBindgen {
+     pub fn exports(&self) -> Vec<(&str, &str)> {
+         self.export_aliases
+             .iter()
+-            .map(|(alias, name)| (alias.as_ref(), name.as_ref()))
+-            .chain(self.exports.iter().map(|(name, binding)| {
+-                (
+-                    name.as_ref(),
+-                    match binding {
+-                        ExportBinding::Interface(_) => name.as_ref(),
+-                        ExportBinding::Local(_, wasm_func_name) => wasm_func_name.as_str(),
+-                    },
+-                )
+-            }))
++            .map(|(alias, name)| (alias.as_ref(), self.exports[name].component_name()))
++            .chain(
++                self.exports
++                    .iter()
++                    .map(|(name, binding)| (name.as_ref(), binding.component_name())),
++            )
+             .collect()
+     }
+ 
+@@ -187,7 +208,7 @@ impl EsmBindgen {
+         // we currently only support first-level nesting so there is no ordering to figure out
+         // in the process we also populate the alias info
+         for (export_name, export) in self.exports.iter() {
+-            let ExportBinding::Interface(iface) = export else {
++            let ExportBinding::Interface { members: iface, .. } = export else {
+                 continue;
+             };
+             let (local_name, _) =
+@@ -213,7 +234,7 @@ impl EsmBindgen {
+             }
+             let local_name = match &self.exports[export_name] {
+                 ExportBinding::Local(local_name, _) => local_name,
+-                ExportBinding::Interface(_) => local_names.get(format!("export:{export_name}")),
++                ExportBinding::Interface { .. } => local_names.get(format!("export:{export_name}")),
+             };
+             let alias_maybe_quoted = maybe_quote_id(alias);
+             if local_name == alias_maybe_quoted {
+@@ -233,7 +254,7 @@ impl EsmBindgen {
+             }
+             let local_name = match export {
+                 ExportBinding::Local(local_name, _) => local_name,
+-                ExportBinding::Interface(_) => local_names.get(format!("export:{export_name}")),
++                ExportBinding::Interface { .. } => local_names.get(format!("export:{export_name}")),
+             };
+             let export_name_maybe_quoted = maybe_quote_id(export_name);
+             if local_name == export_name_maybe_quoted {
+@@ -492,3 +513,85 @@ impl EsmBindgen {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use wit_parser::{Docs, Function, FunctionKind, Span, Stability};
++
++    fn function(name: &str) -> Function {
++        Function {
++            name: name.to_string(),
++            kind: FunctionKind::Freestanding,
++            params: Vec::new(),
++            result: None,
++            docs: Docs::default(),
++            stability: Stability::default(),
++            span: Span::default(),
++            external_id: None,
++        }
++    }
++
++    #[test]
++    fn export_metadata_retains_original_component_names() {
++        let mut bindgen = EsmBindgen::default();
++        bindgen.add_export_binding(
++            Some("interface-0"),
++            "local_interface".into(),
++            "value".into(),
++            &function("value"),
++        );
++        bindgen.add_export_binding(
++            None,
++            "local_root".into(),
++            "root0".into(),
++            &function("root-0"),
++        );
++
++        assert_eq!(
++            bindgen.exports(),
++            vec![("interface0", "interface-0"), ("root0", "root-0")]
++        );
++    }
++
++    #[test]
++    fn qualified_export_alias_retains_original_component_name() {
++        let mut bindgen = EsmBindgen::default();
++        bindgen.add_export_binding(
++            Some("example:worker/math-api@1.0.0"),
++            "local_interface".into(),
++            "value".into(),
++            &function("value"),
++        );
++        bindgen.populate_export_aliases();
++
++        assert_eq!(
++            bindgen.exports(),
++            vec![
++                ("mathApi", "example:worker/math-api@1.0.0"),
++                (
++                    "example:worker/math-api@1.0.0",
++                    "example:worker/math-api@1.0.0"
++                ),
++            ]
++        );
++    }
++
++    #[test]
++    #[should_panic(expected = "normalize to the same JavaScript name interface0")]
++    fn colliding_interface_names_are_rejected() {
++        let mut bindgen = EsmBindgen::default();
++        bindgen.add_export_binding(
++            Some("interface-0"),
++            "first".into(),
++            "value".into(),
++            &function("value"),
++        );
++        bindgen.add_export_binding(
++            Some("interface0"),
++            "second".into(),
++            "value".into(),
++            &function("value"),
++        );
++    }
++}
+diff --git a/crates/js-component-bindgen/src/intrinsics/mod.rs b/crates/js-component-bindgen/src/intrinsics/mod.rs
+index f04463cb..e1bd0c5b 100644
+--- a/crates/js-component-bindgen/src/intrinsics/mod.rs
++++ b/crates/js-component-bindgen/src/intrinsics/mod.rs
+@@ -291,6 +291,7 @@ impl Intrinsic {
+                         const enumerable = typeof value !== 'string';
+                         super(enumerable ? `${String(value)} (see error.payload)` : value);
+                         Object.defineProperty(this, 'payload', { value, enumerable });
++                        componentErrorInstances.add(this);
+                     }
+                 }
+             ",
+@@ -1750,6 +1751,8 @@ impl Intrinsic {
+                 "base64Compile",
+                 "clampGuest",
+                 "ComponentError",
++                "componentErrorInstances",
++                "WeakSet",
+                 "fetchCompile",
+                 "finalizationRegistryCreate",
+                 "getErrorPayload",
+diff --git a/crates/js-component-bindgen/src/transpile_bindgen.rs b/crates/js-component-bindgen/src/transpile_bindgen.rs
+index 4dd1272c..acaeb244 100644
+--- a/crates/js-component-bindgen/src/transpile_bindgen.rs
++++ b/crates/js-component-bindgen/src/transpile_bindgen.rs
+@@ -6,7 +6,7 @@ use std::ops::Index;
+ 
+ use base64::Engine as _;
+ use base64::engine::general_purpose;
+-use heck::{ToKebabCase, ToLowerCamelCase, ToUpperCamelCase};
++use heck::{ToLowerCamelCase, ToUpperCamelCase};
+ use semver::Version;
+ use wasmtime_environ::component::{
+     CanonicalOptions, CanonicalOptionsDataModel, Component, ComponentExtern, ComponentTranslation,
+@@ -364,34 +364,24 @@ pub fn transpile_bindgen(
+         .esm_bindgen
+         .exports()
+         .iter()
+-        .map(|(export_name, canon_export_name)| {
+-            let expected_export_name =
+-                if canon_export_name.contains(':') || canon_export_name.starts_with("[async]") {
+-                    canon_export_name.to_string()
+-                } else {
+-                    canon_export_name.to_kebab_case()
+-                };
++        .map(|(export_name, component_export_name)| {
+             let (export_idx, _extern_data) = instantiator
+                 .component
+                 .exports
+-                .get(&expected_export_name, &NameMapNoIntern)
+-                .unwrap_or_else(|| panic!("failed to find component export [{expected_export_name}] (original '{canon_export_name}')"));
++                .get(component_export_name, &NameMapNoIntern)
++                .unwrap_or_else(|| {
++                    panic!("failed to find component export [{component_export_name}]")
++                });
+ 
+             let export_kind = match &instantiator.component.export_items[*export_idx] {
+                 wasmtime_environ::component::Export::LiftedFunction { .. } => {
+                     ExportKind::LiftedFunction
+                 }
+-                wasmtime_environ::component::Export::Instance { .. } => {
+-                    ExportKind::Instance
+-                }
++                wasmtime_environ::component::Export::Instance { .. } => ExportKind::Instance,
+                 _ => panic!("unexpected export kind"),
+             };
+ 
+-
+-            (
+-                export_name.to_string(),
+-export_kind,
+-            )
++            (export_name.to_string(), export_kind)
+         })
+         .collect();
+ 
+@@ -477,6 +467,9 @@ impl JsBindgen<'_> {
+             .transpile_opts(opts)
+             .build();
+         let js_intrinsics = render_intrinsics(render_args);
++        if self.all_intrinsics.contains(&Intrinsic::ComponentError) {
++            uwriteln!(output, "const componentErrorInstances = new WeakSet();");
++        }
+ 
+         // Write out instantiation
+         if let Some(instantiation) = &self.opts.instantiation_mode {
+@@ -681,11 +674,19 @@ impl JsBindgen<'_> {
+             "".into()
+         };
+ 
++        let maybe_component_error_predicate =
++            if self.all_intrinsics.contains(&Intrinsic::ComponentError) {
++                "isComponentError: value => componentErrorInstances.has(value),"
++            } else {
++                ""
++            };
++
+         uwriteln!(
+             output,
+             r#"
+               export const _util = {{
+                   {maybe_ext_future_class}
++                  {maybe_component_error_predicate}
+               }}
+             "#,
+         );

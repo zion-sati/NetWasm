@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
@@ -13,6 +14,48 @@ using static EmitterTestSupport;
 
 public sealed class FilterFuncletEmitterTests
 {
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void MemberExecutionPlanPreservesScratchOffsetsInsideTheParentEnvironment(WasmTarget target)
+    {
+        var program = new FakeProgram();
+        var method = CreateFilterMethod(program);
+        var plan = MemberExecutionPlan.Empty with { MethodInvokers = [EntryKey] };
+        var scratch = new ValueFrameLayout(32, [], [], [], [])
+        {
+            MemberResultOffsets = ImmutableDictionary<int, int>.Empty.Add(7, 8),
+        };
+        var valueFrames = new RecordingValueFramePlanner(scratch);
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var emitter = ThroughContract(new FilterFuncletEmitter(
+            layouts, valueFrames, new ExceptionPayloadBlockEmitter(layouts),
+            new GeneratedFunctionWriterFactory()));
+        var environment = new FilterEnvironmentLayout(64, 48, 0, []);
+        MethodEmissionContext? emittedContext = null;
+        var sequence = new FilterSequenceEmitterAdapter((_, _, _, context) =>
+        {
+            emittedContext = context;
+            return new ManagedMethodSequenceEmission([]);
+        });
+
+        var emission = emitter.Emit(
+            new FilterFunclet(1, new ManagedMethodIdentity("test-filter"), method,
+                CreateFilterClause(StructuredSequence.Empty)),
+            environment,
+            sequence,
+            plan);
+
+        Assert.Same(plan, valueFrames.MemberExecution);
+        Assert.Same(method.Header, valueFrames.Header);
+        Assert.NotNull(emittedContext);
+        Assert.Equal(8, emittedContext.ValueLayout.MemberResultOffsets[7]);
+        Assert.Equal(scratch with { Size = environment.Size }, emittedContext.ValueLayout);
+        Assert.Equal(1, emittedContext.ValueFrame);
+        Assert.Same(environment, emittedContext.FilterEnvironment);
+        Assert.NotEmpty(emission.Body);
+    }
+
     [Fact]
     public void SequenceAdapterRejectsAMissingEmissionCapability()
     {
@@ -53,6 +96,7 @@ public sealed class FilterFuncletEmitterTests
 
         var emitter = new FilterFuncletEmitter(
 layouts,
+            CreateValueFrameLayoutPlanner(program, layouts),
             new ExceptionPayloadBlockEmitter(layouts),
             new GeneratedFunctionWriterFactory());
         var emission = ((IFilterFuncletEmitter)emitter).Emit(
@@ -153,6 +197,8 @@ layouts,
                 CreateSequence()));
     }
 
+    private static IFilterFuncletEmitter ThroughContract(IFilterFuncletEmitter emitter) => emitter;
+
     private static IFilterFuncletEmitter CreateEmitter(WasmTarget target)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
@@ -161,9 +207,26 @@ layouts,
         {
             new FilterFuncletEmitter(
 layouts,
+                CreateValueFrameLayoutPlanner(program, layouts),
                 new ExceptionPayloadBlockEmitter(layouts),
                 new GeneratedFunctionWriterFactory()),
         }.Cast<IFilterFuncletEmitter>().Single();
+    }
+
+    private sealed class RecordingValueFramePlanner(ValueFrameLayout result) : IValueFrameLayoutPlanner
+    {
+        public MemberExecutionPlan? MemberExecution { get; private set; }
+        public StructuredMethodHeader? Header { get; private set; }
+
+        public ValueFrameLayout Create(
+            StructuredMethodHeader header,
+            NativeImportPlan? nativeImports = null,
+            MemberExecutionPlan? memberExecution = null)
+        {
+            Header = header;
+            MemberExecution = memberExecution;
+            return result;
+        }
     }
 
     private static StructuredMethod CreateFilterMethod(FakeProgram program) =>

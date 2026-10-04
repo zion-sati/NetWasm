@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 using NetWasm.Runtime.Pack.Composition;
@@ -11,15 +12,17 @@ namespace NetWasm.Runtime.Pack.MsBuild;
 public sealed class RuntimeMaterializationTask : Task
 {
     private readonly IRuntimeModuleMaterializer _materializer;
+    private readonly INativeLibraryItemReader _nativeLibraries;
 
     public RuntimeMaterializationTask()
-        : this(RuntimeMaterializationComposition.Create())
+        : this(RuntimeMaterializationComposition.Create(), RuntimeMaterializationComposition.CreateNativeLibraryItemReader())
     {
     }
 
-    internal RuntimeMaterializationTask(IRuntimeModuleMaterializer materializer)
+    internal RuntimeMaterializationTask(IRuntimeModuleMaterializer materializer, INativeLibraryItemReader nativeLibraries)
     {
         _materializer = materializer ?? throw new ArgumentNullException(nameof(materializer));
+        _nativeLibraries = nativeLibraries ?? throw new ArgumentNullException(nameof(nativeLibraries));
     }
 
     [Required]
@@ -62,6 +65,10 @@ public sealed class RuntimeMaterializationTask : Task
     public string InitialHeapSizeBytes { get; set; } = string.Empty;
 
     public string MaximumMemorySizeBytes { get; set; } = string.Empty;
+
+    public ITaskItem[] NativeLibraries { get; set; } = [];
+
+    public string NativeCallbackObjectPath { get; set; } = string.Empty;
 
     [Required]
     public string SdkVersion { get; set; } = string.Empty;
@@ -127,7 +134,11 @@ public sealed class RuntimeMaterializationTask : Task
                     WasmLdVersion,
                     WasmOptVersion,
                     WasmToolsVersion,
-                    NodeVersion)));
+                    NodeVersion))
+            {
+                NativeLibraries = _nativeLibraries.Read(NativeLibraries),
+                NativeCallbackObjectPath = NativeCallbackObjectPath,
+            });
             RuntimeModules = [CreateRuntimeModule(materialization)];
             LogCacheMetrics(materialization.CacheMetrics);
             return true;
@@ -179,6 +190,10 @@ public sealed class RuntimeMaterializationTask : Task
         item.SetMetadata("RuntimeAbi", materialization.RuntimeAbi);
         item.SetMetadata("BuildSeam", materialization.BuildSeam);
         item.SetMetadata("ToolchainFingerprint", materialization.ToolchainFingerprint);
+        ((ITaskItem2)item).SetMetadataValueLiteral("InternalRuntimeExports", JsonSerializer.Serialize(materialization.InternalRuntimeExports));
+        ((ITaskItem2)item).SetMetadataValueLiteral(
+            "InternalApplicationExports",
+            JsonSerializer.Serialize(materialization.InternalApplicationExports));
         return item;
     }
 

@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.Analysis;
 internal interface IReachabilityClosureBuilder
 {
     ReachableProgram Build(
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         IEnumerable<ProgramExport> requestedExports,
         ReachabilityRoots? roots = null);
 }

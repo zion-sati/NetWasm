@@ -44,7 +44,10 @@ public sealed record WitInterface(
 public sealed record WitWorldItem(
     string Name,
     int? InterfaceId,
-    WitFunction? Function);
+    WitFunction? Function)
+{
+    public string? CoreBindingName { get; init; }
+}
 
 public sealed record WitWorld(
     int Id,

@@ -17,7 +17,7 @@ internal interface ICompilerDiagnosticTraceWriter
         ITypeLayoutProvider typeLayouts,
         IInstanceFieldLayoutProvider instanceFields,
         IStaticFieldLayoutProvider staticFields,
-        MethodDefinitionModel entryPoint,
+        MethodDefinitionModel? entryPoint,
         WasmTarget target,
         int staticDataEnd);
 }

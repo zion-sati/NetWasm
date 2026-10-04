@@ -16,6 +16,7 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
     private static readonly JsonSerializerOptions MetadataJsonOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
     private readonly ICompilerBuildMetadataReader _compilerMetadata;
     private readonly IHostInteropManifestReader _interopManifests;
@@ -88,6 +89,9 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
     [Required]
     public string AdapterPath { get; set; } = string.Empty;
 
+    [Required]
+    public string BindingManifestPath { get; set; } = string.Empty;
+
     [Output]
     public ITaskItem[] Adapters { get; private set; } = [];
 
@@ -134,12 +138,19 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
                 RuntimeWitPath = RuntimeWitPath,
                 RuntimeWorld = NullIfEmpty(RuntimeWorld),
             });
+            var requiredImports = result.RequiredImports
+                .OrderBy(item => item.Interface, StringComparer.Ordinal)
+                .ThenBy(item => item.Name, StringComparer.Ordinal)
+                .ToArray();
             _artifacts.Write(AdapterPath, result.Adapter);
+            _artifacts.Write(BindingManifestPath, JsonSerializer.SerializeToUtf8Bytes(
+                new RawBindingManifest(1, Target, [.. requiredImports]),
+                MetadataJsonOptions));
             Adapters = [CreateAdapterItem()];
-            RequiredImports = [.. result.RequiredImports.Select(CreateFunctionItem)];
+            RequiredImports = [.. requiredImports.Select(CreateFunctionItem)];
             RequiredImportModules =
             [
-                .. result.RequiredImports
+                .. requiredImports
                     .Select(function => function.Interface)
                     .Distinct(StringComparer.Ordinal)
                     .Order(StringComparer.Ordinal)

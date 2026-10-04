@@ -169,7 +169,7 @@
       "id": "wit.package-manifest",
       "version": "1",
       "relativePath": "tools/wit-packages/wit-package-manifest.json",
-      "sha256": "1bf92396f007e365fe2577e3fe174811ceea8179588c46c6314cc2527baf635b"
+      "sha256": "128bfefc6d7a5a7e3292405ba98889c0966f70fc5e02f9d4c6e2eeebd6b97ef6"
     },
     {
       "id": "wit.command-package",
@@ -181,7 +181,7 @@
       "id": "wit.async-command-package",
       "version": "1.0.0",
       "relativePath": "tools/wit-packages/async-command.wit.wasm",
-      "sha256": "c299d92ee7136b7c1efda87c97d69b312e532285482a80c8d73e0fcd03154fe7"
+      "sha256": "2d9f6e646bf37da0299cb3c9aa4988ee139300540dc4f14aea5d29d45f16fa37"
     },
     {
       "id": "wit.compiler-package",
@@ -217,7 +217,7 @@
       "id": "jco.closure-integrity",
       "version": "1",
       "relativePath": "tools/jco/closure-integrity.json",
-      "sha256": "756300ad2a4a92508cc7c149bac9eebc6b2ebe2921c068837fba80af94ed4251"
+      "sha256": "827d7a0f23aa0ea96c909176d272be5995cc4caf6f42c9fe79fe13715295dbc5"
     },
     {
       "id": "jco.notices",
@@ -230,6 +230,12 @@
       "version": "1",
       "relativePath": "tools/jco/closure-policy.json",
       "sha256": "bc65a6b87be119c87c1c51f155681b045382b3d29e467cc6b7765cf9006d8a70"
+    },
+    {
+      "id": "jco.bindgen-patch",
+      "version": "1.28.1+netwasm.2",
+      "relativePath": "tools/jco/patch-provenance.json",
+      "sha256": "c205e2c248f8bdefae317606fb03af5711c5fa6e9bb4ff10b85d94a92a389ce5"
     },
     {
       "id": "hosting-bundle.command",

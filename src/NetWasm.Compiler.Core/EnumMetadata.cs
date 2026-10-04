@@ -10,14 +10,18 @@ namespace NetWasm.Compiler.Core;
 public readonly record struct EnumMemberModel(string Name, ulong RawValue);
 
 /// <summary>
-/// The compact metadata published for one reachable enum type.
+/// The compact metadata published for one reachable enum type. Type identifies
+/// the metadata definition; EnumType preserves its exact runtime identity.
+/// Open definitions retain enum facts but cannot be boxed or allocated as values.
 /// </summary>
 public readonly record struct EnumMetadataLayout(
     EntityKey Type,
+    CliTypeIdentity EnumType,
     int TypeId,
     int Address,
     CliTypeIdentity UnderlyingType,
     bool IsFlags,
+    bool IsOpenDefinition,
     ImmutableArray<EnumMetadataMemberLayout> Members);
 
 public readonly record struct EnumMetadataMemberLayout(

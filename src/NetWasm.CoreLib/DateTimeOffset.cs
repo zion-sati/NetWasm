@@ -284,33 +284,7 @@ namespace System
             {
                 value = value.Substring(start, end - start);
             }
-            if (value.Length < 25) return false;
-            var offsetStart = value.Length - 6;
-            var sign = value[offsetStart];
-            if ((sign != '+' && sign != '-') ||
-                !InvariantDateTimeText.TryReadDigits(value, offsetStart + 1, 2, out var hours) ||
-                !InvariantDateTimeText.HasSeparator(value, offsetStart + 3, ':') ||
-                !InvariantDateTimeText.TryReadDigits(value, offsetStart + 4, 2, out var minutes) ||
-                hours > 14 || minutes >= 60 || (hours == 14 && minutes != 0))
-            {
-                return false;
-            }
-            var dateText = value.Substring(0, offsetStart);
-            if (!DateTime.TryParse(dateText, out var dateTime) || dateTime.Kind != DateTimeKind.Unspecified)
-            {
-                return false;
-            }
-            try
-            {
-                var offsetMinutes = hours * 60 + minutes;
-                if (sign == '-') offsetMinutes = -offsetMinutes;
-                result = new DateTimeOffset(dateTime.Ticks, TimeSpan.FromMinutes(offsetMinutes));
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            return TryParseInvariant(value, requireFixedFraction: false, out result);
         }
 
         public static bool TryParse(string? value, IFormatProvider? formatProvider, out DateTimeOffset result) =>
@@ -364,12 +338,24 @@ namespace System
             System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
         {
             ValidateStyles(styles);
-            if (value is null || format is null || !IsRoundTripFormat(format))
+            result = default;
+            if (value is null || format is null)
             {
-                result = default;
                 return false;
             }
-            return TryParse(value, formatProvider, styles, out result);
+            var parsed = format switch
+            {
+                "O" or "o" => TryParseInvariant(value, requireFixedFraction: true, out result),
+                "G" or "g" => TryParseInvariant(value, requireFixedFraction: false, out result),
+                _ when format == InvariantDateTimeText.Rfc3339Format =>
+                    TryParseInvariant(value, requireFixedFraction: false, out result),
+                _ => false,
+            };
+            if (parsed && (styles & System.Globalization.DateTimeStyles.AdjustToUniversal) != 0)
+            {
+                result = result.ToUniversalTime();
+            }
+            return parsed;
         }
 
         public static DateTimeOffset ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
@@ -464,8 +450,12 @@ namespace System
 
         private string FormatInvariant(string? format)
         {
-            if (format is not null && format.Length != 0 && format != "O" && format != "o" &&
-                format != "G" && format != "g")
+            if (format == InvariantDateTimeText.Rfc3339Format)
+            {
+                return InvariantDateTimeText.FormatRfc3339(DateTime, FormatOffset());
+            }
+            if (format is not null && format.Length != 0 && format != "O" && format != "o"
+                && format != "G" && format != "g")
             {
                 throw new FormatException();
             }
@@ -490,7 +480,62 @@ namespace System
             return days + value.Day;
         }
 
-        private static bool IsRoundTripFormat(string format) => format == "O" || format == "o" || format == "G" || format == "g";
+        private static bool TryParseInvariant(
+            string value,
+            bool requireFixedFraction,
+            out DateTimeOffset result)
+        {
+            result = default;
+            var dateEnd = value.Length;
+            var offsetMinutes = 0;
+            if (dateEnd > 0 && value[dateEnd - 1] == 'Z')
+            {
+                dateEnd--;
+            }
+            else
+            {
+                if (value.Length < 25)
+                {
+                    return false;
+                }
+                dateEnd -= 6;
+                var sign = value[dateEnd];
+                if ((sign != '+' && sign != '-')
+                    || !InvariantDateTimeText.TryReadDigits(value, dateEnd + 1, 2, out var hours)
+                    || !InvariantDateTimeText.HasSeparator(value, dateEnd + 3, ':')
+                    || !InvariantDateTimeText.TryReadDigits(value, dateEnd + 4, 2, out var minutes)
+                    || hours > 14 || minutes >= 60 || (hours == 14 && minutes != 0))
+                {
+                    return false;
+                }
+                offsetMinutes = hours * 60 + minutes;
+                if (sign == '-') offsetMinutes = -offsetMinutes;
+            }
+
+            if (requireFixedFraction
+                && (dateEnd != 27
+                    || !InvariantDateTimeText.HasSeparator(value, 19, '.')
+                    || !InvariantDateTimeText.TryReadFraction(value, 20, 27, out _)))
+            {
+                return false;
+            }
+
+            var dateText = value.Substring(0, dateEnd);
+            if (!DateTime.TryParse(dateText, out var dateTime)
+                || dateTime.Kind != DateTimeKind.Unspecified)
+            {
+                return false;
+            }
+            try
+            {
+                result = new DateTimeOffset(dateTime.Ticks, TimeSpan.FromMinutes(offsetMinutes));
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
 
         private static bool IsWhiteSpace(char value) => value is ' ' or '\t' or '\r' or '\n' or '\f' or '\v';
 

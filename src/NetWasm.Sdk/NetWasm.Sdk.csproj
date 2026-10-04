@@ -52,6 +52,7 @@
     <None Include="../../eng/NetWasm.PackageVersions.props" Pack="true" PackagePath="Sdk/NetWasm.PackageVersions.props" LogicalSourcePath="eng/NetWasm.PackageVersions.props" />
     <None Include="Sdk/NetWasm.Sdk.Analyzers.globalconfig" Pack="true" PackagePath="Sdk/NetWasm.Sdk.Analyzers.globalconfig" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NetWasm.Sdk.Analyzers.globalconfig" />
     <None Include="Sdk/NetWasm.Toolchain.targets" Pack="true" PackagePath="Sdk/NetWasm.Toolchain.targets" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NetWasm.Toolchain.targets" />
+    <None Include="Sdk/NetWasm.NativeLibraries.targets" Pack="true" PackagePath="Sdk/NetWasm.NativeLibraries.targets" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NetWasm.NativeLibraries.targets" />
     <None Include="Sdk/NuGetBuildTasksPackTargets.targets" Pack="true" PackagePath="Sdk/NuGetBuildTasksPackTargets.targets" LogicalSourcePath="src/NetWasm.Sdk/Sdk/NuGetBuildTasksPackTargets.targets" />
     <None Include="README.md" Pack="true" PackagePath="README.md" LogicalSourcePath="src/NetWasm.Sdk/README.md" Condition="Exists('README.md')" />
   </ItemGroup>
