@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -47,6 +48,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             layout.NativeImports.Any(import =>
                 string.IsNullOrWhiteSpace(import.LibraryName) ||
                 string.IsNullOrWhiteSpace(import.EntryPoint)) ||
+            !ValidRuntimeFeatures(layout.RuntimeFeatures) ||
             !ValidCallbackSupport(layout.NativeCallbackSupport))
         {
             throw new InvalidOperationException("The NetWasm runtime layout evidence is invalid.");
@@ -63,6 +65,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             "target",
             "applicationStaticDataEnd",
             "managedExecutableEntryPoint",
+            "runtimeFeatures",
             "nativeImports",
             "nativeCallbackSupport",
         ]);
@@ -70,6 +73,11 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             !schema.TryGetInt32(out var version) ||
             !fields.ContainsKey("target") || !fields.ContainsKey("applicationStaticDataEnd"))
             throw InvalidContract();
+        if (fields.TryGetValue("runtimeFeatures", out var features) &&
+            features.ValueKind != JsonValueKind.Array)
+        {
+            throw InvalidContract();
+        }
         if (!fields.TryGetValue("nativeImports", out var imports))
         {
             if (version != 2 || fields.ContainsKey("nativeCallbackSupport"))
@@ -97,6 +105,25 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
         {
             throw InvalidContract();
         }
+    }
+
+    private static bool ValidRuntimeFeatures(ImmutableArray<string> features)
+    {
+        if (features.IsDefault)
+        {
+            return true;
+        }
+        string[] known =
+        [
+            "ephemeron-handles",
+            "local-time",
+            "structured-command-diagnostics",
+        ];
+        return features.SequenceEqual(
+            features.Order(StringComparer.Ordinal),
+            StringComparer.Ordinal) &&
+            features.Distinct(StringComparer.Ordinal).Count() == features.Length &&
+            features.All(known.Contains);
     }
 
     private static void ValidateCallbackContract(JsonElement support)

@@ -76,6 +76,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
             request.Manifest.Exports,
             bindings)
         {
+            RuntimeFeatures = request.SourceLayout.RuntimeFeatures,
             NativeCallbackSupport = callbackSupport,
         };
         var internalExports = exports.Build(exportRequest).InternalExports;
@@ -86,6 +87,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
             new(plan.RuntimeGlobalBase, null, plan.MaximumMemorySizeBytes), consumer.AssetRoot,
             request.SystemLibraryPaths, consumer.OutputPath)
         {
+            RuntimeFeatures = request.SourceLayout.RuntimeFeatures,
             NativeBindings = bindings,
             NativeCallbackObjectPath = callbackSupport is null
                 ? null
@@ -94,7 +96,13 @@ internal sealed class RuntimeNativeModuleMaterializer(
             NativeCallbackSupport = callbackSupport,
         };
         var identityArguments = linkArguments.Build(identityLink);
-        var identityOptimization = optimizationArguments.Build(new(request.Target, consumer.OutputPath, consumer.Optimization));
+        var identityOptimization = optimizationArguments.Build(new(
+            request.Target,
+            consumer.OutputPath,
+            consumer.Optimization)
+        {
+            RuntimeGlobalBase = plan.RuntimeGlobalBase,
+        });
         var keyRequest = new RuntimeNativeMaterializationCacheKeyRequest(consumer.BuildIdentity, request.Manifest,
             request.Target, plan, bindings, consumer.Optimization, identityArguments, identityOptimization,
             consumer.AssetRoot, consumer.OutputPath)
@@ -213,7 +221,10 @@ internal sealed class RuntimeNativeModuleMaterializer(
         bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated, finalTrace, linked));
         if (consumer.Optimization != RuntimeWasmOptimization.None)
             commands.Invoke(new(consumer.WasmOptPath,
-                optimizationArguments.Build(new(request.Target, output, consumer.Optimization)),
+                optimizationArguments.Build(new(request.Target, output, consumer.Optimization)
+                {
+                    RuntimeGlobalBase = plan.RuntimeGlobalBase,
+                }),
                 Path.Combine(workspace.LogDirectoryPath, "native-optimize.log")));
         validation.Validate(new(profile, consumer.Target, output, consumer.WasmToolsNodePath,
             consumer.WasmToolsCommandPath, consumer.WasmToolsModulePath,

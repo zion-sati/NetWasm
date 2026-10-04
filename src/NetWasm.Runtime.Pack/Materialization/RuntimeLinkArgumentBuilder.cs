@@ -61,6 +61,7 @@ internal sealed class RuntimeLinkArgumentBuilder(IRuntimeLinkExportPlanBuilder e
         arguments.Add("--export-table");
         var exportPlan = _exports.Build(new(request.Manifest.Exports, request.NativeBindings)
         {
+            RuntimeFeatures = request.RuntimeFeatures,
             NativeCallbackSupport = request.NativeCallbackSupport,
         });
         arguments.AddRange(exportPlan.Arguments);

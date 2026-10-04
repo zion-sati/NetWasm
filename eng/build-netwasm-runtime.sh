@@ -374,6 +374,7 @@ if [[ "$output_kind" = relocatable ]]; then
             emcc "$relative_source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" \
                 -I"$libc_internal_include" -I"$libc_arch_include" -I"$libc_source_include" \
                 "${defines[@]}" "${configuration_defines[@]}" \
+                -DNETWASM_RUNTIME_PACK \
                 "${target_args[@]}" "${optimization[@]}" \
                 "${debug_information[@]}" -o "$object"
         )

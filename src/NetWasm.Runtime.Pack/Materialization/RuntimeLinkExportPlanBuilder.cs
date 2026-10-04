@@ -6,6 +6,23 @@ namespace NetWasm.Runtime.Pack.Materialization;
 
 internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuilder
 {
+    private const string EphemeronHandlesFeature = "ephemeron-handles";
+    private const string StructuredCommandDiagnosticsFeature =
+        "structured-command-diagnostics";
+    private static readonly ImmutableArray<string> EphemeronExports =
+    [
+        "ephemeron_handle_get_key",
+        "ephemeron_handle_get_value",
+        "ephemeron_handle_new",
+        "ephemeron_handle_release",
+    ];
+    private static readonly ImmutableArray<string> StructuredCommandDiagnosticsExports =
+    [
+        "command_exception_capture",
+        "command_exception_completion",
+        "command_exception_release",
+        "command_exception_write",
+    ];
     private static readonly ImmutableArray<string> RequiredRuntimeExports =
         ["emscripten_stack_get_current", "_emscripten_stack_restore"];
     private static readonly ImmutableArray<string> OptionalRuntimeExports =
@@ -23,10 +40,11 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
             (callbackSupport.TemporaryRuntimeExports.IsDefault ||
              callbackSupport.TemporaryRuntimeExports.Any(InvalidName)))
             throw new InvalidOperationException("The runtime export plan inputs are invalid.");
-        var required = RequiredRuntimeExports.AddRange(request.PublicExports);
+        var publicExports = SelectPublicExports(request);
+        var required = RequiredRuntimeExports.AddRange(publicExports);
         var arguments = RequiredRuntimeExports.Select(name => "--export=" + name)
             .Concat(OptionalRuntimeExports.Select(name => "--export-if-defined=" + name))
-            .Concat(request.PublicExports.Select(name => "--export=" + name)).ToImmutableArray();
+            .Concat(publicExports.Select(name => "--export=" + name)).ToImmutableArray();
         if (request.NativeBindings.IsEmpty && request.NativeCallbackSupport is null)
             return new(arguments, []);
         var publicNames = required.Concat(OptionalRuntimeExports).Append("memory").Append("__indirect_function_table")
@@ -46,6 +64,28 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
             throw new InvalidOperationException("The runtime export plan contains conflicting native export kinds.");
         return new(arguments.AddRange(added.Select(export => "--export=" + export.Name)),
             added.Distinct().Where(export => !publicNames.Contains(export.Name)).ToImmutableArray());
+    }
+
+    private static ImmutableArray<string> SelectPublicExports(
+        RuntimeLinkExportPlanRequest request)
+    {
+        // Missing feature evidence is the compatibility form used by older
+        // compilers. It retains every optional runtime capability.
+        var includeEphemerons = request.RuntimeFeatures.IsDefault ||
+            request.RuntimeFeatures.Contains(EphemeronHandlesFeature);
+        var includeStructuredDiagnostics = request.RuntimeFeatures.IsDefault ||
+            request.RuntimeFeatures.Contains(StructuredCommandDiagnosticsFeature);
+        var exports = includeEphemerons
+            ? request.PublicExports
+            : request.PublicExports
+                .Where(name => !EphemeronExports.Contains(name))
+                .ToImmutableArray();
+        if (includeStructuredDiagnostics)
+        {
+            exports = exports.AddRange(StructuredCommandDiagnosticsExports
+                .Where(name => !exports.Contains(name)));
+        }
+        return exports;
     }
 
     private static bool InvalidName(string? name) =>

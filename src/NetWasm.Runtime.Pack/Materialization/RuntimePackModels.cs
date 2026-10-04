@@ -50,6 +50,10 @@ internal sealed record RuntimeLayout(
     string Target,
     long ApplicationStaticDataEnd)
 {
+    // A default array identifies layouts written before runtime feature
+    // evidence was added. Those layouts retain the complete runtime for
+    // compatibility; an initialized empty array selects the base runtime.
+    public ImmutableArray<string> RuntimeFeatures { get; init; }
     public ImmutableArray<RuntimeNativeImport> NativeImports { get; init; } = [];
     public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
 }
@@ -90,6 +94,7 @@ internal sealed record RuntimeLinkRequest(
     ImmutableArray<string> SystemLibraryPaths,
     string OutputPath)
 {
+    public ImmutableArray<string> RuntimeFeatures { get; init; }
     public ImmutableArray<RuntimeNativeBinding> NativeBindings { get; init; } = [];
     public string? NativeCallbackObjectPath { get; init; }
     public string? NativeCallbackAllowedUndefinedPath { get; init; }
@@ -99,7 +104,10 @@ internal sealed record RuntimeLinkRequest(
 internal sealed record RuntimeOptimizationRequest(
     RuntimePackTarget Target,
     string OutputPath,
-    RuntimeWasmOptimization Optimization);
+    RuntimeWasmOptimization Optimization)
+{
+    public long RuntimeGlobalBase { get; init; }
+}
 
 internal sealed record RuntimeCommand(
     string ExecutablePath,

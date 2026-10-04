@@ -70,6 +70,8 @@ public sealed class CompilerArtifactWriterTests
         Assert.Equal("wasm32", layout.RootElement.GetProperty("target").GetString());
         Assert.Equal(65_537, layout.RootElement.GetProperty("applicationStaticDataEnd").GetInt32());
         Assert.False(layout.RootElement.TryGetProperty("runtimeGlobalBase", out _));
+        Assert.Equal("local-time", Assert.Single(
+            layout.RootElement.GetProperty("runtimeFeatures").EnumerateArray()).GetString());
         var nativeImports = layout.RootElement.GetProperty("nativeImports");
         Assert.Equal(2, nativeImports.GetArrayLength());
         Assert.Equal("mule", nativeImports[0].GetProperty("libraryName").GetString());
@@ -146,6 +148,7 @@ public sealed class CompilerArtifactWriterTests
         Assert.Empty(metadata.RootElement.GetProperty("functionImports").EnumerateArray());
         using var layout = JsonDocument.Parse(File.ReadAllText(layoutPath));
         Assert.Equal(3, layout.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Empty(layout.RootElement.GetProperty("runtimeFeatures").EnumerateArray());
         Assert.Empty(layout.RootElement.GetProperty("nativeImports").EnumerateArray());
     }
 

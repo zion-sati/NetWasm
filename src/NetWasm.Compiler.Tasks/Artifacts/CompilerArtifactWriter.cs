@@ -26,6 +26,11 @@ internal sealed class CompilerArtifactWriter(
             throw new InvalidOperationException("The compiler native import facts are uninitialized.");
         _callbackSupport.Validate(compilation.NativeCallbackSupport);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.NativeCallbackObjectPath);
+        var runtimeFeatures = compilation.RuntimeFeatures.IsDefault
+            ? []
+            : compilation.RuntimeFeatures
+                .Order(StringComparer.Ordinal)
+                .ToArray();
         WriteBytes(request.CoreModulePath, compilation.CoreModule);
         if (compilation.NativeCallbackSupport is { } callbackSupport)
         {
@@ -36,6 +41,7 @@ internal sealed class CompilerArtifactWriter(
                 target = compilation.Target,
                 applicationStaticDataEnd = compilation.StaticDataEnd,
                 managedExecutableEntryPoint = compilation.EntryPoint,
+                runtimeFeatures,
                 nativeImports = compilation.NativeImports,
                 nativeCallbackSupport = new
                 {
@@ -56,6 +62,7 @@ internal sealed class CompilerArtifactWriter(
                 target = compilation.Target,
                 applicationStaticDataEnd = compilation.StaticDataEnd,
                 managedExecutableEntryPoint = compilation.EntryPoint,
+                runtimeFeatures,
                 nativeImports = compilation.NativeImports,
             });
         }
@@ -67,9 +74,6 @@ internal sealed class CompilerArtifactWriter(
                     "compiler diagnostics did not produce an exception type map");
             WriteBytes(request.ExceptionTypeMapPath, map.Bytes);
         }
-        var runtimeFeatures = compilation.RuntimeFeatures.IsDefault
-            ? []
-            : compilation.RuntimeFeatures;
         var functionImports = compilation.FunctionImports.IsDefault
             ? []
             : compilation.FunctionImports;
@@ -77,9 +81,7 @@ internal sealed class CompilerArtifactWriter(
         {
             schemaVersion = 1,
             target = compilation.Target,
-            runtimeFeatures = runtimeFeatures
-                .Order(StringComparer.Ordinal)
-                .ToArray(),
+            runtimeFeatures,
             functionImports = functionImports.Select(import => new
             {
                 import.Module,

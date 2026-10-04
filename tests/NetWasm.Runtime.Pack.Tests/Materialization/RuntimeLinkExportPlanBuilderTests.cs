@@ -22,13 +22,60 @@ public sealed class RuntimeLinkExportPlanBuilderTests
     [Fact]
     public void NonNativePlanPreservesExistingExportOrderWithoutTemporaryRoots()
     {
-        var plan = new RuntimeLinkExportPlanBuilder().Build(new(["initialize", "allocate"], []));
+        var plan = new RuntimeLinkExportPlanBuilder().Build(new(["initialize", "allocate"], [])
+        {
+            RuntimeFeatures = [],
+        });
         Assert.Equal(["--export=emscripten_stack_get_current", "--export=_emscripten_stack_restore",
             "--export-if-defined=__start_em_asm", "--export-if-defined=__stop_em_asm",
             "--export-if-defined=__start_em_lib_deps", "--export-if-defined=__stop_em_lib_deps",
             "--export-if-defined=__start_em_js", "--export-if-defined=__stop_em_js",
             "--export=initialize", "--export=allocate"], plan.Arguments.ToArray());
         Assert.Empty(plan.InternalExports);
+    }
+
+    [Fact]
+    public void SelectsOptionalExportsFromCompilerRuntimeFeatures()
+    {
+        var builder = new RuntimeLinkExportPlanBuilder();
+        var manifestExports = ImmutableArray.Create(
+            "initialize",
+            "ephemeron_handle_get_key",
+            "ephemeron_handle_get_value",
+            "ephemeron_handle_new",
+            "ephemeron_handle_release");
+
+        var ordinary = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = [],
+        });
+        Assert.DoesNotContain(ordinary.Arguments,
+            argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
+        Assert.DoesNotContain(ordinary.Arguments,
+            argument => argument.Contains("command_exception", StringComparison.Ordinal));
+
+        var ephemerons = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["ephemeron-handles"],
+        });
+        Assert.Contains("--export=ephemeron_handle_new", ephemerons.Arguments);
+        Assert.DoesNotContain(ephemerons.Arguments,
+            argument => argument.Contains("command_exception", StringComparison.Ordinal));
+
+        var diagnostics = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["structured-command-diagnostics"],
+        });
+        Assert.DoesNotContain(diagnostics.Arguments,
+            argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
+        Assert.Contains("--export=command_exception_capture", diagnostics.Arguments);
+        Assert.Contains("--export=command_exception_completion", diagnostics.Arguments);
+        Assert.Contains("--export=command_exception_release", diagnostics.Arguments);
+        Assert.Contains("--export=command_exception_write", diagnostics.Arguments);
+
+        var legacy = builder.Build(new(manifestExports, []));
+        Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
+        Assert.Contains("--export=command_exception_capture", legacy.Arguments);
     }
 
     [Fact]

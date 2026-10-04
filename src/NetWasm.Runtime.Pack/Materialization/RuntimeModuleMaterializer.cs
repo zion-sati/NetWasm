@@ -59,10 +59,16 @@ internal sealed class RuntimeModuleMaterializer(
             new RuntimeLinkMemoryLimits(memoryLayout.RuntimeGlobalBase, memoryLayout.InitialMemorySizeBytes, memoryLayout.MaximumMemorySizeBytes),
             request.AssetRoot,
             systemLibraryPaths,
-            request.OutputPath));
+            request.OutputPath)
+        {
+            RuntimeFeatures = sourceLayout.RuntimeFeatures,
+        });
         var optimizeArguments = request.Optimization == RuntimeWasmOptimization.None
             ? ImmutableArray<string>.Empty
-            : optimizationArguments.Build(new(target, request.OutputPath, request.Optimization));
+            : optimizationArguments.Build(new(target, request.OutputPath, request.Optimization)
+            {
+                RuntimeGlobalBase = memoryLayout.RuntimeGlobalBase,
+            });
         var cacheKey = cacheKeys.Build(new RuntimeMaterializationCacheKeyRequest(
             request.BuildIdentity,
             manifest,

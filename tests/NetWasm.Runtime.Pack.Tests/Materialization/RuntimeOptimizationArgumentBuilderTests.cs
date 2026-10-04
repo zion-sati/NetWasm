@@ -24,14 +24,34 @@ public sealed class RuntimeOptimizationArgumentBuilderTests
         var output = directory.PathTo("runtime.wasm");
 
         var arguments = new RuntimeOptimizationArgumentBuilder().Build(new(
-            RuntimePackTestData.Target(target), output, optimization));
+            RuntimePackTestData.Target(target), output, optimization)
+        {
+            RuntimeGlobalBase = 1024,
+        });
 
         Assert.Contains("--post-emscripten", arguments);
         Assert.Equal(optimizationFlag, Assert.Single(arguments, IsOptimizationFlag));
+        Assert.Contains("--low-memory-unused", arguments);
         Assert.Contains("--strip-debug", arguments);
         Assert.Contains("--strip-producers", arguments);
         Assert.Equal(2, arguments.Count(argument => argument == Path.GetFullPath(output)));
         Assert.Equal(memory64, arguments.Contains("--enable-memory64"));
+    }
+
+    [Fact]
+    public void KeepsLowMemoryLiveWhenStaticDataStartsBelowTheBinaryenBoundary()
+    {
+        using var directory = new TemporaryDirectory();
+
+        var arguments = new RuntimeOptimizationArgumentBuilder().Build(new(
+            RuntimePackTestData.Target("wasm32"),
+            directory.PathTo("runtime.wasm"),
+            RuntimeWasmOptimization.Oz)
+        {
+            RuntimeGlobalBase = 1008,
+        });
+
+        Assert.DoesNotContain("--low-memory-unused", arguments);
     }
 
     [Fact]

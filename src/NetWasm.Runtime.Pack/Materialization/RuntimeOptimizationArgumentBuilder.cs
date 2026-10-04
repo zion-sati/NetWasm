@@ -37,6 +37,13 @@ internal sealed class RuntimeOptimizationArgumentBuilder :
         arguments.Add("--strip-target-features");
         arguments.Add("--post-emscripten");
         arguments.Add(OptimizationFlags[request.Optimization]);
+        // Match Emscripten's optimized non-stack-first link. Binaryen may
+        // treat the first KiB as unreachable only when static data starts at
+        // or above the boundary enforced by that pass.
+        if (request.RuntimeGlobalBase >= 1024)
+        {
+            arguments.Add("--low-memory-unused");
+        }
         arguments.Add("--zero-filled-memory");
         arguments.Add("--pass-arg=directize-initial-contents-immutable");
         arguments.Add("--no-stack-ir");

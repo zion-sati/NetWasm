@@ -28,6 +28,45 @@ public sealed class RuntimeLayoutReaderTests
         Assert.Equal("wasm64", layout.Target);
         Assert.Equal(65_537, layout.ApplicationStaticDataEnd);
         Assert.Empty(layout.NativeImports);
+        Assert.True(layout.RuntimeFeatures.IsDefault);
+    }
+
+    [Fact]
+    public void ReadsCanonicalRuntimeFeaturesAndDistinguishesAnExplicitEmptySet()
+    {
+        using var directory = new TemporaryDirectory();
+        var selectedPath = directory.Write("selected.json", """
+            {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "runtimeFeatures":["ephemeron-handles","structured-command-diagnostics"],
+             "nativeImports":[]}
+            """);
+        var emptyPath = directory.Write("empty.json", """
+            {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "runtimeFeatures":[],"nativeImports":[]}
+            """);
+
+        var reader = new RuntimeLayoutReader();
+        Assert.Equal(
+            ["ephemeron-handles", "structured-command-diagnostics"],
+            reader.Read(selectedPath).RuntimeFeatures.ToArray());
+        Assert.Empty(reader.Read(emptyPath).RuntimeFeatures);
+        Assert.False(reader.Read(emptyPath).RuntimeFeatures.IsDefault);
+    }
+
+    [Theory]
+    [InlineData("[\"structured-command-diagnostics\",\"ephemeron-handles\"]")]
+    [InlineData("[\"ephemeron-handles\",\"ephemeron-handles\"]")]
+    [InlineData("[\"future-feature\"]")]
+    public void RejectsNonCanonicalRuntimeFeatures(string features)
+    {
+        using var directory = new TemporaryDirectory();
+        var layout = $$"""
+            {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "runtimeFeatures":{{features}},"nativeImports":[]}
+            """;
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new RuntimeLayoutReader().Read(directory.Write("layout.json", layout)));
     }
 
     [Fact]

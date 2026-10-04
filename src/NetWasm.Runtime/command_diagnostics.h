@@ -102,7 +102,9 @@ static CommandDiagnosticText command_diagnostic_text(
     return result;
 }
 
+#ifndef NETWASM_RUNTIME_PACK
 __attribute__((export_name("command_exception_capture")))
+#endif
 void command_exception_capture(
     uint32_t type_id,
     netwasm_reference_t message,
@@ -125,7 +127,9 @@ void command_exception_capture(
         command_diagnostic_text(stack_trace, stack_trace_length);
 }
 
+#ifndef NETWASM_RUNTIME_PACK
 __attribute__((export_name("command_exception_completion")))
+#endif
 netwasm_address_t command_exception_completion(int32_t exit_code)
 {
     if (!command_diagnostic_owned) {
@@ -135,7 +139,9 @@ netwasm_address_t command_exception_completion(int32_t exit_code)
     return (netwasm_address_t)(uintptr_t)&command_diagnostic_completion;
 }
 
+#ifndef NETWASM_RUNTIME_PACK
 __attribute__((export_name("command_exception_release")))
+#endif
 void command_exception_release(void)
 {
     if (command_diagnostic_owned) {
@@ -146,7 +152,9 @@ void command_exception_release(void)
     memset(&command_diagnostic_completion, 0, sizeof(command_diagnostic_completion));
 }
 
+#ifndef NETWASM_RUNTIME_PACK
 __attribute__((export_name("command_exception_write")))
+#endif
 void command_exception_write(void)
 {
     if (!command_diagnostic_owned) {
