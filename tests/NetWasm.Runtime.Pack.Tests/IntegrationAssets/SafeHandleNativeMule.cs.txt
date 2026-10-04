@@ -292,11 +292,8 @@ public static unsafe partial class EntryPoint
         var grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
         try
         {
-            if ((nuint)grown < DataEnd())
-            {
-                return false;
-            }
-
+            // Desktop shared libraries and heaps have no portable address order. The distant
+            // write plus the static-data probe validates Wasm growth without assuming one.
             grown[0] = 3;
             grown[6 * 1024 * 1024 - 1] = 71;
             Native.ResetHandles();
@@ -304,7 +301,7 @@ public static unsafe partial class EntryPoint
             var borrowed = Native.BorrowHandle(handle) == 42;
             handle.Dispose();
             return borrowed && Native.ReleaseCount() == 1 &&
-                grown[0] == 3 && grown[6 * 1024 * 1024 - 1] == 71;
+                grown[0] == 3 && grown[6 * 1024 * 1024 - 1] == 71 && Probe() == 180;
         }
         finally
         {

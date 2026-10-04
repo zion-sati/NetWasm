@@ -118,11 +118,12 @@ public static unsafe partial class EntryPoint
         var grown = (byte*)NativeMemory.Alloc(6 * 1024 * 1024);
         try
         {
-            if ((nuint)grown < DataEnd()) return -22;
+            // Desktop shared libraries and heaps have no portable address order. The distant
+            // write plus the static-data probe validates Wasm growth without assuming one.
             grown[0] = 3; grown[6 * 1024 * 1024 - 1] = 71;
             mixed = Mix(left, right, 3);
             if (mixed.Integer != 42 || mixed.Real != 3.75 || left.Integer != 20 || right.Integer != 19 ||
-                grown[0] != 3 || grown[6 * 1024 * 1024 - 1] != 71) return -23;
+                grown[0] != 3 || grown[6 * 1024 * 1024 - 1] != 71 || Probe() != 180) return -23;
         }
         finally { NativeMemory.Free(grown); }
         return 42;
