@@ -98,6 +98,15 @@ class SdkConsumerArtifactTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode)
                 self.assertEqual(explicit, output.exists())
 
+    def test_qualifies_literal_first_run_before_scripted_restore(self):
+        script = SCRIPT.read_text(encoding="utf-8")
+        first_run = script.index('assert_run_42 "$work_root/app-first-run.log"')
+        restore = script.index('run_log "$work_root/app-restore-debug.log"')
+
+        self.assertLess(first_run, restore)
+        self.assertIn('--project "$app_project" --disable-build-servers',
+                      script[first_run:restore])
+
 
 if __name__ == "__main__":
     unittest.main()
