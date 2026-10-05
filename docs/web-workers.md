@@ -40,7 +40,8 @@ ordinary `command` or `async-command` entry contracts:
 ## Call the generated client
 
 Publishing creates `browser/<ProjectName>.worker-client.mjs`. Import its
-`createWorker` function from page JavaScript:
+`createWorker` function from page JavaScript. This example uses the JSExport
+template; WIT export names are qualified as shown in the WIT section below:
 
 ```js
 import { createWorker } from "./browser/ReportWorker.worker-client.mjs";
@@ -64,10 +65,14 @@ Promises. `dispose()` lets accepted calls finish before closing the worker;
 `terminate()` stops it immediately and rejects pending calls. New calls are
 rejected after either operation.
 
+The generated `*.worker-client.d.mts` file lists the available method names and
+their TypeScript signatures. The template's `app.mjs` calls the matching
+boundary.
+
 When an exported `Task` or `ValueTask` faults, the Promise rejects with the
 managed message in `error.message`. `error.managed` carries the available
-`typeId`, `typeName`, `message`, and `stackTrace`. Debug builds include source
-file and line information when portable PDB data is available.
+`typeId`, `typeName`, `message`, and `stackTrace`. Debug builds include
+source file and line information when portable PDB data is available.
 
 ## WIT workers
 
@@ -130,6 +135,8 @@ The generated client exposes that method as `worker.run(total)`. Reachable
 
 The JavaScript module runs inside the worker. It cannot access the page DOM;
 use notifications or exported calls to ask page code to update the UI.
+For notifications, export `createWorkerImports(notify)` and return the named
+import functions; see the [JavaScript interop example](javascript-interop.md#declare-imports-and-exports).
 
 ## Execution boundary
 
