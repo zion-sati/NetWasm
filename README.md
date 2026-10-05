@@ -22,6 +22,9 @@ memory. Deploy the compiled program to a compatible WASI host.
 [Try it in the browser](https://playground.netwasm.com/) ·
 [Measured size and reproduction steps](docs/size-and-methodology.md) ·
 [Quickstart](docs/sdk-quickstart.md) ·
+[JavaScript interop](docs/javascript-interop.md) ·
+[Static C interop](docs/static-native-interop.md) ·
+[WIT bindings](docs/wit-bindings.md) ·
 [Supported APIs and limitations](docs/support-status.md)
 
 ## AOT vs AOT: printing `42`

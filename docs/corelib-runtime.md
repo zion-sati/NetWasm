@@ -87,15 +87,21 @@ pre-reserved runtime tiers.
 
 The bounded static C implementation is available in NetWasm 0.6.0 and has been
 qualified across ordinary application, library and test consumers on wasm32
-and raw wasm64. See the [support inventory](support-status.md).
+and raw wasm64. See the [two-way tutorial](static-native-interop.md)
+and [support inventory](support-status.md).
 
 Use ordinary source-generated `LibraryImport` or supported raw `DllImport`
 declarations on non-generic static methods in non-generic declaring types. The
 SDK links regular Wasm `.a` archives into the application, not dynamically loaded
 libraries. Logical names need no `.a` suffix and match an explicit target-specific
-provider ordinally:
+provider ordinally. Set `<AllowUnsafeBlocks>true</AllowUnsafeBlocks>` for
+the stock `LibraryImport` source generator:
 
 ```xml
+<PropertyGroup>
+  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+</PropertyGroup>
+
 <ItemGroup>
   <NativeLibrary Include="native/wasm32/libexample.a"
                  NetWasmLibraryName="example"

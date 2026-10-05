@@ -60,6 +60,10 @@ installation is required. Unlike an SDK application build, this standalone
 command needs Node.js 24+ on `PATH`, through `NETWASM_NODE_PATH` or through
 `EMSDK_NODE`.
 
+The optional `--accessibility public|internal` selects generated top-level
+accessibility (default: public). See [WIT-to-C# bindings](wit-bindings.md) for a
+complete contract, type mappings, dependencies, and regeneration.
+
 `componentize` accepts required `--core-module`, `--wit`, `--output`, and
 `--manifest`, plus optional `--runtime-module`, `--world`, `--target`,
 `--interop-manifest`, `--jco-version`, and `--preview2-shim-version`. Current

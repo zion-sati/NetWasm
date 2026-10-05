@@ -14,6 +14,15 @@ repository.
 - [NetWasm SDK quickstart](sdk-quickstart.md) — create an app or dual-target
   library, restore the pinned host tools through NuGet, then build, run and
   publish with ordinary `dotnet` commands.
+- [JavaScript interop](javascript-interop.md) — use `[JSImport]` and
+  `[JSExport]`, generated worker clients, callbacks, tasks, and explicit module
+  providers within the supported ABI.
+- [Static native C interop](static-native-interop.md) — link Wasm `.a`
+  archives with `[LibraryImport]` and expose managed callbacks with
+  `[UnmanagedCallersOnly]`.
+- [WIT-to-C# bindings](wit-bindings.md) — run the standalone binding tool,
+  select a world, understand the generated model, and match it to the runtime
+  boundary.
 - [Support status and roadmap](support-status.md) — the canonical inventory of
   implemented, conditional, partially qualified, in-progress, deferred,
   externally blocked, and intentionally unsupported capabilities.
@@ -23,7 +32,8 @@ repository.
   modules, Component Model packaging, `cm32p2`/`cm64p2`, and WASI version
   boundaries.
 - [C# Web Workers](web-workers.md) — publish WIT or JSExport workers, call the
-  generated JavaScript client, exchange notifications, and manage worker lifecycle.
+  generated JavaScript client, exchange notifications, and manage worker
+  lifecycle.
 - [Compiler diagnostics](diagnostics.md) — every current
   `NetWasm.Compiler.Core.DiagnosticCode`, including cause, exact scope, and
   corrective action.

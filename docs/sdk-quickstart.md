@@ -298,3 +298,9 @@ carries the pinned platform-neutral wasm-tools module and does not require a
 native `wasm-tools` installation. This standalone command is separate from the
 SDK build: it still needs Node.js 24+ available on `PATH`, through
 `NETWASM_NODE_PATH` or through `EMSDK_NODE`.
+
+Use `--accessibility internal` for application-private generated types (the
+default is `public`). The [WIT bindings guide](wit-bindings.md) covers a
+complete example, dependency layout, generated types, and regeneration.
+See also the [JavaScript interop guide](javascript-interop.md) and the
+[two-way static C interop tutorial](static-native-interop.md).
