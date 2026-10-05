@@ -233,6 +233,12 @@ if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
   printf 'Qualifying minimum .NET SDK %s\n' "$actual_sdk"
 fi
 
+# Exercise the exact first-use path before any qualification-only restore or
+# build step can prepare the project. This is the command sequence shown to a
+# new user after installing the template, with an empty isolated package cache.
+assert_run_42 "$work_root/app-first-run.log" \
+  --project "$app_project" --disable-build-servers
+
 run_log "$work_root/app-restore-debug.log" \
   dotnet restore "$app_project" --configfile "$work_root/NuGet.Config" \
     --disable-build-servers --nologo
