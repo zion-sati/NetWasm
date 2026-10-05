@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "$#" -lt 2 ]]; then
-  echo "usage: eng/qualify-sdk-consumers.sh <package-directory> <version> [--host-tools-version VERSION] [--sdk-evaluation-output PATH --producer-manifest PATH --asset-receipt-output PATH] [--artifact-directory ABSOLUTE_NEW_DIRECTORY] [--skip-test-consumers]" >&2
+  echo "usage: eng/qualify-sdk-consumers.sh <package-directory> <version> [--host-tools-version VERSION] [--sdk-evaluation-output PATH --producer-manifest PATH --asset-receipt-output PATH] [--artifact-directory ABSOLUTE_NEW_DIRECTORY] [--skip-test-consumers] [--collector-canary|--test-collectors]" >&2
   exit 2
 fi
 
@@ -12,12 +12,22 @@ version="$2"
 shift 2
 host_tools_version="$version"
 skip_test_consumers=false
+collector_canary=false
+test_collectors=false
 sdk_evaluation_output=""
 producer_manifest=""
 asset_receipt_output=""
 artifact_directory=""
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --test-collectors)
+      test_collectors=true
+      shift
+      ;;
+    --collector-canary)
+      collector_canary=true
+      shift
+      ;;
     --artifact-directory)
       [[ "$#" -ge 2 && -n "$2" ]] || { echo "--artifact-directory requires a path" >&2; exit 2; }
       [[ -z "$artifact_directory" ]] || { echo "--artifact-directory may only be specified once" >&2; exit 2; }
@@ -54,12 +64,20 @@ while [[ "$#" -gt 0 ]]; do
       ;;
   esac
 done
+if [[ "$test_collectors" == true ]]; then
+  [[ "$collector_canary" == false && "$skip_test_consumers" == false && -n "$producer_manifest" ]] || {
+    echo "Test-collector qualification requires a producer manifest and cannot skip tests or run the app canary." >&2
+    exit 2
+  }
+fi
 if [[ -n "$artifact_directory" ]]; then
   [[ "$artifact_directory" = /* ]] || { echo "Artifact directory must be absolute." >&2; exit 2; }
   [[ ! -e "$artifact_directory" && ! -L "$artifact_directory" ]] || {
     echo "Refusing to reuse an existing artifact directory." >&2
     exit 2
   }
+  # Claim this fresh run before creating receipt parent directories inside it.
+  mkdir "$artifact_directory"
 fi
 if [[ -n "$sdk_evaluation_output" ]]; then
   mkdir -p "$(dirname "$sdk_evaluation_output")"
@@ -75,8 +93,33 @@ if [[ -n "$producer_manifest" || -n "$asset_receipt_output" ]]; then
   mkdir -p "$(dirname "$asset_receipt_output")"
   asset_receipt_output="$(cd "$(dirname "$asset_receipt_output")" && pwd -P)/$(basename "$asset_receipt_output")"
 fi
+if [[ "$test_collectors" == true ]]; then
+  python3 - "$source_root" "$producer_manifest" "$version" <<'PY'
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+source, manifest_path, version = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+manifest = json.loads(manifest_path.read_text())
+assert manifest['candidateVersion'] == version
+with tempfile.TemporaryDirectory(prefix='netwasm-test-inputs-') as temporary:
+    env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / 'index'))
+    for command in [
+        ['read-tree', manifest['repositoryCommit']],
+        ['add', '-A', '--', 'src', 'eng', 'tools', 'scripts'],
+        ['diff', '--cached', '--quiet', manifest['repositoryCommit'], '--',
+         'src', 'eng', 'tools', 'scripts', ':(exclude)eng/qualify-sdk-consumers.sh'],
+    ]:
+        subprocess.run(['git', '-C', str(source), *command], env=env, check=True)
+for package in manifest['packages']:
+    path = manifest_path.parent / f"{package['id']}.{package['version']}.nupkg"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == package['sha256']
+PY
+fi
 if [[ -n "$artifact_directory" ]]; then
-  mkdir "$artifact_directory"
   work_root="$(cd "$artifact_directory" && pwd -P)"
 else
   work_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/netwasm-runtime-host.XXXXXX")"
@@ -141,6 +184,42 @@ assert_run_42() {
     echo "Expected application stdout to end with 42; received: $actual" >&2
     return 1
   fi
+}
+
+check_test_payload() {
+  python3 - "$test_root" "$test_log_root" "$1" "$2" <<'PY'
+import hashlib
+import json
+import shutil
+import sys
+from pathlib import Path
+project, logs, action = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+records = {'RuntimeHostTests.netwasm.request.json', 'RuntimeHostTests.netwasm.result.json',
+           'RuntimeHostTests.netwasm.execution.json'}
+payload = {str(p.relative_to(project)): hashlib.sha256(p.read_bytes()).hexdigest()
+           for p in (project / 'bin').rglob('*') if p.is_file() and p.name not in records}
+assert payload and any(p.endswith('.wasm') for p in payload)
+receipt = logs / (sys.argv[4] + '-payload.json')
+if action == 'snapshot':
+    receipt.write_text(json.dumps(payload))
+    shutil.copytree(project / 'bin', logs / (sys.argv[4] + '-artifacts') / 'bin',
+                    ignore=lambda directory, names: [name for name in names if name in records])
+else:
+    assert payload == json.loads(receipt.read_text()), 'Test payload changed during metadata or no-build execution'
+PY
+}
+
+check_test_counts() {
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+from pathlib import Path
+pairs = re.findall(r'\b(Failed|Passed|Skipped|Total):\s*(\d+)', Path(sys.argv[1]).read_text())
+assert len(pairs) == 4 and len(dict(pairs)) == 4
+actual = {name: int(value) for name, value in pairs}
+failure = sys.argv[2] == 'failing'
+assert actual == {'Failed': int(failure), 'Passed': int(not failure), 'Skipped': 0, 'Total': 1}
+PY
 }
 
 dotnet_package_root="$package_root"
@@ -236,6 +315,7 @@ fi
 # Exercise the exact first-use path before any qualification-only restore or
 # build step can prepare the project. This is the command sequence shown to a
 # new user after installing the template, with an empty isolated package cache.
+if [[ "$test_collectors" == false ]]; then
 assert_run_42 "$work_root/app-first-run.log" \
   --project "$app_project" --disable-build-servers
 
@@ -276,6 +356,135 @@ if [[ -n "$asset_receipt_output" ]]; then
     --candidate-version "$version" \
     --released-baseline-version "$host_tools_version" \
     --output "$asset_receipt_output"
+fi
+if [[ "$collector_canary" == true ]]; then
+  run_log "$work_root/collector-unset-property.log" \
+    dotnet msbuild "$app_project" -getProperty:NetWasmGarbageCollector -nologo -v:quiet
+  python3 - "$work_root/collector-unset-property.log" \
+    "$package_cache_root/netwasm.runtime.pack/$version/runtime/runtime-pack.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+assert not Path(sys.argv[1]).read_text().strip(), 'Default canary must leave the collector property unset'
+manifest = json.loads(Path(sys.argv[2]).read_text())
+assert manifest['defaultGarbageCollector'] == 'Compact'
+assert len(manifest['targets']) == 4
+assert {(target['target'], target['garbageCollector']) for target in manifest['targets']} == {
+    (target, collector) for target in ('wasm32', 'wasm64') for collector in ('Compact', 'Boehm')
+}
+PY
+  # Keep the first-use default proof above. Switch the same ordinary project
+  # without cleaning or changing its package graph, then inspect resolved output.
+  sequence=0
+  for selection in Default Compact Boehm Compact; do
+    sequence=$((sequence + 1))
+    collector_arguments=()
+    expected_collector=Compact
+    if [[ "$selection" != Default ]]; then
+      collector_arguments=(-p:NetWasmGarbageCollector="$selection")
+      expected_collector="$selection"
+    fi
+    assert_run_42 "$work_root/collector-$sequence-run.log" \
+      --project "$app_project" -c Release --no-restore \
+      --disable-build-servers "${collector_arguments[@]}"
+    # Snapshot the runnable component before the metadata build can replace it.
+    node --input-type=module - \
+      "$app_root/bin/Release/netwasm0.1/NetWasmApp.wasm" \
+      "$work_root/collector-$sequence-final.json" <<'JS'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { brotliCompressSync, constants } from 'node:zlib';
+const [artifactPath, receiptPath] = process.argv.slice(2);
+const bytes = readFileSync(artifactPath);
+writeFileSync(receiptPath, JSON.stringify({
+  sha256: createHash('sha256').update(bytes).digest('hex'),
+  rawBytes: bytes.length,
+  brotli11Bytes: brotliCompressSync(bytes, {
+    params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
+  }).length,
+  compressionNodeVersion: process.version,
+}, null, 2) + '\n');
+JS
+    run_log "$work_root/collector-$sequence-metadata.log" \
+      dotnet msbuild "$app_project" -t:Build -p:Configuration=Release \
+        "${collector_arguments[@]}" \
+        -getItem:NetWasmComponentRuntime -nologo -v:quiet
+    python3 - "$work_root/collector-$sequence-metadata.log" "$expected_collector" \
+      "$work_root/collector-$sequence.json" \
+      "$work_root/collector-$sequence-final.json" \
+      "$app_root/bin/Release/netwasm0.1/NetWasmApp.wasm" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+# MSBuild may write build messages before its final evaluation JSON.
+start = text.rfind("\n{")
+evaluation = json.loads(text[start + 1:] if start >= 0 else text)
+modules = evaluation["Items"]["NetWasmComponentRuntime"]
+if len(modules) != 1 or modules[0]["GarbageCollector"] != sys.argv[2]:
+    raise ValueError("The resolved runtime collector does not match the selection.")
+module = modules[0]
+runtime = Path(module["Identity"])
+digest = hashlib.sha256(runtime.read_bytes()).hexdigest()
+if digest != module["Digest"]:
+    raise ValueError("The runtime bytes do not match their materialization metadata.")
+final = json.loads(Path(sys.argv[4]).read_text())
+if hashlib.sha256(Path(sys.argv[5]).read_bytes()).hexdigest() != final["sha256"]:
+    raise ValueError("The metadata build changed the previously executed final artifact.")
+Path(sys.argv[3]).write_text(json.dumps({
+    "collector": module["GarbageCollector"],
+    "target": module["WasmTarget"],
+    "runtimeSha256": digest,
+    "runtimeBytes": runtime.stat().st_size,
+}, indent=2) + "\n", encoding="utf-8")
+PY
+  done
+  python3 - "$work_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+rows = [json.loads((root / f"collector-{i}.json").read_text()) for i in (1, 2, 3, 4)]
+if rows[0] != rows[1] or rows[1] != rows[3] or rows[1]["runtimeSha256"] == rows[2]["runtimeSha256"]:
+    raise ValueError("Switching collectors did not reproduce the correct runtime bytes.")
+finals = [json.loads((root / f"collector-{i}-final.json").read_text()) for i in (1, 2, 3, 4)]
+if finals[0] != finals[1] or finals[1] != finals[3] or finals[1]["sha256"] == finals[2]["sha256"]:
+    raise ValueError("Switching collectors did not reproduce the correct runnable artifacts.")
+PY
+  library_root="$consumer_root/library"
+  library_project="$library_root/RuntimeLibrary.csproj"
+  run_log "$work_root/collector-library-create.log" \
+    dotnet new netwasm-lib -n RuntimeLibrary -o "$library_root"
+  run_log "$work_root/collector-library-build.log" \
+    dotnet build "$library_project" -c Release --disable-build-servers \
+      --nologo -p:NetWasmGarbageCollector=invalid
+  python3 - "$library_root/obj/project.assets.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+assets = json.loads(Path(sys.argv[1]).read_text())
+if any(identity.lower().startswith("netwasm.hosttools.") for identity in assets["libraries"]):
+    raise ValueError("A collector-neutral library restored development host tools.")
+PY
+  run_log "$work_root/collector-library-reference.log" \
+    dotnet add "$app_project" reference "$library_project"
+  assert_run_42 "$work_root/collector-library-run.log" \
+    --project "$app_project" -c Release --disable-build-servers \
+    -p:NetWasmGarbageCollector=Compact
+  expect_failure_contains "$work_root/collector-invalid.log" NWPACK007 \
+    dotnet build "$app_project" --no-restore --disable-build-servers \
+      -p:NetWasmGarbageCollector=compact -nologo
+  expect_failure_contains "$work_root/collector-custom-conflict.log" NWPACK006 \
+    dotnet build "$app_project" --no-restore --disable-build-servers \
+      -p:NetWasmGarbageCollector=Compact \
+      -p:NetWasmRuntimeModulePath="$consumer_root/custom.wasm" -nologo
+  printf 'Collector consumer canary PASS\n'
+  exit 0
 fi
 if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
   evaluated_sdk="$(dotnet msbuild "$app_project" -getProperty:NETCoreSdkVersion -nologo | tr -d '\r')"
@@ -577,9 +786,24 @@ assert_run_42 "$work_root/transitive-wasm-run.log" \
 assert_run_42 "$work_root/transitive-desktop-run.log" \
   --project "$desktop_consumer_root/TransitiveDesktop.csproj" -c Debug \
   --no-restore --disable-build-servers
+fi
 
 if [[ "$skip_test_consumers" == false ]]; then
+selections=("")
+if [[ "$test_collectors" == true ]]; then
+  selections=(Compact Boehm)
+  cp "$source_root/eng/qualify-sdk-consumers.sh" "$work_root/qualified-runner.sh"
+fi
+for selection in "${selections[@]}"; do
 test_root="$consumer_root/tunit"
+test_log_root="$work_root"
+test_selection=()
+if [[ -n "$selection" ]]; then
+  test_root="$consumer_root/tunit-$selection"
+  test_log_root="$work_root/test-$selection"
+  test_selection=(-p:NetWasmGarbageCollector="$selection")
+fi
+mkdir -p "$test_log_root"
 mkdir -p "$test_root"
 cp "$app_root/global.json" "$test_root/global.json"
 cat > "$test_root/RuntimeHostTests.csproj" <<'EOF'
@@ -606,6 +830,7 @@ cat > "$work_root/NuGet.WithTUnit.Config" <<EOF
 EOF
 cat > "$test_root/Tests.cs" <<'EOF'
 using System.Threading.Tasks;
+using System;
 using TUnit.Assertions;
 using TUnit.Core;
 
@@ -614,22 +839,81 @@ public sealed class Tests
     [Test]
     public async Task AnswerIsFortyTwo()
     {
+        var survivor = new byte[4096];
+        survivor[0] = 42;
+        survivor[^1] = 43;
+        var collections = GC.CollectionCount(0);
+        GC.Collect();
+        await Assert.That(GC.CollectionCount(0) > collections).IsEqualTo(true);
+        await Assert.That(survivor[0]).IsEqualTo((byte)42);
+        await Assert.That(survivor[^1]).IsEqualTo((byte)43);
         await Assert.That(42).IsEqualTo(42);
     }
 }
 EOF
-run_log "$work_root/tunit-restore.log" \
+run_log "$test_log_root/tunit-restore.log" \
   dotnet restore "$test_root/RuntimeHostTests.csproj" \
     --configfile "$work_root/NuGet.WithTUnit.Config" \
-    --disable-build-servers --nologo
-run_log "$work_root/tunit-test.log" \
+    --disable-build-servers --nologo "${test_selection[@]}"
+if [[ "$test_collectors" == true ]]; then
+  run_log "$test_log_root/sdk-evaluation.log" dotnet msbuild "$test_root/RuntimeHostTests.csproj" \
+    -getProperty:NetWasmSdkPackageVersion,NetWasmSdkPackageRoot -nologo
+  python3 - "$test_log_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+props = json.loads((root / 'sdk-evaluation.log').read_text())['Properties']
+(root / 'sdk-evaluation.json').write_text(json.dumps({
+    'packageVersion': props['NetWasmSdkPackageVersion'],
+    'packageRoot': props['NetWasmSdkPackageRoot'],
+}))
+PY
+  run_log "$test_log_root/assets-before.log" python3 "$source_root/eng/verify-managed-candidate-assets.py" \
+    --assets "$test_root/obj/project.assets.json" --sdk-evaluation "$test_log_root/sdk-evaluation.json" \
+    --packages-root "$package_cache_root" --producer-manifest "$producer_manifest" \
+    --candidate-version "$version" --released-baseline-version "$host_tools_version" \
+    --output "$test_log_root/assets-before.json"
+fi
+run_log "$test_log_root/tunit-test.log" \
   dotnet test "$test_root/RuntimeHostTests.csproj" -c Debug --no-restore \
-    --disable-build-servers --nologo
-assert_log_contains "$work_root/tunit-test.log" 'Passed!'
-run_log "$work_root/tunit-no-build.log" \
+    --disable-build-servers --nologo "${test_selection[@]}"
+assert_log_contains "$test_log_root/tunit-test.log" 'Passed!'
+if [[ "$test_collectors" == true ]]; then
+  check_test_counts "$test_log_root/tunit-test.log" passing
+  cp "$test_root/Tests.cs" "$test_log_root/passing.Tests.cs"
+  check_test_payload snapshot passing
+  run_log "$test_log_root/runtime-metadata.log" dotnet msbuild "$test_root/RuntimeHostTests.csproj" \
+    -t:Build -p:Configuration=Debug "${test_selection[@]}" \
+    -getItem:NetWasmComponentRuntime -nologo -v:quiet
+  python3 - "$test_log_root" "$selection" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+text = (root / 'runtime-metadata.log').read_text()
+start = text.rfind('\n{')
+items = json.loads(text[start + 1:] if start >= 0 else text)['Items']['NetWasmComponentRuntime']
+assert len(items) == 1
+runtime = items[0]
+assert runtime['GarbageCollector'] == sys.argv[2]
+assert runtime['WasmTarget'] == 'wasm32'
+assert hashlib.sha256(Path(runtime['Identity']).read_bytes()).hexdigest() == runtime['Digest']
+(root / 'runtime.json').write_text(json.dumps({
+    'collector': runtime['GarbageCollector'], 'target': runtime['WasmTarget'], 'sha256': runtime['Digest'],
+}))
+PY
+  check_test_payload verify passing
+fi
+run_log "$test_log_root/tunit-no-build.log" \
   dotnet test "$test_root/RuntimeHostTests.csproj" -c Debug \
-    --no-build --no-restore --disable-build-servers --nologo
-assert_log_contains "$work_root/tunit-no-build.log" 'Passed!'
+    --no-build --no-restore --disable-build-servers --nologo "${test_selection[@]}"
+assert_log_contains "$test_log_root/tunit-no-build.log" 'Passed!'
+if [[ "$test_collectors" == true ]]; then
+  check_test_counts "$test_log_root/tunit-no-build.log" passing
+  check_test_payload verify passing
+fi
 cat > "$test_root/Tests.cs" <<'EOF'
 using System.Threading.Tasks;
 using TUnit.Assertions;
@@ -644,17 +928,71 @@ public sealed class Tests
     }
 }
 EOF
-run_log "$work_root/tunit-failing-build.log" \
+run_log "$test_log_root/tunit-failing-build.log" \
   dotnet build "$test_root/RuntimeHostTests.csproj" -c Debug --no-restore \
-    --disable-build-servers --nologo
+    --disable-build-servers --nologo "${test_selection[@]}"
+if [[ "$test_collectors" == true ]]; then
+  cp "$test_root/Tests.cs" "$test_log_root/failing.Tests.cs"
+  check_test_payload snapshot failing
+fi
 if dotnet test "$test_root/RuntimeHostTests.csproj" -c Debug \
-    --no-build --no-restore --disable-build-servers --nologo \
-    > "$work_root/tunit-failing-test.log" 2>&1; then
+    --no-build --no-restore --disable-build-servers --nologo "${test_selection[@]}" \
+    > "$test_log_root/tunit-failing-test.log" 2>&1; then
   echo "The failing TUnit canary unexpectedly passed" >&2
   exit 1
 fi
-assert_log_contains "$work_root/tunit-failing-test.log" 'Failed!'
-assert_log_contains "$work_root/tunit-failing-test.log" 'AnswerIsFortyTwo'
+assert_log_contains "$test_log_root/tunit-failing-test.log" 'Failed!'
+assert_log_contains "$test_log_root/tunit-failing-test.log" 'AnswerIsFortyTwo'
+if [[ "$test_collectors" == true ]]; then
+  check_test_counts "$test_log_root/tunit-failing-test.log" failing
+  check_test_payload verify failing
+  run_log "$test_log_root/assets-after.log" python3 "$source_root/eng/verify-managed-candidate-assets.py" \
+    --assets "$test_root/obj/project.assets.json" --sdk-evaluation "$test_log_root/sdk-evaluation.json" \
+    --packages-root "$package_cache_root" --producer-manifest "$producer_manifest" \
+    --candidate-version "$version" --released-baseline-version "$host_tools_version" \
+    --output "$test_log_root/assets-after.json"
+fi
+done
+if [[ "$test_collectors" == true ]]; then
+  python3 - "$work_root" "$source_root" "$producer_manifest" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+root, source, producer = map(Path, sys.argv[1:])
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+runner = source / 'eng/qualify-sdk-consumers.sh'
+assert digest(runner) == digest(root / 'qualified-runner.sh')
+manifest = json.loads(producer.read_text())
+for package in manifest['packages']:
+    assert digest(producer.parent / f"{package['id']}.{package['version']}.nupkg") == package['sha256']
+cells = []
+for collector in ['Compact', 'Boehm']:
+    logs = root / ('test-' + collector)
+    before = json.loads((logs / 'assets-before.json').read_text())
+    after = json.loads((logs / 'assets-after.json').read_text())
+    assert before == after
+    stages = {}
+    for name in ['tunit-test', 'tunit-no-build', 'tunit-failing-test']:
+        stages[name] = {key: int(value) for key, value in re.findall(
+            r'\b(Failed|Passed|Skipped|Total):\s*(\d+)', (logs / (name + '.log')).read_text())}
+    for phase in ['passing', 'failing']:
+        payload = json.loads((logs / (phase + '-payload.json')).read_text())
+        assert all(digest(logs / (phase + '-artifacts') / path) == expected
+                   for path, expected in payload.items())
+    bridge = next(package for package in before['packages'] if package['id'] == 'netwasm.testing.vstest')
+    cells.append({'collector': collector, 'runtime': json.loads((logs / 'runtime.json').read_text()),
+                  'testBridge': bridge, 'stages': stages, 'passed': True})
+(root / 'qualification.json').write_text(json.dumps({
+    'producerSha256': digest(producer), 'runnerSha256': digest(runner),
+    'candidateVersion': manifest['candidateVersion'], 'cells': cells, 'passed': True,
+}, indent=2))
+PY
+  printf 'Executable test collectors PASS\n'
+  exit 0
+fi
 
 adapter_project="$source_root/tests/NetWasm.Testing.VSTest.Tests.Adapter/NetWasm.Testing.VSTest.Tests.Adapter.csproj"
 adapter_feed="$consumer_root/vstest-adapter-packages"

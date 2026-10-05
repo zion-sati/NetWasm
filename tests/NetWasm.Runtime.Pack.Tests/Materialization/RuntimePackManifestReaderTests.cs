@@ -12,14 +12,16 @@ public sealed class RuntimePackManifestReaderTests
         var manifest = RuntimePackManifestReader.ReadJson(
             JsonSerializer.Serialize(RuntimePackTestData.Manifest()));
 
-        Assert.Equal(4, manifest.SchemaVersion);
+        Assert.Equal(5, manifest.SchemaVersion);
+        Assert.Equal("Boehm", manifest.DefaultGarbageCollector);
+        Assert.Equal(4, manifest.TargetLookup.Count);
         Assert.Equal("netwasm.runtime.v1", manifest.RuntimeAbi);
         Assert.Equal("6.0.7", manifest.EmscriptenVersion);
         Assert.Equal(65_536, manifest.WasmPageSize);
         Assert.Equal(2, manifest.Exports.Length);
-        Assert.Equal(["wasm32", "wasm64"], manifest.Targets.Select(static target => target.Target));
-        Assert.Equal([4, 8], manifest.Targets.Select(static target => target.PointerSizeBytes));
-        Assert.Equal([91_968, 114_352], manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
+        Assert.Equal(["wasm32", "wasm64", "wasm32", "wasm64"], manifest.Targets.Select(static target => target.Target));
+        Assert.Equal([4, 8, 4, 8], manifest.Targets.Select(static target => target.PointerSizeBytes));
+        Assert.Equal([91_968, 114_352, 91_968, 114_352], manifest.Targets.Select(static target => target.RuntimeFootprintBytes));
         foreach (var target in manifest.Targets)
         {
             var profile = Assert.IsType<RuntimeNativeValidationProfile>(target.NativeValidation);
@@ -32,7 +34,7 @@ public sealed class RuntimePackManifestReaderTests
             Assert.Empty(contract.Results);
             Assert.True(contract.Required);
             Assert.Contains("libc.a", target.SystemLibraries.Names);
-            Assert.Equal($"{target.Target}/libgc.a", target.CollectorArchive.Path);
+            Assert.Equal($"{target.Target}/{target.GarbageCollector.ToLowerInvariant()}/libgc.a", target.CollectorArchive.Path);
             Assert.Equal($"{target.Target}/allowed-undefined-symbols.txt",
                 target.AllowedUndefinedSymbols.Path);
             Assert.Equal($"{target.Target}/system-libraries/libc.a",
@@ -41,7 +43,7 @@ public sealed class RuntimePackManifestReaderTests
     }
 
     [Fact]
-    public void RuntimeOnlySchemaFourPacksNeedNotDeclareNativeValidation()
+    public void RuntimeOnlySchemaFivePacksNeedNotDeclareNativeValidation()
     {
         var source = RuntimePackTestData.Manifest();
         var manifest = RuntimePackManifestReader.ReadJson(JsonSerializer.Serialize(source with
@@ -81,6 +83,7 @@ public sealed class RuntimePackManifestReaderTests
     [
         null,
         RuntimePackTestData.Manifest() with { SchemaVersion = 1 },
+        RuntimePackTestData.Manifest() with { SchemaVersion = 4 },
         RuntimePackTestData.Manifest() with { WasmPageSize = 1 },
     ];
 
@@ -127,7 +130,7 @@ public sealed class RuntimePackManifestReaderTests
         {
             var manifest = RuntimePackTestData.Manifest() with
             {
-                Targets = [target, RuntimePackTestData.Target("wasm64")],
+                Targets = ReplaceTarget(target),
             };
             var exception = ReadInvalid(manifest);
             Assert.Equal("The NetWasm runtime target layout is invalid.", exception.Message);
@@ -157,7 +160,7 @@ public sealed class RuntimePackManifestReaderTests
         var unsupported = RuntimePackTestData.Target("wasm32") with { Target = "wasm128" };
         var manifest = RuntimePackTestData.Manifest() with
         {
-            Targets = [unsupported, RuntimePackTestData.Target("wasm64")],
+            Targets = ReplaceTarget(unsupported),
         };
         Assert.Equal(
             "The NetWasm runtime target is unsupported.",
@@ -173,7 +176,7 @@ public sealed class RuntimePackManifestReaderTests
         };
         var manifest = RuntimePackTestData.Manifest() with
         {
-            Targets = [target, RuntimePackTestData.Target("wasm64")],
+            Targets = ReplaceTarget(target),
         };
         Assert.Equal("The NetWasm runtime link closure is empty.", ReadInvalid(manifest).Message);
     }
@@ -191,7 +194,7 @@ public sealed class RuntimePackManifestReaderTests
         };
         var manifest = RuntimePackTestData.Manifest() with
         {
-            Targets = [wrong, RuntimePackTestData.Target("wasm64")],
+            Targets = ReplaceTarget(wrong),
         };
 
         Assert.Equal("The NetWasm runtime system-library path is invalid.",
@@ -213,7 +216,7 @@ public sealed class RuntimePackManifestReaderTests
         };
         var manifest = RuntimePackTestData.Manifest() with
         {
-            Targets = [target, RuntimePackTestData.Target("wasm64")],
+            Targets = ReplaceTarget(target),
         };
 
         Assert.Equal("The NetWasm runtime target asset path is invalid.",
@@ -232,7 +235,7 @@ public sealed class RuntimePackManifestReaderTests
         };
         var manifest = RuntimePackTestData.Manifest() with
         {
-            Targets = [target, RuntimePackTestData.Target("wasm64")],
+            Targets = ReplaceTarget(target),
         };
         Assert.Equal(
             "The NetWasm runtime pack contains an invalid asset descriptor.",
@@ -250,7 +253,7 @@ public sealed class RuntimePackManifestReaderTests
         };
         var manifest = RuntimePackTestData.Manifest() with
         {
-            Targets = [target, RuntimePackTestData.Target("wasm64")],
+            Targets = ReplaceTarget(target),
         };
         Assert.Equal(
             "The NetWasm runtime pack contains an invalid asset descriptor.",
@@ -284,6 +287,10 @@ public sealed class RuntimePackManifestReaderTests
     {
         return Assert.Throws<InvalidOperationException>(() => Read(manifest));
     }
+
+    private static System.Collections.Immutable.ImmutableArray<RuntimePackTarget> ReplaceTarget(RuntimePackTarget target) =>
+        [target, RuntimePackTestData.Target("wasm64"), RuntimePackTestData.Target("wasm32", "Compact"),
+            RuntimePackTestData.Target("wasm64", "Compact")];
 
     private static void Read(RuntimePackManifest manifest)
     {

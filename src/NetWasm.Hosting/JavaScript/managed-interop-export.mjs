@@ -107,6 +107,7 @@ export function createManagedInteropExport(request) {
       if (cause instanceof WebAssembly.RuntimeError) {
         const terminalEvent = exceptionReporter.consumeTerminalEvent();
         if (terminalEvent !== null) {
+          instance.exports.exception_clear_active();
           throw new NetWasmManagedError(descriptor.name, {
             cause,
             managedType: terminalEvent.typeId,

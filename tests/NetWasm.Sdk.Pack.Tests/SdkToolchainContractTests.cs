@@ -4,6 +4,10 @@ namespace NetWasm.Sdk.Pack.Tests;
 
 public sealed class SdkToolchainContractTests
 {
+    private static readonly string[] RuntimeTargets = ["wasm32", "wasm64"];
+    private static readonly string[] RuntimeCollectors = ["compact", "boehm"];
+    private static readonly string[] RuntimeVariantFiles = ["libnetwasm-runtime.a", "libgc.a", "layout.json"];
+
     [Fact]
     public void CompilerTaskCarriesPathMapIntoStackTraceIdentity()
     {
@@ -211,6 +215,8 @@ public sealed class SdkToolchainContractTests
         var identityWriter = Assert.Single(identity.Descendants(
             targetNamespace + "WriteLinesToFile"));
         Assert.Equal("true", (string?)identityWriter.Attribute("WriteOnlyWhenDifferent"));
+        Assert.Contains("garbageCollector=$(NetWasmGarbageCollector)",
+            (string?)identityWriter.Attribute("Lines"), StringComparison.Ordinal);
 
         var materialize = Assert.Single(targets.Descendants(
             targetNamespace + "Target"), candidate =>
@@ -222,6 +228,7 @@ public sealed class SdkToolchainContractTests
         Assert.Null(materialize.Attribute("Outputs"));
         var materializer = Assert.Single(materialize.Descendants(
             targetNamespace + "RuntimeMaterializationTask"));
+        Assert.Equal("$(NetWasmGarbageCollector)", (string?)materializer.Attribute("GarbageCollector"));
         var materializerOutput = Assert.Single(materializer.Elements(
             targetNamespace + "Output"));
         Assert.Equal("RuntimeModules",
@@ -578,14 +585,45 @@ public sealed class SdkToolchainContractTests
     public void RuntimePackageContainsTheExactRuntimeAndSystemArchivePaths()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var project = File.ReadAllText(Path.Combine(
+        var project = XDocument.Load(Path.Combine(
             repositoryRoot,
             "src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj"));
+        var assets = project.Descendants("None").ToArray();
+        foreach (var target in RuntimeTargets)
+        {
+            foreach (var collector in RuntimeCollectors)
+            {
+                var destination = $"runtime/{target}/{collector}/";
+                var item = Assert.Single(assets, item => (string?)item.Attribute("PackagePath") == destination);
+                Assert.Equal("true", (string?)item.Attribute("Pack"));
+                Assert.Equal(RuntimeVariantFiles
+                    .Select(name => $"$(NetWasmRuntimePackAssetRoot)/{target}/{collector}/{name}"),
+                    ((string)item.Attribute("Include")!).Split(';'));
+            }
+            var system = Assert.Single(assets, item => (string?)item.Attribute("PackagePath") == $"runtime/{target}/system-libraries/");
+            Assert.Equal($"$(NetWasmRuntimePackAssetRoot)/{target}/system-libraries/*.a", (string?)system.Attribute("Include"));
+        }
+        Assert.DoesNotContain(assets, item => ((string?)item.Attribute("Include"))?.Contains("**", StringComparison.Ordinal) == true);
+    }
 
-        Assert.Contains("runtime/*/libnetwasm-runtime.a", project, StringComparison.Ordinal);
-        Assert.Contains("runtime/wasm32/system-libraries/*.a", project, StringComparison.Ordinal);
-        Assert.Contains("runtime/wasm64/system-libraries/*.a", project, StringComparison.Ordinal);
-        Assert.DoesNotContain("runtime/**/*.a", project, StringComparison.Ordinal);
+    [Fact]
+    public void CollectorValidationRunsBeforeRuntimeOwnershipChangesWithoutAnSdkDefault()
+    {
+        var document = LoadSdkTarget("Sdk.targets");
+        var ns = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
+        Assert.Empty(document.Descendants(ns + "NetWasmGarbageCollector"));
+        var validation = Assert.Single(document.Descendants(ns + "Target"), target =>
+            (string?)target.Attribute("Name") == "NetWasmSdkValidateGarbageCollectorSelection");
+        Assert.Equal("NetWasmCompileCoreModule;NetWasmRuntimePackMaterialize", (string?)validation.Attribute("BeforeTargets"));
+        Assert.Contains("$(_NetWasmWorkerKind)", (string?)validation.Attribute("Condition"), StringComparison.Ordinal);
+        Assert.Contains("$(OutputType)", (string?)validation.Attribute("Condition"), StringComparison.Ordinal);
+        var errors = validation.Elements(ns + "Error").ToArray();
+        Assert.Equal(2, errors.Length);
+        Assert.Equal("NWPACK007", (string?)errors[0].Attribute("Code"));
+        Assert.Contains("System.String]::Equals", (string?)errors[0].Attribute("Condition"), StringComparison.Ordinal);
+        Assert.Equal("NWPACK006", (string?)errors[1].Attribute("Code"));
+        Assert.Contains("@(NetWasmComponentRuntime)", (string?)errors[1].Attribute("Condition"), StringComparison.Ordinal);
+        Assert.Contains("$(NetWasmRuntimeModulePath)", (string?)errors[1].Attribute("Condition"), StringComparison.Ordinal);
     }
 
     private static XDocument LoadSdkTarget(string fileName)

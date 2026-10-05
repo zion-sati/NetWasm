@@ -22,7 +22,16 @@ public sealed record RuntimeLinkPlanRequest(
     long? InitialHeapSizeBytes = null,
     long? MaximumMemorySizeBytes = null,
     ImmutableArray<RuntimeLinkPlanAsset> SystemLibraries = default,
-    RuntimeWasmOptimization Optimization = RuntimeWasmOptimization.Oz);
+    RuntimeWasmOptimization Optimization = RuntimeWasmOptimization.Oz)
+{
+    // A default array preserves the complete legacy runtime when an older
+    // compiler cannot report feature use. An initialized array is authoritative,
+    // including an empty array for applications that need no optional runtime
+    // capabilities.
+    public ImmutableArray<string> RuntimeFeatures { get; init; }
+
+    public string? GarbageCollector { get; init; }
+}
 
 public sealed record RuntimeLinkPlanAsset(string Path, string Sha256);
 
@@ -42,4 +51,7 @@ public sealed record RuntimeLinkPlan(
     long HeapBase,
     long InitialMemorySizeBytes,
     long MaximumMemorySizeBytes,
-    RuntimeMaterializationCacheDescriptor Cache);
+    RuntimeMaterializationCacheDescriptor Cache)
+{
+    public string GarbageCollector { get; init; } = string.Empty;
+}

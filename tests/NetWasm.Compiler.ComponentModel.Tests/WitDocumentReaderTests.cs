@@ -143,6 +143,21 @@ public sealed class WitDocumentReaderTests
     }
 
     [Fact]
+    public void SelectWorldRejectsMissingWorldInUnversionedPackage()
+    {
+        var selected = new WitWorld(0, "main", "example:test", [], []);
+        var document = new WitDocument([], [], [selected], [], "{}");
+
+        Assert.Equal(selected, document.SelectWorld("example:test/main"));
+        var exception = Assert.Throws<CompilerException>(() =>
+            document.SelectWorld("missing"));
+
+        Assert.Equal("NW1009", exception.Diagnostic.Id);
+        Assert.Contains("was not found or is ambiguous", exception.Diagnostic.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InvalidWitBecomesDeterministicComponentDiagnostic()
     {
         var reader = new WitDocumentReader(new StubTools(

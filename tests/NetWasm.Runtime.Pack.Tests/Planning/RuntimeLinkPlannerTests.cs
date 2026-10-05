@@ -9,12 +9,36 @@ namespace NetWasm.Runtime.Pack.Tests.Planning;
 public sealed class RuntimeLinkPlannerTests
 {
     [Theory]
+    [InlineData("wasm32", "Compact")]
+    [InlineData("wasm32", "Boehm")]
+    [InlineData("wasm64", "Compact")]
+    [InlineData("wasm64", "Boehm")]
+    public void SelectsMatchedPairAndTracksResolvedDefault(string target, string collector)
+    {
+        var manifest = RuntimePackTestData.Manifest() with { DefaultGarbageCollector = collector };
+        var request = new RuntimeLinkPlanRequest(JsonSerializer.Serialize(manifest), target, 948,
+            SystemLibraries: SystemLibraries(RuntimePackTestData.Target(target)));
+        var defaultPlan = RuntimeLinkPlanner.Plan(request);
+        var explicitPlan = RuntimeLinkPlanner.Plan(request with { GarbageCollector = collector });
+        var other = collector == "Compact" ? "Boehm" : "Compact";
+        var otherPlan = RuntimeLinkPlanner.Plan(request with { GarbageCollector = other });
+        Assert.Equal(collector, defaultPlan.GarbageCollector);
+        Assert.Equal(defaultPlan.Cache, explicitPlan.Cache);
+        Assert.Equal($"/runtime/{target}/{collector.ToLowerInvariant()}/libnetwasm-runtime.a", defaultPlan.Inputs[0].Path);
+        Assert.Equal($"/runtime/{target}/{collector.ToLowerInvariant()}/libgc.a", defaultPlan.Inputs[1].Path);
+        Assert.Equal(other, otherPlan.GarbageCollector);
+        Assert.NotEqual(defaultPlan.Cache.Key, otherPlan.Cache.Key);
+        Assert.DoesNotContain(defaultPlan.Inputs[0].Path, otherPlan.Arguments);
+        Assert.DoesNotContain(defaultPlan.Inputs[1].Path, otherPlan.Arguments);
+    }
+
+    [Theory]
     [InlineData("wasm32")]
     [InlineData("wasm64")]
     public void PreservesDesktopPolicyWithVirtualAssetPaths(string targetName)
     {
         var manifest = RuntimePackTestData.Manifest();
-        var target = manifest.Targets.Single(item => item.Target == targetName);
+        var target = manifest.Targets.Single(item => item.Target == targetName && item.GarbageCollector == "Boehm");
         var systemLibraries = SystemLibraries(target);
         var request = new RuntimeLinkPlanRequest(
             JsonSerializer.Serialize(manifest), targetName, 948, SystemLibraries: systemLibraries);
@@ -36,6 +60,8 @@ public sealed class RuntimeLinkPlannerTests
         Assert.Equal(2,
             actual.OptimizationArguments.Count(argument => argument == request.OutputPath));
         Assert.Contains("--post-emscripten", actual.OptimizationArguments);
+        Assert.Equal(layout.RuntimeGlobalBase >= 1024,
+            actual.OptimizationArguments.Contains("--low-memory-unused"));
         Assert.Equal(layout.RuntimeGlobalBase, actual.RuntimeGlobalBase);
         Assert.Equal(layout.InitialMemorySizeBytes, actual.InitialMemorySizeBytes);
         Assert.Equal(layout.MaximumMemorySizeBytes, actual.MaximumMemorySizeBytes);
@@ -48,6 +74,70 @@ public sealed class RuntimeLinkPlannerTests
         Assert.Equal("runtime-materialization-cache-v1", actual.Cache.Schema);
         Assert.All([actual.Cache.Namespace, actual.Cache.Slot, actual.Cache.Key], value =>
             Assert.Equal(64, value.Length));
+    }
+
+    [Theory]
+    [InlineData("wasm32", "Compact")]
+    [InlineData("wasm32", "Boehm")]
+    [InlineData("wasm64", "Compact")]
+    [InlineData("wasm64", "Boehm")]
+    public void SelectsOptionalRuntimeExportsFromCompilerFeatureEvidence(
+        string targetName, string collector)
+    {
+        var manifestModel = RuntimePackTestData.Manifest() with
+        {
+            Exports =
+            [
+                .. RuntimePackTestData.Manifest().Exports,
+                "ephemeron_handle_get_key",
+                "ephemeron_handle_get_value",
+                "ephemeron_handle_new",
+                "ephemeron_handle_release",
+            ],
+        };
+        var manifest = JsonSerializer.Serialize(manifestModel);
+        var target = manifestModel.Targets.Single(item =>
+            item.Target == targetName && item.GarbageCollector == collector);
+        var request = new RuntimeLinkPlanRequest(
+            manifest, targetName, 948, SystemLibraries: SystemLibraries(target))
+        {
+            GarbageCollector = collector,
+        };
+
+        var legacy = RuntimeLinkPlanner.Plan(request);
+        var baseRuntime = RuntimeLinkPlanner.Plan(request with { RuntimeFeatures = [] });
+        var ephemerons = RuntimeLinkPlanner.Plan(request with
+        {
+            RuntimeFeatures = ["ephemeron-handles"],
+        });
+        var diagnostics = RuntimeLinkPlanner.Plan(request with
+        {
+            RuntimeFeatures = ["structured-command-diagnostics"],
+        });
+
+        Assert.All([legacy, baseRuntime, ephemerons, diagnostics], plan =>
+        {
+            Assert.Equal(collector, plan.GarbageCollector);
+            Assert.Equal($"/runtime/{targetName}/{collector.ToLowerInvariant()}/libnetwasm-runtime.a",
+                plan.Inputs[0].Path);
+            Assert.Equal($"/runtime/{targetName}/{collector.ToLowerInvariant()}/libgc.a",
+                plan.Inputs[1].Path);
+        });
+        Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
+        Assert.Contains("--export=command_exception_capture", legacy.Arguments);
+        Assert.DoesNotContain(baseRuntime.Arguments,
+            argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
+        Assert.DoesNotContain(baseRuntime.Arguments,
+            argument => argument.Contains("command_exception", StringComparison.Ordinal));
+        Assert.Contains("--export=ephemeron_handle_new", ephemerons.Arguments);
+        Assert.DoesNotContain(ephemerons.Arguments,
+            argument => argument.Contains("command_exception", StringComparison.Ordinal));
+        Assert.DoesNotContain(diagnostics.Arguments,
+            argument => argument.Contains("ephemeron_handle", StringComparison.Ordinal));
+        Assert.Contains("--export=command_exception_capture", diagnostics.Arguments);
+        Assert.NotEqual(legacy.Cache.Key, baseRuntime.Cache.Key);
+        Assert.NotEqual(baseRuntime.Cache.Key, ephemerons.Cache.Key);
+        Assert.NotEqual(baseRuntime.Cache.Key, diagnostics.Cache.Key);
     }
 
     [Fact]
@@ -157,7 +247,7 @@ public sealed class RuntimeLinkPlannerTests
         var json = JsonSerializer.Serialize(RuntimePackTestData.Manifest());
         Assert.Throws<InvalidOperationException>(() => RuntimeLinkPlanner.Plan(new(json, "unsupported", 948)));
         Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(new(json, "wasm32", 948,
-            OutputPath: "/runtime/wasm32/libnetwasm-runtime.a",
+            OutputPath: "/runtime/wasm32/boehm/libnetwasm-runtime.a",
             SystemLibraries: SystemLibraries(RuntimePackTestData.Target("wasm32")))));
     }
 

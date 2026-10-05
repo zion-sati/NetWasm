@@ -2,13 +2,28 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-package_root="$repo_root/src/NetWasm.Runtime.Pack"
-runtime_root="$package_root/runtime"
-policy="$runtime_root/runtime-policy.json"
+source_package_root="$repo_root/src/NetWasm.Runtime.Pack"
+package_root="$source_package_root"
 if [[ "${1:-}" != "--allow-emscripten" ]]; then
   echo "runtime pack regeneration is maintainer-only; pass --allow-emscripten explicitly" >&2
   exit 2
 fi
+shift
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-package-root) package_root="$2"; shift 2 ;;
+    *) echo 'Unknown runtime pack regeneration option.' >&2; exit 2 ;;
+  esac
+done
+if [[ "$package_root" != "$source_package_root" ]]; then
+  [[ "$package_root" = /* && ! -e "$package_root" ]] || {
+    echo 'Output package root must be a new absolute directory.' >&2; exit 2;
+  }
+  mkdir -p "$package_root/runtime"
+  cp "$source_package_root/runtime/runtime-policy.json" "$package_root/runtime/runtime-policy.json"
+fi
+runtime_root="$package_root/runtime"
+policy="$runtime_root/runtime-policy.json"
 
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/netwasm-runtime-pack.XXXXXX")"
 trap 'rm -rf "$temporary_root"' EXIT
@@ -71,14 +86,6 @@ const [layout, target] = process.argv.slice(2);
 fs.writeFileSync(layout, `${JSON.stringify({ schemaVersion: 2, target, applicationStaticDataEnd: 0 }, null, 2)}\n`);
 NODE
 
-  "$repo_root/eng/build-netwasm-runtime.sh" \
-    --runtime-layout "$layout" \
-    --target "$target" \
-    --configuration release \
-    --relocatable \
-    --output "$target_root/libnetwasm-runtime.a" \
-    --collector-output "$target_root/libgc.a"
-
   printf '%s\n' emscripten_notify_memory_growth \
     > "$target_root/allowed-undefined-symbols.txt"
 
@@ -122,7 +129,7 @@ NODE
     system_paths+=("$packaged_library")
   done
 
-  normalization_arguments=(
+  system_normalization_arguments=(
     --prefix "$repo_root"
     --prefix "$EMSDK"
     --prefix "$dependency_root"
@@ -130,17 +137,15 @@ NODE
     --prefix "$gc_work"
     --prefix "$build_root"
     --prefix "$system_source"
-    --archive "$target_root/libnetwasm-runtime.a"
-    --archive "$target_root/libgc.a"
   )
   if [[ -n "${HOME:-}" ]]; then
-    normalization_arguments+=(--prefix "$HOME")
+    system_normalization_arguments+=(--prefix "$HOME")
   fi
   for library in "${system_paths[@]}"; do
-    normalization_arguments+=(--archive "$library")
+    system_normalization_arguments+=(--archive "$library")
   done
-  node "$package_root/tools/normalize-archive-paths.mjs" \
-    "${normalization_arguments[@]}"
+  node "$source_package_root/tools/normalize-archive-paths.mjs" \
+    "${system_normalization_arguments[@]}"
 
   maximum_memory="$(node -p \
     'require(process.argv[1]).targets[process.argv[2]].maximumMemorySizeBytes' \
@@ -150,6 +155,26 @@ NODE
     export_args+=("--export=$export_name")
   done < "$runtime_root/runtime-exports.txt"
 
+  for collector in boehm tcms; do
+  collector_directory=boehm
+  if [[ "$collector" = tcms ]]; then collector_directory=compact; fi
+  collector_root="$target_root/$collector_directory"
+  mkdir -p "$collector_root"
+  "$repo_root/eng/build-netwasm-runtime.sh" \
+    --collector "$collector" \
+    --runtime-layout "$layout" \
+    --target "$target" \
+    --configuration release \
+    --relocatable \
+    --output "$collector_root/libnetwasm-runtime.a" \
+    --collector-output "$collector_root/libgc.a"
+  node "$source_package_root/tools/normalize-archive-paths.mjs" \
+    --prefix "$repo_root" --prefix "$EMSDK" --prefix "$dependency_root" \
+    --prefix "$temporary_root" --prefix "$gc_work" --prefix "$build_root" \
+    --prefix "$HOME" \
+    --archive "$collector_root/libnetwasm-runtime.a" \
+    --archive "$collector_root/libgc.a"
+
   footprint=""
   for base in "$alignment" 123456 67108864; do
     (( base % alignment == 0 )) || {
@@ -157,10 +182,10 @@ NODE
       exit 1
     }
     initial_memory=$(( (base + 262144 + wasm_page_size - 1) / wasm_page_size * wasm_page_size ))
-    proof="$temporary_root/$target-$base.wasm"
+    proof="$temporary_root/$target-$collector_directory-$base.wasm"
     "$wasm_ld" "$machine" -Bstatic --strip-debug --table-base=1 \
-      --whole-archive "$target_root/libnetwasm-runtime.a" --no-whole-archive \
-      "$target_root/libgc.a" \
+      --whole-archive "$collector_root/libnetwasm-runtime.a" --no-whole-archive \
+      "$collector_root/libgc.a" \
       "${system_paths[@]}" \
       --allow-undefined-file="$target_root/allowed-undefined-symbols.txt" \
       --no-entry --gc-sections --no-stack-first \
@@ -176,7 +201,7 @@ NODE
       -mllvm -enable-emscripten-sjlj -mllvm -disable-lsr \
       "${export_args[@]}" -o "$proof"
     wasm-tools validate "$proof" --features all
-    wat="$temporary_root/$target-$base.wat"
+    wat="$temporary_root/$target-$collector_directory-$base.wat"
     wasm-tools print "$proof" > "$wat"
     heap_index="$(grep -F '(export "__heap_base"' "$wat" | sed -E 's/.*global ([0-9]+).*/\1/')"
     heap_base="$(grep -E '^  \(global ' "$wat" | sed -n "$((heap_index + 1))p" | sed -E 's/.*const ([0-9]+)\).*/\1/')"
@@ -188,12 +213,12 @@ NODE
       exit 1
     fi
 
-    node "$package_root/tools/validate-runtime-imports.mjs" "$temporary_root/$target-$base.wasm" "$target"
-    node "$package_root/tools/validate-runtime-component-metadata.mjs" \
+    node "$source_package_root/tools/validate-runtime-imports.mjs" "$proof" "$target"
+    node "$source_package_root/tools/validate-runtime-component-metadata.mjs" \
       "$proof" "$temporary_root/runtime-component-type.bin"
   done
 
-  node - "$target_root/layout.json" "$target" "$footprint" <<'NODE'
+  node - "$collector_root/layout.json" "$target" "$footprint" <<'NODE'
 const fs = require("node:fs");
 const [path, target, footprint] = process.argv.slice(2);
 fs.writeFileSync(path, `${JSON.stringify({
@@ -202,7 +227,8 @@ fs.writeFileSync(path, `${JSON.stringify({
   runtimeFootprintBytes: Number(footprint),
 }, null, 2)}\n`);
 NODE
+  done
 done
 
-node "$package_root/tools/write-runtime-pack-manifest.mjs" \
+node "$source_package_root/tools/write-runtime-pack-manifest.mjs" \
   "$package_root" "$repo_root/eng/toolchain.json"

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -35,12 +36,16 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         }
 
         Validate(manifest);
-        return manifest!;
+        return manifest! with
+        {
+            TargetLookup = manifest.Targets.ToImmutableDictionary(
+                target => (target.Target, target.GarbageCollector)),
+        };
     }
 
     private static void Validate(RuntimePackManifest? manifest)
     {
-        if (manifest is null || manifest.SchemaVersion != 4 || manifest.WasmPageSize != 65_536)
+        if (manifest is null || manifest.SchemaVersion != 5 || manifest.WasmPageSize != 65_536)
         {
             throw new InvalidOperationException("The NetWasm runtime pack manifest schema is unsupported.");
         }
@@ -58,8 +63,12 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
             throw new InvalidOperationException("The NetWasm runtime export contract is invalid.");
         }
 
-        if (manifest.Targets.Length != 2 ||
-            manifest.Targets.Select(static target => target.Target).Distinct(StringComparer.Ordinal).Count() != 2)
+        if (manifest.DefaultGarbageCollector is not ("Compact" or "Boehm"))
+            throw new InvalidOperationException("The NetWasm runtime pack default collector is invalid.");
+
+        if (manifest.Targets.IsDefault || manifest.Targets.Length != 4 ||
+            manifest.Targets.Any(target => target is null) ||
+            manifest.Targets.Select(static target => (target.Target, target.GarbageCollector)).Distinct().Count() != 4)
         {
             throw new InvalidOperationException("The NetWasm runtime target contract is invalid.");
         }
@@ -68,6 +77,7 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         {
             ValidateTarget(target, manifest.WasmPageSize);
         }
+
     }
 
     private static void ValidateProvenance(RuntimePackProvenance provenance)
@@ -83,6 +93,8 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
 
     private static void ValidateTarget(RuntimePackTarget target, long wasmPageSize)
     {
+        if (target.GarbageCollector is not ("Compact" or "Boehm"))
+            throw new InvalidOperationException("The NetWasm runtime target collector is unsupported.");
         var expectedPointerSize = target.Target switch
         {
             "wasm32" => 4,
@@ -106,9 +118,9 @@ internal sealed class RuntimePackManifestReader : IRuntimePackManifestReader
         ValidateAsset(target.CollectorArchive);
         ValidateAsset(target.AllowedUndefinedSymbols);
         if (!string.Equals(target.RuntimeArchive.Path,
-                $"{target.Target}/libnetwasm-runtime.a", StringComparison.Ordinal) ||
+                $"{target.Target}/{target.GarbageCollector.ToLowerInvariant()}/libnetwasm-runtime.a", StringComparison.Ordinal) ||
             !string.Equals(target.CollectorArchive.Path,
-                $"{target.Target}/libgc.a", StringComparison.Ordinal) ||
+                $"{target.Target}/{target.GarbageCollector.ToLowerInvariant()}/libgc.a", StringComparison.Ordinal) ||
             !string.Equals(target.AllowedUndefinedSymbols.Path,
                 $"{target.Target}/allowed-undefined-symbols.txt", StringComparison.Ordinal))
         {

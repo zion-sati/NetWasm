@@ -23,6 +23,7 @@ public sealed class RuntimeMaterializationCacheKeyBuilderTests
         var contract = profile.Imports[0];
         var changes = new[]
         {
+            baseline with { Target = baseline.Target with { GarbageCollector = "Compact" } },
             baseline with { Plan = plan with { InitialHeapSizeBytes = plan.InitialHeapSizeBytes + 1 } },
             baseline with { Plan = plan with { MaximumMemorySizeBytes = plan.MaximumMemorySizeBytes - 65_536 } },
             baseline with { Bindings = [binding with { Provider = binding.Provider with { Sha256 = new string('b', 64) } }] },
@@ -68,6 +69,15 @@ public sealed class RuntimeMaterializationCacheKeyBuilderTests
         var secondKey = _builder.Build(Request(second.Path));
 
         Assert.Equal(firstKey, secondKey);
+    }
+
+    [Fact]
+    public void ResolvedCollectorIdentityChangesOrdinaryCacheKeyEvenWithIdenticalAssetBytes()
+    {
+        var request = Request("/test");
+        var changed = request with { Target = request.Target with { GarbageCollector = "Compact" } };
+        Assert.NotEqual(_builder.Build(request), _builder.Build(changed));
+        Assert.Equal(_builder.Build(changed), _builder.Build(changed));
     }
 
     [Fact]

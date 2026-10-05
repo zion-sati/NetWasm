@@ -9,6 +9,37 @@ namespace NetWasm.Runtime.Pack.Tests.MsBuild;
 public sealed class RuntimeMaterializationTaskTests
 {
     [Theory]
+    [InlineData("", null)]
+    [InlineData("Compact", "Compact")]
+    [InlineData("Boehm", "Boehm")]
+    public void ForwardsOptionalCanonicalCollectorAndResolvedMetadata(string value, string? expected)
+    {
+        var actor = new RecordingMaterializer(Materialization() with { GarbageCollector = expected ?? "Boehm" });
+        var task = Create(actor, new RecordingBuildEngine());
+        task.GarbageCollector = value;
+        Assert.True(task.Execute());
+        Assert.Equal(expected, actor.Request!.GarbageCollector);
+        Assert.Equal(expected ?? "Boehm", Assert.Single(task.RuntimeModules).GetMetadata("GarbageCollector"));
+    }
+
+    [Theory]
+    [InlineData("compact")]
+    [InlineData("Boehm ")]
+    [InlineData("tcms")]
+    [InlineData(" ")]
+    public void RejectsNoncanonicalCollectorBeforeMaterialization(string value)
+    {
+        var actor = new RecordingMaterializer(Materialization());
+        var build = new RecordingBuildEngine();
+        var task = Create(actor, build);
+        task.GarbageCollector = value;
+        Assert.False(task.Execute());
+        Assert.Null(actor.Request);
+        Assert.Empty(task.RuntimeModules);
+        Assert.Single(build.Errors);
+    }
+
+    [Theory]
     [InlineData("native%3Bentry")]
     [InlineData("native;entry")]
     [InlineData("native%253B;entry")]

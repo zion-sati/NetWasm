@@ -9,6 +9,7 @@ configuration="release"
 force_component_collection=0
 output_kind="module"
 collector_output=""
+collector="boehm"
 link_map=""
 additional_sources=()
 
@@ -21,11 +22,17 @@ while [[ $# -gt 0 ]]; do
         --force-component-collection) force_component_collection=1; shift ;;
         --relocatable) output_kind="relocatable"; shift ;;
         --collector-output) collector_output="$2"; shift 2 ;;
+        --collector) collector="$2"; shift 2 ;;
         --link-map) link_map="$2"; shift 2 ;;
         --additional-source) additional_sources+=("$2"); shift 2 ;;
         *) echo "unknown runtime-build option '$1'" >&2; exit 2 ;;
     esac
 done
+
+[[ "$collector" = boehm || "$collector" = tcms ]] || {
+    echo "collector must be 'boehm' or 'tcms'" >&2
+    exit 2
+}
 
 [[ -z "$link_map" || "$output_kind" = module ]] || {
     echo "--link-map requires a final runtime module" >&2
@@ -171,6 +178,11 @@ actual_emscripten="$(emcc --version | sed -nE \
     exit 1
 }
 
+defines=()
+if [[ "$force_component_collection" = 1 ]]; then
+    defines+=(-DNETWASM_FORCE_COMPONENT_COLLECTION)
+fi
+if [[ "$collector" = boehm ]]; then
 dependency_root="${NETWASM_DEPENDENCY_ROOT:-${TMPDIR:-/tmp}/netwasm-dependencies}"
 [[ "$dependency_root" = /* ]] || {
     echo "NETWASM_DEPENDENCY_ROOT must be an absolute path" >&2
@@ -284,6 +296,10 @@ if [[ ! -f "$build_root/libgc.a" ||
 fi
 release_dependency_lock
 trap - EXIT INT TERM
+else
+    defines+=('-DNETWASM_UNMANAGED_ALLOCATOR_BACKEND="unmanaged_allocator_libc.h"')
+    gc_work="$repo_root/src/NetWasm.Runtime/collector/compact"
+fi
 
 optimization=(-Oz -flto)
 configuration_defines=()
@@ -354,6 +370,24 @@ if [[ "$include_ephemerons" = 1 ]]; then
       "$repo_root/src/NetWasm.Runtime/collector/ephemeron_handle_table.c"
     )
 fi
+collector_sources=()
+collector_archive=""
+if [[ "$collector" = tcms ]]; then
+    # Keep the existing collector interfaces and shared handle stores. Select
+    # adapters at composition time, without runtime backend dispatch.
+    selected_sources=()
+    for source in "${runtime_sources[@]}"; do
+        case "$(basename "$source")" in
+            boehm_identity_hash.c|boehm_reference_store.c|boehm_pinning.c) ;;
+            boehm_*.c) source="${source%/*}/tcms_${source##*/boehm_}" ;;
+        esac
+        selected_sources+=("$source")
+    done
+    runtime_sources=("${selected_sources[@]}")
+    collector_sources=("$gc_work/tcms.c" "$gc_work/tcms_lifetime.c")
+else
+    collector_archive="$build_root/libgc.a"
+fi
 runtime_sources+=("${additional_sources[@]}")
 libc_internal_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/src/internal"
 libc_arch_include="$EMSDK/upstream/emscripten/system/lib/libc/musl/arch/emscripten"
@@ -371,7 +405,7 @@ if [[ "$output_kind" = relocatable ]]; then
         }
         (
             cd "$repo_root"
-            emcc "$relative_source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" \
+            emcc "$relative_source" -c -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" -I"$gc_work" \
                 -I"$libc_internal_include" -I"$libc_arch_include" -I"$libc_source_include" \
                 "${defines[@]}" "${configuration_defines[@]}" \
                 -DNETWASM_RUNTIME_PACK \
@@ -382,16 +416,28 @@ if [[ "$output_kind" = relocatable ]]; then
     done
     emar rcs "$output" "${runtime_objects[@]}"
     mkdir -p "$(dirname "$collector_output")"
-    cp "$build_root/libgc.a" "$collector_output"
+    if [[ "$collector" = tcms ]]; then
+        collector_objects=()
+        for source in "${collector_sources[@]}"; do
+            object="$archive_work/collector-$(basename "${source%.c}").o"
+            emcc "$source" -c "${target_args[@]}" "${optimization[@]}" \
+                "${debug_information[@]}" -o "$object"
+            collector_objects+=("$object")
+        done
+        emar rcs "$collector_output" "${collector_objects[@]}"
+    else
+        cp "$collector_archive" "$collector_output"
+    fi
 else
     initial_memory="$(( (runtime_global_base + 4194304 + 65535) / 65536 * 65536 ))"
     emcc_args=(
       "$metadata_object"
       "${runtime_sources[@]}"
-      "$build_root/libgc.a"
-      -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" -I"$libc_internal_include" -I"$libc_arch_include"
+      "${collector_sources[@]}"
+      -I"$repo_root/src/NetWasm.Runtime" -I"$gc_work/include" -I"$gc_work" -I"$libc_internal_include" -I"$libc_arch_include"
       -I"$libc_source_include" "${defines[@]}" "${configuration_defines[@]}"
     )
+    if [[ -n "$collector_archive" ]]; then emcc_args+=("$collector_archive"); fi
     if [[ "$target" = wasm64 ]]; then
         emcc_args+=(-sMEMORY64=1 -sWASM_BIGINT=1)
     fi

@@ -41,7 +41,7 @@
           DependsOnTargets="NetWasmRuntimePackResolveOutputPaths"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
     <WriteLinesToFile File="$(NetWasmRuntimePackMaterializationIdentityPath)"
-                      Lines="target=$(NetWasmTarget);optimization=$(_NetWasmCanonicalOptimization);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);wasmOpt=$(NetWasmNativeBinaryenWasmOptPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath);sdk=$(NetWasmSdkVersion);compiler=$(NetWasmCompilerVersion);runtime=$(NetWasmRuntimeVersion);runtimePack=$(NetWasmRuntimePackPackageVersion);hostTools=$(NetWasmHostToolsPackageId)@$(NetWasmHostToolsPackageVersion);wasmLdVersion=$(NetWasmWasmLdVersion);wasmOptVersion=$(NetWasmNativeBinaryenWasmOptVersion);wasmToolsVersion=$(NetWasmWasmToolsVersion);nodeVersion=$(NetWasmNodeVersion)"
+                      Lines="target=$(NetWasmTarget);garbageCollector=$(NetWasmGarbageCollector);optimization=$(_NetWasmCanonicalOptimization);initialHeap=$(NetWasmInitialHeapSizeBytes);maximumMemory=$(NetWasmMaximumMemorySizeBytes);assetRoot=$(NetWasmRuntimePackRoot);wasmLd=$(NetWasmWasmLdPath);wasmOpt=$(NetWasmNativeBinaryenWasmOptPath);node=$(NetWasmNodePath);wasmToolsCommand=$(NetWasmWasmToolsCommandPath);wasmToolsModule=$(NetWasmWasmToolsModulePath);sdk=$(NetWasmSdkVersion);compiler=$(NetWasmCompilerVersion);runtime=$(NetWasmRuntimeVersion);runtimePack=$(NetWasmRuntimePackPackageVersion);hostTools=$(NetWasmHostToolsPackageId)@$(NetWasmHostToolsPackageVersion);wasmLdVersion=$(NetWasmWasmLdVersion);wasmOptVersion=$(NetWasmNativeBinaryenWasmOptVersion);wasmToolsVersion=$(NetWasmWasmToolsVersion);nodeVersion=$(NetWasmNodeVersion)"
                       Overwrite="true"
                       WriteOnlyWhenDifferent="true" />
   </Target>
@@ -74,6 +74,7 @@
                                 LogDirectory="$(NetWasmRuntimePackLogDirectory)"
                                 CacheDirectory="$(NetWasmRuntimePackCacheDirectory)"
                                 Target="$(NetWasmTarget)"
+                                GarbageCollector="$(NetWasmGarbageCollector)"
                                 Optimization="$(_NetWasmCanonicalOptimization)"
                                 InitialHeapSizeBytes="$(NetWasmInitialHeapSizeBytes)"
                                 MaximumMemorySizeBytes="$(NetWasmMaximumMemorySizeBytes)"

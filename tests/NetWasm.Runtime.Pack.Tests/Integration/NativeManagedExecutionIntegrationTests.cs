@@ -205,7 +205,9 @@ public sealed class NativeManagedExecutionIntegrationTests
                 generated ? "GeneratedNativeMule.cs.txt" : "NativeMule.cs.txt");
         var source = File.ReadAllText(sourcePath);
         var wasmTarget = target == "wasm64" ? WasmTarget.Wasm64 : WasmTarget.Wasm32;
-        var runtimeAssets = Path.Combine(assets.Root, "src", "NetWasm.Runtime.Pack", "runtime");
+        var runtimeAssets = Environment.GetEnvironmentVariable("NETWASM_NATIVE_INTEROP_RUNTIME_ASSETS_ROOT") is null
+            ? Path.Combine(assets.Root, "src", "NetWasm.Runtime.Pack", "runtime")
+            : RequiredDirectory("NETWASM_NATIVE_INTEROP_RUNTIME_ASSETS_ROOT");
         var coreLib = Path.Combine(cell, "NetWasm.CoreLib.dll");
         File.Copy(assets.CoreLib, coreLib);
         if (nativeSource is not null)
@@ -322,6 +324,7 @@ public sealed class NativeManagedExecutionIntegrationTests
                 RuntimeWasmOptimization.None, 1_048_576, null,
                 new("source", "source", "source", "source", "qualified-host-tools", "0.5.0", "pinned", "pinned", "pinned", "pinned"))
             {
+                GarbageCollector = Environment.GetEnvironmentVariable("NETWASM_NATIVE_INTEROP_GARBAGE_COLLECTOR"),
                 NativeLibraries = providerlessCallbacks
                     ? []
                     : [new("mule", target, archive), new("unused", target, Path.Combine(cell, "missing-unused.a"))],
@@ -330,6 +333,10 @@ public sealed class NativeManagedExecutionIntegrationTests
                     : null,
             };
             var runtime = RuntimeMaterializationComposition.Create().Materialize(request);
+            if (request.GarbageCollector is not null)
+            {
+                Assert.Equal(request.GarbageCollector, runtime.GarbageCollector);
+            }
             if (namedCallbacks || providerlessCallbacks)
             {
                 Assert.Empty(runtime.InternalApplicationExports);

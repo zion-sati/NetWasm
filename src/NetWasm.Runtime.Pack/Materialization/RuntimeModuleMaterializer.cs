@@ -9,6 +9,7 @@ namespace NetWasm.Runtime.Pack.Materialization;
 
 internal sealed class RuntimeModuleMaterializer(
     IRuntimePackManifestReader manifests,
+    IRuntimePackTargetSelector targets,
     IRuntimeLayoutReader layouts,
     IRuntimeMemoryLayoutCalculator memoryLayouts,
     IRuntimeAssetDigestVerifier assetDigests,
@@ -37,9 +38,7 @@ internal sealed class RuntimeModuleMaterializer(
             throw new InvalidOperationException("The NetWasm runtime layout target does not match the requested target.");
         }
 
-        var target = manifest.Targets.SingleOrDefault(
-            target => string.Equals(target.Target, request.Target, StringComparison.Ordinal))
-            ?? throw new InvalidOperationException("The requested NetWasm runtime target is unavailable.");
+        var target = targets.Select(manifest, request.Target, request.GarbageCollector);
         var systemLibraryPaths = target.SystemLibraries.Assets
             .Select(asset => ResolveAsset(request.AssetRoot, asset.Path))
             .ToImmutableArray();
@@ -173,7 +172,10 @@ internal sealed class RuntimeModuleMaterializer(
             memoryLayout.HeapBase,
             memoryLayout.InitialMemorySizeBytes,
             memoryLayout.MaximumMemorySizeBytes,
-            metrics);
+            metrics)
+        {
+            GarbageCollector = target.GarbageCollector,
+        };
 
     private static void ValidateRequest(RuntimeMaterializationRequest request)
     {

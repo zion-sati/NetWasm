@@ -1,5 +1,43 @@
 # Compiler diagnostics
 
+## Managed exceptions and diagnostic profiles
+
+NetWasm does not promise desktop .NET exception diagnostics. Managed exception
+control flow is separate from optional rich reports and stack instrumentation.
+The size-first Release profile normally leaves those optional features out.
+
+| SDK property | Debug default | Release default | Purpose |
+| --- | --- | --- | --- |
+| `NetWasmStructuredDiagnostics` | `true` | `false` | Structured managed failure reporting for the selected execution contract |
+| `NetWasmManagedStackTrace` | `true` | `false` | Managed stack instrumentation and its symbol sidecar |
+
+The switches are independent. Enable the desired features explicitly, for
+example for an application that needs rich Release diagnostics:
+
+```xml
+<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+  <NetWasmStructuredDiagnostics>true</NetWasmStructuredDiagnostics>
+  <NetWasmManagedStackTrace>true</NetWasmManagedStackTrace>
+</PropertyGroup>
+```
+
+Setting either property to `false` also overrides its Debug default. These
+features are pay-as-you-use and do not enable reflection or general runtime
+type-name discovery. Do not require desktop-style messages, formatted exception
+text or stack frames from a deployment whose selected profile omits them.
+
+Supported interop boundaries can still expose a managed type ID, sidecar-mapped
+type name and stored message when available. Turning diagnostics off is not a
+security guarantee that application messages are erased. JavaScript managed
+error payloads preserve the stored nullable message, not a synthesized result
+of the managed `Exception.Message` getter. Null and an explicitly empty string
+remain distinct. The public JavaScript error uses the available message, then
+the mapped type name, then a generic export-failure fallback. Stack details
+depend on the selected instrumentation/symbols. Applications should inspect
+the supported payload rather than assume desktop `Exception.ToString()` output.
+
+## Compiler diagnostic format
+
 The diagnostic format is `NWdddd: [Type::Method IL_000a:] message`; the
 reserved `GenericExpansion` code is formatted as `NWA2001`. The complete enum
 is defined in `NetWasm.Compiler.Core`.

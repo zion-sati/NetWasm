@@ -26,11 +26,17 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
         if len(names) != len(set(names)):
             raise ValueError("Runtime-pack archive has duplicate entries.")
         manifest = json.loads(archive.read("runtime/runtime-pack.json"))
-        if manifest.get("schemaVersion") != 4 or manifest.get("emscriptenVersion") != pins["emscripten"]:
+        if manifest.get("schemaVersion") != 5 or manifest.get("emscriptenVersion") != pins["emscripten"]:
             raise ValueError("Runtime-pack manifest uses an unexpected source version.")
         targets = manifest.get("targets", [])
-        if [target.get("target") for target in targets] != ["wasm32", "wasm64"]:
+        pairs = [(target.get("target"), target.get("garbageCollector")) for target in targets]
+        expected_pairs = {(target, collector) for target in ("wasm32", "wasm64")
+                          for collector in ("Compact", "Boehm")}
+        if len(pairs) != 4 or set(pairs) != expected_pairs:
             raise ValueError("Runtime-pack target inventory is incomplete.")
+        if manifest.get("defaultGarbageCollector") not in ("Compact", "Boehm") or \
+                manifest.get("defaultGarbageCollector") != policy["defaultGarbageCollector"]:
+            raise ValueError("Runtime-pack default collector does not match source policy.")
 
         expected_archives: set[str] = set()
         forbidden = (
@@ -41,13 +47,18 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
         )
         for target in targets:
             name = target["target"]
+            collector = target["garbageCollector"].lower()
+            layout = json.loads(archive.read(f"runtime/{name}/{collector}/layout.json"))
+            if layout.get("schemaVersion") != 1 or layout.get("target") != name or \
+                    layout.get("runtimeFootprintBytes") != target.get("runtimeFootprintBytes"):
+                raise ValueError("Runtime-pack collector layout does not match its manifest.")
             required = policy["targets"][name]["systemLibraries"]
             closure = target["systemLibraries"]
             if closure.get("names") != required or len(closure.get("assets", [])) != len(required):
                 raise ValueError(f"Runtime-pack {name} system-library inventory is incomplete.")
             assets = [target["runtimeArchive"], target["collectorArchive"],
                       target["allowedUndefinedSymbols"], *closure["assets"]]
-            expected_paths = [f"{name}/libnetwasm-runtime.a", f"{name}/libgc.a",
+            expected_paths = [f"{name}/{collector}/libnetwasm-runtime.a", f"{name}/{collector}/libgc.a",
                               f"{name}/allowed-undefined-symbols.txt", *(
                 f"{name}/system-libraries/{library}" for library in required)]
             if [asset.get("path") for asset in assets] != expected_paths:
@@ -73,6 +84,8 @@ def inspect(package: Path, pins_root: Path, version: str) -> None:
         if any(title not in license_text for title in (
             "=== NetWasm code: MIT ===", "=== Emscripten notice ===",
             "=== musl libc notice ===", "=== LLVM compiler-rt notice ===",
+            "=== Compact collector LICENSE ===", "=== Compact collector NOTICE ===",
+            "=== Compact collector UPSTREAM-NOTICE ===",
         )):
             raise ValueError("Runtime-pack package is missing an upstream notice.")
         nuspec_name = next(name for name in names if name.endswith(".nuspec"))

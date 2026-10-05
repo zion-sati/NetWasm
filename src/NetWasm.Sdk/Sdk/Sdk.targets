@@ -87,6 +87,17 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="NetWasmSdkValidateGarbageCollectorSelection"
+          BeforeTargets="NetWasmCompileCoreModule;NetWasmRuntimePackMaterialize"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')">
+    <Error Code="NWPACK007"
+           Condition="'$(NetWasmGarbageCollector)' != '' AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Compact')) AND !$([System.String]::Equals('$(NetWasmGarbageCollector)', 'Boehm'))"
+           Text="NetWasmGarbageCollector must be exactly Compact or Boehm, or unset to use the runtime pack default." />
+    <Error Code="NWPACK006"
+           Condition="'$(NetWasmGarbageCollector)' != '' AND ('$(NetWasmRuntimeModulePath)' != '' OR '@(NetWasmComponentRuntime)' != '')"
+           Text="An explicit NetWasmGarbageCollector cannot be combined with a caller-supplied runtime module. Remove the override or leave the collector unset." />
+  </Target>
+
   <Import Project="$(MSBuildThisFileDirectory)NetWasm.NativeLibraries.targets" />
 
   <!-- Resolve only restored, pinned toolchain assets and expose the

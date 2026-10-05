@@ -2,11 +2,14 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ $# -ne 1 || "$1" != /* || -e "$1" ]]; then
-    echo 'usage: measure-console42-size.sh <new absolute evidence directory>' >&2
+if [[ $# -lt 1 || $# -gt 2 || "$1" != /* || -e "$1" ||
+      ( $# -eq 2 && "$2" != --compare-collectors ) ]]; then
+    echo 'usage: measure-console42-size.sh <new absolute evidence directory> [--compare-collectors]' >&2
     exit 2
 fi
 evidence_root="$1"
+compare_collectors=0
+if [[ $# -eq 2 ]]; then compare_collectors=1; fi
 case "$evidence_root" in
     "$repo_root"/*)
         echo 'evidence directory must be outside the source worktree' >&2
@@ -98,6 +101,28 @@ if [[ ! "$expected_component_bytes" =~ ^[0-9]+$ ]] || \
     printf 'Console42 component size mismatch: expected %s bytes, found %s bytes\n' \
         "$expected_component_bytes" "$component_bytes" >&2
     exit 6
+fi
+
+if [[ "$compare_collectors" = 1 ]]; then
+    candidate_runtime="$evidence_root/runtime-tcms.wasm"
+    candidate_component="$evidence_root/NetWasmApp-tcms.wasm"
+    run_logged runtime-tcms bash eng/build-netwasm-runtime.sh \
+        --collector tcms --runtime-layout "$layout" --target wasm32 \
+        --configuration release --output "$candidate_runtime"
+    run_logged package-tcms dotnet "$harness" package "$application" \
+        "$candidate_runtime" "$command_wit" "$candidate_component"
+    run_logged validate-tcms wasm-tools validate "$candidate_component"
+    run_logged wit-tcms wasm-tools component wit "$candidate_component"
+    run_logged run-tcms wasmtime run "$candidate_component"
+    if [[ "$(< "$evidence_root/logs/run-tcms.stdout.log")" != '42' ]] || \
+       ! rg -q 'export wasi:cli/run@0.2.11' "$evidence_root/logs/wit-tcms.stdout.log"; then
+        echo 'candidate component does not satisfy the Console42 command contract' >&2
+        exit 4
+    fi
+    shasum -a 256 "$candidate_runtime" "$candidate_component" \
+        > "$evidence_root/candidate-sha256.txt"
+    node "$repo_root/spikes/assemblyscript-c-gc/compare-size.mjs" \
+        "$component" "$candidate_component" "$evidence_root/collector-comparison.json"
 fi
 
 wc -c "$corelib" "$assembly" "$application" "$runtime" "$command_wit" "$component" \

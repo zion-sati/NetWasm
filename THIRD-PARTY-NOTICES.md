@@ -18,6 +18,15 @@ locations in `licenses/`.
 notices for its static archive inputs in its own
 [`LICENSE.txt`](src/NetWasm.Runtime.Pack/runtime/LICENSE.txt).
 
+## Compact garbage collector
+
+The Compact collector is a C adaptation of AssemblyScript's two-colour
+mark-and-sweep collector, with NetWasm tracing and lifetime extensions. Its
+source retains the AssemblyScript Authors' copyright and Apache-2.0 license.
+See the collector's [LICENSE](src/NetWasm.Runtime/collector/compact/LICENSE),
+[NOTICE](src/NetWasm.Runtime/collector/compact/NOTICE) and
+[upstream notice](src/NetWasm.Runtime/collector/compact/UPSTREAM-NOTICE).
+
 ## .NET Foundation sources
 
 Selected .NET runtime and CoreLib sources retain their `.NET Foundation` MIT

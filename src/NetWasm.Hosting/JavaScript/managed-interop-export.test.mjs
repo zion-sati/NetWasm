@@ -190,16 +190,37 @@ test("converts low-level WebAssembly exceptions and preserves unrelated failures
 test("maps runtime traps through terminal managed-exception events", () => {
   const trap = new WebAssembly.RuntimeError("trap");
   for (const event of [null, { typeId: 73 }]) {
+    let active = 1;
+    let finalizerFailure = true;
+    let cleared = 0;
     const invoke = createManagedInteropExport(request({
       exceptionReporter: reporter(event),
       instance: { exports: {
-        run() { throw trap; },
-        exception_get_active: () => 0,
+        run() {
+          if (finalizerFailure) throw trap;
+          assert.equal(active, 0);
+          return 42;
+        },
+        exception_get_active: () => active,
+        exception_clear_active() {
+          cleared++;
+          active = 0;
+          finalizerFailure = false;
+        },
       } },
     }));
     assert.throws(() => invoke(), error => event === null
       ? error === trap
-      : error instanceof NetWasmManagedError && error.managedType === 73);
+      : error instanceof NetWasmManagedError && error.managedType === 73
+        && error.cause === trap && active === 0 && !finalizerFailure);
+    assert.equal(cleared, event === null ? 0 : 1);
+    if (event !== null) {
+      assert.equal(invoke(), 42);
+      assert.equal(cleared, 1);
+    } else {
+      assert.equal(active, 1);
+      assert.equal(finalizerFailure, true);
+    }
   }
 });
 

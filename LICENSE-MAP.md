@@ -21,6 +21,7 @@ where they are more specific than a path default.
 | src/NetWasm.Ref/** | MIT |
 | src/NetWasm.Templates/** | MIT |
 | src/NetWasm.CoreLib/** | MIT |
+| src/NetWasm.Runtime/collector/compact/** | Apache-2.0 |
 | src/NetWasm.Runtime/** | MIT |
 | src/NetWasm.Runtime.Pack/** | MIT |
 | src/NetWasm.Runtime.Wasm32/** | MIT |

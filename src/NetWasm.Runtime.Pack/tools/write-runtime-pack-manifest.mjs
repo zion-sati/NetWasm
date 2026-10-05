@@ -10,6 +10,9 @@ if (!packageRoot) {
 const toolchainPath = toolchainArgument ?? join(packageRoot, "..", "..", "eng", "toolchain.json");
 const runtimeRoot = join(packageRoot, "runtime");
 const policy = JSON.parse(await readFile(join(runtimeRoot, "runtime-policy.json"), "utf8"));
+if (!['Compact', 'Boehm'].includes(policy.defaultGarbageCollector)) {
+  throw new Error('The runtime policy default garbage collector is invalid.');
+}
 const toolchain = JSON.parse(await readFile(toolchainPath, "utf8"));
 const exports = (await readFile(join(runtimeRoot, "runtime-exports.txt"), "utf8"))
   .split(/\r?\n/u)
@@ -44,13 +47,16 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
     if (!Object.hasOwn(valueTypes, value)) throw new Error('Unsupported native policy value type');
     return valueTypes[value];
   });
-  const measured = JSON.parse(await readFile(join(runtimeRoot, target, "layout.json"), "utf8"));
-  const runtimeArchive = await describeAsset(`${target}/libnetwasm-runtime.a`);
-  const collectorArchive = await describeAsset(`${target}/libgc.a`);
   const allowedUndefinedSymbols = await describeAsset(
     `${target}/allowed-undefined-symbols.txt`);
+  for (const garbageCollector of ['Compact', 'Boehm']) {
+  const collectorDirectory = garbageCollector.toLowerCase();
+  const measured = JSON.parse(await readFile(join(runtimeRoot, target, collectorDirectory, "layout.json"), "utf8"));
+  const runtimeArchive = await describeAsset(`${target}/${collectorDirectory}/libnetwasm-runtime.a`);
+  const collectorArchive = await describeAsset(`${target}/${collectorDirectory}/libgc.a`);
   targets.push({
     target,
+    garbageCollector,
     pointerSizeBytes: targetPolicy.pointerSizeBytes,
     alignment: policy.alignment,
     runtimeFootprintBytes: measured.runtimeFootprintBytes,
@@ -76,10 +82,12 @@ for (const [target, targetPolicy] of Object.entries(policy.targets)) {
         describeAsset(`${target}/system-libraries/${name}`))),
     },
   });
+  }
 }
 
 const manifest = {
-  schemaVersion: 4,
+  schemaVersion: 5,
+  defaultGarbageCollector: policy.defaultGarbageCollector,
   runtimeAbi: toolchain.runtimeAbi,
   emscriptenVersion: toolchain.emscripten,
   wasmPageSize: policy.wasmPageSize,

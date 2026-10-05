@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "defaultGarbageCollector": "Compact",
   "alignment": 16,
   "wasmPageSize": 65536,
   "nativeStackSizeBytes": 65536,
