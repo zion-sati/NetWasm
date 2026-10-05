@@ -154,4 +154,3 @@ Callback aggregates, arrays, byrefs, handles, callback-valued parameters or
 results, arbitrary unmanaged `calli`, and delegate-to-native-pointer conversion
 are also outside the profile. These exclusions are compile-time failures rather
 than silent ABI guesses.
-
