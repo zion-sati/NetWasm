@@ -17,7 +17,7 @@ Boehm is the alternative BDWGC backend. Its allocation paths can be faster for
 allocation-heavy workloads, particularly many small objects, but it typically
 adds more code to the final module. NetWasm supplies exact roots and layouts to
 Boehm too; Boehm still has conservative pressure paths. Benchmark your actual
-application before choosing it for performance—neither backend is universally
+application before choosing it for performance. Neither backend is universally
 faster.
 
 Both collectors manage memory automatically. They do not make desktop .NET

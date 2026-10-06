@@ -1,8 +1,35 @@
 # Size measurements and methodology
 
+## NetWasm 0.7.0: Compact is the default
+
+The qualified Release `Console.WriteLine(42)` WASI Preview 2 component is
+**55,825 bytes (54.5 KiB)** with Compact, including the linked runtime and GC.
+The SDK package-consumer matrix checks this exact size on .NET 10 and 11.
+Selecting Boehm produces the retained **84,653-byte** baseline for the same
+workload. These are uncompressed final components, not isolated collector sizes
+or complete browser downloads. Wasmtime execution must print `42`.
+
+Against the retained Blazor AOT payloads below, the Compact component is about
+220 times smaller than the .NET 10 build and 274 times smaller than the .NET 11
+RC1 build. The app/settings and deployment-format caveats still apply; this is
+not a comparison of equivalent UI frameworks.
+
+To reproduce both collectors from a source checkout with the pinned maintainer
+tools, use a new absolute evidence directory:
+
+```sh
+bash eng/measure-console42-size.sh /absolute/new/evidence --compare-collectors
+```
+
+The script checks the Boehm baseline, then builds, validates and executes the
+Compact component from the same application and command WIT. Its comparison
+receipt records raw bytes, Brotli quality 11 and gzip level 9 sizes, and SHA-256
+hashes. SDK users do not need these maintainer tools; see
+[collector selection](runtime-garbage-collection.md) for the `.csproj` setting.
+
 ## The 84,653-byte C# result
 
-These measurements use the Boehm collector, the default before NetWasm 0.7.0.
+The historical measurements below use Boehm, the default before NetWasm 0.7.0.
 They remain a reproducible Boehm baseline, not the size of the new Compact
 default. See [Choosing a garbage collector](runtime-garbage-collection.md) for
 the current selection policy and tradeoffs.

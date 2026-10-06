@@ -29,6 +29,8 @@ shasum -a 256 global.json eng/toolchain.json \
     eng/size-canary/Hello42.cs eng/size-canary/Program.cs \
     eng/size-canary/SizeCanary.csproj \
     eng/size-canary/expected-component-bytes.txt \
+    eng/size-canary/expected-compact-component-bytes.txt \
+    eng/compare-collector-size.mjs \
     eng/measure-console42-size.sh \
     > "$evidence_root/input-sha256.txt"
 
@@ -114,6 +116,15 @@ if [[ "$compare_collectors" = 1 ]]; then
     run_logged validate-tcms wasm-tools validate "$candidate_component"
     run_logged wit-tcms wasm-tools component wit "$candidate_component"
     run_logged run-tcms wasmtime run "$candidate_component"
+    compact_component_bytes="$(wc -c < "$candidate_component" | tr -d ' ')"
+    expected_compact_component_bytes="$(tr -d '[:space:]' < \
+        eng/size-canary/expected-compact-component-bytes.txt)"
+    if [[ ! "$expected_compact_component_bytes" =~ ^[0-9]+$ ]] || \
+       [[ "$compact_component_bytes" != "$expected_compact_component_bytes" ]]; then
+        printf 'Compact Console42 component size mismatch: expected %s bytes, found %s bytes\n' \
+            "$expected_compact_component_bytes" "$compact_component_bytes" >&2
+        exit 6
+    fi
     if [[ "$(< "$evidence_root/logs/run-tcms.stdout.log")" != '42' ]] || \
        ! rg -q 'export wasi:cli/run@0.2.11' "$evidence_root/logs/wit-tcms.stdout.log"; then
         echo 'candidate component does not satisfy the Console42 command contract' >&2
@@ -121,7 +132,7 @@ if [[ "$compare_collectors" = 1 ]]; then
     fi
     shasum -a 256 "$candidate_runtime" "$candidate_component" \
         > "$evidence_root/candidate-sha256.txt"
-    node "$repo_root/spikes/assemblyscript-c-gc/compare-size.mjs" \
+    node "$repo_root/eng/compare-collector-size.mjs" \
         "$component" "$candidate_component" "$evidence_root/collector-comparison.json"
 fi
 
