@@ -1,43 +1,14 @@
 # Size measurements and methodology
 
-## NetWasm 0.7.0: Compact is the default
+## NetWasm 0.7.0: the 55,825-byte Compact result
 
-The qualified Release `Console.WriteLine(42)` WASI Preview 2 component is
-**55,825 bytes (54.5 KiB)** with Compact, including the linked runtime and GC.
-The SDK package-consumer matrix checks this exact size on .NET 10 and 11.
-Selecting Boehm produces the retained **84,653-byte** baseline for the same
-workload. These are uncompressed final components, not isolated collector sizes
-or complete browser downloads. Wasmtime execution must print `42`.
-
-Against the retained Blazor AOT payloads below, the Compact component is about
-220 times smaller than the .NET 10 build and 274 times smaller than the .NET 11
-RC1 build. The app/settings and deployment-format caveats still apply; this is
-not a comparison of equivalent UI frameworks.
-
-To reproduce both collectors from a source checkout with the pinned maintainer
-tools, use a new absolute evidence directory:
-
-```sh
-bash eng/measure-console42-size.sh /absolute/new/evidence --compare-collectors
-```
-
-The script checks the Boehm baseline, then builds, validates and executes the
-Compact component from the same application and command WIT. Its comparison
-receipt records raw bytes, Brotli quality 11 and gzip level 9 sizes, and SHA-256
-hashes. SDK users do not need these maintainer tools; see
-[collector selection](runtime-garbage-collection.md) for the `.csproj` setting.
-
-## The 84,653-byte C# result
-
-The historical measurements below use Boehm, the default before NetWasm 0.7.0.
-They remain a reproducible Boehm baseline, not the size of the new Compact
-default. See [Choosing a garbage collector](runtime-garbage-collection.md) for
-the current selection policy and tradeoffs.
-
-The reference result was reproduced on 2026-10-04 with .NET SDK 10.0.401 on
-macOS arm64. A clean source canary and a clean SDK package consumer both
-produced an 84,653-byte Release component. Each artifact validated, ran under
-Wasmtime, printed `42`, and exported the expected WASI Preview 2 command world.
+The reference Release `Console.WriteLine(42)` WASI Preview 2 component is
+**55,825 bytes (54.5 KiB)** with Compact, the default since NetWasm 0.7.0.
+This includes the linked runtime and precise, non-moving collector; there is
+no separate desktop .NET runtime to download. A clean released 0.7.0 SDK
+consumer reproduced this size with .NET SDK 10.0.401 on macOS arm64 and printed
+`42` under Wasmtime. The package-consumer matrix also checks the exact-size
+canary on .NET 10 and 11.
 
 The generated console application's source is:
 
@@ -47,16 +18,16 @@ using System;
 Console.WriteLine(42);
 ```
 
-The canonical sample assembly is named `NetWasmApp` in the source canary, SDK
-reproduction and browser Playground. Assembly identity participates in
-deterministic method/type ordering, so renaming an otherwise identical assembly
-can change the final artifact by a few encoded index bytes.
+Use the canonical assembly name `NetWasmApp` for exact-size reproduction.
+Assembly identity participates in deterministic method/type ordering, so
+renaming an otherwise identical assembly can change a few encoded index bytes.
+For example, the same released SDK produced 55,827 bytes for `HelloNetWasm`.
 
-After the corresponding packages are released, the end-user reproduction uses
-only the .NET SDK and restores the host tools through NuGet:
+The end-user reproduction uses the .NET SDK and restores host tools through
+NuGet:
 
 ```sh
-dotnet new install NetWasm.Templates
+dotnet new install NetWasm.Templates::0.7.0
 dotnet new netwasm-app -n NetWasmApp
 cd NetWasmApp
 dotnet restore
@@ -65,35 +36,45 @@ dotnet run -c Release
 wc -c publish/local/NetWasmApp.wasm
 ```
 
-The reference final WASI Preview 2 Component is **84,653 bytes**,
-uncompressed. Runtime support, allocation and precise BDWGC/BoehmGC garbage
-collection are linked into the program; there is no separate desktop .NET
-runtime to download.
-
-The component also runs directly with Wasmtime 47.0.3 and prints `42`:
+The final component also runs directly with Wasmtime and prints `42`:
 
 ```sh
 wasmtime run publish/local/NetWasmApp.wasm
 ```
 
-The repository pins 84,653 bytes as a regression canary for this exact source
-and toolchain. A compiler, runtime, SDK or native-tool change can intentionally
-change it, but the new value must be reproduced through both the source canary
-and a clean SDK package consumer before the pin is updated.
+### Collector selection and compression
 
-This baseline is 147 bytes above the previous result because
-`ArgumentNullException.ThrowIfNull` now preserves caller-expression parameter
-names. Those names are observable through `ParamName` and `Message`, so the
-increase preserves normal .NET exception behavior. Optional rich exception
-diagnostics remain absent from this Release artifact.
+| Collector | Uncompressed component | Brotli quality 11 | gzip level 9 |
+| --- | ---: | ---: | ---: |
+| Compact (default) | 55,825 bytes | 14,215 bytes | 16,776 bytes |
+| Boehm (explicit opt-in) | 84,653 bytes | 26,216 bytes | 30,321 bytes |
 
-The figure excludes the host engine, JavaScript hosting/transpilation files,
-deployment manifests and optional sidecars. Those files are part of a
-JavaScript-host deployment, but not part of this component. It is neither the
-whole deployment's byte count nor a startup, memory-use or performance score.
+These are complete optimized components for the same application and command
+WIT, not isolated collector sizes. The compression measurements use Brotli's
+generic mode with `lgwin=22`. See
+[Choosing a garbage collector](runtime-garbage-collection.md) for selection and
+tradeoffs. To reproduce the Boehm row with the released SDK, explicitly set
+`NetWasmGarbageCollector=Boehm` when publishing; it is not the default.
 
-Exact size depends on the workload, compiler and toolchain. The package
-version, host and recorded hash identify a specific reproduction.
+From a source checkout with the pinned maintainer tools, reproduce both
+collectors into a new absolute evidence directory:
+
+```sh
+bash eng/measure-console42-size.sh /absolute/new/evidence --compare-collectors
+```
+
+The script validates and executes both components and records compressed
+sizes and SHA-256 hashes. SDK users do not need the maintainer tool setup.
+
+The repository keeps separate exact-size canaries for Compact and Boehm.
+Intentional compiler, runtime, SDK or native-tool changes require source and
+clean package-consumer reproduction before updating the corresponding pin.
+Optional rich exception diagnostics remain absent from this Release artifact.
+
+The figures exclude the host engine, JavaScript hosting/transpilation files,
+deployment manifests and optional sidecars. They are neither whole browser
+deployment sizes nor startup, memory-use or performance scores. Exact size
+depends on the workload, assembly identity, package version and toolchain.
 
 ## Blazor WebAssembly AOT: printing `42`
 
@@ -204,9 +185,9 @@ loaded, their uncompressed response lengths matched the published totals,
 `42` appeared in the console, the empty component rendered, and no browser
 errors occurred.
 
-Relative to the 84,653-byte NetWasm component, the measured total Wasm
-payloads are 145.02x and 180.61x as large. Counting only the native runtime
-module gives 111.92x and 138.52x. MB means 1,000,000 bytes; KiB means 1,024
+Relative to the 55,825-byte NetWasm Compact component, the measured total Wasm
+payloads are 219.91x and 273.88x as large. Counting only the native runtime
+module gives 169.72x and 210.05x. MB means 1,000,000 bytes; KiB means 1,024
 bytes. Neither total includes JavaScript, HTML or the host engine.
 
 This is [Mono WebAssembly AOT](https://learn.microsoft.com/en-us/aspnet/core/blazor/webassembly-build-tools-and-aot?view=aspnetcore-10.0),
@@ -233,12 +214,13 @@ fn main() {
 
 | Toolchain and build | Final component |
 | --- | ---: |
-| NetWasm, ordinary Release | 84,653 bytes |
+| NetWasm 0.7.0, ordinary Release, Compact | 55,825 bytes |
 | Rust 1.90.0, ordinary Cargo release | 86,248 bytes |
 | Rust 1.95.0, ordinary Cargo release | 81,997 bytes |
 | Rust 1.95.0, size-oriented profile below | 53,635 bytes |
 
-All four artifacts executed and printed `42` under Wasmtime 47.0.3.
+All four artifacts executed and printed `42` under Wasmtime. The retained
+Rust runs used Wasmtime 47.0.3; the NetWasm row uses the current Compact result.
 The Rust artifacts also pass wasm-tools 1.256.0 validation.
 
 This is a deliberately small console-output workload, not a language-wide
@@ -311,7 +293,7 @@ settings**:
 
 | Build | Artifact | Bytes | Collector boundary |
 | --- | --- | ---: | --- |
-| NetWasm Release | WASI Preview 2 Component | 84,653 | Precise BDWGC/BoehmGC included in the artifact |
+| NetWasm 0.7.0 Release, Compact | WASI Preview 2 Component | 55,825 | Precise Compact GC included in the artifact |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 Hello World* | WASI Preview 1 core module | 110,084 | Precise GC configured |
 
@@ -333,7 +315,8 @@ descriptors and exact compiler-maintained roots. Kotlin/Wasm uses the engine's
 WasmGC implementation instead: the 79,293-byte module does not contain a
 standalone collector. Neither figure includes the host engine.
 
-Our early spike put the bundled BDWGC collector footprint at roughly **30 KB**.
+The component sizes above include reachable runtime and application code as
+well as the collector. They do not establish an isolated GC size.
 
 ### Kotlin
 
@@ -373,7 +356,7 @@ System.Text.Json workloads produced:
 These are historical scenario measurements, not current component sizes,
 not incremental package costs, and not minimum sizes for arbitrary JSON
 programs. Do not compare their 54,230-byte baseline directly with the current
-84,653-byte component. `JsonDocument` is also not the mutable `JsonNode` API.
+55,825-byte Compact component. `JsonDocument` is also not the mutable `JsonNode` API.
 
 The useful result is granularity: choosing a different JSON workload retains
 a different closure. Adding a package reference alone is not the same thing
