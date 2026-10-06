@@ -27,7 +27,8 @@ public sealed class NativeLinkedMemoryLayoutIntegrationTests
         var repository = RepositoryRoot();
         var assetRoot = Path.Combine(repository, "src", "NetWasm.Runtime.Pack", "runtime");
         var manifest = new RuntimePackManifestReader().Read(Path.Combine(assetRoot, "runtime-pack.json"));
-        var target = manifest.Targets.Single(item => item.Target == targetName);
+        var target = new RuntimePackTargetSelector().Select(manifest, targetName,
+            Environment.GetEnvironmentVariable("NETWASM_NATIVE_INTEROP_GARBAGE_COLLECTOR"));
         var emsdk = Environment.GetEnvironmentVariable("NETWASM_EMSDK_ROOT") ??
             Environment.GetEnvironmentVariable("EMSDK") ?? Environment.GetEnvironmentVariable("EMSDK_ROOT") ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "emsdk");

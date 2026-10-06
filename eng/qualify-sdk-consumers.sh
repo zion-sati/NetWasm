@@ -603,7 +603,7 @@ for target in wasm32 wasm64; do
           "${NETWASM_QUALIFY_SDK_VERSION:-}" == 11.* ]]; then
       published_component="$consumer_root/publish/local/NetWasmApp.wasm"
       expected_component_bytes="$(tr -d '[:space:]' < \
-        "$source_root/eng/size-canary/expected-component-bytes.txt")"
+        "$source_root/eng/size-canary/expected-compact-component-bytes.txt")"
       actual_component_bytes="$(wc -c < "$published_component" | tr -d ' ')"
       if [[ "$actual_component_bytes" != "$expected_component_bytes" ]]; then
         printf 'Console42 package component size mismatch: expected %s bytes, found %s bytes\n' \
