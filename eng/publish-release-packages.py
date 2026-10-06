@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -24,7 +23,6 @@ from xml.etree import ElementTree
 SOURCE_INDEX = "https://api.nuget.org/v3/index.json"
 PUSH_SOURCE = SOURCE_INDEX
 PUSH_TIMEOUT_SECONDS = 2 * 60
-MAX_PARALLEL_PUSHES = 4
 FINAL_IDS = ("NetWasm.Sdk", "NetWasm.Templates")
 STAGE_NAMES = ("prerequisites", "final")
 
@@ -272,21 +270,9 @@ def publish_stage(
     count = len(stage)
     print(f"Publishing {stage_name} ({count} package{'s' if count != 1 else ''}).", flush=True)
     verified: set[str] = set()
-    workers = min(MAX_PARALLEL_PUSHES, count)
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(
-                push_or_reconcile,
-                package_id,
-                version,
-                path,
-                base_address,
-            ): package_id
-            for package_id, path in stage
-        }
-        for future in as_completed(futures):
-            if future.result():
-                verified.add(futures[future])
+    for package_id, path in stage:
+        if push_or_reconcile(package_id, version, path, base_address):
+            verified.add(package_id)
     finished = time.monotonic()
     print(f"Submitted the {stage_name} packages to NuGet.org.", flush=True)
     return {
