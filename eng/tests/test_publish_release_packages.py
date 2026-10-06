@@ -6,8 +6,6 @@ import json
 import stat
 import subprocess
 import tempfile
-import threading
-import time
 import unittest
 import urllib.error
 import warnings
@@ -261,31 +259,26 @@ class PublishReleasePackagesTests(unittest.TestCase):
             [("verify", "NetWasm.HostTools.linux-x64")],
             [event for event in events if event[0] == "verify"],
         )
-    def test_prerequisites_use_bounded_parallel_pushes(self) -> None:
+    def test_prerequisites_publish_sequentially_in_dependency_safe_order(self) -> None:
         for index in range(8):
             package_id = f"NetWasm.Independent{index}"
             self.manifest["packages"].append(package_id)
             self.create_package(package_id)
-        active = 0
-        maximum = 0
-        lock = threading.Lock()
+        published: list[str] = []
 
-        def push(*args) -> bool:
-            nonlocal active, maximum
-            with lock:
-                active += 1
-                maximum = max(maximum, active)
-            time.sleep(0.02)
-            with lock:
-                active -= 1
+        def push(package_id: str, *args) -> bool:
+            published.append(package_id)
             return False
 
         with mock.patch.object(MODULE, "package_base_address", return_value="https://example.invalid/"), \
              mock.patch.object(MODULE, "push_or_reconcile", side_effect=push):
             MODULE.publish_stage(self.manifest, self.root, "prerequisites")
 
-        self.assertGreater(maximum, 1)
-        self.assertLessEqual(maximum, MODULE.MAX_PARALLEL_PUSHES)
+        expected = [
+            package_id
+            for package_id, _ in MODULE.publication_stages(self.manifest, self.root)[0]
+        ]
+        self.assertEqual(expected, published)
 
     def test_preflight_reconciles_existing_payloads_without_a_credential(self) -> None:
         with mock.patch.object(MODULE, "package_base_address", return_value="https://example.invalid/"), \
