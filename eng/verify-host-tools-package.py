@@ -126,6 +126,15 @@ def inspect(
             "package/services/metadata/core-properties/core-properties.psmdcp",
             "tools/host-tools-manifest.json",
         }
+        # NuGet.org adds a repository signature without changing the payload.
+        # This checks its archive shape, not the cryptographic signature trust.
+        if ".signature.p7s" in names:
+            signature = archive.getinfo(".signature.p7s")
+            if (signature.compress_type != zipfile.ZIP_STORED or
+                    signature.is_dir() or signature.file_size == 0 or
+                    stat.S_IFMT(signature.external_attr >> 16) not in (0, stat.S_IFREG)):
+                raise ValueError("Host-tools package has an invalid signature entry.")
+            metadata.add(".signature.p7s")
         if set(names) != set(listed) | metadata:
             raise ValueError("Host-tools package has missing or extra archive entries.")
         for item in files:

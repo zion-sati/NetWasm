@@ -395,7 +395,8 @@ jobs:
         shell: bash
         run: |
           base_version="$(tr -d '[:space:]' < eng/NetWasm.ReleaseVersion.txt)"
-          version="${base_version}-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          # Partial reruns reuse successful packages from this immutable run.
+          version="${base_version}-ci.${GITHUB_RUN_ID}"
           echo "value=$version" >> "$GITHUB_OUTPUT"
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           bash eng/build-packages.sh --version "$version" --output "$RUNNER_TEMP/packages"
@@ -480,7 +481,8 @@ jobs:
           NETWASM_GITHUB_TOKEN: ${{ github.token }}
         run: |
           base_version="$(tr -d '[:space:]' < eng/NetWasm.ReleaseVersion.txt)"
-          version="${base_version}-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          # Match retained neutral packages when only this host is retried.
+          version="${base_version}-ci.${GITHUB_RUN_ID}"
           python eng/build-host-tools-package.py \
             --rid "${{ matrix.rid }}" \
             --version "$version" \
