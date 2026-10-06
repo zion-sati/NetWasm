@@ -2,6 +2,7 @@ using NetWasm.Compiler.Browser.Results;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.ManagedExecutables;
 using NetWasm.Compiler.Wasm;
+using NetWasm.Compiler.Wasm.Emission;
 
 namespace NetWasm.Compiler.Browser.Tests.Results;
 
@@ -20,10 +21,14 @@ public sealed class BrowserCompilationResultProjectorTests
         };
         var manifest = new HostInteropManifest(1, "wasm32", new(0, 1, 0), new(4, 0, 0, 0, 0), [], []);
         // Reachability and layout payloads are deliberately not needed for projection.
+        var callback = new WasmNativeCallbackSupportArtifact(
+            [1, 2, 3], new string('a', 64), [], [], []);
         var source = new CompilationResult([0, 97, 115, 109], null!, null!, manifest, 4096)
         {
             RuntimeFeatures = ["exceptions"],
             FunctionImports = [new WasmFunctionImport("runtime", "function", new([], default))],
+            NativeImports = [new WasmNativeImport("sample", "native_add", [WasmValueType.I32], WasmValueType.I32)],
+            NativeCallbackSupport = callback,
         };
         var projector = CreateProjector();
 
@@ -38,6 +43,8 @@ public sealed class BrowserCompilationResultProjectorTests
         Assert.Equal(4096, actual.StaticDataEnd);
         Assert.Equal(source.RuntimeFeatures, actual.RuntimeFeatures);
         Assert.Equal(source.FunctionImports, actual.FunctionImports);
+        Assert.Equal(source.NativeImports, actual.NativeImports);
+        Assert.Same(callback, actual.NativeCallbackSupport);
         Assert.Same(manifest, actual.InteropManifest);
         Assert.Equal(new BrowserCompilationEntryPoint("app.dll", "Program", "Main", token, kind, abi), actual.EntryPoint);
         Assert.Null(actual.CompilerMetrics);

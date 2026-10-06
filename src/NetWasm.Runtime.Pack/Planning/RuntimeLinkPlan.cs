@@ -31,9 +31,37 @@ public sealed record RuntimeLinkPlanRequest(
     public ImmutableArray<string> RuntimeFeatures { get; init; }
 
     public string? GarbageCollector { get; init; }
+
+    /// <summary>Reached native calls. An initialized empty array selects no native providers.</summary>
+    public ImmutableArray<RuntimeLinkPlanNativeImport> NativeImports { get; init; } = [];
+
+    /// <summary>Caller-validated regular archives available to satisfy reached native calls.</summary>
+    public ImmutableArray<RuntimeLinkPlanNativeLibrary> NativeLibraries { get; init; } = [];
 }
 
 public sealed record RuntimeLinkPlanAsset(string Path, string Sha256);
+
+public sealed record RuntimeLinkPlanExport(string Name, byte Kind);
+
+public enum RuntimeLinkPlanNativeValueType
+{
+    I32,
+    I64,
+    F32,
+    F64,
+}
+
+public sealed record RuntimeLinkPlanNativeImport(
+    string LibraryName,
+    string EntryPoint,
+    ImmutableArray<RuntimeLinkPlanNativeValueType> Parameters,
+    RuntimeLinkPlanNativeValueType? ReturnType);
+
+public sealed record RuntimeLinkPlanNativeLibrary(
+    string LibraryName,
+    string Target,
+    string Path,
+    string Sha256);
 
 public sealed record RuntimeMaterializationCacheDescriptor(
     string Schema,
@@ -54,4 +82,7 @@ public sealed record RuntimeLinkPlan(
     RuntimeMaterializationCacheDescriptor Cache)
 {
     public string GarbageCollector { get; init; } = string.Empty;
+
+    /// <summary>Temporary runtime exports that a raw-module consumer must remove after linking.</summary>
+    public ImmutableArray<RuntimeLinkPlanExport> InternalRuntimeExports { get; init; } = [];
 }

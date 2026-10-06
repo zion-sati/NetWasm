@@ -8,11 +8,19 @@ internal static class BrowserComponentExportPruner
     private const string OutputPath = "sanitized.wasm";
 
     public static byte[] Retain(ReadOnlyMemory<byte> module, string prefix)
+        => Rewrite(module, new(prefix, []));
+
+    public static byte[] Remove(
+        ReadOnlyMemory<byte> module,
+        System.Collections.Immutable.ImmutableArray<WasmInternalExport> exports)
+        => Rewrite(module, new(null, exports));
+
+    private static byte[] Rewrite(ReadOnlyMemory<byte> module, WasmExportSelection selection)
     {
         var reader = new VirtualModuleReader(module.ToArray());
         var writer = new VirtualModuleWriter();
         new WasmCoreModuleExportEditor(new VirtualModuleExistence(), reader, writer)
-            .Rewrite(InputPath, OutputPath, new(prefix, []));
+            .Rewrite(InputPath, OutputPath, selection);
         return writer.Module;
     }
 

@@ -46,11 +46,40 @@ public static class RuntimeLinkPlanner
         }
 
         var systemLibraryPaths = request.SystemLibraries.Select(asset => asset.Path).ToImmutableArray();
+        if (request.NativeImports.IsDefault || request.NativeLibraries.IsDefault)
+        {
+            throw new InvalidOperationException("The native link-plan inputs must be initialized.");
+        }
+        var nativeImports = request.NativeImports.Select(import => new RuntimeNativeImport(
+            import.LibraryName,
+            import.EntryPoint,
+            import.Parameters.Select(MapNativeType).ToImmutableArray(),
+            import.ReturnType is { } result ? MapNativeType(result) : null)).ToImmutableArray();
+        var nativeLibraries = request.NativeLibraries.Select(library => new RuntimeNativeLibrary(
+            library.LibraryName,
+            library.Target,
+            library.Path,
+            library.Sha256)).ToImmutableArray();
+        foreach (var library in request.NativeLibraries)
+        {
+            ValidateVirtualPath(library.Path);
+        }
+        var nativeBindings = new RuntimeNativeProviderSelector().Select(new(
+            request.Target,
+            nativeImports,
+            nativeLibraries));
+        var exportPlan = new RuntimeLinkExportPlanBuilder().Build(new(
+            manifest.Exports,
+            nativeBindings)
+        {
+            RuntimeFeatures = request.RuntimeFeatures,
+        });
         var link = new RuntimeLinkRequest(
             manifest, target, new RuntimeLinkMemoryLimits(layout.RuntimeGlobalBase, layout.InitialMemorySizeBytes,
                 layout.MaximumMemorySizeBytes), request.AssetRoot, systemLibraryPaths, request.OutputPath)
         {
             RuntimeFeatures = request.RuntimeFeatures,
+            NativeBindings = nativeBindings,
         };
         var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(link);
         var runtimeInput = new RuntimeLinkPlanAsset(
@@ -59,7 +88,11 @@ public static class RuntimeLinkPlanner
         var collectorInput = ResolveInput(request.AssetRoot, target.CollectorArchive);
         var allowedUndefinedInput = ResolveInput(
             request.AssetRoot, target.AllowedUndefinedSymbols);
+        var nativeInputs = nativeBindings.Select(binding => binding.Provider)
+            .DistinctBy(provider => provider.Path, StringComparer.Ordinal)
+            .Select(provider => new RuntimeLinkPlanAsset(provider.Path, provider.Sha256));
         var inputs = ImmutableArray.Create(runtimeInput, collectorInput, allowedUndefinedInput)
+            .AddRange(nativeInputs)
             .AddRange(request.SystemLibraries);
         if (inputs.Any(asset => asset.Path == request.OutputPath))
         {
@@ -79,6 +112,10 @@ public static class RuntimeLinkPlanner
         foreach (var systemLibrary in request.SystemLibraries)
         {
             paths[Path.GetFullPath(systemLibrary.Path)] = systemLibrary.Path;
+        }
+        foreach (var nativeLibrary in request.NativeLibraries)
+        {
+            paths[Path.GetFullPath(nativeLibrary.Path)] = nativeLibrary.Path;
         }
         paths[Path.GetFullPath(request.OutputPath)] = request.OutputPath;
         var virtualArguments = arguments.Select(argument => MapPathArgument(argument, paths))
@@ -108,8 +145,22 @@ public static class RuntimeLinkPlanner
             layout.MaximumMemorySizeBytes, cache)
         {
             GarbageCollector = target.GarbageCollector,
+            InternalRuntimeExports =
+            [
+                .. exportPlan.InternalExports.Select(export =>
+                    new RuntimeLinkPlanExport(export.Name, export.Kind)),
+            ],
         };
     }
+
+    private static RuntimeNativeValueType MapNativeType(RuntimeLinkPlanNativeValueType value) => value switch
+    {
+        RuntimeLinkPlanNativeValueType.I32 => RuntimeNativeValueType.I32,
+        RuntimeLinkPlanNativeValueType.I64 => RuntimeNativeValueType.I64,
+        RuntimeLinkPlanNativeValueType.F32 => RuntimeNativeValueType.F32,
+        RuntimeLinkPlanNativeValueType.F64 => RuntimeNativeValueType.F64,
+        _ => throw new InvalidOperationException("The native link-plan value type is invalid."),
+    };
 
     private static RuntimeLinkPlanAsset ResolveInput(
         string assetRoot,

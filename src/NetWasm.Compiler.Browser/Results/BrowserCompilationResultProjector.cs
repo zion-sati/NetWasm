@@ -29,6 +29,10 @@ internal sealed class BrowserCompilationResultProjector : IBrowserCompilationRes
                 options.EntryMethodName,
                 options.EntryMethodToken,
                 options.EntryPointKind,
-                entryPointAbi));
+                entryPointAbi))
+        {
+            NativeImports = result.NativeImports,
+            NativeCallbackSupport = result.NativeCallbackSupport,
+        };
     }
 }
