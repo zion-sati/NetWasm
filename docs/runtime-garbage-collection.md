@@ -58,15 +58,26 @@ live memory after collection. This is not a timer, an exact memory-use ceiling,
 or a promise of pause-free allocation. Most applications should leave collection
 to the runtime rather than calling `GC.Collect()` repeatedly.
 
-## Boehm Debug diagnostic
+## Prebuilt runtimes and application builds
 
-For a Debug build using Boehm, the module's WASI environment can provide
-`GC_DONT_GC` before runtime initialization to disable collection while retaining
-the allocator. Presence alone enables this diagnostic, even with an empty value
-or `0`. The host must forward the variable through WASI Preview 2; setting a host
-process variable is not sufficient otherwise.
+Published runtime packs contain prebuilt, size-optimized Release native archives.
+Ordinary application builds select and link those archives, including link-time
+optimization, rather than recompiling the collector's C source. Both Debug and
+Release C# application builds use these prebuilt native archives.
 
-This does not apply to Compact. Release builds compile the diagnostic hook out.
-It cannot be switched after initialization, and explicit collection requests do
-not override it. Use it only to diagnose collection versus allocation behavior:
-without collection, managed memory is not reclaimed.
+## Boehm diagnostic-enabled native runtimes
+
+`GC_DONT_GC` is a maintainer diagnostic for a Boehm native runtime built with
+`NETWASM_GC_DIAGNOSTICS`. The native runtime build script defines this only for
+its `--configuration debug` mode. It is not enabled in published runtime packs:
+**`dotnet build -c Debug` does not enable the hook or rebuild the collector.**
+
+With that diagnostic-enabled native runtime, the module's WASI environment can
+provide `GC_DONT_GC` before runtime initialization to disable collection while
+retaining the allocator. Presence alone enables it, even with an empty value or
+`0`. The host must forward the variable through WASI Preview 2.
+
+This does not apply to Compact. Native Release builds preprocess the hook out
+before packaging. It cannot be switched after initialization, and explicit
+collection requests do not override it. Without collection, managed memory is
+not reclaimed.
