@@ -7,8 +7,12 @@ internal static class RuntimePackTestData
 {
     public const string Digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    public static RuntimePackManifest Manifest() => new(
-        4,
+    public static RuntimePackManifest Manifest()
+    {
+        var targets = ImmutableArray.Create(Target("wasm32"), Target("wasm64"),
+            Target("wasm32", "Compact"), Target("wasm64", "Compact"));
+        return new(
+        5,
         "netwasm.runtime.v1",
         "6.0.7",
         65_536,
@@ -20,9 +24,14 @@ internal static class RuntimePackTestData
             "fingerprint",
             "runtime sources",
             "per-application wasm-ld final link"),
-        [Target("wasm32"), Target("wasm64")]);
+        targets)
+        {
+            DefaultGarbageCollector = "Boehm",
+            TargetLookup = targets.ToImmutableDictionary(target => (target.Target, target.GarbageCollector)),
+        };
+    }
 
-    public static RuntimePackTarget Target(string target) => target == "wasm64"
+    public static RuntimePackTarget Target(string target, string collector = "Boehm") => target == "wasm64"
         ? new(
             target,
             8,
@@ -32,10 +41,10 @@ internal static class RuntimePackTestData
             65_536,
             8_589_934_592,
             8_589_934_592,
-            Asset("wasm64/libnetwasm-runtime.a"),
-            Asset("wasm64/libgc.a"),
+            Asset($"wasm64/{collector.ToLowerInvariant()}/libnetwasm-runtime.a"),
+            Asset($"wasm64/{collector.ToLowerInvariant()}/libgc.a"),
             Asset("wasm64/allowed-undefined-symbols.txt"),
-            new(["libc.a"], [Asset("wasm64/system-libraries/libc.a")])) { NativeValidation = NativeProfile(target) }
+            new(["libc.a"], [Asset("wasm64/system-libraries/libc.a")])) { GarbageCollector = collector, NativeValidation = NativeProfile(target) }
         : new(
             target,
             4,
@@ -45,10 +54,10 @@ internal static class RuntimePackTestData
             65_536,
             2_147_483_648,
             2_147_483_648,
-            Asset("wasm32/libnetwasm-runtime.a"),
-            Asset("wasm32/libgc.a"),
+            Asset($"wasm32/{collector.ToLowerInvariant()}/libnetwasm-runtime.a"),
+            Asset($"wasm32/{collector.ToLowerInvariant()}/libgc.a"),
             Asset("wasm32/allowed-undefined-symbols.txt"),
-            new(["libc.a"], [Asset("wasm32/system-libraries/libc.a")])) { NativeValidation = NativeProfile(target) };
+            new(["libc.a"], [Asset("wasm32/system-libraries/libc.a")])) { GarbageCollector = collector, NativeValidation = NativeProfile(target) };
 
     public static RuntimeNativeValidationProfile NativeProfile(string target = "wasm32") => new(1,
         ["mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types", "multi-value", "bulk-memory",

@@ -1,0 +1,14 @@
+AssemblyScript-derived two-colour mark-and-sweep collector.
+Copyright (c) The AssemblyScript Authors.
+Derived from std/assembly/rt/tcms.ts at upstream commit
+b6bda05c29c9eb7d07d7f6cb2703508483b30493.
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Modified by Zion Sati: translated to C; explicit offset/repeated-element
+descriptors replace compiler-generated member visitors; caller-published roots
+replace global visitors; list membership encodes colours; counted pins replace
+the separate pinned list; interior address lookup added; allocation-time
+collection policy and injected allocator callbacks added. Static AssemblyScript
+objects, renew/realloc and upstream finalization hooks are not carried over.
+The core is non-moving. Independently written NetWasm lifetime extensions add
+finalization, weak references and ephemerons; these are not AssemblyScript code.

@@ -69,6 +69,9 @@ dotnet run
 The template prints `42`. Debug builds include managed stack traces by default.
 Release omits their instrumentation and symbol sidecar unless
 `NetWasmManagedStackTrace=true`.
+Structured rich failure reporting also defaults on in Debug and off in Release,
+with the independent `NetWasmStructuredDiagnostics` switch. See
+[exception profiles and their non-desktop boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).
 
 An application or runnable test project restores one host-tools package. A
 plain or dual-target library does not; its consumer selects the host package.

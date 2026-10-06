@@ -56,6 +56,10 @@ def stage(emsdk_root: Path, toolchain: Path, output: Path) -> None:
         if hashlib.sha256(data).hexdigest() != pins["runtimePackLicenseSources"][key]:
             raise ValueError(f"The pinned {title} notice changed.")
         sections.extend((f"\n=== {title} notice ===\n", data.decode("utf-8")))
+    compact_root = Path(__file__).resolve().parents[1] / "src/NetWasm.Runtime/collector/compact"
+    for name in ("LICENSE", "NOTICE", "UPSTREAM-NOTICE"):
+        sections.extend((f"\n=== Compact collector {name} ===\n",
+                         (compact_root / name).read_text(encoding="utf-8")))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(sections), encoding="utf-8")
 

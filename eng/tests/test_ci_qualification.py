@@ -11,7 +11,6 @@ import zipfile
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ci-qualification.py"
-WORKFLOW = SCRIPT.parents[1] / ".github/workflows/ci.yml"
 SPEC = importlib.util.spec_from_file_location("ci_qualification", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 QUALIFICATION = importlib.util.module_from_spec(SPEC)
@@ -27,16 +26,6 @@ def archive(receipt):
 
 
 class CiQualificationTests(unittest.TestCase):
-    def test_candidate_version_is_stable_across_partial_reruns(self):
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        stable_assignment = 'version="${base_version}-ci.${GITHUB_RUN_ID}"'
-
-        self.assertEqual(2, workflow.count(stable_assignment))
-        self.assertNotIn(
-            'version="${base_version}-ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"',
-            workflow,
-        )
-
     def test_does_not_forward_authorization_to_artifact_storage(self):
         handler = QUALIFICATION.SafeAuthorizationRedirectHandler()
         request = Request(

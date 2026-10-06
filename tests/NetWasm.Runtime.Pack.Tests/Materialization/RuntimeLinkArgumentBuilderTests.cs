@@ -67,20 +67,27 @@ public sealed class RuntimeLinkArgumentBuilderTests
             directory.PathTo("runtime.wasm"))));
     }
 
-    [Fact]
-    public void AcceptsAssetRootWithTrailingSeparator()
+    [Theory]
+    [InlineData("wasm32", "Boehm")]
+    [InlineData("wasm32", "Compact")]
+    [InlineData("wasm64", "Boehm")]
+    [InlineData("wasm64", "Compact")]
+    public void AcceptsAssetRootWithTrailingSeparator(string target, string collector)
     {
         using var directory = new TemporaryDirectory();
         var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(new(
             RuntimePackTestData.Manifest(),
-            RuntimePackTestData.Target("wasm32"),
+            RuntimePackTestData.Target(target, collector),
             RuntimePackTestData.LinkLimits(),
             directory.Path + Path.DirectorySeparatorChar,
             [directory.PathTo("libc.a")],
             directory.PathTo("runtime.wasm")));
 
         Assert.Contains(
-            Path.GetFullPath(directory.PathTo("wasm32/libnetwasm-runtime.a")),
+            Path.GetFullPath(directory.PathTo($"{target}/{collector.ToLowerInvariant()}/libnetwasm-runtime.a")),
+            arguments);
+        Assert.Contains(
+            Path.GetFullPath(directory.PathTo($"{target}/{collector.ToLowerInvariant()}/libgc.a")),
             arguments);
     }
 

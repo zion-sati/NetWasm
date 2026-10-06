@@ -185,6 +185,7 @@ internal sealed class RuntimeMaterializationCacheKeyBuilder :
     {
         ArgumentNullException.ThrowIfNull(target);
         Append(hash, "target.name", target.Target);
+        Append(hash, "target.garbageCollector", target.GarbageCollector);
         Append(hash, "target.pointerSize", target.PointerSizeBytes);
         Append(hash, "target.alignment", target.Alignment);
         Append(hash, "target.runtimeFootprint", target.RuntimeFootprintBytes);

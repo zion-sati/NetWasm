@@ -23,8 +23,7 @@ public static class RuntimeLinkPlanner
         {
             throw new ArgumentOutOfRangeException(nameof(request));
         }
-        var target = manifest.Targets.SingleOrDefault(item => item.Target == request.Target)
-            ?? throw new InvalidOperationException("The requested NetWasm runtime target is unavailable.");
+        var target = new RuntimePackTargetSelector().Select(manifest, request.Target, request.GarbageCollector);
         var layout = new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()).Calculate(new(
             target, manifest.WasmPageSize, request.ApplicationStaticDataEnd,
             request.InitialHeapSizeBytes, request.MaximumMemorySizeBytes));
@@ -49,7 +48,10 @@ public static class RuntimeLinkPlanner
         var systemLibraryPaths = request.SystemLibraries.Select(asset => asset.Path).ToImmutableArray();
         var link = new RuntimeLinkRequest(
             manifest, target, new RuntimeLinkMemoryLimits(layout.RuntimeGlobalBase, layout.InitialMemorySizeBytes,
-                layout.MaximumMemorySizeBytes), request.AssetRoot, systemLibraryPaths, request.OutputPath);
+                layout.MaximumMemorySizeBytes), request.AssetRoot, systemLibraryPaths, request.OutputPath)
+        {
+            RuntimeFeatures = request.RuntimeFeatures,
+        };
         var arguments = new RuntimeLinkArgumentBuilder(new RuntimeLinkExportPlanBuilder()).Build(link);
         var runtimeInput = new RuntimeLinkPlanAsset(
             request.AssetRoot.TrimEnd('/') + "/" + target.RuntimeArchive.Path.Replace('\\', '/'),
@@ -82,7 +84,10 @@ public static class RuntimeLinkPlanner
         var virtualArguments = arguments.Select(argument => MapPathArgument(argument, paths))
             .ToImmutableArray();
         var optimizationArguments = new RuntimeOptimizationArgumentBuilder()
-            .Build(new(target, request.OutputPath, request.Optimization))
+            .Build(new(target, request.OutputPath, request.Optimization)
+            {
+                RuntimeGlobalBase = layout.RuntimeGlobalBase,
+            })
             .Select(argument => MapPathArgument(argument, paths))
             .ToImmutableArray();
         var cache = new RuntimeMaterializationCacheDescriptorBuilder().Build(new(
@@ -100,7 +105,10 @@ public static class RuntimeLinkPlanner
         return new(virtualArguments, optimizationArguments, inputs, manifest.RuntimeAbi,
             manifest.Provenance.ToolchainFingerprint,
             layout.RuntimeGlobalBase, layout.HeapBase, layout.InitialMemorySizeBytes,
-            layout.MaximumMemorySizeBytes, cache);
+            layout.MaximumMemorySizeBytes, cache)
+        {
+            GarbageCollector = target.GarbageCollector,
+        };
     }
 
     private static RuntimeLinkPlanAsset ResolveInput(

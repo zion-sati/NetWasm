@@ -2,6 +2,11 @@
 
 ## The 84,653-byte C# result
 
+These measurements use the Boehm collector, the default before NetWasm 0.7.0.
+They remain a reproducible Boehm baseline, not the size of the new Compact
+default. See [Choosing a garbage collector](runtime-garbage-collection.md) for
+the current selection policy and tradeoffs.
+
 The reference result was reproduced on 2026-10-04 with .NET SDK 10.0.401 on
 macOS arm64. A clean source canary and a clean SDK package consumer both
 produced an 84,653-byte Release component. Each artifact validated, ran under

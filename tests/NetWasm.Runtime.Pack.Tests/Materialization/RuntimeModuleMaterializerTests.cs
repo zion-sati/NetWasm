@@ -8,9 +8,13 @@ namespace NetWasm.Runtime.Pack.Tests.Materialization;
 public sealed class RuntimeModuleMaterializerTests
 {
     [Theory]
-    [InlineData("wasm32")]
-    [InlineData("wasm64")]
-    public void MaterializesAndValidatesTargetSpecificRuntime(string target)
+    [InlineData("wasm32", null)]
+    [InlineData("wasm64", null)]
+    [InlineData("wasm32", "Boehm")]
+    [InlineData("wasm64", "Boehm")]
+    [InlineData("wasm32", "Compact")]
+    [InlineData("wasm64", "Compact")]
+    public void MaterializesAndValidatesTargetSpecificRuntime(string target, string? collector)
     {
         using var directory = new TemporaryDirectory();
         var manifest = RuntimePackTestData.Manifest();
@@ -34,6 +38,7 @@ public sealed class RuntimeModuleMaterializerTests
             new Sha256ArtifactDigestCalculator());
         var request = Request(directory, target) with
         {
+            GarbageCollector = collector,
             InitialHeapSizeBytes = 131_072,
             MaximumMemorySizeBytes = calculatedLayout.MaximumMemorySizeBytes,
         };
@@ -42,6 +47,11 @@ public sealed class RuntimeModuleMaterializerTests
         var result = capability.Materialize(request);
 
         Assert.Equal(target, result.Target);
+        Assert.Equal(collector ?? "Boehm", result.GarbageCollector);
+        Assert.EndsWith($"{target}/{result.GarbageCollector.ToLowerInvariant()}/libnetwasm-runtime.a", assets.Verifications[0].Path,
+            StringComparison.Ordinal);
+        Assert.EndsWith($"{target}/{result.GarbageCollector.ToLowerInvariant()}/libgc.a", assets.Verifications[1].Path,
+            StringComparison.Ordinal);
         Assert.Equal(Path.GetFullPath(request.OutputPath), result.OutputPath);
         Assert.Equal(new Sha256ArtifactDigestCalculator().Calculate(request.OutputPath), result.Sha256);
         Assert.Equal(manifest.RuntimeAbi, result.RuntimeAbi);
@@ -154,7 +164,7 @@ public sealed class RuntimeModuleMaterializerTests
         var materializer = Create(new RuntimeLayout(2, "wasm128", 0));
         var exception = Assert.Throws<InvalidOperationException>(() =>
             materializer.Materialize(Request(directory, "wasm128")));
-        Assert.Equal("The requested NetWasm runtime target is unavailable.", exception.Message);
+        Assert.Equal("The requested NetWasm runtime target and collector pair is unavailable.", exception.Message);
     }
 
     [Fact]
@@ -198,7 +208,10 @@ public sealed class RuntimeModuleMaterializerTests
         {
             SystemLibraries = new(["libc.a"], []),
         };
-        var manifest = RuntimePackTestData.Manifest() with { Targets = [target] };
+        var manifest = RuntimePackTestData.Manifest() with
+        {
+            TargetLookup = RuntimePackTestData.Manifest().TargetLookup.SetItem((target.Target, target.GarbageCollector), target),
+        };
         var commands = new RecordingCommandInvoker();
         var materializer = Materializer(
             new RecordingManifestReader(manifest),
@@ -500,6 +513,7 @@ public sealed class RuntimeModuleMaterializerTests
         IRuntimeNativeModuleMaterializer? nativeModules = null) =>
         new(
             manifests,
+            new RuntimePackTargetSelector(),
             layouts,
             memoryLayouts,
             assetDigests,
@@ -672,7 +686,8 @@ public sealed class RuntimeModuleMaterializerTests
         new RuntimeMaterializationCacheKeyBuilder().Build(new RuntimeMaterializationCacheKeyRequest(
             request.BuildIdentity,
             manifest,
-            manifest.Targets.Single(target => target.Target == request.Target),
+            manifest.Targets.Single(target => target.Target == request.Target &&
+                target.GarbageCollector == (request.GarbageCollector ?? manifest.DefaultGarbageCollector)),
             layout,
             request.Optimization,
             ["link"],

@@ -307,6 +307,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
             new("runtime-materialization", key.Prefix, outcome, recomputed, bytes, lookupMilliseconds,
                 Stopwatch.GetElapsedTime(started).TotalMilliseconds))
         {
+            GarbageCollector = request.Target.GarbageCollector,
             InternalRuntimeExports = internalExports,
             InternalApplicationExports = request.SourceLayout.NativeCallbackSupport is null
                 ? []

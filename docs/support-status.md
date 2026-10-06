@@ -118,6 +118,10 @@ interface in a selected WIT world into a .NET API.
 
 ### Managed stack traces
 
+Rich exception diagnostics are a build-profile choice, not a promise of desktop
+.NET diagnostic behavior. See [the exception-profile defaults, opt-ins and
+interop payload boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).
+
 SDK Debug builds enable managed stack instrumentation and its deterministic
 symbol sidecar by default; Release builds leave it out unless
 `NetWasmManagedStackTrace=true`. The compiler CLI enables the same behavior

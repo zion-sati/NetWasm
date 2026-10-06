@@ -62,6 +62,8 @@ public sealed class RuntimeMaterializationTask : Task
 
     public string Optimization { get; set; } = "Oz";
 
+    public string GarbageCollector { get; set; } = string.Empty;
+
     public string InitialHeapSizeBytes { get; set; } = string.Empty;
 
     public string MaximumMemorySizeBytes { get; set; } = string.Empty;
@@ -108,6 +110,9 @@ public sealed class RuntimeMaterializationTask : Task
         RuntimeModules = [];
         try
         {
+            var garbageCollector = GarbageCollector.Length == 0 ? null : GarbageCollector;
+            if (garbageCollector is not (null or "Compact" or "Boehm"))
+                throw new InvalidOperationException("The NetWasm garbage collector must be Compact or Boehm.");
             var materialization = _materializer.Materialize(new(
                 ManifestPath,
                 RuntimeLayoutPath,
@@ -136,6 +141,7 @@ public sealed class RuntimeMaterializationTask : Task
                     WasmToolsVersion,
                     NodeVersion))
             {
+                GarbageCollector = garbageCollector,
                 NativeLibraries = _nativeLibraries.Read(NativeLibraries),
                 NativeCallbackObjectPath = NativeCallbackObjectPath,
             });
@@ -182,6 +188,7 @@ public sealed class RuntimeMaterializationTask : Task
         var item = new TaskItem(materialization.OutputPath);
         item.SetMetadata("Kind", "RuntimeModule");
         item.SetMetadata("WasmTarget", materialization.Target);
+        item.SetMetadata("GarbageCollector", materialization.GarbageCollector);
         item.SetMetadata("RuntimeGlobalBase", Format(materialization.RuntimeGlobalBase));
         item.SetMetadata("HeapBase", Format(materialization.HeapBase));
         item.SetMetadata("InitialMemorySizeBytes", Format(materialization.InitialMemorySizeBytes));

@@ -10,6 +10,7 @@ internal static class RuntimeMaterializationComposition
     public static IRuntimeModuleMaterializer Create() =>
         new RuntimeModuleMaterializer(
             new RuntimePackManifestReader(),
+            new RuntimePackTargetSelector(),
             new RuntimeLayoutReader(),
             new RuntimeMemoryLayoutCalculator(new RuntimeMemoryPlanBuilder()),
             new RuntimeAssetDigestVerifier(),

@@ -10,7 +10,12 @@ internal sealed record RuntimePackManifest(
     long WasmPageSize,
     ImmutableArray<string> Exports,
     RuntimePackProvenance Provenance,
-    ImmutableArray<RuntimePackTarget> Targets);
+    ImmutableArray<RuntimePackTarget> Targets)
+{
+    public string DefaultGarbageCollector { get; init; } = string.Empty;
+    internal ImmutableDictionary<(string Target, string GarbageCollector), RuntimePackTarget> TargetLookup { get; init; } =
+        ImmutableDictionary<(string Target, string GarbageCollector), RuntimePackTarget>.Empty;
+}
 
 internal sealed record RuntimePackProvenance(
     string BuildSeam,
@@ -34,6 +39,7 @@ internal sealed record RuntimePackTarget(
     RuntimePackAsset AllowedUndefinedSymbols,
     RuntimePackSystemLibraries SystemLibraries)
 {
+    public string GarbageCollector { get; init; } = string.Empty;
     public RuntimeNativeValidationProfile? NativeValidation { get; init; }
 }
 
@@ -144,6 +150,7 @@ internal sealed record RuntimeMaterializationRequest(
     long? MaximumMemorySizeBytes,
     RuntimeBuildIdentity BuildIdentity)
 {
+    public string? GarbageCollector { get; init; }
     public ImmutableArray<RuntimeNativeLibraryDescriptor> NativeLibraries { get; init; } = [];
     public string? NativeCallbackObjectPath { get; init; }
 }
@@ -222,6 +229,7 @@ internal sealed record RuntimeMaterialization(
     long MaximumMemorySizeBytes,
     RuntimeMaterializationCacheMetrics CacheMetrics)
 {
+    public string GarbageCollector { get; init; } = string.Empty;
     public ImmutableArray<RuntimeLinkExport> InternalRuntimeExports { get; init; } = [];
     public ImmutableArray<RuntimeLinkExport> InternalApplicationExports { get; init; } = [];
 }
