@@ -155,6 +155,71 @@ public sealed class RuntimeLinkPlannerTests
         Assert.NotEqual(small.Cache.Key, large.Cache.Key);
     }
 
+    [Fact]
+    public void SelectsOnlyReachedNativeProvidersAndIncludesTheirIdentityInThePlan()
+    {
+        var manifest = JsonSerializer.Serialize(RuntimePackTestData.Manifest());
+        var target = RuntimePackTestData.Target("wasm32");
+        var request = new RuntimeLinkPlanRequest(manifest, "wasm32", 948,
+            SystemLibraries: SystemLibraries(target))
+        {
+            NativeImports =
+            [
+                new("lz4", "LZ4_compressBound", [RuntimeLinkPlanNativeValueType.I32],
+                    RuntimeLinkPlanNativeValueType.I32),
+            ],
+            NativeLibraries =
+            [
+                new("unused", "wasm32", "/native/libunused.a", new string('b', 64)),
+                new("lz4", "wasm32", "/native/liblz4.a", new string('a', 64)),
+            ],
+        };
+
+        var actual = RuntimeLinkPlanner.Plan(request);
+        var withoutNative = RuntimeLinkPlanner.Plan(request with
+        {
+            NativeImports = [],
+        });
+
+        Assert.Contains("/native/liblz4.a", actual.Arguments);
+        Assert.Contains("--undefined=LZ4_compressBound", actual.Arguments);
+        Assert.Contains("--export=LZ4_compressBound", actual.Arguments);
+        Assert.Contains(actual.Inputs, input => input == new RuntimeLinkPlanAsset(
+            "/native/liblz4.a", new string('a', 64)));
+        Assert.Contains(new RuntimeLinkPlanExport("LZ4_compressBound", 0), actual.InternalRuntimeExports);
+        Assert.Contains(new RuntimeLinkPlanExport("__heap_base", 3), actual.InternalRuntimeExports);
+        Assert.DoesNotContain(actual.Arguments, argument => argument.Contains("libunused", StringComparison.Ordinal));
+        Assert.DoesNotContain(actual.Inputs, input => input.Path.Contains("libunused", StringComparison.Ordinal));
+        Assert.NotEqual(withoutNative.Cache.Key, actual.Cache.Key);
+        Assert.Empty(withoutNative.InternalRuntimeExports);
+    }
+
+    [Fact]
+    public void RejectsMissingConflictingAndUnsafeNativeProviders()
+    {
+        var manifest = JsonSerializer.Serialize(RuntimePackTestData.Manifest());
+        var target = RuntimePackTestData.Target("wasm32");
+        var request = new RuntimeLinkPlanRequest(manifest, "wasm32", 948,
+            SystemLibraries: SystemLibraries(target))
+        {
+            NativeImports = [new("sample", "native_add", [], RuntimeLinkPlanNativeValueType.I32)],
+        };
+
+        Assert.Throws<InvalidOperationException>(() => RuntimeLinkPlanner.Plan(request));
+        Assert.Throws<ArgumentException>(() => RuntimeLinkPlanner.Plan(request with
+        {
+            NativeLibraries = [new("sample", "wasm32", "relative/libsample.a", new string('a', 64))],
+        }));
+        Assert.Throws<InvalidOperationException>(() => RuntimeLinkPlanner.Plan(request with
+        {
+            NativeLibraries =
+            [
+                new("sample", "wasm32", "/native/one.a", new string('a', 64)),
+                new("sample", "wasm32", "/native/two.a", new string('b', 64)),
+            ],
+        }));
+    }
+
     [Theory]
     [InlineData(RuntimeWasmOptimization.None, null)]
     [InlineData(RuntimeWasmOptimization.O0, "-O0")]
