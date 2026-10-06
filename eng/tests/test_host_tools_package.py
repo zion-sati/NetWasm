@@ -203,6 +203,46 @@ class HostToolsPackageTests(unittest.TestCase):
         self.assertEqual(self.PACKAGE_ID, result["packageId"])
         self.assertEqual("a" * 40, result["sourceCommit"])
 
+    def test_repository_signature_archive_entry_is_accepted(self):
+        self.make_package()
+        with zipfile.ZipFile(self.package, "a") as archive:
+            archive.writestr(".signature.p7s", b"synthetic signature")
+        result = verify.inspect(self.package, self.RID, self.VERSION)
+        self.assertEqual(self.PACKAGE_ID, result["packageId"])
+
+    def test_signature_entry_does_not_allow_other_archive_entries(self):
+        for unexpected in (".signature.P7S", "nested/.signature.p7s", "extra.txt"):
+            with self.subTest(entry=unexpected):
+                self.make_package()
+                with zipfile.ZipFile(self.package, "a") as archive:
+                    archive.writestr(".signature.p7s", b"synthetic signature")
+                    archive.writestr(unexpected, b"unexpected")
+                with self.assertRaisesRegex(ValueError, "extra archive entries"):
+                    verify.inspect(self.package, self.RID, self.VERSION)
+
+    def test_invalid_signature_archive_shapes_are_rejected(self):
+        for defect in ("compressed", "empty", "symlink", "directory", "duplicate"):
+            with self.subTest(defect=defect):
+                self.make_package()
+                entry = zipfile.ZipInfo(".signature.p7s")
+                entry.create_system = 3
+                entry.external_attr = stat.S_IFREG << 16
+                data = b"synthetic signature"
+                if defect == "compressed":
+                    entry.compress_type = zipfile.ZIP_DEFLATED
+                elif defect == "empty":
+                    data = b""
+                elif defect == "symlink":
+                    entry.external_attr = stat.S_IFLNK << 16
+                elif defect == "directory":
+                    entry.external_attr = stat.S_IFDIR << 16
+                with zipfile.ZipFile(self.package, "a") as archive:
+                    archive.writestr(entry, data)
+                    if defect == "duplicate":
+                        archive.writestr(entry, data)
+                with self.assertRaises(ValueError):
+                    verify.inspect(self.package, self.RID, self.VERSION)
+
     def test_missing_notice_extra_binary_bad_hash_architecture_symlink_and_host_fail(self):
         for defect in (
             "missing-notice", "extra-binary", "wrong-hash",
