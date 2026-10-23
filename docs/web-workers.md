@@ -18,8 +18,10 @@ dotnet publish -c Release
 ```
 
 Serve `bin/Release/netwasm0.1/publish` with a static HTTP server and open
-`index.html`. Both templates include a working page, progress notifications,
-a generated worker client, and orderly disposal.
+`index.html`. The server must send `.mjs` files as `text/javascript`; see
+[Serve the published files](javascript-interop.md#serve-the-published-files).
+Both templates include a working page, progress notifications, a generated
+worker client, and orderly disposal.
 
 | Worker kind | Select it when | Output boundary |
 | --- | --- | --- |

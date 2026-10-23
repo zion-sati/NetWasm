@@ -295,6 +295,20 @@ no server code and no `Cross-Origin-Opener-Policy` or
 browsers provide only in secure contexts. Opening `index.html` from a
 `file://` URL does not work: browsers block module scripts and `fetch` there.
 
+The server must send `.mjs` files with a JavaScript MIME type such as
+`text/javascript`, because browsers refuse to run a module script served as
+anything else. Most static servers already do. Python's `http.server` on
+Windows sends `text/plain` when the Windows registry lists `.mjs` as
+`text/plain`, since registry entries override Python's own mapping. Set the
+type when starting it from the publish directory (`py` on Windows):
+
+```sh
+python -c "import http.server, mimetypes; mimetypes.add_type('text/javascript', '.mjs'); http.server.test(http.server.SimpleHTTPRequestHandler, port=8000)"
+```
+
+or change the `Content Type` value under `HKEY_CLASSES_ROOT\.mjs` to
+`text/javascript`.
+
 Under a strict Content Security Policy, allow module loading from the site,
 from `blob:` URLs (startup imports each verified module from a `blob:` URL),
 and WebAssembly compilation:
