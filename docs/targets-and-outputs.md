@@ -15,6 +15,27 @@ classification of this boundary and the remaining work.
 defined widths. Select the width with `--target`; the default is wasm32. The
 runtime layout and native runtime target must match the application target.
 
+## Browser and runtime requirements
+
+NetWasm output uses the standardized WebAssembly exception-handling
+instructions (`try_table` and `exnref`), bulk memory, reference types,
+multi-value, non-trapping float-to-int conversions, sign-extension operations
+and mutable globals. Exception handling is the most recent of these, so it
+decides the oldest browsers that run NetWasm output. A browser that predates it
+rejects the module when it compiles it.
+
+| Browser | wasm32 | wasm64 (Memory64) |
+| --- | --- | --- |
+| Chrome and Edge | 137 (May 2025) | 137 |
+| Firefox | 131 (October 2024) | 134 (January 2025) |
+| Safari on macOS and iOS | 18.4 (March 2025) | Not supported |
+
+Node.js runs NetWasm output from 24.15. The SDK's local launcher uses the
+Node.js from `NetWasm.HostTools`, which meets this; the requirement applies
+when you host raw output in your own Node.js. Browser deployments use a single
+linear memory, so they do not depend on multi-memory support. The versions come
+from the [WebAssembly feature status](https://webassembly.org/features/) table.
+
 ## Per-application runtime and memory layout
 
 The runtime pack supplies relocatable archives rather than fixed-address
