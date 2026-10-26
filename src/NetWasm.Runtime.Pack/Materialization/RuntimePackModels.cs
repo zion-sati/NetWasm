@@ -75,6 +75,8 @@ internal sealed record RuntimeLayout(
     // compatibility; an initialized empty array selects the base runtime.
     public ImmutableArray<string> RuntimeFeatures { get; init; }
     public ImmutableArray<RuntimeNativeImport> NativeImports { get; init; } = [];
+    // Modules the host supplies; a linked native archive may import from them.
+    public ImmutableArray<string> ImportModules { get; init; } = [];
     public RuntimeNativeCallbackSupport? NativeCallbackSupport { get; init; }
 }
 

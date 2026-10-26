@@ -27,8 +27,21 @@ public interface IRawAdapterWriter
 public sealed class RawAdapterWriter(
     IWitInterfaceSpecifierFormatter interfaces) : IRawAdapterWriter
 {
-    public const int CurrentAbiVersion = 1;
+    // Version 2 emits each callable's canonical-ABI code instead of its plan.
+    public const int CurrentAbiVersion = 2;
     private const string ReactorHostInterface = "netwasm:runtime@1.0.0/reactor-host";
+    private const string CanonicalCapability = "canonical";
+
+    // The helpers the emitted bindings call, without their test-facing exports.
+    private static readonly Lazy<string> RuntimeSource = new(() =>
+    {
+        using var stream = typeof(RawAdapterWriter).Assembly.GetManifestResourceStream(
+            "NetWasm.Compiler.ComponentModel.Raw.raw-adapter-runtime.mjs")
+            ?? throw new InvalidOperationException("The raw adapter runtime is not embedded.");
+        using var reader = new System.IO.StreamReader(stream, Encoding.UTF8);
+        return System.Text.RegularExpressions.Regex.Replace(
+            reader.ReadToEnd(), "^export ", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+    });
     private readonly IWitInterfaceSpecifierFormatter _interfaces = interfaces ??
         throw new ArgumentNullException(nameof(interfaces));
 
@@ -42,9 +55,17 @@ public sealed class RawAdapterWriter(
     {
         ArgumentNullException.ThrowIfNull(request);
         var context = CreateContext(request);
+        var emitter = new RawCanonicalBindingEmitter(context.Target == WasmTarget.Wasm64);
         var bindings = context.Bindings.Select((binding, index) =>
-            $"const binding{index.ToString(CultureInfo.InvariantCulture)} = " +
-            $"deepFreeze({SerializeBinding(binding, context)});").ToArray();
+        {
+            var serialized = SerializeBinding(binding, context);
+            if (Capability(binding.Layout) != CanonicalCapability)
+            {
+                return $"const binding{index.ToString(CultureInfo.InvariantCulture)} = deepFreeze({serialized});";
+            }
+            using var document = JsonDocument.Parse(serialized);
+            return emitter.EmitCallable(index, document.RootElement);
+        }).ToArray();
         var capabilityNames = context.Bindings
             .Select(binding => Capability(binding.Layout))
             .Distinct(StringComparer.Ordinal)
@@ -68,20 +89,29 @@ public sealed class RawAdapterWriter(
         source.AppendLine("  if (request.metadata !== rawAdapterMetadata) {");
         source.AppendLine("    throw new TypeError(\"raw adapter metadata does not belong to this module\");");
         source.AppendLine("  }");
+        if (capabilityNames.Contains(CanonicalCapability))
+        {
+            source.AppendLine("  if (request.canonical === null || typeof request.canonical !== \"object\") {");
+            source.AppendLine("    throw new TypeError(\"raw adapter canonical capability is invalid\");");
+            source.AppendLine("  }");
+        }
         source.AppendLine("  const imports = Object.create(null);");
         for (var index = 0; index < context.Bindings.Length; index++)
         {
             var layout = context.Bindings[index].Layout;
             var capability = Capability(layout);
-            source.AppendLine(CultureInfo.InvariantCulture,
-                $"  addBinding(imports, binding{index.ToString(CultureInfo.InvariantCulture)}, " +
-                $"bind(request.{capability}, binding{index.ToString(CultureInfo.InvariantCulture)}));");
+            var name = index.ToString(CultureInfo.InvariantCulture);
+            source.AppendLine(capability == CanonicalCapability
+                ? $"  addBinding(imports, {SerializeIdentityBinding(layout.Identity)}, bindCallable{name}(request.canonical));"
+                : $"  addBinding(imports, binding{name}, bind(request.{capability}, binding{name}));");
         }
         source.AppendLine("  for (const module of Object.values(imports)) Object.freeze(module);");
         source.AppendLine("  return Object.freeze({ metadata: rawAdapterMetadata, imports: Object.freeze(imports) });");
         source.AppendLine("}");
+        source.Append(emitter.Functions);
         source.AppendLine();
         source.AppendLine(CommonSource);
+        if (capabilityNames.Contains(CanonicalCapability)) source.Append(RuntimeSource.Value);
         return Encoding.UTF8.GetBytes(source.ToString().ReplaceLineEndings("\n"));
     }
 
@@ -205,7 +235,7 @@ public sealed class RawAdapterWriter(
         var callable = (RawWitImportLayout.Callable)layout;
         if (callable.Function.Layout.Function.InterfaceName != ReactorHostInterface)
         {
-            return "bindCallable";
+            return CanonicalCapability;
         }
         if (callable.Function.Declaration.Name is not ("watch" or "cancel"))
         {
@@ -306,6 +336,14 @@ public sealed class RawAdapterWriter(
             writer.WriteStringValue(capability);
         }
         writer.WriteEndArray();
+        writer.WriteEndObject();
+    });
+
+    private static string SerializeIdentityBinding(RawCanonicalImportIdentity identity) => Serialize(writer =>
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("physical");
+        WriteIdentity(writer, identity);
         writer.WriteEndObject();
     });
 

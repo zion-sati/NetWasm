@@ -624,10 +624,15 @@ public sealed class InteropContractCoverageTests
         var program = ValidationTestData.Program();
         var exports = ImmutableArray<ProgramExport>.Empty;
 
-        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, exports, SnapshotLayout()));
-        Assert.Throws<ArgumentNullException>(() => builder.Build(program, exports, null!));
-        var wasm32 = builder.Build(program, exports, SnapshotLayout(WasmTarget.Wasm32));
-        var wasm64 = builder.Build(program, exports, SnapshotLayout(WasmTarget.Wasm64));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(null!, exports, SnapshotLayout(), []));
+        Assert.Throws<ArgumentNullException>(() => builder.Build(program, exports, null!, []));
+        foreach (var module in new[] { "", "netwasm.host.v1", "netwasm:runtime/reactor-host", "wasi:io/streams", "wasi_unstable" })
+        {
+            Assert.Throws<CompilerException>(() => builder.Build(program, exports, SnapshotLayout(), [module]));
+        }
+        Assert.Throws<CompilerException>(() => builder.Build(program, exports, SnapshotLayout(), default));
+        var wasm32 = builder.Build(program, exports, SnapshotLayout(WasmTarget.Wasm32), []);
+        var wasm64 = builder.Build(program, exports, SnapshotLayout(WasmTarget.Wasm64), []);
         Assert.Equal("wasm32", wasm32.Target);
         Assert.Equal("wasm64", wasm64.Target);
         Assert.Empty(wasm32.Imports);
@@ -708,7 +713,7 @@ public sealed class InteropContractCoverageTests
             WitImportMethods = [equivalentWitImport, witImport],
         };
 
-        var manifest = builder.Build(program, [], SnapshotLayout());
+        var manifest = builder.Build(program, [], SnapshotLayout(), []);
 
         Assert.Equal(4, manifest.Imports.Length);
         Assert.Contains(manifest.Imports, import => import.AsyncReturn == "task");
@@ -737,7 +742,8 @@ public sealed class InteropContractCoverageTests
         var exception = Assert.Throws<InvalidOperationException>(() => builder.Build(
             unsupportedProgram,
             [],
-            SnapshotLayout()));
+            SnapshotLayout(),
+            []));
         Assert.Contains("unsupported host ABI type", exception.Message);
     }
 

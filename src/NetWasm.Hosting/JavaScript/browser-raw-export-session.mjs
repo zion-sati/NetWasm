@@ -7,19 +7,22 @@ import { createExecutionRequestValidator } from "./execution-request-validator.m
 import { jsExportExecutionContract } from "./execution-contracts.mjs";
 import { createManagedExceptionOutput } from "./managed-exception-output.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
-import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
+import { requiredImportModules } from "./interop-manifest-reader.mjs";
 import { prepareRawNetWasmInterop } from "./raw-interop-preparation.mjs";
 import { openRawExportSession } from "./raw-export-session.mjs";
 import { createScopeReleaseCommand } from "./scope-release-command.mjs";
 import { selectTimeZoneSidecar } from "./timezone-sidecar-selector.mjs";
 
-const optionKeys = ["configuration", "consumerModules", "manifestUrl", "platform", "stderr", "stdout"];
+const optionKeys = [
+  "configuration", "consumerModules", "manifestUrl", "platform", "platformProviderCatalog",
+  "snapshotDeploymentManifest", "stderr", "stdout",
+];
 const configurationKeys = ["applicationImports", "arguments", "environment", "grants"];
 const platformKeys = [
   "compileCoreModule",
-  "createFilesystem",
+  "createFilesystemScope",
   "createModuleUrl",
   "createShim",
   "digest",
@@ -37,6 +40,9 @@ export function createBrowserRawExportSession(options) {
     "browser raw export-session configuration");
   assertExactDataObject(options.platform, platformKeys, "browser raw export-session platform");
   for (const [name, value] of Object.entries(options.platform)) {
+    // The generated entry passes no filesystem scope when the application
+    // links no filesystem interface, so the bundle carries no filesystem code.
+    if (name === "createFilesystemScope" && value === null) continue;
     if (typeof value !== "function") {
       throw new TypeError(`browser raw export-session platform '${name}' action is required`);
     }
@@ -58,6 +64,7 @@ export function createBrowserRawExportSession(options) {
       digest: options.platform.digest,
       fetch: options.platform.fetch,
     }),
+    snapshotManifest: options.snapshotDeploymentManifest,
   });
   const loadArtifacts = createBrowserRawLoader({
     manifestUrl: options.manifestUrl,
@@ -70,12 +77,15 @@ export function createBrowserRawExportSession(options) {
       revokeModuleUrl: options.platform.revokeModuleUrl,
     }),
   });
+  // The generated entry selects the providers the application links.
   const prepareProviders = createProviderExecutionComposition({
+    catalog: options.platformProviderCatalog,
     createShim: options.platform.createShim,
     hashBytes: transport.hashBytes,
     importModule,
     isAbsoluteHostPath: rejectHostPath,
     readArtifact: transport.readArtifact,
+    snapshotManifest: options.snapshotDeploymentManifest,
   });
   const validateRequest = createExecutionRequestValidator({
     isAbsoluteHostPath: rejectHostPath,
@@ -112,26 +122,29 @@ export function createBrowserRawExportSession(options) {
       }
       validateConsumerModules(loaded.interopManifest, consumerModules);
 
-      const filesystem = createPreview2FilesystemScope({
-        createFilesystem: options.platform.createFilesystem,
-        preopens: hostRequest.grants.preopens,
-      });
-      releaseActions.push(filesystem.dispose);
+      const filesystem = options.platform.createFilesystemScope === null ? null
+        : options.platform.createFilesystemScope(hostRequest.grants.preopens);
+      if (filesystem !== null) releaseActions.push(filesystem.dispose);
       const selection = selectTimeZoneSidecar({
         artifacts: manifest.artifacts,
         environment: hostRequest.environment,
         runtimeFeatures: manifest.runtimeFeatures,
       });
-      const materializeTimeZone = createBrowserTimeZoneMaterializer({
-        manifestUrl: options.manifestUrl,
-        platform: Object.freeze({
-          digest: options.platform.digest,
-          fetch: options.platform.fetch,
-          mountReadOnlyFile: filesystem.mountReadOnlyFile,
-        }),
-      });
-      const mount = await materializeTimeZone(Object.freeze({ selection, signal: null }));
-      if (mount !== null) releaseActions.push(mount.release);
+      if (selection !== null) {
+        if (filesystem === null) {
+          throw new TypeError("time zone data requires an application that links a filesystem interface");
+        }
+        const materializeTimeZone = createBrowserTimeZoneMaterializer({
+          manifestUrl: options.manifestUrl,
+          platform: Object.freeze({
+            digest: options.platform.digest,
+            fetch: options.platform.fetch,
+            mountReadOnlyFile: filesystem.mountReadOnlyFile,
+          }),
+        });
+        const mount = await materializeTimeZone(Object.freeze({ selection, signal: null }));
+        if (mount !== null) releaseActions.push(mount.release);
+      }
 
       const providers = await prepareProviders(Object.freeze({
         filesystem,
@@ -198,9 +211,7 @@ function snapshotConsumerModules(value) {
 }
 
 function validateConsumerModules(manifest, consumerModules) {
-  const required = new Set(manifest.imports
-    .map(descriptor => descriptor.module)
-    .filter(moduleName => moduleName !== builtinInteropModule));
+  const required = requiredImportModules(manifest);
   const supplied = Object.keys(consumerModules);
   if (required.size !== supplied.length || supplied.some(moduleName => !required.has(moduleName))) {
     throw new TypeError("worker JS import modules do not match the interop manifest");

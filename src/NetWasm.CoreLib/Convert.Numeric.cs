@@ -11,6 +11,123 @@ namespace System
     // parsing and formatting therefore use the invariant primitive contracts.
     public static partial class Convert
     {
+        // Destination dispatch follows upstream Convert.DefaultToType. The internal
+        // Empty marker is absent; unknown destinations retain InvalidCastException.
+        internal static object DefaultToType(IConvertible value, Type targetType, IFormatProvider? provider)
+        {
+            ArgumentNullException.ThrowIfNull(targetType);
+
+            if (ReferenceEquals(value.GetType(), targetType))
+            {
+                return value;
+            }
+
+            if (ReferenceEquals(targetType, typeof(bool)))
+                return value.ToBoolean(provider);
+            if (ReferenceEquals(targetType, typeof(char)))
+                return value.ToChar(provider);
+            if (ReferenceEquals(targetType, typeof(sbyte)))
+                return value.ToSByte(provider);
+            if (ReferenceEquals(targetType, typeof(byte)))
+                return value.ToByte(provider);
+            if (ReferenceEquals(targetType, typeof(short)))
+                return value.ToInt16(provider);
+            if (ReferenceEquals(targetType, typeof(ushort)))
+                return value.ToUInt16(provider);
+            if (ReferenceEquals(targetType, typeof(int)))
+                return value.ToInt32(provider);
+            if (ReferenceEquals(targetType, typeof(uint)))
+                return value.ToUInt32(provider);
+            if (ReferenceEquals(targetType, typeof(long)))
+                return value.ToInt64(provider);
+            if (ReferenceEquals(targetType, typeof(ulong)))
+                return value.ToUInt64(provider);
+            if (ReferenceEquals(targetType, typeof(float)))
+                return value.ToSingle(provider);
+            if (ReferenceEquals(targetType, typeof(double)))
+                return value.ToDouble(provider);
+            if (ReferenceEquals(targetType, typeof(decimal)))
+                return value.ToDecimal(provider);
+            if (ReferenceEquals(targetType, typeof(DateTime)))
+                return value.ToDateTime(provider);
+            if (ReferenceEquals(targetType, typeof(string)))
+                return value.ToString(provider);
+            if (ReferenceEquals(targetType, typeof(object)))
+                return (object)value;
+            // Need to special case Enum because typecode will be underlying type, e.g. Int32
+            if (ReferenceEquals(targetType, typeof(Enum)))
+                return (Enum)value;
+            if (ReferenceEquals(targetType, typeof(DBNull)))
+                throw new InvalidCastException("Cannot convert to DBNull.");
+
+            throw new InvalidCastException("The requested conversion is not supported.");
+        }
+
+        [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(value))]
+        public static object? ChangeType(object? value, Type conversionType)
+        {
+            return ChangeType(value, conversionType, CultureInfo.CurrentCulture);
+        }
+
+        [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(value))]
+        public static object? ChangeType(object? value, Type conversionType, IFormatProvider? provider)
+        {
+            ArgumentNullException.ThrowIfNull(conversionType);
+
+            if (value == null)
+            {
+                if (conversionType.IsValueType)
+                {
+                    throw new InvalidCastException("Null object cannot be converted to a value type.");
+                }
+                return null;
+            }
+
+            if (value is not IConvertible ic)
+            {
+                if (value.GetType() == conversionType)
+                {
+                    return value;
+                }
+                throw new InvalidCastException("Object must implement IConvertible.");
+            }
+
+            if (ReferenceEquals(conversionType, typeof(bool)))
+                return ic.ToBoolean(provider);
+            if (ReferenceEquals(conversionType, typeof(char)))
+                return ic.ToChar(provider);
+            if (ReferenceEquals(conversionType, typeof(sbyte)))
+                return ic.ToSByte(provider);
+            if (ReferenceEquals(conversionType, typeof(byte)))
+                return ic.ToByte(provider);
+            if (ReferenceEquals(conversionType, typeof(short)))
+                return ic.ToInt16(provider);
+            if (ReferenceEquals(conversionType, typeof(ushort)))
+                return ic.ToUInt16(provider);
+            if (ReferenceEquals(conversionType, typeof(int)))
+                return ic.ToInt32(provider);
+            if (ReferenceEquals(conversionType, typeof(uint)))
+                return ic.ToUInt32(provider);
+            if (ReferenceEquals(conversionType, typeof(long)))
+                return ic.ToInt64(provider);
+            if (ReferenceEquals(conversionType, typeof(ulong)))
+                return ic.ToUInt64(provider);
+            if (ReferenceEquals(conversionType, typeof(float)))
+                return ic.ToSingle(provider);
+            if (ReferenceEquals(conversionType, typeof(double)))
+                return ic.ToDouble(provider);
+            if (ReferenceEquals(conversionType, typeof(decimal)))
+                return ic.ToDecimal(provider);
+            if (ReferenceEquals(conversionType, typeof(DateTime)))
+                return ic.ToDateTime(provider);
+            if (ReferenceEquals(conversionType, typeof(string)))
+                return ic.ToString(provider);
+            if (ReferenceEquals(conversionType, typeof(object)))
+                return (object)value;
+
+            return ic.ToType(conversionType, provider);
+        }
+
         public static object? ChangeType(object? value, TypeCode typeCode) => ChangeType(value, typeCode, null);
 
         public static object? ChangeType(object? value, TypeCode typeCode, IFormatProvider? provider)
@@ -37,7 +154,7 @@ namespace System
                 TypeCode.Decimal => ToDecimal(value, provider),
                 TypeCode.String => ToString(value, provider),
                 TypeCode.Object => value,
-                TypeCode.DateTime => throw new InvalidCastException(),
+                TypeCode.DateTime => value is null ? throw new InvalidCastException() : ToDateTime(value, provider),
                 TypeCode.Empty or TypeCode.DBNull => throw new InvalidCastException(),
                 _ => throw new ArgumentException(),
             };

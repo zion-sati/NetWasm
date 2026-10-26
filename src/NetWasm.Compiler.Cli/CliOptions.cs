@@ -118,6 +118,8 @@ internal sealed record CompileCliOptions(
 {
     public FinalWasmOptimization Optimization { get; init; } =
         FinalWasmOptimization.Oz;
+    // Modules the input's native archives import from; the host supplies them.
+    public ImmutableArray<string> ImportModules { get; init; } = [];
     public string? ManagedLoopInvariantFieldHoisting { get; init; }
     public string? ManagedStaticDataViewElimination { get; init; }
     public string? ManagedAddressTakenValuePromotion { get; init; }
@@ -171,6 +173,7 @@ internal sealed record CompileCliOptions(
         var references = ImmutableArray.CreateBuilder<string>();
         var exports = ImmutableArray.CreateBuilder<RequestedExport>();
         var sources = ImmutableArray.CreateBuilder<string>();
+        var importModules = ImmutableArray.CreateBuilder<string>();
         CliOptionReader.Read(arguments, (option, value) =>
         {
             switch (option)
@@ -261,6 +264,7 @@ internal sealed record CompileCliOptions(
                 case "--reference": references.Add(value); break;
                 case "--export": exports.Add(ParseExport(value)); break;
                 case "--source": sources.Add(value); break;
+                case "--import-module": importModules.Add(value); break;
                 default: throw CliOptionException.Create($"unknown option '{option}'");
             }
         });
@@ -323,6 +327,7 @@ internal sealed record CompileCliOptions(
             ManagedStaticArrayPopulationElimination = managedStaticArrayPopulationElimination,
             ManagedConstantCallFolding = managedConstantCallFolding,
             ManagedSwitchBitTests = managedSwitchBitTests,
+            ImportModules = importModules.ToImmutable(),
             ManagedDevirtualization = managedDevirtualization,
             ManagedAllocationElimination = managedAllocationElimination,
             ManagedLoopRotation = managedLoopRotation,

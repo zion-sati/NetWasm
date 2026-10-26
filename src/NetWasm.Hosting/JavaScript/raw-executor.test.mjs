@@ -35,7 +35,7 @@ const processAbi = () => ({
 const fingerprint = `sha256:${"1".repeat(64)}`;
 const emptyAdapter = (target = "wasm32") => {
   const metadata = Object.freeze({
-    abiVersion: 1,
+    abiVersion: 2,
     bindingIdentities: Object.freeze([]),
     requiredCapabilities: Object.freeze([]),
     target,
@@ -60,46 +60,58 @@ const pollableIdentity = {
 const reactorModule = "cm32p2|netwasm:runtime/reactor-host@1";
 const watchIdentity = { module: reactorModule, name: "watch" };
 const cancelIdentity = { module: reactorModule, name: "cancel" };
+// The code a generated adapter emits for read-value: () -> u32 and
+// get-pollable: () -> own<pollable>, with providers resolved when bound.
+function provider(canonical, interfaceName, name) {
+  const source = canonical.providers[interfaceName];
+  if (source === null || typeof source !== "object") {
+    throw new TypeError(`raw logical provider '${interfaceName}' is unavailable`);
+  }
+  if (typeof source[name] !== "function") throw new TypeError("raw provider function is invalid");
+  return source;
+}
+const readValue = canonical => {
+  const source = provider(canonical, "sample:raw@1/api", "readValue");
+  return () => {
+    canonical.memory();
+    canonical.store();
+    const value = source.readValue();
+    if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
+      throw new TypeError("raw canonical u32 value is invalid");
+    }
+    return value | 0;
+  };
+};
+const getPollable = canonical => {
+  const source = provider(canonical, "fixture:reactor@1/source", "getPollable");
+  return () => {
+    canonical.memory();
+    const store = canonical.store();
+    const value = source.getPollable();
+    if (value === null || typeof value !== "object" && typeof value !== "function") {
+      throw new TypeError("raw canonical owned resource value is invalid");
+    }
+    return canonical.register({
+      release: item => canonical.release({ type: 7, value: item }),
+      store,
+      type: 7,
+      value,
+    }) | 0;
+  };
+};
 const canonicalAdapter = () => {
   const metadata = Object.freeze({
-    abiVersion: 1,
+    abiVersion: 2,
     bindingIdentities: Object.freeze([Object.freeze(canonicalIdentity)]),
-    requiredCapabilities: Object.freeze(["bindCallable"]),
+    requiredCapabilities: Object.freeze(["canonical"]),
     target: "wasm32",
     witSourceFingerprint: fingerprint,
-  });
-  const binding = Object.freeze({
-    kind: "callable",
-    target: "wasm32",
-    physical: canonicalIdentity,
-    coreSignature: Object.freeze({ parameters: [], results: ["i32"] }),
-    provider: Object.freeze({
-      interface: "sample:raw@1/api",
-      function: "read-value",
-      javascriptName: "readValue",
-      functionKind: "freestanding",
-      resourceType: null,
-      resourceName: null,
-      resourceJavaScriptName: null,
-    }),
-    parameters: Object.freeze([]),
-    result: Object.freeze({ kind: "u32" }),
-    canonicalSignature: Object.freeze({
-      parameters: [],
-      result: "i32",
-      flatParameters: [],
-      flatResults: ["i32"],
-      indirectParameters: false,
-      indirectResult: false,
-    }),
-    parameterMemory: Object.freeze({ size: 0, alignment: 1 }),
-    resultMemory: Object.freeze({ size: 4, alignment: 4 }),
   });
   return Object.freeze({
     rawAdapterMetadata: metadata,
     createAdapter(request) {
       const module = Object.freeze({
-        [canonicalIdentity.name]: request.bindCallable(binding),
+        [canonicalIdentity.name]: readValue(request.canonical),
       });
       return Object.freeze({
         imports: Object.freeze({ [canonicalIdentity.module]: module }),
@@ -108,29 +120,6 @@ const canonicalAdapter = () => {
     },
   });
 };
-const pollableBinding = Object.freeze({
-  kind: "callable",
-  target: "wasm32",
-  physical: Object.freeze(pollableIdentity),
-  coreSignature: Object.freeze({ parameters: [], results: ["i32"] }),
-  provider: Object.freeze({
-    interface: "fixture:reactor@1/source",
-    function: "get-pollable",
-    javascriptName: "getPollable",
-    functionKind: "freestanding",
-    resourceType: null,
-    resourceName: null,
-    resourceJavaScriptName: null,
-  }),
-  parameters: Object.freeze([]),
-  result: Object.freeze({ kind: "owned-resource", resourceType: 7 }),
-  canonicalSignature: Object.freeze({
-    parameters: [], result: "i32", flatParameters: [], flatResults: ["i32"],
-    indirectParameters: false, indirectResult: false,
-  }),
-  parameterMemory: Object.freeze({ size: 0, alignment: 1 }),
-  resultMemory: Object.freeze({ size: 4, alignment: 4 }),
-});
 const reactorBinding = operation => Object.freeze({
   kind: "callable",
   target: "wasm32",
@@ -177,9 +166,9 @@ const processAdapter = () => {
     Object.freeze(cancelIdentity),
   ]);
   const metadata = Object.freeze({
-    abiVersion: 1,
+    abiVersion: 2,
     bindingIdentities: identities,
-    requiredCapabilities: Object.freeze(["bindCallable", "bindReactor"]),
+    requiredCapabilities: Object.freeze(["bindReactor", "canonical"]),
     target: "wasm32",
     witSourceFingerprint: fingerprint,
   });
@@ -189,7 +178,7 @@ const processAdapter = () => {
       return Object.freeze({
         imports: Object.freeze({
           [pollableIdentity.module]: Object.freeze({
-            [pollableIdentity.name]: request.bindCallable(pollableBinding),
+            [pollableIdentity.name]: getPollable(request.canonical),
           }),
           [reactorModule]: Object.freeze({
             watch: request.bindReactor(reactorBinding("watch")),

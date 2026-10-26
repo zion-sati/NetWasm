@@ -43,23 +43,27 @@ public sealed class RawAdapterWriterTests
         Assert.Contains($"\"witSourceFingerprint\":\"{fingerprint}\"", source, StringComparison.Ordinal);
         Assert.Contains("export function createAdapter(request = {})", source, StringComparison.Ordinal);
         Assert.Contains("request.metadata !== rawAdapterMetadata", source, StringComparison.Ordinal);
-        Assert.Contains("request.bindCallable", source, StringComparison.Ordinal);
+        Assert.Contains("bindCallable0(request.canonical)", source, StringComparison.Ordinal);
         Assert.Contains("request.bindResource", source, StringComparison.Ordinal);
-        Assert.Contains("\"requiredCapabilities\":[\"bindCallable\",\"bindResource\"]", source,
+        Assert.Contains("\"requiredCapabilities\":[\"bindResource\",\"canonical\"]", source,
             StringComparison.Ordinal);
         Assert.Contains($"\"module\":\"{fixture.Callable.Identity.Module}\"", source, StringComparison.Ordinal);
         Assert.Contains($"\"name\":\"{fixture.Callable.Identity.Name}\"", source, StringComparison.Ordinal);
         Assert.Contains("\"interface\":\"sample:raw/api@1.0.0\"", source,
             StringComparison.Ordinal);
-        Assert.Contains("\"javascriptName\":\"readRecords\"", source, StringComparison.Ordinal);
-        Assert.Contains("\"javascriptName\":\"fieldName\"", source, StringComparison.Ordinal);
+        Assert.Contains("rcFunction(host.providers, \"sample:raw/api@1.0.0\", \"readRecords\")", source,
+            StringComparison.Ordinal);
+        Assert.Contains("\"fieldName\": ", source, StringComparison.Ordinal);
         Assert.Contains("\"javascriptName\":\"FileHandle\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain(fixture.JavaScript.Module, source, StringComparison.Ordinal);
         Assert.DoesNotContain(fixture.Runtime.Module, source, StringComparison.Ordinal);
         Assert.DoesNotContain("unused-physical-member", source, StringComparison.Ordinal);
-        Assert.Contains(target == WasmTarget.Wasm64
-            ? "\"coreSignature\":{\"parameters\":[\"i64\",\"i64\"]"
-            : "\"coreSignature\":{\"parameters\":[\"i32\",\"i32\"]", source, StringComparison.Ordinal);
+        // Its parameters exceed the flat limit, so both the tuple and the result are addresses.
+        Assert.Contains("return function (a0, a1) {", source, StringComparison.Ordinal);
+        Assert.Contains("const out = rcIndex(memory, a1, ", source, StringComparison.Ordinal);
+        Assert.Contains("(memory, rcIndex(memory, a0, ", source, StringComparison.Ordinal);
+        Assert.Contains(target == WasmTarget.Wasm64 ? "getBigUint64(index, true)" : "getUint32(index, true)",
+            source, StringComparison.Ordinal);
         Assert.Contains("return Object.freeze({ metadata: rawAdapterMetadata, imports: Object.freeze(imports) });",
             source, StringComparison.Ordinal);
     }
@@ -69,24 +73,18 @@ public sealed class RawAdapterWriterTests
     {
         var source = Encoding.UTF8.GetString(_subject.Write(Fixture.Create(WasmTarget.Wasm32).Validated));
 
-        foreach (var kind in new[]
+        foreach (var marker in new[]
         {
-            "unit", "bool", "s8", "u8", "s16", "u16", "s32", "u32", "s64", "u64",
-            "f32", "f64", "character", "text", "alias", "list", "record", "tuple", "option",
-            "result", "variant", "enum", "flags", "owned-resource", "borrowed-resource",
+            "!== 0)", "getInt8(", "getUint8(", "getInt16(", "getUint16(", "getInt32(", "getUint32(",
+            "getBigInt64(", "getBigUint64(", "getFloat32(", "getFloat64(", "rcCharacter(", "rcReadText(",
+            "rcReadBytes(", "\"fieldName\": ", "case 1: return { tag: \"second-case\" }", "rcEnumCase([",
+            "rcFlags([\"firstFlag\",\"secondFlag\"]", "lift.own(0, ", "lift.borrow(0, ", "lift.commit();",
+            "rcBigInteger(", "rcLiftTransaction(host, store)",
         })
         {
-            Assert.Contains($"\"kind\":\"{kind}\"", source, StringComparison.Ordinal);
+            Assert.Contains(marker, source, StringComparison.Ordinal);
         }
-        Assert.Contains("\"count\":2", source, StringComparison.Ordinal);
-        Assert.Contains("\"resourceType\":0", source, StringComparison.Ordinal);
-        Assert.Contains("\"name\":\"second-case\"", source, StringComparison.Ordinal);
-        Assert.Contains("\"name\":\"second-flag\",\"javascriptName\":\"secondFlag\"", source,
-            StringComparison.Ordinal);
-        Assert.Contains("\"discriminantSize\":", source, StringComparison.Ordinal);
-        Assert.Contains("\"payloadOffset\":", source, StringComparison.Ordinal);
-        Assert.Contains("\"indirectParameters\":true", source, StringComparison.Ordinal);
-        Assert.Contains("\"indirectResult\":true", source, StringComparison.Ordinal);
+        AssertParsesAsJavaScript(source);
     }
 
     [Theory]
@@ -104,12 +102,14 @@ public sealed class RawAdapterWriterTests
 
         var source = Encoding.UTF8.GetString(_subject.Write(fixture.Validated));
 
-        Assert.Contains($"\"function\":\"{functionName}\"", source, StringComparison.Ordinal);
-        Assert.Contains($"\"javascriptName\":\"{javaScriptName}\"", source, StringComparison.Ordinal);
-        Assert.Contains($"\"functionKind\":\"{kind}\"", source, StringComparison.Ordinal);
-        Assert.Contains(resourceType is null
-            ? "\"resourceJavaScriptName\":null"
-            : "\"resourceJavaScriptName\":\"FileHandle\"", source, StringComparison.Ordinal);
+        Assert.Contains(kind switch
+        {
+            "freestanding" => $"rcFunction(host.providers, \"sample:raw/api@1.0.0\", \"{javaScriptName}\")",
+            "method" => $"rcMethod(host.providers, \"sample:raw/api@1.0.0\", \"FileHandle\", \"{javaScriptName}\")",
+            "static" => $"rcStatic(host.providers, \"sample:raw/api@1.0.0\", \"FileHandle\", \"{javaScriptName}\")",
+            _ => "rcConstructor(host.providers, \"sample:raw/api@1.0.0\", \"FileHandle\")",
+        }, source, StringComparison.Ordinal);
+        Assert.Contains($"\"name\":\"{functionName}\"", source, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -175,7 +175,7 @@ public sealed class RawAdapterWriterTests
         Assert.Contains("\"requiredCapabilities\":[\"bindReactor\"]", source, StringComparison.Ordinal);
         Assert.Contains("bind(request.bindReactor, binding0)", source, StringComparison.Ordinal);
         Assert.Contains("bind(request.bindReactor, binding1)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("request.bindCallable", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("request.canonical", source, StringComparison.Ordinal);
         Assert.DoesNotContain("request.bindResource", source, StringComparison.Ordinal);
     }
 
@@ -190,7 +190,7 @@ public sealed class RawAdapterWriterTests
 
         Assert.Contains("reactor-host function", failure.Diagnostic.Message, StringComparison.Ordinal);
         var ordinary = Fixture.Create(WasmTarget.Wasm32, functionName: "watch");
-        Assert.Contains("request.bindCallable", Encoding.UTF8.GetString(_subject.Write(ordinary.Validated)),
+        Assert.Contains("bindCallable0(request.canonical)", Encoding.UTF8.GetString(_subject.Write(ordinary.Validated)),
             StringComparison.Ordinal);
     }
 
@@ -206,6 +206,7 @@ public sealed class RawAdapterWriterTests
         Assert.DoesNotContain("const binding0", source, StringComparison.Ordinal);
         Assert.DoesNotContain("bindCallable", source, StringComparison.Ordinal);
         Assert.DoesNotContain("bindResource", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("function rcIndex", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -229,8 +230,8 @@ public sealed class RawAdapterWriterTests
 
         Assert.Contains("\"name\":\"application-call\"", source, StringComparison.Ordinal);
         Assert.Contains("\"name\":\"runtime-call\"", source, StringComparison.Ordinal);
-        Assert.Contains("bind(request.bindCallable, binding0)", source, StringComparison.Ordinal);
-        Assert.Contains("bind(request.bindCallable, binding1)", source, StringComparison.Ordinal);
+        Assert.Contains("bindCallable0(request.canonical)", source, StringComparison.Ordinal);
+        Assert.Contains("bindCallable1(request.canonical)", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -249,9 +250,9 @@ public sealed class RawAdapterWriterTests
             runtime.WithLayouts(runtime.Callable),
         ])));
 
-        Assert.Contains("\"resourceType\":0", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"resourceType\":9", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"resourceType\":12", source, StringComparison.Ordinal);
+        Assert.Contains("lift.own(0, ", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("lift.own(9, ", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("lift.own(12, ", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -497,8 +498,9 @@ public sealed class RawAdapterWriterTests
         var source = Encoding.UTF8.GetString(_subject.Write(
             fixture.WithLayouts(noResult, fixture.Resource)));
 
-        Assert.Contains("\"result\":null", source, StringComparison.Ordinal);
-        Assert.Contains("\"resultMemory\":null", source, StringComparison.Ordinal);
+        Assert.Contains("    invoke(parameters[0], ", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("const value = invoke(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("const out =", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -513,7 +515,8 @@ public sealed class RawAdapterWriterTests
                 Signature = callable.Function.Layout.Signature with { Result = CliValueKind.I4 },
             },
         });
-        Assert.Contains("\"result\":\"i32\"", Encoding.UTF8.GetString(
+        // The emitted code follows the canonical plan's indirect result.
+        Assert.Contains("const out = rcIndex(memory, a1, ", Encoding.UTF8.GetString(
             _subject.Write(fixture.WithLayouts(direct, fixture.Resource))), StringComparison.Ordinal);
 
         var unknownCli = new RawWitImportLayout.Callable(callable.Function with
@@ -572,6 +575,27 @@ public sealed class RawAdapterWriterTests
         var selection = fixture.Selection with { Catalog = catalog };
         var plan = fixture.Plan with { Selection = selection };
         return new(plan, fixture.Validated.ExpectedImports, fixture.Validated.ObservedImports);
+    }
+
+    private static void AssertParsesAsJavaScript(string source)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"netwasm-raw-adapter-{Guid.NewGuid():N}.mjs");
+        File.WriteAllText(path, source);
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                Environment.GetEnvironmentVariable("NETWASM_NODE_PATH") ?? "node", ["--check", path])
+            {
+                RedirectStandardError = true,
+            })!;
+            var error = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            Assert.True(process.ExitCode == 0, error);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private sealed record Fixture(

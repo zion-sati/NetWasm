@@ -32,6 +32,29 @@ public sealed class NativeImportPlannerTests
         Assert.Empty(result.Methods[1].Import.Type.Parameters);
     }
 
+    // A [WasmImportLinkage] import keeps its library name as the Wasm import
+    // module, so the host supplies it instead of the linked runtime.
+    [Fact]
+    public void ImportsAWasmImportLinkageDeclarationFromItsLibraryModule()
+    {
+        var linked = Method(1, "create_node", MethodSignatureModel.Create(CliValueKind.I8, CliValueKind.I4));
+        linked = linked with
+        {
+            Definition = linked.Definition with
+            {
+                NativeImport = linked.Definition.NativeImport! with { HasWasmImportLinkage = true },
+            },
+        };
+        var planner = Assert.IsAssignableFrom<INativeImportPlanner>(new NativeImportPlanner(new RecordingAbiPlanner()));
+
+        var import = Assert.Single(planner.Plan([linked]).Methods).Import;
+
+        Assert.Equal("mule", import.Module);
+        Assert.Equal("create_node", import.Name);
+        Assert.Equal(CliValueKind.I8, import.Type.Result);
+        Assert.Equal([CliValueKind.I4], import.Type.Parameters.ToArray());
+    }
+
     [Fact]
     public void ManagedAndUnusedDeclarationsDoNotCreateNativeImports()
     {

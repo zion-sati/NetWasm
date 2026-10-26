@@ -25,6 +25,33 @@ public sealed class WitBindingOptionsReaderTests
     }
 
     [Fact]
+    public void ReadsTheNamespaceAndStandardStreams()
+    {
+        var options = _reader.Read([
+            "--wit", "-",
+            "--output", "-",
+            "--namespace", "My.Bindings_2",
+        ]);
+
+        Assert.Equal("-", options.Wit);
+        Assert.Equal("-", options.Output);
+        Assert.Equal("My.Bindings_2", options.Namespace);
+        Assert.Null(_reader.Read(["--wit", "a.wit", "--output", "b.cs"]).Namespace);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("My..Bindings")]
+    [InlineData("2Bindings")]
+    [InlineData("My.Bindings.")]
+    [InlineData("My-Bindings")]
+    public void RejectsANamespaceThatIsNotOne(string value)
+    {
+        Assert.Contains("is not a C# namespace", Assert.Throws<WitBindingException>(() =>
+            _reader.Read(["--wit", "a.wit", "--output", "b.cs", "--namespace", value])).Message);
+    }
+
+    [Fact]
     public void RejectsInvalidOptions()
     {
         Assert.Throws<ArgumentNullException>(() => _reader.Read(null!));

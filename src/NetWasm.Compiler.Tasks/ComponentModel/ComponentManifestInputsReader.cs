@@ -13,6 +13,12 @@ internal sealed class ComponentManifestInputsReader(
     {
         ArgumentNullException.ThrowIfNull(request);
         var interop = _manifests.Read(request.InteropManifestPath, request.Target);
+        if (!interop.ImportModules.IsDefaultOrEmpty)
+        {
+            throw new InvalidOperationException(
+                $"[WasmImportLinkage] imports from '{interop.ImportModules[0]}' need raw WebAssembly output: use JsModule, " +
+                "or set NetWasmRawWasm=true for an executable. A component imports host functions through WIT.");
+        }
 
         return new(
             new(

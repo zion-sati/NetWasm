@@ -61,7 +61,7 @@ public sealed class RawCompilerImportDeclarationBuilderTests
                 1,
                 "wasm32",
                 new(0, 1, 0),
-                new(4, 4, 8, 4, 8),
+                new(4, 4, 8, 4, 8, 0, 4),
                 default,
                 [])),
             Catalog())));
@@ -141,7 +141,7 @@ public sealed class RawCompilerImportDeclarationBuilderTests
             1,
             manifestTarget,
             new(0, 1, 0),
-            new(4, 4, 8, 4, 8),
+            new(4, 4, 8, 4, 8, 0, 4),
             manifestImports.IsDefault ? [] : manifestImports,
             []));
 

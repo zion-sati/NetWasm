@@ -255,7 +255,10 @@ public sealed class FrontendArtifactCodecTests
         var snapshot = CreateStressSnapshot();
         var import = new NativeImportDeclaration("logical-library", "actual_symbol",
             MethodImportAttributes.CallingConventionCDecl | MethodImportAttributes.ExactSpelling,
-            enabled, enabled, enabled, enabled);
+            enabled, enabled, enabled, enabled)
+        {
+            HasWasmImportLinkage = enabled,
+        };
         snapshot = snapshot with
         {
             Analysis = snapshot.Analysis with

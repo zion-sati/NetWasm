@@ -477,6 +477,12 @@ namespace System
 
         internal static void ThrowDecimalOverflowException() => throw new OverflowException();
 
+        // ToString() with no format: the shortest round-trip form, without the
+        // format string machinery.
+        internal static string FormatFloat<TNumber>(TNumber value)
+            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
+            => FormatShortestFloating<TNumber>(TNumber.FloatToBits(value));
+
         internal static string FormatFloat<TNumber>(TNumber value, string? format, object? provider)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
             => FormatFloating<TNumber>(TNumber.FloatToBits(value), format);

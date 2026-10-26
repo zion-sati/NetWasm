@@ -556,7 +556,7 @@ assert_run_42 "$work_root/app-run-debug.log" \
   --project "$app_project" -c Debug --no-build --no-restore \
   --disable-build-servers
 host_rid="$(dotnet msbuild "$app_project" \
-  -getProperty:NETCoreSdkRuntimeIdentifier -nologo | tr -d '\r')"
+  -getProperty:_NetWasmHostRid -nologo | tr -d '\r')"
 [[ -n "$host_rid" ]] || {
   echo "The SDK did not evaluate a development-host RID" >&2
   exit 1
@@ -605,10 +605,30 @@ expect_failure_contains "$work_root/invalid-node-override.log" 'NWSDK040' \
 unset NETWASM_NODE_PATH
 expect_failure_contains "$work_root/unsupported-host.log" 'NWSDK041' \
   dotnet msbuild "$app_project" -target:NetWasmSdkValidateHostToolsHost \
-    -p:NETCoreSdkRuntimeIdentifier=freebsd-x64 -nologo
+    -p:NETCoreSdkRuntimeIdentifier=freebsd-x64 \
+    -p:NETCoreSdkPortableRuntimeIdentifier=freebsd-x64 -nologo
+# Distribution-built SDKs report their distribution's RID; the host tools
+# follow the portable RID the SDK reports beside it.
+host_architecture="${host_rid##*-}"
+for distribution in arch fedora.42 rhel.9 ubuntu.24.04; do
+  distribution_rid="$distribution-$host_architecture"
+  run_log "$work_root/distribution-host-$distribution_rid.log" \
+    dotnet msbuild "$app_project" \
+      -target:NetWasmSdkValidateHostToolsHost\;NetWasmSdkResolveBuildEnvironment \
+      -p:NETCoreSdkRuntimeIdentifier="$distribution_rid" -v:normal -nologo
+  assert_log_contains "$work_root/distribution-host-$distribution_rid.log" 'Node=Package '
+done
+# Distributions package only the 10.0.1xx SDK, which cannot restore the
+# framework; such a build stops before restore and names Microsoft's SDK.
+expect_failure_contains "$work_root/distribution-sdk-band.log" 'NWSDK086' \
+  dotnet msbuild "$app_project" -target:NetWasmSdkValidateSdkVersion \
+    -p:NETCoreSdkVersion=10.0.113 \
+    -p:NETCoreSdkRuntimeIdentifier="arch-$host_architecture" -nologo
+assert_log_contains "$work_root/distribution-sdk-band.log" 'Linux distribution packages ship the 10.0.1xx SDK'
 expect_failure_contains "$work_root/emulated-host.log" 'NWSDK044' \
   dotnet msbuild "$app_project" -target:NetWasmSdkValidateHostToolsHost \
     -p:NETCoreSdkRuntimeIdentifier=win-x64 \
+    -p:NETCoreSdkPortableRuntimeIdentifier=win-x64 \
     -p:NetWasmBuildHostOSArchitecture=Arm64 -nologo
 run_log "$work_root/app-clean-debug.log" \
   dotnet clean "$app_project" -c Debug --disable-build-servers --nologo
@@ -1234,11 +1254,147 @@ if [[ "$test_collectors" == false ]]; then
     dotnet publish WitWorker.csproj -c Release --disable-build-servers --nologo)
   require_file "$consumer_root/WitWorker/bin/Release/netwasm0.1/publish/browser/WitWorker.worker-client.mjs"
 
+  # NetWasmWit items generate bindings during the build, here in a library:
+  # a WIT file and a WIT package directory with its deps, both under paths with
+  # spaces, which the generator receives as quoted arguments on every host.
+  wit_root="$consumer_root/wit bindings"
+  mkdir -p "$wit_root/host api" "$wit_root/wit packages/deps"
+  cp "$app_root/global.json" "$wit_root/global.json"
+  cat > "$wit_root/WitBindings.csproj" <<'EOF'
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <NetWasmWit Include="host api/world.wit" Namespace="Consumer.Host" Accessibility="Internal" />
+    <NetWasmWit Include="wit packages/" World="app" />
+  </ItemGroup>
+</Project>
+EOF
+  cat > "$wit_root/host api/world.wit" <<'EOF'
+package consumer:host;
+
+world host-world {
+	type count = u32;
+
+	resource counter {
+		constructor(start: count);
+		increment: func() -> count;
+	}
+
+	import make-counter: func(start: count) -> counter;
+	export run: func() -> count;
+}
+EOF
+  cat > "$wit_root/wit packages/main.wit" <<'EOF'
+package consumer:app;
+
+world app {
+	import consumer:math/ops;
+}
+EOF
+  cat > "$wit_root/wit packages/deps/math.wit" <<'EOF'
+package consumer:math;
+
+interface ops {
+	add: func(left: u32, right: u32) -> u32;
+}
+EOF
+  cat > "$wit_root/Run.cs" <<'EOF'
+namespace Consumer.Host;
+
+internal static partial class HostWorldExports
+{
+    public static partial uint Run()
+    {
+        using var counter = HostWorldImports.CreateCounter(1);
+        return HostWorldImports.Increment(counter) + NetWasm.Wit.Consumer.App.OpsImports.Add(1, 2);
+    }
+}
+EOF
+  (cd "$wit_root" && run_log "$work_root/wit-bindings-build.log" \
+    dotnet build WitBindings.csproj -c Release --disable-build-servers --nologo)
+  grep -Fqi 'NetWasm.HostTools.' "$wit_root/obj/project.assets.json" || {
+    echo "A library with NetWasmWit items did not restore the host tools" >&2
+    exit 1
+  }
+  wit_bindings="$wit_root/obj/Release/netwasm0.1/netwasm/wit-bindings"
+  require_file "$wit_bindings/world.wit.g.cs"
+  require_file "$wit_bindings/wit packages.g.cs"
+  grep -Fq 'internal static partial class HostWorldImports' "$wit_bindings/world.wit.g.cs" || {
+    echo "NetWasmWit Namespace or Accessibility metadata was not applied" >&2
+    exit 1
+  }
+
   create_consumer PageModule --host page
+  # A JSExport in a referenced library is exported like the application's own.
+  exports_root="$consumer_root/PageExports"
+  mkdir -p "$exports_root"
+  cp "$app_root/global.json" "$exports_root/global.json"
+  cat > "$exports_root/PageExports.csproj" <<'EOF'
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+EOF
+  cat > "$exports_root/LibraryExports.cs" <<'EOF'
+using System.Runtime.InteropServices.JavaScript;
+
+public static partial class LibraryExports
+{
+    [JSExport("libraryCallback")]
+    public static void LibraryCallback(float width, float height)
+    {
+    }
+}
+EOF
+  python3 - "$consumer_root/PageModule/PageModule.csproj" <<'PY'
+import sys
+from pathlib import Path
+
+project = Path(sys.argv[1])
+text = project.read_text(encoding="utf-8")
+assert text.count("</Project>") == 1
+text = text.replace("</Project>", "  <ItemGroup>\n    <ProjectReference Include=\"../PageExports/PageExports.csproj\" />\n  </ItemGroup>\n</Project>")
+project.write_text(text, encoding="utf-8")
+PY
   (cd "$consumer_root/PageModule" && run_log "$work_root/page-module-publish.log" \
     dotnet publish PageModule.csproj -c Release --disable-build-servers --nologo)
-  require_file "$consumer_root/PageModule/bin/Release/netwasm0.1/publish/browser/PageModule.mjs"
-  require_file "$consumer_root/PageModule/bin/Release/netwasm0.1/publish/browser/PageModule.d.mts"
+  page_publish="$consumer_root/PageModule/bin/Release/netwasm0.1/publish/browser"
+  require_file "$page_publish/PageModule.mjs"
+  require_file "$page_publish/PageModule.d.mts"
+  for published in "$page_publish/PageModule.mjs" "$page_publish/PageModule.d.mts"; do
+    grep -Fq 'libraryCallback' "$published" || {
+      echo "A referenced library's JSExport is missing from $published" >&2
+      exit 1
+    }
+  done
+  # The page runtime carries only what the application links (issue #121):
+  # this page links no filesystem, network or clock interface, and its raw
+  # adapter brings generated canonical-ABI code instead of an interpreter. A
+  # ceiling, not a pin (about 192,000 bytes when set), so hosting changes need
+  # not update it; bringing back the full Preview 2 shim, the provider catalog
+  # or the canonical-ABI interpreter crosses it.
+  page_runtime_bytes="$(wc -c < "$page_publish/netwasm.page.mjs" | tr -d ' ')"
+  if (( page_runtime_bytes > 210000 )); then
+    echo "The page runtime is $page_runtime_bytes bytes, over the 210000-byte ceiling" >&2
+    exit 1
+  fi
+  # A Release page trusts its digest-pinned deployment manifest, which the
+  # build validated, so it carries no manifest validator (issue #121).
+  if grep -Fq 'deployment manifest schema is unsupported' "$page_publish/netwasm.page.mjs"; then
+    echo "The Release page runtime still carries the deployment manifest validator" >&2
+    exit 1
+  fi
+  if grep -q '^  ' "$page_publish/PageModule.raw-adapter.mjs"; then
+    echo "The Release raw adapter is not minified" >&2
+    exit 1
+  fi
 
   create_consumer ZoneApp
   cat > "$consumer_root/ZoneApp/Program.cs" <<'EOF'

@@ -20,7 +20,7 @@ public sealed class BrowserCompilationResultProjectorTests
             EntryPointKind = kind,
             EntryMethodToken = token,
         };
-        var manifest = new HostInteropManifest(1, "wasm32", new(0, 1, 0), new(4, 0, 0, 0, 0), [], []);
+        var manifest = new HostInteropManifest(1, "wasm32", new(0, 1, 0), new(4, 0, 0, 0, 0, 0, 0), [], []);
         // Reachability and layout payloads are deliberately not needed for projection.
         var callback = new WasmNativeCallbackSupportArtifact(
             [1, 2, 3], new string('a', 64), [], [], []);

@@ -25,7 +25,9 @@ internal sealed class JavaScriptExportResolver : ICompilationExportResolver
         {
             return [];
         }
-        return metadata.EntryAssemblyMethods
+        // As in .NET, a JSExport is exported wherever it is declared, so a
+        // referenced library can ship the callbacks its JavaScript host calls.
+        return metadata.Methods
             .Where(method => method.JSExport is not null)
             .OrderBy(
                 method => method.JSExport!.ExportName ?? method.Name,

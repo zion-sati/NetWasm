@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.JavaScript;
 using System.Threading.Tasks;
 
@@ -26,6 +27,15 @@ public static class PageExports
     [JSImport("reenter", "app.host")]
     private static extern int Reenter(int depth);
 
+    [JSImport("fill", "app.host")]
+    private static extern int Fill(Span<byte> pixels, byte value);
+
+    [JSImport("sum", "app.host")]
+    private static extern double Sum(ReadOnlySpan<double> values);
+
+    [JSImport("count", "app.host")]
+    private static extern int Count(Span<int> values);
+
     [JSExport("add")]
     public static int Add(int value) => _counter += value;
 
@@ -45,6 +55,51 @@ public static class PageExports
             scaled[index] = values[index] * factor;
         }
         return scaled;
+    }
+
+    // A span reaches JavaScript as a view over linear memory, so the page's
+    // writes are the managed buffer's, wherever that buffer lives.
+    [JSExport("fillPixels")]
+    public static unsafe int FillPixels(int length, int value)
+    {
+        var pixels = new byte[length];
+        var filled = Fill(pixels, (byte)value);
+        foreach (var pixel in pixels)
+        {
+            if (pixel != value)
+            {
+                return -1;
+            }
+        }
+        Span<byte> stack = stackalloc byte[4];
+        var native = (byte*)NativeMemory.Alloc(8);
+        try
+        {
+            filled += Fill(stack, 1) + Fill(new Span<byte>(native, 8), 2) + Fill(Span<byte>.Empty, 3);
+            return stack[3] == 1 && native[7] == 2 ? filled : -2;
+        }
+        finally
+        {
+            NativeMemory.Free(native);
+        }
+    }
+
+    [JSExport("sumMiddle")]
+    public static double SumMiddle(double[] values) => Sum(values.AsSpan(1, values.Length - 2));
+
+    // A typed array cannot start between elements, so a misaligned span fails the call.
+    [JSExport("countInts")]
+    public static int CountInts()
+    {
+        var aligned = Count(new int[3]);
+        try
+        {
+            return aligned * 10 + Count(MemoryMarshal.Cast<byte, int>(new byte[16].AsSpan(1, 8)));
+        }
+        catch (JSException)
+        {
+            return aligned * 10 - 1;
+        }
     }
 
     [JSExport("describe")]

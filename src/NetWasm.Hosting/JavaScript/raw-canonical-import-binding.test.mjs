@@ -27,29 +27,12 @@ class File {
   }
 }
 
-const callableBinding = () => ({
-  kind: "callable",
-  target: "wasm32",
-  physical: callableIdentity,
-  coreSignature: { parameters: [], results: ["i32"] },
-  provider: {
-    interface: "sample:raw@1/api",
-    function: "get-file",
-    javascriptName: "getFile",
-    functionKind: "freestanding",
-    resourceType: null,
-    resourceName: null,
-    resourceJavaScriptName: null,
-  },
-  parameters: [],
-  result: { kind: "owned-resource", resourceType: 9 },
-  canonicalSignature: {
-    parameters: [], result: "i32", flatParameters: [], flatResults: ["i32"],
-    indirectParameters: false, indirectResult: false,
-  },
-  parameterMemory: { size: 0, alignment: 1 },
-  resultMemory: { size: 4, alignment: 4 },
-});
+// What a generated adapter emits for get-file: () -> own<file>.
+const getFile = canonical => () => {
+  const store = canonical.store();
+  const value = canonical.providers["sample:raw@1/api"].getFile();
+  return canonical.register({ release: item => canonical.release({ type: 9, value: item }), store, type: 9, value });
+};
 
 const resourceBinding = () => ({
   kind: "resource",
@@ -66,22 +49,16 @@ const resourceBinding = () => ({
   },
 });
 
-const textBinding = () => ({
-  ...callableBinding(),
-  physical: textIdentity,
-  coreSignature: { parameters: ["i32"], results: [] },
-  provider: {
-    ...callableBinding().provider,
-    function: "get-text",
-    javascriptName: "getText",
-  },
-  result: { kind: "text" },
-  canonicalSignature: {
-    parameters: ["i32"], result: null, flatParameters: [], flatResults: ["i32", "i32"],
-    indirectParameters: false, indirectResult: true,
-  },
-  resultMemory: { size: 8, alignment: 4 },
-});
+// And for get-text: () -> string, written to the caller's return area.
+const getText = canonical => resultAddress => {
+  const memory = canonical.memory();
+  const bytes = new TextEncoder().encode(canonical.providers["sample:raw@1/api"].getText());
+  const address = canonical.reallocate(0, 0, 1, bytes.length);
+  new Uint8Array(memory.buffer, address, bytes.length).set(bytes);
+  const view = new DataView(memory.buffer);
+  view.setUint32(resultAddress, address, true);
+  view.setUint32(resultAddress + 4, bytes.length, true);
+};
 
 const exportedNewBinding = () => ({
   kind: "resource",
@@ -135,10 +112,10 @@ const reactorBinding = operation => ({
 });
 
 function generatedAdapter(options = {}) {
-  const capabilities = options.capabilities ?? ["bindCallable", "bindResource"];
+  const capabilities = options.capabilities ?? ["bindResource", "canonical"];
   const identities = options.identities ?? [callableIdentity, resourceIdentity];
-  const metadata = options.metadata ?? {
-    abiVersion: 1,
+  const metadata = Object.hasOwn(options, "metadata") ? options.metadata : {
+    abiVersion: 2,
     target: "wasm32",
     witSourceFingerprint: fingerprint,
     bindingIdentities: identities,
@@ -151,8 +128,8 @@ function generatedAdapter(options = {}) {
       if (options.product) return options.product(request, metadata);
       const imports = Object.create(null);
       for (const identity of identities) imports[identity.module] ??= Object.create(null);
-      if (capabilities.includes("bindCallable")) {
-        imports[callableIdentity.module][callableIdentity.name] = request.bindCallable(callableBinding());
+      if (capabilities.includes("canonical")) {
+        imports[callableIdentity.module][callableIdentity.name] = getFile(request.canonical);
       }
       if (capabilities.includes("bindResource")) {
         imports[resourceIdentity.module][resourceIdentity.name] = request.bindResource(resourceBinding());
@@ -189,7 +166,11 @@ test("composes selected generated imports and owns their resource lifetime", () 
     },
   });
   assert.equal(binding.target, "wasm32");
-  assert.deepEqual(Object.keys(adapterRequest).sort(), ["bindCallable", "bindResource", "metadata"]);
+  assert.deepEqual(Object.keys(adapterRequest).sort(), ["bindResource", "canonical", "metadata"]);
+  assert.deepEqual(Object.keys(adapterRequest.canonical).sort(), [
+    "borrow", "drop", "memory", "providers", "reallocate", "register", "release", "store", "transfer",
+  ]);
+  assert.equal(Object.isFrozen(adapterRequest.canonical), true);
   const imports = binding.imports[callableIdentity.module];
   assert.throws(() => imports[callableIdentity.name](), /not bound/);
   assert.equal(providerCalls, 0);
@@ -208,12 +189,12 @@ test("composes selected generated imports and owns their resource lifetime", () 
 });
 
 test("requests only the selected callable, resource or empty capability subset", () => {
-  for (const capabilities of [[], ["bindCallable"], ["bindResource"], ["bindCallable", "bindResource"]]) {
+  for (const capabilities of [[], ["canonical"], ["bindResource"], ["bindResource", "canonical"]]) {
     let keys;
     const identities = capabilities.length === 0
       ? []
       : capabilities.length === 1
-        ? [capabilities[0] === "bindCallable" ? callableIdentity : resourceIdentity]
+        ? [capabilities[0] === "canonical" ? callableIdentity : resourceIdentity]
         : [callableIdentity, resourceIdentity];
     const binding = createRawCanonicalImportBinding({
       adapter: generatedAdapter({
@@ -246,10 +227,10 @@ test("closes outstanding provider resources after binding", () => {
 
 test("uses the deferred canonical reallocator for an indirect text result", () => {
   const adapter = generatedAdapter({
-    capabilities: ["bindCallable"],
+    capabilities: ["canonical"],
     identities: [textIdentity],
     product(request, metadata) {
-      const module = Object.freeze({ [textIdentity.name]: request.bindCallable(textBinding()) });
+      const module = Object.freeze({ [textIdentity.name]: getText(request.canonical) });
       return Object.freeze({
         imports: Object.freeze({ [textIdentity.module]: module }),
         metadata,
@@ -301,13 +282,13 @@ test("binds selected reactor calls through the owned resource store", () => {
   const calls = [];
   let available = false;
   const adapter = generatedAdapter({
-    capabilities: ["bindCallable", "bindReactor"],
+    capabilities: ["bindReactor", "canonical"],
     identities: [callableIdentity, watchIdentity, cancelIdentity],
     product(request, metadata) {
       return Object.freeze({
         imports: Object.freeze({
           [callableIdentity.module]: Object.freeze({
-            [callableIdentity.name]: request.bindCallable(callableBinding()),
+            [callableIdentity.name]: getFile(request.canonical),
           }),
           [reactorModule]: Object.freeze({
             watch: request.bindReactor(reactorBinding("watch")),
@@ -377,7 +358,7 @@ test("rejects invalid factory, adapter namespace and metadata contracts", () => 
     [],
     {},
     { ...metadata, extra: true },
-    { ...metadata, abiVersion: 2 },
+    { ...metadata, abiVersion: 1 },
     { ...metadata, target: "wasm128" },
     { ...metadata, witSourceFingerprint: "sha256:bad" },
     { ...metadata, bindingIdentities: null },
@@ -387,10 +368,11 @@ test("rejects invalid factory, adapter namespace and metadata contracts", () => 
     { ...metadata, bindingIdentities: [{ ...callableIdentity, name: "" }] },
     { ...metadata, bindingIdentities: [callableIdentity, callableIdentity] },
     { ...metadata, requiredCapabilities: null },
-    { ...metadata, requiredCapabilities: ["bindResource", "bindCallable"] },
-    { ...metadata, requiredCapabilities: ["bindCallable", "bindCallable"] },
+    { ...metadata, requiredCapabilities: ["canonical", "bindResource"] },
+    { ...metadata, requiredCapabilities: ["canonical", "canonical"] },
     { ...metadata, requiredCapabilities: ["other"] },
-    { ...metadata, requiredCapabilities: ["bindCallable", "bindResource", "other"] },
+    { ...metadata, requiredCapabilities: ["bindCallable"] },
+    { ...metadata, requiredCapabilities: ["bindReactor", "bindResource", "canonical", "other"] },
   ];
   for (const candidate of invalidMetadata) {
     assert.throws(() => createRawCanonicalImportBinding({

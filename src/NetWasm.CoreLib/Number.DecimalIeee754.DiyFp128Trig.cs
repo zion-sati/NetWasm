@@ -49,65 +49,73 @@ internal static partial class Number
     // Unpacked pi/4 (dpml_trig_x.h) and pi (pi/4 with binary exponent + 2).
     private static DiyFp128 TrigPiOverFour => new DiyFp128(0, 0, 0xC90FDAA22168C234, 0xC4C6628B80DC1CD1);
 
-    private static readonly DiyFp128FixedCoefficient[] TrigSinCoefficients =
-    [
-        new(0x000000039E634562, 0x0000000000000000),
-        new(0x000009F9DCE17A1D, 0x0000000000000000),
-        new(0x001761B4083A3075, 0x0000000000000000),
-        new(0x2E371DEDB1D75408, 0x0000000000000000),
-        new(0xD26D1A05013C755B, 0x000000000000004B),
-        new(0x1DC0C2B528320429, 0x000000000000654B),
-        new(0x9CCEE07C4701FACD, 0x00000000006B9FCF),
-        new(0xA1B425F28DFBF381, 0x000000005849184E),
-        new(0x89C71FCE8FC76DB3, 0x00000035CC8ACFEA),
-        new(0x338FAAC1C88E2826, 0x0000171DE3A556C7),
-        new(0x8068068068067E8F, 0x0006806806806806),
-        new(0x1111111111111106, 0x0111111111111111),
-        new(0x5555555555555555, 0x1555555555555555),
-        new(0x0000000000000000, 0x8000000000000000),
-    ];
+    // Built only when code that uses these tables runs; other Number paths, such as
+    // integer formatting, never pay for them.
+    private static class TrigTables
+    {
+        internal static readonly DiyFp128FixedCoefficient[] TrigSinCoefficients =
+        [
+            new(0x000000039E634562, 0x0000000000000000),
+            new(0x000009F9DCE17A1D, 0x0000000000000000),
+            new(0x001761B4083A3075, 0x0000000000000000),
+            new(0x2E371DEDB1D75408, 0x0000000000000000),
+            new(0xD26D1A05013C755B, 0x000000000000004B),
+            new(0x1DC0C2B528320429, 0x000000000000654B),
+            new(0x9CCEE07C4701FACD, 0x00000000006B9FCF),
+            new(0xA1B425F28DFBF381, 0x000000005849184E),
+            new(0x89C71FCE8FC76DB3, 0x00000035CC8ACFEA),
+            new(0x338FAAC1C88E2826, 0x0000171DE3A556C7),
+            new(0x8068068068067E8F, 0x0006806806806806),
+            new(0x1111111111111106, 0x0111111111111111),
+            new(0x5555555555555555, 0x1555555555555555),
+            new(0x0000000000000000, 0x8000000000000000),
+        ];
 
-    private static readonly DiyFp128FixedCoefficient[] TrigCosCoefficients =
-    [
-        new(0x00000061A9FB87E2, 0x0000000000000000),
-        new(0x0000F96669688C7C, 0x0000000000000000),
-        new(0x0219C72C77C1DE0C, 0x0000000000000000),
-        new(0xCA85747F51903A09, 0x0000000000000003),
-        new(0x9E18EE5EEB393833, 0x00000000000005A0),
-        new(0xF9CCEE079837094C, 0x000000000006B9FC),
-        new(0x301F274823772903, 0x00000000064E5D2A),
-        new(0x3625ED5134A72FA4, 0x000000047BB63BFE),
-        new(0xEB8E5DE02D6A41E7, 0x0000024FC9F6EF13),
-        new(0xD00D00D00CFBFFE1, 0x0000D00D00D00D00),
-        new(0x82D82D82D82D4910, 0x002D82D82D82D82D),
-        new(0x55555555555553EB, 0x0555555555555555),
-        new(0xFFFFFFFFFFFFFFFC, 0x3FFFFFFFFFFFFFFF),
-        new(0x0000000000000000, 0x8000000000000000),
-    ];
+        internal static readonly DiyFp128FixedCoefficient[] TrigCosCoefficients =
+        [
+            new(0x00000061A9FB87E2, 0x0000000000000000),
+            new(0x0000F96669688C7C, 0x0000000000000000),
+            new(0x0219C72C77C1DE0C, 0x0000000000000000),
+            new(0xCA85747F51903A09, 0x0000000000000003),
+            new(0x9E18EE5EEB393833, 0x00000000000005A0),
+            new(0xF9CCEE079837094C, 0x000000000006B9FC),
+            new(0x301F274823772903, 0x00000000064E5D2A),
+            new(0x3625ED5134A72FA4, 0x000000047BB63BFE),
+            new(0xEB8E5DE02D6A41E7, 0x0000024FC9F6EF13),
+            new(0xD00D00D00CFBFFE1, 0x0000D00D00D00D00),
+            new(0x82D82D82D82D4910, 0x002D82D82D82D82D),
+            new(0x55555555555553EB, 0x0555555555555555),
+            new(0xFFFFFFFFFFFFFFFC, 0x3FFFFFFFFFFFFFFF),
+            new(0x0000000000000000, 0x8000000000000000),
+        ];
 
-    private static readonly DiyFp128FixedCoefficient[] TrigTanNumeratorCoefficients =
-    [
-        new(0x0000000000000000, 0x0000000000000000),
-        new(0x02E36384AB86D966, 0x00000000004583DC),
-        new(0xFE661C77C57437CF, 0x00000001DF2FB0D7),
-        new(0xE5F9C2190062EE42, 0x0000036F46CAE26E),
-        new(0x9C878717E15A162F, 0x000269DCA6FA2240),
-        new(0xC5B462FFE65127B0, 0x00B209C04C0B8A2C),
-        new(0xA273C25867F59A68, 0x12F6C9C3D7A587C9),
-        new(0x0000000000000000, 0x8000000000000000),
-    ];
+        internal static readonly DiyFp128FixedCoefficient[] TrigTanNumeratorCoefficients =
+        [
+            new(0x0000000000000000, 0x0000000000000000),
+            new(0x02E36384AB86D966, 0x00000000004583DC),
+            new(0xFE661C77C57437CF, 0x00000001DF2FB0D7),
+            new(0xE5F9C2190062EE42, 0x0000036F46CAE26E),
+            new(0x9C878717E15A162F, 0x000269DCA6FA2240),
+            new(0xC5B462FFE65127B0, 0x00B209C04C0B8A2C),
+            new(0xA273C25867F59A68, 0x12F6C9C3D7A587C9),
+            new(0x0000000000000000, 0x8000000000000000),
+        ];
 
-    private static readonly DiyFp128FixedCoefficient[] TrigTanDenominatorCoefficients =
-    [
-        new(0x196C967ACBFC02D6, 0x000000000000A9BA),
-        new(0xD03D3831CF5F2FE6, 0x000000000E1AE92D),
-        new(0x40A36A10FD241F97, 0x0000002E4C98A51D),
-        new(0xB12A527E72E00402, 0x0000338085B96B4F),
-        new(0xF5E92D642C15CBC5, 0x001739C356378673),
-        new(0x7902CB9A86202DFC, 0x042C1F7EBBBFDF42),
-        new(0x4D1E6D0312A04513, 0x3DA1746E82503274),
-        new(0x0000000000000000, 0x8000000000000000),
-    ];
+        internal static readonly DiyFp128FixedCoefficient[] TrigTanDenominatorCoefficients =
+        [
+            new(0x196C967ACBFC02D6, 0x000000000000A9BA),
+            new(0xD03D3831CF5F2FE6, 0x000000000E1AE92D),
+            new(0x40A36A10FD241F97, 0x0000002E4C98A51D),
+            new(0xB12A527E72E00402, 0x0000338085B96B4F),
+            new(0xF5E92D642C15CBC5, 0x001739C356378673),
+            new(0x7902CB9A86202DFC, 0x042C1F7EBBBFDF42),
+            new(0x4D1E6D0312A04513, 0x3DA1746E82503274),
+            new(0x0000000000000000, 0x8000000000000000),
+        ];
+    }
+
+
+
 
     // dpml_four_over_pi.c: the leading 263 x 64-bit digits of 4/pi (with two words of zero padding).
     private static ReadOnlySpan<ulong> TrigFourOverPi =>
@@ -540,15 +548,15 @@ internal static partial class Number
             {
                 flags |= TrigSwap;
             }
-            DiyFp128EvaluateRational(reduced, TrigSinCoefficients, 1, TrigCosCoefficients, 1, TrigSinCosDegree, flags, result);
+            DiyFp128EvaluateRational(reduced, TrigTables.TrigSinCoefficients, 1, TrigTables.TrigCosCoefficients, 1, TrigSinCosDegree, flags, result);
         }
         else if ((quadrant & 1) != 0)
         {
-            DiyFp128EvaluateRational(reduced, default, 0, TrigCosCoefficients, 1, TrigSinCosDegree, TrigSkip | TrigCosPolyFlags, result);
+            DiyFp128EvaluateRational(reduced, default, 0, TrigTables.TrigCosCoefficients, 1, TrigSinCosDegree, TrigSkip | TrigCosPolyFlags, result);
         }
         else
         {
-            DiyFp128EvaluateRational(reduced, TrigSinCoefficients, 1, default, 0, TrigSinCosDegree, TrigSkip | TrigSinPolyFlags, result);
+            DiyFp128EvaluateRational(reduced, TrigTables.TrigSinCoefficients, 1, default, 0, TrigSinCosDegree, TrigSkip | TrigSinPolyFlags, result);
         }
 
         if ((quadrant & 2) != 0)
@@ -599,7 +607,7 @@ internal static partial class Number
                   | divideFlag;
 
         Span<DiyFp128> r = [default, default];
-        DiyFp128EvaluateRational(reduced, TrigTanNumeratorCoefficients, 1, TrigTanDenominatorCoefficients, 1, TrigTanCotDegree, flags, r);
+        DiyFp128EvaluateRational(reduced, TrigTables.TrigTanNumeratorCoefficients, 1, TrigTables.TrigTanDenominatorCoefficients, 1, TrigTanCotDegree, flags, r);
 
         if ((quadrant & 1) != 0)
         {

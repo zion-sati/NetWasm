@@ -20,4 +20,7 @@ internal sealed record ManagedModuleCompileRequest(
     string? ProjectDirectory = null,
     string? PathMap = null,
     bool StructuredDiagnostics = false,
-    WasmOptimizationOverrides? OptimizationOverrides = null);
+    WasmOptimizationOverrides? OptimizationOverrides = null)
+{
+    public ImmutableArray<string> ImportModules { get; init; } = [];
+}

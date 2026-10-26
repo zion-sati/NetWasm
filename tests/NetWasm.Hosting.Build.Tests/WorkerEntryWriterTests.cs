@@ -11,6 +11,7 @@ public sealed class WorkerEntryWriterTests
     {
         using var directory = TemporaryDirectory.Create();
         var output = Path.Combine(directory.Path, "generated", "worker-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
         var request = new WorkerHostEntryRequest(
             Path.Combine(directory.Path, "hosting"),
             Path.Combine(directory.Path, "preview2-shim"),
@@ -21,7 +22,9 @@ public sealed class WorkerEntryWriterTests
             [new("MODE", "test")],
             ["monotonic"],
             "denyAll",
-            false);
+            false,
+            ["wasi:cli/environment@0.2.11", "wasi:io/streams@0.2.11", "wasi:random/random@0.2.11", "consumer.worker"],
+            true);
 
         new WorkerEntryWriter().WriteHost(request);
 
@@ -36,6 +39,8 @@ public sealed class WorkerEntryWriterTests
         Assert.Contains("\"increment\": imports0[\"increment\"]", source, StringComparison.Ordinal);
         Assert.Contains("./deployment.json", source, StringComparison.Ordinal);
         Assert.Contains("globalThis.addEventListener(\"message\"", source, StringComparison.Ordinal);
+        Assert.Contains("/hosting/deployment-manifest-validator.mjs\";", source, StringComparison.Ordinal);
+        Assert.Contains("snapshotDeploymentManifest: validateDeploymentManifest,", source, StringComparison.Ordinal);
         Assert.Contains("globalThis.addEventListener(\"messageerror\"", source, StringComparison.Ordinal);
         Assert.Contains("host.receive(event.data).catch(fatal)", source, StringComparison.Ordinal);
         Assert.Contains("clocks: Object.freeze([\"monotonic\"])", source, StringComparison.Ordinal);
@@ -47,6 +52,51 @@ public sealed class WorkerEntryWriterTests
         Assert.DoesNotContain("console[", source, StringComparison.Ordinal);
         Assert.Contains("Object.freeze({ name: \"MODE\", value: \"test\" })", source,
             StringComparison.Ordinal);
+        // Issue #121: only the Preview 2 families and providers the application links.
+        Assert.Contains("createShim: createSelectedPreview2ShimFactory({ cli: preview2Cli, io: preview2Io, random: preview2Random }),",
+            source, StringComparison.Ordinal);
+        Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
+        Assert.Contains("\"module\":\"wasi:random/random@0.2.11\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("wasi:http/outgoing-handler", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("WASIShim", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("preview2Http", source, StringComparison.Ordinal);
+        Assert.True(source.LastIndexOf("import ", StringComparison.Ordinal)
+            < source.IndexOf("function deepFreeze", StringComparison.Ordinal));
+
+        // Without validation the worker only freezes its digest-pinned manifest.
+        new WorkerEntryWriter().WriteHost(request with { ValidateDeploymentManifest = false });
+        var trusted = File.ReadAllText(output);
+        Assert.DoesNotContain("deployment-manifest-validator", trusted, StringComparison.Ordinal);
+        Assert.Contains("snapshotDeploymentManifest: deepFreeze,", trusted, StringComparison.Ordinal);
+    }
+
+    // An import module binds every function its JavaScript module exports; a
+    // module with no functions to bind is invalid unless it is an import module.
+    [Fact]
+    public void BindsEveryFunctionOfAnImportModule()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "worker-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
+        WorkerHostEntryRequest Request(bool bindsModule) => new(
+            Path.Combine(directory.Path, "hosting"),
+            Path.Combine(directory.Path, "preview2-shim"),
+            output,
+            [new("host_ui", Path.Combine(directory.Path, "host-ui.mjs"), []) { BindsModule = bindsModule }],
+            [],
+            [],
+            [],
+            "denyAll",
+            false,
+            [],
+            true);
+
+        new WorkerEntryWriter().WriteHost(Request(bindsModule: true));
+
+        Assert.Contains(
+            "...Object.fromEntries(Object.entries(imports0).filter(([name, value]) => name !== \"createWorkerImports\" && typeof value === \"function\")),",
+            File.ReadAllText(output), StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteHost(Request(bindsModule: false)));
     }
 
     [Fact]
@@ -129,12 +179,13 @@ public sealed class WorkerEntryWriterTests
     {
         using var directory = TemporaryDirectory.Create();
         var output = Path.Combine(directory.Path, "worker-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
 
         new WorkerEntryWriter().WriteHost(new(
             Path.Combine(directory.Path, "hosting"),
             Path.Combine(directory.Path, "preview2-shim"),
             output,
-            [], [], [], [], "denyAll", false));
+            [], [], [], [], "denyAll", false, [], true));
 
         var source = File.ReadAllText(output);
         Assert.Contains("clocks: Object.freeze([])", source, StringComparison.Ordinal);
@@ -164,7 +215,7 @@ public sealed class WorkerEntryWriterTests
             Path.Combine(directory.Path, "shim"),
             Path.Combine(directory.Path, "host.mjs"),
             [new("wasi:cli/run@0.2.11", Path.Combine(directory.Path, "provider.mjs"), ["run"])],
-            [], [], [], "denyAll", false)));
+            [], [], [], "denyAll", false, [], true)));
     }
 
     [Fact]
@@ -173,7 +224,7 @@ public sealed class WorkerEntryWriterTests
         using var directory = TemporaryDirectory.Create();
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteHost(new(
             "hosting", Path.Combine(directory.Path, "shim"), Path.Combine(directory.Path, "host.mjs"),
-            [], [], [], [], "denyAll", false)));
+            [], [], [], [], "denyAll", false, [], true)));
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteClient(new(
             Path.Combine(directory.Path, "hosting"),
             "app.worker.mjs",

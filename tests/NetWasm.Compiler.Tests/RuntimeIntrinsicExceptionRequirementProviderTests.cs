@@ -106,16 +106,6 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
 
             cases.Add(
                 RuntimeIntrinsic.EnumConvert,
-                "InternalToType",
-                0,
-                [ManagedExceptionKind.ArgumentNull, ManagedExceptionKind.InvalidCast]);
-            cases.Add(
-                RuntimeIntrinsic.EnumConvert,
-                "System.IConvertible.ToType",
-                0,
-                [ManagedExceptionKind.ArgumentNull, ManagedExceptionKind.InvalidCast]);
-            cases.Add(
-                RuntimeIntrinsic.EnumConvert,
                 "InternalToDateTime",
                 0,
                 [ManagedExceptionKind.InvalidCast]);

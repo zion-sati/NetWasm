@@ -142,6 +142,63 @@ Regular object members and compatible LTO members are accepted when their width
 and Wasm feature set match. Thin archives and direct consumer `.o` items are
 rejected.
 
+## Call host functions directly
+
+`[WasmImportLinkage]` on a `[LibraryImport]` or `[DllImport]` declaration makes
+the library name a WebAssembly import module and the entry point its function.
+No archive defines it: the final module imports it, and the host supplies the
+function. This is the fastest way to call JavaScript, or another WebAssembly
+module, from C#:
+
+```csharp
+using System.Runtime.InteropServices;
+
+public static partial class HostUi
+{
+    [LibraryImport("host_ui", EntryPoint = "create_node"), WasmImportLinkage]
+    public static partial ulong CreateNode(uint type);
+}
+```
+
+```js
+const session = await open({
+  modules: { host_ui: { create_node: type => BigInt(type) << 32n } },
+});
+```
+
+The function receives and returns WebAssembly values: 32-bit integers and
+floating-point values as `number`, 64-bit integers as `bigint`, and pointers
+as addresses in the guest's memory. Anything the function throws reaches the
+caller as a `JSException`. A module can also be bundled with a
+`NetWasmJavaScriptModule` item, as for [JavaScript interop](javascript-interop.md).
+
+A native archive can import host functions too, with the C attributes
+`import_module` and `import_name`:
+
+```c
+__attribute__((import_module("host_ui"), import_name("create_node")))
+extern uint64_t host_create_node(uint32_t type);
+```
+
+Declare each such module so the build keeps its imports:
+
+```xml
+<ItemGroup>
+  <NetWasmImportModule Include="host_ui" />
+</ItemGroup>
+```
+
+A module bundled with `NetWasmJavaScriptModule` is declared already. Without a
+declaration, the build stops with NWPACK001 naming the import. C code cannot
+unwind, so a function an archive calls must not throw; a throw leaves the
+instance unusable.
+
+Both need raw WebAssembly output: a `JsModule`, or an executable with
+`NetWasmRawWasm=true`. A component imports host functions through
+[WIT](wit-bindings.md) instead, and a component build with an import module
+stops with NWSDK087. Module names that start with `netwasm` or `wasi` are
+reserved.
+
 ## Deliberate exclusions
 
 The static profile does not provide dynamic loading, runtime symbol lookup,

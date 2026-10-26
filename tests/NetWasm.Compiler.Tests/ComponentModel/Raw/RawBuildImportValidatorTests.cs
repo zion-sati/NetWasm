@@ -331,7 +331,7 @@ public sealed class RawBuildImportValidatorTests
             1,
             target == WasmTarget.Wasm64 ? "wasm64" : "wasm32",
             new(0, 1, 0),
-            new(8, 8, 12, 8, 16),
+            new(8, 8, 12, 8, 16, 0, 8),
             manifestImports,
             []), 0)
         {

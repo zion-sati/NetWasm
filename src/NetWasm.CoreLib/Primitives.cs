@@ -348,7 +348,7 @@ namespace System
         DateTime IConvertible.ToDateTime(IFormatProvider? provider) => InternalToDateTime(this);
 
         object IConvertible.ToType(Type conversionType, IFormatProvider? provider) =>
-            InternalToType(this, conversionType);
+            Convert.DefaultToType(this, conversionType, provider);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern bool InternalEquals(Enum value, object? other);
@@ -455,9 +455,6 @@ namespace System
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern DateTime InternalToDateTime(Enum value);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern object InternalToType(Enum value, Type conversionType);
     }
 
     public struct Void
@@ -2965,7 +2962,7 @@ namespace System
             if (IsNaN(this) || this == 0) bits &= 0x7f80_0000U;
             return unchecked((int)bits);
         }
-        public override string ToString() => Number.FormatSingle(this, null);
+        public override string ToString() => Number.FormatSingle(this);
         public string ToString(string? format) => Number.FormatSingle(this, format);
         public static float Parse(string value)
         {
@@ -3336,7 +3333,7 @@ namespace System
             if (IsNaN(this) || this == 0) bits &= 0x7ff0_0000_0000_0000UL;
             return unchecked((int)bits) ^ (int)(bits >> 32);
         }
-        public override string ToString() => Number.FormatDouble(this, null);
+        public override string ToString() => Number.FormatDouble(this);
         public string ToString(string? format) => Number.FormatDouble(this, format);
         public static double Parse(string value)
         {

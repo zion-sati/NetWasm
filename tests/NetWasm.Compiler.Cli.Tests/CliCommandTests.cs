@@ -595,7 +595,7 @@ public sealed class CliCommandTests
             1,
             "wasm64",
             new HostInteropStatusAbi(0, -1, 0),
-            new HostInteropTargetLayout(4, 4, 8, 4, 8),
+            new HostInteropTargetLayout(4, 4, 8, 4, 8, 0, 4),
             [],
             []),
         100);

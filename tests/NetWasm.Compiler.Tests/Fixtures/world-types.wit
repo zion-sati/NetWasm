@@ -1,0 +1,14 @@
+package my:ns;
+
+world my-world {
+	type my-type = u64;
+
+	enum my-enum {
+		a, b, c, d,
+	}
+
+	import my-fn-b: func() -> my-type;
+	import my-fn-a: func(a: my-type) -> my-enum;
+
+	export my-export: func();
+}

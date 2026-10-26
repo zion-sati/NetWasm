@@ -98,7 +98,7 @@ public sealed class CoreModelTests
             1,
             "wasm64",
             new HostInteropStatusAbi(0, 1, 0),
-            new HostInteropTargetLayout(8, 8, 12, 8, 16),
+            new HostInteropTargetLayout(8, 8, 12, 8, 16, 0, 8),
             [],
             []);
 

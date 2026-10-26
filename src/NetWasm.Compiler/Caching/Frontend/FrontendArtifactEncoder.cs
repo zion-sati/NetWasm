@@ -16,7 +16,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 21;
+    private const ushort SchemaVersion = 22;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -159,6 +159,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write(item.HasMarshalling);
                     writer.Write(item.SuppressesGcTransition);
                     writer.Write(item.HasCustomCallingConvention);
+                    writer.Write(item.HasWasmImportLinkage);
                 });
                 WriteNullable(writer, value.NativeCallback, item =>
                 {

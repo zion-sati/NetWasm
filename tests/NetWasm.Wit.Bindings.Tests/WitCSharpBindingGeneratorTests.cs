@@ -42,7 +42,7 @@ public sealed class WitCSharpBindingGeneratorTests
             first, StringComparison.Ordinal);
         Assert.Contains("private static extern void __CanonicalExampleSmoke100Host_TransformValue(int __f0, nuint __result);",
             first, StringComparison.Ordinal);
-        Assert.Contains("[WitExport(\"\", \"run\")]", first,
+        Assert.Contains("[WitExport(\"run\")]", first,
             StringComparison.Ordinal);
         Assert.Contains("[WitImport(\"example:smoke@1.0.0/host\", \"transform-value\")]",
             first, StringComparison.Ordinal);
@@ -109,7 +109,46 @@ public sealed class WitCSharpBindingGeneratorTests
 
         var bindings = CreateGenerator().Generate(document, world);
 
-        Assert.Contains("[WitImport(\"\", \"ping\")]", bindings,
+        Assert.Contains("[WitImport(\"ping\")]", bindings,
+            StringComparison.Ordinal);
+    }
+
+    // Every function the world imports directly is a member of one class,
+    // which a class per function would declare again.
+    [Fact]
+    public void GeneratesTheWorldsDirectImportsInOneClass()
+    {
+        var ping = new WitFunction(
+            "ping",
+            [new WitParameter("value", new WitTypeReference.Primitive("u32"))],
+            new WitTypeReference.Primitive("u32"),
+            new WitFunctionKind("freestanding"));
+        var pong = ping with { Name = "pong" };
+        var document = Document(ping, ping);
+        var world = document.Worlds[0] with
+        {
+            Imports = [new WitWorldItem("ping", null, ping), new WitWorldItem("host", 0, null), new WitWorldItem("pong", null, pong)],
+        };
+
+        var bindings = CreateGenerator().Generate(document, world);
+
+        Assert.Single(bindings.Split('\n'), line => line == "public static partial class SmokeImports");
+        Assert.Contains("[WitImport(\"ping\")]", bindings, StringComparison.Ordinal);
+        Assert.Contains("[WitImport(\"pong\")]", bindings, StringComparison.Ordinal);
+        Assert.Contains("public static partial class HostImports", bindings, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UsesTheSelectedNamespace()
+    {
+        var function = new WitFunction("ping", [], null, new WitFunctionKind("freestanding"));
+        var document = Document(function, function);
+
+        var generator = CreateGenerator();
+
+        Assert.Contains("\nnamespace My.Bindings;\n", generator.Generate(document, document.Worlds[0], "My.Bindings"),
+            StringComparison.Ordinal);
+        Assert.Contains("\nnamespace NetWasm.Wit.Example.Smoke._1._0._0;\n", generator.Generate(document, document.Worlds[0]),
             StringComparison.Ordinal);
     }
 
@@ -134,7 +173,7 @@ public sealed class WitCSharpBindingGeneratorTests
             StringComparison.Ordinal);
         Assert.Contains("private static extern void __Canonical__Echo(nuint __f0, nuint __f1, nuint __result);",
             bindings, StringComparison.Ordinal);
-        Assert.Contains("[WitPostReturn(\"\", \"echo\")]", bindings,
+        Assert.Contains("[WitPostReturn(\"echo\")]", bindings,
             StringComparison.Ordinal);
         Assert.Contains("CanonicalAbi.Free(CanonicalAbi.ReadAddress(__result, 0));",
             bindings, StringComparison.Ordinal);

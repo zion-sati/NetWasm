@@ -63,9 +63,8 @@ public sealed class ComponentBoundaryEmitterTests
                 WasmOpcodes.LocalGet, 2, WasmOpcodes.LocalGet, 3,
                 WasmOpcodes.Call, (byte)reallocateIndex, WasmOpcodes.End],
             result.Functions[0].Body);
-        Assert.Contains(
-            (byte)imports.Resolve(RuntimeImportSymbol.Initialize),
-            result.Functions[1].Body);
+        Assert.True(result.Functions[1].Body.AsSpan().IndexOf(
+            [WasmOpcodes.Call, (byte)TestRuntimeInitialization.InitializerFunctionIndex]) >= 0);
         Assert.Equal([CliValueKind.I4], result.Functions[2].Type.Parameters.ToArray());
         Assert.Empty(result.RuntimeFeatures);
     }
@@ -310,7 +309,7 @@ public sealed class ComponentBoundaryEmitterTests
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var emitter = new ComponentBoundaryEmitter(
             imports,
-            EmitterTestSupport.CreateRuntimeStateInitializer(layouts, imports),
+            EmitterTestSupport.CreateRuntimeStateInitializer(),
             CreateCanonicalAbiFunctionTypePlanner(),
             localTimePreflight ?? new NoLocalTimePreflightCallEmitter(),
             new GeneratedFunctionWriterFactory());

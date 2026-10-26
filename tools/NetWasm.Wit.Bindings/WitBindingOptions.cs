@@ -6,11 +6,14 @@ internal enum WitBindingAccessibility
     Internal,
 }
 
+// `--wit -` reads WIT from standard input and `--output -` writes the source
+// to standard output.
 internal sealed record WitBindingOptions(
     string Wit,
     string? World,
     string Output,
-    WitBindingAccessibility Accessibility = WitBindingAccessibility.Public);
+    WitBindingAccessibility Accessibility = WitBindingAccessibility.Public,
+    string? Namespace = null);
 
 internal interface IWitBindingOptionsReader
 {
@@ -25,6 +28,7 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
         string? wit = null;
         string? world = null;
         string? output = null;
+        string? @namespace = null;
         var accessibility = WitBindingAccessibility.Public;
         var accessibilitySpecified = false;
 
@@ -48,6 +52,14 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
                     break;
                 case "--output":
                     output = SetOnce(output, value, option);
+                    break;
+                case "--namespace":
+                    @namespace = SetOnce(@namespace, value, option);
+                    if (!IsNamespace(@namespace))
+                    {
+                        throw WitBindingException.Invalid(
+                            $"'{value}' is not a C# namespace");
+                    }
                     break;
                 case "--accessibility":
                     if (accessibilitySpecified)
@@ -77,8 +89,16 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
             world,
             output ?? throw WitBindingException.Invalid(
                 "missing required option '--output'"),
-            accessibility);
+            accessibility,
+            @namespace);
     }
+
+    // Dot-separated identifiers, without the verbatim prefix.
+    private static bool IsNamespace(string value) =>
+        value.Split('.').All(static part =>
+            part.Length != 0 &&
+            (char.IsLetter(part[0]) || part[0] == '_') &&
+            part.All(static character => char.IsLetterOrDigit(character) || character == '_'));
 
     private static string SetOnce(string? current, string value, string option) =>
         current is null

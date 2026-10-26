@@ -64,9 +64,12 @@ public sealed class CompileCliOptionsTests
             "--javascript-export-boundary", "true",
             "--source", "Entry.cs",
             "--source", "Helpers.cs",
+            "--import-module", "host_ui",
+            "--import-module", "host_gl",
         ]);
 
         Assert.Equal(WasmTarget.Wasm64, options.Target);
+        Assert.Equal(["host_ui", "host_gl"], options.ImportModules.ToArray());
         Assert.Equal(["first.dll", "second.dll"], options.References);
         var export = Assert.Single(options.Exports);
         Assert.Equal("other", export.Name);

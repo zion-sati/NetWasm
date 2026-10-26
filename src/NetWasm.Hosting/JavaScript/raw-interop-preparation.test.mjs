@@ -22,6 +22,8 @@ const targetLayout = Object.freeze({
   stringDataOffset: 8,
   arrayLengthOffset: 4,
   arrayDataPointerOffset: 8,
+  spanReferenceOffset: 0,
+  spanLengthOffset: 4,
 });
 
 test("observes external callbacks but preserves recovered cross-service callback failures", async () => {
@@ -619,7 +621,7 @@ function expectBindFailure(contract, exports, pattern, consumerModules = {}) {
 
 function manifest({ imports = [], exports = [], callbacks } = {}) {
   return {
-    version: 1,
+    version: 2,
     target: "wasm32",
     statusAbi,
     targetLayout,
@@ -630,7 +632,7 @@ function manifest({ imports = [], exports = [], callbacks } = {}) {
 }
 
 function importDescriptor(module, name, result, parameters = []) {
-  return { module, name, parameters, result };
+  return { call: "status", module, name, parameters, result };
 }
 
 function exportDescriptor(name, result, parameters = []) {
@@ -647,3 +649,47 @@ function reporting() {
 async function settleReporting() {
   await new Promise(resolve => setImmediate(resolve));
 }
+
+// A scalar import takes its arguments and returns its result directly; it
+// writes nothing to memory and returns no status.
+test("binds a direct import to a call that returns its result", () => {
+  const raw = prepareRawNetWasmInterop({
+    manifest: manifest({
+      imports: [
+        { ...importDescriptor("consumer", "scale", "u32", ["u32", "f32"]), call: "direct" },
+        { ...importDescriptor("consumer", "note", "void", ["i64"]), call: "direct" },
+      ],
+    }),
+    runtimeModules: {},
+    consumerModules: {
+      consumer: {
+        scale: (value, factor) => value * factor,
+        note(value) { noted.push(value); },
+      },
+    },
+    diagnosticArtifacts: null,
+    managedExceptionReporting: reporting(),
+    stackTraceSymbols: { schemaVersion: 1, methods: [] },
+  });
+  const noted = [];
+  assert.equal(raw.imports.consumer.scale(-1 >>> 1, 2), 0xffff_fffe);
+  assert.equal(raw.imports.consumer.note(-3n), undefined);
+  assert.deepEqual(noted, [-3n]);
+  assert.throws(() => raw.imports.consumer.scale(-1, 2), NetWasmHostError);
+});
+
+// The final module calls an import module's functions as they are.
+test("binds an import module's functions unchanged", () => {
+  const createNode = type => BigInt(type) * 2n;
+  const prepare = consumerModules => prepareRawNetWasmInterop({
+    manifest: { ...manifest(), importModules: ["host_ui"] },
+    runtimeModules: {},
+    consumerModules,
+    diagnosticArtifacts: null,
+    managedExceptionReporting: reporting(),
+    stackTraceSymbols: { schemaVersion: 1, methods: [] },
+  });
+  const raw = prepare({ host_ui: { create_node: createNode } });
+  assert.strictEqual(raw.imports.host_ui.create_node, createNode);
+  assert.throws(() => prepare({}), error => error instanceof NetWasmHostError && /missing host module host_ui/.test(error.message));
+});

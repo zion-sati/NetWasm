@@ -58,7 +58,7 @@ public sealed class BrowserRawBindingsTests
             1,
             target == WasmTarget.Wasm64 ? "wasm64" : "wasm32",
             new(0, 1, 0),
-            new(4, 4, 8, 4, 8),
+            new(4, 4, 8, 4, 8, 0, 4),
             [],
             []));
         return new(

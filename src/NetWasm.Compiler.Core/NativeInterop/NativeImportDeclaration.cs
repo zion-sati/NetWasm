@@ -9,4 +9,9 @@ public sealed record NativeImportDeclaration(
     bool IsVarArg,
     bool HasMarshalling,
     bool SuppressesGcTransition,
-    bool HasCustomCallingConvention);
+    bool HasCustomCallingConvention)
+{
+    // [WasmImportLinkage]: the library name is the Wasm import module, so the
+    // host or another module supplies the function rather than a linked archive.
+    public bool HasWasmImportLinkage { get; init; }
+}

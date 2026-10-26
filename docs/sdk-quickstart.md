@@ -15,12 +15,20 @@ and earlier carry a [CoreCLR ARM64 thread-static publication race](https://githu
 that can terminate parallel compilation with `SIGSEGV`; Microsoft shipped the
 [fix](https://github.com/dotnet/runtime/pull/127843) in runtime 10.0.11.
 
+Linux distributions package only the 10.0.1xx SDK (for example `pacman -S
+dotnet-sdk` on Arch, `dnf install dotnet-sdk-10.0` on Fedora and RHEL), and
+its NuGet cannot restore a `netwasm0.1` project. On those distributions,
+install Microsoft's SDK with the
+[install script](https://learn.microsoft.com/dotnet/core/install/linux-scripted-manual)
+instead. A NetWasm project built with an older SDK stops with `NWSDK086`.
+
 The supported development hosts are Linux x64/ARM64, macOS ARM64 and Windows
 x64/ARM64. On Windows ARM64, use the native ARM64 .NET SDK; the x64 SDK under
 emulation cannot select the ARM64 host-tools package.
 The pinned Linux tools need glibc 2.28 or newer; the Linux package carries
-Node's `libatomic.so.1` dependency. The pinned macOS Node binary needs macOS
-13.5 or newer.
+Node's `libatomic.so.1` dependency. Musl-based distributions such as Alpine
+are not supported development hosts and stop with `NWSDK041`. The pinned
+macOS Node binary needs macOS 13.5 or newer.
 
 The default templates stay on .NET 10. To compile C# 15 source, select the
 .NET 11 SDK version recorded in [`eng/csharp15-toolchain.json`](../eng/csharp15-toolchain.json)
@@ -278,6 +286,12 @@ minifies only the JavaScript host closure needed by that deployment. It does
 not bundle unused local/component or browser/raw strategies into one universal
 file. Set `-p:NetWasmMinifyJavaScript=false` only when readable JavaScript is
 useful for diagnosis.
+
+A Release page or worker also trusts its deployment manifest instead of
+validating its shape again: the build validated it, and the host checks its
+SHA-256 against the digest built into the page. Set
+`-p:NetWasmValidateDeploymentManifest=true` to keep the check, as Debug builds
+do.
 
 ## 5. Create a dual-target library
 

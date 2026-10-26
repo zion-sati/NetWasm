@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 
 import { createContractError } from "./contract-error.mjs";
 import { createDeploymentExecution } from "./deployment-execution.mjs";
+import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { createFailureDetailRedaction } from "./failure-detail-redaction.mjs";
 import { createLocalArtifactTransport } from "./local-artifact-transport.mjs";
@@ -10,6 +11,7 @@ import { createLocalTimeZoneMaterializer } from "./local-timezone-materializer.m
 import { importLocalVerifiedModule } from "./local-verified-module-importer.mjs";
 import { createNetWasmExecutionFacade } from "./netwasm-execution-facade.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
+import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
@@ -30,11 +32,13 @@ export function createLocalExecutionComposition(
   }
   const transport = createLocalArtifactTransport({ manifestPath: options.manifestPath });
   const prepareProviders = createProviderExecutionComposition({
+    catalog: platformProviderCatalog,
     createShim: options.platform.createShim,
     hashBytes: transport.hashBytes,
     importModule: importLocalVerifiedModule,
     isAbsoluteHostPath: isAbsolute,
     readArtifact: transport.readArtifact,
+    snapshotManifest: validateDeploymentManifest,
   });
   const validateRequest = createExecutionRequestValidator({
     isAbsoluteHostPath: isAbsolute,

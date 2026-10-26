@@ -848,7 +848,7 @@ namespace System
         public static string Int32ToDecStr(int value) =>
             value >= 0 ?
                 UInt32ToDecStr((uint)value) :
-                NegativeInt32ToDecStr(value, -1, NumberFormatInfo.CurrentInfo.NegativeSign);
+                NegativeInt32ToDecStr(value, -1, NumberFormatInfo.CurrentNegativeSign);
 
         private static unsafe string NegativeInt32ToDecStr(int value, int digits, string sNegative)
         {
@@ -1280,7 +1280,7 @@ namespace System
         {
             return value >= 0 ?
                 UInt64ToDecStr((ulong)value) :
-                NegativeInt64ToDecStr(value, -1, NumberFormatInfo.CurrentInfo.NegativeSign);
+                NegativeInt64ToDecStr(value, -1, NumberFormatInfo.CurrentNegativeSign);
         }
 
         private static unsafe string NegativeInt64ToDecStr(long value, int digits, string sNegative)
@@ -1706,7 +1706,7 @@ namespace System
         {
             return Int128.IsPositive(value)
                  ? UInt128ToDecStr((UInt128)value, -1)
-                 : NegativeInt128ToDecStr(value, -1, NumberFormatInfo.CurrentInfo.NegativeSign);
+                 : NegativeInt128ToDecStr(value, -1, NumberFormatInfo.CurrentNegativeSign);
         }
 
         private static unsafe string NegativeInt128ToDecStr(Int128 value, int digits, string sNegative)

@@ -211,7 +211,6 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Enum", "InternalToDouble") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "InternalToDecimal") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "InternalToDateTime") => RuntimeIntrinsic.EnumConvert,
-                ("System.Enum", "InternalToType") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "System.IConvertible.ToBoolean") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "System.IConvertible.ToChar") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "System.IConvertible.ToSByte") => RuntimeIntrinsic.EnumConvert,
@@ -224,7 +223,6 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Enum", "System.IConvertible.ToUInt64") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "System.IConvertible.ToSingle") => RuntimeIntrinsic.EnumConvert,
                 ("System.Enum", "System.IConvertible.ToDouble") => RuntimeIntrinsic.EnumConvert,
-                ("System.Enum", "System.IConvertible.ToType") => RuntimeIntrinsic.EnumConvert,
                 (("System.IntPtr", "get_Size") or ("System.UIntPtr", "get_Size")) =>
                     RuntimeIntrinsic.NativeIntegerSize,
                 ("System.BitConverter", "SingleToInt32Bits") =>

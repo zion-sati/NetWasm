@@ -110,6 +110,13 @@ Every export must be a static method with a managed body. Export names must be
 unique; omitting the name uses the method name. NetWasm does not discover
 instance methods, assemblies, or attributes at runtime.
 
+An export can be declared in any assembly the application references, so a
+library can ship the callbacks its JavaScript host calls. All exports share the
+module's namespace. A name declared twice, in the application or in any library,
+fails the build with an error that names both declarations and their assemblies,
+so give a library's exports distinctive names, for example with a library
+prefix.
+
 Supply each application-owned module explicitly:
 
 ```xml
@@ -222,7 +229,7 @@ localhost or HTTPS so `crypto.subtle` is available.
 
 | Boundary | Supported managed signature |
 | --- | --- |
-| Synchronous `JSImport` | Primitive scalars, `string`, number arrays, `JSObject`, and one supported delegate parameter; primitive scalars, `string`, number arrays, `JSObject`, `JSSubscription`, or `void` result |
+| Synchronous `JSImport` | Primitive scalars, `string`, number arrays, spans of numbers, `JSObject`, and one supported delegate parameter; primitive scalars, `string`, number arrays, `JSObject`, `JSSubscription`, or `void` result |
 | Asynchronous `JSImport` | Ordinary `[JSImport]` returning `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>`; `T` is a primitive scalar, `string`, a number array, or `JSObject` |
 | Synchronous `JSExport` | Primitive scalar, `string`, number array, or `JSObject` parameters; the same result types or `void` |
 | Asynchronous `JSExport` | Primitive scalar, `string`, number array, or `JSObject` parameters and a `Task`/`ValueTask` result whose value is `void` or a primitive scalar |
@@ -234,6 +241,14 @@ arrays of `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`,
 `float`, or `double`. `JSObject` and
 `JSSubscription` own host handles and must be disposed. Disposing a
 subscription also releases the managed callback root.
+
+A synchronous `JSImport` whose parameters and result are all primitive scalars
+(or `void`) compiles to a direct WebAssembly call into the JavaScript function,
+with nothing copied through memory. Use such imports for calls on a hot path.
+Anything the function throws, including a result outside the managed type's
+range, reaches the caller as a `JSException`. To call a JavaScript function
+with plain WebAssembly values instead, see
+[Call host functions directly](static-native-interop.md#call-host-functions-directly).
 
 At the JavaScript boundary, 64-bit integers use `bigint`; 32-bit and smaller
 integers and floating-point values use `number`. `nint`/`nuint` follow the
@@ -255,6 +270,49 @@ directions, including the value a Promise settles with; arbitrary managed
 references are not passed to JavaScript. A `JSObject` that an imported Promise
 settles with is owned by the managed task result and must be disposed like any
 other `JSObject`.
+
+### Choose a copy or a view
+
+A number array and a span of numbers both reach JavaScript as the same typed
+array, but they make a different trade, so choose per parameter:
+
+| C# parameter | JavaScript receives | Cost | Safety |
+| --- | --- | --- | --- |
+| `T[]` | A copy of the array | One copy per call | Safe: JavaScript owns its copy, can keep it, and its writes never reach .NET |
+| `Span<T>` / `ReadOnlySpan<T>` | A view of the span's memory | No copy | Unchecked: valid only during the call, and JavaScript can read and write the application's memory through it |
+
+Use an array unless the copy matters, for example for large buffers on every
+frame. A view gives JavaScript direct access to the application's linear
+memory: if it keeps the view after the call, or writes through the view of a
+`ReadOnlySpan<T>`, it can corrupt the application's data. The damage stays
+inside the application; the view cannot reach the page or the browser.
+
+### Pass a buffer without a copy
+
+A synchronous `JSImport` can take a `Span<T>` or `ReadOnlySpan<T>` of any
+number-array element type. JavaScript receives the same typed array as for
+`T[]`, as a view of the span's memory, so nothing is copied:
+
+```csharp
+[JSImport("upload", "app.gl")]
+private static extern void Upload(ReadOnlySpan<byte> rgba, int width, int height);
+```
+
+```js
+export function upload(rgba, width, height) {
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+}
+```
+
+Writes to the view of a `Span<T>` reach the managed buffer. Never write to the
+view of a `ReadOnlySpan<T>`: a typed array cannot be made read-only, and the
+memory may hold data that C# treats as immutable. A span over an array,
+`stackalloc` memory or `NativeMemory` works the same way. The view is
+valid only until the function returns, so copy it with `slice()` to keep the
+data. Calling back into .NET can grow memory and detach the view, so read it
+before such a call. A span whose start is not a multiple of its element size
+cannot be viewed, and the call throws `JSException`. Asynchronous `JSImport`
+and `JSExport` do not take spans; use a number array instead.
 
 An export that takes a `JSObject` receives its own handle to the caller's
 object; dispose it when the export no longer needs it. An export that returns

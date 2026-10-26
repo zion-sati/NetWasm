@@ -41,14 +41,6 @@ internal sealed class EnumMetadataRequirementClassifier : IEnumMetadataRequireme
                 "An enum metadata request requires an enum intrinsic.");
         }
 
-        // The existing conversion intrinsic handles both numeric conversions
-        // and ToType's string branch. Only the latter consumes formatting data.
-        if (intrinsic == RuntimeIntrinsic.EnumConvert &&
-            methodName is "InternalToType" or "System.IConvertible.ToType")
-        {
-            return ManagedAlgorithms;
-        }
-
         return intrinsic == RuntimeIntrinsic.EnumIsDefined && !hasClosedEnum
             ? NameValues
             : payload;

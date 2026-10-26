@@ -66,6 +66,7 @@ internal sealed class ComponentContractResolver(
                 document,
                 world.Imports,
                 CanonicalAbiFunctionKind.ImportedResourceDrop))
+            .AddRange(ResolveWorldResourceDrops(metadata, symbols, document, world))
             .AddRange(ResolveResourceFunctions(
                 metadata,
                 symbols,
@@ -139,6 +140,29 @@ internal sealed class ComponentContractResolver(
         }
         return functions.ToImmutable();
     }
+
+    // A resource the world declares itself is always imported, and its drop
+    // comes from the root module.
+    private ImmutableArray<CanonicalAbiFunction> ResolveWorldResourceDrops(
+        MetadataCompilationSnapshot metadata,
+        ISymbolFormatter symbols,
+        WitDocument document,
+        WitWorld world) =>
+        [
+            .. world.Types
+                .OrderBy(pair => pair.Value)
+                .Select(pair => document.Types[pair.Value])
+                .Where(type => type.Kind.ValueKind == System.Text.Json.JsonValueKind.String &&
+                    type.Kind.GetString() == "resource")
+                .Select(resource => ResolveResourceFunction(
+                    metadata,
+                    symbols,
+                    document,
+                    string.Empty,
+                    string.Empty,
+                    resource.Name!,
+                    CanonicalAbiFunctionKind.ImportedResourceDrop)),
+        ];
 
     private CanonicalAbiFunction ResolveResourceFunction(
         MetadataCompilationSnapshot metadata,

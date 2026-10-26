@@ -25,7 +25,7 @@ public sealed class CompilerHostArtifactFormatterTests
         };
         var result = Result with
         {
-            InteropManifest = new(1, name, new(0, 1, 0), new(width, 8, 12, 8, 16), [], []),
+            InteropManifest = new(1, name, new(0, 1, 0), new(width, 8, 12, 8, 16, 0, width), [], []),
         };
 
         var artifacts = ((ICompilerHostArtifactFormatter)_formatter).Format(request, result);
@@ -137,7 +137,7 @@ public sealed class CompilerHostArtifactFormatterTests
 
     private static CompilationResult Result => new(
         [0, 97, 115, 109], null!, null!,
-        new(1, "wasm32", new(0, 1, 0), new(4, 8, 12, 8, 16), [], []), 1234)
+        new(1, "wasm32", new(0, 1, 0), new(4, 8, 12, 8, 16, 0, 4), [], []), 1234)
     {
         StackTraceSymbols = new([1, 2, 3], "application/json", "symbols.json", "hash"),
     };

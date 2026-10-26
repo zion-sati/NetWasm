@@ -61,13 +61,20 @@ public sealed class WitTypeDeclarationWriter(
                 writer.Line();
             }
         }
+        // Types the world declares itself, as `type` and `enum` items.
+        foreach (var pair in world.Types.OrderBy(pair => pair.Value))
+        {
+            WriteNamedType(writer, document, null, document.Types[pair.Value], imported: true, exported: false);
+            writer.Line();
+        }
         return writer.Text;
     }
 
+    // An interface's type, or the world's own when the interface is null.
     private void WriteNamedType(
         CodeWriter writer,
         WitDocument document,
-        WitInterface @interface,
+        WitInterface? @interface,
         WitTypeDefinition definition,
         bool imported,
         bool exported)
@@ -344,16 +351,18 @@ public sealed class WitTypeDeclarationWriter(
         writer.Line("}");
     }
 
+    // An interface's resource, or the world's own when the interface is null;
+    // a world's own resource is always imported.
     private static void WriteResource(
         CodeWriter writer,
-        WitInterface @interface,
+        WitInterface? @interface,
         string name,
         string witName,
         bool imported,
         bool exported)
     {
-        var interfaceName = $"{@interface.Package}/{@interface.Name}";
-        writer.Line($"[WitResource(\"{interfaceName}\", \"{witName}\")]");
+        var interfaceName = @interface is null ? string.Empty : $"{@interface.Package}/{@interface.Name}";
+        writer.Line(WitAttributeSyntax.Format("WitResource", interfaceName, witName));
         writer.Line($"public sealed class {name} : IDisposable");
         writer.Line("{");
         writer.Indent();
@@ -466,7 +475,7 @@ public sealed class WitTypeDeclarationWriter(
         writer.Line();
         if (imported)
         {
-            writer.Line($"[WitImport(\"{interfaceName}\", \"[resource-drop]{witName}\")]");
+            writer.Line(WitAttributeSyntax.Format("WitImport", interfaceName, $"[resource-drop]{witName}"));
             writer.Line("private static extern void DropImported(uint handle);");
         }
         if (exported)
@@ -508,14 +517,14 @@ public sealed class WitTypeDeclarationWriter(
             writer.Unindent();
             writer.Line("}");
             writer.Line();
-            writer.Line($"[WitImport(\"{interfaceName}\", \"[export-resource-new]{witName}\")]");
+            writer.Line(WitAttributeSyntax.Format("WitImport", interfaceName, $"[export-resource-new]{witName}"));
             writer.Line("private static extern uint ExportNew(uint representation);");
-            writer.Line($"[WitImport(\"{interfaceName}\", \"[export-resource-rep]{witName}\")]");
+            writer.Line(WitAttributeSyntax.Format("WitImport", interfaceName, $"[export-resource-rep]{witName}"));
             writer.Line("private static extern uint ExportRep(uint handle);");
-            writer.Line($"[WitImport(\"{interfaceName}\", \"[export-resource-drop]{witName}\")]");
+            writer.Line(WitAttributeSyntax.Format("WitImport", interfaceName, $"[export-resource-drop]{witName}"));
             writer.Line("private static extern void DropExported(uint handle);");
             writer.Line();
-            writer.Line($"[WitExport(\"{interfaceName}\", \"[resource-dtor]{witName}\")]");
+            writer.Line(WitAttributeSyntax.Format("WitExport", interfaceName, $"[resource-dtor]{witName}"));
             writer.Line("private static void DestroyExported(uint representation)");
             writer.Line("{");
             writer.Indent();

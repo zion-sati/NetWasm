@@ -36,5 +36,8 @@ internal sealed record RuntimeInitializationPlan
 
     public int? StackTraceSymbolRegistrationGuardAddress { get; init; }
 
+    // The generated function that holds this initialization; every entry calls it.
+    public int? InitializerFunctionIndex { get; init; }
+
     public ImmutableArray<StackTraceSymbolData> StackTraceSymbols { get; init; } = [];
 }

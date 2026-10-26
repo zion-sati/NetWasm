@@ -166,6 +166,99 @@ public sealed class HostInteropCompilationTests
         Assert.False(exports["oblivious"].NonNullableResult);
     }
 
+    // Issue #120: as in .NET, a JSExport in a referenced library is exported,
+    // so a framework library can ship the callbacks its JavaScript host calls.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void CompilerExportsJSExportsDeclaredInReferencedLibraries(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var library = assets.CompileSource(
+            "ExportLibrary",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static partial class LibraryExports
+            {
+                [JSExport("libraryCallback")]
+                public static void LibraryCallback(float width, float height)
+                {
+                }
+
+                [JSExport]
+                public static int Twice(int value) => value * 2;
+            }
+            """);
+        var assembly = assets.CompileSource(
+            "ExportApplication",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("appCallback")]
+                public static int AppCallback(int value) => value + 1;
+            }
+            """,
+            library);
+        var options = CompilerTestSupport.CreateReactorOptions(assets, assembly, "EntryPoint", "Run", target);
+
+        var result = NetWasmCompiler.Compile(options with
+        {
+            ReferencePaths = [.. options.ReferencePaths, library],
+            UseJavaScriptExportBoundary = true,
+        });
+
+        var exports = result.InteropManifest.Exports.ToDictionary(export => export.Name);
+        Assert.Equal(["Twice", "appCallback", "libraryCallback"], exports.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(["width", "height"], exports["libraryCallback"].ParameterNames.ToArray());
+    }
+
+    [Fact]
+    public void CompilerRejectsAJSExportNameDeclaredByTwoAssemblies()
+    {
+        using var assets = TestAssets.Create();
+        var library = assets.CompileSource(
+            "ResizeLibrary",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static partial class LibraryExports
+            {
+                [JSExport("resize")]
+                public static void OnResize(int width) { }
+            }
+            """);
+        var assembly = assets.CompileSource(
+            "ResizeApplication",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("resize")]
+                public static void Resize(int width) { }
+            }
+            """,
+            library);
+        var options = CompilerTestSupport.CreateReactorOptions(assets, assembly, "EntryPoint", "Run");
+
+        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(options with
+        {
+            ReferencePaths = [.. options.ReferencePaths, library],
+            UseJavaScriptExportBoundary = true,
+        }));
+
+        Assert.Contains("duplicate JSExport name 'resize'", error.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("in ResizeApplication", error.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("in ResizeLibrary", error.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void CompilerBuildsPromiseImportWithSuccessAndFailureCallbacks()
     {
@@ -253,6 +346,76 @@ public sealed class HostInteropCompilationTests
         }
     }
 
+    // A [WasmImportLinkage] declaration imports its entry point from the module
+    // its library names, which the host supplies; no linked archive defines it.
+    [Fact]
+    public void CompilerImportsWasmImportLinkageDeclarationsFromTheHost()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "WasmImportLinkageFixture",
+            """
+            using System.Runtime.InteropServices;
+
+            public static class HostUi
+            {
+                [DllImport("host_ui", EntryPoint = "create_node"), WasmImportLinkage]
+                public static extern ulong CreateNode(uint type);
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => (int)HostUi.CreateNode((uint)input);
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "EntryPoint",
+            "Run",
+            [])
+        {
+            ImportModules = ["host_gl"],
+        });
+
+        var import = Assert.Single(result.FunctionImports, candidate => candidate.Name == "create_node");
+        Assert.Equal("host_ui", import.Module);
+        Assert.Equal(CliValueKind.I8, import.Type.Result);
+        Assert.Equal([CliValueKind.I4], import.Type.Parameters.ToArray());
+        Assert.Equal(["host_gl", "host_ui"], result.InteropManifest.ImportModules.ToArray());
+        Assert.DoesNotContain(result.NativeImports, native => native.EntryPoint == "create_node");
+        Assert.Empty(result.InteropManifest.Imports);
+    }
+
+    [Theory]
+    [InlineData("netwasm.runtime.v1")]
+    [InlineData("wasi:io/streams@0.2.0")]
+    [InlineData("wasi_snapshot_preview1")]
+    public void CompilerRejectsReservedWasmImportLinkageModules(string module)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ReservedWasmImportLinkageFixture",
+            $$"""
+            using System.Runtime.InteropServices;
+
+            public static class Host
+            {
+                [DllImport("{{module}}", EntryPoint = "read"), WasmImportLinkage]
+                public static extern int Read();
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => Host.Read();
+            }
+            """);
+
+        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [])));
+        Assert.Contains("[WasmImportLinkage]", error.Message);
+    }
+
     [Fact]
     public void CompilerBuildsDeterministicScalarHostInteropManifest()
     {
@@ -313,12 +476,18 @@ public sealed class HostInteropCompilationTests
         Assert.Equal("i32", import.Parameters[0]);
         Assert.Equal("i32", import.Parameters[1]);
         Assert.Equal("i32", import.Result);
+        // A scalar import takes its arguments and returns its result directly.
+        Assert.Equal(JavaScriptDirectImport.DirectCall, import.Call);
         var physicalImport = result.FunctionImports.Single(candidate =>
             candidate.Module == import.Module && candidate.Name == import.Name);
-        Assert.Equal([CliValueKind.I4, CliValueKind.I4, CliValueKind.ManagedAddress],
-            physicalImport.Type.Parameters.ToArray());
+        Assert.Equal([CliValueKind.I4, CliValueKind.I4], physicalImport.Type.Parameters.ToArray());
         Assert.Equal(CliValueKind.I4, physicalImport.Type.Result);
         var echoImport = result.InteropManifest.Imports[1];
+        Assert.Equal(JavaScriptDirectImport.StatusCall, echoImport.Call);
+        var echoPhysical = result.FunctionImports.Single(candidate =>
+            candidate.Module == echoImport.Module && candidate.Name == echoImport.Name);
+        Assert.Equal(CliValueKind.ManagedAddress, echoPhysical.Type.Parameters[^1]);
+        Assert.Equal(CliValueKind.I4, echoPhysical.Type.Result);
         Assert.Equal("echo", echoImport.Name);
         Assert.Equal("string", Assert.Single(echoImport.Parameters));
         Assert.Equal("string", echoImport.Result);
@@ -329,6 +498,9 @@ public sealed class HostInteropCompilationTests
         var reportImport = result.InteropManifest.Imports[3];
         Assert.Equal("report", reportImport.Name);
         Assert.Equal("void", reportImport.Result);
+        Assert.Equal(JavaScriptDirectImport.DirectCall, reportImport.Call);
+        Assert.Equal(CliValueKind.Void, result.FunctionImports.Single(candidate =>
+            candidate.Module == reportImport.Module && candidate.Name == reportImport.Name).Type.Result);
         var export = Assert.Single(result.InteropManifest.Exports);
         Assert.Equal("twice", export.Name);
         Assert.Equal("i32", Assert.Single(export.Parameters));
@@ -576,6 +748,111 @@ public sealed class HostInteropCompilationTests
             Assert.Contains(result.FunctionImports,
                 import => import.Module == "netwasm.host.v1" && import.Name == "interop_copy_bytes");
         }
+    }
+
+    [Fact]
+    public void CompilerPassesSpanJSImportParametersAsMemoryViews()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "SpanViewHostBoundaryFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class Host
+            {
+                [JSImport("upload", "consumer.views")]
+                public static extern int Upload(Span<byte> pixels, ReadOnlySpan<double> samples, Span<long> ids, int count);
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    Span<long> ids = stackalloc long[2];
+                    return Host.Upload(new byte[input], new[] { 1.5, 2.5 }, ids, input);
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(new CompilerOptions(
+                assembly,
+                [assets.CoreLib],
+                "EntryPoint",
+                "Run",
+                [],
+                target));
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var upload = Assert.Single(result.InteropManifest.Imports, candidate => candidate.Name == "upload");
+            Assert.Equal(["u8-view", "f64-view", "i64-view", "i32"], upload.Parameters.ToArray());
+            Assert.Equal("i32", upload.Result);
+            Assert.Equal(0, result.InteropManifest.TargetLayout.SpanReferenceOffset);
+            Assert.Equal(target == WasmTarget.Wasm32 ? 4 : 8, result.InteropManifest.TargetLayout.SpanLengthOffset);
+            // Each span passes the address of its copy; the value frame comes last.
+            var import = Assert.Single(result.FunctionImports, candidate => candidate.Module == "consumer.views");
+            Assert.Equal(
+                [CliValueKind.ManagedAddress, CliValueKind.ManagedAddress, CliValueKind.ManagedAddress,
+                    CliValueKind.I4, CliValueKind.ManagedAddress],
+                import.Type.Parameters.ToArray());
+        }
+    }
+
+    [Fact]
+    public void CompilerRejectsSpanParametersOnAsynchronousJSImport()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "AsyncSpanImportFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class Host
+            {
+                [JSImport("upload", "consumer.views")]
+                public static extern Task<int> Upload(ReadOnlySpan<byte> pixels);
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => Host.Upload(new byte[input]).Result;
+            }
+            """);
+
+        var exception = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
+            new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [])));
+
+        Assert.Contains("an asynchronous JSImport cannot take them", exception.Message);
+    }
+
+    [Fact]
+    public void CompilerRejectsSpanJSExportParameters()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "SpanExportFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("measure")]
+                public static int Measure(Span<byte> pixels) => pixels.Length;
+            }
+            """);
+
+        var exception = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
+            new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [])));
+
+        Assert.Contains("JSExport currently supports", exception.Message);
     }
 
     [Fact]

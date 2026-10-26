@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createProviderMetadataValidator } from "./provider-metadata-validator.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
+import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { createPlatformProviderLoader } from "./platform-provider-loader.mjs";
 import {
   createPreview2PlatformProviderRegistry,
@@ -10,6 +11,7 @@ import {
 
 test("composes the generated catalog into the existing validated registry", () => {
   const registry = createPreview2PlatformProviderRegistry({
+    catalog: platformProviderCatalog,
     createShim() {},
     validateProviderMetadata: createProviderMetadataValidator({ selectProviderKind }),
   });
@@ -33,6 +35,7 @@ test("shares one shim through the existing selected-provider loader", async () =
     "wasi:io/streams@0.2.11": Object.freeze({ OutputStream }),
   };
   const registry = createPreview2PlatformProviderRegistry({
+    catalog: platformProviderCatalog,
     createShim() {
       shimCreations++;
       return { getImportObject: () => sources };
@@ -82,6 +85,7 @@ test("shares one shim through the existing selected-provider loader", async () =
 
 test("validates exact composition dependencies", () => {
   const valid = {
+    catalog: platformProviderCatalog,
     createShim() {},
     validateProviderMetadata() {},
   };
@@ -97,6 +101,23 @@ test("validates exact composition dependencies", () => {
     ...valid,
     validateProviderMetadata: null,
   }), /are required/u);
+  assert.throws(() => createPreview2PlatformProviderRegistry({ ...valid, catalog: null }), TypeError);
+});
+
+// Issue #121: a page entry passes only the providers its application links.
+test("a registry built from a catalog subset resolves only the selected providers", () => {
+  const selected = new Set(["wasi:cli/environment@0.2.11", "wasi:io/streams@0.2.11"]);
+  const registry = createPreview2PlatformProviderRegistry({
+    catalog: Object.freeze({
+      ...platformProviderCatalog,
+      providers: Object.freeze(platformProviderCatalog.providers.filter(provider => selected.has(provider.module))),
+    }),
+    createShim() {},
+    validateProviderMetadata: createProviderMetadataValidator({ selectProviderKind }),
+  });
+
+  assert.equal(registry.resolve({ module: "wasi:io/streams@0.2.11" }).provider.module, "wasi:io/streams@0.2.11");
+  assert.throws(() => registry.resolve({ module: "wasi:http/outgoing-handler@0.2.11" }));
 });
 
 function invalidObjects(valid) {

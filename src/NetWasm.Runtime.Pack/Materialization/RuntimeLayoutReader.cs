@@ -48,6 +48,9 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             layout.NativeImports.Any(import =>
                 string.IsNullOrWhiteSpace(import.LibraryName) ||
                 string.IsNullOrWhiteSpace(import.EntryPoint)) ||
+            layout.ImportModules.IsDefault ||
+            layout.ImportModules.Any(string.IsNullOrWhiteSpace) ||
+            layout.ImportModules.Distinct(StringComparer.Ordinal).Count() != layout.ImportModules.Length ||
             !ValidRuntimeFeatures(layout.RuntimeFeatures) ||
             !ValidCallbackSupport(layout.NativeCallbackSupport))
         {
@@ -67,6 +70,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             "managedExecutableEntryPoint",
             "runtimeFeatures",
             "nativeImports",
+            "importModules",
             "nativeCallbackSupport",
         ]);
         if (!fields.TryGetValue("schemaVersion", out var schema) || schema.ValueKind != JsonValueKind.Number ||
@@ -75,6 +79,12 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             throw InvalidContract();
         if (fields.TryGetValue("runtimeFeatures", out var features) &&
             features.ValueKind != JsonValueKind.Array)
+        {
+            throw InvalidContract();
+        }
+        if (fields.TryGetValue("importModules", out var importModules) &&
+            (importModules.ValueKind != JsonValueKind.Array ||
+                importModules.EnumerateArray().Any(module => module.ValueKind != JsonValueKind.String)))
         {
             throw InvalidContract();
         }

@@ -19,7 +19,11 @@ internal sealed class WasmModuleEmissionResultBuilder(
         ArgumentNullException.ThrowIfNull(request);
         var module = request.Module;
         var target = WasmTargetLayout.For(module.Target);
-        var nativeImports = request.NativeImports.Methods.Select(import => new WasmNativeImport(
+        // An archive linked into the runtime defines each native import except
+        // a [WasmImportLinkage] one, which stays an import of the final module.
+        var nativeImports = request.NativeImports.Methods
+            .Where(import => !import.Abi.Import.HasWasmImportLinkage)
+            .Select(import => new WasmNativeImport(
             import.Abi.Import.LibraryName,
             import.Abi.Import.EntryPoint,
             [.. import.Import.Type.Parameters.Select(parameter => WasmValueTypes.FromCli(parameter, target))],
@@ -68,6 +72,11 @@ internal sealed class WasmModuleEmissionResultBuilder(
         {
             FunctionImports = [.. module.FunctionImports],
             NativeImports = nativeImports,
+            ImportModules = [.. request.NativeImports.Methods
+                .Where(import => import.Abi.Import.HasWasmImportLinkage)
+                .Select(import => import.Abi.Import.LibraryName)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)],
             RuntimeFeatures = request.RuntimeFeatures,
             NativeCallbackSupport = callbackSupport,
         };

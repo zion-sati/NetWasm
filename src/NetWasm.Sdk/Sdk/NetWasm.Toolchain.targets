@@ -74,6 +74,8 @@
     <NetWasmWitWorkerResolvedPackagePath Condition="'$(NetWasmWitWorkerResolvedPackagePath)' == '' AND '$(NetWasmIntermediateOutputPath)' != ''">$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(NetWasmIntermediateOutputPath)', 'wit-worker-source'))))</NetWasmWitWorkerResolvedPackagePath>
     <NetWasmMinifyJavaScript Condition="'$(NetWasmMinifyJavaScript)' == '' AND '$(Configuration)' == 'Release'">true</NetWasmMinifyJavaScript>
     <NetWasmMinifyJavaScript Condition="'$(NetWasmMinifyJavaScript)' == ''">false</NetWasmMinifyJavaScript>
+    <NetWasmValidateDeploymentManifest Condition="'$(NetWasmValidateDeploymentManifest)' == '' AND '$(Configuration)' == 'Release'">false</NetWasmValidateDeploymentManifest>
+    <NetWasmValidateDeploymentManifest Condition="'$(NetWasmValidateDeploymentManifest)' == ''">true</NetWasmValidateDeploymentManifest>
     <NetWasmNetworkPolicy Condition="'$(NetWasmNetworkPolicy)' == ''">allowAll</NetWasmNetworkPolicy>
     <NetWasmRandomness Condition="'$(NetWasmRandomness)' == ''">true</NetWasmRandomness>
     <NetWasmPublishCompilerArtifacts>false</NetWasmPublishCompilerArtifacts>
@@ -81,22 +83,50 @@
     <!-- The ordinary Run target consumes these standard .NET properties. -->
     <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmNodePath)' != ''">$(NetWasmNodePath)</NetWasmRunNodeCommand>
     <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NETWASM_NODE_PATH)' != ''">$(NETWASM_NODE_PATH)</NetWasmRunNodeCommand>
-    <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmHostToolsPackageRoot)' != '' AND ('$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64')">$([System.IO.Path]::Combine('$(NetWasmHostToolsPackageRoot)', 'tools', 'bin', 'node.exe'))</NetWasmRunNodeCommand>
+    <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmHostToolsPackageRoot)' != '' AND ('$(_NetWasmHostRid)' == 'win-x64' OR '$(_NetWasmHostRid)' == 'win-arm64')">$([System.IO.Path]::Combine('$(NetWasmHostToolsPackageRoot)', 'tools', 'bin', 'node.exe'))</NetWasmRunNodeCommand>
     <NetWasmRunNodeCommand Condition="'$(NetWasmRunNodeCommand)' == '' AND '$(NetWasmHostToolsPackageRoot)' != ''">$([System.IO.Path]::Combine('$(NetWasmHostToolsPackageRoot)', 'tools', 'bin', 'node'))</NetWasmRunNodeCommand>
     <RunCommand Condition="'$(OutputType)' == 'Exe' AND '$(RunCommand)' == ''">$(NetWasmRunNodeCommand)</RunCommand>
     <RunArguments Condition="'$(OutputType)' == 'Exe' AND '$(RunArguments)' == ''">&quot;$(NetWasmLocalLauncherPath)&quot; --forward-command-result --descriptor &quot;$(NetWasmExecutionDescriptorPath)&quot; --request &quot;$(NetWasmExecutionRequestPath)&quot; --result &quot;$(NetWasmExecutionResultPath)&quot; --replace-result --</RunArguments>
     <RunWorkingDirectory Condition="'$(OutputType)' == 'Exe' AND '$(RunWorkingDirectory)' == ''">$(MSBuildProjectDirectory)</RunWorkingDirectory>
   </PropertyGroup>
 
+  <Target Name="NetWasmSdkValidateSdkVersion"
+          BeforeTargets="CollectPackageReferences;GenerateRestoreGraphFile;Restore;CoreCompile;Run;Publish"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NETCoreSdkVersion)' != ''">
+    <PropertyGroup>
+      <_NetWasmSdkVersionSupported>$([MSBuild]::VersionGreaterThanOrEquals('$(NETCoreSdkVersion)', '$(_NetWasmMinimumSdkVersion)'))</_NetWasmSdkVersionSupported>
+      <_NetWasmSdkInstallAdvice>Install it from https://dotnet.microsoft.com/download/dotnet/10.0.</_NetWasmSdkInstallAdvice>
+      <!-- A distribution-built SDK reports a distribution RID, not the portable one. -->
+      <_NetWasmSdkInstallAdvice Condition="'$(NETCoreSdkRuntimeIdentifier)' != '$(_NetWasmHostRid)'">Linux distribution packages ship the 10.0.1xx SDK, which cannot restore netwasm0.1 projects. Install Microsoft's .NET SDK instead: https://learn.microsoft.com/dotnet/core/install/linux-scripted-manual</_NetWasmSdkInstallAdvice>
+    </PropertyGroup>
+    <Error Code="NWSDK086"
+           Condition="'$(_NetWasmSdkVersionSupported)' != 'true'"
+           Text="NetWasm needs .NET SDK $(_NetWasmMinimumSdkVersion) or newer; this build uses $(NETCoreSdkVersion) ($(NETCoreSdkRuntimeIdentifier)). $(_NetWasmSdkInstallAdvice)" />
+  </Target>
+
+  <!-- The host supplies an import module's functions to raw WebAssembly; a
+       component imports host functions through WIT instead. -->
+  <Target Name="NetWasmValidateImportModules"
+          BeforeTargets="CoreCompile"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(NetWasmImportModule)' != '' AND '$(NetWasmRawWasm)' != 'true'">
+    <Error Code="NWSDK087"
+           Text="NetWasmImportModule needs raw WebAssembly output: use JsModule, or set NetWasmRawWasm=true for an executable. A component imports host functions through WIT." />
+  </Target>
+
   <Target Name="NetWasmSdkValidateHostToolsHost"
           BeforeTargets="CollectPackageReferences;GenerateRestoreGraphFile;Restore;CoreCompile;Run;Publish"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRequiresHostTools)' == 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '')">
     <Error Code="NWSDK041"
            Condition="'$(NetWasmHostToolsPackageId)' == ''"
-           Text="NetWasm does not support this development host ($(NETCoreSdkRuntimeIdentifier)). Supported hosts: linux-x64, linux-arm64, osx-arm64, win-x64, win-arm64." />
+           Text="NetWasm does not support this development host ($(_NetWasmHostRid)). Supported hosts: linux-x64, linux-arm64, osx-arm64, win-x64, win-arm64." />
     <Error Code="NWSDK044"
-           Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' AND '$(NetWasmBuildHostOSArchitecture)' == 'Arm64'"
+           Condition="'$(_NetWasmHostRid)' == 'win-x64' AND '$(NetWasmBuildHostOSArchitecture)' == 'Arm64'"
            Text="An x64 .NET SDK on Windows ARM64 cannot select the NetWasm x64 host-tools package. Install the native ARM64 .NET SDK and restore again." />
+    <!-- The host tools differ per host, so their lock file must too; only the
+         property, not the item, can select a host-specific lock file name. -->
+    <Error Code="NWSDK089"
+           Condition="'@(NetWasmWit)' != '' AND '$(NetWasmRequiresHostTools)' != 'true' AND '$(RestorePackagesWithLockFile)' == 'true' AND '$(NuGetLockFilePath)' == ''"
+           Text="NetWasmWit restores the development-host tools, which differ per host. With RestorePackagesWithLockFile, also set NetWasmRequiresHostTools to true so each host gets its own lock file." />
   </Target>
 
   <Target Name="NetWasmSdkReportHostLockFileMigration"
@@ -113,7 +143,7 @@
   <Target Name="NetWasmSdkResolveBuildEnvironment"
           BeforeTargets="CoreCompile;Publish;Run"
           DependsOnTargets="ResolvePackageAssets"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRequiresHostTools)' == 'true' AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '') AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK034"
            Condition="'$(NetWasmToolchainPackageRoot)' == '' OR !Exists('$(NetWasmToolchainPackageRoot)')"
            Text="NetWasm.Toolchain was not restored as a platform-neutral package." />
@@ -127,7 +157,7 @@
                                         HostToolsPackageRoot="$(NetWasmHostToolsPackageRoot)"
                                         HostToolsPackageId="$(NetWasmHostToolsPackageId)"
                                         HostToolsPackageVersion="$(NetWasmHostToolsPackageVersion)"
-                                        HostRid="$(NETCoreSdkRuntimeIdentifier)">
+                                        HostRid="$(_NetWasmHostRid)">
       <Output TaskParameter="NodePath" PropertyName="NetWasmNodePath" />
       <Output TaskParameter="NodeSource" PropertyName="NetWasmNodeSource" />
       <Output TaskParameter="NodeVersion" PropertyName="NetWasmNodeVersion" />
@@ -227,6 +257,78 @@
         <ClientClass Condition="'$(NetWasmWorkerClientClass)' == ''">$([System.Text.RegularExpressions.Regex]::Replace('$(AssemblyName)', '^(?=[0-9])|[^a-zA-Z0-9_]', '_'))WorkerClient</ClientClass>
       </_NetWasmWitWorkerClientContract>
     </ItemGroup>
+  </Target>
+
+  <!-- C# bindings for each NetWasmWit item. Include is a WIT file or a WIT
+       package directory; World selects a world (default: the package's only
+       one), Namespace sets the generated namespace and Accessibility is Public
+       (default) or Internal. -->
+  <Target Name="_NetWasmResolveWitBindings"
+          BeforeTargets="CoreCompile"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(NetWasmWit)' != ''">
+    <PropertyGroup>
+      <_NetWasmWitBindingDirectory>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'wit-bindings'))))</_NetWasmWitBindingDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NetWasmWitBinding Remove="@(_NetWasmWitBinding)" />
+      <!-- A directory loses its trailing separator: on Windows "C:\wit\" would
+           escape the closing quote of its command-line argument. -->
+      <_NetWasmWitBinding Include="@(NetWasmWit->'$([System.String]::Copy('%(FullPath)').TrimEnd('\').TrimEnd('/'))')">
+        <Accessibility>$([System.String]::Copy('%(NetWasmWit.Accessibility)').ToLowerInvariant())</Accessibility>
+      </_NetWasmWitBinding>
+      <_NetWasmWitBinding>
+        <BindingPath>$(_NetWasmWitBindingDirectory)/%(_NetWasmWitBinding.Filename)%(_NetWasmWitBinding.Extension).g.cs</BindingPath>
+      </_NetWasmWitBinding>
+      <_NetWasmWitBinding>
+        <Arguments Condition="'%(_NetWasmWitBinding.World)' != ''">--world &quot;%(_NetWasmWitBinding.World)&quot;</Arguments>
+      </_NetWasmWitBinding>
+      <_NetWasmWitBinding>
+        <Arguments Condition="'%(_NetWasmWitBinding.Namespace)' != ''">%(_NetWasmWitBinding.Arguments) --namespace &quot;%(_NetWasmWitBinding.Namespace)&quot;</Arguments>
+      </_NetWasmWitBinding>
+      <_NetWasmWitBinding>
+        <Arguments Condition="'%(_NetWasmWitBinding.Accessibility)' != ''">%(_NetWasmWitBinding.Arguments) --accessibility %(_NetWasmWitBinding.Accessibility)</Arguments>
+      </_NetWasmWitBinding>
+      <_NetWasmWitBindingInput Remove="@(_NetWasmWitBindingInput)" />
+      <_NetWasmWitBindingInput Include="%(_NetWasmWitBinding.Identity)/**/*.wit"
+                               Condition="Exists('%(_NetWasmWitBinding.Identity)/')" />
+      <_NetWasmWitBindingInput Include="@(_NetWasmWitBinding)"
+                               Condition="!Exists('%(_NetWasmWitBinding.Identity)/')" />
+      <_NetWasmWitBindingOutput Remove="@(_NetWasmWitBindingOutput)" />
+      <_NetWasmWitBindingOutput Include="@(_NetWasmWitBinding->'%(BindingPath)')" />
+    </ItemGroup>
+    <RemoveDuplicates Inputs="@(_NetWasmWitBindingOutput)">
+      <Output TaskParameter="Filtered" ItemName="_NetWasmUniqueWitBindingOutput" />
+    </RemoveDuplicates>
+    <Error Code="NWSDK088"
+           Condition="'@(_NetWasmWitBindingOutput->Count())' != '@(_NetWasmUniqueWitBindingOutput->Count())'"
+           Text="Each NetWasmWit item needs a distinct file or directory name, because its bindings file is named after it." />
+    <Error Code="NWSDK090"
+           Condition="'%(_NetWasmWitBinding.Accessibility)' != '' AND '%(_NetWasmWitBinding.Accessibility)' != 'public' AND '%(_NetWasmWitBinding.Accessibility)' != 'internal'"
+           Text="NetWasmWit Accessibility must be Public or Internal." />
+    <ItemGroup>
+      <Compile Include="@(_NetWasmWitBindingOutput)" />
+      <FileWrites Include="@(_NetWasmWitBindingOutput)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="NetWasmGenerateWitBindings"
+          BeforeTargets="NetWasmWriteCompilationIdentity;CoreCompile"
+          DependsOnTargets="NetWasmSdkResolveBuildEnvironment;_NetWasmResolveWitBindings"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(NetWasmWit)' != '' AND '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(_NetWasmWitBindingInput);$(MSBuildProjectFullPath)"
+          Outputs="@(_NetWasmWitBindingOutput)">
+    <PropertyGroup>
+      <_NetWasmWitBindingGeneratorPath>$([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'netwasm.wit.bindings.tool', '$(NetWasmSdkPackageVersion)', 'tools', 'net10.0', 'any', 'NetWasm.Wit.Bindings.dll'))</_NetWasmWitBindingGeneratorPath>
+      <_NetWasmWitBindingDotNetHost Condition="'$(DotNetHostPath)' != ''">$(DotNetHostPath)</_NetWasmWitBindingDotNetHost>
+      <_NetWasmWitBindingDotNetHost Condition="'$(_NetWasmWitBindingDotNetHost)' == '' AND '$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</_NetWasmWitBindingDotNetHost>
+      <_NetWasmWitBindingDotNetHost Condition="'$(_NetWasmWitBindingDotNetHost)' == ''">dotnet</_NetWasmWitBindingDotNetHost>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_NetWasmWitBindingGeneratorPath)')"
+           Text="The restored NetWasm.Wit.Bindings.Tool generator is missing. Run dotnet restore." />
+    <MakeDir Directories="$(_NetWasmWitBindingDirectory)" />
+    <!-- The generator reads WIT through wasm-tools, which runs on the restored Node. -->
+    <Exec EnvironmentVariables="DOTNET_ROLL_FORWARD=Major;NETWASM_NODE_PATH=$(NetWasmNodePath)"
+          Command="&quot;$(_NetWasmWitBindingDotNetHost)&quot; &quot;$(_NetWasmWitBindingGeneratorPath)&quot; --wit &quot;%(_NetWasmWitBinding.Identity)&quot; --output &quot;%(_NetWasmWitBinding.BindingPath)&quot; %(_NetWasmWitBinding.Arguments)" />
   </Target>
 
   <Target Name="NetWasmSdkGenerateWitWorkerClients"
@@ -484,10 +586,27 @@
                                      OutputPath="$(_NetWasmTimeZoneSidecarPath)" />
   </Target>
 
+  <!-- Release deployments minify the generated raw adapter like the hosting
+       bundles. Its digest is taken from the published file afterwards. -->
+  <Target Name="_NetWasmPrepareRawAdapterArtifact"
+          DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts">
+    <PropertyGroup>
+      <_NetWasmRawAdapterArtifactPath>$(NetWasmRawAdapterPath)</_NetWasmRawAdapterArtifactPath>
+      <_NetWasmRawAdapterArtifactPath Condition="'$(NetWasmMinifyJavaScript)' == 'true' AND '$(NetWasmRawAdapterPath)' != '' AND Exists('$(NetWasmRawAdapterPath)')">$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', '$(AssemblyName).raw-adapter.min.mjs'))</_NetWasmRawAdapterArtifactPath>
+    </PropertyGroup>
+    <NetWasmBundleJavaScriptTask Condition="'$(_NetWasmRawAdapterArtifactPath)' != '$(NetWasmRawAdapterPath)'"
+                                NodePath="$(NetWasmNodePath)"
+                                CommandPath="$(NetWasmHostingBundleCommandPath)"
+                                EntryPath="$(NetWasmRawAdapterPath)"
+                                OutputPath="$(_NetWasmRawAdapterArtifactPath)"
+                                Platform="browser"
+                                Minify="true" />
+  </Target>
+
   <Target Name="NetWasmSdkPrepareLocalDeployment"
           AfterTargets="NetWasmSdkComponentize"
           BeforeTargets="Run"
-          DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar"
+          DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmPrepareRawAdapterArtifact"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NoBuild)' != 'true' AND '$(DesignTimeBuild)' != 'true'">
     <NetWasmReadCompilerBuildMetadataTask MetadataPath="$(NetWasmCompilerMetadataPath)">
       <Output TaskParameter="Target" PropertyName="_NetWasmCompilerMetadataTarget" />
@@ -547,7 +666,7 @@
         <Role>hosting-javascript</Role>
         <MediaType>text/javascript</MediaType>
       </_NetWasmDeploymentArtifact>
-      <_NetWasmDeploymentArtifact Include="$(NetWasmRawAdapterPath)" Condition="'$(NetWasmRawWasm)' == 'true'">
+      <_NetWasmDeploymentArtifact Include="$(_NetWasmRawAdapterArtifactPath)" Condition="'$(NetWasmRawWasm)' == 'true'">
         <RelativePath>$(AssemblyName).raw-adapter.mjs</RelativePath>
         <Role>raw-adapter</Role>
         <MediaType>text/javascript</MediaType>
@@ -710,7 +829,7 @@
         <Role>hosting-javascript</Role>
         <MediaType>text/javascript</MediaType>
       </_NetWasmBrowserDeploymentArtifact>
-      <_NetWasmBrowserDeploymentArtifact Include="$(NetWasmRawAdapterPath)" Condition="'$(NetWasmRawWasm)' == 'true'">
+      <_NetWasmBrowserDeploymentArtifact Include="$(_NetWasmRawAdapterArtifactPath)" Condition="'$(NetWasmRawWasm)' == 'true'">
         <RelativePath>$(AssemblyName).raw-adapter.mjs</RelativePath>
         <Role>raw-adapter</Role>
         <MediaType>text/javascript</MediaType>
@@ -802,7 +921,7 @@
 
   <Target Name="NetWasmSdkPublishJsModule"
           BeforeTargets="Publish"
-          DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar"
+          DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmPrepareRawAdapterArtifact"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'jsexport' AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK048"
            Condition="'$(NetWasmWorkerPublishDir)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmWorkerPublishDir)'))"
@@ -846,6 +965,7 @@
                                         Target="$(NetWasmTarget)">
       <Output TaskParameter="Imports" ItemName="_NetWasmWorkerJavaScriptImport" />
       <Output TaskParameter="Exports" ItemName="_NetWasmWorkerJavaScriptExport" />
+      <Output TaskParameter="ImportModules" ItemName="_NetWasmJavaScriptImportModule" />
     </NetWasmReadHostInteropManifestTask>
     <NetWasmReadRawBindingManifestTask ManifestPath="$(NetWasmRawBindingManifestPath)"
                                        Target="$(NetWasmTarget)">
@@ -858,12 +978,15 @@
                                    Preview2ShimRoot="$(NetWasmPreview2ShimRoot)"
                                    OutputPath="$(_NetWasmPageHostEntryPath)"
                                    Imports="@(_NetWasmWorkerJavaScriptImport)"
+                                   ImportModules="@(_NetWasmJavaScriptImportModule)"
                                    Modules="@(NetWasmJavaScriptModule)"
                                    Arguments="@(_NetWasmExecutionArgument)"
                                    EnvironmentVariables="@(NetWasmEnvironmentVariable)"
                                    Clocks="@(NetWasmClockGrant)"
                                    Network="$(NetWasmNetworkPolicy)"
-                                   Randomness="$(NetWasmRandomness)" />
+                                   Randomness="$(NetWasmRandomness)"
+                                   RequiredImportModules="@(_NetWasmWorkerRequiredImportModule)"
+                                   ValidateDeploymentManifest="$(NetWasmValidateDeploymentManifest)" />
     <NetWasmBundleJavaScriptTask Condition="'$(_NetWasmJavaScriptPageHost)' == 'true'"
                                 NodePath="$(NetWasmNodePath)"
                                 CommandPath="$(NetWasmHostingBundleCommandPath)"
@@ -876,12 +999,15 @@
                                      Preview2ShimRoot="$(NetWasmPreview2ShimRoot)"
                                      OutputPath="$(_NetWasmWorkerHostEntryPath)"
                                      Imports="@(_NetWasmWorkerJavaScriptImport)"
+                                     ImportModules="@(_NetWasmJavaScriptImportModule)"
                                      Modules="@(NetWasmJavaScriptModule)"
                                      Arguments="@(_NetWasmExecutionArgument)"
                                      EnvironmentVariables="@(NetWasmEnvironmentVariable)"
                                      Clocks="@(NetWasmClockGrant)"
                                      Network="$(NetWasmNetworkPolicy)"
-                                     Randomness="$(NetWasmRandomness)" />
+                                     Randomness="$(NetWasmRandomness)"
+                                     RequiredImportModules="@(_NetWasmWorkerRequiredImportModule)"
+                                     ValidateDeploymentManifest="$(NetWasmValidateDeploymentManifest)" />
     <NetWasmBundleJavaScriptTask Condition="'$(_NetWasmJavaScriptWorkerHost)' == 'true'"
                                 NodePath="$(NetWasmNodePath)"
                                 CommandPath="$(NetWasmHostingBundleCommandPath)"
@@ -908,7 +1034,7 @@
         <Role>worker-javascript</Role>
         <MediaType>text/javascript</MediaType>
       </_NetWasmWorkerDeploymentArtifact>
-      <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmRawAdapterPath)">
+      <_NetWasmWorkerDeploymentArtifact Include="$(_NetWasmRawAdapterArtifactPath)">
         <RelativePath>$(AssemblyName).raw-adapter.mjs</RelativePath>
         <Role>raw-adapter</Role>
         <MediaType>text/javascript</MediaType>

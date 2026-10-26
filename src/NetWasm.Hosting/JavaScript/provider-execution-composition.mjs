@@ -1,7 +1,6 @@
 import { createApplicationProviderLoader } from "./application-provider-loader.mjs";
 import { createCapabilityBindingValidator } from "./capability-binding-validator.mjs";
 import { createContractError } from "./contract-error.mjs";
-import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { isInternalImport } from "./internal-import-policy.mjs";
 import {
@@ -18,23 +17,29 @@ import { createProviderModuleProjector } from "./provider-module-projector.mjs";
 import { createPlatformProviderLoader } from "./platform-provider-loader.mjs";
 
 const factoryKeys = [
+  "catalog",
   "createShim",
   "hashBytes",
   "importModule",
   "isAbsoluteHostPath",
   "readArtifact",
+  "snapshotManifest",
 ];
 
 export function createProviderExecutionComposition(options) {
   assertExactDataObject(options, factoryKeys, "provider execution composition options");
+  if (options.catalog === null || typeof options.catalog !== "object") {
+    throw new TypeError("provider execution composition catalog is required");
+  }
   for (const [name, value] of Object.entries(options)) {
-    if (typeof value !== "function") {
+    if (name !== "catalog" && typeof value !== "function") {
       throw new TypeError(`provider execution composition '${name}' action is required`);
     }
   }
 
   const validateProviderMetadata = createProviderMetadataValidator({ selectProviderKind });
   const registry = createPreview2PlatformProviderRegistry({
+    catalog: options.catalog,
     createShim: options.createShim,
     validateProviderMetadata,
   });
@@ -62,11 +67,11 @@ export function createProviderExecutionComposition(options) {
     validateCapabilityBinding: asContractAction(createCapabilityBindingValidator({
       isInternalImport,
       selectProviderKind,
-      validateManifest: validateDeploymentManifest,
+      validateManifest: options.snapshotManifest,
       validateProviderMetadata,
       validateRequest,
     })),
-    validateManifest: asContractAction(validateDeploymentManifest),
+    validateManifest: asContractAction(options.snapshotManifest),
     validateRequest: asContractAction(validateRequest),
   });
 }

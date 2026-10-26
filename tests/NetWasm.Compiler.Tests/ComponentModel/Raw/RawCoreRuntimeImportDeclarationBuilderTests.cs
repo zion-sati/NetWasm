@@ -78,6 +78,26 @@ public sealed class RawCoreRuntimeImportDeclarationBuilderTests
         Assert.Empty(facts.Projections);
     }
 
+    // A linked native archive may import from a module the project declares;
+    // the observed signature is the declaration the host supplies.
+    [Fact]
+    public void DeclaredImportModulesAuthorizeTheRuntimeArchiveImports()
+    {
+        var external = new RawCoreFunctionImportSignature(
+            new("host_ui", "create_node"), [RawCoreValueType.I32], [RawCoreValueType.I64]);
+        var request = Request() with
+        {
+            CompilerDeclarations = Declarations() with { ImportModules = ["host_ui"] },
+            RuntimeImports = [external, Signature()],
+            FinalImports = [external.Identity],
+        };
+
+        var declared = Create(new RecordingFacts()).Build(request);
+
+        Assert.Same(external, Assert.Single(declared).Value);
+        Assert.Empty(Create(new RecordingFacts()).Build(request with { CompilerDeclarations = Declarations() }));
+    }
+
     [Fact]
     public void EqualWitOverlapRetainsOnlyApplicationOwnershipAndChecksCompilerOverlap()
     {

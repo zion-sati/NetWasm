@@ -1030,13 +1030,50 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(conversion, code.ToArray());
+    }
+
+    [Theory]
+    [InlineData("i4", CliValueKind.I4, "InternalToByte", 2)]
+    [InlineData("u4", CliValueKind.I4, "InternalToInt16", 1)]
+    [InlineData("i8", CliValueKind.I8, "InternalToUInt64", 1)]
+    [InlineData("u8", CliValueKind.I8, "InternalToInt64", 1)]
+    [InlineData("i4", CliValueKind.I4, "InternalToChar", 2)]
+    [InlineData("i4", CliValueKind.I4, "InternalToSByte", 2)]
+    [InlineData("i4", CliValueKind.I4, "InternalToUInt16", 2)]
+    [InlineData("i4", CliValueKind.I4, "InternalToUInt32", 2)]
+    [InlineData("i4", CliValueKind.I4, "InternalToInt32", 2)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1859:Use concrete types when possible",
+        Justification = "Exercise the emitter through its injected capability contract.")]
+    public void IntegerConversionsEmitOverflowGuardsAndPreserveReceiver(
+        string underlyingName, CliValueKind kind, string method, int guards)
+    {
+        var underlying = CliTypeIdentity.Primitive(underlyingName, kind);
+        var metadata = new EnumMetadataFixture(underlying);
+        var request = Request(method, RuntimeIntrinsic.EnumConvert, kind,
+            [CliValueKind.ManagedReference], [CliValueKind.ManagedReference]);
+        var code = new RecordingInstructionWriter();
+        var errors = new RecordingExceptions();
+        IEnumConvertEmitter emitter = new EnumConvertEmitter(
+                new FixedStorageResolver(metadata, underlying),
+                errors,
+                metadata.Layouts);
+        emitter.EmitConvert(request, code);
+
+        Assert.Equal(guards, errors.Kinds.Count);
+        Assert.All(errors.Kinds, error => Assert.Equal(ManagedExceptionKind.Overflow, error));
+        var prefix = new RecordingInstructionWriter();
+        prefix.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)request.Local(0, CliValueKind.ManagedReference))));
+        prefix.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)request.Instruction.Context.ObjectTemporary)));
+        Assert.Equal(prefix.ToArray(), code.ToArray().Take(prefix.ToArray().Length));
+        Assert.Contains(underlyingName.StartsWith('u')
+            ? WasmOpcodes.I64GreaterThanUnsigned : WasmOpcodes.I64LessThanSigned, code.ToArray());
     }
 
     [Fact]
@@ -1054,10 +1091,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(WasmOpcodes.I32Load, code.ToArray());
@@ -1083,10 +1118,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(comparison, code.ToArray());
@@ -1108,10 +1141,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(WasmOpcodes.I32WrapI64, code.ToArray());
@@ -1147,10 +1178,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(conversion, code.ToArray());
@@ -1171,10 +1200,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         var instructions = code.ToInstructions();
@@ -1211,10 +1238,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(WasmOpcodes.I32Add, code.ToArray());
@@ -1241,10 +1266,8 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.Contains(expectedOperation, code.ToArray());
@@ -1265,10 +1288,8 @@ public sealed class EnumIntrinsicBranchTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             new EnumConvertEmitter(
                     new FixedStorageResolver(metadata, underlying),
-                    new RecordingStringEmitter(),
                     new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                    metadata.Layouts,
-                    metadata)
+                    metadata.Layouts)
                 .EmitConvert(request, new RecordingInstructionWriter()));
 
         Assert.Contains("does not support", exception.Message);
@@ -1289,71 +1310,11 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, metadata.Underlying),
-                new RecordingStringEmitter(),
                 new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
+                metadata.Layouts)
             .EmitConvert(request, code);
 
         Assert.True(ContainsManagedThrow(code.ToArray()));
-    }
-
-    [Fact]
-    public void ConvertToTypeDelegatesToStringCapability()
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4));
-        var strings = new RecordingStringEmitter();
-        var request = Request(
-            "InternalToType",
-            RuntimeIntrinsic.EnumConvert,
-            CliValueKind.ManagedReference,
-            [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
-            [CliValueKind.ManagedReference, CliValueKind.ManagedReference]);
-
-        new EnumConvertEmitter(
-                new FixedStorageResolver(metadata, metadata.Underlying),
-                strings,
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
-            .EmitConvert(request, new RecordingInstructionWriter());
-
-        Assert.True(strings.Called);
-    }
-
-    [Theory]
-    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32EqualZero)]
-    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64EqualZero)]
-    public void ConvertToTypeValidatesTheRequestedTypeAndNull(
-        WasmTarget target,
-        byte nullComparison)
-    {
-        var metadata = new EnumMetadataFixture(
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4),
-            target: target);
-        var request = Request(
-            "InternalToType",
-            RuntimeIntrinsic.EnumConvert,
-            CliValueKind.ManagedReference,
-            [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
-            [CliValueKind.ManagedReference, CliValueKind.ManagedReference],
-            target: target);
-        var code = new RecordingInstructionWriter();
-
-        new EnumConvertEmitter(
-                new FixedStorageResolver(metadata, metadata.Underlying),
-                new RecordingStringEmitter(),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
-                metadata.Layouts,
-                metadata)
-            .EmitConvert(request, code);
-
-        var bytes = code.ToArray();
-        Assert.Contains(nullComparison, bytes);
-        Assert.Contains(WasmOpcodes.I32Load, bytes);
-        Assert.Contains(WasmOpcodes.I32Equal, bytes);
-        Assert.True(ContainsManagedThrow(bytes));
     }
 
     [Theory]
@@ -2045,14 +2006,6 @@ public sealed class EnumIntrinsicBranchTests
         public void Emit(IWasmInstructionWriter code, int objectLocal, OptionalFunctionIndex throwFunction)
         {
         }
-    }
-
-    private sealed class RecordingStringEmitter : IEnumToStringEmitter
-    {
-        public bool Called { get; private set; }
-
-        public void EmitToString(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code) =>
-            Called = true;
     }
 
     private sealed class FixedFunctionIndexResolver : IFunctionIndexResolver

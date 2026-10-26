@@ -694,10 +694,11 @@ public sealed class CompilationPipelineCompositionTests
         public HostInteropManifest Build(
             ReachableProgram program,
             ImmutableArray<ProgramExport> exports,
-            ManagedLayoutSnapshot layouts)
+            ManagedLayoutSnapshot layouts,
+            ImmutableArray<string> importModules)
         {
             calls.Add("manifest");
-            return inner.Build(program, exports, layouts);
+            return inner.Build(program, exports, layouts, importModules);
         }
     }
 }

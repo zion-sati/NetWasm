@@ -1134,7 +1134,7 @@ internal static partial class Number
                 return ConvertFloatToDecimalIeee754<double, TDecimal, TValue>(double.CopySign(double.Pi / 2.0, signed ? -1.0 : 1.0));
             }
 
-            DiyFp128 halfPi = InvTrigConstants[2];
+            DiyFp128 halfPi = InvTrigTables.InvTrigConstants[2];
             halfPi._sign = signed ? UxSignBit : 0;
             return DiyFp128ToDecimal<TDecimal, TValue>(halfPi);
         }
@@ -1223,7 +1223,7 @@ internal static partial class Number
             {
                 return ConvertFloatToDecimalIeee754<double, TDecimal, TValue>(double.Pi / 2.0);
             }
-            return DiyFp128ToDecimal<TDecimal, TValue>(InvTrigConstants[2]);
+            return DiyFp128ToDecimal<TDecimal, TValue>(InvTrigTables.InvTrigConstants[2]);
         }
 
         if (DecimalIeee754UsesDouble<TValue>())
@@ -1281,22 +1281,22 @@ internal static partial class Number
             if (yInfinity)
             {
                 // atan2(+/-inf, +/-inf) = +/-3pi/4 or +/-pi/4; atan2(+/-inf, finite) = +/-pi/2.
-                magnitude = xInfinity ? (decodedX.Signed ? InvTrigConstants[3] : InvTrigConstants[1]) : InvTrigConstants[2];
+                magnitude = xInfinity ? (decodedX.Signed ? InvTrigTables.InvTrigConstants[3] : InvTrigTables.InvTrigConstants[1]) : InvTrigTables.InvTrigConstants[2];
             }
             else if (xInfinity)
             {
                 // atan2(+/-finite, -inf) = +/-pi; atan2(+/-finite, +inf) = +/-0.
-                magnitude = decodedX.Signed ? InvTrigConstants[4] : InvTrigConstants[0];
+                magnitude = decodedX.Signed ? InvTrigTables.InvTrigConstants[4] : InvTrigTables.InvTrigConstants[0];
             }
             else if (yZero)
             {
                 // atan2(+/-0, x<0 or -0) = +/-pi; atan2(+/-0, x>=0) = +/-0.
-                magnitude = decodedX.Signed ? InvTrigConstants[4] : InvTrigConstants[0];
+                magnitude = decodedX.Signed ? InvTrigTables.InvTrigConstants[4] : InvTrigTables.InvTrigConstants[0];
             }
             else
             {
                 // xZero, finite non-zero y: atan2(+/-y, +/-0) = +/-pi/2.
-                magnitude = InvTrigConstants[2];
+                magnitude = InvTrigTables.InvTrigConstants[2];
             }
 
             magnitude._sign = decodedY.Signed ? UxSignBit : 0;
@@ -1479,7 +1479,7 @@ internal static partial class Number
                 return ConvertFloatToDecimalIeee754<double, TDecimal, TValue>(double.CopySign(0.5, signed ? -1.0 : 1.0));
             }
 
-            DiyFp128 half = PiFractionConstants[2];
+            DiyFp128 half = PiTrigTables.PiFractionConstants[2];
             half._sign = signed ? UxSignBit : 0;
             return DiyFp128ToDecimal<TDecimal, TValue>(half);
         }
@@ -1499,7 +1499,7 @@ internal static partial class Number
         }
 
         DiyFp128 argument = DecimalToDiyFp128<TDecimal, TValue>(decoded.Signed, decoded.UnbiasedExponent, decoded.Significand);
-        DiyFp128Divide(DiyFp128Atan(argument), InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 result);
+        DiyFp128Divide(DiyFp128Atan(argument), InvTrigTables.InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 result);
         return DiyFp128ToDecimal<TDecimal, TValue>(result);
     }
 
@@ -1542,7 +1542,7 @@ internal static partial class Number
             return TDecimal.NaNMask;
         }
 
-        DiyFp128Divide(DiyFp128Asin(argument), InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 quotient);
+        DiyFp128Divide(DiyFp128Asin(argument), InvTrigTables.InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 quotient);
         return DiyFp128ToDecimal<TDecimal, TValue>(quotient);
     }
 
@@ -1571,7 +1571,7 @@ internal static partial class Number
             {
                 return ConvertFloatToDecimalIeee754<double, TDecimal, TValue>(0.5);
             }
-            return DiyFp128ToDecimal<TDecimal, TValue>(PiFractionConstants[2]);
+            return DiyFp128ToDecimal<TDecimal, TValue>(PiTrigTables.PiFractionConstants[2]);
         }
 
         if (DecimalIeee754UsesDouble<TValue>())
@@ -1589,7 +1589,7 @@ internal static partial class Number
             return TDecimal.NaNMask;
         }
 
-        DiyFp128Divide(DiyFp128Acos(argument), InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 quotient);
+        DiyFp128Divide(DiyFp128Acos(argument), InvTrigTables.InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 quotient);
         return DiyFp128ToDecimal<TDecimal, TValue>(quotient);
     }
 
@@ -1632,22 +1632,22 @@ internal static partial class Number
             if (yInfinity)
             {
                 // atan2Pi(+/-inf, +/-inf) = +/-3/4 or +/-1/4; atan2Pi(+/-inf, finite) = +/-1/2.
-                magnitude = xInfinity ? (decodedX.Signed ? PiFractionConstants[3] : PiFractionConstants[1]) : PiFractionConstants[2];
+                magnitude = xInfinity ? (decodedX.Signed ? PiTrigTables.PiFractionConstants[3] : PiTrigTables.PiFractionConstants[1]) : PiTrigTables.PiFractionConstants[2];
             }
             else if (xInfinity)
             {
                 // atan2Pi(+/-finite, -inf) = +/-1; atan2Pi(+/-finite, +inf) = +/-0.
-                magnitude = decodedX.Signed ? PiFractionConstants[4] : PiFractionConstants[0];
+                magnitude = decodedX.Signed ? PiTrigTables.PiFractionConstants[4] : PiTrigTables.PiFractionConstants[0];
             }
             else if (yZero)
             {
                 // atan2Pi(+/-0, x<0 or -0) = +/-1; atan2Pi(+/-0, x>=0) = +/-0.
-                magnitude = decodedX.Signed ? PiFractionConstants[4] : PiFractionConstants[0];
+                magnitude = decodedX.Signed ? PiTrigTables.PiFractionConstants[4] : PiTrigTables.PiFractionConstants[0];
             }
             else
             {
                 // xZero, finite non-zero y: atan2Pi(+/-y, +/-0) = +/-1/2.
-                magnitude = PiFractionConstants[2];
+                magnitude = PiTrigTables.PiFractionConstants[2];
             }
 
             magnitude._sign = decodedY.Signed ? UxSignBit : 0;
@@ -1656,7 +1656,7 @@ internal static partial class Number
 
         DiyFp128 argumentY = DecimalToDiyFp128<TDecimal, TValue>(decodedY.Signed, decodedY.UnbiasedExponent, decodedY.Significand);
         DiyFp128 argumentX = DecimalToDiyFp128<TDecimal, TValue>(decodedX.Signed, decodedX.UnbiasedExponent, decodedX.Significand);
-        DiyFp128Divide(DiyFp128Atan2(argumentY, argumentX, haveX: true), InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 result);
+        DiyFp128Divide(DiyFp128Atan2(argumentY, argumentX, haveX: true), InvTrigTables.InvTrigConstants[4], DiyFp128FullPrecision, out DiyFp128 result);
         return DiyFp128ToDecimal<TDecimal, TValue>(result);
     }
 

@@ -43,6 +43,32 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         Assert.False(request.Randomness);
     }
 
+    // The final module may call any function of an import module, so the worker
+    // binds the whole module, beside any JSImport functions it also provides.
+    [Fact]
+    public void HostTaskBindsWholeImportModules()
+    {
+        var writer = new RecordingWriter();
+        var task = new NetWasmWriteWorkerHostEntryTask(writer)
+        {
+            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
+            Preview2ShimRoot = Path.GetFullPath("shim"),
+            OutputPath = Path.GetFullPath("worker-entry.mjs"),
+            Imports = [Item("increment", ("Module", "consumer.worker"), ("Name", "increment"))],
+            ImportModules = [new TaskItem("consumer.worker"), new TaskItem("host_ui")],
+            Modules = [Item("consumer.mjs", ("Module", "consumer.worker")), Item("host-ui.mjs", ("Module", "host_ui"))],
+            Network = "denyAll",
+        };
+
+        Assert.True(task.Execute());
+
+        var imports = Assert.IsType<WorkerHostEntryRequest>(writer.Host).Imports;
+        Assert.Equal(["consumer.worker", "host_ui"], imports.Select(binding => binding.Module));
+        Assert.All(imports, binding => Assert.True(binding.BindsModule));
+        Assert.Equal(["increment"], imports[0].Functions.ToArray());
+        Assert.Empty(imports[1].Functions);
+    }
+
     [Fact]
     public void HostTaskRejectsMissingAndUnusedModuleSources()
     {

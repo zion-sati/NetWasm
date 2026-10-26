@@ -6,6 +6,7 @@ import {
   readManagedInteropBytes,
   readManagedInteropString,
   readManagedInteropValueArray,
+  readMemoryView,
   writeManagedInteropBytes,
   writeManagedInteropString,
   writeManagedInteropValueArray,
@@ -15,10 +16,12 @@ const layouts = Object.freeze({
   wasm32: Object.freeze({
     stringLengthOffset: 4, stringDataOffset: 8,
     arrayLengthOffset: 4, arrayDataPointerOffset: 8,
+    spanReferenceOffset: 0, spanLengthOffset: 4,
   }),
   wasm64: Object.freeze({
     stringLengthOffset: 8, stringDataOffset: 12,
     arrayLengthOffset: 8, arrayDataPointerOffset: 16,
+    spanReferenceOffset: 0, spanLengthOffset: 8,
   }),
 });
 
@@ -91,6 +94,62 @@ test("copies every typed array in and out of managed arrays at both widths", () 
         { memory, reference, target, targetLayout: layout }, constructor)], [...result]);
     }
   }
+});
+
+// Writes a span at `spanAddress` whose elements start at `dataAddress`.
+function writeSpan(memory, target, spanAddress, dataAddress, length) {
+  const layout = layouts[target];
+  const view = new DataView(memory.buffer);
+  if (target === "wasm32") view.setUint32(spanAddress + layout.spanReferenceOffset, dataAddress, true);
+  else view.setBigUint64(spanAddress + layout.spanReferenceOffset, BigInt(dataAddress), true);
+  view.setInt32(spanAddress + layout.spanLengthOffset, length, true);
+  return target === "wasm32" ? spanAddress : BigInt(spanAddress);
+}
+
+test("views every span element type over linear memory at both widths", () => {
+  const cases = [
+    [Uint8Array, [255, 1]], [Int8Array, [-1, 2]], [Int16Array, [-300, 4]],
+    [Uint16Array, [65_535, 1]], [Int32Array, [-70_000, 9]], [Uint32Array, [4_000_000_000, 3]],
+    [BigInt64Array, [-(2n ** 40n), 5n]], [BigUint64Array, [2n ** 63n, 1n]],
+    [Float32Array, [1.5, -2.25]], [Float64Array, [Math.PI, -0.5]],
+  ];
+  for (const target of ["wasm32", "wasm64"]) {
+    for (const [constructor, values] of cases) {
+      const memory = new WebAssembly.Memory({ initial: 1 });
+      const reference = writeSpan(memory, target, 16, 128, values.length);
+      new constructor(memory.buffer, 128, values.length).set(values);
+      const result = readMemoryView(reference, target, layouts[target], memory, constructor);
+      assert.ok(result instanceof constructor);
+      assert.equal(result.buffer, memory.buffer, "a view, not a copy");
+      assert.equal(result.byteOffset, 128);
+      assert.deepEqual([...result], values, `${target} ${constructor.name}`);
+      result[0] = values[1];
+      assert.equal(new constructor(memory.buffer, 128, 1)[0], values[1], "writes reach the guest");
+    }
+  }
+});
+
+test("views an empty span at any address", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  for (const dataAddress of [0, 129]) {
+    const result = readMemoryView(
+      writeSpan(memory, "wasm32", 16, dataAddress, 0), "wasm32", layouts.wasm32, memory, Int32Array);
+    assert.equal(result.length, 0);
+    assert.equal(result.buffer, memory.buffer);
+  }
+});
+
+test("rejects invalid span types, ranges and alignment", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const read = (reference, constructor = Int32Array, target = "wasm32") =>
+    readMemoryView(reference, target, layouts[target], memory, constructor);
+  assert.throws(() => read(writeSpan(memory, "wasm32", 16, 128, 1), Array), /memory-view type/);
+  assert.throws(() => read(writeSpan(memory, "wasm32", 16, 128, -1)), /outside linear memory/);
+  assert.throws(() => read(writeSpan(memory, "wasm32", 16, 65_532, 2)), /outside linear memory/);
+  assert.throws(() => read(writeSpan(memory, "wasm64", 16, 2 ** 53, 1), Int32Array, "wasm64"),
+    /outside linear memory/);
+  assert.throws(() => read(writeSpan(memory, "wasm32", 16, 130, 1)), /not aligned/);
+  assert.deepEqual([...read(writeSpan(memory, "wasm32", 16, 131, 1), Uint8Array)], [0]);
 });
 
 test("rejects invalid value-array types, values and destinations", () => {

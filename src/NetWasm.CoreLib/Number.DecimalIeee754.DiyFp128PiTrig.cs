@@ -18,21 +18,30 @@ internal static partial class Number
     // below 2^113), so the pi-scaled reduction avoids the large-argument cancellation that motivates a
     // dedicated *Pi routine. The inverse variants are the radian result divided by pi.
 
-    private static readonly DiyFp128 UxQuarter = new DiyFp128(0, -1, UxMsb, 0);
-    private static readonly DiyFp128 UxHalf = new DiyFp128(0, 0, UxMsb, 0);
-    private static readonly DiyFp128 UxThreeQuarter = new DiyFp128(0, 0, 0xC000000000000000, 0);
-    private static readonly DiyFp128 UxOne = new DiyFp128(0, 1, UxMsb, 0);
-
-    // 0, 1/4, 1/2, 3/4, 1 -- InvTrigConstants (0, pi/4, pi/2, 3pi/4, pi) divided by pi, for the exact
-    // signed-zero/infinity quadrant results of the inverse *Pi variants.
-    private static readonly DiyFp128[] PiFractionConstants = new DiyFp128[]
+    // Built only when code that uses these tables runs; other Number paths, such as
+    // integer formatting, never pay for them.
+    private static class PiTrigTables
     {
-        new DiyFp128(0, UxZeroExponent, 0, 0), // 0
-        UxQuarter,                             // 1/4
-        UxHalf,                                // 1/2
-        UxThreeQuarter,                        // 3/4
-        UxOne,                                 // 1
-    };
+        internal static readonly DiyFp128 UxQuarter = new DiyFp128(0, -1, UxMsb, 0);
+
+        internal static readonly DiyFp128 UxHalf = new DiyFp128(0, 0, UxMsb, 0);
+
+        internal static readonly DiyFp128 UxThreeQuarter = new DiyFp128(0, 0, 0xC000000000000000, 0);
+
+        internal static readonly DiyFp128 UxOne = new DiyFp128(0, 1, UxMsb, 0);
+
+        internal static readonly DiyFp128[] PiFractionConstants = new DiyFp128[]
+        {
+            new DiyFp128(0, UxZeroExponent, 0, 0), // 0
+            PiTrigTables.UxQuarter,                             // 1/4
+            PiTrigTables.UxHalf,                                // 1/2
+            PiTrigTables.UxThreeQuarter,                        // 3/4
+            PiTrigTables.UxOne,                                 // 1
+        };
+    }
+
+    // 0, 1/4, 1/2, 3/4, 1 -- InvTrigTables.InvTrigConstants (0, pi/4, pi/2, 3pi/4, pi) divided by pi, for the exact
+    // signed-zero/infinity quadrant results of the inverse *Pi variants.
 
     private static bool DiyFp128IsZero(in DiyFp128 value) => (value._hi | value._lo) == 0;
 
@@ -124,7 +133,7 @@ internal static partial class Number
     }
 
     // reduced (in [0, 1/4]) * pi -> a small angle in [0, pi/4].
-    private static DiyFp128 DiyFp128TimesPi(in DiyFp128 reduced) => DiyFp128Product(reduced, InvTrigConstants[4]);
+    private static DiyFp128 DiyFp128TimesPi(in DiyFp128 reduced) => DiyFp128Product(reduced, InvTrigTables.InvTrigConstants[4]);
 
     private static DiyFp128 DiyFp128Difference(in DiyFp128 a, in DiyFp128 b)
     {
@@ -155,21 +164,21 @@ internal static partial class Number
         uint sign = x._sign ^ (oddInteger ? UxSignBit : 0u);
         DiyFp128 result;
 
-        if (DiyFp128MagnitudeLessOrEqual(fraction, UxQuarter))
+        if (DiyFp128MagnitudeLessOrEqual(fraction, PiTrigTables.UxQuarter))
         {
             result = DiyFp128Sin(DiyFp128TimesPi(fraction));
         }
-        else if (DiyFp128MagnitudeLessOrEqual(fraction, UxHalf))
+        else if (DiyFp128MagnitudeLessOrEqual(fraction, PiTrigTables.UxHalf))
         {
-            result = DiyFp128Cos(DiyFp128TimesPi(DiyFp128Difference(UxHalf, fraction)));
+            result = DiyFp128Cos(DiyFp128TimesPi(DiyFp128Difference(PiTrigTables.UxHalf, fraction)));
         }
-        else if (DiyFp128MagnitudeLessOrEqual(fraction, UxThreeQuarter))
+        else if (DiyFp128MagnitudeLessOrEqual(fraction, PiTrigTables.UxThreeQuarter))
         {
-            result = DiyFp128Cos(DiyFp128TimesPi(DiyFp128Difference(fraction, UxHalf)));
+            result = DiyFp128Cos(DiyFp128TimesPi(DiyFp128Difference(fraction, PiTrigTables.UxHalf)));
         }
         else
         {
-            result = DiyFp128Sin(DiyFp128TimesPi(DiyFp128Difference(UxOne, fraction)));
+            result = DiyFp128Sin(DiyFp128TimesPi(DiyFp128Difference(PiTrigTables.UxOne, fraction)));
         }
 
         return DiyFp128WithSignFlipped(result, sign);
@@ -185,27 +194,27 @@ internal static partial class Number
         if (isInteger)
         {
             // cos(pi * n) = (-1)^n.
-            return DiyFp128WithSignFlipped(UxOne, oddInteger ? UxSignBit : 0u);
+            return DiyFp128WithSignFlipped(PiTrigTables.UxOne, oddInteger ? UxSignBit : 0u);
         }
 
         uint sign = oddInteger ? UxSignBit : 0u;
         DiyFp128 result;
 
-        if (DiyFp128MagnitudeLessOrEqual(fraction, UxQuarter))
+        if (DiyFp128MagnitudeLessOrEqual(fraction, PiTrigTables.UxQuarter))
         {
             result = DiyFp128Cos(DiyFp128TimesPi(fraction));
         }
-        else if (DiyFp128MagnitudeLessOrEqual(fraction, UxHalf))
+        else if (DiyFp128MagnitudeLessOrEqual(fraction, PiTrigTables.UxHalf))
         {
-            result = DiyFp128Sin(DiyFp128TimesPi(DiyFp128Difference(UxHalf, fraction)));
+            result = DiyFp128Sin(DiyFp128TimesPi(DiyFp128Difference(PiTrigTables.UxHalf, fraction)));
         }
-        else if (DiyFp128MagnitudeLessOrEqual(fraction, UxThreeQuarter))
+        else if (DiyFp128MagnitudeLessOrEqual(fraction, PiTrigTables.UxThreeQuarter))
         {
-            result = DiyFp128WithSignFlipped(DiyFp128Sin(DiyFp128TimesPi(DiyFp128Difference(fraction, UxHalf))), UxSignBit);
+            result = DiyFp128WithSignFlipped(DiyFp128Sin(DiyFp128TimesPi(DiyFp128Difference(fraction, PiTrigTables.UxHalf))), UxSignBit);
         }
         else
         {
-            result = DiyFp128WithSignFlipped(DiyFp128Cos(DiyFp128TimesPi(DiyFp128Difference(UxOne, fraction))), UxSignBit);
+            result = DiyFp128WithSignFlipped(DiyFp128Cos(DiyFp128TimesPi(DiyFp128Difference(PiTrigTables.UxOne, fraction))), UxSignBit);
         }
 
         // cos(pi * (n + 1/2)) is exactly +0; the reduced result is +0 and must not take the odd-integer sign.

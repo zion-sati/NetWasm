@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import {
   createProviderExecutionComposition,
 } from "./provider-execution-composition.mjs";
 import { isContractError } from "./contract-error.mjs";
+import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { describeFailureCause } from "./execution-result.mjs";
 
 const digest = "1".repeat(64);
@@ -69,6 +71,7 @@ function executionRequest() {
 
 function options(overrides = {}) {
   return {
+    catalog: platformProviderCatalog,
     createShim(config) {
       assert.deepEqual(config.sandbox.args, ["application"]);
       return {
@@ -86,6 +89,7 @@ function options(overrides = {}) {
     importModule() { assert.fail("no application provider should be imported"); },
     isAbsoluteHostPath() { return false; },
     readArtifact() { assert.fail("no application provider should be read"); },
+    snapshotManifest: validateDeploymentManifest,
     ...overrides,
   };
 }
@@ -117,9 +121,10 @@ test("rejects malformed composition dependencies before creating the catalog", (
   for (const value of [null, 1, [], {}, { ...valid, extra: () => {} }, Object.create(valid)]) {
     assert.throws(() => createProviderExecutionComposition(value), TypeError);
   }
-  for (const name of Object.keys(valid)) {
+  for (const name of Object.keys(valid).filter(name => name !== "catalog")) {
     assert.throws(() => createProviderExecutionComposition({ ...valid, [name]: null }), /action/);
   }
+  assert.throws(() => createProviderExecutionComposition({ ...valid, catalog: null }), /catalog/);
   const symbolic = { ...valid, [Symbol("invalid")]: true };
   assert.throws(() => createProviderExecutionComposition(symbolic), TypeError);
   const accessor = { ...valid };

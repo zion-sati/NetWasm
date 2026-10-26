@@ -38,11 +38,15 @@ internal sealed class ReachabilityImportClassifier(
                     type.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation)
                 .Distinct()
                 .ToImmutableArray();
+            // The host supplies a [WasmImportLinkage] function; its throw raises JSException.
+            ImmutableArray<ReachabilityExceptionRequirement> nativeExceptions = method.NativeImport.HasWasmImportLinkage
+                ? [new(ManagedExceptionKind.JSException, "System.JSException")]
+                : [];
             return new(true,
                 [.. layoutTypes.Where(type => type.Shape == CliTypeShape.GenericInstantiation)],
                 [],
                 [.. layoutTypes.Select(type => typeDefinitions.ResolveTypeIdentity(type).Key).Distinct()],
-                [], [], [], null, null, [], null);
+                [], [], nativeExceptions, null, null, [], null);
         }
         var constructedTypes = ImmutableArray.CreateBuilder<CliTypeIdentity>();
         var allocatedTypes = ImmutableArray.CreateBuilder<CliTypeIdentity>();
@@ -154,9 +158,7 @@ internal sealed class ReachabilityImportClassifier(
                     ManagedExceptionKind.InvalidCast,
                     "System.InvalidCastException"));
             }
-            if (intrinsic is RuntimeIntrinsic.EnumToString or RuntimeIntrinsic.EnumFormat ||
-                intrinsic == RuntimeIntrinsic.EnumConvert &&
-                method.Name is "InternalToType" or "System.IConvertible.ToType")
+            if (intrinsic is RuntimeIntrinsic.EnumToString or RuntimeIntrinsic.EnumFormat)
             {
                 enqueuedMethods.Add(ResolveEnumFormat());
             }

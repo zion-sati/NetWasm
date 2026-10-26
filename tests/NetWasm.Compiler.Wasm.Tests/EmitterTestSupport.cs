@@ -309,18 +309,18 @@ internal static class EmitterTestSupport
             runtimeImports,
             CreateAddressInstructions(layouts));
 
-    public static IRuntimeStateInitializer CreateRuntimeStateInitializer(
+    public static IRuntimeStateInitializer CreateRuntimeStateInitializer() => new RuntimeStateInitializer();
+
+    public static IRuntimeInitializerFunctionEmitter CreateRuntimeInitializerFunctionEmitter(
         RecordingLayoutProvider layouts,
-        IRuntimeImportResolver runtimeImports)
-    {
-        var core = CreateRuntimeCoreInitializer(layouts, runtimeImports);
-        return new RuntimeStateInitializer(
+        IRuntimeImportResolver runtimeImports) => new RuntimeInitializerFunctionEmitter(
+            layouts,
             layouts,
             layouts,
             runtimeImports,
             CreateAddressInstructions(layouts),
-            core);
-    }
+            CreateRuntimeCoreInitializer(layouts, runtimeImports),
+            new GeneratedFunctionWriterFactory());
 
     public static IReferenceComparisonEmitter CreateReferenceComparisons(
         RecordingLayoutProvider layouts) => new ReferenceComparisonEmitter(layouts);

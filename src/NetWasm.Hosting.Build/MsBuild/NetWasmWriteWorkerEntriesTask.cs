@@ -22,18 +22,23 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
     [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputPath { get; set; } = string.Empty;
     public ITaskItem[] Imports { get; set; } = [];
+    public ITaskItem[] ImportModules { get; set; } = [];
     public ITaskItem[] Modules { get; set; } = [];
     public ITaskItem[] Arguments { get; set; } = [];
     public ITaskItem[] EnvironmentVariables { get; set; } = [];
     public ITaskItem[] Clocks { get; set; } = [];
     [Required] public string Network { get; set; } = string.Empty;
     public bool Randomness { get; set; }
+    public ITaskItem[] RequiredImportModules { get; set; } = [];
+    public bool ValidateDeploymentManifest { get; set; } = true;
 
     public override bool Execute()
     {
         try
         {
+            var importModules = ImportModules.Select(item => item.ItemSpec).ToHashSet(StringComparer.Ordinal);
             var requiredModules = Imports.Select(item => RequiredMetadata(item, "Module"))
+                .Concat(importModules)
                 .ToHashSet(StringComparer.Ordinal);
             var modules = Modules.Where(item =>
                     item.GetMetadata("NetWasmGeneratedWorkerClient") != "true"
@@ -42,16 +47,24 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
                 item => RequiredMetadata(item, "Module"),
                 item => Path.GetFullPath(item.ItemSpec),
                 StringComparer.Ordinal);
-            var imports = Imports.GroupBy(
+            var functions = Imports.GroupBy(
                     item => RequiredMetadata(item, "Module"),
                     StringComparer.Ordinal)
-                .Select(group => new WorkerJavaScriptImport(
-                    group.Key,
-                    modules.Remove(group.Key, out var path)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(item => RequiredMetadata(item, "Name")).ToImmutableArray(),
+                    StringComparer.Ordinal);
+            var imports = requiredModules.Order(StringComparer.Ordinal)
+                .Select(module => new WorkerJavaScriptImport(
+                    module,
+                    modules.Remove(module, out var path)
                         ? path
                         : throw new ArgumentException(
-                            $"Worker JavaScript module '{group.Key}' has no source binding."),
-                    [.. group.Select(item => RequiredMetadata(item, "Name"))]))
+                            $"Worker JavaScript module '{module}' has no source binding."),
+                    functions.GetValueOrDefault(module, []))
+                {
+                    BindsModule = importModules.Contains(module),
+                })
                 .ToImmutableArray();
             if (modules.Count != 0)
             {
@@ -69,7 +82,9 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
                     item.GetMetadata("Value")))],
                 [.. Clocks.Select(item => item.ItemSpec)],
                 Network,
-                Randomness));
+                Randomness,
+                [.. RequiredImportModules.Select(item => item.ItemSpec)],
+                ValidateDeploymentManifest));
             return true;
         }
         catch (Exception exception)

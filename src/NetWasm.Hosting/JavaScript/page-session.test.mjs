@@ -7,6 +7,9 @@ import { createPageSession } from "./page-session-root.mjs";
 const startup = Object.freeze({ buildFingerprint: "1".repeat(64), manifestSha256: "2".repeat(64) });
 const configuration = Object.freeze({ arguments: [] });
 const platform = Object.freeze({ fetch() {} });
+// The page session forwards the entry-selected catalog without reading it.
+const platformProviderCatalog = Object.freeze({ providers: Object.freeze([]) });
+const snapshotDeploymentManifest = manifest => Object.freeze(manifest);
 
 function fixture({ exports = { Add: (a, b) => a + b }, close = async () => {} } = {}) {
   const calls = [];
@@ -31,7 +34,14 @@ function fixture({ exports = { Add: (a, b) => a + b }, close = async () => {} } 
 }
 
 function pageOptions(modules = {}) {
-  return { configuration, manifestUrl: "https://example.test/app/deployment.json", modules, platform };
+  return {
+    configuration,
+    manifestUrl: "https://example.test/app/deployment.json",
+    modules,
+    platform,
+    platformProviderCatalog,
+    snapshotDeploymentManifest,
+  };
 }
 
 test("opens one export surface per call with close and failure", async () => {
@@ -50,6 +60,8 @@ test("opens one export surface per call with close and failure", async () => {
   assert.equal(created.configuration, configuration);
   assert.equal(created.platform, platform);
   assert.equal(created.manifestUrl, "https://example.test/app/deployment.json");
+  assert.equal(created.platformProviderCatalog, platformProviderCatalog);
+  assert.equal(created.snapshotDeploymentManifest, snapshotDeploymentManifest);
   assert.deepEqual(state.calls[1], ["open", { startup }]);
   await first.close();
   assert.equal(await first.failure, null);

@@ -19,12 +19,17 @@ namespace System.Globalization
         internal const string InvariantNaNSymbol = "NaN";
         internal const string InvariantPositiveInfinitySymbol = "Infinity";
         internal const string InvariantNegativeInfinitySymbol = "-Infinity";
+        internal const string InvariantNegativeSign = "-";
 
         private static readonly NumberFormatInfo s_invariant = new();
 
         public static NumberFormatInfo CurrentInfo => s_invariant;
 
         public static NumberFormatInfo InvariantInfo => s_invariant;
+
+        // The current culture is invariant, so its negative sign needs no
+        // instance: integer formatting reads it without initializing this type.
+        internal static string CurrentNegativeSign => InvariantNegativeSign;
 
         public NumberFormatInfo()
         {
@@ -36,7 +41,7 @@ namespace System.Globalization
         public string PositiveInfinitySymbol => InvariantPositiveInfinitySymbol;
         public string NegativeInfinitySymbol => InvariantNegativeInfinitySymbol;
         public string PositiveSign => "+";
-        public string NegativeSign => "-";
+        public string NegativeSign => InvariantNegativeSign;
         public string NumberDecimalSeparator => ".";
         public string NumberGroupSeparator => ",";
         public int NumberDecimalDigits => 2;

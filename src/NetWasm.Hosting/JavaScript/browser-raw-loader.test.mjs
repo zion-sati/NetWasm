@@ -21,7 +21,7 @@ const runtimeLayout = encoder.encode(JSON.stringify({
     completionShape: "synchronous",
   },
 }));
-const interopManifest = encoder.encode(JSON.stringify({ version: 1, target: "wasm32" }));
+const interopManifest = encoder.encode(JSON.stringify({ version: 2, target: "wasm32" }));
 
 test("loads segment-encoded raw browser artifacts and revokes the adapter URL", async () => {
   const fixture = createFixture();

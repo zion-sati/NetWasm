@@ -1,10 +1,9 @@
-import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import {
   createPreview2PlatformProviderRegistrations,
 } from "./preview2-platform-provider-registrations.mjs";
 import { createPlatformProviderRegistry } from "./platform-provider-registry.mjs";
 
-const factoryKeys = ["createShim", "validateProviderMetadata"];
+const factoryKeys = ["catalog", "createShim", "validateProviderMetadata"];
 
 export function createPreview2PlatformProviderRegistry(options) {
   assertExactDataObject(options, factoryKeys, "Preview 2 provider registry options");
@@ -15,7 +14,7 @@ export function createPreview2PlatformProviderRegistry(options) {
   }
   return createPlatformProviderRegistry({
     registrations: createPreview2PlatformProviderRegistrations({
-      catalog: platformProviderCatalog,
+      catalog: options.catalog,
       createShim: options.createShim,
     }),
     validateProviderMetadata: options.validateProviderMetadata,

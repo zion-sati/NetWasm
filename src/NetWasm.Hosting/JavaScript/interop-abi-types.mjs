@@ -13,10 +13,26 @@ const valueArrayConstructors = Object.freeze({
   "f64[]": Float64Array,
 });
 
+// A Span<T> or ReadOnlySpan<T> import parameter is a typed array over linear
+// memory, valid only during the call.
+const memoryViewConstructors = Object.freeze({
+  "u8-view": Uint8Array,
+  "i8-view": Int8Array,
+  "i16-view": Int16Array,
+  "u16-view": Uint16Array,
+  "i32-view": Int32Array,
+  "u32-view": Uint32Array,
+  "i64-view": BigInt64Array,
+  "u64-view": BigUint64Array,
+  "f32-view": Float32Array,
+  "f64-view": Float64Array,
+});
+
 const abiTypes = new Set([
   "void", "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
   "i64", "u64", "f32", "f64", "string", "object",
   "subscription", "promise", "callback", ...Object.keys(valueArrayConstructors),
+  ...Object.keys(memoryViewConstructors),
 ]);
 
 const scalarAbiTypes = new Set([
@@ -51,6 +67,17 @@ export function valueArrayConstructor(type) {
     throw new TypeError(`interop ABI type '${type}' is not a value array`);
   }
   return valueArrayConstructors[type];
+}
+
+export function isMemoryViewAbiType(type) {
+  return typeof type === "string" && Object.hasOwn(memoryViewConstructors, type);
+}
+
+export function memoryViewConstructor(type) {
+  if (!isMemoryViewAbiType(type)) {
+    throw new TypeError(`interop ABI type '${type}' is not a memory view`);
+  }
+  return memoryViewConstructors[type];
 }
 
 export function isValueArray(value) {

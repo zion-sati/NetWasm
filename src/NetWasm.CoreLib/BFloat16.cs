@@ -385,7 +385,7 @@ namespace System.Numerics
         /// <summary>
         /// Returns a string representation of the current value.
         /// </summary>
-        public override string ToString() => Number.FormatFloat(this, null, NumberFormatInfo.CurrentInfo);
+        public override string ToString() => Number.FormatFloat(this);
 
         /// <summary>
         /// Returns a string representation of the current value using the specified <paramref name="format"/>.

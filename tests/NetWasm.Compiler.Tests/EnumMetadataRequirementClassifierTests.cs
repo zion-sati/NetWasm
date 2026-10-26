@@ -59,17 +59,6 @@ public sealed class EnumMetadataRequirementClassifierTests
     private const EnumMetadataPayload ManagedAlgorithms =
         NamesAndValues | EnumMetadataPayload.RuntimeDescriptor;
 
-    [Theory]
-    [InlineData("InternalToType")]
-    [InlineData("System.IConvertible.ToType")]
-    public void TypeConversionsIncludeTheirPossibleStringResult(string methodName)
-    {
-        var classifier = As<IEnumMetadataRequirementClassifier>(new EnumMetadataRequirementClassifier());
-
-        Assert.Equal(ManagedAlgorithms,
-            classifier.Classify(RuntimeIntrinsic.EnumConvert, false, methodName));
-    }
-
     [Fact]
     public void FactoryRejectsMissingRequirementClassifier()
     {

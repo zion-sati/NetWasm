@@ -24,7 +24,7 @@ internal static class CompilerTaskTestData
             1,
             target,
             new HostInteropStatusAbi(0, 1, 8),
-            new HostInteropTargetLayout(4, 4, 8, 4, 8),
+            new HostInteropTargetLayout(4, 4, 8, 4, 8, 0, 4),
             [],
             []),
         symbols,

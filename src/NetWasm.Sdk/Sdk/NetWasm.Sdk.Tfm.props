@@ -63,9 +63,20 @@
     <NetWasmRequiresHostTools Condition="'$(NetWasmRequiresHostTools)' == ''">false</NetWasmRequiresHostTools>
     <NetWasmRequiresHostTools Condition="'$(OutputType)' == 'Exe' OR '$(IsTestProject)' == 'true' OR '$(_NetWasmWorkerKind)' != ''">true</NetWasmRequiresHostTools>
     <NetWasmBuildHostOSArchitecture>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)</NetWasmBuildHostOSArchitecture>
-    <NetWasmHostToolsPackageId Condition="'$(NetWasmRequiresHostTools)' == 'true' AND ('$(NETCoreSdkRuntimeIdentifier)' == 'linux-x64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'linux-arm64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'osx-arm64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'win-x64' OR '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64')">NetWasm.HostTools.$(NETCoreSdkRuntimeIdentifier)</NetWasmHostToolsPackageId>
+    <!-- A distribution-built .NET SDK reports its distribution's RID (arch-x64,
+         fedora.42-x64, rhel.9-x64); the host tools are built for the portable
+         RID that every SDK also reports. -->
+    <_NetWasmHostRid>$(NETCoreSdkPortableRuntimeIdentifier)</_NetWasmHostRid>
+    <_NetWasmHostRid Condition="'$(_NetWasmHostRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_NetWasmHostRid>
+    <!-- The 10.0.1xx SDK's NuGet keys the netwasm0.1 restore target by framework
+         name, which that SDK's build cannot find (NETSDK1005). The templates pin
+         the same version in global.json. -->
+    <_NetWasmMinimumSdkVersion>10.0.303</_NetWasmMinimumSdkVersion>
+    <!-- A NetWasmWit item also needs the host tools, to run wasm-tools on Node;
+         its PackageReference condition below tests the items. -->
+    <NetWasmHostToolsPackageId Condition="('$(_NetWasmHostRid)' == 'linux-x64' OR '$(_NetWasmHostRid)' == 'linux-arm64' OR '$(_NetWasmHostRid)' == 'osx-arm64' OR '$(_NetWasmHostRid)' == 'win-x64' OR '$(_NetWasmHostRid)' == 'win-arm64')">NetWasm.HostTools.$(_NetWasmHostRid)</NetWasmHostToolsPackageId>
     <NetWasmUsesHostQualifiedLockFile Condition="'$(NetWasmRequiresHostTools)' == 'true' AND '$(RestorePackagesWithLockFile)' == 'true' AND '$(NuGetLockFilePath)' == '' AND '$(NetWasmHostToolsPackageId)' != ''">true</NetWasmUsesHostQualifiedLockFile>
-    <NuGetLockFilePath Condition="'$(NetWasmUsesHostQualifiedLockFile)' == 'true'">packages.$(NETCoreSdkRuntimeIdentifier).lock.json</NuGetLockFilePath>
+    <NuGetLockFilePath Condition="'$(NetWasmUsesHostQualifiedLockFile)' == 'true'">packages.$(_NetWasmHostRid).lock.json</NuGetLockFilePath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(NetWasmSdkContainsCustomProfile)' == 'true'">
@@ -97,7 +108,7 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <!-- Tool-only download: never add desktop generator assemblies to guest references. -->
     <PackageDownload Include="NetWasm.Wit.Bindings.Tool" Version="[$(NetWasmSdkPackageVersion)]"
-                     Condition="'@(_NetWasmWorkerReference)' != ''" />
+                     Condition="'@(_NetWasmWorkerReference)' != '' OR '@(NetWasmWit)' != ''" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRefPackageId)' != ''">
@@ -155,12 +166,12 @@
                       PrivateAssets="all"
                       GeneratePathProperty="true"
                       ExcludeAssets="all"
-                      Condition="'$(NetWasmRequiresHostTools)' == 'true' AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' != 'true'" />
+                      Condition="('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '') AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' != 'true'" />
     <PackageReference Include="$(NetWasmHostToolsPackageId)"
                       VersionOverride="[$(NetWasmHostToolsPackageVersion)]"
                       PrivateAssets="all"
                       GeneratePathProperty="true"
                       ExcludeAssets="all"
-                      Condition="'$(NetWasmRequiresHostTools)' == 'true' AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' == 'true'" />
+                      Condition="('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '') AND '$(NetWasmHostToolsPackageId)' != '' AND '$(ManagePackageVersionsCentrally)' == 'true'" />
   </ItemGroup>
 </Project>

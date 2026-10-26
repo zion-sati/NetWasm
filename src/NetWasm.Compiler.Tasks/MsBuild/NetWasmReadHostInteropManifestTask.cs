@@ -38,10 +38,15 @@ public sealed class NetWasmReadHostInteropManifestTask : Microsoft.Build.Utiliti
     [Output]
     public ITaskItem[] Exports { get; private set; } = [];
 
+    // Modules whose functions the final module imports directly.
+    [Output]
+    public ITaskItem[] ImportModules { get; private set; } = [];
+
     public override bool Execute()
     {
         Imports = [];
         Exports = [];
+        ImportModules = [];
         try
         {
             var manifest = _manifests.Read(ManifestPath, Target);
@@ -52,6 +57,9 @@ public sealed class NetWasmReadHostInteropManifestTask : Microsoft.Build.Utiliti
                     .Select(CreateImport),
             ];
             Exports = [.. manifest.Exports.Select(CreateExport)];
+            ImportModules = manifest.ImportModules.IsDefault
+                ? []
+                : [.. manifest.ImportModules.Select(module => new TaskItem(module))];
             return true;
         }
         catch (Exception exception)

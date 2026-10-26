@@ -1,0 +1,14 @@
+package my:ns;
+
+world counter-world {
+	resource counter {
+		constructor(start: u32);
+		increment: func() -> u32;
+		total: static func() -> u32;
+	}
+
+	import make-counter: func(start: u32) -> counter;
+	import read: func(value: borrow<counter>) -> u32;
+
+	export run: func() -> u32;
+}

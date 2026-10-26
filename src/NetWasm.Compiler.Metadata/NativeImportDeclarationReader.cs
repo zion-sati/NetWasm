@@ -12,6 +12,8 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
         "System.Runtime.InteropServices.UnmanagedCallConvAttribute";
     private const string CallConvCdecl =
         "System.Runtime.CompilerServices.CallConvCdecl";
+    private const string WasmImportLinkageAttribute =
+        "System.Runtime.InteropServices.WasmImportLinkageAttribute";
 
     public NativeImportDeclaration? Read(MetadataReader metadata, MethodDefinition method)
     {
@@ -28,6 +30,7 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
         }
         var suppressesGcTransition = false;
         var hasCustomCallingConvention = false;
+        var hasWasmImportLinkage = false;
         var attributes = import.Attributes;
         foreach (var handle in method.GetCustomAttributes())
         {
@@ -35,6 +38,7 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
             var name = AttributeName(metadata, attribute);
             suppressesGcTransition |= name ==
                 "System.Runtime.InteropServices.SuppressGCTransitionAttribute";
+            hasWasmImportLinkage |= name == WasmImportLinkageAttribute;
             if (name == UnmanagedCallConvAttribute)
             {
                 if (TryReadSupportedCallingConvention(
@@ -64,7 +68,10 @@ public sealed class NativeImportDeclarationReader : INativeImportDeclarationRead
             signature.CallingConvention == SignatureCallingConvention.VarArgs,
             hasMarshalling,
             suppressesGcTransition,
-            hasCustomCallingConvention);
+            hasCustomCallingConvention)
+        {
+            HasWasmImportLinkage = hasWasmImportLinkage,
+        };
     }
 
     private static bool TryReadSupportedCallingConvention(

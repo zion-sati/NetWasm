@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Linq;
 
 namespace NetWasm.Compiler.Core;
 
@@ -242,6 +245,10 @@ public sealed record HostInteropManifest(
 {
     public ImmutableArray<HostInteropCallback> Callbacks { get; init; } = [];
     public ImmutableArray<HostInteropWitImport> WitImports { get; init; } = [];
+    // Modules whose imports the host supplies to the final module unchanged:
+    // those [WasmImportLinkage] imports name and those the project declares
+    // for its native archives.
+    public ImmutableArray<string> ImportModules { get; init; } = [];
 }
 
 public sealed record HostInteropWitImport(
@@ -258,7 +265,9 @@ public sealed record HostInteropTargetLayout(
     int StringLengthOffset,
     int StringDataOffset,
     int ArrayLengthOffset,
-    int ArrayDataPointerOffset);
+    int ArrayDataPointerOffset,
+    int SpanReferenceOffset,
+    int SpanLengthOffset);
 
 public sealed record HostInteropImport(
     string Module,
@@ -266,6 +275,9 @@ public sealed record HostInteropImport(
     ImmutableArray<string> Parameters,
     string Result)
 {
+    // "direct" when the call follows JavaScriptDirectImport, otherwise
+    // "status": the import returns a status and writes its result to memory.
+    public string Call { get; init; } = JavaScriptDirectImport.StatusCall;
     public string? AsyncReturn { get; init; }
     public string? ResolveExport { get; init; }
     public string? RejectExport { get; init; }
@@ -306,3 +318,34 @@ public sealed record HostCallbackDeclaration(
     int ParameterIndex,
     MethodInstanceModel Invoke,
     string ExportName);
+
+// A synchronous [JSImport] whose parameters and result are primitive scalars
+// calls its host function directly: the arguments are the Wasm import's
+// parameters and the result is its result, with no result descriptor in the
+// value frame and no status to test. A host failure unwinds into the call,
+// which raises JSException as a failed status does.
+public static class JavaScriptDirectImport
+{
+    public const string StatusCall = "status";
+    public const string DirectCall = "direct";
+
+    private static readonly FrozenSet<string> Scalars = new[]
+    {
+        "primitive:bool", "primitive:i1", "primitive:u1", "primitive:char", "primitive:i2", "primitive:u2",
+        "primitive:i4", "primitive:u4", "primitive:i8", "primitive:u8", "primitive:f4", "primitive:f8",
+        "primitive:nativeint", "primitive:nativeuint",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static bool IsScalar(CliTypeIdentity type) => Scalars.Contains(type.CanonicalName);
+
+    // Delegate, string, array, object and Task types are not scalars, so a
+    // callback or asynchronous import keeps the status call.
+    public static bool Applies(MethodDefinitionModel method)
+    {
+        ArgumentNullException.ThrowIfNull(method);
+        return method.JSImport is { IsPromise: false } &&
+            method.Signature.ParameterSignatureTypes.All(IsScalar) &&
+            (method.Signature.ReturnSignatureType.CanonicalName == "primitive:void" ||
+                IsScalar(method.Signature.ReturnSignatureType));
+    }
+}

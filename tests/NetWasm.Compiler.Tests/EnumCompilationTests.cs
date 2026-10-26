@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
@@ -29,7 +30,13 @@ public sealed class EnumCompilationTests
                     return (string)value.ToType(typeof(string), null) == "Alpha, Beta" ? 0 : 1;
                 }
             }
-            """, "EntryPoint", optimize, target, 3, []));
+            """, "EntryPoint", optimize, target, 3, [])
+        {
+            Exports = [new("run", "EntryPoint", "Run")],
+            WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            Optimization = FinalWasmOptimization.None,
+        });
 
         Assert.Equal(0, observed);
     }
@@ -66,7 +73,13 @@ public sealed class EnumCompilationTests
             optimize,
             target,
             0,
-            []));
+            [])
+        {
+            Exports = [new("run", "EntryPoint", "Run")],
+            WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            Optimization = FinalWasmOptimization.None,
+        });
 
         Assert.Equal(0, observed);
     }
@@ -113,11 +126,13 @@ public sealed class EnumCompilationTests
             [assets.CoreLib],
             "EntryPoint",
             "Run",
-            []));
-        Assert.Equal(0, ExecuteWithNode(
+            [new("run", "EntryPoint", "Run")],
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+        Assert.Equal(0, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
             assets.Directory,
-            0));
+            0, WasmTarget.Wasm32, compilation.StaticDataEnd));
     }
 
     [Fact]
@@ -186,12 +201,14 @@ public sealed class EnumCompilationTests
             [assets.CoreLib],
             "EntryPoint",
             "Run",
-            []));
+            [new("run", "EntryPoint", "Run")],
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform@1.0.0/async-platform"));
 
-        Assert.Equal(0, ExecuteWithNode(
+        Assert.Equal(0, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
             assets.Directory,
-            0));
+            0, WasmTarget.Wasm32, compilation.StaticDataEnd));
     }
 
     [Theory]
@@ -235,7 +252,13 @@ public sealed class EnumCompilationTests
             optimize,
             target,
             0,
-            []));
+            [])
+        {
+            Exports = [new("run", "EntryPoint", "Run")],
+            WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            Optimization = FinalWasmOptimization.None,
+        });
 
         Assert.Equal(0, observed);
     }
@@ -250,11 +273,13 @@ public sealed class EnumCompilationTests
             [assets.CoreLib],
             "EnumBehaviorFixture.EntryPoint",
             "Run",
-            []));
-        Assert.Equal(0, ExecuteWithNode(
+            [new("run", "EnumBehaviorFixture.EntryPoint", "Run")],
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+        Assert.Equal(0, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
             assets.Directory,
-            0));
+            0, WasmTarget.Wasm32, compilation.StaticDataEnd));
     }
 
     private const string Source = """
@@ -573,14 +598,7 @@ public sealed class EnumCompilationTests
                     decimalUnsignedLongBits[2] != 0 || decimalUnsignedLongBits[3] != 0) return 101;
                 if (convertible.ToString(null) != "One") return 96;
                 if ((string)convertible.ToType(typeof(string), null) != "One") return 97;
-                try
-                {
-                    _ = convertible.ToType(typeof(int), null);
-                    return 102;
-                }
-                catch (InvalidCastException)
-                {
-                }
+                if ((int)convertible.ToType(typeof(int), null) != 1) return 102;
                 try
                 {
                     _ = convertible.ToType(null!, null);

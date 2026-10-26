@@ -43,6 +43,7 @@ internal sealed class CompilerArtifactWriter(
                 managedExecutableEntryPoint = compilation.EntryPoint,
                 runtimeFeatures,
                 nativeImports = compilation.NativeImports,
+                importModules = compilation.InteropManifest.ImportModules,
                 nativeCallbackSupport = new
                 {
                     fileName = Path.GetFileName(request.NativeCallbackObjectPath),
@@ -64,6 +65,7 @@ internal sealed class CompilerArtifactWriter(
                 managedExecutableEntryPoint = compilation.EntryPoint,
                 runtimeFeatures,
                 nativeImports = compilation.NativeImports,
+                importModules = compilation.InteropManifest.ImportModules,
             });
         }
         WriteJson(request.InteropManifestPath, compilation.InteropManifest);

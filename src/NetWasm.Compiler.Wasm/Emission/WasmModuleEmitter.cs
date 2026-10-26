@@ -40,7 +40,8 @@ internal sealed class WasmModuleEmitter(
     IEntryPointValidator entryPoints,
     IManagedBoundaryPlanValidator boundaryPlans,
     IWasmModuleEmissionResultBuilder results,
-    IStaticInitializerFunctionAppender staticInitializers) : IWasmModuleEmitter
+    IStaticInitializerFunctionAppender staticInitializers,
+    IRuntimeInitializerFunctionAppender runtimeInitializer) : IWasmModuleEmitter
 {
     private readonly IMethodRepository _methods =
         methods ?? throw new ArgumentNullException(nameof(methods));
@@ -179,6 +180,10 @@ internal sealed class WasmModuleEmitter(
                         guard.FunctionIndex.Value);
                 })
             ],
+        };
+        initialization = initialization with
+        {
+            InitializerFunctionIndex = runtimeInitializer.Append(functions, imports.Length, initialization),
         };
 
         var callbackIndices = ImmutableDictionary.CreateBuilder<string, int>(StringComparer.Ordinal);

@@ -4,9 +4,11 @@ import { createBrowserTimeZoneMaterializer } from "./browser-timezone-materializ
 import { createBrowserVerifiedModuleImporter } from "./browser-verified-module-importer.mjs";
 import { createContractError } from "./contract-error.mjs";
 import { createDeploymentExecution } from "./deployment-execution.mjs";
+import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
 import { createNetWasmExecutionFacade } from "./netwasm-execution-facade.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
+import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { createProviderExecutionComposition } from "./provider-execution-composition.mjs";
 import { selectProviderKind } from "./provider-kind-selector.mjs";
@@ -45,11 +47,13 @@ export function createBrowserExecutionComposition(
     revokeModuleUrl: options.platform.revokeModuleUrl,
   });
   const prepareProviders = createProviderExecutionComposition({
+    catalog: platformProviderCatalog,
     createShim: options.platform.createShim,
     hashBytes: transport.hashBytes,
     importModule,
     isAbsoluteHostPath: rejectHostPath,
     readArtifact: transport.readArtifact,
+    snapshotManifest: validateDeploymentManifest,
   });
   const validateRequest = createExecutionRequestValidator({
     isAbsoluteHostPath: rejectHostPath,
@@ -80,6 +84,7 @@ export function createBrowserExecutionComposition(
         digest: options.platform.digest,
         fetch: options.platform.fetch,
       }),
+      snapshotManifest: validateDeploymentManifest,
     }),
     prepareProviders,
     prepareRawInterop,

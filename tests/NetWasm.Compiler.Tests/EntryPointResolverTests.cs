@@ -52,6 +52,59 @@ public sealed class EntryPointResolverTests
     }
 
     [Fact]
+    public void ResolverExportsAnnotatedMethodsFromReferencedAssemblies()
+    {
+        var application = new AssemblyIdentity("Application");
+        var library = new AssemblyIdentity("Library");
+        var applicationType = new EntityKey(application, 1);
+        var libraryType = new EntityKey(library, 1);
+        var entryPoint = Method(applicationType, 2, "Main", isStatic: true)
+            with
+        { Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4) };
+        var javaScript = Method(libraryType, 3, "LibraryCallback", isStatic: true)
+            with
+        { JSExport = new InteropExportDeclaration("libraryCallback") };
+        var methods = ImmutableArray.Create(entryPoint, javaScript);
+
+        var result = CreateResolver().Resolve(
+            Snapshot(application, methods, [entryPoint]),
+            new MethodFinder(methods),
+            new SymbolFormatter(),
+            new CompilerOptions("entry.dll", [], "Program", "Main", []));
+
+        Assert.Equal(["libraryCallback"], result.Exports.Select(export => export.Name));
+    }
+
+    [Fact]
+    public void ResolverNamesBothAssembliesForAnExportDeclaredTwice()
+    {
+        var application = new AssemblyIdentity("Application");
+        var library = new AssemblyIdentity("Library");
+        var applicationType = new EntityKey(application, 1);
+        var entryPoint = Method(applicationType, 2, "Main", isStatic: true)
+            with
+        { Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4) };
+        var mine = Method(applicationType, 3, "Resize", isStatic: true)
+            with
+        { JSExport = new InteropExportDeclaration("resize") };
+        var theirs = Method(new EntityKey(library, 1), 3, "OnResize", isStatic: true)
+            with
+        { JSExport = new InteropExportDeclaration("resize") };
+        var methods = ImmutableArray.Create(entryPoint, mine, theirs);
+
+        var error = Assert.Throws<CompilerException>(() => CreateResolver().Resolve(
+            Snapshot(application, methods, [entryPoint, mine]),
+            new MethodFinder(methods),
+            new SymbolFormatter(),
+            new CompilerOptions("entry.dll", [], "Program", "Main", [])));
+
+        Assert.Equal(DiagnosticCode.InvalidCommandLine, error.Diagnostic.Code);
+        Assert.Contains("duplicate Wasm export name 'resize'", error.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("Resize in Application", error.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("OnResize in Library", error.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ResolverRejectsDuplicateRequestedExportNamesBeforeMethodLookup()
     {
         var assembly = new AssemblyIdentity("Application");
@@ -133,12 +186,17 @@ public sealed class EntryPointResolverTests
 
     private static MetadataCompilationSnapshot Snapshot(
         AssemblyIdentity assembly,
-        ImmutableArray<MethodDefinitionModel> methods) => new(
+        ImmutableArray<MethodDefinitionModel> methods) => Snapshot(assembly, methods, methods);
+
+    private static MetadataCompilationSnapshot Snapshot(
+        AssemblyIdentity assembly,
+        ImmutableArray<MethodDefinitionModel> methods,
+        ImmutableArray<MethodDefinitionModel> entryAssemblyMethods) => new(
         [],
         assembly,
         [],
         methods,
-        methods);
+        entryAssemblyMethods);
 
     private sealed class MethodFinder(
         ImmutableArray<MethodDefinitionModel> methods) : IMethodFinder

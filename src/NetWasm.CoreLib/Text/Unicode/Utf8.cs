@@ -78,16 +78,20 @@ public static class Utf8
         internal bool Success => _success;
 
         public bool AppendLiteral(string value) => AppendFormatted(value);
-        public bool AppendFormatted<T>(T value) => AppendFormatted(value, 0, null);
-        public bool AppendFormatted<T>(T value, string? format) => AppendFormatted(value, 0, format);
-        public bool AppendFormatted<T>(T value, int alignment) => AppendFormatted(value, alignment, null);
+        public bool AppendFormatted<T>(T value) => AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, _provider), 0);
+        public bool AppendFormatted<T>(T value, string? format) =>
+            AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, format, _provider), 0);
+        public bool AppendFormatted<T>(T value, int alignment) =>
+            AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, _provider), alignment);
         public bool AppendFormatted<T>(T value, int alignment, string? format) =>
-            AppendAligned(StringBuilder.FormatValue(value, format, _provider), alignment);
-        public bool AppendFormatted(string? value) => AppendAligned(value ?? string.Empty, 0);
+            AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, format, _provider), alignment);
+        public bool AppendFormatted(string? value) => _provider is null
+            ? AppendAligned(value ?? string.Empty, 0)
+            : AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, null, _provider), 0);
         public bool AppendFormatted(string? value, int alignment = 0, string? format = null) =>
-            AppendAligned(StringBuilder.FormatValue(value, format, _provider), alignment);
+            AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, format, _provider), alignment);
         public bool AppendFormatted(object? value, int alignment = 0, string? format = null) =>
-            AppendAligned(StringBuilder.FormatValue(value, format, _provider), alignment);
+            AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, format, _provider), alignment);
         public bool AppendFormatted(scoped ReadOnlySpan<char> value) => AppendAligned(value, 0);
         public bool AppendFormatted(scoped ReadOnlySpan<char> value, int alignment = 0, string? format = null) => AppendAligned(value, alignment);
         public bool AppendFormatted(scoped ReadOnlySpan<byte> value) => AppendBytes(value);

@@ -10,10 +10,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 internal sealed class EnumConvertEmitter(
     IEnumStorageResolver storages,
-    IEnumToStringEmitter strings,
     IImplicitExceptionEmitter exceptions,
-    ITargetLayout layouts,
-    ITypeLayoutProvider typeLayouts) : IEnumConvertEmitter
+    ITargetLayout layouts) : IEnumConvertEmitter
 {
     public void EmitConvert(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
@@ -23,18 +21,17 @@ internal sealed class EnumConvertEmitter(
             exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Instruction.Context.ManagedThrowFunction);
             return;
         }
-        if (name == "InternalToType")
-        {
-            EmitToType(request, code);
-            return;
-        }
         if (name == "InternalToDecimal")
         {
             EmitDecimal(request, code);
             return;
         }
 
-        var receiver = request.Local(0, CliValueKind.ManagedReference);
+        // A numeric result can share the receiver's evaluation-stack local.
+        // Keep the boxed address intact while dispatch checks remaining enum types.
+        var receiver = request.Instruction.Context.ObjectTemporary;
+        Get(code, request.Local(0, CliValueKind.ManagedReference));
+        Set(code, receiver);
         var resultKind = request.Method.Signature.ReturnType;
         var result = request.Local(0, resultKind);
         var temporary = request.Instruction.Context.NumericTemporaryI4;
@@ -54,6 +51,7 @@ internal sealed class EnumConvertEmitter(
             ManagedMemoryEmitter.EmitLoadByType(
                 code, layouts.Target, storage.PayloadOffset,
                 storage.UnderlyingType, storage.Layout.Size);
+            EmitIntegerBounds(request, code, name, storage.UnderlyingType);
             EmitConversion(code, name, storage.UnderlyingType, resultKind);
             if (resultKind == CliValueKind.I8)
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
@@ -70,6 +68,63 @@ internal sealed class EnumConvertEmitter(
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
             Set(code, result);
         }
+    }
+
+    private void EmitIntegerBounds(
+        RuntimeIntrinsicEmissionRequest request,
+        IWasmInstructionWriter code,
+        string name,
+        CliTypeIdentity underlying)
+    {
+        (long Minimum, ulong Maximum)? bounds = name switch
+        {
+            "InternalToChar" or "InternalToUInt16" => (0, ushort.MaxValue),
+            "InternalToSByte" => (sbyte.MinValue, (ulong)sbyte.MaxValue),
+            "InternalToByte" => (0, byte.MaxValue),
+            "InternalToInt16" => (short.MinValue, (ulong)short.MaxValue),
+            "InternalToInt32" => (int.MinValue, int.MaxValue),
+            "InternalToUInt32" => (0, uint.MaxValue),
+            "InternalToInt64" => (long.MinValue, long.MaxValue),
+            "InternalToUInt64" => (0, ulong.MaxValue),
+            _ => null,
+        };
+        if (bounds is not { } range)
+            return;
+
+        var unsigned = IsUnsigned(underlying);
+        var temporary = request.Instruction.Context.NumericTemporaryI8;
+        if (underlying.StackKind == CliValueKind.I4)
+            code.Write(WasmInstruction.NoOperand(unsigned
+                ? WasmOpcodes.I64ExtendI32Unsigned
+                : WasmOpcodes.I64ExtendI32Signed));
+        Set(code, temporary);
+        if (!unsigned)
+        {
+            Get(code, temporary);
+            WriteI64(code, range.Minimum);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64LessThanSigned));
+            EmitOverflowIf(code, request.Instruction.Context.ManagedThrowFunction);
+        }
+        if (unsigned || range.Maximum != ulong.MaxValue)
+        {
+            Get(code, temporary);
+            WriteI64(code, unchecked((long)range.Maximum));
+            code.Write(WasmInstruction.NoOperand(unsigned
+                ? WasmOpcodes.I64GreaterThanUnsigned
+                : WasmOpcodes.I64GreaterThanSigned));
+            EmitOverflowIf(code, request.Instruction.Context.ManagedThrowFunction);
+        }
+        Get(code, temporary);
+        if (underlying.StackKind == CliValueKind.I4)
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32WrapI64));
+    }
+
+    private void EmitOverflowIf(IWasmInstructionWriter code, OptionalFunctionIndex throwFunction)
+    {
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        exceptions.Emit(code, ManagedExceptionKind.Overflow, throwFunction);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private void EmitDecimal(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
@@ -154,28 +209,6 @@ internal sealed class EnumConvertEmitter(
             ManagedMemoryEmitter.EmitAddressAdd(code, layouts.Target);
         }
         Set(code, result);
-    }
-
-    private void EmitToType(
-        RuntimeIntrinsicEmissionRequest request,
-        IWasmInstructionWriter code)
-    {
-        var conversionType = request.Local(1, CliValueKind.ManagedReference);
-        EmitNullCheck(code, conversionType, ManagedExceptionKind.ArgumentNull, request.Instruction.Context.ManagedThrowFunction);
-
-        Get(code, conversionType);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Load,
-            WasmInstructionOperand.Memory(2, (uint)layouts.Target.ObjectHeaderSize)));
-        WriteI32(code, typeLayouts.StringTypeId);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        strings.EmitToString(request, code);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
-        exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Instruction.Context.ManagedThrowFunction);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private static void EmitDecimalValue(
@@ -294,24 +327,6 @@ internal sealed class EnumConvertEmitter(
         {
             StoreI32(code, result, 0, 0);
         }
-    }
-
-    private void EmitNullCheck(
-        IWasmInstructionWriter code,
-        int local,
-        ManagedExceptionKind exception,
-        OptionalFunctionIndex throwFunction)
-    {
-        Get(code, local);
-        code.Write(WasmInstruction.NoOperand(
-            layouts.Target.UsesMemory64
-                ? WasmOpcodes.I64EqualZero
-                : WasmOpcodes.I32EqualZero));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        exceptions.Emit(code, exception, throwFunction);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private static void StoreFromI32(
