@@ -679,7 +679,7 @@ public sealed class ManagedAssembly : IDisposable
                 var constructor = Reader.GetCustomAttribute(attributeHandle).Constructor;
                 if (constructor.Kind != HandleKind.MemberReference ||
                     Reader.GetMemberReference((MemberReferenceHandle)constructor).Parent is not
-                        { Kind: HandleKind.TypeSpecification } parent)
+                    { Kind: HandleKind.TypeSpecification } parent)
                 {
                     continue;
                 }

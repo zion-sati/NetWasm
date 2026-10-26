@@ -25,7 +25,10 @@ public sealed class JavaScriptValueFrameEmitterTests
 
     private static readonly ImmutableDictionary<string, int> Conversions = new Dictionary<string, int>
     {
-        ["FromDateTime"] = 11, ["ToDateTime"] = 12, ["FromDateTimeOffset"] = 13, ["ToDateTimeOffset"] = 14,
+        ["FromDateTime"] = 11,
+        ["ToDateTime"] = 12,
+        ["FromDateTimeOffset"] = 13,
+        ["ToDateTimeOffset"] = 14,
     }.ToImmutableDictionary();
 
     [Fact]

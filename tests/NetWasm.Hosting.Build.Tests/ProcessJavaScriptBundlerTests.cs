@@ -62,7 +62,8 @@ public sealed class ProcessJavaScriptBundlerTests
             Path.Combine(directory.Path, "entry.mjs"),
             output,
             "browser",
-            false) { RuntimeImportsPath = imports });
+            false)
+        { RuntimeImportsPath = imports });
         Assert.Equal<string>(["--runtime", imports], process.Request!.Arguments[^2..]);
 
         subject.BundleRuntime(new(
@@ -85,7 +86,8 @@ public sealed class ProcessJavaScriptBundlerTests
             "facades", runtime, true)));
         Assert.Throws<ArgumentException>(() => subject.Bundle(new(
             Path.Combine(directory.Path, "node"), Path.Combine(directory.Path, "bundle-command.mjs"),
-            Path.Combine(directory.Path, "entry.mjs"), output, "browser", false) { RuntimeImportsPath = "imports.json" }));
+            Path.Combine(directory.Path, "entry.mjs"), output, "browser", false)
+        { RuntimeImportsPath = "imports.json" }));
     }
 
     [Fact]
