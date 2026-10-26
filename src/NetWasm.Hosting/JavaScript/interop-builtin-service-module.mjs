@@ -121,12 +121,13 @@ class ManagedError extends Error {
 // The JavaScript values CoreLib's JSMarshal converts, each held behind a host
 // handle: value_kind's numbering is JSValueKind's. A handle 0 is null; the
 // receiver of a handle releases it. Managed objects and exceptions keep their
-// managed GC handle, which value_collected reports once JavaScript collects them.
-function createJavaScriptValueServices(handles) {
+// managed GC handle, which value_collected reports once JavaScript collects them;
+// without a FinalizationRegistry they stay pinned.
+export function createJavaScriptValueServices(handles, Registry = globalThis.FinalizationRegistry) {
   const managed = new WeakMap();
   const collected = [];
-  const registry = typeof FinalizationRegistry === "function"
-    ? new FinalizationRegistry(handle => collected.push(handle))
+  const registry = typeof Registry === "function"
+    ? new Registry(handle => collected.push(handle))
     : null;
   const value = handle => handle === 0 ? null : handles.get(handle);
   const acquire = item => item === null || item === undefined ? 0 : handles.acquire(item);

@@ -549,3 +549,42 @@ test("enters the shared export depth guard for the whole call", () => {
   assert.throws(() => refused(), /too deep/);
   assert.throws(() => createManagedInteropExport(request({ enterExport: 1 })), /lifetime actions/);
 });
+
+// A nullable crosses as its presence and value, a nullable result as the record
+// its returned address names; a handle value's receiver releases the handle.
+test("crosses nullable and handle values through a managed export", () => {
+  const handles = createInteropHandleTable();
+  const view = new DataView(memory.buffer);
+  let received;
+  const nullable = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["i32?", "date?", "any"], result: "f64?" }),
+    handles,
+    instance: { exports: { run: (...values) => {
+      received = values;
+      view.setInt32(256, values[0], true);
+      view.setFloat64(264, 2.5, true);
+      return 256;
+    } } },
+  }));
+  assert.equal(nullable(7, null, "text"), 2.5);
+  assert.deepEqual(received.slice(0, 4), [1, 7, 0, -62_135_596_800_000]);
+  assert.equal(handles.count, 0);
+  assert.equal(nullable(undefined, new Date(5), null), null);
+  assert.deepEqual(received, [0, 0, 1, 5, 0]);
+
+  const value = { key: 1 };
+  const result = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: [], result: "any" }),
+    handles,
+    instance: { exports: { run: () => handles.acquire(value) } },
+  }));
+  assert.equal(result(), value);
+  assert.equal(handles.count, 0);
+  const none = createManagedInteropExport(request({
+    descriptor: descriptor({ parameters: ["string[]"], result: "error" }),
+    handles,
+    instance: { exports: { run: () => 0 } },
+  }));
+  assert.equal(none(["a", null]), null);
+  assert.throws(() => none([1]), NetWasmHostError);
+});

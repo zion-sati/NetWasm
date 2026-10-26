@@ -696,3 +696,64 @@ test("writes a scalar result after memory grows", () => {
   assert.equal(view.getInt32(64, true), 40);
   assert.equal(view.getInt32(65536 + 64, true), 42);
 });
+
+// A nullable argument arrives as its presence and value and a nullable result
+// leaves as a record; a handle value's receiver releases the handle.
+test("lifts and writes nullable and handle values", () => {
+  const handles = createInteropHandleTable();
+  const value = { key: 1 };
+  let received;
+  const arguments_ = createInteropStatusService(request({
+    descriptor: descriptor({ parameters: ["i32?", "date?", "any"], result: "f64?" }),
+    handles,
+    service(...values) { received = values; return values[0] === null ? null : 2.5; },
+  }));
+  const state = arguments_;
+  assert.equal(state(1, 7, 0, 0, handles.acquire(value), 0), 0);
+  assert.deepEqual(received, [7, null, value]);
+  assert.equal(handles.count, 0);
+  for (const [result, returned, check] of [
+    ["f64?", 2.5, view => assert.deepEqual([view.getInt32(0, true), view.getFloat64(8, true)], [1, 2.5])],
+    ["i32?", null, view => assert.equal(view.getInt32(0, true), 0)],
+    ["string[]", ["a", null], (view, table) => assert.deepEqual(table.get(view.getInt32(0, true)), ["a", null])],
+    ["any", undefined, view => assert.equal(view.getInt32(0, true), 0)],
+  ]) {
+    const table = createInteropHandleTable();
+    const results = request({ descriptor: descriptor({ result }), handles: table, service: () => returned });
+    const memoryView = new DataView(results.getMemory().buffer);
+    memoryView.setInt32(0, -1, true);
+    assert.equal(createInteropStatusService(results)(0), 0);
+    check(memoryView, table);
+  }
+  const invalid = request({ descriptor: descriptor({ result: "object[]" }), service: () => [1] });
+  assert.equal(createInteropStatusService(invalid)(0), 1);
+});
+
+test("settles task-style services with nullable and handle values", async () => {
+  for (const [result, value, expected] of [
+    ["i32?", 7, [5, 1, 7]],
+    ["i64?", null, [5, 0, 0n]],
+    ["any[]", [1], [5, [1]]],
+  ]) {
+    const handles = createInteropHandleTable();
+    const calls = [];
+    const state = request({
+      descriptor: descriptor({
+        asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel", result,
+      }),
+      handles,
+      getInstance: () => ({ exports: {
+        resolve(...values) {
+          calls.push(...(result === "any[]" ? [values[0], handles.get(values[1])] : values));
+        },
+        reject: () => calls.push("reject"),
+        cancel() {},
+      } }),
+      service: () => Promise.resolve(value),
+    });
+    assert.equal(createInteropStatusService(state)(5, 0), 0);
+    await tick();
+    assert.deepEqual(calls, expected);
+    assert.equal(handles.count, 0);
+  }
+});

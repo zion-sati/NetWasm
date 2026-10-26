@@ -6,8 +6,10 @@ import {
   isAbiType,
   isHostObject,
   isMemoryViewAbiType,
+  isHandleValueAbiType,
   isScalarAbiType,
   nullableUnderlying,
+  requireHandleValue,
   isTransferAbiType,
   isValueArray,
   isValueArrayAbiType,
@@ -101,4 +103,23 @@ test("maps every value-array ABI type to its typed array", () => {
 test("isHostObject accepts objects and functions only", () => {
   for (const value of [{}, [], () => {}, Float64Array.of(1)]) assert.equal(isHostObject(value), true);
   for (const value of [null, undefined, 1, "text", 1n, true]) assert.equal(isHostObject(value), false);
+});
+
+// An object, exception or array of references enters managed code as a handle.
+test("checks values entering managed code as handle values", () => {
+  for (const type of ["any", "error", "string[]", "object[]", "any[]"]) {
+    assert.equal(isHandleValueAbiType(type), true, type);
+  }
+  for (const type of ["object", "string", null]) assert.equal(isHandleValueAbiType(type), false, String(type));
+  for (const [type, value] of [
+    ["any", 1], ["error", "message"], ["string[]", ["a", null, undefined]], ["object[]", [{}, () => {}, null]],
+    ["any[]", [1, "a"]], ["string[]", null], ["any", undefined],
+  ]) {
+    requireHandleValue(type, value);
+  }
+  assert.throws(() => requireHandleValue("string[]", "a"), /string\[\] value must be an array/);
+  assert.throws(() => requireHandleValue("object[]", 1), /JSObject\[\] value must be an array/);
+  assert.throws(() => requireHandleValue("any[]", {}), /object\[\] value must be an array/);
+  assert.throws(() => requireHandleValue("string[]", [1]), /hold strings/);
+  assert.throws(() => requireHandleValue("object[]", [1]), /hold objects/);
 });

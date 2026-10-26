@@ -110,6 +110,10 @@ test("reads every scalar at its own width", () => {
       readScalarValue(memory, 8, "f64"), readScalarValue(memory, 16, "i64"), readScalarValue(memory, 16, "u64")],
     [true, 65, 65, "\u0141", 0x141, 0x1_0141, 1234, -2n, 0xffff_ffff_ffff_fffen]);
   assert.equal(readScalarValue(memory, 8, "date").getTime(), 1234);
+  view.setFloat32(24, 0.5, true);
+  assert.deepEqual(
+    [readScalarValue(memory, 0, "u16"), readScalarValue(memory, 16, "u32"), readScalarValue(memory, 24, "f32")],
+    [0x141, 0xffff_fffe, 0.5]);
   assert.throws(() => readScalarValue(memory, 0, "string"), /unsupported/);
 });
 
