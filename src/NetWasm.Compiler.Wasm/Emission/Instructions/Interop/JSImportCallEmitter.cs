@@ -17,7 +17,8 @@ internal sealed class JSImportCallEmitter(IJSImportInvocationEmitter invocations
                 instruction.Stack,
                 request.ArgumentBase,
                 request.Consumed,
-                instruction.Target),
+                instruction.Target,
+                instruction.Instruction.Offset),
             code,
             functionIndices);
     }

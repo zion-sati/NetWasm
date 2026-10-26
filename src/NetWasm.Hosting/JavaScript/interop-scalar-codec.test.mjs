@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   liftInteropScalar,
   lowerInteropScalar,
+  readScalarValue,
   writeInteropScalarResult,
 } from "./interop-scalar-codec.mjs";
 
@@ -56,6 +57,64 @@ test("rejects values outside the JavaScript interop scalar ABI", () => {
   for (const [type, value] of invalid) {
     assert.throws(() => lower(type, value), /value|unsupported/);
   }
+});
+
+// A DateTime or DateTimeOffset crosses as its Unix milliseconds, a Date here.
+test("crosses a date as its Unix milliseconds", () => {
+  const lifted = lift("date", 86_400_001);
+  assert.ok(lifted instanceof Date);
+  assert.equal(lifted.getTime(), 86_400_001);
+  assert.equal(lower("date", new Date(-62_135_596_800_000)), -62_135_596_800_000);
+  assert.ok(Number.isNaN(lower("date", new Date(Number.NaN))));
+  for (const value of [0, "1970-01-01", { getTime: () => 0 }]) {
+    assert.throws(() => lower("date", value), /date value must be a Date/);
+  }
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  writeInteropScalarResult({ byteOffset: 8, memory, type: "date", value: lower("date", new Date(1234)) });
+  assert.equal(new DataView(memory.buffer).getFloat64(8, true), 1234);
+});
+
+// A long marked JSType.Number crosses as a number, exact within 2^53 - 1.
+test("crosses an i52 as a safe-integer number", () => {
+  assert.equal(lift("i52", 9_007_199_254_740_991n), Number.MAX_SAFE_INTEGER);
+  assert.equal(lift("i52", -5n), -5);
+  assert.throws(() => lift("i52", 9_007_199_254_740_992n), /outside/);
+  assert.equal(lower("i52", -9_007_199_254_740_991), -9_007_199_254_740_991n);
+  for (const value of [0.5, 2 ** 53, "1", 1n]) assert.throws(() => lower("i52", value), /i52 value/);
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  writeInteropScalarResult({ byteOffset: 0, memory, type: "i52", value: lower("i52", 42) });
+  assert.equal(readScalarValue(memory, 0, "i52"), 42);
+});
+
+// As on .NET's browser runtime, null where C# expects a plain value is its default.
+test("lowers null or undefined to the scalar's default", () => {
+  for (const missing of [null, undefined]) {
+    assert.deepEqual(
+      ["bool", "i8", "u8", "char", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "date"]
+        .map(type => lower(type, missing)),
+      [0, 0, 0, 0, 0, 0, 0, 0, 0n, 0n, 0, 0, -62_135_596_800_000]);
+    assert.equal(lower("i52", missing), 0n);
+  }
+});
+
+// A nullable's record holds its value at the scalar's own width.
+test("reads every scalar at its own width", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const view = new DataView(memory.buffer);
+  view.setInt32(0, 0x1_0141, true);
+  view.setFloat64(8, 1234, true);
+  view.setBigInt64(16, -2n, true);
+  assert.deepEqual(
+    [readScalarValue(memory, 0, "bool"), readScalarValue(memory, 0, "i8"), readScalarValue(memory, 0, "u8"),
+      readScalarValue(memory, 0, "char"), readScalarValue(memory, 0, "i16"), readScalarValue(memory, 0, "i32"),
+      readScalarValue(memory, 8, "f64"), readScalarValue(memory, 16, "i64"), readScalarValue(memory, 16, "u64")],
+    [true, 65, 65, "\u0141", 0x141, 0x1_0141, 1234, -2n, 0xffff_ffff_ffff_fffen]);
+  assert.equal(readScalarValue(memory, 8, "date").getTime(), 1234);
+  view.setFloat32(24, 0.5, true);
+  assert.deepEqual(
+    [readScalarValue(memory, 0, "u16"), readScalarValue(memory, 16, "u32"), readScalarValue(memory, 24, "f32")],
+    [0x141, 0xffff_fffe, 0.5]);
+  assert.throws(() => readScalarValue(memory, 0, "string"), /unsupported/);
 });
 
 test("writes every scalar result using the frozen little-endian status ABI", () => {

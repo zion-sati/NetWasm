@@ -593,7 +593,8 @@ public sealed partial class SdkToolchainContractTests
         var referenceBuilds = referenceProject.Descendants("MSBuild")
             .Where(task => (string?)task.Attribute("Targets") == "Build")
             .ToArray();
-        Assert.Equal(2, referenceBuilds.Length);
+        // The CoreLib contract, the pack task and the JSImport generator.
+        Assert.Equal(3, referenceBuilds.Length);
         Assert.All(referenceBuilds, task => Assert.Contains(
             "'$(NoBuild)' != 'true'", (string?)task.Attribute("Condition"),
             StringComparison.Ordinal));

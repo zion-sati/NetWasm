@@ -667,6 +667,10 @@ internal sealed class ReachabilityClosureBuilder(
                     analysis.JavaScriptAsyncBinding.Method,
                     analysis.JavaScriptAsyncBinding);
             }
+            foreach (var (name, conversion) in analysis.Conversions)
+            {
+                state.JavaScriptConversions.TryAdd(name, conversion);
+            }
         }
 
         void EnqueueInstance(MethodInstanceModel method)

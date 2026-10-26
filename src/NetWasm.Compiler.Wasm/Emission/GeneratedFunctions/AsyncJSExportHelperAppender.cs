@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
@@ -19,7 +20,8 @@ internal sealed class AsyncJSExportHelperAppender(
         ManagedAsyncBoundaryNames names,
         ManagedAsyncBoundaryKinds kinds,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
-        AsyncTaskCompletionPlan completion)
+        AsyncTaskCompletionPlan completion,
+        InteropImportPlan? interopImports = null)
     {
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentOutOfRangeException.ThrowIfNegative(importCount);
@@ -60,7 +62,7 @@ internal sealed class AsyncJSExportHelperAppender(
             functions.Add(new WasmFunctionDefinition(
                 resultName,
                 resultTypes.Resolve(binding),
-                results.Emit(binding)));
+                results.Emit(binding, interopImports)));
             boundaryEntries.Add(boundaries.Build(new(
                 [.. functions],
                 importCount,

@@ -121,7 +121,7 @@ internal sealed class JSImportForwarderFunctionEmitter(
         }
 
         invocations.Emit(
-            new JSImportInvocation(import, context, stack, 0, parameters.Length, target),
+            new JSImportInvocation(import, context, stack, 0, parameters.Length, target, 0),
             code,
             functionIndices);
         if (import.Signature.ReturnType != CliValueKind.Void)

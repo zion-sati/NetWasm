@@ -2,27 +2,24 @@ import {
   NetWasmHostError,
   NetWasmManagedError,
 } from "./managed-errors.mjs";
-import {
-  describeValueArray,
-  isValueArrayAbiType,
-  valueArrayConstructor,
-} from "./interop-abi-types.mjs";
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
-import {
-  liftInteropScalar,
-  lowerInteropScalar,
-} from "./interop-scalar-codec.mjs";
+import { liftResult, lowerArguments } from "./managed-interop-export.mjs";
 
 const requestKeys = [
   "callbacks",
   "descriptor",
   "exceptionReporter",
   "getInstance",
+  "getMemory",
   "handle",
   "handles",
   "parameterIndex",
+  "target",
+  "targetLayout",
 ];
 
+// A callback is entered as a synchronous export is: it takes and returns the
+// same values, lowered and lifted by the same code.
 export function createManagedInteropCallback(request) {
   assertExactDataObject(request, requestKeys, "managed interop callback request");
   if (!Array.isArray(request.callbacks) || !Number.isInteger(request.parameterIndex)
@@ -51,37 +48,18 @@ export function createManagedInteropCallback(request) {
         `managed callback ${callback.exportName} is unavailable`);
     }
     const transientHandles = [];
+    const objectHandles = [];
+    let invoked = false;
     let failure;
     try {
-      const callbackArguments = arguments_.map((value, index) => {
-        const type = callback.parameters[index];
-        if (type === "string") {
-          if (value !== null && typeof value !== "string") {
-            throw new NetWasmHostError(
-              "a managed string callback requires string or null");
-          }
-          if (value === null) return 0;
-          const stringHandle = request.handles.acquire(value);
-          transientHandles.push(stringHandle);
-          return stringHandle;
-        }
-        if (isValueArrayAbiType(type)) {
-          if (value !== null && !(value instanceof valueArrayConstructor(type))) {
-            throw new NetWasmHostError(type === "bytes"
-              ? "a managed byte callback requires Uint8Array or null"
-              : `a managed callback ${describeValueArray(type)}`);
-          }
-          if (value === null) return 0;
-          const byteHandle = request.handles.acquire(value.slice());
-          transientHandles.push(byteHandle);
-          return byteHandle;
-        }
-        return lowerInteropScalar({ type, value });
-      });
+      const callbackArguments = lowerArguments(
+        callback.parameters, arguments_, request.handles, transientHandles, objectHandles);
+      invoked = true;
       const result = invoke(handle, ...callbackArguments);
       return callback.result === "void"
         ? undefined
-        : liftInteropScalar({ type: callback.result, value: result });
+        : liftResult(callback.result, result, request.getMemory, request.handles, request.target,
+          request.targetLayout);
     } catch (cause) {
       if (cause instanceof WebAssembly.RuntimeError) {
         const terminalEvent = request.exceptionReporter.consumeTerminalEvent();
@@ -100,6 +78,8 @@ export function createManagedInteropCallback(request) {
       for (const transientHandle of transientHandles) {
         try { request.handles.release(transientHandle); } catch { }
       }
+      // A JSObject argument's handle belongs to its managed wrapper once the call starts.
+      if (!invoked) for (const objectHandle of objectHandles) request.handles.release(objectHandle);
     }
     throw failure;
   });

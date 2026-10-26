@@ -123,6 +123,17 @@ public static class EntryPoint
         return text!.Length * 1000 + (int)total + HostPromises.ObjectValue(host!);
     }
 
+    // Issue #127: an asynchronous export settles with the values a synchronous one returns.
+    [JSExport("text_later")]
+    public static async Task<string?> TextLater(string name) => await HostPromises.ResolveText(name);
+
+    [JSExport("doubles_later")]
+    public static async ValueTask<double[]?> DoublesLater(int[] values) =>
+        await HostPromises.ResolveDoubles(values);
+
+    [JSExport("object_later")]
+    public static async Task<JSObject?> ObjectLater(int value) => await HostPromises.ResolveObject(value);
+
     [JSExport("echo_object")]
     public static JSObject? EchoObject(JSObject? value) => value;
 

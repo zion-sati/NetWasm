@@ -148,6 +148,19 @@ to the Wasm image. This is diagnostic stack-trace support, not source-level
 debugging or DWARF; see
 [deferred debug information](#deferred-debug-information-dwarf).
 
+### Type names
+
+`Type.Name`, `Type.Namespace`, `Type.FullName` and `Type.ToString()` work on
+any `Type` value, including one from `GetType()`. Looking a type up by its name,
+as `Type.GetType(string)` does, is outside the profile.
+
+The names come from data the compiler generates, and they are not free. The
+first reachable read of one of these members, on any type, adds that form of
+name for every type in the program, together with the runtime type facts the
+names rely on: tens of kilobytes in a small application. Code that must stay
+small, such as an error path every application reaches, should use a string it
+already has, for example a constant or `nameof`.
+
 ## Complete / supported package profiles
 
 ### `System.IO.Hashing` scalar profile

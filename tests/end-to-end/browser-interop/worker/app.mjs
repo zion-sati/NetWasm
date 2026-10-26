@@ -29,6 +29,8 @@ try {
     document.querySelector("#progress").textContent = String(values[0]);
   } });
   second = await createWorker();
+  const runtime = await (await fetch(new URL("./browser/BrowserWorker.worker.mjs", import.meta.url))).text();
+  check(!runtime.includes("netwasm-fixture-optional-feature"), "An unused declared module was bundled.");
   check(await first.add(10) === 10 && await second.add(1) === 1, "Instances share state.");
   check(await first.task(41) === 42, "Task result mismatch.");
   check(document.querySelector("#progress").textContent === "41", "Notification did not reach page.");
@@ -52,11 +54,29 @@ try {
   checkPayload(overlapping[0], "first instance");
   checkPayload(overlapping[1], "second instance");
   check(await first.add(32) === 42, "Failed export poisoned the session.");
+  document.body.dataset.testCase = "concurrent";
+  const waiting = first.waitForRelease();
+  await first.release(41);
+  check(await waiting === 42, "A call could not start while another awaited.");
+  const counting = first.countUntilStopped();
+  await first.stop();
+  check(await counting >= 1, "A running job could not be stopped through another export.");
+  document.body.dataset.testCase = "async-results";
+  check(await first.describe("x") === "worker:x", "Task<string> worker result failed.");
+  const halves = await first.halves(Int32Array.of(2, 5));
+  check(halves instanceof Float64Array && halves[0] === 1 && halves[1] === 2.5,
+    "ValueTask<double[]> worker result failed.");
   const draining = first.task(41);
   await first.dispose();
   check(await draining === 42, "Graceful disposal did not drain the pending call.");
   await rejection(() => first.add(1));
   check(await second.add(41) === 42, "Disposal affected another instance.");
+  document.body.dataset.testCase = "abandon";
+  const abandon = new AbortController();
+  const abandoned = second.pending({ signal: abandon.signal });
+  abandon.abort();
+  check((await rejection(() => abandoned)).name === "AbortError", "Aborting a call did not reject it.");
+  check(await second.add(0) === 42, "An abandoned call held back later calls.");
   const pending = second.pending().then(() => false, () => true);
   second.terminate();
   check(await pending, "Termination did not reject the pending call.");

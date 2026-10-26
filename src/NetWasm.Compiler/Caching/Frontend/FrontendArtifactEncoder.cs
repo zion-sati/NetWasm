@@ -16,7 +16,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 22;
+    private const ushort SchemaVersion = 23;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -127,6 +127,8 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write(String(item.FunctionName));
                     WriteNullableId(writer, item.ModuleName, String);
                     writer.Write(item.IsPromise);
+                    WriteArray(writer, item.MarshalAs.Parameters, (string? marker) => WriteNullableId(writer, marker, String));
+                    WriteNullableId(writer, item.MarshalAs.Result, String);
                 });
                 WriteNullable(writer, value.JSExport, item =>
                 {
@@ -134,6 +136,8 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     WriteArray(writer, item.ParameterNames, String);
                     WriteArray(writer, item.NonNullableParameters, writer.Write);
                     writer.Write(item.NonNullableResult);
+                    WriteArray(writer, item.MarshalAs.Parameters, (string? marker) => WriteNullableId(writer, marker, String));
+                    WriteNullableId(writer, item.MarshalAs.Result, String);
                 });
                 WriteNullable(writer, value.WitImport, item =>
                 {

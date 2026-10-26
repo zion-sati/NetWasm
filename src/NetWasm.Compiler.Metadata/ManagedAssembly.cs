@@ -521,6 +521,7 @@ public sealed class ManagedAssembly : IDisposable
                 {
                     IsPromise = attributeType.EndsWith(
                         "JSImportPromiseAttribute", StringComparison.Ordinal),
+                    MarshalAs = ReadMarshalAs(method, parameterCount),
                 };
             }
             else if (attributeType == "System.Runtime.InteropServices.JavaScript.JSExportAttribute")
@@ -535,6 +536,7 @@ public sealed class ManagedAssembly : IDisposable
                     ParameterNames = ReadParameterNames(method, parameterCount),
                     NonNullableParameters = nonNullableParameters,
                     NonNullableResult = nonNullableResult,
+                    MarshalAs = ReadMarshalAs(method, parameterCount),
                 };
             }
             else if (attributeType == "System.Runtime.InteropServices.WebAssembly.WitImportAttribute")
@@ -658,6 +660,40 @@ public sealed class ManagedAssembly : IDisposable
             throw InvalidInteropDeclaration(methodKey, "JSImport must specify one non-empty function name, an optional module name, and no named arguments");
         }
         return new InteropImportDeclaration(functionName, moduleName);
+    }
+
+    // Each parameter's [JSMarshalAs<T>] marker and the result's (sequence 0).
+    private JavaScriptMarshalAs ReadMarshalAs(MethodDefinition method, int count)
+    {
+        const string attribute = "System.Runtime.InteropServices.JavaScript.JSMarshalAsAttribute`1<";
+        var markers = new string?[count + 1];
+        foreach (var handle in method.GetParameters())
+        {
+            var parameter = Reader.GetParameter(handle);
+            if (parameter.SequenceNumber > count)
+            {
+                continue;
+            }
+            foreach (var attributeHandle in parameter.GetCustomAttributes())
+            {
+                var constructor = Reader.GetCustomAttribute(attributeHandle).Constructor;
+                if (constructor.Kind != HandleKind.MemberReference ||
+                    Reader.GetMemberReference((MemberReferenceHandle)constructor).Parent is not
+                    { Kind: HandleKind.TypeSpecification } parent)
+                {
+                    continue;
+                }
+                var type = Reader.GetTypeSpecification((TypeSpecificationHandle)parent)
+                    .DecodeSignature(new JSTypeMarkerProvider(Reader), null);
+                if (type.StartsWith(attribute, StringComparison.Ordinal) && type.EndsWith('>'))
+                {
+                    markers[parameter.SequenceNumber] = type[attribute.Length..^1];
+                }
+            }
+        }
+        return markers.All(marker => marker is null)
+            ? JavaScriptMarshalAs.None
+            : new([.. markers.Skip(1)], markers[0]);
     }
 
     private ImmutableArray<string> ReadParameterNames(MethodDefinition method, int count)

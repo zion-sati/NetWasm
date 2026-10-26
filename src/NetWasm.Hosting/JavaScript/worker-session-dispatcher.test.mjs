@@ -12,7 +12,7 @@ function fixture(overrides = {}) {
     exports: { add: (left, right) => left + right },
     generation: "generation-1",
     onFailure: cause => failures.push(cause),
-    post: message => messages.push(message),
+    post: (message, transfer = []) => messages.push(transfer.length === 0 ? message : { ...message, transfer }),
     ...overrides,
   };
   return {
@@ -26,7 +26,7 @@ function fixture(overrides = {}) {
 
 function invoke(overrides = {}) {
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     generation: "generation-1",
     kind: "invoke",
     requestId: 1,
@@ -36,7 +36,8 @@ function invoke(overrides = {}) {
   };
 }
 
-const close = () => ({ protocolVersion: 1, generation: "generation-1", kind: "close" });
+const close = () => ({ protocolVersion: 2, generation: "generation-1", kind: "close" });
+const cancel = () => ({ protocolVersion: 2, generation: "generation-1", kind: "cancel", requestId: 1 });
 
 test("dispatches only allowlisted operations and returns values", async () => {
   const state = fixture();
@@ -44,7 +45,7 @@ test("dispatches only allowlisted operations and returns values", async () => {
   assert.equal(Object.isFrozen(state.dispatcher.operations), true);
   await state.dispatcher.receive(invoke());
   assert.deepEqual(state.messages, [{
-    protocolVersion: 1, generation: "generation-1", kind: "result",
+    protocolVersion: 2, generation: "generation-1", kind: "result",
     requestId: 1, value: 42,
   }]);
 
@@ -53,19 +54,43 @@ test("dispatches only allowlisted operations and returns values", async () => {
   assert.equal(state.messages[1].error.category, "contractFailure");
 });
 
-test("does not queue concurrent invocations inside the worker", async () => {
-  let resolve;
+// Issue #126: calls run concurrently, as page calls do, so a call can start
+// while an asynchronous export awaits.
+test("runs invocations concurrently and matches results to their requests", async () => {
+  const resolvers = new Map();
   const calls = [];
   const state = fixture({ exports: {
-    wait: value => { calls.push(value); return new Promise(done => { resolve = done; }); },
+    wait: value => { calls.push(value); return new Promise(done => { resolvers.set(value, done); }); },
   } });
   const first = state.dispatcher.receive(invoke({ operation: "wait", arguments: [1] }));
-  await state.dispatcher.receive(invoke({ requestId: 2, operation: "wait", arguments: [2] }));
-  assert.deepEqual(calls, [1]);
-  assert.equal(state.messages[0].error.category, "contractFailure");
-  resolve(7);
+  const second = state.dispatcher.receive(invoke({ requestId: 2, operation: "wait", arguments: [2] }));
+  assert.deepEqual(calls, [1, 2]);
+  await assert.rejects(
+    () => state.dispatcher.receive(invoke({ operation: "wait", arguments: [3] })),
+    /already active/);
+  resolvers.get(2)(20);
+  await second;
+  resolvers.get(1)(10);
   await first;
-  assert.equal(state.messages[1].value, 7);
+  assert.deepEqual(state.messages.map(message => [message.requestId, message.value]), [[2, 20], [1, 10]]);
+});
+
+test("reports a task the export canceled as cancelled", async () => {
+  const state = fixture({ exports: {
+    stop: () => Promise.reject(new DOMException("canceled", "AbortError")),
+  } });
+  await state.dispatcher.receive(invoke({ operation: "stop", arguments: [] }));
+  assert.equal(state.messages[0].error.category, "cancelled");
+});
+
+test("transfers a returned array it owns and copies one that shares memory", async () => {
+  const owned = Float64Array.of(1, 2);
+  const shared = new Uint8Array(new ArrayBuffer(8), 2, 4);
+  const state = fixture({ exports: { owned: () => owned, shared: () => shared, scalar: () => 4 } });
+  await state.dispatcher.receive(invoke({ operation: "owned", arguments: [] }));
+  await state.dispatcher.receive(invoke({ requestId: 2, operation: "shared", arguments: [] }));
+  await state.dispatcher.receive(invoke({ requestId: 3, operation: "scalar", arguments: [] }));
+  assert.deepEqual(state.messages.map(message => message.transfer ?? []), [[owned.buffer], [], []]);
 });
 
 test("classifies managed failures, traps and host failures", async () => {
@@ -175,7 +200,9 @@ test("rejects malformed composition and request shapes before invocation", async
 
   const state = fixture();
   const cases = [
-    null, [], {}, { ...invoke(), extra: true }, { ...invoke(), protocolVersion: 2 },
+    null, [], {}, { ...invoke(), extra: true }, { ...invoke(), protocolVersion: 1 },
+    // Stopping a running export is an ordinary call to another export.
+    cancel(), { ...invoke(), cancellable: true },
     { ...invoke(), generation: "stale" }, { ...invoke(), requestId: 0 },
     { ...invoke(), requestId: 1.5 }, { ...invoke(), operation: "" },
     { ...invoke(), arguments: null }, { ...invoke(), kind: "other" },

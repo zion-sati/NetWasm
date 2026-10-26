@@ -8,11 +8,13 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class AsyncJSImportResolveEmitter(
     ITargetLayout layouts,
+    IValueLayoutProvider valueLayouts,
     IRuntimeImportResolver runtimeImports,
     IGeneratedFunctionWriterFactory writers,
     IHostCallbackStringArgumentMarshaller stringResults,
     IHostCallbackByteArrayArgumentMarshaller valueArrayResults,
-    IHostCallbackHostObjectArgumentMarshaller hostObjectResults) : IAsyncJSImportResolveEmitter
+    IHostCallbackHostObjectArgumentMarshaller hostObjectResults,
+    IJavaScriptNullableEmitter nullables) : IAsyncJSImportResolveEmitter
 {
     public byte[] Emit(
         JavaScriptAsyncMethodBinding binding,
@@ -23,9 +25,12 @@ internal sealed class AsyncJSImportResolveEmitter(
         var result = binding.Return.ResultType;
         // A string, array, or JSObject result arrives as a host handle in the
         // second parameter and becomes the managed value passed to SetResult.
-        var referenceResult = result is not null && (InteropTypeClassifier.IsString(result)
-            || InteropTypeClassifier.IsValueArray(result) || InteropTypeClassifier.IsJSObject(result));
-        var taskLocal = result is null ? 1 : 2;
+        var referenceResult = result is not null && InteropTypeClassifier.IsJavaScriptReference(result);
+        // A date result arrives as Unix milliseconds and a nullable one as its presence
+        // and value. Either becomes its struct in a value frame, whose address SetResult
+        // receives.
+        var convertedResult = result is not null && InteropTypeClassifier.IsConvertedValue(result);
+        var taskLocal = result is null ? 1 : InteropTypeClassifier.IsNullable(result) ? 3 : 2;
         var valueLocal = taskLocal + 1;
         var temporaryI4 = valueLocal + 1;
         var objectTemporary = temporaryI4 + 1;
@@ -35,7 +40,7 @@ internal sealed class AsyncJSImportResolveEmitter(
                 CliValueKind.ManagedReference,
                 .. (referenceResult
                     ? [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedReference]
-                    : Array.Empty<CliValueKind>()),
+                    : convertedResult ? [CliValueKind.ManagedAddress] : Array.Empty<CliValueKind>()),
             ],
             layouts.Target);
         code.Instructions.Write(WasmInstruction.WithOperand(
@@ -60,9 +65,35 @@ internal sealed class AsyncJSImportResolveEmitter(
                 valueArrayResults.Emit(code.Instructions, result!, 1, valueLocal, temporaryI4,
                     objectTemporary, target, functionIndices.ManagedThrowFunction);
             }
+            else if (InteropTypeClassifier.IsHandleValue(result!))
+            {
+                // CoreLib converts the settled value; the host releases its handle.
+                WriteLocal(code, WasmOpcodes.LocalGet, 1);
+                WriteCall(code, interopImports.ToManaged(result!));
+                WriteLocal(code, WasmOpcodes.LocalSet, valueLocal);
+            }
             else
             {
                 hostObjectResults.Emit(code.Instructions, result!, 1, valueLocal, functionIndices.ManagedThrowFunction);
+            }
+        }
+        if (convertedResult)
+        {
+            ManagedMemoryEmitter.EmitAddressConstant(
+                code.Instructions, layouts.Target, valueLayouts.GetValueLayout(result!).Size);
+            WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter));
+            WriteLocal(code, WasmOpcodes.LocalSet, valueLocal);
+            if (InteropTypeClassifier.IsNullable(result!))
+            {
+                nullables.EmitFromPair(
+                    code.Instructions, result!, () => WriteLocal(code, WasmOpcodes.LocalGet, valueLocal), 1, 2,
+                    interopImports);
+            }
+            else
+            {
+                WriteLocal(code, WasmOpcodes.LocalGet, valueLocal);
+                WriteLocal(code, WasmOpcodes.LocalGet, 1);
+                WriteCall(code, interopImports.ToManaged(result!));
             }
         }
         code.Instructions.Write(WasmInstruction.WithOperand(
@@ -72,12 +103,17 @@ internal sealed class AsyncJSImportResolveEmitter(
         {
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)(referenceResult ? valueLocal : 1))));
+                WasmInstructionOperand.Unsigned((uint)(referenceResult || convertedResult ? valueLocal : 1))));
         }
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
                 binding.SetResult))));
+        if (convertedResult)
+        {
+            WriteLocal(code, WasmOpcodes.LocalGet, valueLocal);
+            WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave));
+        }
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned(0)));
@@ -88,4 +124,10 @@ internal sealed class AsyncJSImportResolveEmitter(
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         return code.Snapshots.Read();
     }
+
+    private static void WriteLocal(GeneratedFunctionWriterLease code, byte opcode, int local) =>
+        code.Instructions.Write(WasmInstruction.WithOperand(opcode, WasmInstructionOperand.Unsigned((uint)local)));
+
+    private static void WriteCall(GeneratedFunctionWriterLease code, int function) =>
+        code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)function)));
 }

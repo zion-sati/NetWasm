@@ -11,7 +11,7 @@ public sealed class NetWasmReadRawBindingManifestTaskTests
         var path = Path.GetTempFileName();
         using var cleanup = new DeleteFile(path);
         File.WriteAllText(path, """
-            {"schemaVersion":1,"target":"wasm32","requiredImports":[{"interface":"wasi:clocks/monotonic-clock@0.2.11","name":"now","parameters":[],"results":["u64"]}]}
+            {"schemaVersion":2,"target":"wasm32","requiredImports":[{"interface":"wasi:clocks/monotonic-clock@0.2.11","name":"now","parameters":[],"results":["u64"]}],"importModules":["app.native"]}
             """);
         var task = new NetWasmReadRawBindingManifestTask
         {
@@ -28,6 +28,30 @@ public sealed class NetWasmReadRawBindingManifestTaskTests
         Assert.Equal("[\"u64\"]", import.GetMetadata("Results"));
         Assert.Equal("wasi:clocks/monotonic-clock@0.2.11",
             Assert.Single(task.RequiredImportModules).ItemSpec);
+        Assert.Equal("app.native", Assert.Single(task.ImportModules).ItemSpec);
+    }
+
+    [Theory]
+    [InlineData("""{"schemaVersion":1,"target":"wasm32","requiredImports":[]}""")]
+    [InlineData("""{"schemaVersion":2,"target":"wasm32","requiredImports":[],"importModules":["b","a"]}""")]
+    [InlineData("""{"schemaVersion":2,"target":"wasm32","requiredImports":[],"importModules":["a","a"]}""")]
+    [InlineData("""{"schemaVersion":2,"target":"wasm32","requiredImports":[],"importModules":[""]}""")]
+    public void RejectsOldAndNonCanonicalImportModules(string json)
+    {
+        var path = Path.GetTempFileName();
+        using var cleanup = new DeleteFile(path);
+        File.WriteAllText(path, json);
+        var build = new RecordingBuildEngine();
+        var task = new NetWasmReadRawBindingManifestTask
+        {
+            BuildEngine = build,
+            ManifestPath = path,
+            Target = "wasm32",
+        };
+
+        Assert.False(task.Execute());
+        Assert.Empty(task.ImportModules);
+        Assert.Contains("NWSDK063", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -36,7 +60,7 @@ public sealed class NetWasmReadRawBindingManifestTaskTests
         var path = Path.GetTempFileName();
         using var cleanup = new DeleteFile(path);
         File.WriteAllText(path,
-            "{\"schemaVersion\":1,\"target\":\"wasm64\",\"requiredImports\":[]}");
+            "{\"schemaVersion\":2,\"target\":\"wasm64\",\"requiredImports\":[],\"importModules\":[]}");
         var build = new RecordingBuildEngine();
         var task = new NetWasmReadRawBindingManifestTask
         {

@@ -63,10 +63,10 @@ internal sealed class OutwardMethodFunctionAppender(
                 request.GeneratedFunctionName,
                 new(
                     request.ArgumentFactory is null
-                        ? [.. request.Method.Signature.ParameterSignatureTypes.Select((type, index) =>
-                            javaScriptArguments is not null && InteropTypeClassifier.IsJavaScriptReference(type)
-                                ? CliValueKind.I4
-                                : request.Method.Signature.ParameterTypes[index])]
+                        ? [.. request.Method.Signature.ParameterSignatureTypes.SelectMany((type, index) =>
+                            javaScriptArguments is null
+                                ? [request.Method.Signature.ParameterTypes[index]]
+                                : InteropTypeClassifier.TransportKinds(type, request.Method.Signature.ParameterTypes[index]))]
                         : [],
                     CliValueKind.I4),
                 asyncWrappers.Emit(
@@ -85,7 +85,8 @@ internal sealed class OutwardMethodFunctionAppender(
                 names,
                 kinds,
                 request.BoundaryEntries,
-                completion);
+                completion,
+                javaScriptArguments);
             kind = kinds.Start;
         }
         else
@@ -93,8 +94,8 @@ internal sealed class OutwardMethodFunctionAppender(
             var isJSExport = request.SynchronousKind == ManagedBoundaryKind.SynchronousExport &&
                 request.InteropImports is not null &&
                 (request.Method.Signature.ParameterSignatureTypes.Any(
-                    InteropTypeClassifier.IsJavaScriptReference) ||
-                 InteropTypeClassifier.IsJavaScriptReference(
+                    InteropTypeClassifier.IsConverted) ||
+                 InteropTypeClassifier.IsConverted(
                      request.Method.Signature.ReturnSignatureType));
             var type = isJSExport
                 ? RequireJSExportTypes().Resolve(request.Method)

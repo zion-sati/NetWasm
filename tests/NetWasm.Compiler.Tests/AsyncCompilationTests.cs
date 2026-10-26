@@ -36,10 +36,97 @@ public sealed class AsyncCompilationTests
             "Run"));
 
         Assert.Empty(result.Program.JSImportMethods);
-        Assert.Contains(
-            "report_unobserved_task_exception",
-            System.Text.Encoding.UTF8.GetString(result.ApplicationModule),
-            StringComparison.Ordinal);
+        var module = System.Text.Encoding.UTF8.GetString(result.ApplicationModule);
+        Assert.Contains("report_unobserved_task_exception", module, StringComparison.Ordinal);
+        // Issue #128: the report names nothing, so it brings no type-name or
+        // message formatting into every asynchronous application.
+        Assert.DoesNotContain("System.Type::ToString", module, StringComparison.Ordinal);
+        Assert.DoesNotContain("System.Exception::get_StackTrace", module, StringComparison.Ordinal);
+    }
+
+    // Issue #128: the reactor keys pending pollables by slot, not in a hash
+    // table, and the always-exported wake reaches its state only through a
+    // constructed reactor, so a program that never awaits keeps none of it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReactorStateFollowsAsynchronousCode(bool awaits)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "ReactorStateFixture",
+            $$"""
+            using System.Threading.Tasks;
+
+            namespace ReactorStateFixture;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    {{(awaits ? "_ = Later(input);" : "")}}
+                    return input;
+                }
+
+                private static async Task<int> Later(int input)
+                {
+                    await Task.Yield();
+                    return input;
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(CreateAsyncOptions(
+            assets,
+            assembly,
+            "ReactorStateFixture.EntryPoint",
+            "Run"));
+
+        var module = System.Text.Encoding.UTF8.GetString(result.ApplicationModule);
+        Assert.Contains("netwasm:runtime/reactor-guest@1|wake", module, StringComparison.Ordinal);
+        Assert.Equal(awaits, module.Contains("WasiPollableReactor::WakeInstance", StringComparison.Ordinal));
+        Assert.DoesNotContain("Dictionary`2<primitive:u4,[NetWasm.CoreLib]System.Runtime.InteropServices.WasiPollableReactor",
+            module, StringComparison.Ordinal);
+    }
+
+    // Issue #128: the unobserved-exception event's arguments exist only for an
+    // application that subscribes; one that never does keeps them out.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnobservedTaskEventArgumentsFollowASubscription(bool subscribes)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "UnobservedTaskSubscriptionFixture",
+            $$"""
+            using System.Threading.Tasks;
+
+            namespace UnobservedTaskSubscriptionFixture;
+
+            public static class EntryPoint
+            {
+                private static Task<int>? _task;
+
+                public static int Run(int input)
+                {
+                    {{(subscribes ? "TaskScheduler.UnobservedTaskException += (sender, args) => args.SetObserved();" : "")}}
+                    _task = Task<int>.FromException(new System.InvalidOperationException());
+                    _task = null;
+                    return input;
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(CreateAsyncOptions(
+            assets,
+            assembly,
+            "UnobservedTaskSubscriptionFixture.EntryPoint",
+            "Run"));
+
+        var module = System.Text.Encoding.UTF8.GetString(result.ApplicationModule);
+        Assert.Equal(subscribes, module.Contains("UnobservedTaskExceptionEventArgs", StringComparison.Ordinal));
+        Assert.Contains("report_unobserved_task_exception", module, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -83,8 +83,9 @@ public sealed class HostCallbackFunctionEmitterTests
                 runtimeImports,
                 runtime,
                 new ImplicitExceptionEmitter(layouts, layouts),
-                stringMarshaller,
-                byteMarshaller,
+                new JavaScriptReferenceArgumentEmitter(
+                    stringMarshaller, byteMarshaller, new RecordingHostObjectMarshaller()),
+                EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 terminalBoundary,
                 new AddressInstructionEmitter(layouts),
                 new GeneratedFunctionWriterFactory()),
@@ -126,6 +127,63 @@ public sealed class HostCallbackFunctionEmitterTests
         Assert.Contains(WasmOpcodes.LocalSet, body);
     }
 
+    // A callback takes and returns what a synchronous export does: every converted
+    // argument is rooted while the next allocates, and a JSObject result leaves as
+    // its host handle.
+    [Fact]
+    public void RootsEveryReferenceArgumentAndReturnsAJSObjectAsItsHandle()
+    {
+        var stringType = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
+        var objectType = CliTypeIdentity.Named(
+            Assembly, "System.Runtime.InteropServices.JavaScript", "JSObject", isValueType: false);
+        var method = new FakeProgram().GetMethod(EntryKey) with
+        {
+            Signature = new MethodSignatureModel(objectType, [stringType, stringType, objectType]),
+        };
+        var instance = new MethodInstanceModel(
+            method,
+            CliTypeIdentity.Named(Assembly, "Test", "Callback", isValueType: false),
+            [],
+            method.Signature);
+        var strings = new RecordingStringMarshaller();
+        var objects = new RecordingHostObjectMarshaller();
+        var layouts = new RecordingLayoutProvider();
+        var runtimeImports = WasmRuntimeImports.CreateCatalog();
+        var selection = new RuntimeImportSelection(WasmModuleProfile.CoreApplication,
+            IncludeTerminalExceptionReporter: true);
+        IHostCallbackFunctionEmitter emitter = new[]
+        {
+            new HostCallbackFunctionEmitter(
+                layouts, runtimeImports, new RecordingRuntimeInitializer(), new ImplicitExceptionEmitter(layouts, layouts),
+                new JavaScriptReferenceArgumentEmitter(strings, new RecordingByteArrayMarshaller(), objects),
+                EmitterTestSupport.ValueFrames(layouts, runtimeImports),
+                new PassthroughTerminalBoundary(),
+                new AddressInstructionEmitter(layouts), new GeneratedFunctionWriterFactory()),
+        }.Cast<IHostCallbackFunctionEmitter>().Single();
+        var indices = new FunctionIndexMap([], [],
+            ImmutableDictionary<string, WasmFunctionIndex>.Empty.Add(instance.DeclaringType.CanonicalName, new(30)), [])
+        {
+            ManagedThrowFunctionIndex = OptionalFunctionIndex.At(EmitterTestSupport.ManagedThrowFunction),
+        };
+
+        var type = CreateFunctionTypes().Resolve(instance);
+        var body = emitter.Emit(new HostCallbackDeclaration(EntryKey, 0, instance, "callback"), indices,
+            TestRuntimeInitialization.Create(256), new InteropImportPlan([], OptionalFunctionIndex.At(1),
+                OptionalFunctionIndex.At(2), OptionalFunctionIndex.Missing, OptionalFunctionIndex.Missing,
+                OptionalFunctionIndex.At(3), OptionalFunctionIndex.At(4)), selection);
+
+        Assert.Equal([CliValueKind.I4, CliValueKind.I4, CliValueKind.I4, CliValueKind.I4], type.Parameters.ToArray());
+        Assert.Equal(CliValueKind.I4, type.Result);
+        Assert.Equal(2, strings.Calls);
+        Assert.True(objects.Called);
+        var calls = body.Select((value, index) => (value, index))
+            .Where(item => item.value == WasmOpcodes.Call && item.index + 1 < body.Length)
+            .Select(item => (int)body[item.index + 1]).ToArray();
+        Assert.Contains(runtimeImports.Resolve(RuntimeImportSymbol.RootFrameEnter), calls);
+        Assert.Contains(runtimeImports.Resolve(RuntimeImportSymbol.RootFrameLeave), calls);
+        Assert.Contains(30, calls);
+    }
+
     [Fact]
     public void EmitsVoidCallbackWithoutReferenceParameters()
     {
@@ -151,8 +209,9 @@ public sealed class HostCallbackFunctionEmitterTests
                 runtimeImports,
                 new RecordingRuntimeInitializer(),
                 new ImplicitExceptionEmitter(layouts, layouts),
-                new RecordingStringMarshaller(),
-                new RecordingByteArrayMarshaller(),
+                new JavaScriptReferenceArgumentEmitter(
+                    new RecordingStringMarshaller(), new RecordingByteArrayMarshaller(), new RecordingHostObjectMarshaller()),
+                EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 terminalBoundary,
                 new AddressInstructionEmitter(layouts),
                 new GeneratedFunctionWriterFactory()),
@@ -209,7 +268,9 @@ public sealed class HostCallbackFunctionEmitterTests
     private sealed class RecordingStringMarshaller :
         IHostCallbackStringArgumentMarshaller
     {
-        public bool Called { get; private set; }
+        public int Calls { get; private set; }
+
+        public bool Called => Calls != 0;
 
         public void Emit(
             IWasmInstructionWriter code,
@@ -218,6 +279,19 @@ public sealed class HostCallbackFunctionEmitterTests
             int temporaryI4,
             int objectTemporary,
             InteropMarshallingTarget target,
+            OptionalFunctionIndex throwFunction) => Calls++;
+    }
+
+    private sealed class RecordingHostObjectMarshaller :
+        IHostCallbackHostObjectArgumentMarshaller
+    {
+        public bool Called { get; private set; }
+
+        public void Emit(
+            IWasmInstructionWriter code,
+            CliTypeIdentity objectType,
+            int handleParameter,
+            int destination,
             OptionalFunctionIndex throwFunction) => Called = true;
     }
 

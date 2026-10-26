@@ -248,6 +248,7 @@
     <Compile Include="Buffers/Text/Utf8Formatter/Utf8Formatter.Integer.cs" />
     <Compile Include="Buffers/Text/Utf8Formatter/Utf8Formatter.TimeSpan.cs" />
     <Compile Include="HostInterop.cs" />
+    <Compile Include="JSMarshal.cs" />
     <Compile Include="ComponentInterop.cs" />
     <Compile Include="CanonicalAbi.cs" />
     <Compile Include="PlatformServices.cs" />

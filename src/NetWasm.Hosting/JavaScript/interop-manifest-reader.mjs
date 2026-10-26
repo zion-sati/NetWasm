@@ -1,7 +1,9 @@
 import {
   isAbiType,
+  isHandleValueAbiType,
   isMemoryViewAbiType,
   isScalarAbiType,
+  nullableUnderlying,
   isTransferAbiType,
   isValueArrayAbiType,
 } from "./interop-abi-types.mjs";
@@ -138,12 +140,17 @@ function validateImportDescriptor(descriptor) {
         || typeof descriptor.resolveExport !== "string" || descriptor.resolveExport.length === 0
         || typeof descriptor.rejectExport !== "string" || descriptor.rejectExport.length === 0
         || typeof descriptor.cancelExport !== "string" || descriptor.cancelExport.length === 0
-        || descriptor.result !== "void" && !isScalarAbiType(descriptor.result)
+        || descriptor.result !== "void" && !isValueAbiType(descriptor.result)
           && descriptor.result !== "string" && descriptor.result !== "object"
-          && !isValueArrayAbiType(descriptor.result))) {
+          && !isValueArrayAbiType(descriptor.result) && !isHandleValueAbiType(descriptor.result))) {
     throw new NetWasmHostError(
       "interop manifest contains an invalid async import descriptor");
   }
+}
+
+// A scalar, date, or either nullable: a value that crosses without a host handle.
+function isValueAbiType(type) {
+  return isScalarAbiType(type) || nullableUnderlying(type) !== null;
 }
 
 function validateExports(exports) {
@@ -163,8 +170,8 @@ function validateExportDescriptor(descriptor) {
       || typeof descriptor.name !== "string" || descriptor.name.length === 0
       || !Array.isArray(descriptor.parameters)
       || !isAbiType(descriptor.result)
-      || descriptor.parameters.some(type => !isScalarAbiType(type) && !isExportReference(type))
-      || descriptor.result !== "void" && !isScalarAbiType(descriptor.result)
+      || descriptor.parameters.some(type => !isValueAbiType(type) && !isExportReference(type))
+      || descriptor.result !== "void" && !isValueAbiType(descriptor.result)
         && !isExportReference(descriptor.result)
       || !hasValidParameterMetadata(descriptor)) {
     throw new NetWasmHostError(
@@ -172,7 +179,6 @@ function validateExportDescriptor(descriptor) {
   }
   if (descriptor.asyncReturn != null
       && (descriptor.asyncReturn !== "task" && descriptor.asyncReturn !== "value-task"
-        || isExportReference(descriptor.result)
         || typeof descriptor.statusExport !== "string" || descriptor.statusExport.length === 0
         || typeof descriptor.completeExport !== "string" || descriptor.completeExport.length === 0
         || descriptor.completionResult !== "exception-handle-v1"
@@ -197,7 +203,7 @@ function hasValidParameterMetadata(descriptor) {
 
 // Values an export copies (strings, arrays) or wraps (JSObject) through a host handle.
 function isExportReference(type) {
-  return isTransferAbiType(type) || type === "object";
+  return isTransferAbiType(type) || type === "object" || isHandleValueAbiType(type);
 }
 
 function validateCallbacks(imports, callbacks) {
@@ -235,9 +241,8 @@ function validateCallbackDescriptor(callback) {
       || !Number.isInteger(callback.parameterIndex) || callback.parameterIndex < 0
       || typeof callback.exportName !== "string" || callback.exportName.length === 0
       || !Array.isArray(callback.parameters)
-      || callback.result !== "void" && !isScalarAbiType(callback.result)
-      || callback.parameters.some(type => !isScalarAbiType(type) && !isTransferAbiType(type))
-      || callback.parameters.filter(isTransferAbiType).length > 1) {
+      || callback.result !== "void" && !isValueAbiType(callback.result) && !isExportReference(callback.result)
+      || callback.parameters.some(type => !isValueAbiType(type) && !isExportReference(type))) {
     throw new NetWasmHostError(
       "interop manifest contains an invalid callback descriptor");
   }

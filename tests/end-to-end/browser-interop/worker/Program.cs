@@ -9,6 +9,10 @@ public static class WorkerExports
     [JSImport("report", "app.host")]
     private static extern void Report(int value);
 
+    // Nothing calls this, so trimming removes it and its module is left out.
+    [JSImport("optionalFeature", "app.optional")]
+    internal static extern string OptionalFeature();
+
     [JSExport("add")]
     public static int Add(int value) => _counter += value;
 
@@ -77,4 +81,54 @@ public static class WorkerExports
 
     [JSExport("pending")]
     public static Task<int> Pending() => new TaskCompletionSource<int>().Task;
+
+    private static TaskCompletionSource<int>? _gate;
+    private static bool _stop;
+
+    // Issue #126: page code stops a running job by calling another export,
+    // and the job returns how far it got.
+    [JSExport("countUntilStopped")]
+    public static async Task<int> CountUntilStopped()
+    {
+        _stop = false;
+        var count = 0;
+        while (!_stop)
+        {
+            count++;
+            await Task.Delay(1);
+        }
+        return count;
+    }
+
+    [JSExport("stop")]
+    public static void Stop() => _stop = true;
+
+    // Issue #126: a call runs while another awaits, as on the page; serialized
+    // calls would leave this waiting for a release that never starts.
+    [JSExport("waitForRelease")]
+    public static async Task<int> WaitForRelease()
+    {
+        _gate = new TaskCompletionSource<int>();
+        return await _gate.Task + 1;
+    }
+
+    [JSExport("release")]
+    public static void Release(int value) => _gate!.SetResult(value);
+
+    // Issue #127: an async export settles with what a synchronous one returns.
+    [JSExport("describe")]
+    public static async Task<string> Describe(string name)
+    {
+        await Task.Yield();
+        return "worker:" + name;
+    }
+
+    [JSExport("halves")]
+    public static async ValueTask<double[]> Halves(int[] values)
+    {
+        await Task.Yield();
+        var halves = new double[values.Length];
+        for (var index = 0; index < values.Length; index++) halves[index] = values[index] / 2.0;
+        return halves;
+    }
 }

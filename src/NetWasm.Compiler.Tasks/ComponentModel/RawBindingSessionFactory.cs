@@ -35,9 +35,17 @@ internal sealed class RawBindingSession(
             plan,
             request.RuntimeWitPath,
             request.RuntimeWorld);
+        var imported = plan.ObservedImports.Select(import => import.Identity.Module)
+            .ToHashSet(StringComparer.Ordinal);
         return new(
             _adapters.WriteDeployment(new(projection.AdapterPlans)),
-            projection.RequiredImports);
+            projection.RequiredImports)
+        {
+            ImportModules = request.Source.InteropManifest.ImportModules.IsDefault
+                ? []
+                : [.. request.Source.InteropManifest.ImportModules.Where(imported.Contains)
+                    .Order(StringComparer.Ordinal)],
+        };
     }
 
     public void Dispose() => services.Dispose();

@@ -518,7 +518,7 @@ public sealed class RuntimeIntrinsicRegistryTests
             .Single(type => type.FullName == "System.Threading.Tasks.TaskDiagnostics")
             .Methods
             .Select(methodRepository.GetMethod)
-            .Single(method => method.Name == "ReportUnobservedExceptionCore");
+            .Single(method => method.Name == "ReportUnobservedException");
 
         Assert.True(registry.TryGetIntrinsic(length.Key, out var lengthIntrinsic));
         Assert.Equal(RuntimeIntrinsic.StringLength, lengthIntrinsic);

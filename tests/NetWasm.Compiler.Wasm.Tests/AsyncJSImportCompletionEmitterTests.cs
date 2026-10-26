@@ -72,11 +72,15 @@ public sealed class AsyncJSImportCompletionEmitterTests
         var objects = new RecordingObjectResults();
         var emitter = new AsyncJSImportResolveEmitter(
             new RecordingLayoutProvider(),
+            new RecordingLayoutProvider(),
             imports,
             new GeneratedFunctionWriterFactory(),
             strings,
             arrays,
-            objects);
+            objects,
+            new JavaScriptNullableEmitter(
+                new RecordingLayoutProvider(), new RecordingLayoutProvider(),
+                new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(new RecordingLayoutProvider())));
 
         var body = ((IAsyncJSImportResolveEmitter)emitter).Emit(
             binding,
@@ -241,11 +245,13 @@ public sealed class AsyncJSImportCompletionEmitterTests
         RecordingLayoutProvider layouts,
         RuntimeImportCatalog imports) => new(
         layouts,
+        layouts,
         imports,
         new GeneratedFunctionWriterFactory(),
         new RecordingStringResults(),
         new RecordingArrayResults(),
-        new RecordingObjectResults());
+        new RecordingObjectResults(),
+        new JavaScriptNullableEmitter(layouts, layouts, new NetWasm.Compiler.Wasm.Emission.Support.AddressInstructionEmitter(layouts)));
 
     private static InteropImportPlan EmptyInteropImports() =>
         new InteropImportPlan([], default, default, default, default, default, default);

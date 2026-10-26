@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
@@ -18,7 +19,8 @@ internal sealed class ReachabilityImportClassifier(
     IRuntimeIntrinsicRegistry intrinsics,
     ISymbolFormatter symbols,
     IEnumMetadataRequirementClassifier enumMetadataRequirements,
-    INativeDeclarationValidator nativeDeclarations) : IReachabilityImportClassifier
+    INativeDeclarationValidator nativeDeclarations,
+    IJavaScriptConversionResolver conversions) : IReachabilityImportClassifier
 {
     private readonly IEnumMetadataRequirementClassifier _enumMetadataRequirements =
         enumMetadataRequirements ?? throw new ArgumentNullException(nameof(enumMetadataRequirements));
@@ -205,6 +207,8 @@ internal sealed class ReachabilityImportClassifier(
             }
             AddByteArrayReturn(resultType, types, allocatedTypes, constructedTypes, exceptions);
             AddHostObjectReturn(resultType, types, allocatedTypes, exceptions);
+            var importConversions = AddConversions(
+                ImportBoundary(method, asyncBinding, hostCallbacks), enqueuedMethods);
             return new(
                 true,
                 constructedTypes.ToImmutable(),
@@ -216,7 +220,10 @@ internal sealed class ReachabilityImportClassifier(
                 method,
                 null,
                 hostCallbacks.ToImmutable(),
-                asyncBinding);
+                asyncBinding)
+            {
+                Conversions = importConversions,
+            };
         }
         if (method.WitImport is not null)
         {
@@ -240,6 +247,9 @@ internal sealed class ReachabilityImportClassifier(
                 "reachable method has no CIL body and is not a declared runtime intrinsic",
                 symbols.Format(method)));
         }
+        var exportConversions = method.JSExport is not null
+            ? AddConversions(ExportBoundary(method, asyncBinding), enqueuedMethods)
+            : ImmutableDictionary<string, MethodInstanceModel>.Empty;
         return new(
             false,
             constructedTypes.ToImmutable(),
@@ -251,7 +261,49 @@ internal sealed class ReachabilityImportClassifier(
             null,
             null,
             hostCallbacks.ToImmutable(),
-            asyncBinding);
+            asyncBinding)
+        {
+            Conversions = exportConversions,
+        };
+    }
+
+    // The values an import passes, each with the conversion it needs: its arguments
+    // leave managed code; its result, settled value and callback arguments enter it,
+    // and a callback's result leaves it.
+    private static IEnumerable<string?> ImportBoundary(
+        MethodDefinitionModel method,
+        JavaScriptAsyncMethodBinding? asyncBinding,
+        IEnumerable<HostCallbackDeclaration> callbacks) =>
+        method.Signature.ParameterSignatureTypes.Select(From)
+            .Append(To(method.Signature.ReturnSignatureType))
+            .Append(asyncBinding?.Return.ResultType is { } result ? To(result) : null)
+            .Concat(callbacks.SelectMany(callback => callback.Invoke.Signature.ParameterSignatureTypes.Select(To)
+                .Append(From(callback.Invoke.Signature.ReturnSignatureType))));
+
+    // An export's arguments enter managed code and its result leaves it.
+    private static IEnumerable<string?> ExportBoundary(
+        MethodDefinitionModel method,
+        JavaScriptAsyncMethodBinding? asyncBinding) =>
+        method.Signature.ParameterSignatureTypes.Select(To)
+            .Append(From(asyncBinding?.Return.ResultType ?? method.Signature.ReturnSignatureType));
+
+    private static string? To(CliTypeIdentity type) => JavaScriptConversion.ToManaged(JavaScriptNullable.Unwrap(type));
+
+    private static string? From(CliTypeIdentity type) => JavaScriptConversion.FromManaged(JavaScriptNullable.Unwrap(type));
+
+    // CoreLib's conversions stay out of a program whose boundaries pass nothing to convert.
+    private ImmutableDictionary<string, MethodInstanceModel> AddConversions(
+        IEnumerable<string?> names,
+        ImmutableArray<MethodInstanceModel>.Builder enqueuedMethods)
+    {
+        var resolved = ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
+        foreach (var name in names.OfType<string>().Distinct(StringComparer.Ordinal))
+        {
+            var conversion = conversions.Resolve(name);
+            resolved.Add(name, conversion);
+            enqueuedMethods.Add(conversion);
+        }
+        return resolved.ToImmutable();
     }
 
     private MethodInstanceModel ResolveObjectEquals()
@@ -381,6 +433,8 @@ internal sealed class ReachabilityImportClassifier(
                     types.Add(typeFinder.FindType("System.String").Key);
                     exceptions.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
                 }
+                // The callback wrapper wraps a JSObject argument without a CIL newobj.
+                AddHostObjectReturn(callbackParameter, types, allocatedTypes, exceptions);
                 if (JavaScriptValueArray.IsSupported(callbackParameter))
                 {
                     allocatedTypes.Add(callbackParameter);

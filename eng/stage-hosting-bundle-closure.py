@@ -34,14 +34,26 @@ POLICY_KEYS = {
     "selectedPackagePaths",
 }
 ACCEPTED_INVOCATION = [
-    "bundle",
-    "<absolute-entry>",
-    "--output",
-    "<absolute-output>",
-    "--platform",
-    "<browser|node>",
-    "--minify",
-    "<true|false>",
+    [
+        "bundle",
+        "<absolute-entry>",
+        "--output",
+        "<absolute-output>",
+        "--platform",
+        "<browser|node>",
+        "--minify",
+        "<true|false>",
+        "[--runtime",
+        "<absolute-runtime-imports>]",
+    ],
+    [
+        "bundle-runtime",
+        "<absolute-facade-directory>",
+        "--output",
+        "<absolute-output-directory>",
+        "--minify",
+        "<true|false>",
+    ],
 ]
 
 
@@ -54,7 +66,7 @@ def _validate_policy(policy: Any) -> dict[str, dict[str, Any]]:
         raise ClosureStagingError("bundler closure policy root is invalid")
     if policy["entryPoint"] != f"{ROOT_PACKAGE}/dist/index.mjs":
         raise ClosureStagingError("bundler closure policy entry point is invalid")
-    if policy["requiredCommands"] != ["bundle"]:
+    if policy["requiredCommands"] != ["bundle", "bundle-runtime"]:
         raise ClosureStagingError("bundler closure policy command is invalid")
     if policy["acceptedInvocation"] != ACCEPTED_INVOCATION:
         raise ClosureStagingError("bundler closure invocation is invalid")

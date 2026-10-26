@@ -257,7 +257,8 @@ public sealed class RequestedExportFunctionAppenderTests
             ManagedAsyncBoundaryNames names,
             ManagedAsyncBoundaryKinds kinds,
             ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
-            AsyncTaskCompletionPlan completion) => Count++;
+            AsyncTaskCompletionPlan completion,
+            InteropImportPlan? interopImports = null) => Count++;
     }
 
     private sealed class RecordingEntryPointEmitter : IEntryPointEmitter

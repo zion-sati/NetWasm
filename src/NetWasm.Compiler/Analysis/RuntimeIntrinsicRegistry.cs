@@ -84,7 +84,7 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.ValueType", "Equals") => RuntimeIntrinsic.ValueTypeEquals,
                 ("System.ValueType", "GetHashCode") =>
                     RuntimeIntrinsic.ValueTypeGetHashCode,
-                ("System.Threading.Tasks.TaskDiagnostics", "ReportUnobservedExceptionCore") =>
+                ("System.Threading.Tasks.TaskDiagnostics", "ReportUnobservedException") =>
                     RuntimeIntrinsic.ReportUnobservedTaskException,
                 ("System.Runtime.ExceptionServices.ExceptionDispatchInfo", "InternalThrow") =>
                     RuntimeIntrinsic.ExceptionDispatchPreserved,

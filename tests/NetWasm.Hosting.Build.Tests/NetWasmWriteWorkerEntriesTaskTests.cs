@@ -14,7 +14,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         var task = new NetWasmWriteWorkerHostEntryTask(writer)
         {
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("worker-entry.mjs"),
             Imports =
             [
@@ -52,7 +51,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         var task = new NetWasmWriteWorkerHostEntryTask(writer)
         {
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("worker-entry.mjs"),
             Imports = [Item("increment", ("Module", "consumer.worker"), ("Name", "increment"))],
             ImportModules = [new TaskItem("consumer.worker"), new TaskItem("host_ui")],
@@ -70,42 +68,37 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
     }
 
     [Fact]
-    public void HostTaskRejectsMissingAndUnusedModuleSources()
+    public void HostTaskRejectsMissingModuleSources()
     {
         var build = new RecordingBuildEngine();
         var task = new NetWasmWriteWorkerHostEntryTask(new RecordingWriter())
         {
             BuildEngine = build,
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("worker-entry.mjs"),
             Imports = [Item("increment", ("Module", "consumer.worker"), ("Name", "increment"))],
             Network = "denyAll",
         };
         Assert.False(task.Execute());
         Assert.Contains("NWSDK061", Assert.Single(build.Errors), StringComparison.Ordinal);
-
-        build.Errors.Clear();
-        task.Imports = [];
-        task.Modules = [Item("consumer.mjs", ("Module", "consumer.worker"))];
-        Assert.False(task.Execute());
-        Assert.Contains("unused", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
+    // Issue #128: a module for a feature trimming removed is left out rather than
+    // failing the build, so a project pays only for the modules it uses.
     [Fact]
-    public void HostTaskFiltersOnlyUnreachableGeneratedClients()
+    public void HostTaskLeavesOutUnusedModules()
     {
         var writer = new RecordingWriter();
         var task = new NetWasmWriteWorkerHostEntryTask(writer)
         {
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("worker-entry.mjs"),
             Imports = [Item("create", ("Module", "used.worker"), ("Name", "create"))],
             Modules =
             [
                 Item("used.mjs", ("Module", "used.worker"), ("NetWasmGeneratedWorkerClient", "true")),
                 Item("unused.mjs", ("Module", "unused.worker"), ("NetWasmGeneratedWorkerClient", "true")),
+                Item("extra.mjs", ("Module", "app.extra")),
             ],
             Network = "denyAll",
         };
@@ -122,7 +115,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         var writer = new RecordingWriter();
         var task = new NetWasmWriteWorkerClientEntryTask(writer)
         {
-            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
             WorkerFileName = "app.worker.mjs",
             BuildFingerprint = new string('1', 64),
             ManifestSha256 = new string('2', 64),
@@ -201,7 +193,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         var task = new NetWasmWriteWorkerClientEntryTask(new RecordingWriter())
         {
             BuildEngine = build,
-            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
             WorkerFileName = "app.worker.mjs",
             BuildFingerprint = new string('1', 64),
             ManifestSha256 = new string('2', 64),
@@ -222,7 +213,6 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
         var task = new NetWasmWriteWorkerClientEntryTask
         {
             BuildEngine = new RecordingBuildEngine(),
-            HostingJavaScriptRoot = Path.Combine(directory.Path, "hosting"),
             WorkerFileName = "app.worker.mjs",
             BuildFingerprint = new string('1', 64),
             ManifestSha256 = new string('2', 64),
@@ -242,20 +232,21 @@ public sealed class NetWasmWriteWorkerEntriesTaskTests
             File.ReadAllText(declarations), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void ClientTaskRejectsJSObjectExportsWithADedicatedDiagnostic()
+    [Theory]
+    [InlineData("[\"object\"]", "void")]
+    [InlineData("[]", "object[]")]
+    public void ClientTaskRejectsJSObjectExportsWithADedicatedDiagnostic(string parameters, string result)
     {
         var build = new RecordingBuildEngine();
         var task = new NetWasmWriteWorkerClientEntryTask
         {
             BuildEngine = build,
-            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
             WorkerFileName = "app.worker.mjs",
             BuildFingerprint = new string('1', 64),
             ManifestSha256 = new string('2', 64),
             OutputPath = Path.GetFullPath("client.mjs"),
             DeclarationPath = Path.GetFullPath("client.d.mts"),
-            Exports = [Item("focus", ("Name", "focus"), ("Parameters", "[\"object\"]"), ("Result", "void"))],
+            Exports = [Item("focus", ("Name", "focus"), ("Parameters", parameters), ("Result", result))],
         };
 
         Assert.False(task.Execute());

@@ -78,7 +78,7 @@ in a worker.
 | --- | --- | --- |
 | `page` (default) | Synchronous exports return values; `Task` exports return Promises. Import modules may use the DOM. | C# drives page UI, or calls are short. |
 | `worker` | Every export returns a Promise. Import modules run in the worker and reach the page through notifications. | Work is long enough to block the page. |
-| `page;worker` | Publishes both. | The page needs some calls of each kind. |
+| `page;worker` | Publishes both, sharing one runtime. | The page needs some calls of each kind. |
 
 The worker host publishes `browser/<AssemblyName>.worker-client.mjs`; see
 [C# Web Workers](web-workers.md). A `JSObject` stays in the realm that created
@@ -104,6 +104,16 @@ public static partial class WorkerExports
         return total;
     }
 }
+```
+
+An import may also be declared `static partial`, as on .NET's browser runtime,
+so such declarations compile unchanged; the SDK supplies the implementing
+declaration. A partial import needs an accessibility modifier, such as
+`internal`, or the build fails with NWJS001:
+
+```csharp
+[JSImport("report", "example.notifications")]
+internal static partial void Report(int completed, int total);
 ```
 
 Every export must be a static method with a managed body. Export names must be
@@ -135,6 +145,10 @@ export function createWorkerImports(notify) {
   });
 }
 ```
+
+A page or worker includes only the declared modules its reachable imports use.
+A module for an optional feature costs nothing in a build that leaves the
+feature out.
 
 For an ordinary browser application rather than a worker, reachable
 `[JSImport]` declarations require `<NetWasmRawWasm>true</NetWasmRawWasm>`.
@@ -229,16 +243,18 @@ localhost or HTTPS so `crypto.subtle` is available.
 
 | Boundary | Supported managed signature |
 | --- | --- |
-| Synchronous `JSImport` | Primitive scalars, `string`, number arrays, spans of numbers, `JSObject`, and one supported delegate parameter; primitive scalars, `string`, number arrays, `JSObject`, `JSSubscription`, or `void` result |
-| Asynchronous `JSImport` | Ordinary `[JSImport]` returning `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>`; `T` is a primitive scalar, `string`, a number array, or `JSObject` |
-| Synchronous `JSExport` | Primitive scalar, `string`, number array, or `JSObject` parameters; the same result types or `void` |
-| Asynchronous `JSExport` | Primitive scalar, `string`, number array, or `JSObject` parameters and a `Task`/`ValueTask` result whose value is `void` or a primitive scalar |
-| Import callback | One delegate parameter and a `JSSubscription` result; callback parameters are primitive scalars plus at most one `string` or number array, and the callback result is a primitive scalar or `void` |
+| Synchronous `JSImport` | Primitive scalars, dates, their nullables, `string`, `object`, `Exception`, number arrays, reference arrays, spans of numbers, `JSObject`, and one supported delegate parameter; the same values except spans, `JSSubscription`, or `void` result |
+| Asynchronous `JSImport` | Ordinary `[JSImport]` returning `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>`; `T` is any synchronous result value |
+| Synchronous `JSExport` | Primitive scalar, date, nullable, `string`, `object`, `Exception`, number array, reference array, or `JSObject` parameters; the same result types or `void` |
+| Asynchronous `JSExport` | A synchronous export's parameters and a `Task`/`ValueTask` result whose value is `void` or a synchronous export's result type |
+| Import callback | One delegate parameter and a `JSSubscription` result; the callback takes and returns what a synchronous `JSExport` does |
 
 Primitive scalars are `bool`, signed and unsigned integer types, `char`,
 `nint`/`nuint`, `float`, and `double`. Number arrays are one-dimensional
 arrays of `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong`,
-`float`, or `double`. `JSObject` and
+`float`, or `double`. Dates are `DateTime` and `DateTimeOffset`. A nullable
+is `T?` of either, such as `int?` or `DateTime?`. Reference arrays are
+`string[]`, `JSObject[]` and `object[]`. `JSObject` and
 `JSSubscription` own host handles and must be disposed. Disposing a
 subscription also releases the managed callback root.
 
@@ -253,7 +269,46 @@ with plain WebAssembly values instead, see
 At the JavaScript boundary, 64-bit integers use `bigint`; 32-bit and smaller
 integers and floating-point values use `number`. `nint`/`nuint` follow the
 guest width. A `char` uses a one-code-unit JavaScript string, `bool` uses a
-Boolean. Each number array uses the typed array with the same element type:
+Boolean. A `DateTime` or `DateTimeOffset` uses a `Date`, as on .NET's
+browser runtime: it crosses as whole Unix milliseconds, so ticks below a
+millisecond are dropped. A `DateTime` is read as UTC whatever its `Kind`, and
+one from JavaScript has `Kind` `Utc`. A `Date` outside the years 1 to 9999
+throws `ArgumentOutOfRangeException`. A nullable uses the value's JavaScript
+type or `null`, typed `T | null`. Where C# expects a plain scalar or date,
+JavaScript's `null` or `undefined` gives its default (`0`, `false`, or
+`DateTime.MinValue`), as on .NET's browser runtime. A delegate cannot bind
+directly to an import that returns a date or a nullable; bind a lambda that
+calls it.
+
+An `object` is any JavaScript value, as on .NET's browser runtime. From
+JavaScript, a number arrives as `double`, a `bigint` as `long`, a Boolean as
+`bool`, a `Date` as `DateTime`, an `Error` as an exception, an array as
+`object[]`, a `Uint8Array`, `Int32Array` or `Float64Array` as the matching
+array, and any other object or function as a `JSObject`. To JavaScript, a
+number, Boolean, string, `char`, date, `JSObject`, exception, number array or
+`object[]` crosses as its JavaScript value; a `long` must fit a JavaScript
+number exactly, within 2^53 - 1, or the conversion throws
+`OverflowException`. A value of any other type crosses as an opaque object
+that JavaScript can only pass back, and it arrives as the same .NET object.
+
+`[JSMarshalAs<T>]` with .NET's `JSType` markers is optional. Without one, a
+parameter or result crosses as described here. With one, the marker must name
+the JavaScript type the value takes, such as `JSType.Promise<JSType.Number>`
+for a `Task<int>` or `JSType.Function<JSType.Number, JSType.String>` for a
+`Func<int, string>`, or the build fails naming the marker it takes. Only a
+`long` has a choice: `JSType.BigInt`, the default, crosses it as a `bigint`,
+and `JSType.Number` as a `number`, which must be an integer within 2^53 - 1
+both ways. A `void` result takes `JSType.Void`, `JSType.Discard` or
+`JSType.DiscardNoWait`.
+
+An `Exception` is an `Error`. An exception that came from JavaScript, a
+`JSException`, gives back the original `Error`; any other exception crosses as
+an `Error` named `ManagedError` with the exception's message, and it arrives
+back as the same exception. A JavaScript value that is not an `Error` arrives
+as a `JSException` whose message is the value as a string. `string[]`,
+`JSObject[]` and `object[]` are JavaScript arrays, whose elements must be
+strings, objects, or any values, or `null`. Each number array
+uses the typed array with the same element type:
 
 | C# | JavaScript |
 | --- | --- |
@@ -318,8 +373,11 @@ An export that takes a `JSObject` receives its own handle to the caller's
 object; dispose it when the export no longer needs it. An export that returns
 a `JSObject` gives the caller the original JavaScript object and keeps its
 managed handle. A JavaScript object cannot be posted between a page and a
-worker, so only the page host publishes exports that use `JSObject`. Selecting
-the worker host for such an export fails the build with NWSDK081.
+worker, so only the page host publishes exports that use `JSObject` or
+`JSObject[]`. Selecting the worker host for such an export fails the build
+with NWSDK081. An `object`, exception or `object[]` crosses into a worker
+when its JavaScript value can be structured-cloned; a call whose value cannot
+be fails.
 
 Use ordinary `[JSImport]` for JavaScript Promise results. The
 `JSImportPromise` attribute is the compiler's callback-lowered form and is not
@@ -339,10 +397,66 @@ Such calls can nest up to 32 levels. A deeper call throws `NetWasmHostError`,
 which the managed caller observes as a `JSException`, and the session remains
 usable.
 
-Worker export calls are serialized by the generated worker boundary.
-`dispose()` drains accepted calls, while `terminate()` rejects pending calls
-and closes immediately. A worker module cannot access the page DOM because it
-runs in the worker realm; send a notification or return a value to page code.
+Calls in both directions run concurrently: while an asynchronous export awaits,
+page code can call it or another export again, in the page realm and in a
+worker alike. `dispose()` drains accepted worker calls, while `terminate()`
+rejects pending calls and closes immediately. A worker module cannot access the
+page DOM because it runs in the worker realm; send a notification or return a
+value to page code.
+
+### Cancel a call
+
+Cancellation has two halves, and each works the same way in both directions.
+
+**The caller stops waiting.** JavaScript passes `{ signal }` as a trailing
+option to any asynchronous export call, on the page or in a worker, and C#
+calls `WaitAsync` on the task an asynchronous import returns. Either rejects
+at once, with the signal's reason or an `OperationCanceledException`. The call
+itself keeps running, and its eventual result is discarded.
+
+```js
+const controller = new AbortController();
+const report = exports.buildReport(input, { signal: controller.signal });
+controller.abort();       // report rejects with an AbortError
+```
+
+```csharp
+[JSImport("fetchText", "app.net")]
+private static extern Task<string> Fetch(string url);
+
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+var page = await Fetch(url).WaitAsync(timeout.Token);
+```
+
+**The callee stops working.** Ask it with an ordinary call in the other
+direction. Page code calls an export that cancels a `CancellationTokenSource`,
+and the running export returns how far it got. Because calls run
+concurrently, this works in a worker too. C# calls an import that aborts the
+`AbortController` its JavaScript module holds. In the page realm an
+`AbortSignal` can also be passed as a `JSObject`.
+
+```csharp
+private static CancellationTokenSource? _job;
+
+[JSExport("run")]
+public static async Task<int> Run(int steps)
+{
+    _job = new CancellationTokenSource();
+    var done = 0;
+    while (done < steps && !_job.IsCancellationRequested)
+    {
+        await Task.Delay(100);
+        done++;
+    }
+    return done;
+}
+
+[JSExport("cancel")]
+public static void Cancel() => _job?.Cancel();
+```
+
+The runtime adds nothing beyond this: no cancellation type crosses the
+boundary, as in .NET's own browser interop.
 
 ## Serve the published files
 
@@ -366,6 +480,9 @@ python -c "import http.server, mimetypes; mimetypes.add_type('text/javascript', 
 
 or change the `Content Type` value under `HKEY_CLASSES_ROOT\.mjs` to
 `text/javascript`.
+
+The `netwasm.runtime.*.mjs` files are named after their content, so a server
+can let browsers cache them for as long as it likes.
 
 Under a strict Content Security Policy, allow module loading from the site,
 from `blob:` URLs (startup imports each verified module from a `blob:` URL),

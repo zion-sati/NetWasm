@@ -3389,66 +3389,50 @@ namespace System.Threading.Tasks
 
         ~TaskExceptionTracker()
         {
-            if (!_observed)
+            if (_observed)
             {
-                // Like the desktop holder, retain the Task until publication so
-                // the event has its real sender. The collector supports this
-                // finalizable cycle; a weak sender could already have vanished.
-                // Do not use Task.Exception: that would mark the fault observed.
-                var aggregate = _aggregateContainer && _exception is AggregateException container
-                    ? container
-                    : new AggregateException(_exception);
-                var args = new UnobservedTaskExceptionEventArgs(aggregate);
-                try { TaskScheduler.PublishUnobservedTaskException(_task, args); }
-                catch (Exception failure)
-                {
-                    // User callbacks must not escape a finalizer. Preserve the
-                    // reactor's nonterminating fault-reporting policy for both
-                    // callback failures and the original unobserved exception.
-                    TaskDiagnostics.ReportUnobservedException(failure);
-                }
-                if (!args.Observed && !_observed)
-                    TaskDiagnostics.ReportUnobservedException(_exception);
+                return;
             }
+            if (TaskScheduler.UnobservedPublisher is { } publish)
+            {
+                publish(this);
+            }
+            else
+            {
+                TaskDiagnostics.ReportUnobservedException();
+            }
+        }
+
+        internal static void Publish(TaskExceptionTracker tracker)
+        {
+            // Like the desktop holder, retain the Task until publication so
+            // the event has its real sender. The collector supports this
+            // finalizable cycle; a weak sender could already have vanished.
+            // Do not use Task.Exception: that would mark the fault observed.
+            var aggregate = tracker._aggregateContainer && tracker._exception is AggregateException container
+                ? container
+                : new AggregateException(tracker._exception);
+            var args = new UnobservedTaskExceptionEventArgs(aggregate);
+            try { TaskScheduler.PublishUnobservedTaskException(tracker._task, args); }
+            catch
+            {
+                // User callbacks must not escape a finalizer. Preserve the
+                // reactor's nonterminating fault-reporting policy for both
+                // callback failures and the original unobserved exception.
+                TaskDiagnostics.ReportUnobservedException();
+            }
+            if (!args.Observed && !tracker._observed)
+                TaskDiagnostics.ReportUnobservedException();
         }
     }
 
     internal static class TaskDiagnostics
     {
-        internal static void ReportUnobservedException(Exception exception)
-        {
-            string? exceptionType = null;
-            string? message = null;
-            string? stackTrace = null;
-            // A diagnostic accessor must not let another exception escape the finalizer.
-            try
-            {
-                exceptionType = exception.GetType().ToString();
-            }
-            catch
-            {
-            }
-            try
-            {
-                message = exception.Message;
-            }
-            catch
-            {
-            }
-            try
-            {
-                stackTrace = exception.StackTrace;
-            }
-            catch
-            {
-            }
-            ReportUnobservedExceptionCore(exceptionType, message, stackTrace);
-        }
-
-        private static void ReportUnobservedExceptionCore(
-            string? exceptionType,
-            string? message,
-            string? stackTrace)
+        // A runtime intrinsic that writes one line to stderr. Naming the
+        // exception would bring type-name and message formatting into every
+        // asynchronous application (issue #128); a
+        // TaskScheduler.UnobservedTaskException handler receives it instead.
+        internal static void ReportUnobservedException()
         {
         }
     }

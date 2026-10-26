@@ -792,10 +792,11 @@ public sealed class InteropContractCoverageTests
     public void InteropDeclarationValidatorCoversMalformedBoundaryDeclarations()
     {
         var validSignature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4);
+        // A class of the application's own has no JavaScript counterpart.
         var unsupportedObject = CliTypeIdentity.Named(
             Assembly,
-            "System",
-            "Object",
+            "Consumer",
+            "Widget",
             false);
         AssertInvalidDeclaration(
             [Method("js-export-object-parameter", 36, VoidSignature(unsupportedObject)) with
@@ -966,12 +967,14 @@ public sealed class InteropContractCoverageTests
             JSImport = new InteropImportDeclaration("unsupported-async", "module"),
         };
         AssertInvalidDeclaration([unsupportedAsyncImport], "JSImport Task and ValueTask results");
+        // Issue #127: an async export settles with what a synchronous one returns,
+        // so only a value no export returns, such as a subscription, is rejected.
         var unsupportedAsyncExportResult = asyncExport with
         {
             Key = new EntityKey(Assembly, 65),
             Signature = MethodSignatureModel.Create(TaskType(
                 "Task`1",
-                CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false))),
+                JavaScriptType("JSSubscription"))),
         };
         AssertInvalidDeclaration([unsupportedAsyncExportResult], "JSExport Task and ValueTask results");
         foreach (var (result, token) in new[]
@@ -1122,8 +1125,10 @@ public sealed class InteropContractCoverageTests
             ordinaryCallbacks.TypeDefinitions,
             ordinaryCallbacks.Methods);
 
+        // A callback takes and returns what a synchronous export does, which a
+        // subscription is not.
         var invalidCallbackReturn = CallbackFixture.Create(
-            MethodSignatureModel.Create(JavaScriptType("JSObject")),
+            MethodSignatureModel.Create(JavaScriptType("JSSubscription")),
             MethodSignatureModel.Create(CliValueKind.Void));
         AssertInvalidDeclaration(
             [CallbackImport(
@@ -1136,7 +1141,7 @@ public sealed class InteropContractCoverageTests
             invalidCallbackReturn);
 
         var invalidCallbackParameter = CallbackFixture.Create(
-            VoidSignature(JavaScriptType("JSObject")),
+            VoidSignature(JavaScriptType("JSSubscription")),
             MethodSignatureModel.Create(CliValueKind.Void));
         AssertInvalidDeclaration(
             [CallbackImport(
@@ -1148,20 +1153,25 @@ public sealed class InteropContractCoverageTests
             "callbacks support",
             invalidCallbackParameter);
 
-        var invalidCallbackText = CallbackFixture.Create(
-            VoidSignature(
-                CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference),
-                CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference)),
+        var callbackValues = CallbackFixture.Create(
+            new MethodSignatureModel(
+                JavaScriptType("JSObject"),
+                [
+                    CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference),
+                    CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference),
+                    JavaScriptType("JSObject"),
+                ]),
             MethodSignatureModel.Create(CliValueKind.Void));
-        AssertInvalidDeclaration(
+        AssertValidDeclaration(
             [CallbackImport(
-                "callback-text",
+                "callback-values",
                 60,
-                invalidCallbackText,
+                callbackValues,
                 false,
-                invalidCallbackText.Success)],
-            "callbacks support",
-            invalidCallbackText);
+                callbackValues.Success)],
+            callbackValues.Factory,
+            callbackValues.TypeDefinitions,
+            callbackValues.Methods);
 
         AssertInvalidDeclaration(
             [Method(

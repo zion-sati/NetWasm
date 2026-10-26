@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using Microsoft.Extensions.DependencyInjection;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Catalogs;
 using NetWasm.Compiler.ComponentModel.Raw;
 using NetWasm.Compiler.Core;
@@ -24,8 +26,12 @@ public sealed class RawBindingSessionTests
             validator,
             adapters,
             functions));
+        var manifest = new HostInteropManifest(2, "wasm32", null!, null!, [], [])
+        {
+            ImportModules = ["app.optional", "app.native"],
+        };
         var request = new RawBuildImportSourceValidationRequest(
-            new([], null!),
+            new([], manifest),
             "wit",
             null,
             WasmTarget.Wasm32,
@@ -46,6 +52,8 @@ public sealed class RawBindingSessionTests
         Assert.Equal([1, 2, 3], result.Adapter);
         Assert.Equal("wasi:cli/environment@0.2.11",
             Assert.Single(result.RequiredImports).Interface);
+        // Issue #128: only a declared module the final module imports is supplied.
+        Assert.Equal(["app.native"], result.ImportModules.ToArray());
         Assert.True(probe.IsDisposed);
     }
 
@@ -80,8 +88,30 @@ public sealed class RawBindingSessionTests
             RawBuildImportSourceValidationRequest request)
         {
             Request = request;
-            return null!;
+            return NativeImportPlan();
         }
+    }
+
+    // A final module that imports one function from a declared module, as a
+    // linked native archive does.
+    private static RawValidatedBindingPlan NativeImportPlan()
+    {
+        var document = new WitDocument([], [], [new(0, "empty", "example:test@1", [], [])], [], "{}");
+        var catalog = new RawWitImportCatalog(document, document.Worlds[0], WasmTarget.Wasm32,
+            ImmutableDictionary<RawCanonicalImportIdentity, RawWitImportDeclaration>.Empty);
+        var identity = new RawCanonicalImportIdentity("app.native", "create_node");
+        var signature = new RawCoreFunctionImportSignature(identity, [RawCoreValueType.I32], [RawCoreValueType.I64]);
+        return new RawFinalImportSignatureValidator(new UnusedProjector()).Validate(new(
+            new(new(catalog, [], [], [identity]), []), [], [], [signature])
+        {
+            RuntimeCoreImports = [signature],
+        });
+    }
+
+    private sealed class UnusedProjector : IRawCliCoreSignatureProjector
+    {
+        public RawCoreFunctionImportSignature Project(RawCliFunctionImportSignature signature, WasmTarget target) =>
+            throw new InvalidOperationException("the plan has no CLI signatures");
     }
 
     private sealed class RecordingAdapterWriter : IRawAdapterWriter

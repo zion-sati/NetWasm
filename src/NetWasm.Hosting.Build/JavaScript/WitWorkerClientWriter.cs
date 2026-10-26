@@ -46,7 +46,7 @@ public sealed class WitWorkerClientWriter(
         js.AppendLine(CultureInfo.InvariantCulture, $"export const workerContractFingerprint = {Json(Convert.ToHexStringLower(SHA256.HashData(request.ContractJson.Span)))};");
         ts.AppendLine("export declare const workerContractFingerprint: string;");
         ts.AppendLine("export interface NetWasmWorkerStartupOptions { signal?: AbortSignal; environment?: Record<string, string>; stdout?: (line: string) => void; stderr?: (line: string) => void; onNotification?: (value: { operation: string; arguments: unknown[] }) => void | Promise<void>; }");
-        ts.AppendLine("export interface NetWasmWorkerCallOptions { signal?: AbortSignal; timeoutMilliseconds?: number; }");
+        ts.AppendLine("export interface NetWasmWorkerCallOptions { signal?: AbortSignal; }");
         foreach (var (id, layout) in layouts.OrderBy(entry => entry.Key))
         {
             var source = _values[layout.Kind].Write(new(id, layout, layouts));

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createInteropBuiltinServiceModule } from "./interop-builtin-service-module.mjs";
+import {
+  createInteropBuiltinServiceModule,
+  createJavaScriptValueServices,
+} from "./interop-builtin-service-module.mjs";
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 
 const layout = Object.freeze({
@@ -147,3 +150,72 @@ function createFixture() {
     },
   };
 }
+
+// CoreLib reads and builds JavaScript values through these, each behind a handle.
+test("serves the JavaScript values CoreLib converts", () => {
+  const handles = createInteropHandleTable();
+  const registered = [];
+  let collect;
+  class Registry {
+    constructor(callback) { collect = callback; }
+    register(item, handle) { registered.push(handle); }
+  }
+  const values = createJavaScriptValueServices(handles, Registry);
+  const kinds = [true, 1.5, 7n, "s", new Date(5), new Error("e"), [1], Uint8Array.of(1), Int32Array.of(1),
+    Float64Array.of(1), {}];
+  assert.equal(values.value_kind(0), 0);
+  assert.equal(values.value_kind(values.value_element(handles.acquire([undefined]), 0)), 0);
+  assert.deepEqual(kinds.map(item => values.value_kind(handles.acquire(item))), [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13]);
+
+  const managed = values.value_from_managed(5n);
+  const managedError = values.value_from_managed_error("message", 6n);
+  assert.deepEqual([values.value_kind(managed), values.value_kind(managedError)], [8, 9]);
+  assert.deepEqual([values.value_managed(managed), values.value_managed(managedError)], [5n, 6n]);
+  assert.equal(String(handles.get(managed)), "[object ManagedObject]");
+  assert.deepEqual([handles.get(managedError).name, handles.get(managedError).message], ["ManagedError", "message"]);
+  assert.deepEqual(registered, [5n, 6n]);
+  assert.equal(values.value_collected(), 0n);
+  collect(5n);
+  assert.deepEqual([values.value_collected(), values.value_collected()], [5n, 0n]);
+
+  assert.equal(values.value_number(handles.acquire(new Date(9))), 9);
+  assert.equal(values.value_number(handles.acquire(true)), 1);
+  assert.equal(values.value_bigint(handles.acquire(-1n)), -1n);
+  assert.equal(values.value_string(handles.acquire(12)), "12");
+  assert.equal(values.value_message(handles.acquire(new Error("boom"))), "boom");
+  assert.equal(values.value_message(handles.acquire(3)), "3");
+  const bytes = Uint8Array.of(2);
+  for (const read of [values.value_bytes, values.value_int32s, values.value_doubles, values.value_object]) {
+    assert.equal(read(handles.acquire(bytes)), bytes);
+  }
+
+  const array = values.value_new_array(2);
+  assert.deepEqual(handles.get(array), [null, null]);
+  values.value_set_element(array, 0, values.value_from_string("a"));
+  values.value_set_element(array, 1, 0);
+  assert.deepEqual(handles.get(array), ["a", null]);
+  assert.equal(values.value_length(array), 2);
+  assert.equal(handles.get(values.value_element(array, 0)), "a");
+  assert.equal(values.value_element(array, 1), 0);
+  const copy = values.value_copy(array);
+  assert.equal(handles.get(copy), handles.get(array));
+  assert.equal(values.value_copy(0), 0);
+  const before = handles.count;
+  values.value_release(copy);
+  values.value_release(0);
+  assert.equal(handles.count, before - 1);
+
+  for (const [create, item] of [
+    [values.value_from_number, 2], [values.value_from_boolean, false], [values.value_from_string, "t"],
+    [values.value_from_bytes, bytes], [values.value_from_int32s, Int32Array.of(3)],
+    [values.value_from_doubles, Float64Array.of(4)], [values.value_from_object, {}],
+  ]) {
+    assert.equal(handles.get(create(item)), item);
+  }
+  assert.equal(handles.get(values.value_from_date(5)).getTime(), 5);
+
+  // Without a FinalizationRegistry, a managed object stays pinned.
+  const pinned = createJavaScriptValueServices(handles, null);
+  assert.equal(pinned.value_kind(pinned.value_from_managed(1n)), 8);
+  assert.equal(pinned.value_collected(), 0n);
+});

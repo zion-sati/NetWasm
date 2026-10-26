@@ -14,7 +14,6 @@ public sealed class WorkerEntryWriterTests
         HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
         var request = new WorkerHostEntryRequest(
             Path.Combine(directory.Path, "hosting"),
-            Path.Combine(directory.Path, "preview2-shim"),
             output,
             [new("consumer.worker", Path.Combine(directory.Path, "consumer.mjs"),
                 ["increment", "read"])],
@@ -39,14 +38,20 @@ public sealed class WorkerEntryWriterTests
         Assert.Contains("\"increment\": imports0[\"increment\"]", source, StringComparison.Ordinal);
         Assert.Contains("./deployment.json", source, StringComparison.Ordinal);
         Assert.Contains("globalThis.addEventListener(\"message\"", source, StringComparison.Ordinal);
-        Assert.Contains("/hosting/deployment-manifest-validator.mjs\";", source, StringComparison.Ordinal);
+        // Issue #128: the host imports the shared runtime, which the page and its workers load once.
+        Assert.Contains("import { validateDeploymentManifest } from \"netwasm:runtime/manifest-validator\";", source,
+            StringComparison.Ordinal);
+        Assert.Contains("import { bindWorkerImports, createBrowserRawExportSession, createWorkerSessionHost, mergeEnvironment } from \"netwasm:runtime/worker\";",
+            source, StringComparison.Ordinal);
+        Assert.Contains("import { cli as preview2Cli } from \"netwasm:runtime/worker\";", source, StringComparison.Ordinal);
+        Assert.Contains("import { random as preview2Random } from \"netwasm:runtime/random\";", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("file://", source.Split("consumer0")[0], StringComparison.Ordinal);
         Assert.Contains("snapshotDeploymentManifest: validateDeploymentManifest,", source, StringComparison.Ordinal);
         Assert.Contains("globalThis.addEventListener(\"messageerror\"", source, StringComparison.Ordinal);
         Assert.Contains("host.receive(event.data).catch(fatal)", source, StringComparison.Ordinal);
         Assert.Contains("clocks: Object.freeze([\"monotonic\"])", source, StringComparison.Ordinal);
         Assert.Contains("configuration: mergeEnvironment(configuration, request.environment),", source,
             StringComparison.Ordinal);
-        Assert.Contains("/session-options.mjs\";", source, StringComparison.Ordinal);
         Assert.Contains("stderr: request.stderr,", source, StringComparison.Ordinal);
         Assert.Contains("stdout: request.stdout,", source, StringComparison.Ordinal);
         Assert.DoesNotContain("console[", source, StringComparison.Ordinal);
@@ -80,7 +85,6 @@ public sealed class WorkerEntryWriterTests
         HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
         WorkerHostEntryRequest Request(bool bindsModule) => new(
             Path.Combine(directory.Path, "hosting"),
-            Path.Combine(directory.Path, "preview2-shim"),
             output,
             [new("host_ui", Path.Combine(directory.Path, "host-ui.mjs"), []) { BindsModule = bindsModule }],
             [],
@@ -106,7 +110,6 @@ public sealed class WorkerEntryWriterTests
         var output = Path.Combine(directory.Path, "calculator.worker-client.mjs");
         var declarations = Path.Combine(directory.Path, "calculator.worker-client.d.mts");
         new WorkerEntryWriter().WriteClient(new(
-            Path.Combine(directory.Path, "hosting"),
             "calculator.worker.mjs",
             new string('1', 64),
             new string('2', 64),
@@ -155,7 +158,8 @@ public sealed class WorkerEntryWriterTests
         Assert.Contains("export interface NetWasmWorkerCallOptions", declaration,
             StringComparison.Ordinal);
         Assert.Contains("signal?: AbortSignal", declaration, StringComparison.Ordinal);
-        Assert.Contains("timeoutMilliseconds?: number", declaration, StringComparison.Ordinal);
+        // A deadline is an AbortSignal.timeout(); there is no separate option.
+        Assert.DoesNotContain("timeoutMilliseconds", declaration, StringComparison.Ordinal);
         Assert.Contains("environment?: Record<string, string>; stdout?: (line: string) => void;", declaration,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -183,7 +187,6 @@ public sealed class WorkerEntryWriterTests
 
         new WorkerEntryWriter().WriteHost(new(
             Path.Combine(directory.Path, "hosting"),
-            Path.Combine(directory.Path, "preview2-shim"),
             output,
             [], [], [], [], "denyAll", false, [], true));
 
@@ -198,7 +201,6 @@ public sealed class WorkerEntryWriterTests
     {
         using var directory = TemporaryDirectory.Create();
         var valid = new WorkerClientEntryRequest(
-            Path.Combine(directory.Path, "hosting"),
             "app.worker.mjs",
             new string('1', 64),
             new string('2', 64),
@@ -211,8 +213,7 @@ public sealed class WorkerEntryWriterTests
         Assert.Throws<JavaScriptExportRealmException>(() => new WorkerEntryWriter().WriteClient(
             valid with { Exports = [new("read", [], "object", null)] }));
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteHost(new(
-            valid.HostingJavaScriptRoot,
-            Path.Combine(directory.Path, "shim"),
+            Path.Combine(directory.Path, "hosting"),
             Path.Combine(directory.Path, "host.mjs"),
             [new("wasi:cli/run@0.2.11", Path.Combine(directory.Path, "provider.mjs"), ["run"])],
             [], [], [], "denyAll", false, [], true)));
@@ -223,10 +224,9 @@ public sealed class WorkerEntryWriterTests
     {
         using var directory = TemporaryDirectory.Create();
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteHost(new(
-            "hosting", Path.Combine(directory.Path, "shim"), Path.Combine(directory.Path, "host.mjs"),
+            "hosting", Path.Combine(directory.Path, "host.mjs"),
             [], [], [], [], "denyAll", false, [], true)));
         Assert.Throws<ArgumentException>(() => new WorkerEntryWriter().WriteClient(new(
-            Path.Combine(directory.Path, "hosting"),
             "app.worker.mjs",
             "invalid",
             new string('2', 64),

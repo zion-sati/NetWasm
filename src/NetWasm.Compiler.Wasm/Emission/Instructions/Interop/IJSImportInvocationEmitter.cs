@@ -7,14 +7,16 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 
 // Arguments occupy evaluation-stack slots [ArgumentBase, ArgumentBase + Consumed); the
-// marshalled result replaces them at ArgumentBase.
+// marshalled result replaces them at ArgumentBase. A value-type result is held in
+// the value-frame temporary of the call at Offset.
 internal sealed record JSImportInvocation(
     MethodInstanceModel Method,
     MethodEmissionContext Context,
     List<CliValueKind> Stack,
     int ArgumentBase,
     int Consumed,
-    InstructionModuleTarget Target);
+    InstructionModuleTarget Target,
+    int Offset);
 
 internal interface IJSImportInvocationEmitter
 {

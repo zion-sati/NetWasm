@@ -16,9 +16,8 @@ internal sealed class AsyncJSExportWrapperEmitter(
     IImplicitExceptionEmitter exceptions,
     IReferenceComparisonEmitter references,
     IGeneratedFunctionWriterFactory writers,
-    IHostCallbackStringArgumentMarshaller stringArguments,
-    IHostCallbackByteArrayArgumentMarshaller valueArrayArguments,
-    IHostCallbackHostObjectArgumentMarshaller hostObjectArguments) : IAsyncJSExportWrapperEmitter
+    IJavaScriptReferenceArgumentEmitter referenceArguments,
+    IJavaScriptValueFrameEmitter valueFrames) : IAsyncJSExportWrapperEmitter
 {
     public byte[] Emit(
         MethodDefinitionModel method,
@@ -29,8 +28,12 @@ internal sealed class AsyncJSExportWrapperEmitter(
         EntityKey? argumentFactory = null,
         InteropImportPlan? interopImports = null)
     {
+        // At a JavaScript boundary a nullable parameter arrives as two Wasm values.
+        var parameterLocals = interopImports is not null
+            ? InteropTypeClassifier.TransportLocals(method.Signature.ParameterSignatureTypes, 0)
+            : [.. Enumerable.Range(0, method.Signature.ParameterTypes.Length + 1)];
         var wrapperParameterCount = argumentFactory is null
-            ? method.Signature.ParameterTypes.Length
+            ? parameterLocals[^1]
             : 0;
         var taskLocal = wrapperParameterCount;
         var handleLocal = taskLocal + 1;
@@ -53,6 +56,12 @@ internal sealed class AsyncJSExportWrapperEmitter(
         var temporaryI4 = argumentFrameLocal + 1;
         var objectTemporary = temporaryI4 + 1;
         var argumentLocal = objectTemporary + 1;
+        // Date and nullable parameters become structs in a value frame that lives until
+        // the method returns its task. The result is read from the task later.
+        var converted = argumentFactory is null && interopImports is not null
+            ? valueFrames.Plan(method.Signature.ParameterSignatureTypes, CliTypeIdentity.FromStackKind(CliValueKind.Void))
+            : null;
+        var convertedFrameLocal = referenceParameters.Length == 0 ? argumentFrameLocal : argumentLocal + 1;
         var code = writers.Create();
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
@@ -67,6 +76,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
                     ? Array.Empty<CliValueKind>()
                     : [CliValueKind.ManagedAddress, CliValueKind.I4, CliValueKind.ManagedReference,
                         CliValueKind.ManagedReference]),
+                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress]),
             ],
             layouts.Target);
         runtimeInitialization.Initialize(code, initialization);
@@ -104,25 +114,15 @@ internal sealed class AsyncJSExportWrapperEmitter(
             var target = new InteropMarshallingTarget(interopImports!);
             foreach (var parameter in referenceParameters)
             {
-                if (InteropTypeClassifier.IsString(parameter.Type))
-                {
-                    stringArguments.Emit(code.Instructions, parameter.Index, argumentLocal,
-                        temporaryI4, objectTemporary, target, functionIndices.ManagedThrowFunction);
-                }
-                else if (InteropTypeClassifier.IsJSObject(parameter.Type))
-                {
-                    hostObjectArguments.Emit(code.Instructions, parameter.Type, parameter.Index,
-                        argumentLocal, functionIndices.ManagedThrowFunction);
-                }
-                else
-                {
-                    valueArrayArguments.Emit(code.Instructions, parameter.Type, parameter.Index,
-                        argumentLocal, temporaryI4, objectTemporary, target, functionIndices.ManagedThrowFunction);
-                }
+                referenceArguments.Emit(code.Instructions, parameter.Type, parameterLocals[parameter.Index], argumentLocal,
+                    temporaryI4, objectTemporary, target, functionIndices.ManagedThrowFunction);
                 ManagedMemoryEmitter.EmitRootSlotStore(code.Instructions, layouts.Target,
                     argumentFrameLocal, rootSlots[parameter.Index], argumentLocal);
             }
         }
+        if (converted is not null)
+            valueFrames.EmitEnter(
+                code.Instructions, converted, convertedFrameLocal, index => parameterLocals[index], interopImports!);
         if (binding.Return.Kind == JavaScriptAsyncReturnKind.ValueTask)
         {
             var valueLayout = valueLayouts.GetValueLayout(
@@ -147,7 +147,10 @@ internal sealed class AsyncJSExportWrapperEmitter(
                 argumentFactory,
                 functionIndices,
                 rootSlots,
-                argumentFrameLocal);
+                argumentFrameLocal,
+                converted,
+                convertedFrameLocal,
+                parameterLocals);
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
@@ -178,7 +181,10 @@ internal sealed class AsyncJSExportWrapperEmitter(
                 argumentFactory,
                 functionIndices,
                 rootSlots,
-                argumentFrameLocal);
+                argumentFrameLocal,
+                converted,
+                convertedFrameLocal,
+                parameterLocals);
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
@@ -187,6 +193,8 @@ internal sealed class AsyncJSExportWrapperEmitter(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)taskLocal)));
         }
+        if (converted is not null)
+            valueFrames.EmitLeave(code.Instructions, convertedFrameLocal);
         // Normal completion leaves the argument frame and skips the handler.
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         if (referenceParameters.Length != 0)
@@ -311,7 +319,10 @@ internal sealed class AsyncJSExportWrapperEmitter(
         EntityKey? argumentFactory,
         IFunctionIndexResolver functionIndices,
         Dictionary<int, int> rootSlots,
-        int argumentFrameLocal)
+        int argumentFrameLocal,
+        JavaScriptValueFrame? converted,
+        int convertedFrameLocal,
+        int[] parameterLocals)
     {
         if (argumentFactory is { } factory)
         {
@@ -335,9 +346,14 @@ internal sealed class AsyncJSExportWrapperEmitter(
                     layouts.Target.ObjectReferenceSize);
                 continue;
             }
+            if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
+            {
+                valueFrames.EmitAddress(code.Instructions, convertedFrameLocal, valueSlot.Offset);
+                continue;
+            }
             code.Instructions.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)index)));
+                WasmInstructionOperand.Unsigned((uint)parameterLocals[index])));
         }
     }
 

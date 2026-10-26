@@ -56,6 +56,8 @@ public sealed class NetWasmBuildRawBindingsTaskTests
         var manifestJson = System.Text.Encoding.UTF8.GetString(manifest.Bytes);
         Assert.Contains("\"target\":\"" + target + "\"", manifestJson, StringComparison.Ordinal);
         Assert.Contains("\"requiredImports\"", manifestJson, StringComparison.Ordinal);
+        Assert.Contains("\"importModules\":[\"app.native\"]", manifestJson, StringComparison.Ordinal);
+        Assert.Equal("app.native", Assert.Single(task.ImportModules).ItemSpec);
         Assert.Equal("RawAdapter", Assert.Single(task.Adapters).GetMetadata("Kind"));
         Assert.Collection(
             task.RequiredImports,
@@ -92,6 +94,7 @@ public sealed class NetWasmBuildRawBindingsTaskTests
         Assert.Empty(task.Adapters);
         Assert.Empty(task.RequiredImports);
         Assert.Empty(task.RequiredImportModules);
+        Assert.Empty(task.ImportModules);
         Assert.Null(sessions.Session);
         Assert.Contains("NWSDK027", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
@@ -135,6 +138,7 @@ public sealed class NetWasmBuildRawBindingsTaskTests
         Assert.Empty(task.Adapters);
         Assert.Empty(task.RequiredImports);
         Assert.Empty(task.RequiredImportModules);
+        Assert.Empty(task.ImportModules);
         Assert.Contains("NW1010", Assert.Single(build.Errors), StringComparison.Ordinal);
         Assert.True(Assert.IsType<RecordingSession>(sessions.Session).IsDisposed);
     }
@@ -260,7 +264,10 @@ public sealed class NetWasmBuildRawBindingsTaskTests
                 [
                     new("wasi:cli/environment@0.2.11", "get-arguments", [], ["list<string>"]),
                     new("wasi:cli/environment@0.2.11", "get-environment", [], ["list<string>"]),
-                ]);
+                ])
+            {
+                ImportModules = ["app.native"],
+            };
         }
 
         public void Dispose() => IsDisposed = true;

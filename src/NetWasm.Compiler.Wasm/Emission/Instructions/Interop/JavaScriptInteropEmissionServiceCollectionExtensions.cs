@@ -21,6 +21,10 @@ internal static class JavaScriptInteropEmissionServiceCollectionExtensions
         services.AddSingleton<ByteArrayJavaScriptImportResultMarshaller>();
         services.AddSingleton<HostObjectJavaScriptImportResultMarshaller>();
         services.AddSingleton<ScalarJavaScriptImportResultMarshaller>();
+        services.AddSingleton<DateJavaScriptImportResultMarshaller>();
+        services.AddSingleton<NullableJavaScriptImportResultMarshaller>();
+        services.AddSingleton<HandleValueJavaScriptImportResultMarshaller>();
+        services.AddSingleton<IJavaScriptNullableEmitter, JavaScriptNullableEmitter>();
         services.AddSingleton<IJavaScriptImportResultKindResolver,
             JavaScriptImportResultKindResolver>();
         services.AddSingleton(provider => new JavaScriptImportResultEmitterRegistration(
@@ -35,6 +39,15 @@ internal static class JavaScriptInteropEmissionServiceCollectionExtensions
         services.AddSingleton(provider => new JavaScriptImportResultEmitterRegistration(
             JavaScriptImportResultKind.Scalar,
             provider.GetRequiredService<ScalarJavaScriptImportResultMarshaller>()));
+        services.AddSingleton(provider => new JavaScriptImportResultEmitterRegistration(
+            JavaScriptImportResultKind.Date,
+            provider.GetRequiredService<DateJavaScriptImportResultMarshaller>()));
+        services.AddSingleton(provider => new JavaScriptImportResultEmitterRegistration(
+            JavaScriptImportResultKind.Nullable,
+            provider.GetRequiredService<NullableJavaScriptImportResultMarshaller>()));
+        services.AddSingleton(provider => new JavaScriptImportResultEmitterRegistration(
+            JavaScriptImportResultKind.HandleValue,
+            provider.GetRequiredService<HandleValueJavaScriptImportResultMarshaller>()));
         services.AddSingleton<IJavaScriptImportResultEmitterRegistry,
             JavaScriptImportResultEmitterRegistry>();
         services.AddSingleton<JavaScriptImportResultMarshaller>();
@@ -54,6 +67,8 @@ internal static class JavaScriptInteropEmissionServiceCollectionExtensions
             HostCallbackByteArrayArgumentMarshaller>();
         services.AddSingleton<IHostCallbackHostObjectArgumentMarshaller,
             HostCallbackHostObjectArgumentMarshaller>();
+        services.AddSingleton<IJavaScriptReferenceArgumentEmitter,
+            JavaScriptReferenceArgumentEmitter>();
         return services;
     }
 }

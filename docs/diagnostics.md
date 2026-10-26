@@ -36,6 +36,11 @@ the mapped type name, then a generic export-failure fallback. Stack details
 depend on the selected instrumentation/symbols. Applications should inspect
 the supported payload rather than assume desktop `Exception.ToString()` output.
 
+A faulted `Task` whose exception nothing observes writes one line, "NetWasm: an
+unobserved managed Task exception was finalized", to standard error when it is
+collected. Handle `TaskScheduler.UnobservedTaskException` to receive the
+exception itself.
+
 ## Compiler diagnostic format
 
 The diagnostic format is `NWdddd: [Type::Method IL_000a:] message`; the

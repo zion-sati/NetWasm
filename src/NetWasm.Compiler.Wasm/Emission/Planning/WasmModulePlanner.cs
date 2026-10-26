@@ -195,6 +195,16 @@ internal sealed class WasmModulePlanner(
                 item => item.Index,
                 StringComparer.Ordinal);
         var helperBase = managedThrowFunction + throwFunctionCount + delegateInvokes.Length;
+        if (!request.JavaScriptConversions.IsEmpty)
+        {
+            interopImports = interopImports with
+            {
+                Conversions = request.JavaScriptConversions.ToImmutableDictionary(
+                    conversion => conversion.Key,
+                    conversion => functionIndices[conversion.Value.Definition.Key].Value,
+                    StringComparer.Ordinal),
+            };
+        }
         var plan = new WasmModulePlan(
             runtimeImportSelection,
             finalization,

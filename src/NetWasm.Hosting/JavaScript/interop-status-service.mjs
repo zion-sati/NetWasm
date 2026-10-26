@@ -1,12 +1,17 @@
 import {
   describeValueArray,
+  isHandleValueAbiType,
   isHostObject,
   isMemoryViewAbiType,
   isScalarAbiType,
   isValueArrayAbiType,
   memoryViewConstructor,
+  nullableRecord,
+  nullableUnderlying,
+  requireHandleValue,
   valueArrayConstructor,
 } from "./interop-abi-types.mjs";
+import { takeHandleValue } from "./managed-interop-export.mjs";
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
 import {
   liftScalar,
@@ -60,6 +65,7 @@ export function createInteropStatusService(
     type => isValueArrayAbiType(type) ? valueArrayConstructor(type) : null);
   const viewConstructors = request.descriptor.parameters.map(
     type => isMemoryViewAbiType(type) ? memoryViewConstructor(type) : null);
+  const nullables = request.descriptor.parameters.map(nullableUnderlying);
   return Object.freeze((...argumentsWithDescriptor) => {
     const descriptorAddress = argumentsWithDescriptor.pop();
     try {
@@ -67,9 +73,19 @@ export function createInteropStatusService(
         ? 0
         : normalizeInteropHandle(argumentsWithDescriptor.pop());
       const callbackHandles = [];
-      const argumentsForService = argumentsWithDescriptor.map((value, index) =>
-        liftArgument(request, value, index, callbackHandles, observeAsyncCompletion, isImportActive,
-          arrayConstructors[index], viewConstructors[index]));
+      // A nullable argument arrives as two Wasm values, its presence and its value.
+      const argumentsForService = [];
+      for (let index = 0, position = 0; index < request.descriptor.parameters.length; index++) {
+        const underlying = nullables[index];
+        if (underlying !== null) {
+          const present = argumentsWithDescriptor[position] !== 0;
+          argumentsForService.push(present ? liftScalar(underlying, argumentsWithDescriptor[position + 1]) : null);
+          position += 2;
+          continue;
+        }
+        argumentsForService.push(liftArgument(request, argumentsWithDescriptor[position++], index, callbackHandles,
+          observeAsyncCompletion, isImportActive, arrayConstructors[index], viewConstructors[index]));
+      }
       let result;
       if (request.descriptor.asyncReturn != null) {
         return startAsyncOperation(request, asyncHandle, argumentsForService, observeAsyncCompletion);
@@ -118,6 +134,7 @@ function liftArgument(
   if (type === "object" || type === "subscription") {
     return value === 0 ? null : request.handles.get(value);
   }
+  if (isHandleValueAbiType(type)) return takeHandleValue(request.handles, value);
   if (type === "callback") {
     const handle = normalizeInteropHandle(value);
     callbackHandles.push(handle);
@@ -126,9 +143,12 @@ function liftArgument(
       descriptor: request.descriptor,
       exceptionReporter: request.exceptionReporter,
       getInstance: request.getInstance,
+      getMemory: request.getMemory,
       handle,
       handles: request.handles,
       parameterIndex: index,
+      target: request.target,
+      targetLayout: request.targetLayout,
     });
     // Promise callbacks already notify through settleAsyncCompletion. Ordinary
     // callbacks can also complete Main without a reactor wake. Observe only
@@ -217,11 +237,17 @@ function prepareAsyncResolution(request, asyncHandle, resolve, value) {
     const normalized = lowerScalar(result, value);
     return () => resolve(asyncHandle, normalized);
   }
+  const underlying = nullableUnderlying(result);
+  if (underlying !== null) {
+    const present = value !== null && value !== undefined;
+    const normalized = lowerScalar(underlying, present ? value : null);
+    return () => resolve(asyncHandle, present ? 1 : 0, normalized);
+  }
   requireTransferResult(result, value);
   // The resolve export copies a string or array before returning, so its handle
   // ends here. A JSObject wrapper owns its handle once resolve succeeds.
   return () => {
-    const handle = value === null ? 0 : handles.acquire(value);
+    const handle = value === null || value === undefined ? 0 : handles.acquire(value);
     let transferred = false;
     try {
       resolve(asyncHandle, handle);
@@ -233,6 +259,10 @@ function prepareAsyncResolution(request, asyncHandle, resolve, value) {
 }
 
 function requireTransferResult(type, result) {
+  if (isHandleValueAbiType(type)) {
+    requireHandleValue(type, result);
+    return;
+  }
   if (result === null) return;
   if (type === "string" && typeof result !== "string") {
     throw new NetWasmHostError("a string host service must return string or null");
@@ -274,6 +304,21 @@ function writeResult(request, result, descriptorAddress, callbackHandles) {
   const byteOffset = managedInteropMemoryOffset(descriptorAddress, target, memory) + statusAbi.scalarResultOffset;
   if (isScalarAbiType(descriptor.result)) {
     writeScalarResult(memory, byteOffset, descriptor.result, lowerScalar(descriptor.result, result));
+    return;
+  }
+  const underlying = nullableUnderlying(descriptor.result);
+  if (underlying !== null) {
+    const present = result !== null && result !== undefined;
+    new DataView(memory.buffer).setInt32(byteOffset + nullableRecord.hasValueOffset, present ? 1 : 0, true);
+    if (present) {
+      writeScalarResult(memory, byteOffset + nullableRecord.valueOffset, underlying, lowerScalar(underlying, result));
+    }
+    return;
+  }
+  // Managed code converts a handle value and releases its handle.
+  if (isHandleValueAbiType(descriptor.result)) {
+    requireHandleValue(descriptor.result, result);
+    writeHandle(handles, result === null || result === undefined ? 0 : handles.acquire(result), memory, byteOffset);
     return;
   }
   if (descriptor.result === "string" || descriptor.result === "object"

@@ -35,11 +35,28 @@ export function liftScalar(type, value) {
     case "u64": return BigInt.asUintN(64, value);
     case "f32": return Math.fround(value);
     case "f64": return value;
+    case "date": return new Date(value);
+    case "i52": return safeNumber(value);
     default: throw new NetWasmHostError(`unsupported scalar type ${type}`);
   }
 }
 
+// A long crossing as a Number must be one JavaScript represents exactly.
+function safeNumber(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) throw new NetWasmHostError("i52 value is outside 2^53 - 1");
+  return number;
+}
+
+// The value a plain scalar takes for null or undefined, as .NET's browser runtime
+// gives it: the default, and DateTime.MinValue for a date.
+const defaults = Object.freeze({
+  bool: 0, i8: 0, u8: 0, char: 0, i16: 0, u16: 0, i32: 0, u32: 0,
+  i64: 0n, u64: 0n, f32: 0, f64: 0, date: -62_135_596_800_000, i52: 0n,
+});
+
 export function lowerScalar(type, value) {
+  if ((value === null || value === undefined) && Object.hasOwn(defaults, type)) return defaults[type];
   const integer = (minimum, maximum) => {
     if (!Number.isInteger(value) || value < minimum || value > maximum) {
       throw new NetWasmHostError(`${type} value is outside its range`);
@@ -78,6 +95,12 @@ export function lowerScalar(type, value) {
     case "f64":
       if (typeof value !== "number") throw new NetWasmHostError("f64 value must be a number");
       return value;
+    case "date":
+      if (!(value instanceof Date)) throw new NetWasmHostError("date value must be a Date");
+      return value.getTime();
+    case "i52":
+      if (!Number.isSafeInteger(value)) throw new NetWasmHostError("i52 value must be an integer within 2^53 - 1");
+      return BigInt(value);
     default: throw new NetWasmHostError(`unsupported scalar type ${type}`);
   }
 }
@@ -92,11 +115,33 @@ export function writeScalarResult(memory, byteOffset, type, value) {
       view.setInt32(byteOffset, value, true); break;
     case "u8": case "char": case "u16": case "u32":
       view.setUint32(byteOffset, value, true); break;
-    case "i64": view.setBigInt64(byteOffset, value, true); break;
+    case "i64": case "i52": view.setBigInt64(byteOffset, value, true); break;
     case "u64": view.setBigUint64(byteOffset, BigInt.asUintN(64, value), true); break;
     case "f32": view.setFloat32(byteOffset, value, true); break;
-    case "f64": view.setFloat64(byteOffset, value, true); break;
+    case "f64": case "date": view.setFloat64(byteOffset, value, true); break;
     default: throw new NetWasmHostError(`unsupported scalar result type ${type}`);
+  }
+}
+
+// Reads a scalar written at its own width, as a nullable's record holds it.
+export function readScalarValue(memory, byteOffset, type) {
+  const view = memoryView(memory);
+  switch (type) {
+    case "bool": return view.getUint8(byteOffset) !== 0;
+    case "i8": return view.getInt8(byteOffset);
+    case "u8": return view.getUint8(byteOffset);
+    case "char": return String.fromCharCode(view.getUint16(byteOffset, true));
+    case "i16": return view.getInt16(byteOffset, true);
+    case "u16": return view.getUint16(byteOffset, true);
+    case "i32": return view.getInt32(byteOffset, true);
+    case "u32": return view.getUint32(byteOffset, true);
+    case "i64": return view.getBigInt64(byteOffset, true);
+    case "u64": return view.getBigUint64(byteOffset, true);
+    case "f32": return view.getFloat32(byteOffset, true);
+    case "f64": return view.getFloat64(byteOffset, true);
+    case "date": return new Date(view.getFloat64(byteOffset, true));
+    case "i52": return safeNumber(view.getBigInt64(byteOffset, true));
+    default: throw new NetWasmHostError(`unsupported scalar value type ${type}`);
   }
 }
 

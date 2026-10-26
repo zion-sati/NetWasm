@@ -14,6 +14,10 @@ const manifestUrl = "https://example.test/workers/deployment.json";
 const application = Buffer.from(
   "AGFzbQEAAAABFgRgBH9/f38Bf2AAAGACf38Bf2AAAX8DBQQAAQIDBQMBAAEGBgF/AUEACwdKBQ1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAABFjbTMycDJfaW5pdGlhbGl6ZQABA2FkZAACC2luaXRpYWxpemVkAAMKGgQEAEEACwYAQQEkAAsHACAAIAFqCwQAIwALABUEbmFtZQcOAQALaW5pdGlhbGl6ZWQ=",
   "base64");
+// The fixture application with one import from the host_ui import module.
+const hostUiApplication = Buffer.from(
+  "AGFzbQEAAAABGwVgAX8BfmAEf39/fwF/YAAAYAJ/fwF/YAABfwIXAQdob3N0X3VpC2NyZWF0ZV9ub2RlAAADBQQBAgMEBQMBAAEGBgF/AUEACwdKBQ1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAARFjbTMycDJfaW5pdGlhbGl6ZQACA2FkZAADC2luaXRpYWxpemVkAAQKGgQEAEEACwYAQQEkAAsHACAAIAFqCwQAIwAL",
+  "base64");
 const reportingApplication = Buffer.from(
   "AGFzbQEAAAABEgNgA39/fwBgBH9/f38Bf2AAAAIwAQ9uZXR3YXNtLmhvc3QudjEccmVwb3J0X3Rlcm1pbmFsX2V4Y2VwdGlvbl92MQAAAwQDAQICBQMBAAEGBgF/AUEACwc/BA1jbTMycDJfbWVtb3J5AgAOY20zMnAyX3JlYWxsb2MAARFjbTMycDJfaW5pdGlhbGl6ZQACBnJlcG9ydAADChgDBABBAAsGAEEBJAALCgBBB0EAQQAQAAs=",
   "base64");
@@ -307,12 +311,13 @@ test("keeps ordinary JS imports separate from WIT providers", async () => {
 // The final module imports an import module's functions as they are, so a
 // session requires the module like a JSImport module.
 test("requires the import modules the final module calls", async () => {
-  const missing = fixture({ interopImportModules: ["host_ui"] });
+  const missing = fixture({ applicationBytes: hostUiApplication, interopImportModules: ["host_ui"] });
   await assert.rejects(() => missing.open({ startup: {
     buildFingerprint, manifestSha256: missing.manifestSha256,
   } }), /JS import modules/);
 
   const supplied = fixture({
+    applicationBytes: hostUiApplication,
     consumerModules: { host_ui: { create_node: type => BigInt(type) } },
     interopImportModules: ["host_ui"],
   });
@@ -321,6 +326,15 @@ test("requires the import modules the final module calls", async () => {
   } });
   assert.equal(session.exports.add(20, 22), 42);
   await session.close();
+
+  // Issue #128: a declared module the final module does not import, such as
+  // one for a feature trimming removed, is not required.
+  const unused = fixture({ interopImportModules: ["host_ui"] });
+  const trimmed = await unused.open({ startup: {
+    buildFingerprint, manifestSha256: unused.manifestSha256,
+  } });
+  assert.equal(trimmed.exports.add(1, 2), 3);
+  await trimmed.close();
 });
 
 test("releases acquired scopes when provider preparation fails", async () => {

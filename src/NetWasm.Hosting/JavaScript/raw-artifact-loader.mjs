@@ -123,6 +123,7 @@ export async function loadRawArtifacts(request = {}) {
   throwIfAborted(signal);
   const [module, adapter] = loadedValues;
   const inventory = inspectModule(module);
+  const contract = supplyImportedModulesOnly(interopManifest, inventory.imports);
   validateAdapterNamespace(adapter);
   const abi = Object.freeze({
     target: runtimeLayout.target,
@@ -148,10 +149,22 @@ export async function loadRawArtifacts(request = {}) {
     abi,
     adapter,
     diagnosticArtifacts,
-    interopManifest,
+    interopManifest: contract,
     module,
     runtimeLayout,
     stackTraceSymbols,
+  });
+}
+
+// A project may declare a module that its native archives could import from.
+// Only a module the final module imports is supplied, so a module for a
+// feature trimming removed is neither bundled nor required.
+function supplyImportedModulesOnly(manifest, imports) {
+  if (!Array.isArray(manifest.importModules)) return manifest;
+  const imported = new Set(imports.map(value => value.module));
+  return deepFreeze({
+    ...manifest,
+    importModules: manifest.importModules.filter(module => imported.has(module)),
   });
 }
 

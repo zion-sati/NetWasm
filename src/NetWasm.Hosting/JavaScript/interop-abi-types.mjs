@@ -1,3 +1,4 @@
+import { NetWasmHostError } from "./managed-errors.mjs";
 // Arrays of primitive numbers cross the boundary as copied typed arrays;
 // byte[] keeps its established "bytes" name.
 const valueArrayConstructors = Object.freeze({
@@ -28,17 +29,31 @@ const memoryViewConstructors = Object.freeze({
   "f64-view": Float64Array,
 });
 
+// A date crosses as its Unix milliseconds in an f64, a JavaScript Date on this side.
+// An i52 is a long marked JSType.Number: a Wasm i64 that is a number here, exact
+// within 2^53 - 1.
+const scalarAbiTypes = new Set([
+  "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
+  "i64", "u64", "f32", "f64", "date", "i52",
+]);
+
+// A nullable scalar or date, "i32?", is the scalar or null here. A parameter crosses
+// as two Wasm values, its presence and its value; a result as a record in memory
+// with its presence as an i32 at 0 and its value at 8.
+const nullableAbiTypes = new Set([...scalarAbiTypes].map(type => `${type}?`));
+
+// An object, exception, or array of strings, JSObjects or objects: managed code
+// converts it to and from a host handle to its JavaScript value, which whoever
+// receives the handle releases.
+const handleValueAbiTypes = new Set(["any", "error", "string[]", "object[]", "any[]"]);
+
 const abiTypes = new Set([
-  "void", "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
-  "i64", "u64", "f32", "f64", "string", "object",
+  "void", ...scalarAbiTypes, ...nullableAbiTypes, ...handleValueAbiTypes, "string", "object",
   "subscription", "promise", "callback", ...Object.keys(valueArrayConstructors),
   ...Object.keys(memoryViewConstructors),
 ]);
 
-const scalarAbiTypes = new Set([
-  "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
-  "i64", "u64", "f32", "f64",
-]);
+export const nullableRecord = Object.freeze({ hasValueOffset: 0, valueOffset: 8 });
 
 export function isAbiType(type) {
   return typeof type === "string" && abiTypes.has(type);
@@ -46,6 +61,35 @@ export function isAbiType(type) {
 
 export function isScalarAbiType(type) {
   return typeof type === "string" && scalarAbiTypes.has(type);
+}
+
+export function isHandleValueAbiType(type) {
+  return typeof type === "string" && handleValueAbiTypes.has(type);
+}
+
+// Checks a value entering managed code as a handle value. Any value is an object
+// or an exception; an array's elements must suit its element type.
+export function requireHandleValue(type, value) {
+  if (value === null || value === undefined) return;
+  const array = type.endsWith("[]");
+  if (array && !Array.isArray(value)) {
+    throw new NetWasmHostError(`${describeHandleValue(type)} value must be an array or null`);
+  }
+  if (type === "string[]" && !value.every(item => item == null || typeof item === "string")) {
+    throw new NetWasmHostError("string[] value must hold strings or null");
+  }
+  if (type === "object[]" && !value.every(item => item == null || isHostObject(item))) {
+    throw new NetWasmHostError("JSObject[] value must hold objects, functions, or null");
+  }
+}
+
+function describeHandleValue(type) {
+  return type === "object[]" ? "JSObject[]" : type === "any[]" ? "object[]" : type;
+}
+
+/** The scalar ABI type a nullable ABI type wraps, or null when it is not one. */
+export function nullableUnderlying(type) {
+  return typeof type === "string" && nullableAbiTypes.has(type) ? type.slice(0, -1) : null;
 }
 
 export function isValueArrayAbiType(type) {

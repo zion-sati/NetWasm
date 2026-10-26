@@ -109,4 +109,8 @@ public sealed record ReachableProgram(
     public ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>
         JavaScriptAsyncBindings
     { get; init; } = [];
+
+    // CoreLib's conversions, by name, of the values reachable JavaScript boundaries convert.
+    public ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
 }

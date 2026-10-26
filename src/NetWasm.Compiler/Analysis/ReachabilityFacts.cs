@@ -73,4 +73,8 @@ internal sealed record ReachabilityImportAnalysis(
     JavaScriptAsyncMethodBinding? JavaScriptAsyncBinding)
 {
     public ImmutableArray<EnumMetadataRequirement> EnumMetadataRequirements { get; init; } = [];
+
+    // CoreLib's conversions, by name, of the values a JavaScript boundary converts.
+    public ImmutableDictionary<string, MethodInstanceModel> Conversions { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
 }

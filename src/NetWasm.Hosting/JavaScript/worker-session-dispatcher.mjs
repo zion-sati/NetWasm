@@ -2,7 +2,7 @@ import { describeFailureCause } from "./execution-result.mjs";
 import { NetWasmManagedError } from "./managed-errors.mjs";
 
 const optionKeys = ["close", "exports", "generation", "onFailure", "post"];
-const protocolVersion = 1;
+const protocolVersion = 2;
 
 export function createWorkerSessionDispatcher(options) {
   assertExactDataObject(options, optionKeys, "worker session dispatcher options");
@@ -12,7 +12,9 @@ export function createWorkerSessionDispatcher(options) {
   }
   validateGeneration(options.generation);
   const operations = snapshotOperations(options.exports);
-  let activeRequest = null;
+  // Calls run concurrently, as page calls do: each starts when it arrives, and
+  // an asynchronous export's awaits let the next one run.
+  const active = new Set();
   let closeRequested = false;
   let closeCompletion;
   let closed = false;
@@ -20,9 +22,9 @@ export function createWorkerSessionDispatcher(options) {
   const failTerminal = cause => {
     try { options.onFailure(cause); } catch {}
   };
-  const tryPost = message => {
+  const tryPost = (message, transfer = []) => {
     try {
-      options.post(Object.freeze(message));
+      options.post(Object.freeze(message), transfer);
       return null;
     } catch (cause) {
       return { cause };
@@ -35,7 +37,7 @@ export function createWorkerSessionDispatcher(options) {
   const close = () => {
     if (closeCompletion !== undefined) return closeCompletion;
     closeRequested = true;
-    if (activeRequest !== null) return undefined;
+    if (active.size !== 0) return undefined;
     closeCompletion = Promise.resolve().then(options.close).then(
       () => {
         closed = true;
@@ -58,6 +60,9 @@ export function createWorkerSessionDispatcher(options) {
         close();
         return;
       }
+      if (active.has(request.requestId)) {
+        throw new TypeError("worker request identity is already active");
+      }
       if (closed || closeRequested) {
         postOrFail(failedResponse(
           request, new Error("worker session is closing"), "hostFailure"));
@@ -69,24 +74,19 @@ export function createWorkerSessionDispatcher(options) {
           request, new Error("worker operation is unavailable"), "contractFailure"));
         return;
       }
-      if (activeRequest !== null) {
-        postOrFail(failedResponse(
-          request, new Error("worker already has an active invocation"), "contractFailure"));
-        return;
-      }
-      activeRequest = request.requestId;
+      active.add(request.requestId);
       try {
         const value = await operation(...request.arguments);
         const deliveryFailure = tryPost({
           ...baseMessage("result"), requestId: request.requestId, value,
-        });
+        }, transferable(value));
         if (deliveryFailure !== null) {
           postOrFail(failedResponse(request, deliveryFailure.cause, "hostFailure"));
         }
       } catch (cause) {
         postOrFail(failedResponse(request, cause, category(cause)));
       } finally {
-        activeRequest = null;
+        active.delete(request.requestId);
         if (closeRequested) close();
       }
     },
@@ -142,6 +142,15 @@ function validateMessage(value, generation) {
   return value;
 }
 
+// An array a call returns is the worker's own copy, so it moves to the page
+// instead of being copied again.
+function transferable(value) {
+  return ArrayBuffer.isView(value) && value.buffer instanceof ArrayBuffer
+    && value.byteOffset === 0 && value.byteLength === value.buffer.byteLength
+    ? [value.buffer]
+    : [];
+}
+
 function failedResponse(request, cause, failureCategory) {
   return {
     protocolVersion,
@@ -166,6 +175,8 @@ function failureEnvelope(cause, operation, failureCategory) {
 }
 
 function category(cause) {
+  // A canceled task rejects with an AbortError, on the page as here.
+  if (cause?.name === "AbortError") return "cancelled";
   if (cause instanceof NetWasmManagedError) return "guestFailure";
   if (cause instanceof WebAssembly.RuntimeError) return "trap";
   return "hostFailure";

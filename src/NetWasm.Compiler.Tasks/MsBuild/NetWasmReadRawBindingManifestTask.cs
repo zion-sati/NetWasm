@@ -26,11 +26,14 @@ public sealed class NetWasmReadRawBindingManifestTask : Microsoft.Build.Utilitie
     [Required] public string Target { get; set; } = string.Empty;
     [Output] public ITaskItem[] RequiredImports { get; private set; } = [];
     [Output] public ITaskItem[] RequiredImportModules { get; private set; } = [];
+    // The declared import modules the final module imports from.
+    [Output] public ITaskItem[] ImportModules { get; private set; } = [];
 
     public override bool Execute()
     {
         RequiredImports = [];
         RequiredImportModules = [];
+        ImportModules = [];
         try
         {
             var manifest = _reader.Read(ManifestPath, Target);
@@ -42,6 +45,7 @@ public sealed class NetWasmReadRawBindingManifestTask : Microsoft.Build.Utilitie
                     .Order(StringComparer.Ordinal)
                     .Select(item => new TaskItem(item)),
             ];
+            ImportModules = [.. manifest.ImportModules.Select(module => new TaskItem(module))];
             return true;
         }
         catch (Exception exception)

@@ -5,7 +5,7 @@ import { readManagedExceptionDetails } from "./managed-exception-details.mjs";
 const optionKeys = ["generation", "operations", "startup", "worker"];
 const optionalOptionKeys = ["environment", "onNotification", "stderr", "stdout"];
 const outputStreams = new Set(["stderr", "stdout"]);
-const protocolVersion = 1;
+const protocolVersion = 2;
 
 export class NetWasmWorkerError extends Error {
   constructor(message, {
@@ -48,7 +48,9 @@ export function createWorkerSessionClient(options) {
   const worker = readWorker(options.worker);
   let state = "starting";
   let nextRequestId = 1;
-  let active = null;
+  // Calls run concurrently in the worker, as page calls do. Calls made before
+  // the worker is ready wait in order.
+  const inFlight = new Map();
   const queued = [];
   let disposeRequested = false;
   let closeSent = false;
@@ -91,18 +93,16 @@ export function createWorkerSessionClient(options) {
       if (!Array.isArray(arguments_)) {
         return Promise.reject(new TypeError("worker arguments must be an array"));
       }
-      let cancellation;
+      let signal;
       try {
-        cancellation = snapshotCallOptions(callOptions, operation);
+        signal = snapshotCallOptions(callOptions);
       } catch (cause) {
         return Promise.reject(cause);
       }
       if (disposeRequested || state === "terminated" || state === "failed") {
         return Promise.reject(new NetWasmWorkerError("worker session is closed"));
       }
-      if (cancellation.signal?.aborted) {
-        return Promise.reject(callError("cancelled", operation));
-      }
+      if (signal?.aborted) return Promise.reject(signal.reason);
       const requestId = nextRequestId++;
       const completion = new Promise((resolve, reject) => {
         const request = {
@@ -112,17 +112,11 @@ export function createWorkerSessionClient(options) {
           resolve,
           reject,
           settled: false,
-          signal: cancellation.signal,
+          signal,
           abort: null,
-          timer: null,
         };
-        request.abort = () => cancelRequest(request, "cancelled");
-        request.signal?.addEventListener("abort", request.abort, { once: true });
-        if (cancellation.timeoutMilliseconds !== null) {
-          request.timer = setTimeout(
-            () => cancelRequest(request, "deadlineExceeded"),
-            cancellation.timeoutMilliseconds);
-        }
+        request.abort = () => abortRequest(request);
+        signal?.addEventListener("abort", request.abort, { once: true });
         queued.push(request);
       });
       dispatch();
@@ -177,7 +171,7 @@ export function createWorkerSessionClient(options) {
       return;
     }
     if (response.kind === "closed") {
-      if (!disposeRequested || active !== null || queued.length !== 0 || !closeSent) {
+      if (!disposeRequested || inFlight.size !== 0 || queued.length !== 0 || !closeSent) {
         throw new TypeError("worker closed unexpectedly");
       }
       terminate(null, true);
@@ -186,51 +180,52 @@ export function createWorkerSessionClient(options) {
     if (response.kind === "failure" && response.requestId === null) {
       throw remoteError(response.error);
     }
-    if (active === null || response.requestId !== active.requestId) {
+    const request = inFlight.get(response.requestId);
+    if (request === undefined) {
       throw new TypeError("worker response request identity is invalid");
     }
-    const request = active;
-    active = null;
+    inFlight.delete(response.requestId);
     if (!request.settled) {
       request.settled = true;
       cleanupRequest(request);
       if (response.kind === "result") request.resolve(response.value);
-      else request.reject(remoteError(response.error));
+      else request.reject(cancellationOrRemoteError(response.error));
     }
     dispatch();
   }
 
-  function cancelRequest(request, category) {
+  // The caller stops waiting: a call the worker has not received is never
+  // sent, and a running one is abandoned, its eventual reply dropped. Asking
+  // the export itself to stop is an ordinary call to another export.
+  function abortRequest(request) {
     if (request.settled) return;
+    const index = queued.indexOf(request);
+    if (index >= 0) queued.splice(index, 1);
     request.settled = true;
     cleanupRequest(request);
-    if (request !== active) {
-      const index = queued.indexOf(request);
-      if (index >= 0) queued.splice(index, 1);
-    }
-    request.reject(callError(category, request.operation));
+    request.reject(request.signal.reason);
     dispatch();
   }
 
   function dispatch() {
-    if (state === "starting" || state === "failed" || state === "terminated" || active !== null) {
-      return;
-    }
-    if (queued.length !== 0) {
-      active = queued.shift();
+    if (state !== "ready") return;
+    while (queued.length !== 0) {
+      const request = queued.shift();
+      inFlight.set(request.requestId, request);
       try {
         worker.postMessage({
           ...baseMessage("invoke"),
-          requestId: active.requestId,
-          operation: active.operation,
-          arguments: active.arguments,
+          requestId: request.requestId,
+          operation: request.operation,
+          arguments: request.arguments,
         });
       } catch (cause) {
         fail(cause);
+        return;
       }
-      return;
     }
-    if (disposeRequested && !closeSent) {
+    // Disposal lets every accepted call finish, abandoned ones included.
+    if (disposeRequested && !closeSent && inFlight.size === 0) {
       closeSent = true;
       try { worker.postMessage(baseMessage("close")); } catch (cause) { fail(cause); }
     }
@@ -246,9 +241,8 @@ export function createWorkerSessionClient(options) {
     state = "failed";
     flushOutput();
     if (wasStarting) rejectReady(error);
-    rejectRequest(active, error);
-    active = null;
-    for (const request of queued.splice(0)) rejectRequest(request, error);
+    for (const request of [...inFlight.values(), ...queued.splice(0)]) rejectRequest(request, error);
+    inFlight.clear();
     rejectDispose?.(error);
     removeListeners();
     try { worker.terminate(); } catch {}
@@ -262,13 +256,12 @@ export function createWorkerSessionClient(options) {
     try { worker.terminate(); } catch {}
     if (cause !== null) {
       if (wasStarting) rejectReady(cause);
-      rejectRequest(active, cause);
-      for (const request of queued.splice(0)) rejectRequest(request, cause);
+      for (const request of [...inFlight.values(), ...queued.splice(0)]) rejectRequest(request, cause);
       rejectDispose?.(cause);
     } else if (graceful) {
       resolveDispose?.();
     }
-    active = null;
+    inFlight.clear();
   }
 
   // Delivers each stream's final partial line once the guest can write no more.
@@ -287,7 +280,7 @@ export function createWorkerSessionClient(options) {
   }
 
   function rejectRequest(request, error) {
-    if (request === null || request.settled) return;
+    if (request.settled) return;
     request.settled = true;
     cleanupRequest(request);
     request.reject(error);
@@ -298,30 +291,23 @@ export function createWorkerSessionClient(options) {
   }
 }
 
-function snapshotCallOptions(value, operation) {
-  if (value === undefined) return Object.freeze({ signal: null, timeoutMilliseconds: null });
+function snapshotCallOptions(value) {
+  if (value === undefined) return null;
   if (value === null || typeof value !== "object" || Array.isArray(value)
       || Object.getOwnPropertySymbols(value).length !== 0) {
     throw new TypeError("worker call options are invalid");
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  const keys = Object.keys(descriptors);
-  if (keys.some(key => key !== "signal" && key !== "timeoutMilliseconds")
+  if (Object.keys(descriptors).some(key => key !== "signal")
       || Object.values(descriptors).some(
         descriptor => !descriptor.enumerable || !("value" in descriptor))) {
     throw new TypeError("worker call options shape is invalid");
   }
   const signal = value.signal ?? null;
-  const timeoutMilliseconds = value.timeoutMilliseconds ?? null;
   if (signal !== null && !(signal instanceof AbortSignal)) {
     throw new TypeError("worker call signal must be an AbortSignal");
   }
-  if (timeoutMilliseconds !== null
-      && (!Number.isSafeInteger(timeoutMilliseconds) || timeoutMilliseconds < 0
-        || timeoutMilliseconds > 2_147_483_647)) {
-    throw new TypeError("worker call timeout must be a non-negative integer");
-  }
-  return Object.freeze({ signal, timeoutMilliseconds, operation });
+  return signal;
 }
 
 function snapshotArguments(values) {
@@ -330,15 +316,11 @@ function snapshotArguments(values) {
 
 function cleanupRequest(request) {
   request.signal?.removeEventListener("abort", request.abort);
-  if (request.timer !== null) clearTimeout(request.timer);
-  request.timer = null;
 }
 
-function callError(category, operation) {
-  const message = category === "cancelled"
-    ? "worker call was cancelled"
-    : "worker call deadline was exceeded";
-  return new NetWasmWorkerError(message, { category, operation });
+// A task the export canceled rejects with an AbortError, as on the page.
+function cancellationOrRemoteError(value) {
+  return value.category === "cancelled" ? new DOMException(value.message, "AbortError") : remoteError(value);
 }
 
 function readWorker(value) {

@@ -18,6 +18,12 @@ internal sealed class JavaScriptImportResultKindResolver :
             JavaScriptImportResultKind.ByteArray,
         _ when InteropTypeClassifier.IsHostObject(type) =>
             JavaScriptImportResultKind.HostObject,
+        _ when InteropTypeClassifier.IsDate(type) =>
+            JavaScriptImportResultKind.Date,
+        _ when InteropTypeClassifier.IsNullable(type) =>
+            JavaScriptImportResultKind.Nullable,
+        _ when InteropTypeClassifier.IsHandleValue(type) =>
+            JavaScriptImportResultKind.HandleValue,
         _ => JavaScriptImportResultKind.Scalar,
     };
 }

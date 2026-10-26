@@ -17,7 +17,6 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
     }
 
     [Required] public string HostingJavaScriptRoot { get; set; } = string.Empty;
-    [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputPath { get; set; } = string.Empty;
     public ITaskItem[] Imports { get; set; } = [];
     public ITaskItem[] ImportModules { get; set; } = [];
@@ -35,25 +34,19 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
         try
         {
             // A page may supply a required module to open() instead of bundling
-            // it, but a bundled module that no import uses is a project error.
+            // it. A declared module that no import uses, such as one for a
+            // feature trimming removed, is left out: the page pays for what it uses.
             var required = Imports.Select(item => JavaScriptExportItems.RequiredMetadata(item, "Module"))
                 .Concat(ImportModules.Select(item => item.ItemSpec))
                 .ToHashSet(StringComparer.Ordinal);
             var modules = Modules
-                .Where(item => item.GetMetadata("NetWasmGeneratedWorkerClient") != "true"
-                    || required.Contains(JavaScriptExportItems.RequiredMetadata(item, "Module")))
                 .Select(item => new BrowserJavaScriptModule(
                     JavaScriptExportItems.RequiredMetadata(item, "Module"),
                     Path.GetFullPath(item.ItemSpec)))
+                .Where(module => required.Contains(module.Module))
                 .ToImmutableArray();
-            var unused = modules.FirstOrDefault(module => !required.Contains(module.Module));
-            if (unused is not null)
-            {
-                throw new ArgumentException($"Page JavaScript module '{unused.Module}' is unused.");
-            }
             _writer.WriteHost(new(
                 Path.GetFullPath(HostingJavaScriptRoot),
-                Path.GetFullPath(Preview2ShimRoot),
                 Path.GetFullPath(OutputPath),
                 modules,
                 [.. Arguments.Select(item => item.ItemSpec)],

@@ -74,6 +74,16 @@ public sealed class TestAssets : IDisposable
     public string CompileSource(string assemblyName, string source, params string[] references)
         => CompileSourceCore(assemblyName, source, allowUnsafe: false, references);
 
+    // Runs the given analyzers, such as source generators, as a consumer build does.
+    public string CompileSourceWithAnalyzers(string assemblyName, string source, IReadOnlyList<string> analyzers)
+    {
+        var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
+        var output = Path.Combine(Directory, assemblyName + ".dll");
+        File.WriteAllText(sourcePath, source);
+        Compile(Root, CoreLib, output, [sourcePath], allowUnsafe: false, optimize: false, [], analyzers: analyzers);
+        return output;
+    }
+
     public string CompileSourceWithPortablePdb(
         string assemblyName,
         string source,
@@ -393,7 +403,8 @@ public sealed class TestAssets : IDisposable
         IReadOnlyList<string>? features = null,
         bool warningsAsErrors = false,
         bool emitPortablePdb = false,
-        string? sourceLinkPath = null)
+        string? sourceLinkPath = null,
+        IReadOnlyList<string>? analyzers = null)
     {
         var sdkVersion = sdkVersionOverride ?? File.ReadAllText(Path.Combine(root, "global.json"))
             .Split("\"version\": \"", StringSplitOptions.None)[1]
@@ -457,6 +468,10 @@ public sealed class TestAssets : IDisposable
         foreach (var reference in references)
         {
             start.ArgumentList.Add("-reference:" + reference);
+        }
+        foreach (var analyzer in analyzers ?? [])
+        {
+            start.ArgumentList.Add("-analyzer:" + analyzer);
         }
         foreach (var source in sources)
         {
@@ -572,6 +587,7 @@ public sealed partial class RoslynCompilationException : InvalidOperationExcepti
 
     public IReadOnlyList<string> DiagnosticCodes { get; }
 
-    [GeneratedRegex(@"\bCS\d{4}\b", RegexOptions.CultureInvariant)]
+    // Roslyn's own codes and those of NetWasm's source generator.
+    [GeneratedRegex(@"\b(?:CS\d{4}|NWJS\d{3})\b", RegexOptions.CultureInvariant)]
     private static partial Regex DiagnosticCodePattern();
 }

@@ -6,7 +6,10 @@ import {
   isAbiType,
   isHostObject,
   isMemoryViewAbiType,
+  isHandleValueAbiType,
   isScalarAbiType,
+  nullableUnderlying,
+  requireHandleValue,
   isTransferAbiType,
   isValueArray,
   isValueArrayAbiType,
@@ -23,7 +26,7 @@ const valueArrays = Object.freeze({
 test("isAbiType recognizes the complete supported ABI vocabulary", () => {
   for (const type of [
     "void", "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
-    "i64", "u64", "f32", "f64", "string", "bytes", "object",
+    "i64", "u64", "f32", "f64", "date", "string", "bytes", "object",
     "subscription", "promise", "callback",
   ]) {
     assert.equal(isAbiType(type), true, type);
@@ -33,10 +36,20 @@ test("isAbiType recognizes the complete supported ABI vocabulary", () => {
   }
 });
 
+test("nullableUnderlying recognizes a nullable scalar or date", () => {
+  assert.equal(nullableUnderlying("i32?"), "i32");
+  assert.equal(nullableUnderlying("date?"), "date");
+  assert.equal(isAbiType("u64?"), true);
+  assert.equal(isScalarAbiType("i32?"), false);
+  for (const type of [null, "i32", "string?", "object?", "?", "bytes?"]) {
+    assert.equal(nullableUnderlying(type), null, String(type));
+  }
+});
+
 test("isScalarAbiType recognizes only scalar ABI values", () => {
   for (const type of [
     "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
-    "i64", "u64", "f32", "f64",
+    "i64", "u64", "f32", "f64", "date",
   ]) {
     assert.equal(isScalarAbiType(type), true, type);
   }
@@ -90,4 +103,23 @@ test("maps every value-array ABI type to its typed array", () => {
 test("isHostObject accepts objects and functions only", () => {
   for (const value of [{}, [], () => {}, Float64Array.of(1)]) assert.equal(isHostObject(value), true);
   for (const value of [null, undefined, 1, "text", 1n, true]) assert.equal(isHostObject(value), false);
+});
+
+// An object, exception or array of references enters managed code as a handle.
+test("checks values entering managed code as handle values", () => {
+  for (const type of ["any", "error", "string[]", "object[]", "any[]"]) {
+    assert.equal(isHandleValueAbiType(type), true, type);
+  }
+  for (const type of ["object", "string", null]) assert.equal(isHandleValueAbiType(type), false, String(type));
+  for (const [type, value] of [
+    ["any", 1], ["error", "message"], ["string[]", ["a", null, undefined]], ["object[]", [{}, () => {}, null]],
+    ["any[]", [1, "a"]], ["string[]", null], ["any", undefined],
+  ]) {
+    requireHandleValue(type, value);
+  }
+  assert.throws(() => requireHandleValue("string[]", "a"), /string\[\] value must be an array/);
+  assert.throws(() => requireHandleValue("object[]", 1), /JSObject\[\] value must be an array/);
+  assert.throws(() => requireHandleValue("any[]", {}), /object\[\] value must be an array/);
+  assert.throws(() => requireHandleValue("string[]", [1]), /hold strings/);
+  assert.throws(() => requireHandleValue("object[]", [1]), /hold objects/);
 });

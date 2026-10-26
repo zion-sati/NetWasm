@@ -43,13 +43,16 @@ public sealed class RawBrowserHostCapabilitiesTests
 
         var capabilities = RawBrowserHostCapabilities.Select(hosting, ["wasi:filesystem/types@0.2.11"]);
         var source = new StringBuilder();
-        BrowserHostSource.AppendRawImports(source, hosting, Path.Combine(directory.Path, "shim"), capabilities);
+        BrowserHostSource.AppendRawImports(source, JavaScriptRuntime.Page, capabilities);
         BrowserHostSource.AppendRawPlatformMembers(source, "", capabilities);
 
         Assert.Equal(["cli", "filesystem", "io"], capabilities.ShimFamilies.ToArray());
         Assert.True(capabilities.LinksFilesystem);
         var text = source.ToString();
-        Assert.Contains("/preview2-filesystem-scope.mjs\";", text, StringComparison.Ordinal);
+        Assert.Contains("import { createPreview2FilesystemScope } from \"netwasm:runtime/filesystem\";", text,
+            StringComparison.Ordinal);
+        Assert.Contains("import { filesystem as preview2Filesystem } from \"netwasm:runtime/filesystem\";", text,
+            StringComparison.Ordinal);
         Assert.Contains("createFilesystemScope: preopens => createPreview2FilesystemScope({", text, StringComparison.Ordinal);
         Assert.Contains("new preview2Filesystem.InMemoryFilesystemAdapter()", text, StringComparison.Ordinal);
         Assert.Contains("createShim: createSelectedPreview2ShimFactory({ cli: preview2Cli, filesystem: preview2Filesystem, io: preview2Io }),",

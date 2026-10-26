@@ -54,7 +54,8 @@ internal sealed class JSImportInvocationEmitter(
                     code,
                     signature.ParameterSignatureTypes[index],
                     local,
-                    context);
+                    context,
+                    invocation.Target.InteropImports);
             }
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropDescriptor))));
@@ -75,7 +76,8 @@ internal sealed class JSImportInvocationEmitter(
             invocation.ArgumentBase,
             invocation.Consumed,
             callback,
-            new InteropMarshallingTarget(invocation.Target.InteropImports)), code);
+            new InteropMarshallingTarget(invocation.Target.InteropImports),
+            invocation.Offset), code);
     }
 
     // The arguments are the import's parameters and its result is the call's
@@ -111,7 +113,8 @@ internal sealed class JSImportInvocationEmitter(
                     invocation.ArgumentBase + index,
                     invocation.Stack[invocation.ArgumentBase + index],
                     layouts.Target),
-                context);
+                context,
+                invocation.Target.InteropImports);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(new InteropImportKey(invocation.Method.Definition.Key))))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));

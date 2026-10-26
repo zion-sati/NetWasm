@@ -68,10 +68,10 @@ function fixture(overrides = {}) {
 }
 
 const initialize = (overrides = {}) => ({
-  protocolVersion: 1, generation: "generation-1", kind: "initialize", environment: {}, startup, ...overrides,
+  protocolVersion: 2, generation: "generation-1", kind: "initialize", environment: {}, startup, ...overrides,
 });
 const invoke = (overrides = {}) => ({
-  protocolVersion: 1, generation: "generation-1", kind: "invoke",
+  protocolVersion: 2, generation: "generation-1", kind: "invoke",
   requestId: 1, operation: "add", arguments: [20, 22], ...overrides,
 });
 
@@ -83,7 +83,7 @@ test("opens one session before readiness and delegates allowlisted calls", async
   assert.deepEqual(state.opened[0].startup, startup);
   assert.equal(typeof state.opened[0].notify, "function");
   assert.deepEqual(state.messages[0], {
-    protocolVersion: 1, generation: "generation-1", kind: "ready", operations: ["add"],
+    protocolVersion: 2, generation: "generation-1", kind: "ready", operations: ["add"],
   });
   await state.host.receive(invoke());
   assert.equal(state.messages[1].kind, "result");
@@ -231,7 +231,7 @@ test("rejects malformed composition, initialization and session products", async
     assert.throws(() => createWorkerSessionHost({ ...valid, [key]: null }), /actions/);
   }
   for (const value of [
-    null, [], {}, { ...initialize(), extra: true }, initialize({ protocolVersion: 2 }),
+    null, [], {}, { ...initialize(), extra: true }, initialize({ protocolVersion: 1 }),
     initialize({ kind: "other" }), initialize({ generation: "" }),
     initialize({ generation: "bad\0generation" }), initialize({ generation: "x".repeat(129) }),
     initialize({ startup: null }), initialize({ startup: {} }),
@@ -274,7 +274,7 @@ test("application-defined notifications post during work and stop after close", 
   assert.equal(state.messages[1].operation, "custom-progress");
   assert.throws(() => notify("", []), TypeError);
   assert.throws(() => notify("valid", null), TypeError);
-  await state.host.receive({ protocolVersion: 1, generation: "generation-1", kind: "close" });
+  await state.host.receive({ protocolVersion: 2, generation: "generation-1", kind: "close" });
   await new Promise(resolve => setImmediate(resolve));
   const count = state.messages.length;
   notify("late", []);

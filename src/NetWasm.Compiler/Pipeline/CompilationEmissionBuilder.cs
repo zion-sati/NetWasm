@@ -177,6 +177,7 @@ internal sealed class CompilationEmissionBuilder(
         request = request with
         {
             ModuleInitializers = analysis.Program.ModuleInitializers,
+            JavaScriptConversions = analysis.Program.JavaScriptConversions,
             ManagedCallSites = analysis.Program.ManagedCallSites,
             DelegateBindings = analysis.Program.DelegateBindings,
             ManagedByRefEffects = analysis.Program.ManagedByRefEffects,

@@ -35,7 +35,22 @@ public abstract class TaskScheduler
         }
     }
 
-    public static event EventHandler<UnobservedTaskExceptionEventArgs>? UnobservedTaskException;
+    private static EventHandler<UnobservedTaskExceptionEventArgs>? s_unobservedTaskException;
+
+    // Installed by the first subscription, so an application that never
+    // subscribes brings no event arguments or AggregateException into its
+    // task finalizers (issue #128).
+    internal static Action<TaskExceptionTracker>? UnobservedPublisher { get; private set; }
+
+    public static event EventHandler<UnobservedTaskExceptionEventArgs>? UnobservedTaskException
+    {
+        add
+        {
+            UnobservedPublisher = TaskExceptionTracker.Publish;
+            s_unobservedTaskException += value;
+        }
+        remove => s_unobservedTaskException -= value;
+    }
 
     public static TaskScheduler FromCurrentSynchronizationContext() => new SynchronizationContextTaskScheduler();
 
@@ -64,7 +79,7 @@ public abstract class TaskScheduler
     }
 
     internal static void PublishUnobservedTaskException(Task sender, UnobservedTaskExceptionEventArgs args) =>
-        UnobservedTaskException?.Invoke(sender, args);
+        s_unobservedTaskException?.Invoke(sender, args);
 
     // Event-only consumers must not retain a platform scheduler or its queue.
     private static class DefaultScheduler
