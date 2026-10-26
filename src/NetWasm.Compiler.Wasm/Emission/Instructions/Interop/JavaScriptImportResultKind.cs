@@ -6,4 +6,7 @@ internal enum JavaScriptImportResultKind
     String,
     ByteArray,
     HostObject,
+    Date,
+    Nullable,
+    HandleValue,
 }

@@ -6,4 +6,5 @@ namespace NetWasm.Compiler.Tasks.Artifacts;
 internal sealed record RawBindingManifest(
     int SchemaVersion,
     string Target,
-    ImmutableArray<WitInterfaceFunction> RequiredImports);
+    ImmutableArray<WitInterfaceFunction> RequiredImports,
+    ImmutableArray<string> ImportModules);

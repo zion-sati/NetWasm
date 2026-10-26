@@ -1380,14 +1380,17 @@ PY
   # ceiling, not a pin (about 192,000 bytes when set), so hosting changes need
   # not update it; bringing back the full Preview 2 shim, the provider catalog
   # or the canonical-ABI interpreter crosses it.
-  page_runtime_bytes="$(wc -c < "$page_publish/netwasm.page.mjs" | tr -d ' ')"
+  # The page loads its entry and the shared runtime files beside it (issue
+  # #128), and this page-only publish holds only the files it loads.
+  page_runtime_files=("$page_publish/netwasm.page.mjs" "$page_publish"/netwasm.runtime.*.mjs)
+  page_runtime_bytes="$(cat "${page_runtime_files[@]}" | wc -c | tr -d ' ')"
   if (( page_runtime_bytes > 210000 )); then
     echo "The page runtime is $page_runtime_bytes bytes, over the 210000-byte ceiling" >&2
     exit 1
   fi
   # A Release page trusts its digest-pinned deployment manifest, which the
   # build validated, so it carries no manifest validator (issue #121).
-  if grep -Fq 'deployment manifest schema is unsupported' "$page_publish/netwasm.page.mjs"; then
+  if grep -Fq 'deployment manifest schema is unsupported' "${page_runtime_files[@]}"; then
     echo "The Release page runtime still carries the deployment manifest validator" >&2
     exit 1
   fi

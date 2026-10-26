@@ -19,6 +19,16 @@ const callback = (overrides = {}) => ({
 });
 const descriptor = Object.freeze({ module: callback().module, name: callback().importName });
 const reporter = (event = null) => ({ consumeTerminalEvent: () => event });
+const memory = new WebAssembly.Memory({ initial: 1 });
+const targetLayout = {
+  managedReferenceSize: 4,
+  stringLengthOffset: 4,
+  stringDataOffset: 8,
+  arrayLengthOffset: 4,
+  arrayDataPointerOffset: 8,
+  spanReferenceOffset: 0,
+  spanLengthOffset: 4,
+};
 
 function request(overrides = {}) {
   const handles = createInteropHandleTable();
@@ -27,9 +37,12 @@ function request(overrides = {}) {
     descriptor,
     exceptionReporter: reporter(),
     getInstance: () => ({ exports: { callback_1: (_handle, value) => value + 1 } }),
+    getMemory: () => memory,
     handle: 7,
     handles,
     parameterIndex: 0,
+    target: "wasm32",
+    targetLayout,
     ...overrides,
   };
 }
@@ -56,8 +69,8 @@ test("owns transient string and byte callback handles for one invocation", () =>
       callback_1(handle, stringHandle, bytesHandle, nullString, nullBytes) {
         assert.equal(handle, 7);
         assert.equal(handles.get(stringHandle), "value");
-        assert.notStrictEqual(handles.get(bytesHandle), sourceBytes);
-        assert.deepEqual([...handles.get(bytesHandle)], [1, 2, 3]);
+        // Lent for the call, as an export argument is; managed code copies it.
+        assert.strictEqual(handles.get(bytesHandle), sourceBytes);
         assert.deepEqual([nullString, nullBytes], [0, 0]);
         return 5;
       },
@@ -67,9 +80,9 @@ test("owns transient string and byte callback handles for one invocation", () =>
   assert.equal(handles.count, 0);
 
   for (const [parameters, value, pattern] of [
-    [["string"], 1, /string callback/],
-    [["bytes"], [], /byte callback/],
-    [["f32[]"], Float64Array.of(1), /callback f32\[\] value must be Float32Array or null/],
+    [["string"], 1, /string value must be a string or null/],
+    [["bytes"], [], /byte-array value must be Uint8Array or null/],
+    [["f32[]"], Float64Array.of(1), /f32\[\] value must be Float32Array or null/],
   ]) {
     const invalid = createManagedInteropCallback(request({
       callbacks: [callback({ parameters })],
@@ -81,7 +94,7 @@ test("owns transient string and byte callback handles for one invocation", () =>
   }
 });
 
-test("passes typed array callback arguments as transient copies", () => {
+test("lends typed array callback arguments for the call", () => {
   const handles = createInteropHandleTable();
   const source = Uint16Array.of(1, 65_535);
   const invoke = createManagedInteropCallback(request({
@@ -89,16 +102,48 @@ test("passes typed array callback arguments as transient copies", () => {
     handles,
     getInstance: () => ({ exports: {
       callback_1(handle, valuesHandle) {
-        const values = handles.get(valuesHandle);
-        assert.ok(values instanceof Uint16Array);
-        assert.notStrictEqual(values, source);
-        assert.deepEqual([...values], [1, 65_535]);
+        assert.strictEqual(handles.get(valuesHandle), source);
         return 2;
       },
     } }),
   }));
   assert.equal(invoke(source), 2);
   assert.equal(handles.count, 0);
+});
+
+// A callback takes and returns what a synchronous export does.
+test("passes JSObject arguments and lifts string, array and JSObject callback results", () => {
+  const handles = createInteropHandleTable();
+  const view = new DataView(memory.buffer);
+  const text = 1024;
+  view.setInt32(text + targetLayout.stringLengthOffset, 1, true);
+  view.setUint16(text + targetLayout.stringDataOffset, "z".charCodeAt(0), true);
+  const page = { id: "page" };
+  let objectHandle;
+  const results = { string: text, "i32[]": 0, object: 0 };
+  const callbackFor = result => createManagedInteropCallback(request({
+    callbacks: [callback({ parameters: ["object", "string", "string"], result })],
+    handles,
+    getInstance: () => ({ exports: {
+      callback_1(handle, element, first, second) {
+        objectHandle = element;
+        assert.strictEqual(handles.get(element), page);
+        assert.deepEqual([handles.get(first), handles.get(second)], ["a", "b"]);
+        return result === "object" ? element : results[result];
+      },
+    } }),
+  }));
+  assert.equal(callbackFor("string")(page, "a", "b"), "z");
+  assert.equal(callbackFor("i32[]")(page, "a", "b"), null);
+  assert.strictEqual(callbackFor("object")(page, "a", "b"), page);
+  // The managed wrapper owns each JSObject handle once the call starts.
+  assert.equal(handles.count, 3);
+  assert.strictEqual(handles.get(objectHandle), page);
+
+  // A later invalid argument releases the JSObject handle before the call starts.
+  const before = handles.count;
+  assert.throws(() => callbackFor("string")(page, 1, "b"), NetWasmManagedError);
+  assert.equal(handles.count, before);
 });
 
 test("maps callback traps and continues transient cleanup", () => {

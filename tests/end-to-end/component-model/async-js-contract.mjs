@@ -71,6 +71,12 @@ export async function runAsyncJavaScriptInterop(
   equal(await managed.exports.reference_round_trip("tag", Int32Array.of(2, 4, 6)), 4048,
     "string and array arguments with string, array, and JSObject async results");
   equal(await managed.exports.null_references(null), 15, "null async references");
+  equal(await managed.exports.text_later("tag"), "tag!", "async string export result");
+  const doubles = await managed.exports.doubles_later(Int32Array.of(2, 4));
+  equal(doubles instanceof Float64Array ? [...doubles].join() : doubles, "3,6", "async array export result");
+  equal(await managed.exports.doubles_later(new Int32Array(0)), null, "null async array export result");
+  equal((await managed.exports.object_later(4))?.value, 40, "async JSObject export result");
+  equal(await managed.exports.object_later(-1), null, "null async JSObject export result");
   var page = { value: 41 };
   equal(managed.exports.echo_object(page), page, "JSObject export identity");
   equal(managed.exports.echo_object(null), null, "null JSObject export");

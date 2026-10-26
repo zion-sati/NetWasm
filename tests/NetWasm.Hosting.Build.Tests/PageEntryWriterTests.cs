@@ -38,10 +38,13 @@ public sealed partial class PageEntryWriterTests
         Assert.False(bytes.AsSpan().StartsWith(Encoding.UTF8.Preamble));
         var source = Encoding.UTF8.GetString(bytes);
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
-        Assert.Contains("import { createPageSession } from \"file://", source, StringComparison.Ordinal);
-        Assert.Contains("/hosting/page-session-root.mjs\";", source, StringComparison.Ordinal);
-        Assert.Contains("import { createSelectedPreview2ShimFactory } from", source, StringComparison.Ordinal);
-        Assert.Contains("/preview2-shim/dist/browser/random.js\";", source, StringComparison.Ordinal);
+        // Issue #128: the page imports the shared runtime its workers load too.
+        Assert.Contains("import { createPageSession } from \"netwasm:runtime/page\";", source, StringComparison.Ordinal);
+        Assert.Contains("import { createSelectedPreview2ShimFactory } from \"netwasm:runtime/page\";", source,
+            StringComparison.Ordinal);
+        Assert.Contains("import { io as preview2Io } from \"netwasm:runtime/page\";", source, StringComparison.Ordinal);
+        Assert.Contains("import { random as preview2Random } from \"netwasm:runtime/random\";", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("file://", source.Split("consumer0")[0], StringComparison.Ordinal);
         Assert.Contains("export const openPage = createPageSession({", source, StringComparison.Ordinal);
         Assert.Contains("manifestUrl: new URL(\"./deployment.json\", import.meta.url).href,", source,
             StringComparison.Ordinal);
@@ -61,7 +64,8 @@ public sealed partial class PageEntryWriterTests
         Assert.DoesNotContain("wasi:http/outgoing-handler", source, StringComparison.Ordinal);
         Assert.DoesNotContain("wasi:filesystem/types", source, StringComparison.Ordinal);
         Assert.DoesNotContain("WASIShim", source, StringComparison.Ordinal);
-        Assert.Contains("/hosting/deployment-manifest-validator.mjs\";", source, StringComparison.Ordinal);
+        Assert.Contains("import { validateDeploymentManifest } from \"netwasm:runtime/manifest-validator\";", source,
+            StringComparison.Ordinal);
         Assert.Contains("snapshotDeploymentManifest: validateDeploymentManifest,", source, StringComparison.Ordinal);
         Assert.EndsWith("});\n", source, StringComparison.Ordinal);
     }
@@ -78,10 +82,35 @@ public sealed partial class PageEntryWriterTests
         new PageEntryWriter().WriteHost(HostRequest(directory.Path, output, validate: false));
 
         var source = File.ReadAllText(output);
-        Assert.DoesNotContain("deployment-manifest-validator", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("manifest-validator", source, StringComparison.Ordinal);
         Assert.DoesNotContain("validateDeploymentManifest", source, StringComparison.Ordinal);
         Assert.Contains("snapshotDeploymentManifest: deepFreeze,", source, StringComparison.Ordinal);
         Assert.Contains("function deepFreeze(value) {", source, StringComparison.Ordinal);
+    }
+
+    // DateTime and DateTimeOffset cross as a JavaScript Date, and nullables as T | null.
+    [Fact]
+    public void DeclaresDatesAndNullablesAsJavaScriptValues()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var declaration = Path.Combine(directory.Path, "Dates.d.mts");
+
+        new PageEntryWriter().WriteModule(new(
+            "netwasm.page.mjs", new string('1', 64), new string('2', 64), Path.Combine(directory.Path, "Dates.mjs"),
+            declaration, [new("Shift", ["date", "i32"], "date", null), new("Later", ["date"], "date", "task"),
+                new("Maybe", ["i32?", "date?"], "i64?", null),
+                new("Values", ["any", "error", "string[]", "object[]"], "any[]", null)]));
+
+        var types = File.ReadAllText(declaration);
+        Assert.Contains("  \"Shift\"(argument0: Date, argument1: number): Date;", types, StringComparison.Ordinal);
+        Assert.Contains("  \"Later\"(argument0: Date, options?: NetWasmCallOptions): Promise<Date>;", types,
+            StringComparison.Ordinal);
+        // A nullable scalar or date is the value or null.
+        Assert.Contains("  \"Maybe\"(argument0: number | null, argument1: Date | null): bigint | null;", types,
+            StringComparison.Ordinal);
+        // An object is any value; an exception an Error; arrays hold their elements or null.
+        Assert.Contains("  \"Values\"(argument0: unknown, argument1: Error | null, argument2: (string | null)[] | null, "
+            + "argument3: (object | null)[] | null): unknown[] | null;", types, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -104,14 +133,17 @@ public sealed partial class PageEntryWriterTests
         Assert.Contains("return openPage(Object.freeze({ exports, options, startup }));", source, StringComparison.Ordinal);
         var types = File.ReadAllText(declaration);
         Assert.Contains("  \"Add\"(argument0: number, argument1: number): number;", types, StringComparison.Ordinal);
-        Assert.Contains("  \"FetchTitle\"(argument0: string | null): Promise<string | null>;", types, StringComparison.Ordinal);
-        Assert.Contains("  \"Read\"(): Promise<bigint>;", types, StringComparison.Ordinal);
+        // An asynchronous export takes { signal }, as a worker call does.
+        Assert.Contains("export interface NetWasmCallOptions {", types, StringComparison.Ordinal);
+        Assert.Contains("  signal?: AbortSignal;", types, StringComparison.Ordinal);
+        Assert.Contains("  \"FetchTitle\"(argument0: string | null, options?: NetWasmCallOptions): Promise<string | null>;", types, StringComparison.Ordinal);
+        Assert.Contains("  \"Read\"(options?: NetWasmCallOptions): Promise<bigint>;", types, StringComparison.Ordinal);
         Assert.Contains("  \"Echo\"(argument0: Uint8Array | null, argument1: string): Uint8Array | null;", types,
             StringComparison.Ordinal);
         Assert.Contains("  \"Reset\"(): void;", types, StringComparison.Ordinal);
         Assert.Contains("  \"Scale\"(argument0: Int8Array | null, argument1: Int16Array | null, argument2: Uint16Array | null, argument3: Int32Array | null, argument4: Uint32Array | null): Float64Array | null;",
             types, StringComparison.Ordinal);
-        Assert.Contains("  \"Widen\"(argument0: BigInt64Array | null, argument1: BigUint64Array | null, argument2: Float32Array | null): Promise<Float64Array | null>;",
+        Assert.Contains("  \"Widen\"(argument0: BigInt64Array | null, argument1: BigUint64Array | null, argument2: Float32Array | null, options?: NetWasmCallOptions): Promise<Float64Array | null>;",
             types, StringComparison.Ordinal);
         Assert.Contains("  \"Wrap\"(element: object | null): object | null;", types, StringComparison.Ordinal);
         Assert.Contains("  close(): Promise<void>;", types, StringComparison.Ordinal);
@@ -136,7 +168,7 @@ public sealed partial class PageEntryWriterTests
             "netwasm.page.mjs", new string('1', 64), new string('2', 64),
             Path.Combine(directory.Path, "App.mjs"), page, Exports));
         new WorkerEntryWriter().WriteClient(new(
-            Path.Combine(directory.Path, "hosting"), "App.worker.mjs", new string('1', 64), new string('2', 64),
+            "App.worker.mjs", new string('1', 64), new string('2', 64),
             Path.Combine(directory.Path, "App.worker-client.mjs"), worker, Exports));
 
         static string[] Members(string path) =>
@@ -220,7 +252,6 @@ public sealed partial class PageEntryWriterTests
 
     private static PageHostEntryRequest HostRequest(string root, string output, bool validate = true) => new(
         Path.Combine(root, "hosting"),
-        Path.Combine(root, "preview2-shim"),
         output,
         [new("app.host", Path.Combine(root, "host.mjs")), new("app.analytics", Path.Combine(root, "analytics.mjs"))],
         ["argument"],

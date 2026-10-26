@@ -39,7 +39,6 @@ public sealed record WorkerEnvironmentVariable(string Name, string Value);
 
 public sealed record WorkerHostEntryRequest(
     string HostingJavaScriptRoot,
-    string Preview2ShimRoot,
     string OutputPath,
     ImmutableArray<WorkerJavaScriptImport> Imports,
     ImmutableArray<string> Arguments,
@@ -51,7 +50,6 @@ public sealed record WorkerHostEntryRequest(
     bool ValidateDeploymentManifest);
 
 public sealed record WorkerClientEntryRequest(
-    string HostingJavaScriptRoot,
     string WorkerFileName,
     string BuildFingerprint,
     string ManifestSha256,
@@ -73,12 +71,9 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         var imports = request.Imports.OrderBy(binding => binding.Module, StringComparer.Ordinal).ToArray();
         var capabilities = RawBrowserHostCapabilities.Select(request.HostingJavaScriptRoot, request.RequiredImportModules);
         var source = new StringBuilder();
-        AppendLine(source, $"import {{ bindWorkerImports }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-import-bindings.mjs"))};");
-        AppendLine(source, $"import {{ createBrowserRawExportSession }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "browser-raw-export-session.mjs"))};");
-        AppendLine(source, $"import {{ createWorkerSessionHost }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-session-host.mjs"))};");
-        AppendLine(source, $"import {{ mergeEnvironment }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "session-options.mjs"))};");
-        BrowserHostSource.AppendRawImports(source, request.HostingJavaScriptRoot, request.Preview2ShimRoot, capabilities);
-        BrowserHostSource.AppendManifestValidatorImport(source, request.HostingJavaScriptRoot, request.ValidateDeploymentManifest);
+        AppendLine(source, $"import {{ bindWorkerImports, createBrowserRawExportSession, createWorkerSessionHost, mergeEnvironment }} from {JavaScriptRuntime.Quoted(JavaScriptRuntime.Worker)};");
+        BrowserHostSource.AppendRawImports(source, JavaScriptRuntime.Worker, capabilities);
+        BrowserHostSource.AppendManifestValidatorImport(source, request.ValidateDeploymentManifest);
         for (var index = 0; index < imports.Length; index++)
         {
             AppendLine(source, $"import * as consumer{index} from {ModuleSpecifier(imports[index].SourcePath)};");
@@ -134,7 +129,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         source.AppendLine("return openSession({ startup: request.startup }); }");
         source.AppendLine("const host = createWorkerSessionHost({");
         source.AppendLine("  openSession: open,");
-        source.AppendLine("  post: message => globalThis.postMessage(message),");
+        source.AppendLine("  post: (message, transfer = []) => globalThis.postMessage(message, transfer),");
         source.AppendLine("  terminate: cause => cause === null ? globalThis.close() : fatal(cause),");
         source.AppendLine("});");
         source.AppendLine("globalThis.addEventListener(\"message\", event => { host.receive(event.data).catch(fatal); });");
@@ -148,7 +143,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         var exports = request.Exports.OrderBy(export => export.Name, StringComparer.Ordinal).ToArray();
         var operations = JsonSerializer.Serialize(exports.Select(export => export.Name));
         var source = new StringBuilder();
-        AppendLine(source, $"import {{ createWorkerSessionClient }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-session-client.mjs"))};");
+        AppendLine(source, $"import {{ createWorkerSessionClient }} from {JavaScriptRuntime.Quoted(JavaScriptRuntime.WorkerClient)};");
         source.AppendLine();
         AppendLine(source, $"const operations = Object.freeze({operations});");
         source.AppendLine("export async function createWorker(options = {}) {");
@@ -189,7 +184,6 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         var source = new StringBuilder();
         source.AppendLine("export interface NetWasmWorkerCallOptions {");
         source.AppendLine("  signal?: AbortSignal;");
-        source.AppendLine("  timeoutMilliseconds?: number;");
         source.AppendLine("}");
         source.AppendLine("export interface NetWasmWorkerClient {");
         JavaScriptExportSurface.AppendMembers(source, WorkerJavaScriptExportRealm.Instance, exports);
@@ -204,7 +198,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
     private static void ValidateHost(WorkerHostEntryRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.Preview2ShimRoot, request.OutputPath);
+        ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.OutputPath);
         if (request.Imports.IsDefault || request.Arguments.IsDefault || request.Environment.IsDefault
             || request.RequiredImportModules.IsDefault
             || request.Clocks.IsDefault || request.Network is not ("allowAll" or "denyAll")
@@ -237,7 +231,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
     private static void ValidateClient(WorkerClientEntryRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.OutputPath, request.DeclarationPath);
+        ValidateAbsolutePaths(request.OutputPath, request.DeclarationPath);
         if (Path.GetFileName(request.WorkerFileName) != request.WorkerFileName
             || string.IsNullOrWhiteSpace(request.WorkerFileName)
             || !DigestPattern().IsMatch(request.BuildFingerprint)

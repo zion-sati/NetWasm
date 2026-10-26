@@ -21,6 +21,7 @@ internal sealed class ReachabilityImportClassifierFactory(
         IMethodRepository methods,
         IDelegateTypeRecognizer delegateTypes,
         IJavaScriptAsyncBindingResolver javaScriptAsyncBindings,
+        IJavaScriptConversionResolver conversions,
         IRuntimeIntrinsicRegistry intrinsics,
         ISymbolFormatter symbols) =>
         new ReachabilityImportClassifier(
@@ -32,5 +33,6 @@ internal sealed class ReachabilityImportClassifierFactory(
             intrinsics,
             symbols,
             _enumMetadataRequirements,
-            _nativeDeclarations);
+            _nativeDeclarations,
+            conversions);
 }

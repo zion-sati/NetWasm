@@ -21,7 +21,8 @@ public sealed class WitWorkerClientWriterTests
         Assert.Contains("\"echo\"(value: Wititem_", ts, StringComparison.Ordinal);
         Assert.Contains("Promise<Wititem_", ts, StringComparison.Ordinal);
         Assert.Contains("signal?: AbortSignal", ts, StringComparison.Ordinal);
-        Assert.Contains("timeoutMilliseconds?: number", ts, StringComparison.Ordinal);
+        // A deadline is an AbortSignal.timeout(); there is no separate option.
+        Assert.Contains("export interface NetWasmWorkerCallOptions { signal?: AbortSignal; }", ts, StringComparison.Ordinal);
         Assert.DoesNotContain("JsonSerializer", js, StringComparison.Ordinal);
         Assert.EndsWith("\n", js, StringComparison.Ordinal); Assert.DoesNotContain('\r', js);
         Assert.Equal(1, js.Split("const session =", StringSplitOptions.None).Length - 1);

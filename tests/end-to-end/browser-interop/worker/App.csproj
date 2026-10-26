@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <NetWasmJavaScriptModule Include="notifications.mjs" Module="app.host" />
+    <NetWasmJavaScriptModule Include="optional.mjs" Module="app.optional" />
     <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

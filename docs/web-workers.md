@@ -62,9 +62,14 @@ try {
 ```
 
 `createWorker()` resolves after the worker is ready. Export calls return
-Promises. `dispose()` lets accepted calls finish before closing the worker;
-`terminate()` stops it immediately and rejects pending calls. New calls are
-rejected after either operation.
+Promises and run concurrently, as page calls do: while an asynchronous export
+awaits, another call starts, so page code can call a `cancel` export to stop a
+running job, which then returns how far it got. Each call also takes a trailing
+`{ signal }`; aborting it rejects the call at once while the worker finishes
+it. See [Cancel a call](javascript-interop.md#cancel-a-call). `dispose()` lets
+accepted calls finish before closing the worker; `terminate()` stops it
+immediately and rejects pending calls. New calls are rejected after either
+operation.
 
 Besides `onNotification`, `createWorker()` accepts `environment`, which adds or
 replaces environment variables for that worker over the project's
@@ -74,8 +79,8 @@ worker's output one line at a time on the page (the console by default).
 A `JsModule` can run on the page instead, where exports return values directly
 and import modules can use the DOM; see
 [JavaScript interop](javascript-interop.md#call-c-from-a-page). A `JSObject` cannot
-cross into a worker, so a worker-hosted export may not take or return one
-(NWSDK081).
+cross into a worker, so a worker-hosted export may not take or return one or
+a `JSObject[]` (NWSDK081).
 
 The generated `*.worker-client.d.mts` file lists the available method names and
 their TypeScript signatures, with parameters named after the C# or WIT
@@ -84,7 +89,9 @@ without `| null`. A name that is reserved in JavaScript, or that the generated c
 uses itself, becomes `argument0`, `argument1` and so on. The template's `app.mjs` calls the matching
 boundary.
 
-When an exported `Task` or `ValueTask` faults, the Promise rejects with the
+An exported `Task` or `ValueTask` settles with the values a synchronous export
+returns, such as a `string` or a number array; an array result moves to the page
+without another copy. When it faults, the Promise rejects with the
 managed message in `error.message`. `error.managed` carries the available
 `typeId`, `typeName`, `message`, and `stackTrace`. Debug builds include
 source file and line information when portable PDB data is available.
@@ -152,6 +159,29 @@ The JavaScript module runs inside the worker. It cannot access the page DOM;
 use notifications or exported calls to ask page code to update the UI.
 For notifications, export `createWorkerImports(notify)` and return the named
 import functions; see the [JavaScript interop example](javascript-interop.md#declare-imports-and-exports).
+
+### Publish workers with the page
+
+A page can publish its workers into its own deployment. Reference each worker
+project with `NetWasmWorker="true"`:
+
+```xml
+<ItemGroup>
+  <ProjectReference Include="../ReportWorker/ReportWorker.csproj" NetWasmWorker="true" />
+</ItemGroup>
+```
+
+Publishing the page then publishes each referenced worker into
+`browser/workers/<ProjectName>/`, and page JavaScript imports its client from
+there:
+
+```js
+import { createWorker } from "./browser/workers/ReportWorker/ReportWorker.worker-client.mjs";
+```
+
+The page and its JSExport workers then load the NetWasm JavaScript runtime
+from the same `browser/netwasm.runtime.*.mjs` files, so the browser downloads
+it once. A worker published on its own carries its own copy.
 
 ## Execution boundary
 

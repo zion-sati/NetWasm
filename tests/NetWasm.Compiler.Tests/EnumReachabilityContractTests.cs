@@ -191,7 +191,8 @@ public sealed class EnumReachabilityContractTests
             new EnumTypeFinder(), new EnumTypeResolver(EnumType, EnumType),
             new EnumMethodRepository(), new UnusedDelegateRecognizer(),
             new NoAsyncBindingResolver(), new SingleIntrinsicRegistry(default, ""),
-            new EnumSymbolFormatter(), null!, new NetWasm.Compiler.Core.NativeInterop.NativeDeclarationValidator()));
+            new EnumSymbolFormatter(), null!, new NetWasm.Compiler.Core.NativeInterop.NativeDeclarationValidator(),
+            new UnusedConversionResolver()));
 
         Assert.Equal("enumMetadataRequirements", error.ParamName);
     }
@@ -209,7 +210,8 @@ public sealed class EnumReachabilityContractTests
             new SingleIntrinsicRegistry(method.Key, method.Name),
             new EnumSymbolFormatter(),
             new EnumMetadataRequirementClassifier(),
-            new NetWasm.Compiler.Core.NativeInterop.NativeDeclarationValidator());
+            new NetWasm.Compiler.Core.NativeInterop.NativeDeclarationValidator(),
+            new UnusedConversionResolver());
 
     private static ReachabilityImportRequest Request(
         MethodDefinitionModel method,
@@ -363,5 +365,11 @@ public sealed class EnumReachabilityContractTests
     private sealed class NoAsyncBindingResolver : IJavaScriptAsyncBindingResolver
     {
         public JavaScriptAsyncMethodBinding? Resolve(MethodDefinitionModel method) => null;
+    }
+
+    private sealed class UnusedConversionResolver : IJavaScriptConversionResolver
+    {
+        public MethodInstanceModel Resolve(string name) =>
+            throw new InvalidOperationException($"no boundary converts with {name}");
     }
 }

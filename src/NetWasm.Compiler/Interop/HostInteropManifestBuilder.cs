@@ -47,15 +47,21 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
             .Select(pair => BuildExport(pair.Export.Name, pair.Method, pair.Method.JSExport!, layouts))
             .OrderBy(export => export.Name, StringComparer.Ordinal)
             .ToImmutableArray();
-        var callbacks = program.HostCallbacks.Select(callback => new HostInteropCallback(
-                program.JSImportMethods.Single(method => method.Key == callback.ImportMethod)
-                    .JSImport!.ModuleName ?? RuntimeAbi.HostModule,
-                program.JSImportMethods.Single(method => method.Key == callback.ImportMethod)
-                    .JSImport!.FunctionName,
-                callback.ParameterIndex,
-                callback.ExportName,
-                [.. callback.Invoke.Signature.ParameterSignatureTypes.Select(type => ToAbiType(type, layouts))],
-                ToAbiType(callback.Invoke.Signature.ReturnSignatureType, layouts)))
+        var callbacks = program.HostCallbacks.Select(callback =>
+            {
+                var import = program.JSImportMethods.Single(method => method.Key == callback.ImportMethod).JSImport!;
+                // A Function<...> marker lists the callback's values, its result last.
+                var values = JavaScriptMarshalAsRules.Arguments(import.MarshalAs.Parameter(callback.ParameterIndex));
+                var invoke = callback.Invoke.Signature;
+                return new HostInteropCallback(
+                    import.ModuleName ?? RuntimeAbi.HostModule,
+                    import.FunctionName,
+                    callback.ParameterIndex,
+                    callback.ExportName,
+                    [.. invoke.ParameterSignatureTypes.Select((type, index) =>
+                        ToAbiType(type, layouts, Marker(values, index)))],
+                    ToAbiType(invoke.ReturnSignatureType, layouts, Marker(values, invoke.ParameterSignatureTypes.Length)));
+            })
             .OrderBy(callback => callback.ExportName, StringComparer.Ordinal)
             .ToImmutableArray();
         var witImports = program.WitImportMethods
@@ -100,10 +106,12 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
             method.JSImport.FunctionName,
             [.. method.Signature.ParameterSignatureTypes.Select((type, index) =>
                 program.HostCallbacks.Any(callback => callback.ImportMethod == method.Key &&
-                    callback.ParameterIndex == index) ? "callback" : ToAbiType(type, layouts))],
+                    callback.ParameterIndex == index)
+                    ? "callback"
+                    : ToAbiType(type, layouts, method.JSImport.MarshalAs.Parameter(index)))],
             method.JSImport.IsPromise
                 ? "promise"
-                : ToAsyncAbiType(asyncReturn, method.Signature.ReturnSignatureType, layouts))
+                : ToAsyncAbiType(asyncReturn, method.Signature.ReturnSignatureType, layouts, method.JSImport.MarshalAs.Result))
         {
             Call = JavaScriptDirectImport.Applies(method) ? JavaScriptDirectImport.DirectCall : JavaScriptDirectImport.StatusCall,
             AsyncReturn = asyncReturn.IsAsync ? ToAsyncKind(asyncReturn) : null,
@@ -129,8 +137,9 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
             method.Signature.ReturnSignatureType);
         return new HostInteropExport(
             name,
-            [.. method.Signature.ParameterSignatureTypes.Select(type => ToAbiType(type, layouts))],
-            ToAsyncAbiType(asyncReturn, method.Signature.ReturnSignatureType, layouts))
+            [.. method.Signature.ParameterSignatureTypes.Select((type, index) =>
+                ToAbiType(type, layouts, declaration.MarshalAs.Parameter(index)))],
+            ToAsyncAbiType(asyncReturn, method.Signature.ReturnSignatureType, layouts, declaration.MarshalAs.Result))
         {
             ParameterNames = declaration.ParameterNames,
             NonNullableParameters = declaration.NonNullableParameters,
@@ -149,18 +158,32 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
         };
     }
 
+    // A Promise<...> marker names the settled value's JavaScript type.
     private static string ToAsyncAbiType(
         JavaScriptAsyncReturn asyncReturn,
         CliTypeIdentity declaredReturn,
-        ITargetLayout layouts) => asyncReturn.IsAsync
-            ? asyncReturn.ResultType is null ? "void" : ToAbiType(asyncReturn.ResultType, layouts)
-            : ToAbiType(declaredReturn, layouts);
+        ITargetLayout layouts,
+        string? marker) => asyncReturn.IsAsync
+            ? asyncReturn.ResultType is null
+                ? "void"
+                : ToAbiType(asyncReturn.ResultType, layouts, Marker(JavaScriptMarshalAsRules.Arguments(marker), 0))
+            : ToAbiType(declaredReturn, layouts, marker);
+
+    // A long a marker makes a Number crosses as Int52.
+    private static string ToAbiType(CliTypeIdentity type, ITargetLayout layouts, string? marker) =>
+        JavaScriptMarshalAsRules.SelectsInt52(type, marker)
+            ? JavaScriptMarshalAsRules.Int52 + (JavaScriptNullable.IsSupported(type) ? "?" : "")
+            : ToAbiType(type, layouts);
+
+    private static string? Marker(ImmutableArray<string> markers, int index) =>
+        index < markers.Length ? markers[index] : null;
 
     private static string ToAsyncKind(JavaScriptAsyncReturn asyncReturn) =>
         asyncReturn.Kind == JavaScriptAsyncReturnKind.Task ? "task" : "value-task";
 
     private static string ToAbiType(CliTypeIdentity type, ITargetLayout layouts) => type.CanonicalName switch
     {
+        _ when JavaScriptNullable.Underlying(type) is { } underlying => ToAbiType(underlying, layouts) + "?",
         "primitive:void" => "void",
         "primitive:bool" => "bool",
         "primitive:i1" => "i8",
@@ -176,6 +199,8 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
         "primitive:f8" => "f64",
         "primitive:nativeint" => layouts.Target.UsesMemory64 ? "i64" : "i32",
         "primitive:nativeuint" => layouts.Target.UsesMemory64 ? "u64" : "u32",
+        _ when JavaScriptConversion.IsDate(type) => "date",
+        _ when JavaScriptConversion.HandleAbiType(type) is { } handleValue => handleValue,
         _ when IsString(type) => "string",
         _ when JavaScriptValueArray.IsSupported(type) => JavaScriptValueArray.GetAbiType(type),
         _ when JavaScriptMemoryView.IsSupported(type) => JavaScriptMemoryView.GetAbiType(type),

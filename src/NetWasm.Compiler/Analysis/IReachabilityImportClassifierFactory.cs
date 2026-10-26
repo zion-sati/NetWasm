@@ -12,6 +12,7 @@ internal interface IReachabilityImportClassifierFactory
         IMethodRepository methods,
         IDelegateTypeRecognizer delegateTypes,
         IJavaScriptAsyncBindingResolver javaScriptAsyncBindings,
+        IJavaScriptConversionResolver conversions,
         IRuntimeIntrinsicRegistry intrinsics,
         ISymbolFormatter symbols);
 }

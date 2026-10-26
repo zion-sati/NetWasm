@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -15,7 +16,27 @@ internal sealed record InteropImportPlan(
     OptionalFunctionIndex ReleaseSubscription,
     OptionalFunctionIndex ByteLength,
     OptionalFunctionIndex CopyBytes,
-    bool UseJavaScriptExportBoundary = false);
+    bool UseJavaScriptExportBoundary = false)
+{
+    // The Wasm functions of CoreLib's conversions (JavaScriptConversion), by name,
+    // for the values reachable boundaries convert. A date's take or leave Unix
+    // milliseconds with the struct at an address, as any value-type argument or
+    // result is.
+    public ImmutableDictionary<string, int> Conversions { get; init; } =
+        ImmutableDictionary<string, int>.Empty;
+
+    /// <summary>The function that takes a managed value of the type to JavaScript.</summary>
+    public int FromManaged(CliTypeIdentity type) => Require(JavaScriptConversion.FromManaged(type), type);
+
+    /// <summary>The function that brings a JavaScript value into managed code as the type.</summary>
+    public int ToManaged(CliTypeIdentity type) => Require(JavaScriptConversion.ToManaged(type), type);
+
+    private int Require(string? name, CliTypeIdentity type) =>
+        name is not null && Conversions.TryGetValue(name, out var function)
+            ? function
+            : throw new InvalidOperationException(
+                $"no reachable JavaScript boundary converts '{type.CanonicalName}' that way");
+}
 
 internal interface IInteropImportPlanner
 {
@@ -52,8 +73,10 @@ internal sealed class InteropImportPlanner : IInteropImportPlanner
                     InteropTypeClassifier.IsValueArray) ||
                 InteropTypeClassifier.IsValueArray(
                     method.Signature.ReturnSignatureType));
+        // A handle value's import result handle is released once CoreLib converts it.
         var hasObjects = request.JSImportMethods.Any(method =>
             InteropTypeClassifier.IsHostObject(ImportResult(method)) ||
+            InteropTypeClassifier.IsHandleValue(ImportResult(method)) ||
             method.Signature.ParameterSignatureTypes.Any(InteropTypeClassifier.IsHostObject)) ||
             useJavaScriptExportBoundary &&
             requestedExports.Values.Any(method =>

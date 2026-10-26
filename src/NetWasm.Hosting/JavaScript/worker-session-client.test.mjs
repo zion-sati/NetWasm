@@ -49,18 +49,18 @@ function fixture(overrides = {}) {
 }
 
 const ready = (overrides = {}) => ({ data: {
-  protocolVersion: 1,
+  protocolVersion: 2,
   generation: "generation-1",
   kind: "ready",
   operations: ["add", "fail"],
   ...overrides,
 } });
 const result = (requestId, value, overrides = {}) => ({ data: {
-  protocolVersion: 1, generation: "generation-1", kind: "result", requestId, value,
+  protocolVersion: 2, generation: "generation-1", kind: "result", requestId, value,
   ...overrides,
 } });
 const failure = (requestId, overrides = {}) => ({ data: {
-  protocolVersion: 1, generation: "generation-1", kind: "failure", requestId,
+  protocolVersion: 2, generation: "generation-1", kind: "failure", requestId,
   error: {
     category: "guestFailure",
     detail: "NetWasmManagedError: managed failure",
@@ -71,27 +71,30 @@ const failure = (requestId, overrides = {}) => ({ data: {
   ...overrides,
 } });
 const closed = (overrides = {}) => ({ data: {
-  protocolVersion: 1, generation: "generation-1", kind: "closed", ...overrides,
+  protocolVersion: 2, generation: "generation-1", kind: "closed", ...overrides,
 } });
 
-test("starts one generation and dispatches accepted invocations through one FIFO", async () => {
+// Issue #126: calls run concurrently in the worker, as page calls do.
+test("starts one generation and dispatches every accepted call without waiting for earlier ones", async () => {
   const { client, worker } = fixture();
   assert.equal(client.generation, "generation-1");
   assert.deepEqual(worker.sent, [{
-    protocolVersion: 1, generation: "generation-1", kind: "initialize", environment: {}, startup,
+    protocolVersion: 2, generation: "generation-1", kind: "initialize", environment: {}, startup,
   }]);
   const first = client.invoke("add", [20, 22]);
   const second = client.invoke("add", [1, 2]);
   assert.equal(worker.sent.length, 1);
   worker.emit("message", ready());
   await client.ready;
-  assert.equal(worker.sent[1].requestId, 1);
-  assert.equal(worker.sent.length, 2);
-  worker.emit("message", result(1, 42));
-  assert.equal(await first, 42);
-  assert.equal(worker.sent[2].requestId, 2);
+  assert.deepEqual(worker.sent.slice(1).map(message => message.requestId), [1, 2]);
   worker.emit("message", result(2, 3));
   assert.equal(await second, 3);
+  worker.emit("message", result(1, 42));
+  assert.equal(await first, 42);
+  const third = client.invoke("add", [0, 7]);
+  assert.equal(worker.sent.at(-1).requestId, 3);
+  worker.emit("message", result(3, 7));
+  assert.equal(await third, 7);
 });
 
 test("snapshots byte views when calls are accepted", async () => {
@@ -188,73 +191,44 @@ test("rejects malformed managed failure envelopes before exposing them to the pa
   }
 });
 
-test("cancels queued waits without dispatching and retains active queue order", async () => {
+test("aborting a call the worker cannot observe rejects with the signal's reason", async () => {
   const { client, worker } = fixture();
+  // Accepted before readiness: aborting it means it is never sent.
+  const early = new AbortController();
+  const waiting = client.invoke("add", [1], { signal: early.signal });
+  early.abort(new Error("early reason"));
+  await assert.rejects(waiting, /early reason/);
   worker.emit("message", ready());
   await client.ready;
-  const activeController = new AbortController();
-  const active = client.invoke("add", [1], { signal: activeController.signal });
-  const queuedController = new AbortController();
-  const queued = client.invoke("add", [2], { signal: queuedController.signal });
-  const next = client.invoke("add", [3]);
+  assert.equal(worker.sent.filter(message => message.kind === "invoke").length, 0);
 
-  queuedController.abort();
-  await assert.rejects(queued, error => error instanceof NetWasmWorkerError
-    && error.category === "cancelled" && error.operation === "add");
-  assert.equal(worker.sent.filter(message => message.kind === "invoke").length, 1);
-
-  activeController.abort();
-  await assert.rejects(active, error => error instanceof NetWasmWorkerError
-    && error.category === "cancelled" && error.operation === "add");
-  assert.equal(worker.sent.filter(message => message.kind === "invoke").length, 1);
-
-  worker.emit("message", result(1, 1));
-  assert.equal(worker.sent.at(-1).requestId, 3);
+  // In flight without a token: abandoned at once; its late reply is dropped.
+  const abandoned = new AbortController();
+  const running = client.invoke("add", [2], { signal: abandoned.signal });
+  const other = client.invoke("add", [3]);
+  abandoned.abort();
+  await assert.rejects(running, error => error instanceof DOMException && error.name === "AbortError");
+  assert.equal(worker.sent.some(message => message.kind === "cancel"), false);
+  worker.emit("message", result(2, 2));
   worker.emit("message", result(3, 3));
-  assert.equal(await next, 3);
+  assert.equal(await other, 3);
 
-  const aborted = new AbortController();
-  aborted.abort();
+  const aborted = AbortSignal.abort(new Error("already aborted"));
   const sent = worker.sent.length;
-  await assert.rejects(
-    client.invoke("add", [4], { signal: aborted.signal }),
-    error => error instanceof NetWasmWorkerError && error.category === "cancelled");
+  await assert.rejects(client.invoke("add", [4], { signal: aborted }), /already aborted/);
   assert.equal(worker.sent.length, sent);
 });
 
-test("times out caller waits while containing late guest completion", async () => {
+test("a task the worker's export canceled rejects with an AbortError, as on the page", async () => {
   const { client, worker } = fixture();
   worker.emit("message", ready());
   await client.ready;
-  const timed = client.invoke("add", [1], { timeoutMilliseconds: 0 });
-  const next = client.invoke("add", [2]);
-  await assert.rejects(timed, error => error instanceof NetWasmWorkerError
-    && error.category === "deadlineExceeded" && error.operation === "add");
-  assert.equal(worker.sent.filter(message => message.kind === "invoke").length, 1);
-  worker.emit("message", result(1, 1));
-  assert.equal(worker.sent.at(-1).requestId, 2);
-  worker.emit("message", result(2, 2));
-  assert.equal(await next, 2);
-});
-
-test("a stale deadline callback cannot cancel a later request", async t => {
-  let deadline;
-  t.mock.method(globalThis, "setTimeout", callback => { deadline = callback; return 123; });
-  const cleared = [];
-  t.mock.method(globalThis, "clearTimeout", timer => cleared.push(timer));
-  const { client, worker } = fixture();
-  worker.emit("message", ready());
-  await client.ready;
-  const first = client.invoke("add", [1], { timeoutMilliseconds: 100 });
-  worker.emit("message", result(1, 42));
-  assert.equal(await first, 42);
-  assert.deepEqual(cleared, [123]);
-  const second = client.invoke("add", [2]);
-  deadline();
-  worker.emit("message", result(2, 43));
-  assert.equal(await second, 43);
-  assert.equal(worker.terminations, 0);
-  client.terminate();
+  const canceled = client.invoke("add", [3]);
+  assert.equal(Object.hasOwn(worker.sent.at(-1), "cancellable"), false);
+  worker.emit("message", failure(1, { error: { ...failure(1).data.error, category: "cancelled" } }));
+  await assert.rejects(canceled, error => error instanceof DOMException && error.name === "AbortError"
+    && error.message === "managed failure");
+  assert.throws(() => fixture({ cancellableOperations: ["add"] }), /options shape/);
 });
 
 test("graceful disposal drains accepted work then closes and terminates", async () => {
@@ -363,10 +337,10 @@ test("ignores stale generations and faults malformed or unexpected responses", a
   await stale.client.ready;
 
   const cases = [
-    { data: null }, { data: [] }, { data: {} }, ready({ protocolVersion: 2 }),
+    { data: null }, { data: [] }, { data: {} }, ready({ protocolVersion: 1 }),
     ready({ operations: ["add"] }), ready({ operations: null }), ready({ extra: true }),
     ready({ operations: ["add", "add"] }),
-    { data: { protocolVersion: 1, generation: "generation-1", kind: "other" } },
+    { data: { protocolVersion: 2, generation: "generation-1", kind: "other" } },
     result(7, 1), result(0, 1), result(1, 1, { requestId: null }), closed(),
     failure(null, { error: null }),
     failure(null, { error: { category: "", message: "", operation: 1, stack: 1 } }),
@@ -453,10 +427,9 @@ test("contains post and terminate failures and validates composition", async () 
   await assert.rejects(() => state.client.invoke("missing"), /unavailable/);
   await assert.rejects(() => state.client.invoke("add", null), /array/);
   for (const options of [
-    null, [], { extra: true }, { signal: {} }, { timeoutMilliseconds: -1 },
-    { timeoutMilliseconds: 1.5 }, { timeoutMilliseconds: 2_147_483_648 },
+    null, [], { extra: true }, { signal: {} }, { timeoutMilliseconds: 1 },
     Object.defineProperty({}, "signal", { enumerable: true, get: () => null }),
-  ]) await assert.rejects(() => state.client.invoke("add", [], options), /options|signal|timeout/);
+  ]) await assert.rejects(() => state.client.invoke("add", [], options), /options|signal/);
 });
 
 
@@ -467,22 +440,18 @@ test("native notifications preserve names and values without releasing the activ
   worker.emit("message", ready());
   await client.ready;
   const first = client.invoke("add", [20, 22]);
-  const second = client.invoke("add", [1, 2]);
   const arguments_ = [42, "diagnostic", { total: 100 }, Uint8Array.of(1, 2), 9007199254740993n];
   worker.emit("message", { data: {
-    protocolVersion: 1, generation: "generation-1", kind: "notification",
+    protocolVersion: 2, generation: "generation-1", kind: "notification",
     operation: "my-app/custom-event", arguments: arguments_,
   } });
   assert.deepEqual(seen, [{ operation: "my-app/custom-event", arguments: arguments_ }]);
-  assert.equal(worker.sent.length, 2);
+  // The handler's pending work does not hold the call back.
   worker.emit("message", result(1, 42));
   assert.equal(await first, 42);
-  assert.equal(worker.sent.length, 3);
-  worker.emit("message", result(2, 3));
-  assert.equal(await second, 3);
   client.terminate();
   worker.emit("message", { data: {
-    protocolVersion: 1, generation: "generation-1", kind: "notification",
+    protocolVersion: 2, generation: "generation-1", kind: "notification",
     operation: "late", arguments: [],
   } });
   assert.equal(seen.length, 1);
@@ -499,7 +468,7 @@ test("notification handlers are optional and their errors remain caller-local", 
     await client.ready;
     const call = client.invoke("add", [20, 22]);
     worker.emit("message", { data: {
-      protocolVersion: 1, generation: "generation-1", kind: "notification",
+      protocolVersion: 2, generation: "generation-1", kind: "notification",
       operation: "notice", arguments: ["hello"],
     } });
     worker.emit("message", result(1, 42));
@@ -523,7 +492,7 @@ test("notification errors use console reporting when reportError is unavailable"
   await client.ready;
   const call = client.invoke("add", [20, 22]);
   worker.emit("message", { data: {
-    protocolVersion: 1, generation: "generation-1", kind: "notification",
+    protocolVersion: 2, generation: "generation-1", kind: "notification",
     operation: "notice", arguments: [],
   } });
   worker.emit("message", result(1, 42));
@@ -539,18 +508,18 @@ test("malformed live notifications fail clearly while stale notifications are ig
   const call = client.invoke("add");
   const failed = assert.rejects(call, TypeError);
   worker.emit("message", { data: {
-    protocolVersion: 1, generation: "old", kind: "notification", operation: "", arguments: null,
+    protocolVersion: 2, generation: "old", kind: "notification", operation: "", arguments: null,
   } });
   assert.equal(worker.terminations, 0);
   worker.emit("message", { data: {
-    protocolVersion: 1, generation: "generation-1", kind: "notification", operation: "", arguments: [],
+    protocolVersion: 2, generation: "generation-1", kind: "notification", operation: "", arguments: [],
   } });
   await failed;
   assert.equal(worker.terminations, 1);
 });
 
 const output = (stream, text, overrides = {}) => ({ data: {
-  protocolVersion: 1, generation: "generation-1", kind: "output", stream,
+  protocolVersion: 2, generation: "generation-1", kind: "output", stream,
   bytes: new TextEncoder().encode(text), ...overrides,
 } });
 

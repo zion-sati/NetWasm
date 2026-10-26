@@ -169,6 +169,23 @@ public sealed class ReferenceAssemblyContractTests
         Assert.Empty(targets.Descendants("Exec"));
     }
 
+    // The generator that implements [JSImport] static partial declarations ships
+    // as an analyzer, so a declaration written for .NET's browser runtime compiles.
+    [Fact]
+    public void RefPackShipsTheJSImportPartialGenerator()
+    {
+        var project = XDocument.Load(Path.Combine(FindRepositoryRoot(), "src/NetWasm.Ref/NetWasm.Ref.csproj"));
+        var resolve = project.Descendants("Target").Single(target =>
+            (string?)target.Attribute("Name") == "NetWasmRefResolveJSImportGenerator");
+        var pack = project.Descendants("Target").Single(target =>
+            (string?)target.Attribute("Name") == "NetWasmRefPack");
+
+        Assert.Equal("analyzers/dotnet/cs/NetWasm.JSImportGenerator.dll", resolve.Descendants("PackagePath").Single().Value);
+        Assert.Contains("NetWasmRefResolveJSImportGenerator", (string?)pack.Attribute("DependsOnTargets"), StringComparison.Ordinal);
+        Assert.Contains(pack.Descendants("_NetWasmRefPackageFile"), file =>
+            (string?)file.Attribute("Include") == "@(_NetWasmRefJSImportGeneratorFile)");
+    }
+
     private static string FindReferenceAssembly()
     {
         var configuration = typeof(ReferenceAssemblyContractTests).Assembly

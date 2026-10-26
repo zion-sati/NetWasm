@@ -111,6 +111,76 @@ public sealed class JSImportDelegateCompilationTests
         Assert.Contains("returns a Task or ValueTask", exception.Diagnostic.Message, StringComparison.Ordinal);
     }
 
+    // A forwarder has no value frame for a date result; a date argument is its address.
+    [Fact]
+    public void DelegateBoundToAJSImportReturningADateIsRejected()
+    {
+        var exception = CompileRejected(
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class Program
+            {
+                public static int Run(int input)
+                {
+                    Func<DateTime> now = Host.Now;
+                    return now().Year;
+                }
+            }
+
+            internal static class Host
+            {
+                [JSImport("now", "repro.host")]
+                internal static extern DateTime Now();
+            }
+            """);
+
+        Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
+        Assert.Contains("returns a DateTime, DateTimeOffset or nullable value", exception.Diagnostic.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void DelegateBoundToAJSImportTakingADateProducesValidWasm(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "JSImportDateDelegateFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class Program
+            {
+                public static int Run(int input)
+                {
+                    Func<DateTime, int> day = Host.Day;
+                    return day(new DateTime(2000, 1, input + 1));
+                }
+            }
+
+            internal static class Host
+            {
+                [JSImport("day", "repro.host")]
+                internal static extern int Day(DateTime value);
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "Program",
+            "Run",
+            [],
+            target));
+
+        ValidateWithNode(result.ApplicationModule, assets.Directory);
+        Assert.Equal(["date"], Assert.Single(result.InteropManifest.Imports).Parameters.ToArray());
+    }
+
     private static CompilerException CompileRejected(string source)
     {
         using var assets = TestAssets.Create();

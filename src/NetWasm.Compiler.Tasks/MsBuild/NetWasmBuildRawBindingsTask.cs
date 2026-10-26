@@ -101,11 +101,15 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
     [Output]
     public ITaskItem[] RequiredImportModules { get; private set; } = [];
 
+    [Output]
+    public ITaskItem[] ImportModules { get; private set; } = [];
+
     public override bool Execute()
     {
         Adapters = [];
         RequiredImports = [];
         RequiredImportModules = [];
+        ImportModules = [];
         try
         {
             var target = Target switch
@@ -144,7 +148,7 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
                 .ToArray();
             _artifacts.Write(AdapterPath, result.Adapter);
             _artifacts.Write(BindingManifestPath, JsonSerializer.SerializeToUtf8Bytes(
-                new RawBindingManifest(1, Target, [.. requiredImports]),
+                new RawBindingManifest(2, Target, [.. requiredImports], result.ImportModules),
                 MetadataJsonOptions));
             Adapters = [CreateAdapterItem()];
             RequiredImports = [.. requiredImports.Select(CreateFunctionItem)];
@@ -156,6 +160,7 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
                     .Order(StringComparer.Ordinal)
                     .Select(module => new TaskItem(module)),
             ];
+            ImportModules = [.. result.ImportModules.Select(module => new TaskItem(module))];
             return true;
         }
         catch (CompilerException exception)

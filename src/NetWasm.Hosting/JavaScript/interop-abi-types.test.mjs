@@ -7,6 +7,7 @@ import {
   isHostObject,
   isMemoryViewAbiType,
   isScalarAbiType,
+  nullableUnderlying,
   isTransferAbiType,
   isValueArray,
   isValueArrayAbiType,
@@ -23,7 +24,7 @@ const valueArrays = Object.freeze({
 test("isAbiType recognizes the complete supported ABI vocabulary", () => {
   for (const type of [
     "void", "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
-    "i64", "u64", "f32", "f64", "string", "bytes", "object",
+    "i64", "u64", "f32", "f64", "date", "string", "bytes", "object",
     "subscription", "promise", "callback",
   ]) {
     assert.equal(isAbiType(type), true, type);
@@ -33,10 +34,20 @@ test("isAbiType recognizes the complete supported ABI vocabulary", () => {
   }
 });
 
+test("nullableUnderlying recognizes a nullable scalar or date", () => {
+  assert.equal(nullableUnderlying("i32?"), "i32");
+  assert.equal(nullableUnderlying("date?"), "date");
+  assert.equal(isAbiType("u64?"), true);
+  assert.equal(isScalarAbiType("i32?"), false);
+  for (const type of [null, "i32", "string?", "object?", "?", "bytes?"]) {
+    assert.equal(nullableUnderlying(type), null, String(type));
+  }
+});
+
 test("isScalarAbiType recognizes only scalar ABI values", () => {
   for (const type of [
     "bool", "i8", "u8", "char", "i16", "u16", "i32", "u32",
-    "i64", "u64", "f32", "f64",
+    "i64", "u64", "f32", "f64", "date",
   ]) {
     assert.equal(isScalarAbiType(type), true, type);
   }

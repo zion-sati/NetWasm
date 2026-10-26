@@ -195,7 +195,7 @@ public sealed class AsyncJSExportHelperAppenderTests
 
     private sealed class FixedResultEmitter : IAsyncJSExportResultEmitter
     {
-        public byte[] Emit(JavaScriptAsyncMethodBinding binding) => [2];
+        public byte[] Emit(JavaScriptAsyncMethodBinding binding, NetWasm.Compiler.Wasm.Emission.Planning.InteropImportPlan? interopImports = null) => [2];
     }
 
     private sealed class FixedCompletionEmitter : IAsyncTaskCompletionEmitter

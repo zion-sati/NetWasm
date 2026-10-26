@@ -63,6 +63,506 @@ public sealed class HostInteropCompilationTests
             });
     }
 
+    // DateTime and DateTimeOffset cross every JavaScript boundary as a Date: imports,
+    // async import results, exports, async export results and callbacks.
+    [Fact]
+    public void CompilerMarshalsDatesAtEveryJavaScriptBoundary()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "DateInteropFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                [JSImport("next_day", "dates.host")]
+                private static extern DateTime NextDay(DateTime value);
+
+                [JSImport("next_hour", "dates.host")]
+                private static extern DateTimeOffset NextHour(DateTimeOffset value, string label);
+
+                [JSImport("later", "dates.host")]
+                private static extern Task<DateTime> Later(DateTime value);
+
+                [JSImport("shift", "dates.host")]
+                private static extern JSSubscription OnShift(Func<DateTime, DateTimeOffset> shift);
+
+                public static int Run(int input) => input;
+
+                [JSExport("tomorrow")]
+                public static DateTime Tomorrow(DateTime value, int days) => NextDay(value).AddDays(days);
+
+                [JSExport("hour_later")]
+                public static long HourLater(string label, DateTimeOffset value) =>
+                    NextHour(value, label).ToUnixTimeMilliseconds();
+
+                [JSExport("later_date")]
+                public static async Task<DateTime> LaterDate(DateTime value) => await Later(value);
+
+                [JSExport("offset_later")]
+                public static async ValueTask<DateTimeOffset> OffsetLater(DateTimeOffset value)
+                {
+                    await Task.Yield();
+                    return value;
+                }
+
+                [JSExport("shift_once")]
+                public static void ShiftOnce()
+                {
+                    using (OnShift(value => new DateTimeOffset(value))) { }
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+            Assert.Equal(["date"], imports["next_day"].Parameters.ToArray());
+            Assert.Equal("date", imports["next_day"].Result);
+            Assert.Equal(["date", "string"], imports["next_hour"].Parameters.ToArray());
+            Assert.Equal("date", imports["next_hour"].Result);
+            Assert.Equal("task", imports["later"].AsyncReturn);
+            Assert.Equal("date", imports["later"].Result);
+            var exports = result.InteropManifest.Exports.ToDictionary(export => export.Name);
+            Assert.Equal(["date", "i32"], exports["tomorrow"].Parameters.ToArray());
+            Assert.Equal("date", exports["tomorrow"].Result);
+            Assert.Equal(["string", "date"], exports["hour_later"].Parameters.ToArray());
+            Assert.Equal("date", exports["later_date"].Result);
+            Assert.Equal("date", exports["offset_later"].Result);
+            var callback = Assert.Single(result.InteropManifest.Callbacks);
+            Assert.Equal(["date"], callback.Parameters.ToArray());
+            Assert.Equal("date", callback.Result);
+        }
+    }
+
+    // A nullable scalar or date crosses every JavaScript boundary as the value or null.
+    [Fact]
+    public void CompilerMarshalsNullablesAtEveryJavaScriptBoundary()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "NullableInteropFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                [JSImport("half", "nullables.host")]
+                private static extern double? Half(int? value, string label);
+
+                [JSImport("later", "nullables.host")]
+                private static extern Task<long?> Later(bool? present);
+
+                [JSImport("pick", "nullables.host")]
+                private static extern JSSubscription OnPick(Func<int?, DateTime?, bool?> pick);
+
+                public static int Run(int input) => input;
+
+                [JSExport("maybe_add")]
+                public static int? MaybeAdd(int? left, int right) => left + right;
+
+                [JSExport("half_of")]
+                public static double? HalfOf(string label, int? value) => Half(value, label);
+
+                [JSExport("maybe_day")]
+                public static DateTime? MaybeDay(DateTime? value) => value?.AddDays(1);
+
+                [JSExport("later_sum")]
+                public static async Task<long?> LaterSum(bool? present) => await Later(present) + 1;
+
+                [JSExport("offset_later")]
+                public static async ValueTask<DateTimeOffset?> OffsetLater(DateTimeOffset? value)
+                {
+                    await Task.Yield();
+                    return value;
+                }
+
+                [JSExport("pick_once")]
+                public static void PickOnce()
+                {
+                    using (OnPick((value, date) => value is null ? null : date is not null)) { }
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+            Assert.Equal(["i32?", "string"], imports["half"].Parameters.ToArray());
+            Assert.Equal("f64?", imports["half"].Result);
+            Assert.Equal(["bool?"], imports["later"].Parameters.ToArray());
+            Assert.Equal("i64?", imports["later"].Result);
+            var exports = result.InteropManifest.Exports.ToDictionary(export => export.Name);
+            Assert.Equal(["i32?", "i32"], exports["maybe_add"].Parameters.ToArray());
+            Assert.Equal("i32?", exports["maybe_add"].Result);
+            Assert.Equal(["string", "i32?"], exports["half_of"].Parameters.ToArray());
+            Assert.Equal("date?", exports["maybe_day"].Result);
+            Assert.Equal("i64?", exports["later_sum"].Result);
+            Assert.Equal("date?", exports["offset_later"].Result);
+            var callback = Assert.Single(result.InteropManifest.Callbacks);
+            Assert.Equal(["i32?", "date?"], callback.Parameters.ToArray());
+            Assert.Equal("bool?", callback.Result);
+        }
+    }
+
+    // An object, exception or array of references crosses every JavaScript boundary
+    // as a handle to its JavaScript value, which CoreLib converts.
+    [Fact]
+    public void CompilerMarshalsObjectsExceptionsAndReferenceArraysAtEveryJavaScriptBoundary()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "HandleValueInteropFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                [JSImport("echo", "values.host")]
+                private static extern object? Echo(object? value, string[] labels);
+
+                [JSImport("fail", "values.host")]
+                private static extern Exception? Fail(Exception? error);
+
+                [JSImport("later", "values.host")]
+                private static extern Task<object?[]?> Later(JSObject?[]? elements);
+
+                [JSImport("visit", "values.host")]
+                private static extern JSSubscription OnVisit(Func<object?, string?[]?, Exception?> visit);
+
+                public static int Run(int input) => input;
+
+                [JSExport("round_trip")]
+                public static object? RoundTrip(object? value, string?[]? labels) => Echo(value, labels ?? []);
+
+                [JSExport("wrap")]
+                public static Exception? Wrap(Exception? error) => Fail(error);
+
+                [JSExport("elements")]
+                public static JSObject?[]? Elements(JSObject?[]? elements) => elements;
+
+                [JSExport("later_values")]
+                public static async Task<object?[]?> LaterValues(JSObject?[]? elements) => await Later(elements);
+
+                [JSExport("visit_once")]
+                public static void VisitOnce()
+                {
+                    using (OnVisit((value, labels) => value is null ? null : new InvalidOperationException("seen"))) { }
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+            Assert.Equal(["any", "string[]"], imports["echo"].Parameters.ToArray());
+            Assert.Equal("any", imports["echo"].Result);
+            Assert.Equal(["error"], imports["fail"].Parameters.ToArray());
+            Assert.Equal("error", imports["fail"].Result);
+            Assert.Equal(["object[]"], imports["later"].Parameters.ToArray());
+            Assert.Equal("any[]", imports["later"].Result);
+            // CoreLib reads and builds JavaScript values through the runtime's own module.
+            Assert.Contains(result.InteropManifest.Imports,
+                import => import.Module == "netwasm.host.v1" && import.Name == "value_kind");
+            var exports = result.InteropManifest.Exports.ToDictionary(export => export.Name);
+            Assert.Equal(["any", "string[]"], exports["round_trip"].Parameters.ToArray());
+            Assert.Equal("any", exports["round_trip"].Result);
+            Assert.Equal("error", exports["wrap"].Result);
+            Assert.Equal("object[]", exports["elements"].Result);
+            Assert.Equal("any[]", exports["later_values"].Result);
+            var callback = Assert.Single(result.InteropManifest.Callbacks);
+            Assert.Equal(["any", "string[]"], callback.Parameters.ToArray());
+            Assert.Equal("error", callback.Result);
+        }
+    }
+
+    // CoreLib's conversions stay out of a program whose boundaries pass only what
+    // crosses as it is, including one whose failed import throws JSException.
+    [Fact]
+    public void CompilerLeavesJavaScriptValueConversionsOutOfProgramsThatPassNone()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "PlainInteropFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                [JSImport("label", "plain.host")]
+                private static extern string Label(int value, DateTime? when);
+
+                public static int Run(int input) => input;
+
+                [JSExport("labelled")]
+                public static string Labelled(int value)
+                {
+                    try
+                    {
+                        return Label(value, null);
+                    }
+                    catch (JSException)
+                    {
+                        return "failed";
+                    }
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+            assets,
+            assembly,
+            "EntryPoint",
+            "Run",
+            WasmTarget.Wasm32) with
+        { UseJavaScriptExportBoundary = true });
+
+        Assert.DoesNotContain(result.InteropManifest.Imports, import => import.Module == RuntimeAbi.HostModule);
+    }
+
+    // Mono's [JSMarshalAs<T>] markers are optional: a long marked JSType.Number
+    // crosses as Int52, and every other marker is checked against its type.
+    [Fact]
+    public void CompilerHonoursJSMarshalAsMarkers()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "MarshalAsInteropFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                [JSImport("count", "markers.host")]
+                [return: JSMarshalAs<JSType.Number>]
+                private static extern long Count([JSMarshalAs<JSType.Number>] long start, [JSMarshalAs<JSType.BigInt>] long exact);
+
+                [JSImport("later", "markers.host")]
+                [return: JSMarshalAs<JSType.Promise<JSType.Number>>]
+                private static extern Task<long> Later([JSMarshalAs<JSType.Number>] long? start);
+
+                [JSImport("each", "markers.host")]
+                private static extern JSSubscription OnEach(
+                    [JSMarshalAs<JSType.Function<JSType.Number, JSType.String, JSType.Number>>] Func<long, string, long> each);
+
+                [JSImport("note", "markers.host")]
+                [return: JSMarshalAs<JSType.Discard>]
+                private static extern void Note(
+                    [JSMarshalAs<JSType.Date>] DateTime when,
+                    [JSMarshalAs<JSType.Any>] object? value,
+                    [JSMarshalAs<JSType.Array<JSType.Number>>] double[] values,
+                    [JSMarshalAs<JSType.MemoryView>] Span<byte> bytes,
+                    [JSMarshalAs<JSType.Error>] Exception? error);
+
+                public static int Run(int input) => input;
+
+                [JSExport("total")]
+                [return: JSMarshalAs<JSType.Number>]
+                public static long Total([JSMarshalAs<JSType.Number>] long first, long second)
+                {
+                    using (OnEach((value, label) => value + label.Length)) { }
+                    Note(DateTime.UnixEpoch, null, [], [], null);
+                    return Count(first, second);
+                }
+
+                [JSExport("total_later")]
+                [return: JSMarshalAs<JSType.Promise<JSType.Number>>]
+                public static async Task<long> TotalLater([JSMarshalAs<JSType.Number>] long? start) => await Later(start);
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+            assets,
+            assembly,
+            "EntryPoint",
+            "Run",
+            WasmTarget.Wasm32) with
+        { UseJavaScriptExportBoundary = true });
+
+        CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+        var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+        Assert.Equal(["i52", "i64"], imports["count"].Parameters.ToArray());
+        Assert.Equal("i52", imports["count"].Result);
+        Assert.Equal(["i52?"], imports["later"].Parameters.ToArray());
+        Assert.Equal("i52", imports["later"].Result);
+        var exports = result.InteropManifest.Exports.ToDictionary(export => export.Name);
+        Assert.Equal(["i52", "i64"], exports["total"].Parameters.ToArray());
+        Assert.Equal("i52", exports["total"].Result);
+        Assert.Equal(["i52?"], exports["total_later"].Parameters.ToArray());
+        Assert.Equal("i52", exports["total_later"].Result);
+        var callback = Assert.Single(result.InteropManifest.Callbacks);
+        Assert.Equal(["i52", "string"], callback.Parameters.ToArray());
+        Assert.Equal("i52", callback.Result);
+    }
+
+    [Theory]
+    [InlineData("[JSMarshalAs<JSType.Number>] string value", "void", "parameter 1, which takes JSType.String")]
+    [InlineData("int value", "[return: JSMarshalAs<JSType.Promise<JSType.String>>] Task<int>",
+        "result, which takes JSType.Promise<JSType.Number>")]
+    [InlineData("[JSMarshalAs<JSType.Array<JSType.String>>] double[] values", "void",
+        "parameter 1, which takes JSType.Array<JSType.Number>")]
+    public void CompilerRejectsJSMarshalAsMarkersThatDoNotFit(string parameter, string result, string message)
+    {
+        using var assets = TestAssets.Create();
+        var returns = result.StartsWith("[return:", StringComparison.Ordinal)
+            ? result[..(result.IndexOf(']') + 1)] + "\n                public static async " + result[(result.IndexOf(']') + 2)..]
+            : "public static " + result;
+        var body = result == "void" ? "{ }" : "{ await Task.Yield(); return 0; }";
+        var assembly = assets.CompileSource(
+            "MarshalAsMismatchFixture",
+            $$"""
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("marked")]
+                {{returns}} Marked({{parameter}}) {{body}}
+            }
+            """);
+
+        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
+            CompilerTestSupport.CreateReactorOptions(assets, assembly, "EntryPoint", "Run", WasmTarget.Wasm32) with
+            { UseJavaScriptExportBoundary = true }));
+
+        Assert.Contains("does not fit the " + message, error.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    // .NET's browser runtime declares imports static partial. The SDK's generator
+    // supplies each implementing declaration, so they compile and bind unchanged.
+    [Fact]
+    public void CompilerBindsStaticPartialJSImportsTheSdkGeneratorImplements()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSourceWithAnalyzers(
+            "PartialImportFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            namespace Consumer
+            {
+                public static partial class Host
+                {
+                    [JSImport("add", "partial.host")]
+                    internal static partial int Add(int left, int right);
+
+                    public static partial class Nested
+                    {
+                        [JSImport("label", "partial.host")]
+                        internal static partial string? Label([JSMarshalAs<JSType.Number>] long value);
+                    }
+                }
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) =>
+                    Consumer.Host.Add(input, 1) + (Consumer.Host.Nested.Label(input)?.Length ?? 0);
+            }
+            """,
+            [GeneratorAssembly]);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", []));
+
+        var imports = result.InteropManifest.Imports.ToDictionary(import => import.Name);
+        Assert.Equal(["add", "label"], imports.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(["i52"], imports["label"].Parameters.ToArray());
+        Assert.Equal("string", imports["label"].Result);
+    }
+
+    // C# drops a call to a partial method without an implementation, so an import
+    // the generator cannot implement is an error rather than a silent no-op.
+    [Fact]
+    public void SdkGeneratorRefusesAStaticPartialJSImportWithoutAccessibility()
+    {
+        using var assets = TestAssets.Create();
+
+        var error = Assert.Throws<RoslynCompilationException>(() => assets.CompileSourceWithAnalyzers(
+            "PartialImportWithoutAccessibilityFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static partial class Host
+            {
+                [JSImport("notify", "partial.host")]
+                static partial void Notify(int value);
+
+                public static void Run() => Notify(1);
+            }
+            """,
+            [GeneratorAssembly]));
+
+        Assert.Contains("NWJS001", error.DiagnosticCodes);
+    }
+
+    private static string GeneratorAssembly =>
+        typeof(NetWasm.JSImportGenerator.JSImportPartialGenerator).Assembly.Location;
+
+    [Fact]
+    public void CompilerRejectsOtherStructsAtJavaScriptBoundaries()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "TimeSpanExportFixture",
+            """
+            using System;
+            using System.Runtime.InteropServices.JavaScript;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("wait")]
+                public static int Wait(TimeSpan value) => value.Seconds;
+            }
+            """);
+
+        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(
+            CompilerTestSupport.CreateReactorOptions(assets, assembly, "EntryPoint", "Run", WasmTarget.Wasm32) with
+            { UseJavaScriptExportBoundary = true }));
+
+        Assert.Contains("DateTime, DateTimeOffset", error.Diagnostic.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void CompilerBuildsIdiomaticTaskAndValueTaskExports()
     {
@@ -122,6 +622,66 @@ public sealed class HostInteropCompilationTests
                     Assert.NotNull(export.CompleteExport);
                     Assert.Equal("exception-handle-v1", export.CompletionResult);
                 });
+        }
+    }
+
+    // Issue #127: an asynchronous export settles with the values a synchronous one
+    // returns, read from the completed task as the synchronous result is.
+    [Fact]
+    public void CompilerBuildsAsynchronousExportsWithReferenceResults()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "AsyncReferenceExportFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+            using System.Threading.Tasks;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) => input;
+
+                [JSExport("text")]
+                public static async Task<string?> Text(string input)
+                {
+                    await Task.Yield();
+                    return input + "!";
+                }
+
+                [JSExport("doubles")]
+                public static ValueTask<double[]> Doubles(int count) => new(new double[count]);
+
+                [JSExport("host_object")]
+                public static Task<JSObject?> HostObject(JSObject? value) => Task.FromResult(value);
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(CompilerTestSupport.CreateReactorOptions(
+                assets,
+                assembly,
+                "EntryPoint",
+                "Run",
+                target) with
+            { UseJavaScriptExportBoundary = true });
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var exports = result.InteropManifest.Exports.ToDictionary(export => export.Name);
+            foreach (var (name, asyncReturn, type) in new[]
+            {
+                ("text", "task", "string"),
+                ("doubles", "value-task", "f64[]"),
+                ("host_object", "task", "object"),
+            })
+            {
+                var export = exports[name];
+                Assert.Equal(asyncReturn, export.AsyncReturn);
+                Assert.Equal(type, export.Result);
+                Assert.NotNull(export.StatusExport);
+                Assert.NotNull(export.ResultExport);
+                Assert.NotNull(export.CompleteExport);
+            }
         }
     }
 
@@ -1012,6 +1572,56 @@ public sealed class HostInteropCompilationTests
         Assert.StartsWith("netwasm.callback.", callback.ExportName, StringComparison.Ordinal);
     }
 
+    // A callback takes and returns what a synchronous export does: any number of
+    // string, array and JSObject arguments, and the same results.
+    [Fact]
+    public void CompilerBuildsCallbacksWithTheExportValueTypes()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "RichCallbackInteropFixture",
+            """
+            using System.Runtime.InteropServices.JavaScript;
+
+            public delegate string? Describe(string? name, string? title, JSObject? element, double[]? values);
+
+            public delegate JSObject? Choose(JSObject? first, int[]? order);
+
+            public static class HostCallbacks
+            {
+                [JSImport("describe", "consumer.callbacks")]
+                public static extern JSSubscription OnDescribe(Describe callback);
+
+                [JSImport("choose", "consumer.callbacks")]
+                public static extern JSSubscription OnChoose(Choose callback);
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    using var describing = HostCallbacks.OnDescribe((name, title, element, values) =>
+                        name + title + (element is null ? "" : "!") + values?.Length);
+                    using var choosing = HostCallbacks.OnChoose((first, order) => order is null ? null : first);
+                    return input;
+                }
+            }
+            """);
+
+        foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
+        {
+            var result = NetWasmCompiler.Compile(new CompilerOptions(
+                assembly, [assets.CoreLib], "EntryPoint", "Run", [], target));
+
+            CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
+            var callbacks = result.InteropManifest.Callbacks.ToDictionary(callback => callback.ImportName);
+            Assert.Equal(["string", "string", "object", "f64[]"], callbacks["describe"].Parameters.ToArray());
+            Assert.Equal("string", callbacks["describe"].Result);
+            Assert.Equal(["object", "i32[]"], callbacks["choose"].Parameters.ToArray());
+            Assert.Equal("object", callbacks["choose"].Result);
+        }
+    }
+
     [Fact]
     public void CompilerMapsNativeIntegerInteropToTheSelectedTargetWidth()
     {
@@ -1086,10 +1696,12 @@ public sealed class HostInteropCompilationTests
             """
             using System.Runtime.InteropServices.JavaScript;
 
+            public sealed class Widget;
+
             public static class Host
             {
                 [JSImport("bad", "consumer.invalid")]
-                public static extern object Bad(object value);
+                public static extern Widget Bad(Widget value);
             }
 
             public static class EntryPoint

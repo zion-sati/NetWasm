@@ -21,6 +21,7 @@
     <Project Path="src/NetWasm.Sdk.Pack/NetWasm.Sdk.Pack.csproj" />
     <Project Path="src/NetWasm.Sdk/NetWasm.Sdk.csproj" />
     <Project Path="src/NetWasm.Ref/NetWasm.Ref.csproj" />
+    <Project Path="src/NetWasm.JSImportGenerator/NetWasm.JSImportGenerator.csproj" />
     <Project Path="src/NetWasm.Templates/NetWasm.Templates.csproj" />
     <Project Path="src/NetWasm.Testing.VSTest/NetWasm.Testing.VSTest.csproj" />
   </Folder>

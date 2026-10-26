@@ -58,6 +58,77 @@ static CommandDiagnosticCompletion command_diagnostic_completion;
 static netwasm_reference_t command_diagnostic_roots[2];
 static uint32_t command_diagnostic_owned;
 
+static size_t encode_utf8(u32 value, char *destination)
+{
+    if (value <= 0x7f) {
+        destination[0] = (char)value;
+        return 1;
+    }
+    if (value <= 0x7ff) {
+        destination[0] = (char)(0xc0 | (value >> 6));
+        destination[1] = (char)(0x80 | (value & 0x3f));
+        return 2;
+    }
+    if (value <= 0xffff) {
+        destination[0] = (char)(0xe0 | (value >> 12));
+        destination[1] = (char)(0x80 | ((value >> 6) & 0x3f));
+        destination[2] = (char)(0x80 | (value & 0x3f));
+        return 3;
+    }
+    destination[0] = (char)(0xf0 | (value >> 18));
+    destination[1] = (char)(0x80 | ((value >> 12) & 0x3f));
+    destination[2] = (char)(0x80 | ((value >> 6) & 0x3f));
+    destination[3] = (char)(0x80 | (value & 0x3f));
+    return 4;
+}
+
+static void write_diagnostic_string(netwasm_reference_t string)
+{
+    char buffer[256];
+    size_t buffered = 0;
+    u32 length;
+    uint16_t *characters;
+    if (string == 0) {
+        return;
+    }
+    length = *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
+    characters = (uint16_t *)(uintptr_t)(string + NETWASM_STRING_DATA_OFFSET);
+    for (u32 index = 0; index < length; index++) {
+        u32 value = characters[index];
+        if (value >= 0xd800 && value <= 0xdbff && index + 1 < length &&
+            characters[index + 1] >= 0xdc00 && characters[index + 1] <= 0xdfff) {
+            value = 0x10000 + ((value - 0xd800) << 10) +
+                (characters[++index] - 0xdc00);
+        } else if (value >= 0xd800 && value <= 0xdfff) {
+            value = 0xfffd;
+        }
+        if (sizeof(buffer) - buffered < 4) {
+            write_diagnostic_bytes(buffer, buffered);
+            buffered = 0;
+        }
+        buffered += encode_utf8(value, buffer + buffered);
+    }
+    write_diagnostic_bytes(buffer, buffered);
+}
+
+static int diagnostic_string_is_empty(netwasm_reference_t string)
+{
+    return string == 0 ||
+        *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET) == 0;
+}
+
+static int diagnostic_string_ends_with_newline(netwasm_reference_t string)
+{
+    u32 length;
+    uint16_t *characters;
+    if (diagnostic_string_is_empty(string)) {
+        return 0;
+    }
+    length = *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
+    characters = (uint16_t *)(uintptr_t)(string + NETWASM_STRING_DATA_OFFSET);
+    return characters[length - 1] == '\n';
+}
+
 static void write_command_exception(
     uint32_t type_id,
     netwasm_reference_t message,

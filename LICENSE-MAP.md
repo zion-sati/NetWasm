@@ -20,6 +20,7 @@ where they are more specific than a path default.
 | tests/** | LicenseRef-NetWasm-Community-1.0 |
 | build and repository tooling metadata | LicenseRef-NetWasm-Community-1.0 |
 | src/NetWasm.Ref/** | MIT |
+| src/NetWasm.JSImportGenerator/** | MIT |
 | src/NetWasm.Templates/** | MIT |
 | src/NetWasm.CoreLib/** | MIT |
 | src/NetWasm.Runtime/collector/compact/** | Apache-2.0 |

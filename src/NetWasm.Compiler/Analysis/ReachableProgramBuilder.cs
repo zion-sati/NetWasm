@@ -130,6 +130,7 @@ internal sealed class ReachableProgramBuilder(
             HostCallbacks = [.. state.HostCallbacks
                 .OrderBy(callback => callback.ExportName, StringComparer.Ordinal)],
             JavaScriptAsyncBindings = state.JavaScriptAsyncBindings,
+            JavaScriptConversions = state.JavaScriptConversions,
             ManagedCallSites = state.ManagedCallSites,
             DelegateBindings = plannedDelegateBindings,
             ManagedByRefEffects = managedByRefEffects,

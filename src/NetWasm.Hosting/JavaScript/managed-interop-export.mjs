@@ -5,18 +5,24 @@ import {
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
 import {
   describeValueArray,
+  isHandleValueAbiType,
   isHostObject,
   isTransferAbiType,
   isValueArrayAbiType,
+  nullableRecord,
+  nullableUnderlying,
+  requireHandleValue,
   valueArrayConstructor,
 } from "./interop-abi-types.mjs";
 import {
+  managedInteropMemoryOffset,
   readString,
   readValueArray,
 } from "./managed-interop-memory-codec.mjs";
 import {
   liftScalar,
   lowerScalar,
+  readScalarValue,
 } from "./interop-scalar-codec.mjs";
 import { observeManagedAsyncExport } from "./managed-async-export-observer.mjs";
 
@@ -83,12 +89,17 @@ export function createManagedInteropExport(request) {
     throw new TypeError("managed interop export memory services are invalid");
   }
   const invoke = createLowLevelManagedExport(instance, descriptor.name);
-  return Object.freeze((...arguments_) => {
+  return Object.freeze((...values) => {
     assertAvailable();
+    // An asynchronous export takes a trailing { signal }, as a worker call does.
+    const hasOptions = descriptor.asyncReturn != null && values.length === descriptor.parameters.length + 1;
+    const arguments_ = hasOptions ? values.slice(0, -1) : values;
     if (arguments_.length !== descriptor.parameters.length) {
       throw new NetWasmHostError(
         `managed export ${descriptor.name} received an invalid argument count`);
     }
+    const signal = hasOptions ? readCallSignal(values.at(-1)) : null;
+    if (signal?.aborted) return Promise.reject(signal.reason);
     // A JavaScript import may call back into an export while managed frames are live.
     const leaveExport = enterExport();
     const argumentHandles = [];
@@ -96,19 +107,21 @@ export function createManagedInteropExport(request) {
     let invoked = false;
     let result;
     try {
-      const wasmArguments = arguments_.map((value, index) => lowerArgument(
-        descriptor.parameters[index], value, handles, argumentHandles, objectHandles));
+      const wasmArguments = lowerArguments(
+        descriptor.parameters, arguments_, handles, argumentHandles, objectHandles);
       invoked = true;
       const value = invoke(...wasmArguments);
       if (descriptor.asyncReturn != null) {
         const normalizedHandle = normalizeInteropHandle(value);
-        result = observeAsyncExport({
+        result = abandonOnAbort(signal, observeAsyncExport({
           name: descriptor.name,
           readStatus: () => instance.exports[descriptor.statusExport](normalizedHandle),
-          readResult: () => descriptor.result === "void" ? undefined : liftScalar(
-            descriptor.result, instance.exports[descriptor.resultExport](normalizedHandle)),
+          // The completed task's result is read as a synchronous export's is.
+          readResult: () => descriptor.result === "void" ? undefined : liftResult(
+            descriptor.result, instance.exports[descriptor.resultExport](normalizedHandle),
+            getMemory, handles, target, targetLayout),
           complete: () => consumeExceptionPayload(instance.exports[descriptor.completeExport](normalizedHandle)),
-        });
+        }));
       } else {
         result = descriptor.result === "void"
           ? undefined
@@ -142,7 +155,26 @@ export function createManagedInteropExport(request) {
   });
 }
 
+// Shared with callbacks, which take and return the same values. A nullable
+// argument crosses as two Wasm values, its presence and its value.
+export function lowerArguments(types, values, handles, argumentHandles, objectHandles) {
+  return values.flatMap((value, index) => {
+    const underlying = nullableUnderlying(types[index]);
+    if (underlying === null) return [lowerArgument(types[index], value, handles, argumentHandles, objectHandles)];
+    const present = value !== null && value !== undefined;
+    return [present ? 1 : 0, lowerScalar(underlying, present ? value : null)];
+  });
+}
+
 function lowerArgument(type, value, handles, argumentHandles, objectHandles) {
+  // Managed code converts the value through its handle, which is released after the call.
+  if (isHandleValueAbiType(type)) {
+    requireHandleValue(type, value);
+    if (value === null || value === undefined) return 0;
+    const handle = handles.acquire(value);
+    argumentHandles.push(handle);
+    return handle;
+  }
   if (type === "object") {
     if (value === null) return 0;
     if (!isHostObject(value)) {
@@ -165,13 +197,60 @@ function lowerArgument(type, value, handles, argumentHandles, objectHandles) {
   return handle;
 }
 
-function liftResult(type, value, getMemory, handles, target, targetLayout) {
+// The caller stops waiting when its signal aborts; the managed call runs on and
+// is still observed to completion. Asking the export to stop is an ordinary
+// call to another export.
+function abandonOnAbort(signal, completion) {
+  if (signal === null) return completion;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    completion.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+function readCallSignal(options) {
+  if (options === null || typeof options !== "object" || Array.isArray(options)
+      || Object.getOwnPropertySymbols(options).length !== 0) {
+    throw new TypeError("managed export call options are invalid");
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(options);
+  if (Object.keys(descriptors).some(key => key !== "signal")
+      || Object.values(descriptors).some(descriptor => !descriptor.enumerable || !("value" in descriptor))) {
+    throw new TypeError("managed export call options shape is invalid");
+  }
+  const signal = options.signal ?? null;
+  if (signal !== null && !(signal instanceof AbortSignal)) {
+    throw new TypeError("managed export call signal must be an AbortSignal");
+  }
+  return signal;
+}
+
+export function liftResult(type, value, getMemory, handles, target, targetLayout) {
   // The managed JSObject keeps its handle; the caller only receives the object.
   if (type === "object") return value === 0 ? null : handles.get(value);
+  if (isHandleValueAbiType(type)) return takeHandleValue(handles, value);
+  // A nullable result is the address of its record, read before calling in again.
+  const underlying = nullableUnderlying(type);
+  if (underlying !== null) {
+    const memory = getMemory();
+    const record = managedInteropMemoryOffset(value, target, memory);
+    return new DataView(memory.buffer).getInt32(record + nullableRecord.hasValueOffset, true) === 0
+      ? null
+      : readScalarValue(memory, record + nullableRecord.valueOffset, underlying);
+  }
   if (!isTransferAbiType(type)) return liftScalar(type, value);
   return type === "string"
     ? readString(value, target, targetLayout, getMemory())
     : readValueArray(value, target, targetLayout, getMemory(), valueArrayConstructor(type));
+}
+
+// A handle value's receiver reads it and releases the handle.
+export function takeHandleValue(handles, handle) {
+  if (handle === 0) return null;
+  const value = handles.get(handle);
+  handles.release(handle);
+  return value;
 }
 
 function createLowLevelManagedExport(instance, name) {

@@ -331,12 +331,44 @@
           Command="&quot;$(_NetWasmWitBindingDotNetHost)&quot; &quot;$(_NetWasmWitBindingGeneratorPath)&quot; --wit &quot;%(_NetWasmWitBinding.Identity)&quot; --output &quot;%(_NetWasmWitBinding.BindingPath)&quot; %(_NetWasmWitBinding.Arguments)" />
   </Target>
 
+  <!-- What a NetWasmWorker project reference is: a WIT worker, or a JsModule
+       that hosts a worker. A caller publishes either into its own deployment. -->
+  <Target Name="NetWasmSdkGetWorkerReference"
+          Returns="@(_NetWasmWorkerReferenceIdentity)"
+          Condition="'$(TargetFramework)' == 'netwasm0.1'">
+    <ItemGroup>
+      <_NetWasmWorkerReferenceIdentity Include="$(MSBuildProjectFullPath)">
+        <WorkerProjectName>$(MSBuildProjectName)</WorkerProjectName>
+        <WorkerKind>$(_NetWasmWorkerKind)</WorkerKind>
+        <WorkerHost>$(_NetWasmJavaScriptWorkerHost)</WorkerHost>
+      </_NetWasmWorkerReferenceIdentity>
+    </ItemGroup>
+  </Target>
+
   <Target Name="NetWasmSdkGenerateWitWorkerClients"
           BeforeTargets="NetWasmWriteCompilationIdentity;CoreCompile"
           DependsOnTargets="ResolveProjectReferences"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(_NetWasmWorkerReference)' != '' AND '$(DesignTimeBuild)' != 'true'">
-    <Error Condition="'$(NetWasmRawWasm)' != 'true'"
-           Text="Generated worker clients use browser JavaScript imports. Set NetWasmRawWasm=true in the caller project." />
+    <MSBuild Projects="@(_NetWasmWorkerReference)"
+             Targets="NetWasmSdkGetWorkerReference"
+             Properties="Configuration=$(Configuration)"
+             RemoveProperties="OutputType;PublishDir;NetWasmWorkerPublishDir;NetWasmRawWasm;NoBuild">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmResolvedWorkerReference" />
+    </MSBuild>
+    <ItemGroup>
+      <_NetWasmWorkerReferenceProblem Include="@(_NetWasmResolvedWorkerReference)"
+                                      Condition="'%(WorkerKind)' != 'wit' AND ('%(WorkerKind)' != 'jsexport' OR '%(WorkerHost)' != 'true')" />
+    </ItemGroup>
+    <Error Condition="'@(_NetWasmWorkerReferenceProblem)' != '' OR '@(_NetWasmResolvedWorkerReference->Count())' != '@(_NetWasmWorkerReference->Count())'"
+           Text="A NetWasmWorker project reference must be a WitWebWorker, or a JsModule whose NetWasmJavaScriptHosts include worker." />
+    <ItemGroup>
+      <_NetWasmReferencedWorkerName Include="@(_NetWasmResolvedWorkerReference->'%(WorkerProjectName)')" />
+    </ItemGroup>
+    <RemoveDuplicates Inputs="@(_NetWasmReferencedWorkerName)">
+      <Output TaskParameter="Filtered" ItemName="_NetWasmUniqueWorkerName" />
+    </RemoveDuplicates>
+    <Error Condition="'@(_NetWasmReferencedWorkerName->Count())' != '@(_NetWasmUniqueWorkerName->Count())'"
+           Text="Referenced worker projects must have distinct project names because each owns its generated and published directory." />
     <PropertyGroup>
       <_NetWasmWorkerGeneratorPath>$([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'netwasm.wit.bindings.tool', '$(NetWasmSdkPackageVersion)', 'tools', 'net10.0', 'any', 'NetWasm.Wit.Bindings.dll'))</_NetWasmWorkerGeneratorPath>
       <_NetWasmWorkerGeneratedDirectory>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'worker-clients'))))</_NetWasmWorkerGeneratedDirectory>
@@ -357,24 +389,21 @@
              RemoveProperties="OutputType;PublishDir;NetWasmWorkerPublishDir;NetWasmRawWasm;NoBuild">
       <Output TaskParameter="TargetOutputs" ItemName="_NetWasmReferencedWorkerContract" />
     </MSBuild>
-    <Error Condition="'@(_NetWasmReferencedWorkerContract)' == ''"
-           Text="A NetWasmWorker project reference must select WitWebWorker and supply its application WIT contract." />
+    <!-- A WIT worker gets a generated C# client; page JavaScript calls a
+         JSExport worker through its own worker client. -->
+    <Error Condition="'@(_NetWasmReferencedWorkerContract)' != '' AND '$(NetWasmRawWasm)' != 'true'"
+           Text="Generated worker clients use browser JavaScript imports. Set NetWasmRawWasm=true in the caller project." />
     <ItemGroup>
-      <_NetWasmReferencedWorkerName Include="@(_NetWasmReferencedWorkerContract->'%(WorkerProjectName)')" />
       <_NetWasmReferencedWorkerClientType Include="@(_NetWasmReferencedWorkerContract->'%(ClientNamespace).%(ClientClass)')" />
     </ItemGroup>
-    <RemoveDuplicates Inputs="@(_NetWasmReferencedWorkerName)">
-      <Output TaskParameter="Filtered" ItemName="_NetWasmUniqueWorkerName" />
-    </RemoveDuplicates>
     <RemoveDuplicates Inputs="@(_NetWasmReferencedWorkerClientType)">
       <Output TaskParameter="Filtered" ItemName="_NetWasmUniqueWorkerClientType" />
     </RemoveDuplicates>
-    <Error Condition="'@(_NetWasmReferencedWorkerName->Count())' != '@(_NetWasmUniqueWorkerName->Count())'"
-           Text="Referenced worker projects must have distinct project names because each owns its generated and published directory." />
     <Error Condition="'@(_NetWasmReferencedWorkerClientType->Count())' != '@(_NetWasmUniqueWorkerClientType->Count())'"
            Text="Worker client types must be distinct. Set NetWasmWorkerClientClass or NetWasmWorkerClientNamespace on the conflicting ProjectReference." />
-    <MakeDir Directories="$(_NetWasmWorkerGeneratedDirectory)" />
-    <Exec EnvironmentVariables="DOTNET_ROLL_FORWARD=Major"
+    <MakeDir Condition="'@(_NetWasmReferencedWorkerContract)' != ''" Directories="$(_NetWasmWorkerGeneratedDirectory)" />
+    <Exec Condition="'@(_NetWasmReferencedWorkerContract)' != ''"
+          EnvironmentVariables="DOTNET_ROLL_FORWARD=Major"
           Command="&quot;$(_NetWasmWorkerDotNetHost)&quot; &quot;$(_NetWasmWorkerGeneratorPath)&quot; --worker-contract &quot;%(_NetWasmReferencedWorkerContract.Identity)&quot; --output &quot;$(_NetWasmWorkerGeneratedDirectory)/%(_NetWasmReferencedWorkerContract.WorkerProjectName).g.cs&quot; --javascript-output &quot;$(_NetWasmWorkerGeneratedDirectory)/%(_NetWasmReferencedWorkerContract.WorkerProjectName).mjs&quot; --namespace &quot;%(_NetWasmReferencedWorkerContract.ClientNamespace)&quot; --class &quot;%(_NetWasmReferencedWorkerContract.ClientClass)&quot; --javascript-module &quot;netwasm:worker/%(_NetWasmReferencedWorkerContract.WorkerProjectName)&quot; --worker-client-module &quot;./workers/%(_NetWasmReferencedWorkerContract.WorkerProjectName)/%(_NetWasmReferencedWorkerContract.WorkerAssemblyName).worker-client.mjs&quot;" />
     <ItemGroup>
       <Compile Include="@(_NetWasmReferencedWorkerContract->'$(_NetWasmWorkerGeneratedDirectory)/%(WorkerProjectName).g.cs')" />
@@ -397,7 +426,7 @@
            Text="Publish a worker caller for the browser using NetWasmPublishTarget=browser." />
     <MSBuild Projects="@(_NetWasmWorkerReference)"
              Targets="Publish"
-             Properties="Configuration=$(Configuration);NetWasmWorkerPublishDir=$(_NetWasmWorkerCallerPublishDir)/workers/%(_NetWasmWorkerReference.Filename)"
+             Properties="Configuration=$(Configuration);NetWasmWorkerPublishDir=$(_NetWasmWorkerCallerPublishDir)/workers/%(_NetWasmWorkerReference.Filename);_NetWasmCallerRuntimeDirectory=$(_NetWasmWorkerCallerPublishDir)"
              RemoveProperties="PublishDir;OutputType;NetWasmRawWasm;NetWasmWorkerClientNamespace;NetWasmWorkerClientClass" />
   </Target>
 
@@ -942,6 +971,13 @@
       <_NetWasmPageHostBundlePath>$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'netwasm.page.mjs'))</_NetWasmPageHostBundlePath>
       <_NetWasmPageModulePath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).mjs'))</_NetWasmPageModulePath>
       <_NetWasmPageDeclarationPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).d.mts'))</_NetWasmPageDeclarationPath>
+      <!-- The shared runtime's files go beside the entries, or, for a worker a
+           page publishes into its own deployment, beside the page's, so the
+           page and its workers load one copy. -->
+      <_NetWasmJavaScriptRuntimeDirectory>$([MSBuild]::EnsureTrailingSlash('$(NetWasmWorkerPublishDir)'))</_NetWasmJavaScriptRuntimeDirectory>
+      <_NetWasmJavaScriptRuntimeDirectory Condition="'$(_NetWasmCallerRuntimeDirectory)' != ''">$([MSBuild]::EnsureTrailingSlash('$(_NetWasmCallerRuntimeDirectory)'))</_NetWasmJavaScriptRuntimeDirectory>
+      <_NetWasmJavaScriptRuntimeUrlPrefix>$([MSBuild]::MakeRelative('$([MSBuild]::EnsureTrailingSlash('$(NetWasmWorkerPublishDir)'))', '$(_NetWasmJavaScriptRuntimeDirectory)').Replace('\', '/'))</_NetWasmJavaScriptRuntimeUrlPrefix>
+      <_NetWasmJavaScriptRuntimeUrlPrefix Condition="'$(_NetWasmJavaScriptRuntimeUrlPrefix)' == '' OR '$(_NetWasmJavaScriptRuntimeUrlPrefix)' == '.'">./</_NetWasmJavaScriptRuntimeUrlPrefix>
     </PropertyGroup>
 
     <NetWasmReadCompilerBuildMetadataTask MetadataPath="$(NetWasmCompilerMetadataPath)">
@@ -965,17 +1001,25 @@
                                         Target="$(NetWasmTarget)">
       <Output TaskParameter="Imports" ItemName="_NetWasmWorkerJavaScriptImport" />
       <Output TaskParameter="Exports" ItemName="_NetWasmWorkerJavaScriptExport" />
-      <Output TaskParameter="ImportModules" ItemName="_NetWasmJavaScriptImportModule" />
     </NetWasmReadHostInteropManifestTask>
+    <!-- Only the declared modules the final module imports from are bundled. -->
     <NetWasmReadRawBindingManifestTask ManifestPath="$(NetWasmRawBindingManifestPath)"
                                        Target="$(NetWasmTarget)">
       <Output TaskParameter="RequiredImports" ItemName="_NetWasmWorkerRequiredImport" />
       <Output TaskParameter="RequiredImportModules" ItemName="_NetWasmWorkerRequiredImportModule" />
+      <Output TaskParameter="ImportModules" ItemName="_NetWasmJavaScriptImportModule" />
     </NetWasmReadRawBindingManifestTask>
 
+    <NetWasmBuildJavaScriptRuntimeTask NodePath="$(NetWasmNodePath)"
+                                       CommandPath="$(NetWasmHostingBundleCommandPath)"
+                                       HostingJavaScriptRoot="$(NetWasmHostingJavaScriptRoot)"
+                                       Preview2ShimRoot="$(NetWasmPreview2ShimRoot)"
+                                       OutputDirectory="$(NetWasmIntermediateOutputPath)javascript-runtime"
+                                       Minify="$(NetWasmMinifyJavaScript)">
+      <Output TaskParameter="ManifestPath" PropertyName="_NetWasmJavaScriptRuntimeManifestPath" />
+    </NetWasmBuildJavaScriptRuntimeTask>
     <NetWasmWritePageHostEntryTask Condition="'$(_NetWasmJavaScriptPageHost)' == 'true'"
                                    HostingJavaScriptRoot="$(NetWasmHostingJavaScriptRoot)"
-                                   Preview2ShimRoot="$(NetWasmPreview2ShimRoot)"
                                    OutputPath="$(_NetWasmPageHostEntryPath)"
                                    Imports="@(_NetWasmWorkerJavaScriptImport)"
                                    ImportModules="@(_NetWasmJavaScriptImportModule)"
@@ -993,10 +1037,13 @@
                                 EntryPath="$(_NetWasmPageHostEntryPath)"
                                 OutputPath="$(_NetWasmPageHostBundlePath)"
                                 Platform="browser"
-                                Minify="$(NetWasmMinifyJavaScript)" />
+                                Minify="$(NetWasmMinifyJavaScript)"
+                                RuntimeManifestPath="$(_NetWasmJavaScriptRuntimeManifestPath)"
+                                RuntimeUrlPrefix="$(_NetWasmJavaScriptRuntimeUrlPrefix)">
+      <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
+    </NetWasmBundleJavaScriptTask>
     <NetWasmWriteWorkerHostEntryTask Condition="'$(_NetWasmJavaScriptWorkerHost)' == 'true'"
                                      HostingJavaScriptRoot="$(NetWasmHostingJavaScriptRoot)"
-                                     Preview2ShimRoot="$(NetWasmPreview2ShimRoot)"
                                      OutputPath="$(_NetWasmWorkerHostEntryPath)"
                                      Imports="@(_NetWasmWorkerJavaScriptImport)"
                                      ImportModules="@(_NetWasmJavaScriptImportModule)"
@@ -1014,7 +1061,11 @@
                                 EntryPath="$(_NetWasmWorkerHostEntryPath)"
                                 OutputPath="$(_NetWasmWorkerHostBundlePath)"
                                 Platform="browser"
-                                Minify="$(NetWasmMinifyJavaScript)" />
+                                Minify="$(NetWasmMinifyJavaScript)"
+                                RuntimeManifestPath="$(_NetWasmJavaScriptRuntimeManifestPath)"
+                                RuntimeUrlPrefix="$(_NetWasmJavaScriptRuntimeUrlPrefix)">
+      <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
+    </NetWasmBundleJavaScriptTask>
     <ItemGroup>
       <_NetWasmWorkerDeploymentArtifact Include="$(NetWasmOutputPath)">
         <RelativePath>$(AssemblyName).wasm</RelativePath>
@@ -1095,7 +1146,6 @@
                                 DeclarationPath="$(_NetWasmPageDeclarationPath)"
                                 Exports="@(_NetWasmWorkerJavaScriptExport)" />
     <NetWasmWriteWorkerClientEntryTask Condition="'$(_NetWasmJavaScriptWorkerHost)' == 'true'"
-                                       HostingJavaScriptRoot="$(NetWasmHostingJavaScriptRoot)"
                                        WorkerFileName="$(_NetWasmWorkerFileName)"
                                        BuildFingerprint="$(_NetWasmWorkerBuildFingerprint)"
                                        ManifestSha256="$(_NetWasmWorkerManifestSha256)"
@@ -1108,7 +1158,21 @@
                                 EntryPath="$(_NetWasmWorkerClientEntryPath)"
                                 OutputPath="$(_NetWasmWorkerClientPath)"
                                 Platform="browser"
-                                Minify="$(NetWasmMinifyJavaScript)" />
+                                Minify="$(NetWasmMinifyJavaScript)"
+                                RuntimeManifestPath="$(_NetWasmJavaScriptRuntimeManifestPath)"
+                                RuntimeUrlPrefix="$(_NetWasmJavaScriptRuntimeUrlPrefix)">
+      <Output TaskParameter="RuntimeFiles" ItemName="_NetWasmJavaScriptRuntimeFile" />
+    </NetWasmBundleJavaScriptTask>
+    <ItemGroup>
+      <_NetWasmJavaScriptRuntimeFileDistinct Remove="@(_NetWasmJavaScriptRuntimeFileDistinct)" />
+      <_NetWasmJavaScriptRuntimeFileDistinct Include="@(_NetWasmJavaScriptRuntimeFile->Distinct())" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NetWasmJavaScriptRuntimeFileDistinct)"
+          DestinationFiles="@(_NetWasmJavaScriptRuntimeFileDistinct->'$(_NetWasmJavaScriptRuntimeDirectory)%(RelativePath)')"
+          SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <FileWrites Include="@(_NetWasmJavaScriptRuntimeFileDistinct->'$(_NetWasmJavaScriptRuntimeDirectory)%(RelativePath)')" />
+    </ItemGroup>
   </Target>
 
   <Target Name="NetWasmSdkPublishWitWorker"

@@ -239,9 +239,9 @@
     },
     {
       "id": "hosting-bundle.command",
-      "version": "1",
+      "version": "2",
       "relativePath": "tools/bundler/netwasm-bundle.mjs",
-      "sha256": "2671fa73574a46d931c4c192db85187f46c873eb79c19e6b734a615ca75399fc"
+      "sha256": "aaf428954b5c0da1d50d58e28f4a5e91acd27ea9f5ae1bedc5041ec4996f2d04"
     },
     {
       "id": "rolldown.package",
@@ -275,9 +275,9 @@
     },
     {
       "id": "hosting-bundle.closure-policy",
-      "version": "1",
+      "version": "2",
       "relativePath": "tools/bundler/closure-policy.json",
-      "sha256": "8e9e089f1d500eadf41353ca86b20005d52d253f3702d92a42e440823ab87383"
+      "sha256": "5886456a23ae0d069f007463704a6fe58df6c9f038536285ef063292b5674038"
     },
     {
       "id": "timezones.closure-integrity",

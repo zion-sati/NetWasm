@@ -48,6 +48,10 @@ public sealed record WasmEmissionRequest(
 {
     public ImmutableArray<EntityKey> ModuleInitializers { get; init; } = [];
 
+    // CoreLib's conversions, by name, of the values JavaScript boundaries convert.
+    public ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites { get; init; } =
         ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty;
 

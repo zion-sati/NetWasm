@@ -406,6 +406,94 @@ test("passes async string and typed array arguments as handles released with the
   assert.equal(handles.count, 0);
 });
 
+// Issue #127: the completed task's string, array or JSObject result is read as a
+// synchronous export's result is.
+test("lifts async string, typed array and JSObject results from the completed task", async () => {
+  const exportMemory = new WebAssembly.Memory({ initial: 1 });
+  const view = new DataView(exportMemory.buffer);
+  const text = 1024;
+  view.setInt32(text + targetLayout.stringLengthOffset, 2, true);
+  view.setUint16(text + targetLayout.stringDataOffset, "o".charCodeAt(0), true);
+  view.setUint16(text + targetLayout.stringDataOffset + 2, "k".charCodeAt(0), true);
+  const doubles = 2048;
+  const data = 2112;
+  view.setInt32(doubles + targetLayout.arrayLengthOffset, 2, true);
+  view.setInt32(doubles + targetLayout.arrayDataPointerOffset, data, true);
+  view.setFloat64(data, 1.5, true);
+  view.setFloat64(data + 8, -2, true);
+  const handles = createInteropHandleTable();
+  const page = { id: "page" };
+  const pageHandle = handles.acquire(page);
+  const run = (result, value) => createManagedInteropExport(request({
+    descriptor: descriptor({
+      result, asyncReturn: "task", statusExport: "status", resultExport: "result",
+      completeExport: "complete", completionResult: "exception-handle-v1",
+    }),
+    getMemory: () => exportMemory,
+    handles,
+    instance: { exports: { run: () => 3, status: () => 1, result: () => value, complete: () => 0 } },
+    observeAsyncExport(operation) { return Promise.resolve(operation.readResult()); },
+  }))();
+  assert.equal(await run("string", text), "ok");
+  assert.deepEqual(await run("f64[]", doubles), Float64Array.of(1.5, -2));
+  assert.strictEqual(await run("object", pageHandle), page);
+  assert.equal(await run("object", 0), null);
+  assert.equal(await run("string", 0), null);
+});
+
+// Issue #126: an async export call takes { signal }, as a worker call does. The
+// caller stops waiting; the managed call runs on and is still observed.
+test("abandons an async export call when its signal aborts", async () => {
+  let finish;
+  let completed = 0;
+  let started = 0;
+  const asyncExport = descriptor({
+    parameters: ["i32"], asyncReturn: "task", statusExport: "status", resultExport: "result",
+    completeExport: "complete", completionResult: "exception-handle-v1",
+  });
+  const invoke = createManagedInteropExport(request({
+    descriptor: asyncExport,
+    instance: { exports: {
+      run: () => { started++; return 4; }, status: () => 1, result: () => 9, complete: () => 0,
+    } },
+    observeAsyncExport(operation) {
+      return new Promise((resolve, reject) => {
+        finish = failure => {
+          completed++;
+          if (failure) reject(failure);
+          else resolve(operation.readResult());
+        };
+      });
+    },
+  }));
+  const controller = new AbortController();
+  const abandoned = invoke(1, { signal: controller.signal });
+  controller.abort(new Error("caller stopped"));
+  await assert.rejects(abandoned, /caller stopped/);
+  finish();
+  assert.equal(completed, 1);
+
+  const plain = invoke(2, {});
+  finish();
+  assert.equal(await plain, 9);
+  const kept = new AbortController();
+  const rejected = invoke(3, { signal: kept.signal });
+  finish(new Error("managed failure"));
+  await assert.rejects(rejected, /managed failure/);
+  kept.abort();
+
+  assert.equal(started, 3);
+  await assert.rejects(invoke(4, { signal: AbortSignal.abort(new Error("already")) }), /already/);
+  assert.equal(started, 3);
+  for (const options of [null, 1, [], { extra: true }, { signal: {} }, { [Symbol("s")]: true },
+    Object.defineProperty({}, "signal", { enumerable: true, get: () => null })]) {
+    assert.throws(() => invoke(5, options), TypeError);
+  }
+  // A synchronous export takes no options.
+  const sync = createManagedInteropExport(request({ descriptor: descriptor({ parameters: ["i32"] }) }));
+  assert.throws(() => sync(1, {}), /invalid argument count/);
+});
+
 test("transfers JSObject arguments to the managed wrapper and looks up JSObject results", () => {
   const handles = createInteropHandleTable();
   const element = { id: "element" };

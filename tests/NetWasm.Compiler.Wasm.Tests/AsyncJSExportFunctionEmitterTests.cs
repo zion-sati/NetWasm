@@ -267,6 +267,8 @@ public sealed class AsyncJSExportFunctionEmitterTests
             layouts,
             layouts,
             imports,
+            CreateAddressInstructions(layouts),
+            new JavaScriptNullableEmitter(layouts, layouts, CreateAddressInstructions(layouts)),
             new GeneratedFunctionWriterFactory());
 
         var body = ((IAsyncJSExportResultEmitter)emitter).Emit(binding);
@@ -275,6 +277,38 @@ public sealed class AsyncJSExportFunctionEmitterTests
             Call(imports.Resolve(RuntimeImportSymbol.HandleGet)),
             Calls(body));
         Assert.Contains(WasmOpcodes.I32Load, body);
+    }
+
+    // Issue #127: a JSObject result leaves as its host handle, as a synchronous
+    // export's does, so the host looks the object up.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void JSObjectResultsLeaveAsTheirHostHandle(WasmTarget target)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var binding = CreateBinding(new FakeProgram(), CliValueKind.ManagedReference) with
+        {
+            Return = new JavaScriptAsyncReturn(JavaScriptAsyncReturnKind.Task, JSObjectType),
+        };
+        var emitter = new AsyncJSExportResultEmitter(
+            layouts,
+            layouts,
+            WasmRuntimeImports.CreateCatalog(),
+            CreateAddressInstructions(layouts),
+            new JavaScriptNullableEmitter(layouts, layouts, CreateAddressInstructions(layouts)),
+            new GeneratedFunctionWriterFactory());
+
+        var body = ((IAsyncJSExportResultEmitter)emitter).Emit(binding);
+        var type = ((IAsyncJSExportResultTypeResolver)new AsyncJSExportResultTypeResolver(layouts)).Resolve(binding);
+
+        Assert.Equal(CliValueKind.I4, type.Result);
+        // One local holds the object; null becomes handle 0, otherwise the handle field is read.
+        Assert.Equal<byte>([1, 1, target == WasmTarget.Wasm64 ? (byte)WasmValueType.I64 : (byte)WasmValueType.I32],
+            body[..3]);
+        Assert.Contains(WasmOpcodes.If, body);
+        Assert.Contains(WasmOpcodes.Else, body);
+        Assert.Equal<byte>([WasmOpcodes.I32Load, 2, 0, WasmOpcodes.End, WasmOpcodes.End], body[^5..]);
     }
 
     [Fact]
@@ -291,6 +325,8 @@ public sealed class AsyncJSExportFunctionEmitterTests
             layouts,
             layouts,
             WasmRuntimeImports.CreateCatalog(),
+            CreateAddressInstructions(layouts),
+            new JavaScriptNullableEmitter(layouts, layouts, CreateAddressInstructions(layouts)),
             new GeneratedFunctionWriterFactory());
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -314,6 +350,9 @@ public sealed class AsyncJSExportFunctionEmitterTests
 
         Assert.Equal(expectedResult, type.Result);
     }
+
+    private static readonly CliTypeIdentity JSObjectType = CliTypeIdentity.Named(
+        Assembly, "System.Runtime.InteropServices.JavaScript", "JSObject", isValueType: false);
 
     private static JavaScriptAsyncMethodBinding CreateBinding(
         FakeProgram methods,
@@ -362,9 +401,11 @@ public sealed class AsyncJSExportFunctionEmitterTests
                 new ImplicitExceptionEmitter(layouts, layouts),
                 CreateReferenceComparisons(layouts),
                 new GeneratedFunctionWriterFactory(),
-                strings ?? new RecordingStringArguments(),
-                arrays ?? new RecordingArrayArguments(),
-                objects ?? new RecordingObjectArguments()),
+                new JavaScriptReferenceArgumentEmitter(
+                    strings ?? new RecordingStringArguments(),
+                    arrays ?? new RecordingArrayArguments(),
+                    objects ?? new RecordingObjectArguments()),
+                EmitterTestSupport.ValueFrames(layouts, imports)),
         }.Cast<IAsyncJSExportWrapperEmitter>().Single();
 
     private static FunctionIndexResolver CreateFunctionIndices(FakeProgram methods)

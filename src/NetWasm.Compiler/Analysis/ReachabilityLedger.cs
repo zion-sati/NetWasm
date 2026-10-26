@@ -97,4 +97,6 @@ internal sealed class ReachabilityLedger
         JavaScriptAsyncBindings
     { get; } =
         ImmutableDictionary.CreateBuilder<EntityKey, JavaScriptAsyncMethodBinding>();
+    internal ImmutableDictionary<string, MethodInstanceModel>.Builder JavaScriptConversions { get; } =
+        ImmutableDictionary.CreateBuilder<string, MethodInstanceModel>(StringComparer.Ordinal);
 }

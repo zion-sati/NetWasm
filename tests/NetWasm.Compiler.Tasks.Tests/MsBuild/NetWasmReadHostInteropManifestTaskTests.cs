@@ -22,7 +22,6 @@ public sealed class NetWasmReadHostInteropManifestTaskTests
         Assert.Equal("interop.json", reader.Path);
         Assert.Equal("wasm64", reader.Target);
         var import = Assert.Single(task.Imports);
-        Assert.Equal("host_ui", Assert.Single(task.ImportModules).ItemSpec);
         Assert.Equal("increment", import.ItemSpec);
         Assert.Equal("consumer.worker", import.GetMetadata("Module"));
         Assert.Equal("[\"i32\"]", import.GetMetadata("Parameters"));
@@ -67,7 +66,6 @@ public sealed class NetWasmReadHostInteropManifestTaskTests
 
         Assert.Empty(task.Imports);
         Assert.Empty(task.Exports);
-        Assert.Empty(task.ImportModules);
         Assert.Contains("NWSDK060", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 

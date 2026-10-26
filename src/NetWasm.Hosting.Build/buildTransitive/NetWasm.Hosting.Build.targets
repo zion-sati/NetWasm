@@ -3,6 +3,8 @@
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
   <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmBundleJavaScriptTask"
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmBuildJavaScriptRuntimeTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
   <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteBrowserBootstrapEntryTask"
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
   <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteDeploymentTask"

@@ -64,12 +64,15 @@ internal sealed class ModuleImportCollector(
                 [.. method.Signature.ParameterSignatureTypes.Select(type =>
                     javaScriptParameterTypes.Resolve(type, false))]);
         }
+        // A nullable argument crosses as its presence and its value.
         return WasmFunctionType.Create(
             CliValueKind.I4,
-            [.. method.Signature.ParameterSignatureTypes.Select((type, index) =>
-                javaScriptParameterTypes.Resolve(
-                    type,
-                    request.HostCallbacks.ContainsKey((method.Key, index)))),
+            [.. method.Signature.ParameterSignatureTypes.SelectMany((type, index) =>
+                JavaScriptNullable.Underlying(type) is { } underlying
+                    ? [CliValueKind.I4, javaScriptParameterTypes.Resolve(underlying, false)]
+                    : new[] { javaScriptParameterTypes.Resolve(
+                        type,
+                        request.HostCallbacks.ContainsKey((method.Key, index))) }),
                 .. request.Emission.JavaScriptAsyncBindings.ContainsKey(method.Key)
                     ? [CliValueKind.I4]
                     : Array.Empty<CliValueKind>(),

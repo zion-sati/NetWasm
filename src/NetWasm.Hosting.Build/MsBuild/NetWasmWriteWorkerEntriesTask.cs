@@ -19,7 +19,6 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
     }
 
     [Required] public string HostingJavaScriptRoot { get; set; } = string.Empty;
-    [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputPath { get; set; } = string.Empty;
     public ITaskItem[] Imports { get; set; } = [];
     public ITaskItem[] ImportModules { get; set; } = [];
@@ -40,10 +39,9 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
             var requiredModules = Imports.Select(item => RequiredMetadata(item, "Module"))
                 .Concat(importModules)
                 .ToHashSet(StringComparer.Ordinal);
-            var modules = Modules.Where(item =>
-                    item.GetMetadata("NetWasmGeneratedWorkerClient") != "true"
-                    || requiredModules.Contains(RequiredMetadata(item, "Module")))
-                .ToDictionary(
+            // A declared module that no import uses, such as one for a feature
+            // trimming removed, is left out: the worker pays for what it uses.
+            var modules = Modules.ToDictionary(
                 item => RequiredMetadata(item, "Module"),
                 item => Path.GetFullPath(item.ItemSpec),
                 StringComparer.Ordinal);
@@ -57,7 +55,7 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
             var imports = requiredModules.Order(StringComparer.Ordinal)
                 .Select(module => new WorkerJavaScriptImport(
                     module,
-                    modules.Remove(module, out var path)
+                    modules.TryGetValue(module, out var path)
                         ? path
                         : throw new ArgumentException(
                             $"Worker JavaScript module '{module}' has no source binding."),
@@ -66,14 +64,8 @@ public sealed class NetWasmWriteWorkerHostEntryTask : Microsoft.Build.Utilities.
                     BindsModule = importModules.Contains(module),
                 })
                 .ToImmutableArray();
-            if (modules.Count != 0)
-            {
-                throw new ArgumentException(
-                    $"Worker JavaScript module '{modules.Keys.Order(StringComparer.Ordinal).First()}' is unused.");
-            }
             _writer.WriteHost(new(
                 Path.GetFullPath(HostingJavaScriptRoot),
-                Path.GetFullPath(Preview2ShimRoot),
                 Path.GetFullPath(OutputPath),
                 imports,
                 [.. Arguments.Select(item => item.ItemSpec)],
@@ -203,7 +195,6 @@ public sealed class NetWasmWriteWorkerClientEntryTask : Microsoft.Build.Utilitie
         _writer = writer ?? throw new ArgumentNullException(nameof(writer));
     }
 
-    [Required] public string HostingJavaScriptRoot { get; set; } = string.Empty;
     [Required] public string WorkerFileName { get; set; } = string.Empty;
     [Required] public string BuildFingerprint { get; set; } = string.Empty;
     [Required] public string ManifestSha256 { get; set; } = string.Empty;
@@ -217,7 +208,6 @@ public sealed class NetWasmWriteWorkerClientEntryTask : Microsoft.Build.Utilitie
         {
             var exports = JavaScriptExportItems.Read(Exports);
             _writer.WriteClient(new(
-                Path.GetFullPath(HostingJavaScriptRoot),
                 WorkerFileName,
                 BuildFingerprint,
                 ManifestSha256,

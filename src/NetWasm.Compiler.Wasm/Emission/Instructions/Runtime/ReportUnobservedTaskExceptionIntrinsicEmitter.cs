@@ -7,19 +7,9 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 internal sealed class ReportUnobservedTaskExceptionIntrinsicEmitter(
     IRuntimeImportResolver runtimeImports) : IRuntimeIntrinsicEmitter
 {
-    public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
-    {
-        for (var argument = 0; argument < 3; argument++)
-        {
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet,
-                WasmInstructionOperand.Unsigned((uint)request.Local(
-                    argument,
-                    CliValueKind.ManagedReference))));
-        }
+    public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code) =>
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                 RuntimeImportSymbol.ReportUnobservedTaskException))));
-    }
 }

@@ -7,7 +7,6 @@ namespace NetWasm.Hosting.Build.JavaScript;
 
 public sealed record PageHostEntryRequest(
     string HostingJavaScriptRoot,
-    string Preview2ShimRoot,
     string OutputPath,
     ImmutableArray<BrowserJavaScriptModule> Modules,
     ImmutableArray<string> Arguments,
@@ -44,10 +43,9 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         var capabilities = RawBrowserHostCapabilities.Select(request.HostingJavaScriptRoot, request.RequiredImportModules);
         var source = new StringBuilder();
         source.Append("import { createPageSession } from ")
-            .Append(BrowserHostSource.ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "page-session-root.mjs")))
-            .AppendLine(";");
-        BrowserHostSource.AppendRawImports(source, request.HostingJavaScriptRoot, request.Preview2ShimRoot, capabilities);
-        BrowserHostSource.AppendManifestValidatorImport(source, request.HostingJavaScriptRoot, request.ValidateDeploymentManifest);
+            .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Page)).AppendLine(";");
+        BrowserHostSource.AppendRawImports(source, JavaScriptRuntime.Page, capabilities);
+        BrowserHostSource.AppendManifestValidatorImport(source, request.ValidateDeploymentManifest);
         for (var index = 0; index < modules.Length; index++)
         {
             source.Append("import * as consumer").Append(index).Append(" from ")
@@ -111,6 +109,9 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         source.AppendLine("  stderr?: (line: string) => void;");
         source.AppendLine("  stdout?: (line: string) => void;");
         source.AppendLine("}");
+        source.AppendLine("export interface NetWasmCallOptions {");
+        source.AppendLine("  signal?: AbortSignal;");
+        source.AppendLine("}");
         source.AppendLine("export interface NetWasmPageModule {");
         JavaScriptExportSurface.AppendMembers(source, PageJavaScriptExportRealm.Instance, exports);
         source.AppendLine("  close(): Promise<void>;");
@@ -123,7 +124,7 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
     private static void ValidateHost(PageHostEntryRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.Preview2ShimRoot, request.OutputPath);
+        ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.OutputPath);
         if (request.Modules.IsDefault || request.Arguments.IsDefault || request.Environment.IsDefault
             || request.RequiredImportModules.IsDefault
             || request.Clocks.IsDefault || request.Network is not ("allowAll" or "denyAll")

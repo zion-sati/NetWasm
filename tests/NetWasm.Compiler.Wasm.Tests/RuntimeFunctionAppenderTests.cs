@@ -419,7 +419,8 @@ public sealed class RuntimeFunctionAppenderTests
             ManagedAsyncBoundaryNames names,
             ManagedAsyncBoundaryKinds kinds,
             ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
-            AsyncTaskCompletionPlan completion)
+            AsyncTaskCompletionPlan completion,
+            InteropImportPlan? interopImports = null)
         {
             Count++;
         }

@@ -38,17 +38,21 @@ internal sealed class PageJavaScriptExportRealm : IJavaScriptExportRealm
         "then",
     };
 
+    // An asynchronous export takes a trailing { signal }, as a worker call does.
     public string Declare(WorkerJavaScriptExport export)
     {
         var result = JavaScriptExportSurface.TypeScriptType(export.Result, allowVoid: true, !export.NonNullableResult);
-        return $"{JavaScriptExportSurface.Signature(export, ParameterNames(export), [])}: "
-            + (export.AsyncReturn is null ? result : $"Promise<{result}>") + ";";
+        return export.AsyncReturn is null
+            ? $"{JavaScriptExportSurface.Signature(export, ParameterNames(export), [])}: {result};"
+            : $"{JavaScriptExportSurface.Signature(export, ParameterNames(export), ["options?: NetWasmCallOptions"])}: "
+                + $"Promise<{result}>;";
     }
 
     public string? DescribeUnsupported(WorkerJavaScriptExport export) => null;
 
     public ImmutableArray<string> ParameterNames(WorkerJavaScriptExport export) =>
-        JavaScriptParameterNames.Resolve(export.ParameterNames, export.Parameters.Length, []);
+        JavaScriptParameterNames.Resolve(export.ParameterNames, export.Parameters.Length,
+            export.AsyncReturn is null ? [] : ["options"]);
 }
 
 /// <summary>A worker client posts every call, so each export returns a promise and takes call options.</summary>
@@ -76,10 +80,12 @@ internal sealed class WorkerJavaScriptExportRealm : IJavaScriptExportRealm
 
     // A page object cannot be posted to a worker, and a worker's object cannot be posted back.
     public string? DescribeUnsupported(WorkerJavaScriptExport export) =>
-        export.Parameters.Contains("object") || export.Result == "object"
+        export.Parameters.Any(IsRealmBound) || IsRealmBound(export.Result)
             ? $"JavaScript export '{export.Name}' passes a JSObject, which cannot cross into a Web Worker. "
                 + "Publish it with the page host (NetWasmJavaScriptHosts=page)."
             : null;
+
+    private static bool IsRealmBound(string type) => type is "object" or "object[]";
 }
 
 /// <summary>The export naming and type mapping every generated host shares.</summary>
@@ -129,6 +135,8 @@ internal static class JavaScriptExportSurface
     /// </summary>
     public static string TypeScriptType(string value, bool allowVoid, bool nullable = true)
     {
+        // A nullable scalar or date, "i32?", is the scalar or null.
+        if (value.EndsWith('?')) return TypeScriptType(value[..^1], allowVoid: false) + " | null";
         var reference = value switch
         {
             "string" => "string",
@@ -143,16 +151,22 @@ internal static class JavaScriptExportSurface
             "u64[]" => "BigUint64Array",
             "f32[]" => "Float32Array",
             "f64[]" => "Float64Array",
+            "error" => "Error",
+            "string[]" => "(string | null)[]",
+            "object[]" => "(object | null)[]",
+            "any[]" => "unknown[]",
             _ => null,
         };
         if (reference is not null) return nullable ? reference + " | null" : reference;
         return value switch
         {
             "void" when allowVoid => "void",
+            "any" => "unknown",
             "bool" => "boolean",
             "char" => "string",
             "i64" or "u64" => "bigint",
-            "i8" or "u8" or "i16" or "u16" or "i32" or "u32" or "f32" or "f64" => "number",
+            "i8" or "u8" or "i16" or "u16" or "i32" or "u32" or "f32" or "f64" or "i52" => "number",
+            "date" => "Date",
             _ => throw new ArgumentException($"JavaScript export ABI type '{value}' is unsupported."),
         };
     }

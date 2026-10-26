@@ -3,7 +3,7 @@ import { readEnvironmentOverride } from "./session-options.mjs";
 import { createWorkerSessionDispatcher } from "./worker-session-dispatcher.mjs";
 
 const optionKeys = ["openSession", "post", "terminate"];
-const protocolVersion = 1;
+const protocolVersion = 2;
 
 export function createWorkerSessionHost(options) {
   assertExactDataObject(options, optionKeys, "worker session host options");
@@ -42,8 +42,8 @@ export function createWorkerSessionHost(options) {
             onFailure: cause => {
               terminate(postTerminalFailure(cause, "delivery"));
             },
-            post: message => {
-              options.post(message);
+            post: (message, transfer) => {
+              options.post(message, transfer);
               if (message.kind === "closed") state = "terminated";
             },
           });

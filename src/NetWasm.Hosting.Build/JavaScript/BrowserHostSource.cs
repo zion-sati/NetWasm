@@ -54,42 +54,38 @@ internal static class BrowserHostSource
         AppendLines(source, indent, WebMembers);
 
     /// <summary>
-    /// Imports for a raw page or worker host: the shim factory with only the
-    /// application's Preview 2 families, and the filesystem scope when it links
-    /// a filesystem interface.
+    /// Imports for a raw page or worker host from the shared runtime: the shim
+    /// factory with only the application's Preview 2 families, and the
+    /// filesystem scope when it links a filesystem interface.
     /// </summary>
     public static void AppendRawImports(
         StringBuilder source,
-        string hostingJavaScriptRoot,
-        string preview2ShimRoot,
+        string host,
         RawBrowserHostCapabilities capabilities)
     {
         source.Append("import { createSelectedPreview2ShimFactory } from ")
-            .Append(ModuleSpecifier(Path.Combine(hostingJavaScriptRoot, "preview2-selected-shim.mjs")))
-            .AppendLine(";");
+            .Append(JavaScriptRuntime.Quoted(host)).AppendLine(";");
         if (capabilities.LinksFilesystem)
         {
             source.Append("import { createPreview2FilesystemScope } from ")
-                .Append(ModuleSpecifier(Path.Combine(hostingJavaScriptRoot, "preview2-filesystem-scope.mjs")))
-                .AppendLine(";");
+                .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.Filesystem)).AppendLine(";");
         }
         foreach (var family in capabilities.ShimFamilies)
         {
-            source.Append("import * as ").Append(FamilyIdentifier(family)).Append(" from ")
-                .Append(ModuleSpecifier(Path.Combine(preview2ShimRoot, "dist", "browser", family + ".js")))
+            source.Append("import { ").Append(family).Append(" as ").Append(FamilyIdentifier(family))
+                .Append(" } from ").Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.FamilyModule(family, host)))
                 .AppendLine(";");
         }
     }
 
     /// <summary>The helper <see cref="AppendProviderCatalog"/> freezes the catalog with; written after the imports.</summary>
     /// <summary>Imports the deployment-manifest validator when the entry validates its manifest.</summary>
-    public static void AppendManifestValidatorImport(StringBuilder source, string hostingRoot, bool validate)
+    public static void AppendManifestValidatorImport(StringBuilder source, bool validate)
     {
         if (validate)
         {
             source.Append("import { validateDeploymentManifest } from ")
-                .Append(ModuleSpecifier(Path.Combine(hostingRoot, "deployment-manifest-validator.mjs")))
-                .AppendLine(";");
+                .Append(JavaScriptRuntime.Quoted(JavaScriptRuntime.ManifestValidator)).AppendLine(";");
         }
     }
 

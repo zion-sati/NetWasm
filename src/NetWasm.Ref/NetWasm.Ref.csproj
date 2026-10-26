@@ -29,6 +29,7 @@
     <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' != ''">$([System.IO.Path]::Combine('$(BaseOutputPath)', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
     <NetWasmPackTaskOutput Condition="'$(BaseOutputPath)' == ''">$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '../NetWasm.Sdk.Pack/bin', '$(Configuration)', 'net10.0', 'NetWasm.Sdk.Pack.dll'))</NetWasmPackTaskOutput>
     <NetWasmSdkPackTaskAssemblyFile>$(NetWasmPackTaskOutput)</NetWasmSdkPackTaskAssemblyFile>
+    <NetWasmJSImportGeneratorProjectPath>$(MSBuildProjectDirectory)/../NetWasm.JSImportGenerator/NetWasm.JSImportGenerator.csproj</NetWasmJSImportGeneratorProjectPath>
   </PropertyGroup>
 
   <Import Project="NetWasm.Ref.ImportGenerator.targets" />
@@ -39,6 +40,10 @@
                       BuildReference="true"
                       PrivateAssets="all" />
     <ProjectReference Include="$(NetWasmPackTaskProjectPath)"
+                      ReferenceOutputAssembly="false"
+                      BuildReference="true"
+                      PrivateAssets="all" />
+    <ProjectReference Include="$(NetWasmJSImportGeneratorProjectPath)"
                       ReferenceOutputAssembly="false"
                       BuildReference="true"
                       PrivateAssets="all" />
@@ -76,11 +81,35 @@
     </PropertyGroup>
   </Target>
 
+  <!-- The generator that implements [JSImport] static partial declarations
+       ships beside the import generator, as an ordinary analyzer. -->
+  <Target Name="NetWasmRefResolveJSImportGenerator">
+    <MSBuild Projects="$(NetWasmJSImportGeneratorProjectPath)"
+             Targets="Build"
+             Condition="'$(NoBuild)' != 'true'"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)" />
+    <MSBuild Projects="$(NetWasmJSImportGeneratorProjectPath)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);BaseOutputPath=$(BaseOutputPath);BaseIntermediateOutputPath=$(BaseIntermediateOutputPath)">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetWasmJSImportGeneratorTargetPath" />
+    </MSBuild>
+    <Error Condition="!Exists('@(_NetWasmJSImportGeneratorTargetPath)')"
+           Code="NWRF005"
+           Text="The JSImport partial generator was not built." />
+    <ItemGroup>
+      <_NetWasmRefJSImportGeneratorFile Include="@(_NetWasmJSImportGeneratorTargetPath)">
+        <SourcePath>%(FullPath)</SourcePath>
+        <PackagePath>analyzers/dotnet/cs/NetWasm.JSImportGenerator.dll</PackagePath>
+        <PackKind>Other</PackKind>
+      </_NetWasmRefJSImportGeneratorFile>
+    </ItemGroup>
+  </Target>
+
   <!-- This is the request-construction side of the SDK-owned Pack boundary.
        It runs before the wrapper's Pack target and feeds the one-action
        CanonicalPackMsBuildTask directly; no stock package is produced first. -->
   <Target Name="NetWasmRefPack"
-          DependsOnTargets="NetWasmRefBuildContract;NetWasmRefResolvePackTaskOutput;NetWasmRefResolveImportGeneratorAssets;_InitializeNuspecRepositoryInformationProperties"
+          DependsOnTargets="NetWasmRefBuildContract;NetWasmRefResolvePackTaskOutput;NetWasmRefResolveImportGeneratorAssets;NetWasmRefResolveJSImportGenerator;_InitializeNuspecRepositoryInformationProperties"
           Condition="'$(NetWasmSdkRefPackEnabled)' == 'true'">
     <PropertyGroup>
       <NetWasmRefPackageFilePath>$([System.IO.Path]::Combine('$(PackageOutputPath)', '$(PackageId).$(PackageVersion).nupkg'))</NetWasmRefPackageFilePath>
@@ -108,6 +137,7 @@
         <PackKind>BuildOutput</PackKind>
       </_NetWasmRefPackageFile>
       <_NetWasmRefPackageFile Include="@(_NetWasmRefGeneratorPackageFile)" />
+      <_NetWasmRefPackageFile Include="@(_NetWasmRefJSImportGeneratorFile)" />
     </ItemGroup>
     <CanonicalPackMsBuildTask
       PackageId="$(PackageId)"

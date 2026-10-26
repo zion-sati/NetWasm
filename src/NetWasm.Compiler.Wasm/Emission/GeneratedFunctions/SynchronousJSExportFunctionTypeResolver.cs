@@ -11,16 +11,17 @@ internal sealed class SynchronousJSExportFunctionTypeResolver :
     public WasmFunctionType Resolve(MethodDefinitionModel method)
     {
         ArgumentNullException.ThrowIfNull(method);
+        // References cross as host handles, dates as Unix milliseconds and nullables
+        // as their presence and value; a nullable result leaves in a record.
+        var result = method.Signature.ReturnSignatureType;
         return new(
-            [.. method.Signature.ParameterSignatureTypes.Select((type, index) =>
-                InteropTypeClassifier.IsString(type) ||
-                InteropTypeClassifier.IsValueArray(type) ||
-                InteropTypeClassifier.IsJSObject(type)
-                    ? CliValueKind.I4
-                    : Normalize(method.WasmParameterTypes[index]))],
-            InteropTypeClassifier.IsJSObject(method.Signature.ReturnSignatureType)
+            [.. method.Signature.ParameterSignatureTypes.SelectMany((type, index) =>
+                InteropTypeClassifier.TransportKinds(type, Normalize(method.WasmParameterTypes[index])))],
+            InteropTypeClassifier.IsJSObject(result) || InteropTypeClassifier.IsHandleValue(result)
                 ? CliValueKind.I4
-                : method.Signature.ReturnType);
+                : InteropTypeClassifier.IsConvertedValue(result)
+                    ? InteropTypeClassifier.ConvertedResultKind(result)
+                    : method.Signature.ReturnType);
     }
 
     private static CliValueKind Normalize(CliValueKind kind) =>

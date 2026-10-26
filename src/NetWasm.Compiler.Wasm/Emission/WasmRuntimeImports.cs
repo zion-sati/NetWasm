@@ -244,11 +244,7 @@ internal static class WasmRuntimeImports
         new(RuntimeImportSymbol.ReportUnobservedTaskException, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeReportUnobservedTaskException,
-            WasmFunctionType.Create(
-                CliValueKind.Void,
-                CliValueKind.ManagedReference,
-                CliValueKind.ManagedReference,
-                CliValueKind.ManagedReference))),
+            WasmFunctionType.Create(CliValueKind.Void))),
         new(RuntimeImportSymbol.IsAssignable, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeIsAssignable,

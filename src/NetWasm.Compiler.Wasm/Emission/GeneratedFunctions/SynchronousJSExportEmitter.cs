@@ -12,9 +12,8 @@ internal sealed class SynchronousJSExportEmitter(
     ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
     IRuntimeStateInitializer runtimeInitialization,
-    IHostCallbackStringArgumentMarshaller stringArguments,
-    IHostCallbackByteArrayArgumentMarshaller byteArrayArguments,
-    IHostCallbackHostObjectArgumentMarshaller hostObjectArguments,
+    IJavaScriptReferenceArgumentEmitter referenceArguments,
+    IJavaScriptValueFrameEmitter valueFrames,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
     IManagedTerminalTrapBoundaryEmitter terminalTraps,
     IAddressInstructionEmitter addresses,
@@ -34,13 +33,11 @@ internal sealed class SynchronousJSExportEmitter(
 
         var referenceParameters = method.Signature.ParameterSignatureTypes
             .Select((type, index) => (Type: type, Index: index))
-            .Where(parameter =>
-                InteropTypeClassifier.IsString(parameter.Type) ||
-                InteropTypeClassifier.IsValueArray(parameter.Type) ||
-                InteropTypeClassifier.IsJSObject(parameter.Type))
+            .Where(parameter => InteropTypeClassifier.IsJavaScriptReference(parameter.Type))
             .ToArray();
-        var parameterCount = method.WasmParameterTypes.Length;
-        var temporaryI4 = parameterCount;
+        // A nullable parameter arrives as two Wasm values, its presence and its value.
+        var parameterLocals = InteropTypeClassifier.TransportLocals(method.Signature.ParameterSignatureTypes, 0);
+        var temporaryI4 = parameterLocals[^1];
         var objectTemporary = temporaryI4 + 1;
         var referenceLocals = referenceParameters.Select((parameter, index) =>
             (parameter.Index, Local: objectTemporary + 1 + index)).ToDictionary();
@@ -50,7 +47,14 @@ internal sealed class SynchronousJSExportEmitter(
         var hasResult = method.Signature.ReturnType != CliValueKind.Void;
         // A JSObject result leaves as its host handle; the host looks the value up.
         var hostObjectResult = InteropTypeClassifier.IsJSObject(method.Signature.ReturnSignatureType);
-        var resultKind = hostObjectResult ? CliValueKind.I4 : method.Signature.ReturnType;
+        // An object, exception or array of references leaves as a handle the host releases.
+        var handleValueResult = InteropTypeClassifier.IsHandleValue(method.Signature.ReturnSignatureType);
+        var converted = valueFrames.Plan(method.Signature.ParameterSignatureTypes, method.Signature.ReturnSignatureType);
+        var resultKind = hostObjectResult || handleValueResult
+            ? CliValueKind.I4
+            : converted?.Result is { } convertedResult
+                ? InteropTypeClassifier.ConvertedResultKind(convertedResult.Type)
+                : method.Signature.ReturnType;
         var rootResult = resultKind == CliValueKind.ManagedReference;
         var resultRootSlot = referenceParameters.Length;
         var rootSlotCount = referenceParameters.Length + (rootResult ? 1 : 0);
@@ -62,6 +66,7 @@ internal sealed class SynchronousJSExportEmitter(
         var messageLengthLocal = messageLocal + 1;
         var stackTraceLocal = messageLengthLocal + 1;
         var stackTraceLengthLocal = stackTraceLocal + 1;
+        var valueFrameLocal = stackTraceLengthLocal + 1;
         var code = writers.Create();
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
@@ -74,7 +79,8 @@ internal sealed class SynchronousJSExportEmitter(
                 CliValueKind.ManagedReference,
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
-                CliValueKind.I4],
+                CliValueKind.I4,
+                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress])],
             layouts.Target);
 
         void EmitBody()
@@ -88,35 +94,15 @@ internal sealed class SynchronousJSExportEmitter(
             }
             foreach (var parameter in referenceParameters)
             {
-                if (InteropTypeClassifier.IsString(parameter.Type))
-                {
-                    stringArguments.Emit(
-                        code.Instructions,
-                        parameter.Index,
-                        referenceLocals[parameter.Index],
-                        temporaryI4,
-                        objectTemporary,
-                        new InteropMarshallingTarget(interopImports), functionIndices.ManagedThrowFunction);
-                }
-                else if (InteropTypeClassifier.IsJSObject(parameter.Type))
-                {
-                    hostObjectArguments.Emit(
-                        code.Instructions,
-                        parameter.Type,
-                        parameter.Index,
-                        referenceLocals[parameter.Index], functionIndices.ManagedThrowFunction);
-                }
-                else
-                {
-                    byteArrayArguments.Emit(
-                        code.Instructions,
-                        parameter.Type,
-                        parameter.Index,
-                        referenceLocals[parameter.Index],
-                        temporaryI4,
-                        objectTemporary,
-                        new InteropMarshallingTarget(interopImports), functionIndices.ManagedThrowFunction);
-                }
+                referenceArguments.Emit(
+                    code.Instructions,
+                    parameter.Type,
+                    parameterLocals[parameter.Index],
+                    referenceLocals[parameter.Index],
+                    temporaryI4,
+                    objectTemporary,
+                    new InteropMarshallingTarget(interopImports),
+                    functionIndices.ManagedThrowFunction);
                 WriteRootAddress(code, rootFrameLocal);
                 WriteLocalGet(code, referenceLocals[parameter.Index]);
                 ManagedMemoryEmitter.EmitStoreBySize(
@@ -124,6 +110,13 @@ internal sealed class SynchronousJSExportEmitter(
                     layouts.Target,
                     rootSlots[parameter.Index] * layouts.Target.ObjectReferenceSize,
                     layouts.Target.ObjectReferenceSize);
+            }
+            if (converted is not null)
+            {
+                valueFrames.EmitEnter(
+                    code.Instructions, converted, valueFrameLocal, index => parameterLocals[index], interopImports);
+                if (converted.Result is { } resultSlot)
+                    valueFrames.EmitAddress(code.Instructions, valueFrameLocal, resultSlot.Offset);
             }
             for (var index = 0; index < method.Signature.ParameterSignatureTypes.Length; index++)
             {
@@ -136,7 +129,9 @@ internal sealed class SynchronousJSExportEmitter(
                         slot * layouts.Target.ObjectReferenceSize,
                         layouts.Target.ObjectReferenceSize);
                 }
-                else WriteLocalGet(code, index);
+                else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
+                    valueFrames.EmitAddress(code.Instructions, valueFrameLocal, valueSlot.Offset);
+                else WriteLocalGet(code, parameterLocals[index]);
             }
             WriteCall(code, functionIndices.Resolve(method.Key));
             if (hostObjectResult)
@@ -145,8 +140,21 @@ internal sealed class SynchronousJSExportEmitter(
                 EmitHostObjectHandle(code, objectTemporary);
                 WriteLocalSet(code, resultLocal);
             }
+            else if (handleValueResult)
+            {
+                WriteCall(code, interopImports.FromManaged(method.Signature.ReturnSignatureType));
+                WriteLocalSet(code, resultLocal);
+            }
+            else if (converted?.Result is not null)
+            {
+                valueFrames.EmitResult(code.Instructions, converted, valueFrameLocal, interopImports);
+                WriteLocalSet(code, resultLocal);
+            }
             else if (hasResult)
                 WriteLocalSet(code, resultLocal);
+            // A nullable result's record stays where it is until the host reads it on return.
+            if (converted is not null)
+                valueFrames.EmitLeave(code.Instructions, valueFrameLocal);
             if (rootResult)
             {
                 WriteRootAddress(code, rootFrameLocal);

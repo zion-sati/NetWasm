@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
@@ -13,5 +14,6 @@ internal interface IAsyncJSExportHelperAppender
         ManagedAsyncBoundaryNames names,
         ManagedAsyncBoundaryKinds kinds,
         ICollection<ManagedBoundaryPlanEntry> boundaryEntries,
-        AsyncTaskCompletionPlan completion);
+        AsyncTaskCompletionPlan completion,
+        InteropImportPlan? interopImports = null);
 }

@@ -39,6 +39,9 @@ internal sealed record ReachabilityLedgerSnapshot(
 
     internal ImmutableHashSet<EntityKey> ModuleInitializers { get; init; } = [];
 
+    internal ImmutableDictionary<string, MethodInstanceModel> JavaScriptConversions { get; init; } =
+        ImmutableDictionary<string, MethodInstanceModel>.Empty;
+
     internal ImmutableDictionary<string, MethodInstanceModel> MethodDescriptors { get; init; } =
         ImmutableDictionary<string, MethodInstanceModel>.Empty;
 
@@ -102,6 +105,7 @@ internal sealed record ReachabilityLedgerSnapshot(
             ledger.ManagedCallSites.ToImmutable())
     {
         ModuleInitializers = ledger.ModuleInitializers.ToImmutable(),
+        JavaScriptConversions = ledger.JavaScriptConversions.ToImmutable(),
         EnumMetadataRequirements = ledger.EnumMetadataRequirements.ToImmutable(),
         MethodDescriptors = ledger.MethodDescriptors.ToImmutable(),
         FieldDescriptors = ledger.FieldDescriptors.ToImmutable(),

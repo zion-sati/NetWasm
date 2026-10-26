@@ -270,10 +270,6 @@ test("parseInteropManifest validates asynchronous export descriptors", () => {
     { ...base, completionResult: undefined },
     { ...base, completionResult: "void" },
     { ...base, resultExport: "" },
-    { ...base, result: "string" },
-    { ...base, result: "bytes" },
-    { ...base, result: "f32[]" },
-    { ...base, result: "object" },
   ]) {
     const manifest = createManifest();
     manifest.exports = [descriptor];
@@ -285,6 +281,11 @@ test("parseInteropManifest validates asynchronous export descriptors", () => {
     { ...base, parameters: ["string", "bytes", "f32[]", "i32", "object"] },
     { ...base, asyncReturn: "value-task" },
     { ...base, result: "void", resultExport: undefined },
+    // Issue #127: an async export settles with what a synchronous one returns.
+    { ...base, result: "string" },
+    { ...base, result: "bytes" },
+    { ...base, result: "f32[]" },
+    { ...base, result: "object" },
   ]) {
     const manifest = createManifest();
     manifest.exports = [descriptor];
@@ -318,11 +319,9 @@ test("parseInteropManifest validates callback descriptors", () => {
     { ...base, exportName: 1 },
     { ...base, exportName: "" },
     { ...base, parameters: null },
-    { ...base, result: "string" },
-    { ...base, parameters: ["object"] },
+    { ...base, result: "subscription" },
     { ...base, parameters: ["u8-view"] },
-    { ...base, parameters: ["string", "bytes"] },
-    { ...base, parameters: ["i32[]", "u16[]"] },
+    { ...base, parameters: ["callback"] },
     { ...base, parameters: ["bool[]"] },
   ];
   for (const callback of invalid) {
@@ -330,6 +329,18 @@ test("parseInteropManifest validates callback descriptors", () => {
     manifest.imports = [callbackImport];
     manifest.callbacks = [callback];
     expectInvalid(manifest, /invalid callback descriptor/i);
+  }
+  // A callback takes and returns what a synchronous export does.
+  for (const callback of [
+    { ...base, result: "string" },
+    { ...base, result: "object" },
+    { ...base, result: "f64[]" },
+    { ...base, parameters: ["object", "string", "bytes", "i32[]", "u16[]", "f64"] },
+  ]) {
+    const manifest = createManifest();
+    manifest.imports = [callbackImport];
+    manifest.callbacks = [callback];
+    assert.strictEqual(parseInteropManifest(manifest), manifest);
   }
 });
 

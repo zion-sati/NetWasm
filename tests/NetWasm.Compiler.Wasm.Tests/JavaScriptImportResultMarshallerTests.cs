@@ -337,7 +337,8 @@ public sealed class JavaScriptImportResultMarshallerTests
         consumed,
         null,
         new InteropMarshallingTarget(new InteropImportPlan(
-            [], default, default, default, default, default, default)));
+            [], default, default, default, default, default, default)),
+        0);
 
     private static JavaScriptImportResultRequest CreateRequest(
         CliTypeIdentity result,
@@ -351,7 +352,8 @@ public sealed class JavaScriptImportResultMarshallerTests
         0,
         consumed,
         callback,
-        target);
+        target,
+        0);
 
     private static InteropMarshallingTarget CreateInteropTarget() => new(
         new InteropImportPlan(

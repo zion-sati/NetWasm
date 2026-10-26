@@ -198,6 +198,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             methodRepository,
             delegateTypeRecognizer,
             asyncBindingResolver,
+            new JavaScriptConversionResolver(typeFinder, methodRepository, methodInstances, symbols),
             intrinsics,
             symbols);
         var programBuilder = programBuilders.Create(

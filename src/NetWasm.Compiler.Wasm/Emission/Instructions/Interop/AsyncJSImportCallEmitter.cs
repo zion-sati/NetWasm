@@ -60,7 +60,8 @@ internal sealed class AsyncJSImportCallEmitter(
                 code,
                 request.Method.Signature.ParameterSignatureTypes[index],
                 local,
-                context);
+                context,
+                instruction.Target.InteropImports);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropResult))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.InteropDescriptor))));

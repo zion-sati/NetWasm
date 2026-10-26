@@ -14,7 +14,6 @@ public sealed class NetWasmWritePageEntriesTaskTests
         var task = new NetWasmWritePageHostEntryTask(writer)
         {
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("page-entry.mjs"),
             Imports =
             [
@@ -48,7 +47,6 @@ public sealed class NetWasmWritePageEntriesTaskTests
         var task = new NetWasmWritePageHostEntryTask(writer)
         {
             HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-            Preview2ShimRoot = Path.GetFullPath("shim"),
             OutputPath = Path.GetFullPath("page-entry.mjs"),
             ImportModules = [new TaskItem("host_ui")],
             Modules = [Item("host-ui.mjs", ("Module", "host_ui"))],
@@ -61,30 +59,48 @@ public sealed class NetWasmWritePageEntriesTaskTests
             Assert.Single(Assert.IsType<PageHostEntryRequest>(writer.Host).Modules));
     }
 
+    // Issue #128: a module for a feature trimming removed is left out rather than
+    // failing the build, so a project pays only for the modules it uses.
     [Fact]
-    public void HostTaskRejectsUnusedAndUnnamedModules()
+    public void HostTaskLeavesOutUnusedModules()
     {
-        foreach (var modules in new[]
-                 {
-                     new ITaskItem[] { Item("extra.mjs", ("Module", "app.extra")) },
-                     [new TaskItem("unnamed.mjs")],
-                 })
+        var writer = new RecordingWriter();
+        var task = new NetWasmWritePageHostEntryTask(writer)
         {
-            var build = new RecordingBuildEngine();
-            var task = new NetWasmWritePageHostEntryTask(new RecordingWriter())
-            {
-                BuildEngine = build,
-                HostingJavaScriptRoot = Path.GetFullPath("hosting"),
-                Preview2ShimRoot = Path.GetFullPath("shim"),
-                OutputPath = Path.GetFullPath("page-entry.mjs"),
-                Imports = [Item("report", ("Module", "app.host"), ("Name", "report"))],
-                Modules = modules,
-                Network = "denyAll",
-            };
+            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
+            OutputPath = Path.GetFullPath("page-entry.mjs"),
+            Imports = [Item("report", ("Module", "app.host"), ("Name", "report"))],
+            Modules =
+            [
+                Item("extra.mjs", ("Module", "app.extra")),
+                Item("host.mjs", ("Module", "app.host")),
+                Item("client.mjs", ("Module", "netwasm:worker/Unused"), ("NetWasmGeneratedWorkerClient", "true")),
+            ],
+            Network = "denyAll",
+        };
 
-            Assert.False(task.Execute());
-            Assert.Contains("NWSDK077", Assert.Single(build.Errors), StringComparison.Ordinal);
-        }
+        Assert.True(task.Execute());
+
+        Assert.Equal(new BrowserJavaScriptModule("app.host", Path.GetFullPath("host.mjs")),
+            Assert.Single(Assert.IsType<PageHostEntryRequest>(writer.Host).Modules));
+    }
+
+    [Fact]
+    public void HostTaskRejectsUnnamedModules()
+    {
+        var build = new RecordingBuildEngine();
+        var task = new NetWasmWritePageHostEntryTask(new RecordingWriter())
+        {
+            BuildEngine = build,
+            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
+            OutputPath = Path.GetFullPath("page-entry.mjs"),
+            Imports = [Item("report", ("Module", "app.host"), ("Name", "report"))],
+            Modules = [new TaskItem("unnamed.mjs")],
+            Network = "denyAll",
+        };
+
+        Assert.False(task.Execute());
+        Assert.Contains("NWSDK077", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
     [Fact]

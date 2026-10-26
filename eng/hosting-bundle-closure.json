@@ -6,23 +6,37 @@
   ],
   "entryPoint": "node_modules/rolldown/dist/index.mjs",
   "requiredCommands": [
-    "bundle"
+    "bundle",
+    "bundle-runtime"
   ],
   "acceptedInvocation": [
-    "bundle",
-    "<absolute-entry>",
-    "--output",
-    "<absolute-output>",
-    "--platform",
-    "<browser|node>",
-    "--minify",
-    "<true|false>"
+    [
+      "bundle",
+      "<absolute-entry>",
+      "--output",
+      "<absolute-output>",
+      "--platform",
+      "<browser|node>",
+      "--minify",
+      "<true|false>",
+      "[--runtime",
+      "<absolute-runtime-imports>]"
+    ],
+    [
+      "bundle-runtime",
+      "<absolute-facade-directory>",
+      "--output",
+      "<absolute-output-directory>",
+      "--minify",
+      "<true|false>"
+    ]
   ],
   "lockSha256": "a1e1788569730917c0f8187c2f0738de18cc1e0f2de36babb24d35a35a227fc7",
   "evidence": {
     "api": "rolldown@1.2.4/dist/index.d.mts",
     "minification": "rolldown@1.2.4 OutputOptions.minify",
-    "singleEntry": "NetWasm.Toolchain/JavaScript/netwasm-bundle.mjs"
+    "singleEntry": "NetWasm.Toolchain/JavaScript/netwasm-bundle.mjs",
+    "sharedRuntime": "rolldown@1.2.4 OutputOptions.entryFileNames, chunkFileNames, paths; InputOptions.experimental.attachDebugInfo"
   },
   "selectedPackagePaths": [
     {

@@ -62,7 +62,8 @@ public sealed class JSImportInvocationEmitterTests
                 [CliValueKind.ManagedReference, CliValueKind.I4],
                 0,
                 2,
-                target),
+                target,
+                0),
             code,
             CreateResolver(program));
 
@@ -100,7 +101,7 @@ public sealed class JSImportInvocationEmitterTests
                 [CliValueKind.ManagedReference, CliValueKind.I4],
                 0,
                 2,
-                CreateInstructionModuleTarget(program)),
+                CreateInstructionModuleTarget(program), 0),
             code,
             functionIndices);
 
@@ -143,7 +144,7 @@ public sealed class JSImportInvocationEmitterTests
 
         emitter.Emit(
             new JSImportInvocation(method, CreateMethodEmissionContext(), stack, 0, 2,
-                CreateInstructionModuleTarget(program)),
+                CreateInstructionModuleTarget(program), 0),
             code,
             CreateResolver(program));
 
@@ -205,7 +206,8 @@ public sealed class JSImportInvocationEmitterTests
             IWasmInstructionWriter code,
             CliTypeIdentity type,
             int local,
-            MethodEmissionContext context) => Count++;
+            MethodEmissionContext context,
+            InteropImportPlan interop) => Count++;
     }
 
     private sealed class RecordingCallbackHandleEmitter : IHostCallbackHandleEmitter

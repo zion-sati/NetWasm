@@ -8,13 +8,17 @@ using NetWasm.Compiler.Wasm.Emission.Support;
 
 namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
+// A JSImport callback is entered the way a synchronous export is: string,
+// array and JSObject arguments arrive as host handles and become managed objects
+// in a root frame for the call, and a JSObject result leaves as its host handle.
+// The first parameter is the delegate's own handle.
 internal sealed class HostCallbackFunctionEmitter(
     ITargetLayout layouts,
     IRuntimeImportResolver runtimeImports,
     IRuntimeStateInitializer runtimeInitialization,
     IImplicitExceptionEmitter exceptions,
-    IHostCallbackStringArgumentMarshaller stringArguments,
-    IHostCallbackByteArrayArgumentMarshaller byteArrayArguments,
+    IJavaScriptReferenceArgumentEmitter referenceArguments,
+    IJavaScriptValueFrameEmitter valueFrames,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
     IAddressInstructionEmitter addresses,
     IGeneratedFunctionWriterFactory writers) : IHostCallbackFunctionEmitter
@@ -30,16 +34,27 @@ internal sealed class HostCallbackFunctionEmitter(
         var code = writers.Create();
         var referenceParameters = invoke.Signature.ParameterSignatureTypes
             .Select((type, index) => (Type: type, Index: index))
-            .Where(parameter => InteropTypeClassifier.IsString(parameter.Type) ||
-                                InteropTypeClassifier.IsValueArray(parameter.Type))
+            .Where(parameter => InteropTypeClassifier.IsJavaScriptReference(parameter.Type))
             .ToArray();
-        var delegateLocal = invoke.Signature.ParameterTypes.Length + 1;
+        var rootSlots = referenceParameters.Select((parameter, slot) =>
+            (parameter.Index, Slot: slot)).ToDictionary();
+        // The delegate's handle comes first; a nullable parameter then takes two Wasm values.
+        var parameterLocals = InteropTypeClassifier.TransportLocals(invoke.Signature.ParameterSignatureTypes, 1);
+        var delegateLocal = parameterLocals[^1];
         var temporaryI4 = delegateLocal + 1;
         var objectTemporary = temporaryI4 + 1;
         var referenceLocals = referenceParameters.Select((parameter, index) =>
             (parameter.Index, Local: objectTemporary + 1 + index)).ToDictionary();
         var nextLocal = objectTemporary + 1 + referenceParameters.Length;
         var hasResult = invoke.Signature.ReturnType != CliValueKind.Void;
+        var hostObjectResult = InteropTypeClassifier.IsJSObject(invoke.Signature.ReturnSignatureType);
+        var handleValueResult = InteropTypeClassifier.IsHandleValue(invoke.Signature.ReturnSignatureType);
+        var converted = valueFrames.Plan(invoke.Signature.ParameterSignatureTypes, invoke.Signature.ReturnSignatureType);
+        var resultKind = hostObjectResult || handleValueResult
+            ? CliValueKind.I4
+            : converted?.Result is { } convertedResult
+                ? InteropTypeClassifier.ConvertedResultKind(convertedResult.Type)
+                : invoke.Signature.ReturnType;
         var resultLocal = nextLocal;
         var exceptionLocal = resultLocal + (hasResult ? 1 : 0);
         var rootFrameLocal = exceptionLocal + 1;
@@ -48,18 +63,20 @@ internal sealed class HostCallbackFunctionEmitter(
         var messageLengthLocal = messageLocal + 1;
         var stackTraceLocal = messageLengthLocal + 1;
         var stackTraceLengthLocal = stackTraceLocal + 1;
+        var valueFrameLocal = stackTraceLengthLocal + 1;
         WasmLocalDeclarationWriter.Write(
             code.Bytes,
             [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedReference,
                 .. referenceParameters.Select(_ => CliValueKind.ManagedReference),
-                .. (hasResult ? [invoke.Signature.ReturnType] : Array.Empty<CliValueKind>()),
+                .. (hasResult ? [resultKind] : Array.Empty<CliValueKind>()),
                 CliValueKind.ManagedReference,
                 CliValueKind.ManagedAddress,
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
                 CliValueKind.I4,
                 CliValueKind.ManagedReference,
-                CliValueKind.I4],
+                CliValueKind.I4,
+                .. (converted is null ? Array.Empty<CliValueKind>() : [CliValueKind.ManagedAddress])],
             layouts.Target);
         terminalExceptions.Emit(
             code.Instructions,
@@ -70,7 +87,7 @@ internal sealed class HostCallbackFunctionEmitter(
             messageLengthLocal,
             stackTraceLocal,
             stackTraceLengthLocal,
-            invoke.Signature.ReturnType,
+            resultKind,
             resultLocal,
             runtimeImports.Resolve(
                 RuntimeImportSymbol.ManagedTerminalExceptionReport,
@@ -81,66 +98,121 @@ internal sealed class HostCallbackFunctionEmitter(
             () =>
             {
                 runtimeInitialization.Initialize(code, initialization);
-                code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned(0)));
-                code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
-                    WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
-                        RuntimeImportSymbol.HandleGet))));
-                code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
-                    WasmInstructionOperand.Unsigned((uint)delegateLocal)));
-                code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)delegateLocal)));
+                WriteLocalGet(code, 0);
+                WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.HandleGet));
+                WriteLocalSet(code, delegateLocal);
+                WriteLocalGet(code, delegateLocal);
                 addresses.Emit(code.Instructions, AddressOperation.EqualZero);
                 code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
                 exceptions.Emit(code.Instructions, ManagedExceptionKind.JSException, functionIndices.ManagedThrowFunctionIndex);
                 code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
-                code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)delegateLocal)));
+                // Each converted argument stays rooted while the next allocates.
+                if (referenceParameters.Length != 0)
+                {
+                    WriteI32Constant(code, referenceParameters.Length);
+                    WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.RootFrameEnter));
+                    WriteLocalSet(code, rootFrameLocal);
+                }
+                var target = new InteropMarshallingTarget(interopImports);
+                foreach (var parameter in referenceParameters)
+                {
+                    referenceArguments.Emit(code.Instructions, parameter.Type, parameterLocals[parameter.Index],
+                        referenceLocals[parameter.Index], temporaryI4, objectTemporary, target,
+                        functionIndices.ManagedThrowFunctionIndex);
+                    WriteLocalGet(code, rootFrameLocal);
+                    WriteLocalGet(code, referenceLocals[parameter.Index]);
+                    ManagedMemoryEmitter.EmitStoreBySize(code.Instructions, layouts.Target,
+                        rootSlots[parameter.Index] * layouts.Target.ObjectReferenceSize,
+                        layouts.Target.ObjectReferenceSize);
+                }
+                // The invoke helper takes a value-type result's address first, then the delegate.
+                if (converted is not null)
+                {
+                    valueFrames.EmitEnter(
+                        code.Instructions, converted, valueFrameLocal, index => parameterLocals[index], interopImports);
+                    if (converted.Result is { } resultSlot)
+                        valueFrames.EmitAddress(code.Instructions, valueFrameLocal, resultSlot.Offset);
+                }
+                WriteLocalGet(code, delegateLocal);
                 for (var index = 0; index < invoke.Signature.ParameterSignatureTypes.Length; index++)
                 {
-                    var type = invoke.Signature.ParameterSignatureTypes[index];
-                    if (InteropTypeClassifier.IsString(type))
+                    if (rootSlots.TryGetValue(index, out var slot))
                     {
-                        stringArguments.Emit(
-                            code.Instructions,
-                            index + 1,
-                            referenceLocals[index],
-                            temporaryI4,
-                            objectTemporary,
-                            new InteropMarshallingTarget(interopImports), functionIndices.ManagedThrowFunctionIndex);
-                        code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                            WasmInstructionOperand.Unsigned((uint)referenceLocals[index])));
+                        WriteLocalGet(code, rootFrameLocal);
+                        ManagedMemoryEmitter.EmitLoadBySize(code.Instructions, layouts.Target,
+                            slot * layouts.Target.ObjectReferenceSize, layouts.Target.ObjectReferenceSize);
                     }
-                    else if (InteropTypeClassifier.IsValueArray(type))
-                    {
-                        byteArrayArguments.Emit(
-                            code.Instructions,
-                            type,
-                            index + 1,
-                            referenceLocals[index],
-                            temporaryI4,
-                            objectTemporary,
-                            new InteropMarshallingTarget(interopImports), functionIndices.ManagedThrowFunctionIndex);
-                        code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                            WasmInstructionOperand.Unsigned((uint)referenceLocals[index])));
-                    }
-                    else
-                    {
-                        code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                            WasmInstructionOperand.Unsigned((uint)(index + 1))));
-                    }
+                    else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
+                        valueFrames.EmitAddress(code.Instructions, valueFrameLocal, valueSlot.Offset);
+                    else WriteLocalGet(code, parameterLocals[index]);
                 }
-                code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
-                    WasmInstructionOperand.Unsigned((uint)functionIndices.GetDelegateInvokeHelper(
-                        invoke.DeclaringType.CanonicalName).Value)));
+                WriteCall(code, functionIndices.GetDelegateInvokeHelper(invoke.DeclaringType.CanonicalName).Value);
+                if (hostObjectResult)
+                {
+                    WriteLocalSet(code, objectTemporary);
+                    EmitHostObjectHandle(code, objectTemporary);
+                }
+                else if (handleValueResult)
+                {
+                    WriteCall(code, interopImports.FromManaged(invoke.Signature.ReturnSignatureType));
+                }
+                else if (converted?.Result is not null)
+                {
+                    valueFrames.EmitResult(code.Instructions, converted, valueFrameLocal, interopImports);
+                }
                 if (hasResult)
                 {
-                    code.Instructions.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
-                        WasmInstructionOperand.Unsigned((uint)resultLocal)));
+                    WriteLocalSet(code, resultLocal);
+                }
+                // A nullable result's record stays where it is until the host reads it on return.
+                if (converted is not null)
+                    valueFrames.EmitLeave(code.Instructions, valueFrameLocal);
+                if (referenceParameters.Length != 0)
+                {
+                    WriteLocalGet(code, rootFrameLocal);
+                    WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.RootFrameLeave));
                 }
             });
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.Return));
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         return code.Snapshots.Read();
     }
+
+    private void EmitHostObjectHandle(GeneratedFunctionWriterLease code, int objectLocal)
+    {
+        WriteLocalGet(code, objectLocal);
+        addresses.Emit(code.Instructions, AddressOperation.EqualZero);
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.If,
+            WasmInstructionOperand.BlockType((byte)WasmValueType.I32)));
+        WriteI32Constant(code, 0);
+        code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+        WriteLocalGet(code, objectLocal);
+        addresses.Emit(code.Instructions, layouts.Target.ObjectHeaderSize);
+        addresses.Emit(code.Instructions, AddressOperation.Add);
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(2, 0)));
+        code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    private static void WriteLocalGet(GeneratedFunctionWriterLease code, int index) =>
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)index)));
+
+    private static void WriteLocalSet(GeneratedFunctionWriterLease code, int index) =>
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)index)));
+
+    private static void WriteCall(GeneratedFunctionWriterLease code, int index) =>
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.Call,
+            WasmInstructionOperand.Unsigned((uint)index)));
+
+    private static void WriteI32Constant(GeneratedFunctionWriterLease code, int value) =>
+        code.Instructions.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Constant,
+            WasmInstructionOperand.Signed(value)));
 }

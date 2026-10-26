@@ -13,8 +13,8 @@ internal sealed class RawBindingManifestReader : IRawBindingManifestReader
         using var document = JsonDocument.Parse(File.ReadAllBytes(path));
         var root = document.RootElement;
         RequireKind(root, JsonValueKind.Object, "raw binding manifest");
-        RequireExactProperties(root, "schemaVersion", "target", "requiredImports");
-        if (root.GetProperty("schemaVersion").GetInt32() != 1)
+        RequireExactProperties(root, "schemaVersion", "target", "requiredImports", "importModules");
+        if (root.GetProperty("schemaVersion").GetInt32() != 2)
         {
             throw Invalid("raw binding manifest schema version is unsupported");
         }
@@ -51,7 +51,12 @@ internal sealed class RawBindingManifestReader : IRawBindingManifestReader
         {
             throw Invalid("raw binding imports are not canonical");
         }
-        return new(1, manifestTarget, requiredImports);
+        var importModules = ReadStrings(root.GetProperty("importModules"), "raw binding import modules");
+        if (!importModules.SequenceEqual(importModules.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)))
+        {
+            throw Invalid("raw binding import modules are not canonical");
+        }
+        return new(2, manifestTarget, requiredImports, importModules);
     }
 
     private static ImmutableArray<string> ReadStrings(JsonElement value, string label)

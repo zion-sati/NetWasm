@@ -14,19 +14,27 @@ internal sealed class AsyncJSImportResolveTypeResolver(ITargetLayout layouts) :
             return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4);
         }
 
-        if (InteropTypeClassifier.IsString(result) || InteropTypeClassifier.IsValueArray(result)
-            || InteropTypeClassifier.IsJSObject(result))
+        if (InteropTypeClassifier.IsJavaScriptReference(result))
         {
             return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, CliValueKind.I4);
         }
-
-        var resultType = result.StackKind;
-        if (resultType == CliValueKind.NativeInt)
+        if (InteropTypeClassifier.IsDate(result))
         {
-            resultType = layouts.Target.UsesMemory64
-                ? CliValueKind.I8
-                : CliValueKind.I4;
+            return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, CliValueKind.F8);
         }
-        return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, resultType);
+        if (JavaScriptNullable.Underlying(result) is { } underlying)
+        {
+            // The settled value's presence, then the value as a parameter takes it.
+            return WasmFunctionType.Create(
+                CliValueKind.Void, CliValueKind.I4, CliValueKind.I4, ScalarKind(underlying));
+        }
+
+        return WasmFunctionType.Create(CliValueKind.Void, CliValueKind.I4, ScalarKind(result));
     }
+
+    private CliValueKind ScalarKind(CliTypeIdentity type) => InteropTypeClassifier.IsDate(type)
+        ? CliValueKind.F8
+        : type.StackKind == CliValueKind.NativeInt
+            ? layouts.Target.UsesMemory64 ? CliValueKind.I8 : CliValueKind.I4
+            : type.StackKind;
 }

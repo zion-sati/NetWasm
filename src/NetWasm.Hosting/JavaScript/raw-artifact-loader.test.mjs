@@ -316,6 +316,27 @@ test("accepts the import modules a compiled layout records", async () => {
   })))), /shape/);
 });
 
+// Issue #128: a project may declare modules its native archives could import
+// from, but only those the final module imports are supplied, so a module for
+// a feature trimming removed is neither bundled nor required.
+test("supplies only the declared import modules the module imports", async () => {
+  const loaded = await loadRawArtifacts(requestWithContent("interop-manifest", encoder.encode(JSON.stringify({
+    ...interop,
+    importModules: ["app.optional", "netwasm.host.v1"],
+  }))));
+  assert.deepEqual(loaded.interopManifest.importModules, ["netwasm.host.v1"]);
+  assert.equal(Object.isFrozen(loaded.interopManifest), true);
+  assert.equal(Object.isFrozen(loaded.interopManifest.importModules), true);
+  assert.equal(Object.isFrozen(loaded.interopManifest.statusAbi), true);
+
+  const none = await loadRawArtifacts(requestWithContent("interop-manifest", encoder.encode(JSON.stringify({
+    ...interop,
+    importModules: ["app.optional"],
+  }))));
+  assert.deepEqual(none.interopManifest.importModules, []);
+  assert.equal(Object.hasOwn((await loadRawArtifacts(createRequest())).interopManifest, "importModules"), false);
+});
+
 test("rejects noncanonical runtime feature evidence before loading", async () => {
   for (const runtimeFeatures of [
     null,

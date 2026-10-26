@@ -26,7 +26,8 @@ public sealed class ReachabilityImportClassifierTests
                 new UnusedTypeFinder(), new UnusedTypeDefinitionResolver(),
                 new UnusedMethodRepository(), new UnusedDelegateTypeRecognizer(),
                 new NoAsyncBindingResolver(), new UnusedIntrinsicRegistry(),
-                new SimpleSymbolFormatter(), new EnumMetadataRequirementClassifier(), planner));
+                new SimpleSymbolFormatter(), new EnumMetadataRequirementClassifier(), planner,
+                new UnusedConversionResolver()));
         var request = Request(method);
 
         if (reject)
@@ -61,7 +62,8 @@ public sealed class ReachabilityImportClassifierTests
                 new UnusedTypeFinder(), new UnusedTypeDefinitionResolver(),
                 new UnusedMethodRepository(), new UnusedDelegateTypeRecognizer(),
                 new NoAsyncBindingResolver(), new UnusedIntrinsicRegistry(),
-                new SimpleSymbolFormatter(), new EnumMetadataRequirementClassifier(), null!));
+                new SimpleSymbolFormatter(), new EnumMetadataRequirementClassifier(), null!,
+                new UnusedConversionResolver()));
         Assert.Equal("nativeDeclarations", classifierError.ParamName);
         var factoryError = Assert.Throws<ArgumentNullException>(() =>
             new ReachabilityImportClassifierFactory(new EnumMetadataRequirementClassifier(), null!));
@@ -82,7 +84,8 @@ public sealed class ReachabilityImportClassifierTests
         var classifier = factory.Create(
             new UnusedTypeFinder(), new UnusedTypeDefinitionResolver(),
             new UnusedMethodRepository(), new UnusedDelegateTypeRecognizer(),
-            new NoAsyncBindingResolver(), new UnusedIntrinsicRegistry(), new SimpleSymbolFormatter());
+            new NoAsyncBindingResolver(), new UnusedConversionResolver(), new UnusedIntrinsicRegistry(),
+            new SimpleSymbolFormatter());
 
         Assert.True(classifier.Classify(Request(method)).IsHandled);
         Assert.Equal(1, planner.Calls);
@@ -114,7 +117,8 @@ public sealed class ReachabilityImportClassifierTests
                 new UnusedTypeFinder(), resolver, new UnusedMethodRepository(),
                 new UnusedDelegateTypeRecognizer(), new NoAsyncBindingResolver(),
                 new UnusedIntrinsicRegistry(), new SimpleSymbolFormatter(),
-                new EnumMetadataRequirementClassifier(), declarations));
+                new EnumMetadataRequirementClassifier(), declarations,
+                new UnusedConversionResolver()));
 
         if (reject)
         {
@@ -159,7 +163,8 @@ public sealed class ReachabilityImportClassifierTests
             new SingleIntrinsicRegistry(method.Key),
             new SimpleSymbolFormatter(),
             new EnumMetadataRequirementClassifier(),
-            new UnusedNativeDeclarationValidator());
+            new UnusedNativeDeclarationValidator(),
+            new UnusedConversionResolver());
         var request = new ReachabilityImportRequest(
             new MethodInstanceModel(
                 method,
@@ -469,7 +474,8 @@ public sealed class ReachabilityImportClassifierTests
                 new FalseIntrinsicRegistry(),
                 new SimpleSymbolFormatter(),
                 new EnumMetadataRequirementClassifier(),
-                new UnusedNativeDeclarationValidator()));
+                new UnusedNativeDeclarationValidator(),
+                new UnusedConversionResolver()));
 
         var request = new ReachabilityImportRequest(
             instance,
@@ -532,7 +538,8 @@ public sealed class ReachabilityImportClassifierTests
             new FixedTypeFinder(), new ConfigurableTypeDefinitionResolver(),
             new ConfigurableMethodRepository(), new FixedDelegateRecognizer(false),
             new FixedAsyncBindingResolver(binding), new FalseIntrinsicRegistry(),
-            new SimpleSymbolFormatter(), new EnumMetadataRequirementClassifier(), new UnusedNativeDeclarationValidator()));
+            new SimpleSymbolFormatter(), new EnumMetadataRequirementClassifier(), new UnusedNativeDeclarationValidator(),
+            new UnusedConversionResolver()));
 
         var analysis = classifier.Classify(new(instance, outward));
 
@@ -628,7 +635,8 @@ public sealed class ReachabilityImportClassifierTests
             intrinsics,
             new SimpleSymbolFormatter(),
             new EnumMetadataRequirementClassifier(),
-            new UnusedNativeDeclarationValidator());
+            new UnusedNativeDeclarationValidator(),
+            new UnusedConversionResolver());
 
     private static ReachabilityImportRequest Request(MethodDefinitionModel method) =>
         new(new MethodInstanceModel(
@@ -724,6 +732,12 @@ public sealed class ReachabilityImportClassifierTests
     private sealed class NoAsyncBindingResolver : IJavaScriptAsyncBindingResolver
     {
         public JavaScriptAsyncMethodBinding? Resolve(MethodDefinitionModel method) => null;
+    }
+
+    private sealed class UnusedConversionResolver : IJavaScriptConversionResolver
+    {
+        public MethodInstanceModel Resolve(string name) =>
+            throw new InvalidOperationException($"no boundary converts with {name}");
     }
 
     private sealed class FixedAsyncBindingResolver(JavaScriptAsyncMethodBinding binding) :

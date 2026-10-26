@@ -3,6 +3,8 @@ using NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
+using NetWasm.Compiler.Wasm.Emission.Planning;
+
 namespace NetWasm.Compiler.Wasm.Tests;
 
 public sealed class JavaScriptImportArgumentEmitterTests
@@ -17,7 +19,8 @@ public sealed class JavaScriptImportArgumentEmitterTests
             code,
             CliTypeIdentity.FromStackKind(CliValueKind.I4),
             7,
-            EmitterTestSupport.CreateMethodEmissionContext());
+            EmitterTestSupport.CreateMethodEmissionContext(),
+            new InteropImportPlan([], default, default, default, default, default, default));
 
         Assert.Empty(addresses.Values);
         Assert.Equal([WasmOpcodes.LocalGet, 7], code.ToArray());
@@ -43,7 +46,8 @@ public sealed class JavaScriptImportArgumentEmitterTests
             code,
             type,
             7,
-            EmitterTestSupport.CreateMethodEmissionContext());
+            EmitterTestSupport.CreateMethodEmissionContext(),
+            new InteropImportPlan([], default, default, default, default, default, default));
 
         Assert.Equal(
             [AddressOperation.EqualZero, expectedHeaderSize, AddressOperation.Add],
@@ -55,7 +59,8 @@ public sealed class JavaScriptImportArgumentEmitterTests
     private static IJavaScriptImportArgumentEmitter CreateEmitter(
         RecordingLayoutProvider layouts,
         IAddressInstructionEmitter addresses) =>
-        new[] { new JavaScriptImportArgumentEmitter(layouts, addresses) }
+        new[] { new JavaScriptImportArgumentEmitter(
+                layouts, addresses, new JavaScriptNullableEmitter(layouts, layouts, addresses)) }
             .Cast<IJavaScriptImportArgumentEmitter>()
             .Single();
 

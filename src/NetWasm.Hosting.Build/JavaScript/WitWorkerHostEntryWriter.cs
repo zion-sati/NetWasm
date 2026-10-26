@@ -58,7 +58,7 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         source.AppendLine("})({ startup: request.startup, notify: request.notify });");
         source.AppendLine("const host = createWorkerSessionHost({");
         source.AppendLine("  openSession: open,");
-        source.AppendLine("  post: message => globalThis.postMessage(message),");
+        source.AppendLine("  post: (message, transfer = []) => globalThis.postMessage(message, transfer),");
         source.AppendLine("  terminate: cause => cause === null ? globalThis.close() : fatal(cause),");
         source.AppendLine("});");
         source.AppendLine("globalThis.addEventListener(\"message\", event => { host.receive(event.data).catch(fatal); });");

@@ -189,7 +189,9 @@ Declare each such module so the build keeps its imports:
 ```
 
 A module bundled with `NetWasmJavaScriptModule` is declared already. Without a
-declaration, the build stops with NWPACK001 naming the import. C code cannot
+declaration, the build stops with NWPACK001 naming the import. A declared
+module that the final module does not import, such as one whose only caller
+trimming removed, is neither bundled nor required. C code cannot
 unwind, so a function an archive calls must not throw; a throw leaves the
 instance unusable.
 

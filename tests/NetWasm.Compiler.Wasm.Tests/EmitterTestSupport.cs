@@ -30,6 +30,13 @@ using StructuredMethod = NetWasm.Compiler.ControlFlow.Structured.StructuredMetho
 
 internal static class EmitterTestSupport
 {
+    // The production value frames: a boundary that converts no value gets no frame.
+    internal static IJavaScriptValueFrameEmitter ValueFrames(
+        RecordingLayoutProvider layouts,
+        IRuntimeImportResolver runtimeImports) =>
+        new JavaScriptValueFrameEmitter(layouts, layouts, runtimeImports, new AddressInstructionEmitter(layouts),
+            new JavaScriptNullableEmitter(layouts, layouts, new AddressInstructionEmitter(layouts)));
+
     private static readonly ConditionalWeakTable<
         InstructionEmissionRequest,
         RecordingInstructionWriter> Writers = [];

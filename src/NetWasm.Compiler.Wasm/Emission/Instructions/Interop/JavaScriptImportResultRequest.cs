@@ -12,4 +12,5 @@ internal sealed record JavaScriptImportResultRequest(
     int ArgumentBase,
     int Consumed,
     HostCallbackDeclaration? Callback,
-    InteropMarshallingTarget Target);
+    InteropMarshallingTarget Target,
+    int Offset);

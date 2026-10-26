@@ -39,6 +39,11 @@ internal sealed class JSImportForwarderPlanner(ISymbolFormatter symbols) : IJSIm
             {
                 throw Unsupported(target, "returns a Task or ValueTask");
             }
+            var result = target.Signature.ReturnSignatureType;
+            if (JavaScriptConversion.IsDate(result) || JavaScriptNullable.IsSupported(result))
+            {
+                throw Unsupported(target, "returns a DateTime, DateTimeOffset or nullable value");
+            }
         }
         if (targets.IsEmpty)
         {
