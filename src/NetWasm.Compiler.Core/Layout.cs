@@ -198,7 +198,8 @@ public static class RuntimeAbi
     public const string ManagedFinalizerDispatcher = "netwasm.finalize";
     public const string RuntimeModule = "netwasm.runtime.v1";
     public const string HostModule = "netwasm.host.v1";
-    public const int HostInteropAbiVersion = 1;
+    // 2: scalar JSImports call their host functions directly.
+    public const int HostInteropAbiVersion = 2;
     public const string HostInteropStringLength = "interop_string_length";
     public const string HostInteropCopyStringUtf16 = "interop_copy_string_utf16";
     public const string HostInteropReleaseHandle = "interop_release_handle";

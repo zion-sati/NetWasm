@@ -224,7 +224,7 @@ public sealed class NetWasmBuildRawBindingsTaskTests
         {
             Path = path;
             Target = target;
-            return new(1, target, new(0, 1, 0), new(4, 4, 8, 4, 8), [], []);
+            return new(1, target, new(0, 1, 0), new(4, 4, 8, 4, 8, 0, 4), [], []);
         }
     }
 

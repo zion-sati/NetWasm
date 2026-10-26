@@ -678,7 +678,7 @@ namespace System.Text
                     continue;
                 }
 
-                var text = FormatValue(args[segment.ArgIndex], segment.Format, provider);
+                var text = DefaultInterpolatedStringHandler.FormatHole(args[segment.ArgIndex], segment.Format, provider);
                 var width = segment.Alignment < 0 ? -segment.Alignment : segment.Alignment;
                 var padding = Math.Max(0, width - text.Length);
                 if (segment.Alignment > 0)
@@ -708,35 +708,6 @@ namespace System.Text
         public StringBuilder AppendLine([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler) => AppendLine();
 
         public StringBuilder AppendLine(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler) => AppendLine();
-
-        internal static string FormatValue(object? value, string? format, IFormatProvider? provider)
-        {
-            ICustomFormatter? customFormatter = (ICustomFormatter?)provider?.GetFormat(typeof(ICustomFormatter));
-            if (customFormatter is not null)
-            {
-                return customFormatter.Format(format, value, provider) ?? string.Empty;
-            }
-            if (value is null)
-            {
-                return string.Empty;
-            }
-            if (value is IFormattable formattable)
-            {
-                return formattable.ToString(format, provider) ?? string.Empty;
-            }
-            if (value is int intValue) return intValue.ToString(format);
-            if (value is uint uintValue) return uintValue.ToString(format);
-            if (value is long longValue) return longValue.ToString(format);
-            if (value is ulong ulongValue) return ulongValue.ToString(format);
-            if (value is short shortValue) return shortValue.ToString(format);
-            if (value is ushort ushortValue) return ushortValue.ToString(format);
-            if (value is byte byteValue) return byteValue.ToString(format);
-            if (value is sbyte sbyteValue) return sbyteValue.ToString(format);
-            if (value is float floatValue) return floatValue.ToString(format);
-            if (value is double doubleValue) return doubleValue.ToString(format);
-            if (value is decimal decimalValue) return decimalValue.ToString();
-            return value.ToString() ?? string.Empty;
-        }
 
         private void AppendCharacters(string value, int startIndex, int count)
         {
@@ -976,17 +947,20 @@ namespace System.Text
             }
 
             public void AppendLiteral(string value) => _builder.Append(value);
-            public void AppendFormatted<T>(T value) => AppendFormatted(value, 0, null);
-            public void AppendFormatted<T>(T value, string? format) => AppendFormatted(value, 0, format);
-            public void AppendFormatted<T>(T value, int alignment) => AppendFormatted(value, alignment, null);
+            public void AppendFormatted<T>(T value) =>
+                AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, _provider), 0);
+            public void AppendFormatted<T>(T value, string? format) =>
+                AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, format, _provider), 0);
+            public void AppendFormatted<T>(T value, int alignment) =>
+                AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, _provider), alignment);
+            public void AppendFormatted<T>(T value, int alignment, string? format) =>
+                AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, format, _provider), alignment);
 
-            public void AppendFormatted<T>(T value, int alignment, string? format)
+            public void AppendFormatted(string? value)
             {
-                var text = FormatValue(value, format, _provider);
-                AppendAligned(text, alignment);
+                if (_provider is null) _builder.Append(value);
+                else AppendAligned(DefaultInterpolatedStringHandler.FormatHole(value, null, _provider), 0);
             }
-
-            public void AppendFormatted(string? value) => AppendFormatted<string?>(value);
             public void AppendFormatted(string? value, int alignment = 0, string? format = null) => AppendFormatted<string?>(value, alignment, format);
             public void AppendFormatted(object? value, int alignment = 0, string? format = null) => AppendFormatted<object?>(value, alignment, format);
             public void AppendFormatted(ReadOnlySpan<char> value) => AppendAligned(value, 0);

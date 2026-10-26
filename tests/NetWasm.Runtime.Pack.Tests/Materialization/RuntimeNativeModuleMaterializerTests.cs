@@ -583,7 +583,8 @@ public sealed class RuntimeNativeModuleMaterializerTests
         public void Validate(
             RuntimeNativeValidationProfile profile,
             RuntimeLinkedModule module,
-            RuntimeNativeCallbackSupport? callbackSupport = null)
+            RuntimeNativeCallbackSupport? callbackSupport = null,
+            IReadOnlySet<string>? importModules = null)
         {
             ImportChecks++;
             if (ImportChecks == FailImportCheck) throw Failure;

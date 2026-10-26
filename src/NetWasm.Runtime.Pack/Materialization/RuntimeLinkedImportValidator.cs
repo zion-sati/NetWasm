@@ -12,7 +12,8 @@ internal sealed class RuntimeLinkedImportValidator(IRuntimeNativeValidationProfi
     public void Validate(
         RuntimeNativeValidationProfile profile,
         RuntimeLinkedModule module,
-        RuntimeNativeCallbackSupport? callbackSupport = null)
+        RuntimeNativeCallbackSupport? callbackSupport = null,
+        IReadOnlySet<string>? importModules = null)
     {
         ArgumentNullException.ThrowIfNull(module);
         ArgumentNullException.ThrowIfNull(module.MemoryLayout);
@@ -42,8 +43,19 @@ internal sealed class RuntimeLinkedImportValidator(IRuntimeNativeValidationProfi
         foreach (var import in module.Imports)
         {
             if (import is null || import.Kind != 0 || !seen.Add((import.Module, import.Name)) ||
-                !expected.TryGetValue((import.Module, import.Name), out var contract) || import.TypeIndex >= module.FunctionTypes.Length)
+                import.TypeIndex >= module.FunctionTypes.Length)
                 throw Invalid();
+            // A native archive may import any function from a module the
+            // project declares; the host supplies it to the final module.
+            if (importModules?.Contains(import.Module) == true && !expected.ContainsKey((import.Module, import.Name)))
+            {
+                if (module.FunctionTypes[(int)import.TypeIndex] is not { } external || external.Parameters.IsDefault ||
+                    external.Results.IsDefault || external.Parameters.Concat(external.Results).Any(type => !IsCoreValueType(type)))
+                    throw Invalid();
+                continue;
+            }
+            if (!expected.TryGetValue((import.Module, import.Name), out var contract))
+                throw Undeclared(import.Module, import.Name);
             var signature = module.FunctionTypes[(int)import.TypeIndex];
             if (signature is null || signature.Parameters.IsDefault || signature.Results.IsDefault ||
                 !signature.Parameters.SequenceEqual(contract.Parameters) || !signature.Results.SequenceEqual(contract.Results))
@@ -55,6 +67,17 @@ internal sealed class RuntimeLinkedImportValidator(IRuntimeNativeValidationProfi
 
     private static InvalidOperationException Invalid() =>
         new("The native-linked runtime imports do not match the supported runtime contract.");
+
+    // A project may declare any module except NetWasm's own, WASI's and the
+    // runtime's canonical ABI modules.
+    private static InvalidOperationException Undeclared(string module, string name) =>
+        new($"The native-linked runtime imports {module}.{name}, which the runtime does not provide." +
+            (module.StartsWith("netwasm", StringComparison.Ordinal) || module.StartsWith("wasi", StringComparison.Ordinal) ||
+                module.Contains('|')
+                ? string.Empty
+                : $" Declare <NetWasmImportModule Include=\"{module}\" /> when the host supplies '{module}'."));
+
+    private static bool IsCoreValueType(byte type) => type is 0x7f or 0x7e or 0x7d or 0x7c;
 
     private static byte ValueType(RuntimeNativeValueType type) => type switch
     {

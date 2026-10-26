@@ -69,6 +69,12 @@ public sealed class WasmModuleEmitterContractTests
         var initialization = Assert.IsType<RuntimeInitializationPlan>(runtime[5]);
         Assert.Equal(96, initialization.StaticDataEnd);
         Assert.Equal(initializes ? [new ModuleInitializerCall(80, 91)] : [], initialization.ModuleInitializers.ToArray());
+        // Every entry gets the plan that names the one runtime initializer function.
+        var initializer = fixture.Arguments("runtimeInitializer");
+        Assert.Equal(fixture.Imports.Length, Assert.IsType<int>(initializer[1]));
+        Assert.Equal(initialization with { InitializerFunctionIndex = null },
+            Assert.IsType<RuntimeInitializationPlan>(initializer[2]));
+        Assert.Equal(30, initialization.InitializerFunctionIndex);
         Assert.Same(initialization, fixture.Arguments("callbacks")[5]);
         Assert.Same(initialization, fixture.Arguments("requested")[6]);
         Assert.Same(initialization, fixture.Arguments("component")[5]);
@@ -151,7 +157,7 @@ public sealed class WasmModuleEmitterContractTests
         [
             "entry", "indices", "imports", "managed", "constructed", "managedThrow",
             "delegates", "jsImportForwarders", "static",
-            "nativeCallbacks", "callbacks", "async", "filters", "runtime", "requested", "exports", "component", "exportValidation", "boundary", "result",
+            "nativeCallbacks", "runtimeInitializer", "callbacks", "async", "filters", "runtime", "requested", "exports", "component", "exportValidation", "boundary", "result",
         ];
 
         public Fixture(
@@ -207,7 +213,8 @@ public sealed class WasmModuleEmitterContractTests
                 Capability<IEntryPointValidator>("entry"),
                 Capability<IManagedBoundaryPlanValidator>("boundary"),
                 Capability<IWasmModuleEmissionResultBuilder>("result", Result),
-                Capability<IStaticInitializerFunctionAppender>("static"));
+                Capability<IStaticInitializerFunctionAppender>("static"),
+                Capability<IRuntimeInitializerFunctionAppender>("runtimeInitializer", 30));
         }
 
         public WasmModuleEmitter Emitter { get; }

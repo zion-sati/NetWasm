@@ -6,23 +6,8 @@ import {
   releaseRawExportedResource,
   requireRawInstanceFunction,
 } from "./raw-instance-boundary.mjs";
-import {
-  createRawCanonicalMemoryAllocator,
-  createRawCanonicalMemoryDeallocator,
-} from "./raw-canonical-memory-allocator.mjs";
-import {
-  createRawCanonicalFlatValueLifter,
-  createRawCanonicalMemoryValueReader,
-} from "./raw-canonical-value-lifter.mjs";
-import {
-  createRawCanonicalFlatValueLowerer,
-  createRawCanonicalMemoryValueWriter,
-} from "./raw-canonical-value-lowerer.mjs";
-import { createRawCanonicalCallableBinder } from "./raw-canonical-callable-binder.mjs";
 import { createRawCanonicalResourceBinder } from "./raw-canonical-resource-binder.mjs";
-import { projectRawCanonicalMemoryRange } from "./raw-canonical-memory-range-projector.mjs";
 import { createRawPhysicalReactorBinder } from "./raw-physical-reactor-binder.mjs";
-import { createRawProviderCallableBinder } from "./raw-provider-callable-binder.mjs";
 import { releaseRawProviderResource } from "./raw-provider-resource-releaser.mjs";
 import {
   borrowRawResource,
@@ -46,7 +31,7 @@ const metadataKeys = [
 ];
 const identityKeys = ["module", "name"];
 const productKeys = ["imports", "metadata"];
-const capabilityOrder = Object.freeze(["bindCallable", "bindReactor", "bindResource"]);
+const capabilityOrder = Object.freeze(["bindReactor", "bindResource", "canonical"]);
 
 export function createRawCanonicalImportBinding(request = {}) {
   assertExactObject(request, requestKeys, "raw canonical-import binding factory");
@@ -64,25 +49,18 @@ export function createRawCanonicalImportBinding(request = {}) {
   const reallocate = (...values) => readRawInstanceReallocator({
     boundary: readOpen(lifecycle).boundary,
   })(...values);
-  const allocateMemory = createRawCanonicalMemoryAllocator({ reallocate });
-  const deallocateMemory = createRawCanonicalMemoryDeallocator({ reallocate });
-  const liftActions = { borrowResource: borrowRawResource, transferResource: transferRawResource };
-  const lowerActions = {
-    allocateMemory,
-    deallocateMemory,
-    dropResource: dropRawResource,
-    registerResource: registerRawResource,
-    releaseResource: releaseRawProviderResource,
-  };
-  const callable = createRawCanonicalCallableBinder({
-    bindProvider: createRawProviderCallableBinder({ providers: request.providers }),
-    liftFlatValue: createRawCanonicalFlatValueLifter(liftActions),
-    lowerFlatValue: createRawCanonicalFlatValueLowerer(lowerActions),
-    projectMemoryRange: projectRawCanonicalMemoryRange,
-    readMemory: readOpenMemory,
-    readMemoryValue: createRawCanonicalMemoryValueReader(liftActions),
-    readStore: readOpenStore,
-    writeMemoryValue: createRawCanonicalMemoryValueWriter(lowerActions),
+  assertPlainDataObject(request.providers, "raw logical providers");
+  // The adapter's generated bindings lift and lower each call themselves.
+  const canonical = Object.freeze({
+    borrow: borrowRawResource,
+    drop: dropRawResource,
+    memory: readOpenMemory,
+    providers: request.providers,
+    reallocate,
+    register: registerRawResource,
+    release: releaseRawProviderResource,
+    store: readOpenStore,
+    transfer: transferRawResource,
   });
   const resource = createRawCanonicalResourceBinder({
     borrowResource: borrowRawResource,
@@ -108,8 +86,8 @@ export function createRawCanonicalImportBinding(request = {}) {
   const adapterRequest = Object.create(null);
   adapterRequest.metadata = metadata.value;
   for (const capability of metadata.requiredCapabilities) {
-    adapterRequest[capability] = capability === "bindCallable"
-      ? callable
+    adapterRequest[capability] = capability === "canonical"
+      ? canonical
       : capability === "bindReactor" ? reactor : resource;
   }
   const product = adapter.create(adapterRequest);
@@ -146,7 +124,7 @@ function readAdapter(value) {
 
 function readMetadata(value) {
   assertExactObject(value, metadataKeys, "generated raw adapter metadata");
-  if (value.abiVersion !== 1 || value.target !== "wasm32" && value.target !== "wasm64"
+  if (value.abiVersion !== 2 || value.target !== "wasm32" && value.target !== "wasm64"
       || typeof value.witSourceFingerprint !== "string"
       || !/^sha256:[0-9a-f]{64}$/u.test(value.witSourceFingerprint)) {
     throw new TypeError("generated raw adapter metadata is unsupported");

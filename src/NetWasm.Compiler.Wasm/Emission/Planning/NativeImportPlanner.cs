@@ -27,8 +27,9 @@ internal sealed class NativeImportPlanner(INativeAbiPlanner abi) : INativeImport
                 continue;
             }
             var plan = _abi.Plan(method);
+            var module = plan.Import.HasWasmImportLinkage ? plan.Import.LibraryName : RuntimeAbi.RuntimeModule;
             imports.Add(method.Definition.Key, new(method, plan,
-                new(RuntimeAbi.RuntimeModule, plan.Import.EntryPoint,
+                new(module, plan.Import.EntryPoint,
                     new(plan.Signature.ParameterTypes, plan.Signature.ReturnType))));
         }
         return new([.. imports.Values.OrderBy(import => import.Method.CanonicalName, StringComparer.Ordinal)]);

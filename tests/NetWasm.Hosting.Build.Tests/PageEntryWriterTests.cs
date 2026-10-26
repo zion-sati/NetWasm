@@ -29,6 +29,7 @@ public sealed partial class PageEntryWriterTests
     {
         using var directory = TemporaryDirectory.Create();
         var output = Path.Combine(directory.Path, "generated", "page-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
         var writer = Assert.IsAssignableFrom<IPageEntryWriter>(new PageEntryWriter());
 
         writer.WriteHost(HostRequest(directory.Path, output));
@@ -39,7 +40,8 @@ public sealed partial class PageEntryWriterTests
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
         Assert.Contains("import { createPageSession } from \"file://", source, StringComparison.Ordinal);
         Assert.Contains("/hosting/page-session-root.mjs\";", source, StringComparison.Ordinal);
-        Assert.Contains("import { WASIShim } from", source, StringComparison.Ordinal);
+        Assert.Contains("import { createSelectedPreview2ShimFactory } from", source, StringComparison.Ordinal);
+        Assert.Contains("/preview2-shim/dist/browser/random.js\";", source, StringComparison.Ordinal);
         Assert.Contains("export const openPage = createPageSession({", source, StringComparison.Ordinal);
         Assert.Contains("manifestUrl: new URL(\"./deployment.json\", import.meta.url).href,", source,
             StringComparison.Ordinal);
@@ -50,8 +52,36 @@ public sealed partial class PageEntryWriterTests
         Assert.Contains("clocks: Object.freeze([\"wall\",\"monotonic\"])", source, StringComparison.Ordinal);
         Assert.Contains("randomness: true,", source, StringComparison.Ordinal);
         Assert.Contains("compileCoreModule: WebAssembly.compile.bind(WebAssembly),", source, StringComparison.Ordinal);
-        Assert.Contains("createShim: configuration => new WASIShim(configuration),", source, StringComparison.Ordinal);
+        // Issue #121: only the Preview 2 families and providers the application links.
+        Assert.Contains("createShim: createSelectedPreview2ShimFactory({ cli: preview2Cli, io: preview2Io, random: preview2Random }),",
+            source, StringComparison.Ordinal);
+        Assert.Contains("createFilesystemScope: null,", source, StringComparison.Ordinal);
+        Assert.Contains("platformProviderCatalog: deepFreeze(", source, StringComparison.Ordinal);
+        Assert.Contains("\"module\":\"wasi:cli/environment@0.2.11\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("wasi:http/outgoing-handler", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("wasi:filesystem/types", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("WASIShim", source, StringComparison.Ordinal);
+        Assert.Contains("/hosting/deployment-manifest-validator.mjs\";", source, StringComparison.Ordinal);
+        Assert.Contains("snapshotDeploymentManifest: validateDeploymentManifest,", source, StringComparison.Ordinal);
         Assert.EndsWith("});\n", source, StringComparison.Ordinal);
+    }
+
+    // Issue #121: a Release page trusts its digest-pinned manifest, so it
+    // ships no manifest validator and only freezes the manifest.
+    [Fact]
+    public void WritesAPageHostEntryThatOnlyFreezesItsManifestWithoutValidation()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = Path.Combine(directory.Path, "generated", "page-entry.mjs");
+        HostingCatalogFixture.Write(Path.Combine(directory.Path, "hosting"));
+
+        new PageEntryWriter().WriteHost(HostRequest(directory.Path, output, validate: false));
+
+        var source = File.ReadAllText(output);
+        Assert.DoesNotContain("deployment-manifest-validator", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("validateDeploymentManifest", source, StringComparison.Ordinal);
+        Assert.Contains("snapshotDeploymentManifest: deepFreeze,", source, StringComparison.Ordinal);
+        Assert.Contains("function deepFreeze(value) {", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -188,7 +218,7 @@ public sealed partial class PageEntryWriterTests
         Assert.Throws<ArgumentNullException>(() => writer.WriteHost(valid with { Modules = [null!] }));
     }
 
-    private static PageHostEntryRequest HostRequest(string root, string output) => new(
+    private static PageHostEntryRequest HostRequest(string root, string output, bool validate = true) => new(
         Path.Combine(root, "hosting"),
         Path.Combine(root, "preview2-shim"),
         output,
@@ -197,7 +227,9 @@ public sealed partial class PageEntryWriterTests
         [new("MODE", "test")],
         ["wall", "monotonic"],
         "denyAll",
-        true);
+        true,
+        ["wasi:cli/environment@0.2.11", "wasi:io/streams@0.2.11", "wasi:random/random@0.2.11", "app.host"],
+        validate);
 
     [GeneratedRegex("^  \"([^\"]+)\"\\(", RegexOptions.Multiline)]
     private static partial Regex ExportMember();

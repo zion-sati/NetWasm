@@ -744,6 +744,8 @@
     <Compile Include="HResults.cs" />
     <Compile Include="Exceptions.cs" />
     <Compile Include="RuntimeServices.cs" />
+    <Compile Include="Threading/Lock.cs" />
+    <Compile Include="Threading/LockRecursionException.cs" />
     <Compile Include="Threading/PeriodicTimer.cs" />
     <Compile Include="Threading/StackHelper.cs" />
     <Compile Include="Threading/AsyncLocal.cs" />
@@ -827,5 +829,10 @@
     <Compile Include="Security/Cryptography/RandomNumberGeneratorImplementation.cs" />
     <Compile Include="Security/Cryptography/RandomNumberGeneratorImplementation.NetWasm.cs" />
     <Compile Include="Runtime/DependentHandle.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Collections/Concurrent/IProducerConsumerCollection.cs" />
+    <Compile Include="Collections/Concurrent/ConcurrentQueue.cs" />
+    <Compile Include="Collections/Concurrent/ConcurrentBag.cs" />
   </ItemGroup>
 </Project>

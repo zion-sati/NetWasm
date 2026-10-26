@@ -6,7 +6,9 @@ import {
 } from "./session-options.mjs";
 import { bindWorkerImports } from "./worker-import-bindings.mjs";
 
-const factoryKeys = ["configuration", "manifestUrl", "modules", "platform"];
+const factoryKeys = [
+  "configuration", "manifestUrl", "modules", "platform", "platformProviderCatalog", "snapshotDeploymentManifest",
+];
 const requestKeys = ["exports", "options", "startup"];
 const optionNames = new Set(["environment", "modules", "onNotification", "platform", "stderr", "stdout"]);
 const platformHookNames = new Set(["now", "random"]);
@@ -53,6 +55,8 @@ export function createPageSessionFactory(createExportSession) {
         consumerModules,
         manifestUrl: options.manifestUrl,
         platform: withPlatformHooks(options.platform, openOptions.platform),
+        platformProviderCatalog: options.platformProviderCatalog,
+        snapshotDeploymentManifest: options.snapshotDeploymentManifest,
         stderr: stderr.sink,
         stdout: stdout.sink,
       }));

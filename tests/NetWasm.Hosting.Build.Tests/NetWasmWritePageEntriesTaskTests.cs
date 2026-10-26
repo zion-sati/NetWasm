@@ -40,6 +40,27 @@ public sealed class NetWasmWritePageEntriesTaskTests
         Assert.True(request.Randomness);
     }
 
+    // The final module calls an import module's functions, so bundling it is a use.
+    [Fact]
+    public void HostTaskBundlesImportModules()
+    {
+        var writer = new RecordingWriter();
+        var task = new NetWasmWritePageHostEntryTask(writer)
+        {
+            HostingJavaScriptRoot = Path.GetFullPath("hosting"),
+            Preview2ShimRoot = Path.GetFullPath("shim"),
+            OutputPath = Path.GetFullPath("page-entry.mjs"),
+            ImportModules = [new TaskItem("host_ui")],
+            Modules = [Item("host-ui.mjs", ("Module", "host_ui"))],
+            Network = "denyAll",
+        };
+
+        Assert.True(task.Execute());
+
+        Assert.Equal(new BrowserJavaScriptModule("host_ui", Path.GetFullPath("host-ui.mjs")),
+            Assert.Single(Assert.IsType<PageHostEntryRequest>(writer.Host).Modules));
+    }
+
     [Fact]
     public void HostTaskRejectsUnusedAndUnnamedModules()
     {

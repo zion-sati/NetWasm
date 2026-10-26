@@ -114,7 +114,14 @@ public sealed class RawCoreRuntimeImportDeclarationBuilder(
                 RequireMatching(import, compilerSignature);
             }
         }
+        // A native archive linked into the runtime may import from a module
+        // the project declares; the host supplies those functions as they are.
+        var external = request.RuntimeImports
+            .Where(import => request.CompilerDeclarations.ImportModules.Contains(import.Identity.Module)
+                && !request.RuntimeCatalog.Imports.ContainsKey(import.Identity)
+                && !request.ApplicationCatalog.Imports.ContainsKey(import.Identity));
         return runtime.Where(pair => !request.ApplicationCatalog.Imports.ContainsKey(pair.Key))
+            .Concat(external.Select(import => KeyValuePair.Create(import.Identity, import)))
             .ToImmutableDictionary();
     }
 

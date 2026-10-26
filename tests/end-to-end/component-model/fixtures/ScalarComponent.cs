@@ -4,9 +4,9 @@ namespace NetWasm.Acceptance.Components;
 
 public static class ScalarComponent
 {
-    [WitImport("", "increment")]
+    [WitImport("increment")]
     private static extern int Increment(int value);
 
-    [WitExport("", "run")]
+    [WitExport("run")]
     public static int Run(int value) => Increment(value);
 }

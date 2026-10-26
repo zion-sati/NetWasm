@@ -164,36 +164,6 @@ public sealed class EnumReachabilityContractTests
     }
 
     [Theory]
-    [InlineData("InternalToType")]
-    [InlineData("System.IConvertible.ToType")]
-    public void ConvertRootsEveryManagedExceptionItCanEmit(string name)
-    {
-        var enumType = CliTypeIdentity.Named(
-            Assembly,
-            "Fixtures",
-            "State",
-            true,
-            CliValueKind.I4);
-        var method = Method(name, RuntimeIntrinsic.EnumConvert);
-        var analysis = CreateClassifier(
-            method,
-            enumType,
-            CliTypeIdentity.Primitive("i4", CliValueKind.I4)).Classify(
-                Request(method, enumType, [enumType]));
-
-        Assert.Contains(analysis.Exceptions, exception =>
-            exception.Kind == ManagedExceptionKind.ArgumentNull &&
-            exception.TypeName == "System.ArgumentNullException");
-        Assert.Contains(analysis.Exceptions, exception =>
-            exception.Kind == ManagedExceptionKind.InvalidCast &&
-            exception.TypeName == "System.InvalidCastException");
-        Assert.Contains(StringType, analysis.AllocatedTypes);
-        Assert.Equal(EnumMetadataPayload.Names | EnumMetadataPayload.Values |
-            EnumMetadataPayload.RuntimeDescriptor,
-            Assert.Single(analysis.EnumMetadataRequirements).Payload);
-    }
-
-    [Theory]
     [InlineData("InternalToString", true)]
     [InlineData("InternalFormat", true)]
     [InlineData("InternalToInt32", false)]
@@ -330,7 +300,7 @@ public sealed class EnumReachabilityContractTests
                 "InternalGetName" => RuntimeIntrinsic.EnumGetName,
                 "InternalGetMetadata" => RuntimeIntrinsic.EnumGetMetadata,
                 "InternalCompareTo" => RuntimeIntrinsic.EnumCompareTo,
-                "InternalToType" or "System.IConvertible.ToType" or "InternalToInt32" => RuntimeIntrinsic.EnumConvert,
+                "InternalToInt32" => RuntimeIntrinsic.EnumConvert,
                 "InternalToString" => RuntimeIntrinsic.EnumToString,
                 "InternalFormat" => RuntimeIntrinsic.EnumFormat,
                 _ => default,

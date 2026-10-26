@@ -1,7 +1,15 @@
 #nullable enable
 
 using System;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.JavaScript;
+
+// The host supplies a [WasmImportLinkage] function to the final module as is.
+public static class RawHost
+{
+    [DllImport("consumer.raw", EntryPoint = "scale"), WasmImportLinkage]
+    public static extern long Scale(int value);
+}
 
 public static class ConsumerMath
 {
@@ -71,6 +79,12 @@ public static class ConsumerMath
 
     [JSImport("receive_bytes", "consumer.math")]
     public static extern void ReceiveBytes(byte[]? value);
+
+    [JSImport("fill_view", "consumer.math")]
+    public static extern int FillView(Span<byte> values, byte value);
+
+    [JSImport("sum_view", "consumer.math")]
+    public static extern double SumView(ReadOnlySpan<double> values);
 
     [JSImport("echo_bytes", "consumer.math")]
     public static extern byte[]? EchoBytes(byte[]? value);
@@ -154,6 +168,16 @@ public static class EntryPoint
         return ConsumerMath.Add(input, 2);
     }
 
+    // A span is a view over linear memory: the host's writes are the array's.
+    [JSExport("span_view_lifecycle")]
+    public static int SpanViewLifecycle(int input)
+    {
+        var bytes = new byte[4];
+        var filled = ConsumerMath.FillView(bytes, 9);
+        var sum = ConsumerMath.SumView(new[] { 100d, 20d, 1.5d, 100d }.AsSpan(1, 2));
+        return filled == 4 && bytes[3] == 9 && sum == 21.5 ? input : 0;
+    }
+
     [JSExport("twice")]
     public static int Twice(int input) => input * 2;
 
@@ -225,6 +249,19 @@ public static class EntryPoint
     {
         var value = ConsumerMath.NativeUnsignedIdentity(unchecked((nuint)4_294_967_296UL));
         return value > (nuint)System.UInt32.MaxValue ? input : 0;
+    }
+
+    [JSExport("raw_scale")]
+    public static int RawScale(int input)
+    {
+        try
+        {
+            return (int)RawHost.Scale(input);
+        }
+        catch (System.JSException)
+        {
+            return -1;
+        }
     }
 
     [JSExport("failure_status")]

@@ -9,6 +9,8 @@ const layouts = Object.freeze({
     stringDataOffset: 8,
     arrayLengthOffset: 4,
     arrayDataPointerOffset: 8,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 4,
   }),
   wasm64: Object.freeze({
     managedReferenceSize: 8,
@@ -16,6 +18,8 @@ const layouts = Object.freeze({
     stringDataOffset: 12,
     arrayLengthOffset: 8,
     arrayDataPointerOffset: 16,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 8,
   }),
 });
 const statusAbi = Object.freeze({ successStatus: 0, hostFailureStatus: 1, scalarResultOffset: 0 });
@@ -33,6 +37,7 @@ const managedExport = (name = "add", result = "i32") => ({
   completeExport: null,
 });
 const hostImport = (name = "increment") => ({
+  call: "status",
   module: "consumer",
   name,
   parameters: ["i32"],
@@ -43,7 +48,7 @@ const hostImport = (name = "increment") => ({
   cancelExport: null,
 });
 const manifest = (target = "wasm32", overrides = {}) => ({
-  version: 1,
+  version: 2,
   target,
   statusAbi,
   targetLayout: layouts[target],
@@ -152,7 +157,7 @@ test("retains void async exports without inventing a result helper", () => {
 
 test("accepts compact synchronous manifests without optional members", () => {
   const contract = manifest();
-  contract.imports = [{
+  contract.imports = [{ call: "status",
     module: "consumer", name: "increment", parameters: ["i32"], result: "i32",
   }];
   contract.exports = [{ name: "add", parameters: ["i32"], result: "i32" }];

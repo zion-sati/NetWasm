@@ -160,6 +160,15 @@ public sealed record WasmInstructionOperand
             tagIndex: tagIndex,
             labelDepth: labelDepth);
 
+    public static WasmInstructionOperand TryTableCatchAll(
+        byte blockType,
+        uint labelDepth) =>
+        new(
+            WasmInstructionOperandShape.TryTableCatch,
+            byteValue: 2,
+            blockTypeValue: blockType,
+            labelDepth: labelDepth);
+
     public static WasmInstructionOperand TryTableCatchAllRef(
         byte blockType,
         uint labelDepth) =>

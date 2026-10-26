@@ -20,12 +20,15 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
     [Required] public string Preview2ShimRoot { get; set; } = string.Empty;
     [Required] public string OutputPath { get; set; } = string.Empty;
     public ITaskItem[] Imports { get; set; } = [];
+    public ITaskItem[] ImportModules { get; set; } = [];
     public ITaskItem[] Modules { get; set; } = [];
     public ITaskItem[] Arguments { get; set; } = [];
     public ITaskItem[] EnvironmentVariables { get; set; } = [];
     public ITaskItem[] Clocks { get; set; } = [];
     [Required] public string Network { get; set; } = string.Empty;
     public bool Randomness { get; set; }
+    public ITaskItem[] RequiredImportModules { get; set; } = [];
+    public bool ValidateDeploymentManifest { get; set; } = true;
 
     public override bool Execute()
     {
@@ -34,6 +37,7 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
             // A page may supply a required module to open() instead of bundling
             // it, but a bundled module that no import uses is a project error.
             var required = Imports.Select(item => JavaScriptExportItems.RequiredMetadata(item, "Module"))
+                .Concat(ImportModules.Select(item => item.ItemSpec))
                 .ToHashSet(StringComparer.Ordinal);
             var modules = Modules
                 .Where(item => item.GetMetadata("NetWasmGeneratedWorkerClient") != "true"
@@ -58,7 +62,9 @@ public sealed class NetWasmWritePageHostEntryTask : Microsoft.Build.Utilities.Ta
                     item.GetMetadata("Value")))],
                 [.. Clocks.Select(item => item.ItemSpec)],
                 Network,
-                Randomness));
+                Randomness,
+                [.. RequiredImportModules.Select(item => item.ItemSpec)],
+                ValidateDeploymentManifest));
             return true;
         }
         catch (Exception exception)

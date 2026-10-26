@@ -7,6 +7,13 @@ namespace System.Runtime.InteropServices.WebAssembly
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class WitImportAttribute : Attribute
     {
+        // A function of the world itself, rather than of one of its interfaces.
+        public WitImportAttribute(string functionName)
+        {
+            InterfaceName = string.Empty;
+            FunctionName = functionName;
+        }
+
         public WitImportAttribute(string interfaceName, string functionName)
         {
             InterfaceName = interfaceName;
@@ -20,6 +27,13 @@ namespace System.Runtime.InteropServices.WebAssembly
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class WitExportAttribute : Attribute
     {
+        // A function of the world itself, rather than of one of its interfaces.
+        public WitExportAttribute(string functionName)
+        {
+            InterfaceName = string.Empty;
+            FunctionName = functionName;
+        }
+
         public WitExportAttribute(string interfaceName, string functionName)
         {
             InterfaceName = interfaceName;
@@ -33,6 +47,13 @@ namespace System.Runtime.InteropServices.WebAssembly
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class WitPostReturnAttribute : Attribute
     {
+        // A function of the world itself, rather than of one of its interfaces.
+        public WitPostReturnAttribute(string functionName)
+        {
+            InterfaceName = string.Empty;
+            FunctionName = functionName;
+        }
+
         public WitPostReturnAttribute(string interfaceName, string functionName)
         {
             InterfaceName = interfaceName;
@@ -46,6 +67,13 @@ namespace System.Runtime.InteropServices.WebAssembly
     [AttributeUsage(AttributeTargets.Class)]
     public sealed class WitResourceAttribute : Attribute
     {
+        // A resource the world itself declares, rather than one of its interfaces.
+        public WitResourceAttribute(string resourceName)
+        {
+            InterfaceName = string.Empty;
+            ResourceName = resourceName;
+        }
+
         public WitResourceAttribute(string interfaceName, string resourceName)
         {
             InterfaceName = interfaceName;

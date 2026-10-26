@@ -37,7 +37,8 @@ internal sealed class InteropDeclarationValidator(
         ArgumentNullException.ThrowIfNull(methods);
         ArgumentNullException.ThrowIfNull(symbols);
         var delegateTypes = _delegateTypes.Create(typeDefinitions, baseTypes);
-        var exportNames = new HashSet<string>(StringComparer.Ordinal);
+        // JSExports from every assembly share one module namespace.
+        var exportNames = new Dictionary<string, MethodDefinitionModel>(StringComparer.Ordinal);
         foreach (var method in metadata.Methods
                      .Where(method => method.JSImport is not null || method.JSExport is not null ||
                          method.WitImport is not null || method.WitExport is not null ||
@@ -50,10 +51,13 @@ internal sealed class InteropDeclarationValidator(
             if (method.JSExport is not null)
             {
                 var exportName = method.JSExport.ExportName ?? method.Name;
-                if (!exportNames.Add(exportName))
+                if (!exportNames.TryAdd(exportName, method))
                 {
+                    var first = exportNames[exportName];
                     throw Invalid(symbols, method,
-                        $"duplicate JSExport name '{exportName}'");
+                        $"duplicate JSExport name '{exportName}': declared by " +
+                        $"{symbols.Format(first)} in {first.Key.Assembly.Name} and " +
+                        $"{symbols.Format(method)} in {method.Key.Assembly.Name}");
                 }
                 ValidateExport(symbols, method);
             }
@@ -168,10 +172,17 @@ internal sealed class InteropDeclarationValidator(
             !IsHostValue(method.Signature.ReturnSignatureType)) ||
             method.Signature.ParameterSignatureTypes.Any(type =>
                 !IsHostScalar(type) && !IsString(type) && !IsValueArray(type) &&
-                !IsHostObject(type) && !delegateTypes.Recognize(type)))
+                !IsMemoryView(type) && !IsHostObject(type) && !delegateTypes.Recognize(type)))
         {
             throw Invalid(symbols, method,
-                "JSImport currently supports primitive scalars, string, primitive number arrays such as byte[] or double[], JSObject, and supported delegate parameters and primitive scalars, string, primitive number arrays, JSObject, JSSubscription, or void results");
+                "JSImport currently supports primitive scalars, string, primitive number arrays such as byte[] or double[], Span<T> or ReadOnlySpan<T> of a primitive number, JSObject, and supported delegate parameters and primitive scalars, string, primitive number arrays, JSObject, JSSubscription, or void results");
+        }
+        // A span reaches JavaScript as a view that is valid only until the call returns.
+        if ((asyncReturn.IsAsync || method.JSImport!.IsPromise) &&
+            method.Signature.ParameterSignatureTypes.Any(IsMemoryView))
+        {
+            throw Invalid(symbols, method,
+                "JSImport Span<T> and ReadOnlySpan<T> parameters are views valid only during the call, so an asynchronous JSImport cannot take them; pass a number array instead");
         }
         if (asyncReturn.IsAsync)
         {
@@ -291,6 +302,8 @@ internal sealed class InteropDeclarationValidator(
     }
 
     private static bool IsValueArray(CliTypeIdentity type) => JavaScriptValueArray.IsSupported(type);
+
+    private static bool IsMemoryView(CliTypeIdentity type) => JavaScriptMemoryView.IsSupported(type);
 
     private static bool IsExportReference(CliTypeIdentity type) =>
         IsString(type) || IsValueArray(type) || IsJSObject(type);

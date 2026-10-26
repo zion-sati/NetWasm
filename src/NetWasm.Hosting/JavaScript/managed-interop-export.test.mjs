@@ -27,6 +27,8 @@ const targetLayout = {
   stringDataOffset: 8,
   arrayLengthOffset: 4,
   arrayDataPointerOffset: 8,
+  spanReferenceOffset: 0,
+  spanLengthOffset: 4,
 };
 const request = (overrides = {}) => ({
   descriptor: descriptor(),

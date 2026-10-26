@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 import { createBrowserRawExportSession } from "./browser-raw-export-session.mjs";
+import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
+import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
+import { createPreview2FilesystemScope } from "./preview2-filesystem-scope.mjs";
 import { timeZoneContainer } from "./timezone-sidecar-zones.test.mjs";
 
 const encoder = new TextEncoder();
@@ -16,7 +19,7 @@ const reportingApplication = Buffer.from(
   "base64");
 const rawAdapter = encoder.encode(`
 export const rawAdapterMetadata = Object.freeze({
-  abiVersion: 1,
+  abiVersion: 2,
   bindingIdentities: Object.freeze([]),
   requiredCapabilities: Object.freeze([]),
   target: "wasm32",
@@ -39,9 +42,9 @@ const runtimeLayout = encoder.encode(JSON.stringify({
 function interop(imports = [], exports = [
   { name: "add", parameters: ["i32", "i32"], result: "i32" },
   { name: "initialized", parameters: [], result: "i32" },
-]) {
+], importModules = []) {
   return encoder.encode(JSON.stringify({
-    version: 1,
+    version: 2,
     target: "wasm32",
     statusAbi: { successStatus: 0, hostFailureStatus: 1, scalarResultOffset: 0 },
     targetLayout: {
@@ -50,11 +53,14 @@ function interop(imports = [], exports = [
       stringDataOffset: 8,
       arrayLengthOffset: 4,
       arrayDataPointerOffset: 8,
+      spanReferenceOffset: 0,
+      spanLengthOffset: 4,
     },
     imports,
     exports,
     callbacks: [],
     witImports: [],
+    importModules,
   }));
 }
 
@@ -75,13 +81,14 @@ function fixture({
   filesystemDisposeError = null,
   interopImports = [],
   interopExports = undefined,
+  interopImportModules = [],
   manifestTarget = "wasm32",
   mutateOptions = null,
   requiredImportModules = [],
   requiredImports = [],
   timeZoneBytes = null,
 } = {}) {
-  const interopManifest = interop(interopImports, interopExports);
+  const interopManifest = interop(interopImports, interopExports, interopImportModules);
   const artifacts = [
     artifact("worker.wasm", "application", "application/wasm", applicationBytes),
     artifact("worker.raw-adapter.mjs", "raw-adapter", "text/javascript", rawAdapter),
@@ -144,16 +151,19 @@ function fixture({
     manifestUrl,
     platform: {
       compileCoreModule: WebAssembly.compile.bind(WebAssembly),
-      createFilesystem() {
-        return {
-          types: { Descriptor },
-          preopens: { getDirectories: () => [] },
-          dispose() {
-            filesystemDisposals++;
-            if (filesystemDisposeError !== null) throw filesystemDisposeError;
-          },
-        };
-      },
+      createFilesystemScope: preopens => createPreview2FilesystemScope({
+        createFilesystem() {
+          return {
+            types: { Descriptor },
+            preopens: { getDirectories: () => [] },
+            dispose() {
+              filesystemDisposals++;
+              if (filesystemDisposeError !== null) throw filesystemDisposeError;
+            },
+          };
+        },
+        preopens,
+      }),
       createModuleUrl(bytes) {
         const url = `blob:netwasm-worker/${++moduleId}`;
         modules.set(url, new Uint8Array(bytes));
@@ -176,6 +186,8 @@ function fixture({
       },
       revokeModuleUrl(url) { modules.delete(url); },
     },
+    platformProviderCatalog,
+    snapshotDeploymentManifest: validateDeploymentManifest,
     stderr: output,
     stdout: output,
   };
@@ -259,7 +271,7 @@ test("retains timezone resources until the persistent session closes", async () 
 });
 
 test("keeps ordinary JS imports separate from WIT providers", async () => {
-  const imported = {
+  const imported = { call: "status",
     module: "consumer.worker",
     name: "increment",
     parameters: ["i32"],
@@ -290,6 +302,25 @@ test("keeps ordinary JS imports separate from WIT providers", async () => {
     /invalid/);
   assert.throws(() => fixture({ consumerModules: { "consumer.worker": { increment: 1 } } }),
     /invalid/);
+});
+
+// The final module imports an import module's functions as they are, so a
+// session requires the module like a JSImport module.
+test("requires the import modules the final module calls", async () => {
+  const missing = fixture({ interopImportModules: ["host_ui"] });
+  await assert.rejects(() => missing.open({ startup: {
+    buildFingerprint, manifestSha256: missing.manifestSha256,
+  } }), /JS import modules/);
+
+  const supplied = fixture({
+    consumerModules: { host_ui: { create_node: type => BigInt(type) } },
+    interopImportModules: ["host_ui"],
+  });
+  const session = await supplied.open({ startup: {
+    buildFingerprint, manifestSha256: supplied.manifestSha256,
+  } });
+  assert.equal(session.exports.add(20, 22), 42);
+  await session.close();
 });
 
 test("releases acquired scopes when provider preparation fails", async () => {
@@ -340,6 +371,33 @@ test("does not release transferred scopes twice when session opening fails", asy
     buildFingerprint, manifestSha256: state.manifestSha256,
   } }), /required/);
   assert.equal(state.filesystemDisposals(), 1);
+});
+
+// Issue #121: an application that links no filesystem interface gets no
+// filesystem scope, so its page bundle carries no filesystem code.
+test("opens without a filesystem scope when the application links no filesystem", async () => {
+  const state = fixture({ mutateOptions(options) { options.platform.createFilesystemScope = null; } });
+  const session = await state.open({ startup: {
+    buildFingerprint, manifestSha256: state.manifestSha256,
+  } });
+  await session.close();
+  assert.equal(state.filesystemDisposals(), 0);
+});
+
+test("time zone data without a filesystem scope fails clearly", async () => {
+  const state = fixture({
+    configuration: {
+      environment: [{ name: "TZ", value: "Australia/Melbourne" }],
+      grants: {
+        clocks: [], environment: ["TZ"], network: "denyAll", preopens: [], randomness: false,
+      },
+    },
+    mutateOptions(options) { options.platform.createFilesystemScope = null; },
+    timeZoneBytes: timeZoneContainer([["Australia/Melbourne", 1]]),
+  });
+  await assert.rejects(() => state.open({ startup: {
+    buildFingerprint, manifestSha256: state.manifestSha256,
+  } }), /time zone data requires an application that links a filesystem interface/);
 });
 
 test("rejects browser host filesystem paths", () => {

@@ -9,7 +9,12 @@ namespace NetWasm.Hosting.Build.JavaScript;
 public sealed record WorkerJavaScriptImport(
     string Module,
     string SourcePath,
-    ImmutableArray<string> Functions);
+    ImmutableArray<string> Functions)
+{
+    // An import module: the final module calls any of its functions directly,
+    // so the worker binds every function it exports.
+    public bool BindsModule { get; init; }
+}
 
 public sealed record WorkerJavaScriptExport(
     string Name,
@@ -41,7 +46,9 @@ public sealed record WorkerHostEntryRequest(
     ImmutableArray<WorkerEnvironmentVariable> Environment,
     ImmutableArray<string> Clocks,
     string Network,
-    bool Randomness);
+    bool Randomness,
+    ImmutableArray<string> RequiredImportModules,
+    bool ValidateDeploymentManifest);
 
 public sealed record WorkerClientEntryRequest(
     string HostingJavaScriptRoot,
@@ -64,17 +71,20 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
     {
         ValidateHost(request);
         var imports = request.Imports.OrderBy(binding => binding.Module, StringComparer.Ordinal).ToArray();
+        var capabilities = RawBrowserHostCapabilities.Select(request.HostingJavaScriptRoot, request.RequiredImportModules);
         var source = new StringBuilder();
         AppendLine(source, $"import {{ bindWorkerImports }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-import-bindings.mjs"))};");
         AppendLine(source, $"import {{ createBrowserRawExportSession }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "browser-raw-export-session.mjs"))};");
         AppendLine(source, $"import {{ createWorkerSessionHost }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-session-host.mjs"))};");
         AppendLine(source, $"import {{ mergeEnvironment }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "session-options.mjs"))};");
-        BrowserHostSource.AppendImports(source, request.Preview2ShimRoot);
+        BrowserHostSource.AppendRawImports(source, request.HostingJavaScriptRoot, request.Preview2ShimRoot, capabilities);
+        BrowserHostSource.AppendManifestValidatorImport(source, request.HostingJavaScriptRoot, request.ValidateDeploymentManifest);
         for (var index = 0; index < imports.Length; index++)
         {
             AppendLine(source, $"import * as consumer{index} from {ModuleSpecifier(imports[index].SourcePath)};");
         }
         source.AppendLine();
+        BrowserHostSource.AppendDeepFreeze(source);
         source.AppendLine("const manifestUrl = new URL(\"./deployment.json\", import.meta.url).href;");
         source.AppendLine("let fatalScheduled = false;");
         source.AppendLine("function fatal(cause) {");
@@ -94,6 +104,10 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         {
             var binding = imports[index];
             AppendLine(source, $"  {Json(binding.Module)}: Object.freeze({{");
+            if (binding.BindsModule)
+            {
+                AppendLine(source, $"    ...Object.fromEntries(Object.entries(imports{index}).filter(([name, value]) => name !== \"createWorkerImports\" && typeof value === \"function\")),");
+            }
             foreach (var function in binding.Functions.Order(StringComparer.Ordinal))
             {
                 AppendLine(source, $"    {Json(function)}: imports{index}[{Json(function)}],");
@@ -110,8 +124,10 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         source.AppendLine("  consumerModules: createConsumerModules(request.notify),");
         source.AppendLine("  manifestUrl,");
         source.AppendLine("  platform: Object.freeze({");
-        BrowserHostSource.AppendPlatformMembers(source, "    ");
+        BrowserHostSource.AppendRawPlatformMembers(source, "    ", capabilities);
         source.AppendLine("  }),");
+        BrowserHostSource.AppendProviderCatalog(source, "  ", capabilities);
+        BrowserHostSource.AppendManifestSnapshot(source, "  ", request.ValidateDeploymentManifest);
         source.AppendLine("  stderr: request.stderr,");
         source.AppendLine("  stdout: request.stdout,");
         source.AppendLine("});");
@@ -190,6 +206,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         ArgumentNullException.ThrowIfNull(request);
         ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.Preview2ShimRoot, request.OutputPath);
         if (request.Imports.IsDefault || request.Arguments.IsDefault || request.Environment.IsDefault
+            || request.RequiredImportModules.IsDefault
             || request.Clocks.IsDefault || request.Network is not ("allowAll" or "denyAll")
             || request.Arguments.Any(argument => argument.Contains('\0'))
             || request.Environment.Any(variable => string.IsNullOrWhiteSpace(variable.Name)
@@ -207,7 +224,8 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
             ArgumentNullException.ThrowIfNull(binding);
             ValidateApplicationModule(binding.Module);
             ValidateAbsolutePaths(binding.SourcePath);
-            if (!modules.Add(binding.Module) || binding.Functions.IsDefaultOrEmpty
+            if (!modules.Add(binding.Module) || binding.Functions.IsDefault
+                || binding.Functions.IsEmpty && !binding.BindsModule
                 || binding.Functions.Any(string.IsNullOrWhiteSpace)
                 || binding.Functions.Distinct(StringComparer.Ordinal).Count() != binding.Functions.Length)
             {

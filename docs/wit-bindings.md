@@ -1,11 +1,40 @@
 # Generate C# bindings from WIT
 
-`NetWasm.Wit.Bindings.Tool` converts one selected WIT world into deterministic,
-reflection-free C# source. It is a source-generation utility, not a compiler
-mode: the NetWasm compiler consumes the generated C# assembly and does not run
-or discover this tool automatically.
+NetWasm converts a selected WIT world into deterministic, reflection-free C#
+source. The SDK generates it during the build from `NetWasmWit` items, and the
+standalone `NetWasm.Wit.Bindings.Tool` produces the same source for other
+workflows.
 
-## Install and run
+## Generate bindings during the build
+
+Add a `NetWasmWit` item for each WIT input:
+
+```xml
+<ItemGroup>
+  <NetWasmWit Include="wit/service.wit"
+              World="docs:bindings@1.0.0/service"
+              Namespace="MyApp.Host"
+              Accessibility="Internal" />
+</ItemGroup>
+```
+
+`Include` is a WIT file or a WIT package directory with its `deps`. `World`
+selects a world and may be omitted when the input contains exactly one.
+`Namespace` replaces the namespace the WIT package name gives, and
+`Accessibility` is `Public` (the default) or `Internal`. Each item's bindings
+compile with the project and are generated again when its WIT changes; two
+items need distinct file or directory names.
+
+The build runs the generator on the restored host tools, so it needs no Node.js
+installation, in an application or a class library. With
+`RestorePackagesWithLockFile`, also set `NetWasmRequiresHostTools` to `true` so
+each development host keeps its own lock file (NWSDK089).
+
+Bindings declare the managed side of a world. The component itself is still
+built against the world that `NetWasmWitPath` and `NetWasmWorld` select; see
+[Use the same world at runtime](#use-the-same-world-at-runtime).
+
+## Run the standalone tool
 
 Install the released tool:
 
@@ -54,9 +83,13 @@ netwasm-wit-bindgen \
 ```
 
 Omit `--world` when the input contains exactly one world. `--wit` accepts a
-WIT file or package directory. `--accessibility` is optional and accepts
-`public` (the default) or `internal`; it changes the accessibility of
-generated top-level declarations.
+WIT file or package directory, or `-` to read the WIT from standard input. A
+shell's process substitution works as well, as in
+`--wit <(generate-wit)`. `--output -` writes the source to standard output.
+`--accessibility` is optional and accepts `public` (the default) or
+`internal`; it changes the accessibility of generated top-level declarations.
+`--namespace` is optional and sets the namespace of the generated source. By
+default the namespace comes from the WIT package name, as below.
 
 The example above, directory input, omitted single-world selection, both
 accessibility modes, and absolute input/output paths were executed against the
@@ -83,9 +116,8 @@ internal static partial class ServiceExports
 }
 ```
 
-Regenerate `Bindings.g.cs` whenever the selected WIT world changes. Commit the
-generated file or add an explicit, deterministic generation step to your build;
-an ordinary NetWasm SDK build does not invoke the standalone tool.
+Regenerate `Bindings.g.cs` whenever the selected WIT world changes, or let the
+build generate it from a `NetWasmWit` item instead.
 
 ## Run the generated bindings in a browser worker
 
@@ -221,11 +253,18 @@ names the unresolved package.
 | variant | Tag enum plus generated value struct |
 | enum and flags | Generated enum; wide flags use the generated multiword representation |
 | resource, `own`, and `borrow` | Generated resource handle classes with explicit ownership/disposal |
-| imports | Static wrapper methods that lower managed values to the canonical ABI |
+| imports | Static wrapper methods, in partial classes, that lower managed values to the canonical ABI |
+| a world's own functions, types and resources | Members of `<World>Imports` and `<World>Exports`, bound with the one-argument `[WitImport("name")]` and `[WitExport("name")]` |
 | exports | Partial managed methods plus generated canonical ABI entry points and post-return cleanup |
 
 The generated marshalling is explicit C# and remains visible to closed-world
 reachability. It does not require reflection or a runtime metadata registry.
+
+The bindings, and the methods that implement a world's exports, can live in a
+library the application references. The selected world binds each of its
+exports to exactly one `[WitExport]` method, and its post-return cleanup to at
+most one `[WitPostReturn]` method, in any assembly of the application. When the
+application selects no world, a library's WIT exports are unused.
 
 Asynchronous WIT functions and `future`/`stream` types are currently
 unsupported by the standalone binding generator. WIT Web Worker application

@@ -146,6 +146,14 @@ namespace System
             return true;
         }
 
+        // ToString() with no format: the shortest round-trip form, without the
+        // format string machinery.
+        internal static string FormatSingle(float value) =>
+            FormatShortestFloating<float>(BitConverter.SingleToUInt32Bits(value));
+
+        internal static string FormatDouble(double value) =>
+            FormatShortestFloating<double>(BitConverter.DoubleToUInt64Bits(value));
+
         internal static string FormatSingle(float value, string? format) =>
             FormatFloating<float>(BitConverter.SingleToUInt32Bits(value), format);
 
@@ -299,7 +307,7 @@ namespace System
             var magnitude = bits & ~signMask;
             if ((magnitude & exponentMask) == exponentMask)
             {
-                AppendFloating<TNumber>(ref builder, bits, default);
+                AppendShortestFloating<TNumber>(ref builder, bits);
                 return;
             }
 
@@ -452,6 +460,14 @@ namespace System
             ? FormatFloating<float>(bits, format)
             : FormatFloating<double>(bits, format);
 
+        internal static string FormatShortestFloating<TNumber>(ulong bits)
+            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
+        {
+            var builder = new ValueStringBuilder(32);
+            AppendShortestFloating<TNumber>(ref builder, bits);
+            return builder.ToString();
+        }
+
         private static string FormatFloating<TNumber>(ulong bits, string? format)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
         {
@@ -478,6 +494,12 @@ namespace System
                 return;
             }
             var lowerExponent = symbol is 'g' or 'r' or 'e';
+            if (!customFormat && symbol is not ('E' or 'e') && !(precision > 0 && symbol is 'G' or 'g'))
+            {
+                AppendRoundTripFloating<TNumber>(
+                    ref builder, bits, precision > 0 ? precision : TNumber.MaxRoundTripDigits, lowerExponent);
+                return;
+            }
             var fractionBits = TNumber.NormalMantissaBits - 1;
             var exponentBits = TNumber.ExponentBits;
             var exponentMask = (1UL << exponentBits) - 1;
@@ -509,23 +531,7 @@ namespace System
                 return;
             }
 
-            GetFloatingRational(
-                bits,
-                out var numerator,
-                out var denominator,
-                TNumber.ExponentBits,
-                TNumber.ExponentBias,
-                TNumber.NormalMantissaBits);
-            var binaryExponent = FloorBinaryExponent(numerator, denominator);
-            var decimalExponent = (int)(binaryExponent * 30_103L / 100_000L);
-            while (CompareToPower10(numerator, denominator, decimalExponent) < 0)
-            {
-                decimalExponent--;
-            }
-            while (CompareToPower10(numerator, denominator, decimalExponent + 1) >= 0)
-            {
-                decimalExponent++;
-            }
+            var decimalExponent = GetFloatingDecimal<TNumber>(bits, out var numerator, out var denominator);
 
             if (customFormat)
             {
@@ -567,27 +573,57 @@ namespace System
                 return;
             }
 
-            var maxDigits = precision > 0 ? precision : TNumber.MaxRoundTripDigits;
-            if (precision > 0 && (symbol is 'G' or 'g'))
+            var generalDigits = GenerateRoundedDigits(
+                numerator,
+                denominator,
+                decimalExponent,
+                precision,
+                out var generalExponent,
+                out var generalLength);
+            AppendGeneralDigits(
+                ref builder,
+                generalDigits,
+                generalLength,
+                generalExponent,
+                negative,
+                precision,
+                lowerExponent);
+        }
+
+        // The shortest digits that round-trip, as ToString() writes them. It takes
+        // no format string, so a program that never passes one does not reach the
+        // custom format parser and formatter.
+        internal static void AppendShortestFloating<TNumber>(scoped ref ValueStringBuilder builder, ulong bits)
+            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber> =>
+            AppendRoundTripFloating<TNumber>(ref builder, bits, TNumber.MaxRoundTripDigits, lowerExponent: false);
+
+        // The fewest digits, up to maxDigits, that convert back to the same value.
+        private static void AppendRoundTripFloating<TNumber>(
+            scoped ref ValueStringBuilder builder,
+            ulong bits,
+            int maxDigits,
+            bool lowerExponent)
+            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
+        {
+            var fractionBits = TNumber.NormalMantissaBits - 1;
+            var exponentBits = TNumber.ExponentBits;
+            var exponentMask = (1UL << exponentBits) - 1;
+            var exponent = (bits >> fractionBits) & exponentMask;
+            var fraction = bits & ((1UL << fractionBits) - 1);
+            if (exponent == exponentMask)
             {
-                var generalDigits = GenerateRoundedDigits(
-                    numerator,
-                    denominator,
-                    decimalExponent,
-                    maxDigits,
-                    out var generalExponent,
-                    out var generalLength);
-                AppendGeneralDigits(
-                    ref builder,
-                    generalDigits,
-                    generalLength,
-                    generalExponent,
-                    negative,
-                    maxDigits,
-                    lowerExponent);
+                builder.Append(fraction != 0 ? "NaN" :
+                    (bits >> (fractionBits + exponentBits)) != 0 ? "-Infinity" : "Infinity");
+                return;
+            }
+            var negative = (bits >> (fractionBits + exponentBits)) != 0;
+            if (exponent == 0 && fraction == 0)
+            {
+                builder.Append(negative ? "-0" : "0");
                 return;
             }
 
+            var decimalExponent = GetFloatingDecimal<TNumber>(bits, out var numerator, out var denominator);
             var selected = new char[maxDigits];
             var selectedLength = maxDigits;
             for (var candidatePrecision = 1; candidatePrecision <= maxDigits; candidatePrecision++)
@@ -618,6 +654,34 @@ namespace System
                 negative,
                 maxDigits,
                 lowerExponent);
+        }
+
+        // The value as numerator / denominator, and the exponent of its leading
+        // decimal digit.
+        private static int GetFloatingDecimal<TNumber>(
+            ulong bits,
+            out FloatingBigInteger numerator,
+            out FloatingBigInteger denominator)
+            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
+        {
+            GetFloatingRational(
+                bits,
+                out numerator,
+                out denominator,
+                TNumber.ExponentBits,
+                TNumber.ExponentBias,
+                TNumber.NormalMantissaBits);
+            var binaryExponent = FloorBinaryExponent(numerator, denominator);
+            var decimalExponent = (int)(binaryExponent * 30_103L / 100_000L);
+            while (CompareToPower10(numerator, denominator, decimalExponent) < 0)
+            {
+                decimalExponent--;
+            }
+            while (CompareToPower10(numerator, denominator, decimalExponent + 1) >= 0)
+            {
+                decimalExponent++;
+            }
+            return decimalExponent;
         }
 
         private static string FormatScientificDigits(

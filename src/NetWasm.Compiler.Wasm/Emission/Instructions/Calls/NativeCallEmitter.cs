@@ -11,13 +11,16 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Calls;
 internal sealed class NativeCallEmitter(
     ITargetLayout layouts,
     IStaticInitializationEmitter initialization,
-    IAddressInstructionEmitter addresses) : ICallEmitter
+    IAddressInstructionEmitter addresses,
+    IImplicitExceptionEmitter exceptions) : ICallEmitter
 {
     private readonly ITargetLayout _layouts = layouts ?? throw new ArgumentNullException(nameof(layouts));
     private readonly IStaticInitializationEmitter _initialization = initialization ??
         throw new ArgumentNullException(nameof(initialization));
     private readonly IAddressInstructionEmitter _addresses = addresses ??
         throw new ArgumentNullException(nameof(addresses));
+    private readonly IImplicitExceptionEmitter _exceptions = exceptions ??
+        throw new ArgumentNullException(nameof(exceptions));
 
     public void Emit(CallEmissionRequest request, IWasmInstructionWriter code,
         IFunctionIndexResolver functionIndices)
@@ -69,7 +72,23 @@ internal sealed class NativeCallEmitter(
         }
         // For a singleton result the address stays below the call operands, so
         // its scalar result can be stored without adding a scratch scalar local.
-        if (result.Kind is NativeAbiValueKind.ScalarizedAggregate or NativeAbiValueKind.IndirectAggregate)
+        if (result.Kind == NativeAbiValueKind.ScalarizedAggregate)
+            EmitFrameAddress(resultOffset);
+        // A host supplies a [WasmImportLinkage] function, so anything it throws
+        // unwinds to a catch_all and raises JSException:
+        //   block (result t)  block  try_table (result t) (catch_all 0)
+        //     arguments, call  end  br 1  end  throw JSException  end
+        var hostCall = native.Abi.Import.HasWasmImportLinkage;
+        var callResult = native.Import.Type.Result == CliValueKind.Void
+            ? WasmOpcodes.EmptyBlockType
+            : (byte)WasmValueTypes.FromCli(native.Import.Type.Result, _layouts.Target);
+        if (hostCall)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Block, WasmInstructionOperand.BlockType(callResult)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Block, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.TryTable, WasmInstructionOperand.TryTableCatchAll(callResult, 0)));
+        }
+        if (result.Kind == NativeAbiValueKind.IndirectAggregate)
             EmitFrameAddress(resultOffset);
         foreach (var parameter in plan.Parameters)
         {
@@ -87,6 +106,15 @@ internal sealed class NativeCallEmitter(
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)functionIndex)));
+        if (hostCall)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Branch, WasmInstructionOperand.Unsigned(1)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+            _exceptions.Emit(code, ManagedExceptionKind.JSException, instruction.Context.ManagedThrowFunction);
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        }
         if (result.Kind == NativeAbiValueKind.ScalarizedAggregate)
             ManagedMemoryEmitter.EmitStoreByType(code, _layouts.Target, result.ScalarOffset,
                 result.ScalarStorageType!, result.Size);

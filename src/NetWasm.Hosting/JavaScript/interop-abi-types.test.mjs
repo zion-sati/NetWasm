@@ -5,10 +5,12 @@ import {
   describeValueArray,
   isAbiType,
   isHostObject,
+  isMemoryViewAbiType,
   isScalarAbiType,
   isTransferAbiType,
   isValueArray,
   isValueArrayAbiType,
+  memoryViewConstructor,
   valueArrayConstructor,
 } from "./interop-abi-types.mjs";
 
@@ -43,6 +45,25 @@ test("isScalarAbiType recognizes only scalar ABI values", () => {
     "subscription", "promise", "callback",
   ]) {
     assert.equal(isScalarAbiType(type), false, String(type));
+  }
+});
+
+test("maps every span view ABI type to its typed array", () => {
+  const views = {
+    "u8-view": Uint8Array, "i8-view": Int8Array, "i16-view": Int16Array, "u16-view": Uint16Array,
+    "i32-view": Int32Array, "u32-view": Uint32Array, "i64-view": BigInt64Array,
+    "u64-view": BigUint64Array, "f32-view": Float32Array, "f64-view": Float64Array,
+  };
+  for (const [type, constructor] of Object.entries(views)) {
+    assert.equal(isAbiType(type), true, type);
+    assert.equal(isMemoryViewAbiType(type), true, type);
+    assert.equal(isTransferAbiType(type), false, type);
+    assert.equal(isValueArrayAbiType(type), false, type);
+    assert.equal(memoryViewConstructor(type), constructor);
+  }
+  for (const type of [null, "bytes", "u8", "bool-view"]) {
+    assert.equal(isMemoryViewAbiType(type), false, String(type));
+    assert.throws(() => memoryViewConstructor(type), /not a memory view/);
   }
 });
 

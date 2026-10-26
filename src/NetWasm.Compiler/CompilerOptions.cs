@@ -43,7 +43,12 @@ public sealed record CompilerOptions(
     string? PathMap = null,
     bool StructuredDiagnostics = false,
     FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
-    WasmOptimizationOverrides? OptimizationOverrides = null);
+    WasmOptimizationOverrides? OptimizationOverrides = null)
+{
+    // Modules the project's native archives import from; the host supplies
+    // them beside the modules [WasmImportLinkage] imports name.
+    public ImmutableArray<string> ImportModules { get; init; } = [];
+}
 
 public sealed partial record CompilationResult(
     byte[] ApplicationModule,

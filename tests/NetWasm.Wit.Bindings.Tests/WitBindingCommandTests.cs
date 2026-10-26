@@ -14,10 +14,12 @@ public sealed class WitBindingCommandTests
 #pragma warning disable CA1859 // Contract tests deliberately dispatch through the one-action interface.
         IWitBindingCommand command = new WitBindingCommand(
             new FixedOptionsReader(new("contract.wit", null, "Bindings.g.cs")),
+            new WitInputStager(TextReader.Null),
             new FixedDocumentReader(document),
             new FixedGenerator("generated source"),
             new WitBindingSourceAccessibilityRewriter(),
-            files);
+            files,
+            TextWriter.Null);
 #pragma warning restore CA1859
 
         var result = command.Run([]);
@@ -35,17 +37,23 @@ public sealed class WitBindingCommandTests
         var bindings = new FixedGenerator("source");
         var accessibility = new WitBindingSourceAccessibilityRewriter();
         var files = new RecordingTextFiles();
+        var inputs = new WitInputStager(TextReader.Null);
+        var output = TextWriter.Null;
 
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingCommand(null!, documents, bindings, accessibility, files));
+            new WitBindingCommand(null!, inputs, documents, bindings, accessibility, files, output));
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingCommand(options, null!, bindings, accessibility, files));
+            new WitBindingCommand(options, null!, documents, bindings, accessibility, files, output));
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingCommand(options, documents, null!, accessibility, files));
+            new WitBindingCommand(options, inputs, null!, bindings, accessibility, files, output));
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingCommand(options, documents, bindings, null!, files));
+            new WitBindingCommand(options, inputs, documents, null!, accessibility, files, output));
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingCommand(options, documents, bindings, accessibility, null!));
+            new WitBindingCommand(options, inputs, documents, bindings, null!, files, output));
+        Assert.Throws<ArgumentNullException>(() =>
+            new WitBindingCommand(options, inputs, documents, bindings, accessibility, null!, output));
+        Assert.Throws<ArgumentNullException>(() =>
+            new WitBindingCommand(options, inputs, documents, bindings, accessibility, files, null!));
     }
 
     [Fact]
@@ -58,16 +66,79 @@ public sealed class WitBindingCommandTests
                 null,
                 "Bindings.g.cs",
                 WitBindingAccessibility.Internal)),
+            new WitInputStager(TextReader.Null),
             new FixedDocumentReader(Document()),
             new FixedGenerator("public sealed class Resource\n{\n    public void Dispose() { }\n}\n"),
             new WitBindingSourceAccessibilityRewriter(),
-            files);
+            files,
+            TextWriter.Null);
 
         _ = command.Run([]);
 
         Assert.Equal(
             "internal sealed class Resource\n{\n    public void Dispose() { }\n}\n",
             files.Content);
+    }
+
+    // `--output -` writes the source to standard output instead of a file.
+    [Fact]
+    public void WritesSourceToStandardOutput()
+    {
+        var files = new RecordingTextFiles();
+        using var output = new StringWriter();
+        var command = new WitBindingCommand(
+            new FixedOptionsReader(new("contract.wit", null, "-")),
+            new WitInputStager(TextReader.Null),
+            new FixedDocumentReader(Document()),
+            new FixedGenerator("generated source"),
+            new WitBindingSourceAccessibilityRewriter(),
+            files,
+            output);
+
+        _ = command.Run([]);
+
+        Assert.Equal("generated source", output.ToString());
+        Assert.Null(files.Path);
+    }
+
+    // `--wit -` reads the WIT from standard input; wasm-tools reads it from a
+    // temporary copy, which is removed afterwards.
+    [Fact]
+    public void ReadsWitFromStandardInput()
+    {
+        const string wit = "package example:test@1.0.0;\n\nworld main {}\n";
+        var documents = new FixedDocumentReader(Document());
+        var command = new WitBindingCommand(
+            new FixedOptionsReader(new("-", null, "Bindings.g.cs")),
+            new WitInputStager(new StringReader(wit)),
+            documents,
+            new FixedGenerator("generated source"),
+            new WitBindingSourceAccessibilityRewriter(),
+            new RecordingTextFiles(),
+            TextWriter.Null);
+
+        _ = command.Run([]);
+
+        Assert.Equal(wit, documents.Text);
+        Assert.False(File.Exists(documents.Path));
+    }
+
+    [Fact]
+    public void PassesTheSelectedNamespaceToTheGenerator()
+    {
+        var bindings = new FixedGenerator("generated source");
+        var command = new WitBindingCommand(
+            new FixedOptionsReader(new("contract.wit", null, "Bindings.g.cs", Namespace: "My.Bindings")),
+            new WitInputStager(TextReader.Null),
+            new FixedDocumentReader(Document()),
+            bindings,
+            new WitBindingSourceAccessibilityRewriter(),
+            new RecordingTextFiles(),
+            TextWriter.Null);
+
+        _ = command.Run([]);
+
+        Assert.Equal("My.Bindings", bindings.Namespace);
     }
 
     private static WitDocument Document()
@@ -96,12 +167,27 @@ public sealed class WitBindingCommandTests
 
     private sealed class FixedDocumentReader(WitDocument document) : IWitDocumentReader
     {
-        public WitDocument Read(string witPath) => document;
+        public string? Path { get; private set; }
+
+        public string? Text { get; private set; }
+
+        public WitDocument Read(string witPath)
+        {
+            Path = witPath;
+            Text = File.Exists(witPath) ? File.ReadAllText(witPath) : null;
+            return document;
+        }
     }
 
     private sealed class FixedGenerator(string source) : IWitCSharpBindingGenerator
     {
-        public string Generate(WitDocument document, WitWorld world) => source;
+        public string? Namespace { get; private set; }
+
+        public string Generate(WitDocument document, WitWorld world, string? namespaceName = null)
+        {
+            Namespace = namespaceName;
+            return source;
+        }
     }
 
     private sealed class RecordingTextFiles : ITextFileWriter

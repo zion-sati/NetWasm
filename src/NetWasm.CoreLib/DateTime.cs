@@ -7,7 +7,7 @@ namespace System
     using Runtime.InteropServices;
     using Runtime.InteropServices.TimeZones;
 
-    public readonly struct DateTime : IComparable, IComparable<DateTime>, IEquatable<DateTime>,
+    public readonly struct DateTime : IComparable, IComparable<DateTime>, IEquatable<DateTime>, IConvertible,
         IFormattable, IParsable<DateTime>, ISpanFormattable, ISpanParsable<DateTime>,
         IUtf8SpanFormattable
     {
@@ -367,6 +367,35 @@ namespace System
             FromFileTimeUtc(fileTime).ToLocalTime();
 
         public TypeCode GetTypeCode() => TypeCode.DateTime;
+
+        bool IConvertible.ToBoolean(IFormatProvider? provider) => throw InvalidConversion(nameof(Boolean));
+        char IConvertible.ToChar(IFormatProvider? provider) => throw InvalidConversion(nameof(Char));
+        sbyte IConvertible.ToSByte(IFormatProvider? provider) => throw InvalidConversion(nameof(SByte));
+        byte IConvertible.ToByte(IFormatProvider? provider) => throw InvalidConversion(nameof(Byte));
+        short IConvertible.ToInt16(IFormatProvider? provider) => throw InvalidConversion(nameof(Int16));
+        ushort IConvertible.ToUInt16(IFormatProvider? provider) => throw InvalidConversion(nameof(UInt16));
+        int IConvertible.ToInt32(IFormatProvider? provider) => throw InvalidConversion(nameof(Int32));
+        uint IConvertible.ToUInt32(IFormatProvider? provider) => throw InvalidConversion(nameof(UInt32));
+        long IConvertible.ToInt64(IFormatProvider? provider) => throw InvalidConversion(nameof(Int64));
+        ulong IConvertible.ToUInt64(IFormatProvider? provider) => throw InvalidConversion(nameof(UInt64));
+        float IConvertible.ToSingle(IFormatProvider? provider) => throw InvalidConversion(nameof(Single));
+        double IConvertible.ToDouble(IFormatProvider? provider) => throw InvalidConversion(nameof(Double));
+        decimal IConvertible.ToDecimal(IFormatProvider? provider) => throw InvalidConversion(nameof(Decimal));
+
+        DateTime IConvertible.ToDateTime(IFormatProvider? provider) => this;
+
+        object IConvertible.ToType(Type conversionType, IFormatProvider? provider)
+        {
+            ArgumentNullException.ThrowIfNull(conversionType);
+            // DateTime's successful DefaultToType cases are identity, Object
+            // and String. Every numeric, Boolean and Char conversion is invalid.
+            if (conversionType == typeof(DateTime) || conversionType == typeof(object)) return this;
+            if (conversionType == typeof(string)) return ToString(provider);
+            throw InvalidConversion(conversionType.FullName ?? conversionType.Name);
+        }
+
+        private static InvalidCastException InvalidConversion(string target) =>
+            new InvalidCastException("Invalid cast from 'DateTime' to '" + target + "'.");
 
         public int CompareTo(DateTime value) => Ticks.CompareTo(value.Ticks);
         public int CompareTo(object? value) => value is null

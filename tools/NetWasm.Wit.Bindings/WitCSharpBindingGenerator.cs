@@ -4,7 +4,8 @@ namespace NetWasm.Wit.Bindings;
 
 public interface IWitCSharpBindingGenerator
 {
-    string Generate(WitDocument document, WitWorld world);
+    // The namespace defaults to one derived from the world's package.
+    string Generate(WitDocument document, WitWorld world, string? namespaceName = null);
 }
 
 public sealed class WitCSharpBindingGenerator(
@@ -28,7 +29,7 @@ public sealed class WitCSharpBindingGenerator(
     private readonly ICodeWriterFactory _writers = writers ??
         throw new ArgumentNullException(nameof(writers));
 
-    public string Generate(WitDocument document, WitWorld world)
+    public string Generate(WitDocument document, WitWorld world, string? namespaceName = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(world);
@@ -40,7 +41,7 @@ public sealed class WitCSharpBindingGenerator(
         writer.Line("using System;");
         writer.Line("using System.Runtime.InteropServices.WebAssembly;");
         writer.Line();
-        writer.Line($"namespace {_syntax.Format(
+        writer.Line($"namespace {namespaceName ?? _syntax.Format(
             new WitBindingSyntaxRequest.PackageNamespace(world.Package))};");
         writer.Line();
         writer.Raw(_typeDeclarations.Generate(document, world));

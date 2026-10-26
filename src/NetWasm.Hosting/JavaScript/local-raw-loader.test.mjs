@@ -24,7 +24,7 @@ const runtimeLayout = encoder.encode(JSON.stringify({
     completionShape: "synchronous",
   },
 }));
-const interopManifest = encoder.encode(JSON.stringify({ version: 1, target: "wasm32" }));
+const interopManifest = encoder.encode(JSON.stringify({ version: 2, target: "wasm32" }));
 
 test("loads the exact local raw closure with isolated adapter modules", async () => {
   await withDeployment(async fixture => {

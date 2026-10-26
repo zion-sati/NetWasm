@@ -38,6 +38,106 @@ public sealed class ComponentCompilationTests
         Assert.DoesNotContain("netwasm.platform", moduleText, StringComparison.Ordinal);
     }
 
+    // Issue #120: the selected world's exports may be implemented in a
+    // referenced library, like JSExports.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, "cm32p2")]
+    [InlineData(WasmTarget.Wasm64, "cm64p2")]
+    public void WorldExportsImplementedInAReferencedLibraryAreExported(
+        WasmTarget target,
+        string prefix)
+    {
+        using var assets = TestAssets.Create();
+        var library = assets.CompileSource(
+            "ScalarComponentLibrary",
+            """
+            using System.Runtime.InteropServices.WebAssembly;
+
+            public static class LibraryExports
+            {
+                [WitImport("increment")]
+                private static extern int Increment(int value);
+
+                [WitExport("run")]
+                public static int Run(int value) => Increment(value);
+            }
+            """);
+        var assembly = assets.CompileSource(
+            "ScalarComponentApplication",
+            """
+            public static class EntryPoint
+            {
+                public static int Run(int value) => value;
+            }
+            """,
+            library);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib, library],
+            "EntryPoint",
+            "Run",
+            [],
+            target,
+            WitPath: WitPath(assets)));
+        var moduleText = Encoding.UTF8.GetString(result.ApplicationModule);
+
+        Assert.Contains($"{prefix}||run", moduleText, StringComparison.Ordinal);
+        Assert.Contains($"{prefix}||run_post", moduleText, StringComparison.Ordinal);
+        Assert.Contains("increment", moduleText, StringComparison.Ordinal);
+    }
+
+    // A library's generated bindings carry both the export and its
+    // post-return; the world binds both from the referenced assembly.
+    [Fact]
+    public void WorldExportAndPostReturnImplementedInAReferencedLibraryAreBound()
+    {
+        using var assets = TestAssets.Create();
+        var witPath = Path.Combine(
+            assets.Root,
+            "tests",
+            "NetWasm.Compiler.Tests",
+            "Fixtures",
+            "string-component.wit");
+        using var services = CreateComponentModelServices();
+        var document = services.GetRequiredService<IWitDocumentReader>().Read(witPath);
+        var bindings = WitBindingCompositionRoot.Create().Generate(document, document.SelectWorld(null));
+        var library = assets.CompileSource(
+            "StringComponentLibrary",
+            bindings +
+            """
+
+            public static partial class StringsExports
+            {
+                public static partial string EchoBack(string value) => value;
+            }
+            """);
+        var assembly = assets.CompileSource(
+            "StringComponentApplication",
+            """
+            public static class EntryPoint
+            {
+                public static int Run(int value) => value;
+            }
+            """,
+            library);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib, library],
+            "EntryPoint",
+            "Run",
+            [],
+            WitPath: witPath));
+        var moduleText = Encoding.UTF8.GetString(result.ApplicationModule);
+
+        Assert.Contains("cm32p2||echo-back", moduleText, StringComparison.Ordinal);
+        Assert.Contains("cm32p2||echo-back_post", moduleText, StringComparison.Ordinal);
+        Assert.Contains(result.Program.Methods.Values, body =>
+            body.Method.Definition.Key.Assembly.Name == "StringComponentLibrary" &&
+            body.Method.Definition.Name.EndsWith("Post", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ReachableWitBindingRequiresSelectedWorld()
     {
@@ -119,6 +219,109 @@ public sealed class ComponentCompilationTests
         Assert.Contains("cm32p2||echo", moduleText, StringComparison.Ordinal);
         Assert.Contains("cm32p2||echo-back", moduleText, StringComparison.Ordinal);
         Assert.Contains("cm32p2||echo-back_post", moduleText, StringComparison.Ordinal);
+    }
+
+    // A world may declare its own types, as `type` and `enum` items, and use
+    // them in the functions it imports.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void WorldDeclaredTypesCompileIntoTheCanonicalBoundary(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var witPath = Path.Combine(assets.Root, "tests", "NetWasm.Compiler.Tests", "Fixtures", "world-types.wit");
+        using var services = CreateComponentModelServices();
+        var document = services.GetRequiredService<IWitDocumentReader>().Read(witPath);
+        var bindings = WitBindingCompositionRoot.Create().Generate(document, document.SelectWorld(null));
+        Assert.Contains("public enum MyEnum", bindings, StringComparison.Ordinal);
+
+        var assembly = assets.CompileSource(
+            "WorldTypesFixture",
+            bindings +
+            """
+
+            public static partial class MyWorldExports
+            {
+                public static partial void MyExport()
+                {
+                    if (MyWorldImports.MyFnA(MyWorldImports.MyFnB() + 1) == MyEnum.D)
+                    {
+                        _ = MyWorldImports.MyFnB();
+                    }
+                }
+            }
+
+            public static class EntryPoint
+            {
+                public static int Main(int input) => input;
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "NetWasm.Wit.My.Ns.EntryPoint",
+            "Main",
+            [],
+            target,
+            WitPath: witPath));
+
+        var modulePath = Path.Combine(assets.Directory, $"world-types-{target}.wasm");
+        File.WriteAllBytes(modulePath, result.ApplicationModule);
+        var validation = services.GetRequiredService<IWasmTools>().Run("validate", modulePath, "--features", "all");
+        Assert.True(validation.ExitCode == 0, validation.StandardError + validation.StandardOutput);
+    }
+
+    // A world may declare a resource itself; its functions are the world's own
+    // imports and its drop comes from the root module.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void WorldDeclaredResourcesCompileIntoTheCanonicalBoundary(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var witPath = Path.Combine(assets.Root, "tests", "NetWasm.Compiler.Tests", "Fixtures", "world-resources.wit");
+        using var services = CreateComponentModelServices();
+        var document = services.GetRequiredService<IWitDocumentReader>().Read(witPath);
+        var bindings = WitBindingCompositionRoot.Create().Generate(document, document.SelectWorld(null));
+        Assert.Contains("[WitResource(\"counter\")]", bindings, StringComparison.Ordinal);
+
+        var assembly = assets.CompileSource(
+            "WorldResourcesFixture",
+            bindings +
+            """
+
+            public static partial class CounterWorldExports
+            {
+                public static partial uint Run()
+                {
+                    using var counter = CounterWorldImports.CreateCounter(1);
+                    using var made = CounterWorldImports.MakeCounter(2);
+                    return CounterWorldImports.Increment(counter) + CounterWorldImports.Read(made) + CounterWorldImports.Total();
+                }
+            }
+
+            public static class EntryPoint
+            {
+                public static int Main(int input) => input;
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "NetWasm.Wit.My.Ns.EntryPoint",
+            "Main",
+            [],
+            target,
+            WitPath: witPath));
+
+        var prefix = target == WasmTarget.Wasm64 ? "cm64p2" : "cm32p2";
+        Assert.Equal(
+            ["[constructor]counter", "[method]counter.increment", "[static]counter.total", "counter_drop", "make-counter", "read"],
+            result.FunctionImports.Where(import => import.Module == prefix).Select(import => import.Name).Order(StringComparer.Ordinal));
+        var modulePath = Path.Combine(assets.Directory, $"world-resources-{target}.wasm");
+        File.WriteAllBytes(modulePath, result.ApplicationModule);
+        var validation = services.GetRequiredService<IWasmTools>().Run("validate", modulePath, "--features", "all");
+        Assert.True(validation.ExitCode == 0, validation.StandardError + validation.StandardOutput);
     }
 
     [Theory]
@@ -286,10 +489,10 @@ public sealed class ComponentCompilationTests
 
             public static class EntryPoint
             {
-                [WitImport("", "increment")]
+                [WitImport("increment")]
                 private static extern {{importType}} Increment({{importType}} value);
 
-                [WitExport("", "run")]
+                [WitExport("run")]
                 public static int Run(int value) => (int)Increment(value);
             }
             """);

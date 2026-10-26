@@ -54,13 +54,21 @@ public sealed record WitWorld(
     string Name,
     string Package,
     ImmutableArray<WitWorldItem> Imports,
-    ImmutableArray<WitWorldItem> Exports);
+    ImmutableArray<WitWorldItem> Exports)
+{
+    // Types the world declares itself, as `type` and `enum` items, by name.
+    public ImmutableDictionary<string, int> Types { get; init; } = ImmutableDictionary<string, int>.Empty;
+}
 
 public sealed record WitTypeDefinition(
     int Id,
     string? Name,
     JsonElement Kind,
-    int? OwnerInterface);
+    int? OwnerInterface)
+{
+    // The world that declares the type, when no interface does.
+    public int? OwnerWorld { get; init; }
+}
 
 public sealed record WitPackage(
     int Id,

@@ -48,6 +48,9 @@ public sealed class ManagedLayoutSnapshot :
         ArrayLengthOffset + WasmTargetLayout.SemanticLengthSize,
         Target.AddressSize);
     public int ArrayElementTypeIdOffset => ArrayDataPointerOffset + Target.AddressSize;
+    // Span<T> and ReadOnlySpan<T> hold a reference to their first element, then their length.
+    public const int SpanReferenceOffset = 0;
+    public int SpanLengthOffset => Target.AddressSize;
     public int DelegateTargetOffset => TypeLayouts.DelegateTargetOffset;
     public int DelegateMethodIdOffset => TypeLayouts.DelegateMethodIdOffset;
     public int DelegateInvocationListOffset => TypeLayouts.DelegateInvocationListOffset;

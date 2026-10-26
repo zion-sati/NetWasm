@@ -55,6 +55,32 @@ public sealed class RuntimeLayoutReaderTests
     }
 
     [Fact]
+    public void ReadsTheImportModulesTheHostSupplies()
+    {
+        using var directory = new TemporaryDirectory();
+        var declared = directory.Write("declared.json", """
+            {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "runtimeFeatures":[],"nativeImports":[],"importModules":["host_gl","host_ui"]}
+            """);
+        var omitted = directory.Write("omitted.json", """
+            {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+             "runtimeFeatures":[],"nativeImports":[]}
+            """);
+
+        var reader = new RuntimeLayoutReader();
+        Assert.Equal(["host_gl", "host_ui"], reader.Read(declared).ImportModules.ToArray());
+        Assert.Empty(reader.Read(omitted).ImportModules);
+        foreach (var modules in new[] { "\"host_ui\"", "[1]", "[\"\"]", "[\"host_ui\",\"host_ui\"]" })
+        {
+            var invalid = directory.Write("invalid.json", $$"""
+                {"schemaVersion":3,"target":"wasm32","applicationStaticDataEnd":0,
+                 "runtimeFeatures":[],"nativeImports":[],"importModules":{{modules}}}
+                """);
+            Assert.Throws<InvalidOperationException>(() => reader.Read(invalid));
+        }
+    }
+
+    [Fact]
     public void ReadsEveryRuntimeFeatureTheCompilerCanRecord()
     {
         using var directory = new TemporaryDirectory();

@@ -12,13 +12,19 @@ internal sealed class JSImportInvocationEmitter(
     IHostCallbackHandleEmitter callbackHandles,
     IInteropHandleReleaser interopHandles,
     IJavaScriptImportResultEmitter results,
-    IImplicitExceptionEmitter exceptions) : IJSImportInvocationEmitter
+    IImplicitExceptionEmitter exceptions,
+    IStackLocalResolver stackLocals) : IJSImportInvocationEmitter
 {
     public void Emit(
         JSImportInvocation invocation,
         IWasmInstructionWriter code,
         IFunctionIndexResolver functionIndices)
     {
+        if (JavaScriptDirectImport.Applies(invocation.Method.Definition))
+        {
+            EmitDirect(invocation, code, functionIndices);
+            return;
+        }
         var context = invocation.Context;
         var signature = invocation.Method.Signature;
         ManagedMemoryEmitter.EmitAddressConstant(
@@ -70,5 +76,56 @@ internal sealed class JSImportInvocationEmitter(
             invocation.Consumed,
             callback,
             new InteropMarshallingTarget(invocation.Target.InteropImports)), code);
+    }
+
+    // The arguments are the import's parameters and its result is the call's
+    // result. Anything the host throws unwinds to the catch_all, which raises
+    // JSException as a failed status does:
+    //   block (result t)
+    //     block
+    //       try_table (result t) (catch_all 0)  arguments, call  end
+    //       br 1
+    //     end
+    //     throw JSException
+    //   end
+    private void EmitDirect(
+        JSImportInvocation invocation,
+        IWasmInstructionWriter code,
+        IFunctionIndexResolver functionIndices)
+    {
+        var context = invocation.Context;
+        var signature = invocation.Method.Signature;
+        var resultType = signature.ReturnType == CliValueKind.Void
+            ? WasmOpcodes.EmptyBlockType
+            : (byte)WasmValueTypes.FromCli(signature.ReturnType, layouts.Target);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Block, WasmInstructionOperand.BlockType(resultType)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Block, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.TryTable, WasmInstructionOperand.TryTableCatchAll(resultType, 0)));
+        for (var index = 0; index < invocation.Consumed; index++)
+        {
+            arguments.Emit(
+                code,
+                signature.ParameterSignatureTypes[index],
+                WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+                    context.StackLocals,
+                    invocation.ArgumentBase + index,
+                    invocation.Stack[invocation.ArgumentBase + index],
+                    layouts.Target),
+                context);
+        }
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(functionIndices.Resolve(new InteropImportKey(invocation.Method.Definition.Key))))));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Branch, WasmInstructionOperand.Unsigned(1)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        exceptions.Emit(code, ManagedExceptionKind.JSException, context.ManagedThrowFunction);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        invocation.Stack.RemoveRange(invocation.ArgumentBase, invocation.Consumed);
+        if (signature.ReturnType != CliValueKind.Void)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)stackLocals.Resolve(
+                context, invocation.ArgumentBase, signature.ReturnType))));
+            invocation.Stack.Add(signature.ReturnType);
+        }
     }
 }

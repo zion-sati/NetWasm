@@ -161,5 +161,6 @@ public sealed class WasmModuleEmitterTests
             null!,
             null!,
             null!,
+            null!,
             null!);
 }

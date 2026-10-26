@@ -610,7 +610,10 @@ public sealed class ManagedAssembly : IDisposable
             throw InvalidInteropDeclaration(methodKey,
                 $"{declaration} has an invalid custom-attribute prolog");
         }
-        var interfaceName = reader.ReadSerializedString();
+        // One argument names a function of the world itself; two name an
+        // interface and its function. The empty interface means the world.
+        var worldFunction = ConstructorParameterCount(attribute) == 1;
+        var interfaceName = worldFunction ? string.Empty : reader.ReadSerializedString();
         var functionName = reader.ReadSerializedString();
         if (interfaceName is null || string.IsNullOrWhiteSpace(functionName) ||
             reader.ReadUInt16() != 0 || reader.RemainingBytes != 0)
@@ -618,7 +621,22 @@ public sealed class ManagedAssembly : IDisposable
             throw InvalidInteropDeclaration(methodKey,
                 $"{declaration} must specify an interface and non-empty function name with no named arguments");
         }
+        if (!worldFunction && interfaceName.Length == 0)
+        {
+            throw InvalidInteropDeclaration(methodKey,
+                $"{declaration} names a world's own function with one argument: [{declaration}(\"{functionName}\")]");
+        }
         return (interfaceName, functionName);
+    }
+
+    private int ConstructorParameterCount(CustomAttribute attribute)
+    {
+        var signature = attribute.Constructor.Kind == HandleKind.MethodDefinition
+            ? Reader.GetMethodDefinition((MethodDefinitionHandle)attribute.Constructor).Signature
+            : Reader.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Signature;
+        var blob = Reader.GetBlobReader(signature);
+        blob.ReadSignatureHeader();
+        return blob.ReadCompressedInteger();
     }
 
     private InteropImportDeclaration ReadJSImport(

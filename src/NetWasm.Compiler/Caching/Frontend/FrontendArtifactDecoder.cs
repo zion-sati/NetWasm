@@ -18,7 +18,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 21;
+    private const ushort SchemaVersion = 22;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -305,7 +305,10 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     ReadBoolean(),
                     ReadBoolean(),
                     ReadBoolean(),
-                    ReadBoolean()));
+                    ReadBoolean())
+                {
+                    HasWasmImportLinkage = ReadBoolean(),
+                });
                 var nativeCallback = ReadNullableClass(() => new NativeCallbackDeclaration(
                     ReadArray(ReadString),
                     ReadNullableString(),

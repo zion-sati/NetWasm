@@ -3,28 +3,43 @@ import { NetWasmHostError } from "./managed-errors.mjs";
 const valueKeys = ["type", "value"];
 const writeKeys = ["byteOffset", "memory", "type", "value"];
 
+// The request forms check an object a caller built. The runtime's own calls,
+// one per JSImport or JSExport call, pass the values directly: checking an
+// object the runtime has just built made most of a call's cost.
 export function liftInteropScalar(request) {
   assertExactDataObject(request, valueKeys, "interop scalar lift");
-  switch (request.type) {
-    case "bool": return request.value !== 0;
-    case "i8": return (request.value << 24) >> 24;
-    case "u8": return request.value & 0xff;
-    case "char": return String.fromCharCode(request.value & 0xffff);
-    case "i16": return (request.value << 16) >> 16;
-    case "u16": return request.value & 0xffff;
-    case "i32": return request.value | 0;
-    case "u32": return request.value >>> 0;
-    case "i64": return BigInt.asIntN(64, request.value);
-    case "u64": return BigInt.asUintN(64, request.value);
-    case "f32": return Math.fround(request.value);
-    case "f64": return request.value;
-    default: throw new NetWasmHostError(`unsupported scalar type ${request.type}`);
-  }
+  return liftScalar(request.type, request.value);
 }
 
 export function lowerInteropScalar(request) {
   assertExactDataObject(request, valueKeys, "interop scalar lower");
-  const { type, value } = request;
+  return lowerScalar(request.type, request.value);
+}
+
+export function writeInteropScalarResult(request) {
+  assertExactDataObject(request, writeKeys, "interop scalar result write");
+  writeScalarResult(request.memory, request.byteOffset, request.type, request.value);
+}
+
+export function liftScalar(type, value) {
+  switch (type) {
+    case "bool": return value !== 0;
+    case "i8": return (value << 24) >> 24;
+    case "u8": return value & 0xff;
+    case "char": return String.fromCharCode(value & 0xffff);
+    case "i16": return (value << 16) >> 16;
+    case "u16": return value & 0xffff;
+    case "i32": return value | 0;
+    case "u32": return value >>> 0;
+    case "i64": return BigInt.asIntN(64, value);
+    case "u64": return BigInt.asUintN(64, value);
+    case "f32": return Math.fround(value);
+    case "f64": return value;
+    default: throw new NetWasmHostError(`unsupported scalar type ${type}`);
+  }
+}
+
+export function lowerScalar(type, value) {
   const integer = (minimum, maximum) => {
     if (!Number.isInteger(value) || value < minimum || value > maximum) {
       throw new NetWasmHostError(`${type} value is outside its range`);
@@ -67,23 +82,34 @@ export function lowerInteropScalar(request) {
   }
 }
 
-export function writeInteropScalarResult(request) {
-  assertExactDataObject(request, writeKeys, "interop scalar result write");
-  if (!(request.memory instanceof WebAssembly.Memory)) {
+export function writeScalarResult(memory, byteOffset, type, value) {
+  if (!(memory instanceof WebAssembly.Memory)) {
     throw new NetWasmHostError("interop scalar result memory is unavailable");
   }
-  const view = new DataView(request.memory.buffer);
-  switch (request.type) {
+  const view = memoryView(memory);
+  switch (type) {
     case "bool": case "i8": case "i16": case "i32":
-      view.setInt32(request.byteOffset, request.value, true); break;
+      view.setInt32(byteOffset, value, true); break;
     case "u8": case "char": case "u16": case "u32":
-      view.setUint32(request.byteOffset, request.value, true); break;
-    case "i64": view.setBigInt64(request.byteOffset, request.value, true); break;
-    case "u64": view.setBigUint64(request.byteOffset, BigInt.asUintN(64, request.value), true); break;
-    case "f32": view.setFloat32(request.byteOffset, request.value, true); break;
-    case "f64": view.setFloat64(request.byteOffset, request.value, true); break;
-    default: throw new NetWasmHostError(`unsupported scalar result type ${request.type}`);
+      view.setUint32(byteOffset, value, true); break;
+    case "i64": view.setBigInt64(byteOffset, value, true); break;
+    case "u64": view.setBigUint64(byteOffset, BigInt.asUintN(64, value), true); break;
+    case "f32": view.setFloat32(byteOffset, value, true); break;
+    case "f64": view.setFloat64(byteOffset, value, true); break;
+    default: throw new NetWasmHostError(`unsupported scalar result type ${type}`);
   }
+}
+
+// A view stays valid until memory grows and replaces its buffer.
+let viewedBuffer;
+let view;
+
+function memoryView(memory) {
+  if (memory.buffer !== viewedBuffer) {
+    viewedBuffer = memory.buffer;
+    view = new DataView(viewedBuffer);
+  }
+  return view;
 }
 
 function assertExactDataObject(value, keys, label) {

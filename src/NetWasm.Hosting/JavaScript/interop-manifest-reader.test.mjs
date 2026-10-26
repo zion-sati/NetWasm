@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { NetWasmHostError } from "./managed-errors.mjs";
-import { parseInteropManifest } from "./interop-manifest-reader.mjs";
+import { parseInteropManifest, requiredImportModules } from "./interop-manifest-reader.mjs";
 
 const layouts = {
   wasm32: {
@@ -11,6 +11,8 @@ const layouts = {
     stringDataOffset: 8,
     arrayLengthOffset: 4,
     arrayDataPointerOffset: 8,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 4,
   },
   wasm64: {
     managedReferenceSize: 8,
@@ -18,12 +20,14 @@ const layouts = {
     stringDataOffset: 12,
     arrayLengthOffset: 8,
     arrayDataPointerOffset: 16,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 8,
   },
 };
 
 function createManifest(target = "wasm32") {
   return {
-    version: 1,
+    version: 2,
     target,
     statusAbi: { successStatus: 0, hostFailureStatus: 1, scalarResultOffset: 0 },
     targetLayout: { ...layouts[target] },
@@ -41,7 +45,7 @@ function expectInvalid(manifest, pattern) {
 test("parseInteropManifest accepts both target layouts and serialized null optionals", () => {
   for (const target of ["wasm32", "wasm64"]) {
     const manifest = createManifest(target);
-    manifest.imports.push({
+    manifest.imports.push({ call: "status",
       module: "consumer",
       name: "sync",
       parameters: ["i32"],
@@ -59,7 +63,7 @@ test("parseInteropManifest accepts both target layouts and serialized null optio
 });
 
 test("parseInteropManifest rejects invalid versions, targets, envelopes and layouts", () => {
-  for (const manifest of [null, {}, { version: 2 }]) {
+  for (const manifest of [null, {}, { version: 1 }, { version: 3 }]) {
     expectInvalid(manifest, /version/i);
   }
   expectInvalid({ ...createManifest(), target: "wasm16" }, /wasm32 or wasm64/i);
@@ -90,7 +94,7 @@ test("parseInteropManifest rejects invalid versions, targets, envelopes and layo
 });
 
 test("parseInteropManifest validates import descriptors and uniqueness", () => {
-  const base = { module: "consumer", name: "call", parameters: [], result: "void" };
+  const base = { call: "status", module: "consumer", name: "call", parameters: [], result: "void" };
   const invalid = [
     null,
     { ...base, module: 1 },
@@ -112,8 +116,51 @@ test("parseInteropManifest validates import descriptors and uniqueness", () => {
   expectInvalid(manifest, /duplicate host import consumer.call/i);
 });
 
+// A span is a view valid only during a synchronous call, so it is only ever
+// a status import's parameter.
+test("parseInteropManifest accepts span views only as synchronous import parameters", () => {
+  const base = { call: "status", module: "consumer", name: "upload", parameters: ["u8-view", "f64-view"], result: "i32" };
+  const accepted = createManifest();
+  accepted.imports = [base];
+  assert.doesNotThrow(() => parseInteropManifest(accepted));
+  for (const [descriptor, message] of [
+    [{ ...base, result: "u8-view" }, /invalid span import descriptor/i],
+    [{ ...base, asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel" },
+      /invalid span import descriptor/i],
+    [{ ...base, call: "direct" }, /invalid direct import descriptor/i],
+  ]) {
+    const manifest = createManifest();
+    manifest.imports = [descriptor];
+    expectInvalid(manifest, message);
+  }
+  const exported = createManifest();
+  exported.exports = [{ name: "run", parameters: ["u8-view"], result: "void" }];
+  expectInvalid(exported, /invalid export descriptor/i);
+});
+
+// A direct import passes primitive scalars as WebAssembly values: anything
+// else, or an asynchronous direct import, is not a direct import.
+test("parseInteropManifest validates direct import descriptors", () => {
+  const base = { call: "direct", module: "consumer", name: "add", parameters: ["i32", "f64"], result: "i32" };
+  for (const descriptor of [
+    { ...base, call: "bogus" },
+    { ...base, parameters: ["string"] },
+    { ...base, result: "string" },
+    { ...base, asyncReturn: "task", resolveExport: "resolve", rejectExport: "reject", cancelExport: "cancel" },
+  ]) {
+    const manifest = createManifest();
+    manifest.imports = [descriptor];
+    expectInvalid(manifest, /invalid (direct )?import descriptor/i);
+  }
+  for (const descriptor of [base, { ...base, result: "void" }]) {
+    const manifest = createManifest();
+    manifest.imports = [descriptor];
+    assert.doesNotThrow(() => parseInteropManifest(manifest));
+  }
+});
+
 test("parseInteropManifest validates asynchronous import descriptors", () => {
-  const base = {
+  const base = { call: "status",
     module: "consumer",
     name: "call",
     parameters: [],
@@ -246,7 +293,7 @@ test("parseInteropManifest validates asynchronous export descriptors", () => {
 });
 
 test("parseInteropManifest validates callback descriptors", () => {
-  const callbackImport = {
+  const callbackImport = { call: "status",
     module: "consumer",
     name: "listen",
     parameters: ["callback"],
@@ -273,6 +320,7 @@ test("parseInteropManifest validates callback descriptors", () => {
     { ...base, parameters: null },
     { ...base, result: "string" },
     { ...base, parameters: ["object"] },
+    { ...base, parameters: ["u8-view"] },
     { ...base, parameters: ["string", "bytes"] },
     { ...base, parameters: ["i32[]", "u16[]"] },
     { ...base, parameters: ["bool[]"] },
@@ -286,7 +334,7 @@ test("parseInteropManifest validates callback descriptors", () => {
 });
 
 test("parseInteropManifest binds each callback to one import parameter and export", () => {
-  const callbackImport = {
+  const callbackImport = { call: "status",
     module: "consumer",
     name: "listen",
     parameters: ["callback", "i32", "callback"],
@@ -323,4 +371,29 @@ test("parseInteropManifest binds each callback to one import parameter and expor
     manifest.callbacks = callbacks;
     expectInvalid(manifest, /does not match|has no callback descriptor/i);
   }
+});
+
+test("parseInteropManifest accepts the modules a host supplies to the final module", () => {
+  const manifest = { ...createManifest(), importModules: ["host_gl", "host_ui"] };
+  assert.strictEqual(parseInteropManifest(manifest), manifest);
+  assert.strictEqual(parseInteropManifest(createManifest()).importModules, undefined);
+  for (const importModules of ["host_ui", [""], [1], ["host_ui", "host_ui"],
+    ["netwasm.host.v1"], ["netwasm:runtime/reactor-host"], ["wasi:io/streams"], ["wasi_snapshot_preview1"]]) {
+    expectInvalid({ ...createManifest(), importModules }, /import module/i);
+  }
+});
+
+test("requiredImportModules names the JSImport modules and the import modules", () => {
+  const manifest = {
+    ...createManifest(),
+    imports: [
+      { call: "direct", module: "consumer", name: "add", parameters: [], result: "i32" },
+      { call: "direct", module: "netwasm.host.v1", name: "queue_microtask", parameters: [], result: "void" },
+    ],
+    importModules: ["host_ui"],
+  };
+  assert.deepEqual([...requiredImportModules(manifest)].sort(), ["consumer", "host_ui"]);
+  // A manifest from a build that declares no import modules omits the key.
+  const { importModules, ...withoutImportModules } = manifest;
+  assert.deepEqual([...requiredImportModules(withoutImportModules)], ["consumer"]);
 });

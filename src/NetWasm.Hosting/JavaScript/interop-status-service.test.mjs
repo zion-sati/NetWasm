@@ -13,13 +13,15 @@ const layout = Object.freeze({
   stringDataOffset: 8,
   arrayLengthOffset: 4,
   arrayDataPointerOffset: 8,
+  spanReferenceOffset: 0,
+  spanLengthOffset: 4,
 });
 const statusAbi = Object.freeze({
   successStatus: 0,
   hostFailureStatus: 1,
   scalarResultOffset: 0,
 });
-const baseDescriptor = Object.freeze({
+const baseDescriptor = Object.freeze({ call: "status",
   module: "example:app/interop@1.0.0",
   name: "service",
   parameters: Object.freeze([]),
@@ -122,6 +124,28 @@ test("preserves callback failures while notifying the process after cleanup", as
     await tick();
     assert.deepEqual(observations, [failure]);
   }
+});
+
+test("lifts a span argument as a view whose writes reach the guest", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const view = new DataView(memory.buffer);
+  view.setUint32(32 + layout.spanReferenceOffset, 128, true);
+  view.setInt32(32 + layout.spanLengthOffset, 3, true);
+  new Uint8Array(memory.buffer, 128, 3).set([1, 2, 3]);
+  const invoke = createInteropStatusService(request({
+    descriptor: descriptor({ parameters: ["u8-view", "i32"], result: "i32" }),
+    getMemory: () => memory,
+    service(pixels, scalar) {
+      assert.ok(pixels instanceof Uint8Array);
+      assert.equal(pixels.buffer, memory.buffer);
+      assert.deepEqual([...pixels], [1, 2, 3]);
+      pixels.fill(scalar);
+      return pixels.length;
+    },
+  }));
+  assert.equal(invoke(32, 7, 0), 0);
+  assert.deepEqual([...new Uint8Array(memory.buffer, 128, 3)], [7, 7, 7]);
+  assert.equal(new DataView(memory.buffer).getInt32(0, true), 3);
 });
 
 test("lifts every host-service argument family and writes a scalar result", () => {
@@ -634,4 +658,41 @@ test("blocks a queued completion when an earlier delivery settles the process", 
   assert.equal(guestEntries, 1);
   assert.equal(notifications, 1);
   assert.equal(state.pendingAsyncOperations.size, 0);
+});
+
+// The runtime builds each call's values itself, so a call checks nothing it
+// just built: the object-shape checks made most of a scalar call's cost.
+test("checks no request shapes on each scalar call", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const invoke = createInteropStatusService(request({
+    descriptor: descriptor({ parameters: ["u32", "f32"], result: "u64" }),
+    getMemory: () => memory,
+    service: (value, scale) => BigInt(value) * BigInt(Math.round(scale)),
+  }));
+  const describe = Object.getOwnPropertyDescriptors;
+  let described = 0;
+  Object.getOwnPropertyDescriptors = value => { described++; return describe(value); };
+  try {
+    for (let call = 0; call < 3; call++) assert.equal(invoke(call + 1, 2.0, 64), 0);
+  } finally {
+    Object.getOwnPropertyDescriptors = describe;
+  }
+  assert.equal(described, 0);
+  assert.equal(new DataView(memory.buffer).getBigUint64(64, true), 6n);
+});
+
+// A result written after the memory grows lands in the new buffer.
+test("writes a scalar result after memory grows", () => {
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 4 });
+  const invoke = createInteropStatusService(request({
+    descriptor: descriptor({ parameters: ["i32"], result: "i32" }),
+    getMemory: () => memory,
+    service: value => value * 2,
+  }));
+  assert.equal(invoke(20, 64), 0);
+  memory.grow(1);
+  assert.equal(invoke(21, 65536 + 64), 0);
+  const view = new DataView(memory.buffer);
+  assert.equal(view.getInt32(64, true), 40);
+  assert.equal(view.getInt32(65536 + 64, true), 42);
 });

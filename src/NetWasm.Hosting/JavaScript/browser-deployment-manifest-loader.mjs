@@ -1,17 +1,21 @@
 import { createDeploymentManifestReader } from "./deployment-manifest-reader.mjs";
-import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { parseStrictJson } from "./strict-json-reader.mjs";
 import {
   createVerifiedDeploymentManifestLoader,
 } from "./verified-deployment-manifest-loader.mjs";
 
-const factoryKeys = ["manifestUrl", "platform"];
+const factoryKeys = ["manifestUrl", "platform", "snapshotManifest"];
 const platformKeys = ["digest", "fetch"];
 
 export function createBrowserDeploymentManifestLoader(options) {
   assertExactDataObject(options, factoryKeys, "browser deployment manifest loader options");
   const manifestUrl = validateManifestUrl(options.manifestUrl);
   assertExactDataObject(options.platform, platformKeys, "browser deployment manifest platform");
+  // Validates and freezes the parsed manifest, or in a Release page only
+  // freezes it: the SDK validated it and its digest is already checked.
+  if (typeof options.snapshotManifest !== "function") {
+    throw new TypeError("browser deployment manifest snapshot action is required");
+  }
   for (const [name, value] of Object.entries(options.platform)) {
     if (typeof value !== "function") {
       throw new TypeError(`browser deployment manifest platform '${name}' action is required`);
@@ -42,7 +46,7 @@ export function createBrowserDeploymentManifestLoader(options) {
     },
     readManifest: createDeploymentManifestReader({
       parseJson: parseStrictJson,
-      validate: validateDeploymentManifest,
+      validate: options.snapshotManifest,
     }),
   });
 }

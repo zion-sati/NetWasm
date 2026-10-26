@@ -22,6 +22,7 @@ public sealed class NetWasmReadHostInteropManifestTaskTests
         Assert.Equal("interop.json", reader.Path);
         Assert.Equal("wasm64", reader.Target);
         var import = Assert.Single(task.Imports);
+        Assert.Equal("host_ui", Assert.Single(task.ImportModules).ItemSpec);
         Assert.Equal("increment", import.ItemSpec);
         Assert.Equal("consumer.worker", import.GetMetadata("Module"));
         Assert.Equal("[\"i32\"]", import.GetMetadata("Parameters"));
@@ -66,6 +67,7 @@ public sealed class NetWasmReadHostInteropManifestTaskTests
 
         Assert.Empty(task.Imports);
         Assert.Empty(task.Exports);
+        Assert.Empty(task.ImportModules);
         Assert.Contains("NWSDK060", Assert.Single(build.Errors), StringComparison.Ordinal);
     }
 
@@ -85,7 +87,7 @@ public sealed class NetWasmReadHostInteropManifestTaskTests
         {
             Path = path;
             Target = target;
-            return new(1, target, new(0, 1, 0), new(8, 8, 16, 8, 16),
+            return new(1, target, new(0, 1, 0), new(8, 8, 16, 8, 16, 0, 8),
             [
                 new(RuntimeAbi.HostModule, "interop_string_length", ["i32"], "i32"),
                 new("consumer.worker", "increment", ["i32"], "i32"),
@@ -96,7 +98,10 @@ public sealed class NetWasmReadHostInteropManifestTaskTests
                     ParameterNames = ["left", "right"], NonNullableParameters = [true, false], NonNullableResult = true,
                 },
                 new("read", [], "i64") { AsyncReturn = "task", ParameterNames = default, NonNullableParameters = default },
-            ]);
+            ])
+            {
+                ImportModules = ["host_ui"],
+            };
         }
     }
 

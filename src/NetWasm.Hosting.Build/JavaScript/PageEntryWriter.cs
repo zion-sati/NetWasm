@@ -14,7 +14,9 @@ public sealed record PageHostEntryRequest(
     ImmutableArray<WorkerEnvironmentVariable> Environment,
     ImmutableArray<string> Clocks,
     string Network,
-    bool Randomness);
+    bool Randomness,
+    ImmutableArray<string> RequiredImportModules,
+    bool ValidateDeploymentManifest);
 
 public sealed record PageModuleRequest(
     string PageFileName,
@@ -39,17 +41,20 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
     {
         ValidateHost(request);
         var modules = request.Modules.OrderBy(module => module.Module, StringComparer.Ordinal).ToArray();
+        var capabilities = RawBrowserHostCapabilities.Select(request.HostingJavaScriptRoot, request.RequiredImportModules);
         var source = new StringBuilder();
         source.Append("import { createPageSession } from ")
             .Append(BrowserHostSource.ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "page-session-root.mjs")))
             .AppendLine(";");
-        BrowserHostSource.AppendImports(source, request.Preview2ShimRoot);
+        BrowserHostSource.AppendRawImports(source, request.HostingJavaScriptRoot, request.Preview2ShimRoot, capabilities);
+        BrowserHostSource.AppendManifestValidatorImport(source, request.HostingJavaScriptRoot, request.ValidateDeploymentManifest);
         for (var index = 0; index < modules.Length; index++)
         {
             source.Append("import * as consumer").Append(index).Append(" from ")
                 .Append(BrowserHostSource.ModuleSpecifier(modules[index].SourcePath)).AppendLine(";");
         }
         source.AppendLine();
+        BrowserHostSource.AppendDeepFreeze(source);
         source.AppendLine("export const openPage = createPageSession({");
         source.AppendLine("  configuration: Object.freeze({");
         BrowserHostSource.AppendConfiguration(source, "    ", [], request.Arguments, request.Environment,
@@ -63,8 +68,10 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         }
         source.AppendLine("  }),");
         source.AppendLine("  platform: Object.freeze({");
-        BrowserHostSource.AppendPlatformMembers(source, "    ");
+        BrowserHostSource.AppendRawPlatformMembers(source, "    ", capabilities);
         source.AppendLine("  }),");
+        BrowserHostSource.AppendProviderCatalog(source, "  ", capabilities);
+        BrowserHostSource.AppendManifestSnapshot(source, "  ", request.ValidateDeploymentManifest);
         source.AppendLine("});");
         Write(request.OutputPath, source.ToString());
     }
@@ -118,6 +125,7 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         ArgumentNullException.ThrowIfNull(request);
         ValidateAbsolutePaths(request.HostingJavaScriptRoot, request.Preview2ShimRoot, request.OutputPath);
         if (request.Modules.IsDefault || request.Arguments.IsDefault || request.Environment.IsDefault
+            || request.RequiredImportModules.IsDefault
             || request.Clocks.IsDefault || request.Network is not ("allowAll" or "denyAll")
             || request.Arguments.Any(argument => argument.Contains('\0'))
             || request.Environment.Any(variable => string.IsNullOrWhiteSpace(variable.Name)

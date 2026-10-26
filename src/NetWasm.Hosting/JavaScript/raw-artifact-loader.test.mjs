@@ -22,7 +22,7 @@ const layout = Object.freeze({
   }),
 });
 const interop = Object.freeze({
-  version: 1,
+  version: 2,
   target: "wasm32",
   statusAbi: Object.freeze({ successStatus: 0 }),
   imports: Object.freeze([]),
@@ -289,6 +289,33 @@ test("accepts and freezes schema-two runtime feature evidence", async () => {
   assert.equal(Object.isFrozen(loaded.runtimeLayout.runtimeFeatures), true);
 });
 
+// The compiler records the modules the host supplies, so a layout from a real
+// build carries importModules beside its native imports.
+test("accepts the import modules a compiled layout records", async () => {
+  for (const importModules of [[], ["host_ui"], ["host_gl", "host_ui"]]) {
+    const result = await loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(JSON.stringify({
+      ...layout,
+      schemaVersion: 3,
+      runtimeFeatures: [],
+      nativeImports: [],
+      importModules,
+    }))));
+    assert.deepEqual(result.runtimeLayout.importModules, importModules);
+  }
+  for (const importModules of [null, [""], [1], ["host_ui", "host_ui"]]) {
+    await assert.rejects(() => loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(JSON.stringify({
+      ...layout,
+      schemaVersion: 3,
+      nativeImports: [],
+      importModules,
+    })))), /import modules/);
+  }
+  await assert.rejects(() => loadRawArtifacts(requestWithContent("runtime-layout", encoder.encode(JSON.stringify({
+    ...layout,
+    importModules: [],
+  })))), /shape/);
+});
+
 test("rejects noncanonical runtime feature evidence before loading", async () => {
   for (const runtimeFeatures of [
     null,
@@ -458,7 +485,7 @@ test("rejects malformed runtime layouts and mismatched interop manifests", async
   for (const bytes of [
     Uint8Array.of(255),
     encoder.encode("[]"),
-    encoder.encode(JSON.stringify({ ...interop, version: 2 })),
+    encoder.encode(JSON.stringify({ ...interop, version: 1 })),
     encoder.encode(JSON.stringify({ ...interop, target: "wasm64" })),
   ]) {
     await assert.rejects(() => loadRawArtifacts(requestWithContent("interop-manifest", bytes)), /interop manifest/);

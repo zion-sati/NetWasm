@@ -17,7 +17,11 @@ public sealed record RawCompilerImportSource(
 
 public sealed record RawCompilerImportDeclarations(
     ImmutableDictionary<RawCanonicalImportIdentity, RawCliFunctionImportSignature> JavaScriptImports,
-    ImmutableDictionary<RawCanonicalImportIdentity, RawCliFunctionImportSignature> RuntimeImports);
+    ImmutableDictionary<RawCanonicalImportIdentity, RawCliFunctionImportSignature> RuntimeImports)
+{
+    // Modules the host supplies to the final module unchanged.
+    public ImmutableHashSet<string> ImportModules { get; init; } = [];
+}
 
 public interface IRawCompilerImportDeclarationBuilder
 {
@@ -72,7 +76,12 @@ public sealed class RawCompilerImportDeclarationBuilder : IRawCompilerImportDecl
         {
             throw Invalid("host interop manifest import is absent from compiler function imports");
         }
-        return new(javaScript.ToImmutable(), runtime.ToImmutable());
+        return new(javaScript.ToImmutable(), runtime.ToImmutable())
+        {
+            ImportModules = request.Source.InteropManifest.ImportModules.IsDefault
+                ? []
+                : request.Source.InteropManifest.ImportModules.ToImmutableHashSet(StringComparer.Ordinal),
+        };
     }
 
     private static ImmutableHashSet<RawCanonicalImportIdentity> BuildJavaScriptIdentities(

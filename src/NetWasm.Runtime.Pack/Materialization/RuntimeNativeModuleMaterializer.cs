@@ -45,6 +45,9 @@ internal sealed class RuntimeNativeModuleMaterializer(
         ArgumentNullException.ThrowIfNull(request.Target);
         ArgumentNullException.ThrowIfNull(request.SourceLayout);
         var callbackSupport = request.SourceLayout.NativeCallbackSupport;
+        var importModules = request.SourceLayout.ImportModules.IsDefault
+            ? null
+            : request.SourceLayout.ImportModules.ToHashSet(StringComparer.Ordinal);
         if (request.SourceLayout.NativeImports.IsDefault ||
             request.SourceLayout.NativeImports.IsEmpty && callbackSupport is null ||
             request.SystemLibraryPaths.IsDefault ||
@@ -128,7 +131,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
                     cached.Bytes is null || cached.Sha256 is null)
                     throw new InvalidOperationException("The native cache entry lacks linked evidence.");
                 var module = modules.Read(cached.Bytes);
-                imports.Validate(profile, module, callbackSupport);
+                imports.Validate(profile, module, callbackSupport, importModules);
                 layoutValidator.Validate(plan, module.MemoryLayout, cached.NativeEvidence.Layout);
                 var expected = linkedLayouts.Calculate(plan, module.MemoryLayout);
                 layoutValidator.Validate(plan, module.MemoryLayout, expected);
@@ -207,7 +210,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         var probeLog = Path.Combine(workspace.LogDirectoryPath, "native-probe-link.log");
         commands.Invoke(new(consumer.WasmLdPath, linkArguments.Build(link), probeLog));
         var probe = modules.Read(artifacts.Read(output));
-        imports.Validate(profile, probe, callbackSupport);
+        imports.Validate(profile, probe, callbackSupport, importModules);
         bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated,
             traces.Read(Encoding.UTF8.GetString(artifacts.Read(probeLog))), probe));
         var finalLayout = linkedLayouts.Calculate(plan, probe.MemoryLayout);
@@ -216,7 +219,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
         commands.Invoke(new(consumer.WasmLdPath, linkArguments.Build(link), finalLog));
         var finalTrace = traces.Read(Encoding.UTF8.GetString(artifacts.Read(finalLog)));
         var linked = modules.Read(artifacts.Read(output));
-        imports.Validate(profile, linked, callbackSupport);
+        imports.Validate(profile, linked, callbackSupport, importModules);
         layoutValidator.Validate(plan, linked.MemoryLayout, finalLayout);
         bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated, finalTrace, linked));
         if (consumer.Optimization != RuntimeWasmOptimization.None)
@@ -234,7 +237,7 @@ internal sealed class RuntimeNativeModuleMaterializer(
             Path.Combine(workspace.LogDirectoryPath, "native-validate.log")));
         var bytes = artifacts.Read(output);
         var optimized = modules.Read(bytes);
-        imports.Validate(profile, optimized, callbackSupport);
+        imports.Validate(profile, optimized, callbackSupport, importModules);
         layoutValidator.Validate(plan, optimized.MemoryLayout, finalLayout);
         var validated = bindingValidator.Validate(new RuntimeNativeBindingValidationRequest(ownedBindings, generated, finalTrace, optimized));
         var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();

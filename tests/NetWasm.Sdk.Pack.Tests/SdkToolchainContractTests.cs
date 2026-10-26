@@ -186,6 +186,123 @@ public sealed partial class SdkToolchainContractTests
         Assert.Equal("@(_NetWasmExecutionArgument)", (string?)task.Attribute("Arguments"));
     }
 
+    // A distribution-built SDK reports its distribution's RID (arch-x64,
+    // fedora.42-arm64, rhel.9-x64); the host tools and the host-qualified lock
+    // file follow the portable RID every SDK reports beside it, and a musl host
+    // stays unsupported.
+    [Theory]
+    [InlineData("arch-x64", "linux-x64", "linux-x64")]
+    [InlineData("fedora.42-arm64", "linux-arm64", "linux-arm64")]
+    [InlineData("rhel.9-x64", "linux-x64", "linux-x64")]
+    [InlineData("ubuntu.24.04-x64", "linux-x64", "linux-x64")]
+    [InlineData("osx-arm64", "osx-arm64", "osx-arm64")]
+    [InlineData("win-arm64", "", "win-arm64")]
+    [InlineData("alpine.3.22-x64", "linux-musl-x64", null)]
+    [InlineData("linux-musl-arm64", "linux-musl-arm64", null)]
+    public void HostToolsFollowThePortableSdkRuntimeIdentifier(
+        string sdkRid, string portableRid, string? hostRid)
+    {
+        XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
+        var props = LoadSdkTarget("NetWasm.Sdk.Tfm.props");
+        var group = Assert.Single(props.Root!.Elements(ns + "PropertyGroup"),
+            element => (string?)element.Attribute("Condition") == "'$(TargetFramework)' == 'netwasm0.1'");
+        var projectDocument = new XDocument(new XElement(ns + "Project",
+            new XElement(ns + "PropertyGroup",
+                new XElement(ns + "TargetFramework", "netwasm0.1"),
+                new XElement(ns + "OutputType", "Exe"),
+                new XElement(ns + "RestorePackagesWithLockFile", "true"),
+                new XElement(ns + "NETCoreSdkRuntimeIdentifier", sdkRid),
+                new XElement(ns + "NETCoreSdkPortableRuntimeIdentifier", portableRid)),
+            new XElement(group)));
+        using var reader = projectDocument.CreateReader();
+        using var projects = new Microsoft.Build.Evaluation.ProjectCollection();
+        var project = new Microsoft.Build.Evaluation.Project(reader, null, null, projects);
+
+        Assert.Equal(hostRid is null ? "" : $"NetWasm.HostTools.{hostRid}",
+            project.GetPropertyValue("NetWasmHostToolsPackageId"));
+        Assert.Equal(hostRid is null ? "" : $"packages.{hostRid}.lock.json",
+            project.GetPropertyValue("NuGetLockFilePath"));
+    }
+
+    // The 10.0.1xx SDK, the only band Linux distributions package, cannot build a
+    // netwasm0.1 project; such a build stops before restore and says which SDK
+    // to install, naming distribution packages when the SDK reports a
+    // distribution RID.
+    [Theory]
+    [InlineData("10.0.113", "arch-x64", "linux-x64", "Linux distribution packages")]
+    [InlineData("10.0.112", "fedora.43-arm64", "linux-arm64", "Linux distribution packages")]
+    [InlineData("10.0.112", "linux-x64", "linux-x64", "dotnet.microsoft.com/download")]
+    [InlineData("10.0.302", "osx-arm64", "osx-arm64", "dotnet.microsoft.com/download")]
+    [InlineData("10.0.300-preview.7.25380.1", "win-x64", "win-x64", "dotnet.microsoft.com/download")]
+    [InlineData("10.0.303", "linux-x64", "linux-x64", null)]
+    [InlineData("10.0.401", "rhel.9-x64", "linux-x64", null)]
+    [InlineData("11.0.100-rc.2.26504.105", "osx-arm64", "osx-arm64", null)]
+    public void SdkVersionValidationStopsSdksThatCannotRestoreTheFramework(
+        string sdkVersion, string sdkRid, string portableRid, string? advice)
+    {
+        XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
+        var props = LoadSdkTarget("NetWasm.Sdk.Tfm.props");
+        var group = Assert.Single(props.Root!.Elements(ns + "PropertyGroup"),
+            element => (string?)element.Attribute("Condition") == "'$(TargetFramework)' == 'netwasm0.1'");
+        var validation = Assert.Single(LoadSdkTarget("NetWasm.Toolchain.targets").Descendants(ns + "Target"),
+            target => (string?)target.Attribute("Name") == "NetWasmSdkValidateSdkVersion");
+        var projectDocument = new XDocument(new XElement(ns + "Project",
+            new XElement(ns + "UsingTask", new XAttribute("TaskName", "Error"),
+                new XAttribute("AssemblyFile", typeof(Microsoft.Build.Tasks.Error).Assembly.Location)),
+            new XElement(ns + "PropertyGroup",
+                new XElement(ns + "TargetFramework", "netwasm0.1"),
+                new XElement(ns + "NETCoreSdkVersion", sdkVersion),
+                new XElement(ns + "NETCoreSdkRuntimeIdentifier", sdkRid),
+                new XElement(ns + "NETCoreSdkPortableRuntimeIdentifier", portableRid)),
+            new XElement(group),
+            new XElement(validation)));
+        using var reader = projectDocument.CreateReader();
+        using var projects = new Microsoft.Build.Evaluation.ProjectCollection();
+        var project = new Microsoft.Build.Evaluation.Project(reader, null, null, projects);
+        var logger = new ValidationErrorLogger();
+
+        var succeeded = project.CreateProjectInstance().Build("NetWasmSdkValidateSdkVersion", [logger]);
+
+        Assert.Equal(advice is null, succeeded);
+        if (advice is not null)
+        {
+            Assert.Equal(["NWSDK086"], logger.Codes);
+            var message = Assert.Single(logger.Messages);
+            Assert.Contains($"this build uses {sdkVersion} ({sdkRid})", message, StringComparison.Ordinal);
+            Assert.Contains(advice, message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void TemplatesPinTheMinimumSdkVersionThatTheSdkValidates()
+    {
+        XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
+        var minimum = (string?)LoadSdkTarget("NetWasm.Sdk.Tfm.props").Descendants(ns + "_NetWasmMinimumSdkVersion")
+            .Single();
+        foreach (var template in new[] { "NetWasm.App/base", "NetWasm.Library" })
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(
+                FindRepositoryRoot(), "src", "NetWasm.Templates", "content", template, "global.json")));
+            Assert.Equal(minimum, json.RootElement.GetProperty("sdk").GetProperty("version").GetString());
+        }
+    }
+
+    // Only the SDK version check reads the SDK's own RID, to name a
+    // distribution-built SDK; every host decision uses the resolved host RID.
+    [Fact]
+    public void ToolchainTargetsDecideTheHostByTheResolvedHostRid()
+    {
+        XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
+        var document = LoadSdkTarget("NetWasm.Toolchain.targets");
+        document.Descendants(ns + "Target")
+            .Single(target => (string?)target.Attribute("Name") == "NetWasmSdkValidateSdkVersion").Remove();
+        var targets = document.ToString();
+
+        Assert.DoesNotContain("NETCoreSdkRuntimeIdentifier", targets, StringComparison.Ordinal);
+        Assert.Contains("HostRid=\"$(_NetWasmHostRid)\"", targets, StringComparison.Ordinal);
+        Assert.Contains("development host ($(_NetWasmHostRid))", targets, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void SdkDiagnosticsUseUniqueCodesAcrossComposedTargets()
     {
@@ -717,11 +834,16 @@ public sealed partial class SdkToolchainContractTests
     private sealed class ValidationErrorLogger : Microsoft.Build.Framework.ILogger
     {
         public List<string> Codes { get; } = [];
+        public List<string> Messages { get; } = [];
         public Microsoft.Build.Framework.LoggerVerbosity Verbosity { get; set; }
         public string? Parameters { get; set; }
 
         public void Initialize(Microsoft.Build.Framework.IEventSource eventSource)
-            => eventSource.ErrorRaised += (_, error) => Codes.Add(error.Code ?? "");
+            => eventSource.ErrorRaised += (_, error) =>
+            {
+                Codes.Add(error.Code ?? "");
+                Messages.Add(error.Message ?? "");
+            };
 
         public void Shutdown() { }
     }

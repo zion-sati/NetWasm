@@ -1,6 +1,7 @@
 import { createInteropHandleTable } from "./interop-handle-table.mjs";
 import { createInteropBuiltinServiceModule } from "./interop-builtin-service-module.mjs";
 import { createInteropStatusService } from "./interop-status-service.mjs";
+import { createInteropDirectService } from "./interop-direct-service.mjs";
 import {
   bindInteropExecutionInstance,
   closeInteropExecution,
@@ -101,7 +102,8 @@ export function prepareParsedNetWasmInterop({
   const pendingAsyncExports = new Set();
   const enterExport = createExportDepthGuard();
   let closed = false;
-  let activeImports = 0;
+  // The imports on the stack; a subscription callback reads the count.
+  const activity = { active: 0 };
   let deferred;
   let exceptionReporter;
   let consumeExceptionPayload;
@@ -144,6 +146,15 @@ export function prepareParsedNetWasmInterop({
         readMemory: readers.readMemory,
       });
       const imports = { ...runtimeModules, [builtinModule]: builtins };
+      // The final module calls an import module's functions as they are; the
+      // engine reports any function the module lacks when it instantiates.
+      for (const module of contract.importModules ?? []) {
+        const serviceModule = consumerModules[module];
+        if (serviceModule === null || typeof serviceModule !== "object") {
+          throw new NetWasmHostError(`missing host module ${module}`);
+        }
+        imports[module] = { ...serviceModule };
+      }
       for (const descriptor of contract.imports) {
         if (descriptor.module === builtinModule) {
           continue;
@@ -262,6 +273,9 @@ export function prepareParsedNetWasmInterop({
   }
 
   function createStatusService(descriptor, service, readers) {
+    if (descriptor.call === "direct") {
+      return createInteropDirectService({ descriptor, service, activity });
+    }
     const invoke = createInteropStatusService({
       assertAsyncDeliveryAvailable,
       callbacks: contract.callbacks ?? [],
@@ -276,11 +290,11 @@ export function prepareParsedNetWasmInterop({
       statusAbi: contract.statusAbi,
       target: contract.target,
       targetLayout: contract.targetLayout,
-    }, error => { if (!closed) observeAsyncCompletion(error); }, () => activeImports !== 0);
+    }, error => { if (!closed) observeAsyncCompletion(error); }, () => activity.active !== 0);
     return Object.freeze((...arguments_) => {
-      activeImports++;
+      activity.active++;
       try { return invoke(...arguments_); }
-      finally { activeImports--; }
+      finally { activity.active--; }
     });
   }
 }

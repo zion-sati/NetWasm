@@ -51,7 +51,13 @@ public sealed class NativeRuntimeValidationRejectionIntegrationTests
 
         var error = Assert.Throws<InvalidOperationException>(() => fixture.Materialize());
 
-        Assert.Equal("The native-linked runtime imports do not match the supported runtime contract.", error.Message);
+        // An import outside the contract is named; only a module the project may
+        // declare suggests NetWasmImportModule.
+        if (kind == "wrong-signature")
+            Assert.Equal("The native-linked runtime imports do not match the supported runtime contract.", error.Message);
+        else
+            Assert.StartsWith($"The native-linked runtime imports {identity.Module}.{identity.Name}, ", error.Message, StringComparison.Ordinal);
+        Assert.Equal(kind == "arbitrary-host", error.Message.Contains("NetWasmImportModule", StringComparison.Ordinal));
         fixture.AssertUnpublished();
         var run = Assert.Single(Directory.GetDirectories(fixture.Request.LogDirectory, "native-run-*"));
         Assert.True(File.Exists(Path.Combine(run, "native-probe-link.log")));

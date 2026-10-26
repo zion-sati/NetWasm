@@ -198,6 +198,20 @@
       <_NetWasmCompilationIdentityLine Include="managedLoopRotation=$(NetWasmManagedLoopRotation)" />
       <_NetWasmCompilationIdentityLine Include="managedArrayStoreCheckElimination=$(NetWasmManagedArrayStoreCheckElimination)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
+      <!-- Modules the project's native archives may import from: each declared
+           NetWasmImportModule and each registered JavaScript module. -->
+      <_NetWasmCompilerImportModule Remove="@(_NetWasmCompilerImportModule)" />
+      <_NetWasmCompilerImportModule Include="@(NetWasmImportModule)" />
+      <_NetWasmCompilerImportModule Include="@(NetWasmJavaScriptModule->'%(Module)')"
+                                    Condition="'%(NetWasmJavaScriptModule.NetWasmGeneratedWorkerClient)' != 'true' AND '%(NetWasmJavaScriptModule.Module)' != ''" />
+      <_NetWasmCompilerImportModuleDistinct Remove="@(_NetWasmCompilerImportModuleDistinct)" />
+      <_NetWasmCompilerImportModuleDistinct Include="@(_NetWasmCompilerImportModule->Distinct())" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_NetWasmCompilerImportModuleList>@(_NetWasmCompilerImportModuleDistinct, ',')</_NetWasmCompilerImportModuleList>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NetWasmCompilationIdentityLine Include="importModules=$(_NetWasmCompilerImportModuleList)" />
       <_NetWasmPortablePdbCandidate Remove="@(_NetWasmPortablePdbCandidate)" />
       <_NetWasmPortablePdbInput Remove="@(_NetWasmPortablePdbInput)" />
       <_NetWasmPortablePdbCandidate Include="@(IntermediateAssembly->'%(RootDir)%(Directory)%(Filename).pdb')" />
@@ -270,6 +284,7 @@
                         DiagnosticLogPath="$(NetWasmDiagnosticLogPath)"
                         WitPath="$(_NetWasmCompilerWitPath)"
                         WitWorld="$(NetWasmCompilerWitWorld)"
+                        ImportModules="@(_NetWasmCompilerImportModuleDistinct)"
                         WasmToolsNodePath="$(NetWasmNodePath)"
                         WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"

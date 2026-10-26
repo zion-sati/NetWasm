@@ -231,7 +231,7 @@ public sealed class InteropContractsTests
             [function],
             [function]);
         var status = new HostInteropStatusAbi(0, 1, 2);
-        var layout = new HostInteropTargetLayout(4, 8, 12, 16, 20);
+        var layout = new HostInteropTargetLayout(4, 8, 12, 16, 20, 24, 28);
         var import = new HostInteropImport(
             "host",
             "invoke",
@@ -297,6 +297,8 @@ public sealed class InteropContractsTests
         Assert.Equal(12, layout.StringDataOffset);
         Assert.Equal(16, layout.ArrayLengthOffset);
         Assert.Equal(20, layout.ArrayDataPointerOffset);
+        Assert.Equal(24, layout.SpanReferenceOffset);
+        Assert.Equal(28, layout.SpanLengthOffset);
         Assert.Equal("host", import.Module);
         Assert.Equal("invoke", import.Name);
         Assert.True(import.Parameters.SequenceEqual(["i32", "string"]));
@@ -305,6 +307,7 @@ public sealed class InteropContractsTests
         Assert.Equal("resolve", import.ResolveExport);
         Assert.Equal("reject", import.RejectExport);
         Assert.Equal("cancel", import.CancelExport);
+        Assert.Equal(JavaScriptDirectImport.StatusCall, import.Call);
         Assert.Equal("publish", export.Name);
         Assert.True(export.Parameters.SequenceEqual(["i32"]));
         Assert.Equal("string", export.Result);
@@ -323,6 +326,38 @@ public sealed class InteropContractsTests
         Assert.Equal("callback", declaration.ExportName);
         Assert.Equal(0x06000006, declaration.Invoke.Definition.Key.MetadataToken);
     }
+
+    // Only a synchronous import of primitive scalars is called directly.
+    [Theory]
+    [InlineData("i4", "i4", false, true)]
+    [InlineData("void", "f8", false, true)]
+    [InlineData("u8", "nativeint", false, true)]
+    [InlineData("i4", "string", false, false)]
+    [InlineData("string", "i4", false, false)]
+    [InlineData("i4", "i4", true, false)]
+    public void CallsSynchronousScalarImportsDirectly(
+        string result,
+        string parameter,
+        bool isPromise,
+        bool expected)
+    {
+        var method = new MethodDefinitionModel(
+            new EntityKey(Assembly, 0x06000001),
+            TypeKey,
+            "Invoke",
+            true,
+            MethodSignatureModel.Create(Primitive(result), Primitive(parameter)),
+            1)
+        {
+            JSImport = new InteropImportDeclaration("invoke", "host") { IsPromise = isPromise },
+        };
+
+        Assert.Equal(expected, JavaScriptDirectImport.Applies(method));
+        Assert.False(JavaScriptDirectImport.Applies(method with { JSImport = null }));
+    }
+
+    private static CliTypeIdentity Primitive(string name) =>
+        CliTypeIdentity.Primitive(name, name == "void" ? CliValueKind.Void : CliValueKind.I4);
 
     private static CanonicalAbiType ResultTypeContract() =>
         new(CanonicalAbiTypeKind.S32, ResultType);

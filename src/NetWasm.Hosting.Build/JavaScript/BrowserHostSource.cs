@@ -53,6 +53,105 @@ internal static class BrowserHostSource
     public static void AppendWebMembers(StringBuilder source, string indent) =>
         AppendLines(source, indent, WebMembers);
 
+    /// <summary>
+    /// Imports for a raw page or worker host: the shim factory with only the
+    /// application's Preview 2 families, and the filesystem scope when it links
+    /// a filesystem interface.
+    /// </summary>
+    public static void AppendRawImports(
+        StringBuilder source,
+        string hostingJavaScriptRoot,
+        string preview2ShimRoot,
+        RawBrowserHostCapabilities capabilities)
+    {
+        source.Append("import { createSelectedPreview2ShimFactory } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingJavaScriptRoot, "preview2-selected-shim.mjs")))
+            .AppendLine(";");
+        if (capabilities.LinksFilesystem)
+        {
+            source.Append("import { createPreview2FilesystemScope } from ")
+                .Append(ModuleSpecifier(Path.Combine(hostingJavaScriptRoot, "preview2-filesystem-scope.mjs")))
+                .AppendLine(";");
+        }
+        foreach (var family in capabilities.ShimFamilies)
+        {
+            source.Append("import * as ").Append(FamilyIdentifier(family)).Append(" from ")
+                .Append(ModuleSpecifier(Path.Combine(preview2ShimRoot, "dist", "browser", family + ".js")))
+                .AppendLine(";");
+        }
+    }
+
+    /// <summary>The helper <see cref="AppendProviderCatalog"/> freezes the catalog with; written after the imports.</summary>
+    /// <summary>Imports the deployment-manifest validator when the entry validates its manifest.</summary>
+    public static void AppendManifestValidatorImport(StringBuilder source, string hostingRoot, bool validate)
+    {
+        if (validate)
+        {
+            source.Append("import { validateDeploymentManifest } from ")
+                .Append(ModuleSpecifier(Path.Combine(hostingRoot, "deployment-manifest-validator.mjs")))
+                .AppendLine(";");
+        }
+    }
+
+    /// <summary>
+    /// The session's manifest snapshot action. Without validation the entry only
+    /// freezes the manifest: the build validated it, and the loader checks its
+    /// SHA-256 against the digest the open() module pins.
+    /// </summary>
+    public static void AppendManifestSnapshot(StringBuilder source, string indent, bool validate) =>
+        source.Append(indent).Append("snapshotDeploymentManifest: ")
+            .Append(validate ? "validateDeploymentManifest" : "deepFreeze").AppendLine(",");
+
+    public static void AppendDeepFreeze(StringBuilder source)
+    {
+        source.AppendLine("function deepFreeze(value) {");
+        source.AppendLine("  for (const child of Object.values(value)) {");
+        source.AppendLine("    if (child !== null && typeof child === \"object\") deepFreeze(child);");
+        source.AppendLine("  }");
+        source.AppendLine("  return Object.freeze(value);");
+        source.AppendLine("}");
+    }
+
+    /// <summary>The raw export-session platform: the selected Preview 2 shim and web actions.</summary>
+    public static void AppendRawPlatformMembers(
+        StringBuilder source,
+        string indent,
+        RawBrowserHostCapabilities capabilities)
+    {
+        if (capabilities.LinksFilesystem)
+        {
+            AppendLines(source, indent,
+            [
+                "createFilesystemScope: preopens => createPreview2FilesystemScope({",
+                "  createFilesystem({ preopens }) {",
+                "    if (Object.keys(preopens).length !== 0) throw new TypeError(\"browser preopens require explicit browser capabilities\");",
+                $"    return {FamilyIdentifier("filesystem")}.createFilesystem({{ adapter: new {FamilyIdentifier("filesystem")}.InMemoryFilesystemAdapter(), preopens: Object.freeze({{}}) }});",
+                "  },",
+                "  preopens,",
+                "}),",
+            ]);
+        }
+        else
+        {
+            AppendLines(source, indent, ["createFilesystemScope: null,"]);
+        }
+        source.Append(indent).Append("createShim: createSelectedPreview2ShimFactory({ ")
+            .Append(string.Join(", ", capabilities.ShimFamilies.Select(family => $"{family}: {FamilyIdentifier(family)}")))
+            .AppendLine(" }),");
+        AppendWebMembers(source, indent);
+    }
+
+    /// <summary>The platform providers the application's raw bindings require.</summary>
+    public static void AppendProviderCatalog(
+        StringBuilder source,
+        string indent,
+        RawBrowserHostCapabilities capabilities) =>
+        source.Append(indent).Append("platformProviderCatalog: deepFreeze(")
+            .Append(capabilities.ProviderCatalogJson).AppendLine("),");
+
+    private static string FamilyIdentifier(string family) =>
+        "preview2" + char.ToUpperInvariant(family[0]) + family[1..];
+
     public static void AppendConfiguration(
         StringBuilder source,
         string indent,

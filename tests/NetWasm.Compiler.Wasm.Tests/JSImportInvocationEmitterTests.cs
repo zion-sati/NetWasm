@@ -51,7 +51,8 @@ public sealed class JSImportInvocationEmitterTests
             callbackHandles,
             handles,
             results,
-            exceptions));
+            exceptions,
+            new FixedStackLocalResolver(9)));
         var code = new RecordingInstructionWriter();
 
         emitter.Emit(
@@ -87,7 +88,8 @@ public sealed class JSImportInvocationEmitterTests
             new RecordingCallbackHandleEmitter(),
             new RecordingHandleReleaser(),
             new RecordingResultEmitter(),
-            new RecordingExceptionEmitter()));
+            new RecordingExceptionEmitter(),
+            new FixedStackLocalResolver(9)));
         var code = new RecordingInstructionWriter();
         var functionIndices = CreateResolver(program);
 
@@ -109,6 +111,53 @@ public sealed class JSImportInvocationEmitterTests
         Assert.Contains((uint)RawImportIndex, calls);
         Assert.DoesNotContain((uint)ForwarderIndex, calls);
         Assert.Equal(ForwarderIndex, functionIndices.Resolve(EntryKey));
+    }
+
+    // A scalar import passes its arguments and takes its result as Wasm
+    // values: no descriptor, no status and no result marshalling. A host
+    // throw reaches the catch_all and raises JSException.
+    [Fact]
+    public void CallsAScalarImportDirectlyAndRaisesJSExceptionWhenTheHostThrows()
+    {
+        var program = new FakeProgram();
+        var method = CreateMethodInstance(program.GetMethod(EntryKey) with
+        {
+            Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4),
+            JSImport = new("add", "tests"),
+        });
+        var arguments = new RecordingArgumentEmitter();
+        var results = new RecordingResultEmitter();
+        var exceptions = new RecordingExceptionEmitter();
+        var emitter = Assert.IsAssignableFrom<IJSImportInvocationEmitter>(new JSImportInvocationEmitter(
+            new RecordingLayoutProvider(),
+            WasmRuntimeImports.CreateCatalog(),
+            new FixedDescriptorSizeResolver(16),
+            arguments,
+            new RecordingCallbackHandleEmitter(),
+            new RecordingHandleReleaser(),
+            results,
+            exceptions,
+            new FixedStackLocalResolver(9)));
+        var code = new RecordingInstructionWriter();
+        List<CliValueKind> stack = [CliValueKind.I4, CliValueKind.I4];
+
+        emitter.Emit(
+            new JSImportInvocation(method, CreateMethodEmissionContext(), stack, 0, 2,
+                CreateInstructionModuleTarget(program)),
+            code,
+            CreateResolver(program));
+
+        var instructions = code.ToInstructions();
+        Assert.Equal(2, arguments.Count);
+        Assert.Null(results.Request);
+        Assert.Equal([ManagedExceptionKind.JSException], exceptions.Kinds);
+        Assert.Equal(
+            [WasmOpcodes.Block, WasmOpcodes.Block, WasmOpcodes.TryTable, WasmOpcodes.Call, WasmOpcodes.End,
+                WasmOpcodes.Branch, WasmOpcodes.End, WasmOpcodes.Unreachable, WasmOpcodes.End, WasmOpcodes.LocalSet],
+            instructions.Select(instruction => instruction.Opcode));
+        Assert.Equal((uint)RawImportIndex, instructions[3].Operand.UnsignedValue);
+        Assert.Equal(9u, instructions[^1].Operand.UnsignedValue);
+        Assert.Equal([CliValueKind.I4], stack);
     }
 
     private static MethodInstanceModel CreateImport(FakeProgram program) =>
@@ -136,6 +185,11 @@ public sealed class JSImportInvocationEmitterTests
         CliTypeIdentity.Named(Assembly, "Test", "Type", isValueType: false),
         [],
         method.Signature);
+
+    private sealed class FixedStackLocalResolver(int local) : IStackLocalResolver
+    {
+        public int Resolve(MethodEmissionContext context, int slot, CliValueKind type) => local;
+    }
 
     private sealed class FixedDescriptorSizeResolver(int size) :
         IJavaScriptResultDescriptorSizeResolver

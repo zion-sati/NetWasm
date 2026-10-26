@@ -24,6 +24,19 @@ const host = {
     return { dispose() { listener = null; } };
   },
   reenter(depth) { return current.nest(depth); },
+  fill(pixels, value) {
+    check(pixels instanceof Uint8Array, "A Span<byte> is not a Uint8Array.");
+    pixels.fill(value);
+    return pixels.length;
+  },
+  sum(values) {
+    check(values instanceof Float64Array, "A ReadOnlySpan<double> is not a Float64Array.");
+    return values.reduce((total, value) => total + value, 0);
+  },
+  count(values) {
+    check(values instanceof Int32Array, "A Span<int> is not an Int32Array.");
+    return values.length;
+  },
 };
 
 let first;
@@ -49,6 +62,11 @@ try {
   document.body.dataset.testCase = "typed-array";
   const scaled = first.scale(Float64Array.of(1.5, -2), 2);
   check(scaled instanceof Float64Array && scaled[0] === 3 && scaled[1] === -4, "Typed array round trip failed.");
+
+  document.body.dataset.testCase = "span-view";
+  check(first.fillPixels(1024, 9) === 1024 + 4 + 8, "Span view writes did not reach C#.");
+  check(first.sumMiddle(Float64Array.of(100, 1.5, 2.5, 100)) === 4, "ReadOnlySpan slice view failed.");
+  check(first.countInts() === 29, "Span<int> views or the misaligned-span failure failed.");
 
   document.body.dataset.testCase = "jsobject";
   const probe = document.querySelector("#probe");

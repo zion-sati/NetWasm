@@ -28,6 +28,7 @@
   <ItemGroup>
     <None Update="IntegrationAssets/native-mule.c" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/named-callback-mule.c" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="IntegrationAssets/native-host-import.c" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/NativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/GeneratedNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/AggregateNativeMule.cs.txt" CopyToOutputDirectory="PreserveNewest" />

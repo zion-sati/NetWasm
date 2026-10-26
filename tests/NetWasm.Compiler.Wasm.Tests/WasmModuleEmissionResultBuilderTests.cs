@@ -88,6 +88,25 @@ public sealed class WasmModuleEmissionResultBuilderTests
         Assert.Null(result.NativeImports[1].ReturnType);
     }
 
+    // No archive defines a [WasmImportLinkage] import: it stays out of the
+    // runtime's native imports and its module is one the host supplies.
+    [Fact]
+    public void KeepsWasmImportLinkageImportsForTheHost()
+    {
+        var archived = CreateNativeImport(1, "mule", "scalar", MethodSignatureModel.Create(CliValueKind.I4));
+        var first = CreateNativeImport(2, "host_ui", "create_node", MethodSignatureModel.Create(CliValueKind.I8), true);
+        var second = CreateNativeImport(3, "host_ui", "remove_node", MethodSignatureModel.Create(CliValueKind.Void), true);
+        var request = new WasmModuleEmissionBuildRequest(
+            new([archived.Import, first.Import, second.Import], "runtime", "memory", [], [], [], false, WasmTarget.Wasm32, false),
+            512, [], [], [])
+        { NativeImports = new([archived, first, second]) };
+
+        var result = CreateBuilder(new RecordingModuleBuilder(), new RecordingMetricProjector()).Build(request);
+
+        Assert.Equal("scalar", Assert.Single(result.NativeImports).EntryPoint);
+        Assert.Equal(["host_ui"], result.ImportModules.ToArray());
+    }
+
     [Theory]
     [InlineData(CliValueKind.I4, WasmValueType.I32)]
     [InlineData(CliValueKind.I8, WasmValueType.I64)]
@@ -176,11 +195,12 @@ public sealed class WasmModuleEmissionResultBuilderTests
     }
 
     private static NativeMethodImport CreateNativeImport(int token, string library, string entry,
-        MethodSignatureModel signature)
+        MethodSignatureModel signature, bool wasmImportLinkage = false)
     {
         var assembly = new AssemblyIdentity("Native");
         var declaration = new NativeImportDeclaration(library, entry, MethodImportAttributes.CallingConventionCDecl,
-            false, false, false, false);
+            false, false, false, false)
+        { HasWasmImportLinkage = wasmImportLinkage };
         var definition = new MethodDefinitionModel(new(assembly, token), new(assembly, 100), entry, true, signature, 0)
         { NativeImport = declaration };
         var method = new MethodInstanceModel(definition, CliTypeIdentity.Named(assembly, "Test", "Native", false), [], signature);

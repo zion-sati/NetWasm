@@ -27,6 +27,8 @@ internal static class GeneratedFunctionServiceCollectionExtensions
         services.AddSingleton<IJSImportForwarderFunctionAppender, JSImportForwarderFunctionAppender>();
         services.AddSingleton<IRuntimeCoreInitializer, RuntimeCoreInitializer>();
         services.AddSingleton<IRuntimeStateInitializer, RuntimeStateInitializer>();
+        services.AddSingleton<IRuntimeInitializerFunctionEmitter, RuntimeInitializerFunctionEmitter>();
+        services.AddSingleton<IRuntimeInitializerFunctionAppender, RuntimeInitializerFunctionAppender>();
         services.AddSingleton<IFilterFuncletEmitter, FilterFuncletEmitter>();
         services.AddSingleton<IFilterSequenceEmitterFactory,
             FilterSequenceEmitterFactory>();

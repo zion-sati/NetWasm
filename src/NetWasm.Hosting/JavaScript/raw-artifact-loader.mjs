@@ -27,11 +27,12 @@ const layoutKeys = [
   "target",
 ];
 const entryPointKeys = ["completionShape", "parameterShape", "returnShape"];
-const nativeLayoutKeys = [...layoutKeys, "nativeImports"].sort();
-const callbackLayoutKeys = [...nativeLayoutKeys, "nativeCallbackSupport"].sort();
-const runtimeFeatureLayoutKeys = [...layoutKeys, "runtimeFeatures"].sort();
-const nativeRuntimeFeatureLayoutKeys = [...nativeLayoutKeys, "runtimeFeatures"].sort();
-const callbackRuntimeFeatureLayoutKeys = [...callbackLayoutKeys, "runtimeFeatures"].sort();
+const nativeLayoutKeys = [...layoutKeys, "nativeImports"];
+const callbackLayoutKeys = [...nativeLayoutKeys, "nativeCallbackSupport"];
+// Present only when the compiler records them: the runtime features every
+// schema may carry, and, from schema 3, the modules the host supplies.
+const optionalLayoutKeys = ["runtimeFeatures"];
+const optionalNativeLayoutKeys = ["importModules", "runtimeFeatures"];
 const nativeImportKeys = ["entryPoint", "libraryName", "parameters", "returnType"];
 const nativeCallbackSupportKeys = [
   "callbacks",
@@ -216,13 +217,12 @@ function validateAdapterNamespace(namespace) {
 
 function parseRuntimeLayout(bytes) {
   const value = parseJson(bytes, "runtime layout");
-  const hasRuntimeFeatures = value !== null && typeof value === "object"
-    && !Array.isArray(value) && Object.hasOwn(value, "runtimeFeatures");
-  const keys = value?.schemaVersion === 4
-    ? hasRuntimeFeatures ? callbackRuntimeFeatureLayoutKeys : callbackLayoutKeys
-    : value?.schemaVersion === 3
-      ? hasRuntimeFeatures ? nativeRuntimeFeatureLayoutKeys : nativeLayoutKeys
-      : hasRuntimeFeatures ? runtimeFeatureLayoutKeys : layoutKeys;
+  const isObject = value !== null && typeof value === "object" && !Array.isArray(value);
+  const hasRuntimeFeatures = isObject && Object.hasOwn(value, "runtimeFeatures");
+  const required = value?.schemaVersion === 4 ? callbackLayoutKeys
+    : value?.schemaVersion === 3 ? nativeLayoutKeys : layoutKeys;
+  const optional = value?.schemaVersion >= 3 ? optionalNativeLayoutKeys : optionalLayoutKeys;
+  const keys = [...required, ...optional.filter(key => isObject && Object.hasOwn(value, key))].sort();
   assertExactDataObject(value, keys, "raw runtime layout");
   if (![2, 3, 4].includes(value.schemaVersion) || value.target !== "wasm32" && value.target !== "wasm64"
       || !Number.isSafeInteger(value.applicationStaticDataEnd) || value.applicationStaticDataEnd < 0) {
@@ -242,6 +242,12 @@ function parseRuntimeLayout(bytes) {
     }
   }
   if (hasRuntimeFeatures) validateRuntimeFeatures(value.runtimeFeatures);
+  if (Object.hasOwn(value, "importModules")
+      && (!Array.isArray(value.importModules)
+        || value.importModules.some(module => typeof module !== "string" || module.length === 0)
+        || new Set(value.importModules).size !== value.importModules.length)) {
+    throw new TypeError("raw runtime layout import modules are invalid");
+  }
   if (value.schemaVersion === 4) validateNativeCallbackSupport(value.nativeCallbackSupport);
   if (value.managedExecutableEntryPoint !== null) {
     assertExactDataObject(value.managedExecutableEntryPoint, entryPointKeys, "raw entry point");
@@ -323,7 +329,7 @@ function isValidNativeName(value) {
 function parseInteropManifest(bytes, target) {
   const value = parseJson(bytes, "interop manifest");
   if (value === null || typeof value !== "object" || Array.isArray(value)
-      || value.version !== 1 || value.target !== target) {
+      || value.version !== 2 || value.target !== target) {
     throw new TypeError("raw interop manifest does not match the runtime layout");
   }
   return deepFreeze(value);

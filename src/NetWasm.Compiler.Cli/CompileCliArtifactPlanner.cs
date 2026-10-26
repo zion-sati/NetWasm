@@ -102,6 +102,7 @@ internal sealed class CompileCliArtifactPlanner(
                 applicationStaticDataEnd = result.StaticDataEnd,
                 runtimeFeatures,
                 nativeImports,
+                importModules = result.InteropManifest.ImportModules,
             });
         }
 
@@ -112,6 +113,7 @@ internal sealed class CompileCliArtifactPlanner(
             applicationStaticDataEnd = result.StaticDataEnd,
             runtimeFeatures,
             nativeImports,
+            importModules = result.InteropManifest.ImportModules,
             nativeCallbackSupport = new
             {
                 fileName = Path.GetFileName(callbackObjectPath),

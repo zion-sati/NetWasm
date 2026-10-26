@@ -23,7 +23,7 @@ const application = Buffer.from(
   "base64");
 const rawAdapter = encoder.encode(`
 export const rawAdapterMetadata = Object.freeze({
-  abiVersion: 1,
+  abiVersion: 2,
   bindingIdentities: Object.freeze([]),
   requiredCapabilities: Object.freeze([]),
   target: "wasm32",
@@ -42,7 +42,7 @@ const runtimeLayout = encoder.encode(JSON.stringify({
   },
 }));
 const interopManifest = encoder.encode(JSON.stringify({
-  version: 1,
+  version: 2,
   target: "wasm32",
   statusAbi: { successStatus: 0, hostFailureStatus: 1, scalarResultOffset: 0 },
   targetLayout: {
@@ -51,6 +51,8 @@ const interopManifest = encoder.encode(JSON.stringify({
     stringDataOffset: 8,
     arrayLengthOffset: 4,
     arrayDataPointerOffset: 8,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 4,
   },
   imports: [], exports: [], callbacks: [],
 }));

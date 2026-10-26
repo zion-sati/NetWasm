@@ -5,4 +5,9 @@
   <ItemGroup>
     <ProjectReference Include="../NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Appended to every raw adapter whose bindings use the canonical ABI. -->
+    <EmbeddedResource Include="Raw/JavaScript/raw-adapter-runtime.mjs"
+                      LogicalName="NetWasm.Compiler.ComponentModel.Raw.raw-adapter-runtime.mjs" />
+  </ItemGroup>
 </Project>

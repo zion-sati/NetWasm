@@ -55,6 +55,8 @@ public sealed class NativeImportDeclarationReaderTests
     [InlineData("UnmanagedCallConvAttribute", true)]
     [InlineData("OtherAttribute", false)]
     [InlineData("OtherAttribute", true)]
+    [InlineData("WasmImportLinkageAttribute", false)]
+    [InlineData("WasmImportLinkageAttribute", true)]
     public void PreservesSuppressionAndNormalizesDefaultConventionAttributes(
         string attribute, bool localConstructor)
     {
@@ -64,6 +66,7 @@ public sealed class NativeImportDeclarationReaderTests
 
         Assert.NotNull(declaration);
         Assert.Equal(attribute == "SuppressGCTransitionAttribute", declaration.SuppressesGcTransition);
+        Assert.Equal(attribute == "WasmImportLinkageAttribute", declaration.HasWasmImportLinkage);
         Assert.False(declaration.HasCustomCallingConvention);
     }
 

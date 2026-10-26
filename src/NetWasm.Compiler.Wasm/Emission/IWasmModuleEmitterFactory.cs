@@ -45,6 +45,8 @@ public sealed record WasmModuleEmissionResult(
 {
     public ImmutableArray<WasmFunctionImport> FunctionImports { get; init; } = [];
     public ImmutableArray<WasmNativeImport> NativeImports { get; init; } = [];
+    // The modules [WasmImportLinkage] imports name; the host supplies them.
+    public ImmutableArray<string> ImportModules { get; init; } = [];
     public ImmutableArray<string> RuntimeFeatures { get; init; } = [];
     public WasmNativeCallbackSupportArtifact? NativeCallbackSupport { get; init; }
 }

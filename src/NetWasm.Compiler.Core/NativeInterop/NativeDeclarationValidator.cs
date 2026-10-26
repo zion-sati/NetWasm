@@ -17,6 +17,11 @@ public sealed class NativeDeclarationValidator : INativeDeclarationValidator
         {
             throw Unsupported(method, "A native library and entry symbol must be explicitly named.");
         }
+        if (import.HasWasmImportLinkage && IsReservedImportModule(import.LibraryName))
+        {
+            throw Unsupported(method,
+                "A [WasmImportLinkage] library name cannot be a NetWasm or WASI import module.");
+        }
         if (!definition.IsStatic || definition.IsAbstract || definition.HasBody ||
             definition.GenericArity != 0 || method.DeclaringType.ContainsGenericParameters ||
             method.DeclaringType.Shape == CliTypeShape.GenericInstantiation ||
@@ -47,6 +52,14 @@ public sealed class NativeDeclarationValidator : INativeDeclarationValidator
                 "Only the default C ABI or Cdecl with no additional native import semantics is supported.");
         }
     }
+
+    // NetWasm's own modules and WASI interfaces are supplied by the runtime and
+    // the component model, never by an application import.
+    public static bool IsReservedImportModule(string module) =>
+        module.StartsWith("netwasm.", StringComparison.Ordinal) ||
+        module.StartsWith("netwasm:", StringComparison.Ordinal) ||
+        module.StartsWith("wasi:", StringComparison.Ordinal) ||
+        module.StartsWith("wasi_", StringComparison.Ordinal);
 
     private static CompilerException Unsupported(MethodInstanceModel method, string message) =>
         new(new(DiagnosticCode.NativeInterop, message, method.CanonicalName));

@@ -159,7 +159,7 @@ public sealed class CompilationPipelineExecutorTests
             var data = new ManagedStaticData(96, [], [], [], [], [], [], [], [], []);
             Layouts = new(new ManagedLayoutSnapshot(types, data));
             Manifest = new(1, width == WasmTarget.Wasm32 ? "wasm32" : "wasm64", new(0, 1, 8),
-                new(target.ObjectReferenceSize, 0, 0, 0, 0), [], []);
+                new(target.ObjectReferenceSize, 0, 0, 0, 0, 0, 0), [], []);
             Emission = new(new WasmModuleEmissionResult([41, 42], 96, [], [new(1, "entry")])
             {
                 NativeImports = [new("library", "entry", [width == WasmTarget.Wasm32 ? WasmValueType.I32 : WasmValueType.I64], WasmValueType.F64)],

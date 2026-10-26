@@ -15,7 +15,7 @@ const application = Buffer.from(
   "base64");
 const rawAdapter = encoder.encode(`
 export const rawAdapterMetadata = Object.freeze({
-  abiVersion: 1,
+  abiVersion: 2,
   bindingIdentities: Object.freeze([]),
   requiredCapabilities: Object.freeze([]),
   target: "wasm32",
@@ -34,7 +34,7 @@ const runtimeLayout = encoder.encode(JSON.stringify({
   },
 }));
 const interopManifest = encoder.encode(JSON.stringify({
-  version: 1,
+  version: 2,
   target: "wasm32",
   statusAbi: { successStatus: 0, hostFailureStatus: 1, scalarResultOffset: 0 },
   targetLayout: {
@@ -43,6 +43,8 @@ const interopManifest = encoder.encode(JSON.stringify({
     stringDataOffset: 8,
     arrayLengthOffset: 4,
     arrayDataPointerOffset: 8,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 4,
   },
   imports: [],
   exports: [],
@@ -171,7 +173,7 @@ test("browser bootstrap composes selected Preview 2 and Web mechanisms", async (
 });
 
 test("raw browser bootstrap binds application modules without a worker caller", async () => {
-  const imported = { module: "netwasm:worker/calculator", name: "read", parameters: [], result: "i32" };
+  const imported = { call: "status", module: "netwasm:worker/calculator", name: "read", parameters: [], result: "i32" };
   for (const supplied of [true, false]) {
     const value = fixture([imported]);
     const modules = supplied ? { [imported.module]: { read: () => 42 } } : {};

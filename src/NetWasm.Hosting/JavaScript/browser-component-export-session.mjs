@@ -4,7 +4,9 @@ import { createBrowserDeploymentManifestLoader } from "./browser-deployment-mani
 import { createBrowserTimeZoneMaterializer } from "./browser-timezone-materializer.mjs";
 import { createBrowserVerifiedModuleImporter } from "./browser-verified-module-importer.mjs";
 import { openComponentExportSession } from "./component-export-session.mjs";
+import { validateDeploymentManifest } from "./deployment-manifest-validator.mjs";
 import { createExecutionRequestValidator } from "./execution-request-validator.mjs";
+import { platformProviderCatalog } from "./platform-provider-catalog.generated.mjs";
 import { bindWorkerImports } from "./worker-import-bindings.mjs";
 import { witWorkerExecutionContract } from "./execution-contracts.mjs";
 import { createOutputFinalization } from "./output-finalization.mjs";
@@ -58,6 +60,7 @@ export function createBrowserComponentExportSession(options) {
       digest: options.platform.digest,
       fetch: options.platform.fetch,
     }),
+    snapshotManifest: validateDeploymentManifest,
   });
   const loadComponent = createBrowserComponentLoader({
     manifestUrl: options.manifestUrl,
@@ -131,12 +134,14 @@ export function createBrowserComponentExportSession(options) {
       if (mount !== null) releaseActions.push(mount.release);
 
       const prepareProviders = createProviderExecutionComposition({
+        catalog: platformProviderCatalog,
         createShim: options.platform.createShim,
         hashBytes: transport.hashBytes,
         importModule: async (...arguments_) => bindWorkerImports(
           await importModule(...arguments_), request.notify),
         isAbsoluteHostPath: rejectHostPath,
         readArtifact: transport.readArtifact,
+        snapshotManifest: validateDeploymentManifest,
       });
       const providers = await prepareProviders(Object.freeze({
         filesystem,

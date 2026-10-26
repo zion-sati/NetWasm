@@ -198,7 +198,8 @@ internal sealed class CompilationPipelineExecutor(
                 var interopManifest = _interopManifests.Build(
                     mappedProgram,
                     prepared.Exports,
-                    compiledLayouts.Snapshot);
+                    compiledLayouts.Snapshot,
+                    [.. emitted.Result.ImportModules, .. options.ImportModules]);
                 _progress.Report(CompilerProgressStage.InteropManifest);
                 _successArtifacts.WriteSuccess(options);
                 _progress.Report(CompilerProgressStage.Complete);

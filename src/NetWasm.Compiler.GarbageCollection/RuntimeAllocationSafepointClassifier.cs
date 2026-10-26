@@ -34,8 +34,6 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Enum", "ToString"),
             ("System.Enum", "InternalToString"),
             ("System.Enum", "InternalFormat"),
-            ("System.Enum", "InternalToType"),
-            ("System.Enum", "System.IConvertible.ToType"),
             ("System.Runtime.CompilerServices.ObjectArrayDelegateAdapter", "Create"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeMethod"),
             ("System.Runtime.CompilerServices.RuntimeMemberExecution", "InvokeDelegate"),

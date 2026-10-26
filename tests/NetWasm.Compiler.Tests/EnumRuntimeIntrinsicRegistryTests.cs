@@ -47,7 +47,6 @@ public sealed class EnumRuntimeIntrinsicRegistryTests
             Method(34, "InternalToDouble"),
             Method(35, "InternalToDecimal"),
             Method(36, "InternalToDateTime"),
-            Method(37, "InternalToType"),
             Method(38, "System.IConvertible.ToBoolean"),
             Method(39, "System.IConvertible.ToChar"),
             Method(40, "System.IConvertible.ToSByte"),
@@ -60,7 +59,6 @@ public sealed class EnumRuntimeIntrinsicRegistryTests
             Method(47, "System.IConvertible.ToUInt64"),
             Method(48, "System.IConvertible.ToSingle"),
             Method(49, "System.IConvertible.ToDouble"),
-            Method(52, "System.IConvertible.ToType"),
         };
         var registry = new RuntimeIntrinsicRegistry(
             new EnumSymbolFormatter(declaringType),
@@ -97,7 +95,6 @@ public sealed class EnumRuntimeIntrinsicRegistryTests
             ["InternalToDouble"] = RuntimeIntrinsic.EnumConvert,
             ["InternalToDecimal"] = RuntimeIntrinsic.EnumConvert,
             ["InternalToDateTime"] = RuntimeIntrinsic.EnumConvert,
-            ["InternalToType"] = RuntimeIntrinsic.EnumConvert,
             ["System.IConvertible.ToBoolean"] = RuntimeIntrinsic.EnumConvert,
             ["System.IConvertible.ToChar"] = RuntimeIntrinsic.EnumConvert,
             ["System.IConvertible.ToSByte"] = RuntimeIntrinsic.EnumConvert,
@@ -110,7 +107,6 @@ public sealed class EnumRuntimeIntrinsicRegistryTests
             ["System.IConvertible.ToUInt64"] = RuntimeIntrinsic.EnumConvert,
             ["System.IConvertible.ToSingle"] = RuntimeIntrinsic.EnumConvert,
             ["System.IConvertible.ToDouble"] = RuntimeIntrinsic.EnumConvert,
-            ["System.IConvertible.ToType"] = RuntimeIntrinsic.EnumConvert,
         };
 
         foreach (var definition in definitions)
@@ -118,6 +114,15 @@ public sealed class EnumRuntimeIntrinsicRegistryTests
             Assert.True(registry.TryGetIntrinsic(definition.Key, out var actual));
             Assert.Equal(expected[definition.Name], actual);
         }
+    }
+
+    [Fact]
+    public void EnumToTypeUsesItsManagedBody()
+    {
+        var method = Method(52, "System.IConvertible.ToType");
+        var registry = new RuntimeIntrinsicRegistry(
+            new EnumSymbolFormatter(method.DeclaringType), [method]);
+        Assert.False(registry.TryGetIntrinsic(method.Key, out _));
     }
 
     [Fact]

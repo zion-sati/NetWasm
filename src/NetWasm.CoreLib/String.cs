@@ -1633,10 +1633,17 @@ namespace System
             return Create(chars);
         }
 
-        public static string Create(IFormatProvider? provider, ref DefaultInterpolatedStringHandler handler) =>
+        public static string Create(
+            IFormatProvider? provider,
+            [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument(nameof(provider))]
+            ref DefaultInterpolatedStringHandler handler) =>
             handler.ToStringAndClear();
 
-        public static string Create(IFormatProvider? provider, Span<char> initialBuffer, ref DefaultInterpolatedStringHandler handler) =>
+        public static string Create(
+            IFormatProvider? provider,
+            Span<char> initialBuffer,
+            [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument(nameof(provider), nameof(initialBuffer))]
+            ref DefaultInterpolatedStringHandler handler) =>
             handler.ToStringAndClear();
 
         public static bool Equals(string? a, string? b, StringComparison comparisonType)

@@ -8,13 +8,19 @@ namespace NetWasm.Compiler.Wasm.Tests;
 
 internal static class TestRuntimeInitialization
 {
+    // Entries call the module's runtime initializer at this index.
+    public const int InitializerFunctionIndex = 90;
+
     public static RuntimeInitializationPlan Create(int staticDataEnd) =>
-        new(staticDataEnd, StackTraceMethodPlan.Disabled);
+        new(staticDataEnd, StackTraceMethodPlan.Disabled) { InitializerFunctionIndex = InitializerFunctionIndex };
 
     public static RuntimeInitializationPlan Create(
         int staticDataEnd,
         RuntimeImportSelection runtimeImports) =>
-        new(staticDataEnd, StackTraceMethodPlan.Disabled, runtimeImports);
+        new(staticDataEnd, StackTraceMethodPlan.Disabled, runtimeImports)
+        {
+            InitializerFunctionIndex = InitializerFunctionIndex,
+        };
 }
 
 internal sealed class DisabledStackTraceMethodPlanBuilder : IStackTraceMethodPlanBuilder

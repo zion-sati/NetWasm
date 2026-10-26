@@ -69,6 +69,8 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     public string? DiagnosticLogPath { get; set; }
     public string? WitPath { get; set; }
     public string? WitWorld { get; set; }
+    // Modules the project's native archives import from (<NetWasmImportModule>).
+    public ITaskItem[] ImportModules { get; set; } = [];
     public bool EmitStackTrace { get; set; }
     public bool StructuredDiagnostics { get; set; }
     public bool CompileAsLibrary { get; set; }
@@ -154,7 +156,10 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
                 ProjectDirectory,
                 PathMap,
                 StructuredDiagnostics,
-                optimizationOverrides));
+                optimizationOverrides)
+            {
+                ImportModules = [.. ImportModules.Select(static item => item.ItemSpec)],
+            });
             _artifacts.Write(new(
                 compilation,
                 CoreModulePath,

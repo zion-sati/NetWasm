@@ -41,9 +41,23 @@ public sealed class ComponentManifestInputsReaderTests
         Assert.Throws<ArgumentNullException>(() => new ComponentManifestInputsReader(null!));
     }
 
+    // A component imports host functions through WIT, never from an import module.
+    [Fact]
+    public void RejectsImportModulesBecauseAComponentImportsThroughWit()
+    {
+        using var file = new TemporaryJsonFile(ValidManifest("wasm32").Replace(
+            "\"witImports\"", "\"importModules\": [\"host_ui\"],\n          \"witImports\"", StringComparison.Ordinal));
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CreateReader().Read(new(file.Path, "wasm32", null, null)));
+
+        Assert.Contains("host_ui", error.Message, StringComparison.Ordinal);
+        Assert.Contains("raw WebAssembly", error.Message, StringComparison.Ordinal);
+    }
+
     private static string ValidManifest(string target) => $$"""
         {
-          "version": 1,
+          "version": 2,
           "target": "{{target}}",
           "statusAbi": { "successStatus": 0, "hostFailureStatus": 1, "scalarResultOffset": 0 },
           "targetLayout": {

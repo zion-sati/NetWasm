@@ -54,7 +54,10 @@ dotnet tool install --global NetWasm.Wit.Bindings.Tool
 netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
 ```
 
-Omit `--world` when the document contains exactly one world. The tool carries
+Omit `--world` when the document contains exactly one world. `--wit` also
+accepts a WIT package directory, or `-` to read standard input, and `--output -`
+writes to standard output. `--namespace` sets the generated namespace and
+`--accessibility public|internal` the generated types' accessibility. The tool carries
 the pinned platform-neutral wasm-tools module; no native `wasm-tools`
 installation is required. Unlike an SDK application build, this standalone
 command needs Node.js 24+ on `PATH`, through `NETWASM_NODE_PATH` or through

@@ -505,7 +505,7 @@ namespace System
         /// </summary>
         public override string ToString()
         {
-            return Number.FormatFloat(this, null, NumberFormatInfo.CurrentInfo);
+            return Number.FormatFloat(this);
         }
 
         /// <summary>

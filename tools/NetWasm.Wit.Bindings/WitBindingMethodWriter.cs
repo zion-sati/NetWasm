@@ -48,16 +48,19 @@ public abstract class WitBindingMethodSectionBase(
                     @interface.Functions,
                     typeSet);
             }
-            else
-            {
-                WriteImportClass(
-                    writer,
-                    document,
-                    _syntax.Format(new WitBindingSyntaxRequest.Identifier(world.Name)) + "Imports",
-                    string.Empty,
-                    [item.Function!],
-                    typeSet);
-            }
+        }
+
+        // The world's own functions share one class, as its exports do.
+        var functions = world.Imports.Where(static item => item.Function is not null).Select(static item => item.Function!).ToArray();
+        if (functions.Length != 0)
+        {
+            WriteImportClass(
+                writer,
+                document,
+                _syntax.Format(new WitBindingSyntaxRequest.Identifier(world.Name)) + "Imports",
+                string.Empty,
+                functions,
+                typeSet);
         }
     }
 
@@ -69,7 +72,7 @@ public abstract class WitBindingMethodSectionBase(
         IEnumerable<WitFunction> functions,
         FlatBindingTypeSet typeSet)
     {
-        writer.Line($"public static class {className}");
+        writer.Line($"public static partial class {className}");
         writer.Line("{");
         writer.Indent();
         foreach (var function in functions)
@@ -239,7 +242,7 @@ public abstract class WitBindingMethodSectionBase(
         writer.Unindent();
         writer.Line("}");
         writer.Line();
-        writer.Line($"[WitImport(\"{interfaceName}\", \"{function.Name}\")]");
+        writer.Line(WitAttributeSyntax.Format("WitImport", interfaceName, function.Name));
         writer.Line($"private static extern {RawType(model.Signature.Result)} __Canonical{helperMethodName}({RawParameters(model.Signature)});");
     }
 
@@ -292,7 +295,7 @@ public abstract class WitBindingMethodSectionBase(
         var methodName = _syntax.Format(new WitBindingSyntaxRequest.FunctionName(function.Name));
         writer.Line($"public static partial {_syntax.Format(new WitBindingSyntaxRequest.ReturnType(document, function))} {methodName}({_syntax.Format(new WitBindingSyntaxRequest.Parameters(document, function))});");
         writer.Line();
-        writer.Line($"[WitExport(\"{interfaceName}\", \"{function.Name}\")]");
+        writer.Line(WitAttributeSyntax.Format("WitExport", interfaceName, function.Name));
         writer.Line($"private static {RawType(model.Signature.Result)} __Canonical{helperMethodName}({RawParameters(model.Signature)})");
         writer.Line("{");
         writer.Indent();
@@ -344,7 +347,7 @@ public abstract class WitBindingMethodSectionBase(
         writer.Unindent();
         writer.Line("}");
         writer.Line();
-        writer.Line($"[WitPostReturn(\"{interfaceName}\", \"{function.Name}\")]");
+        writer.Line(WitAttributeSyntax.Format("WitPostReturn", interfaceName, function.Name));
         writer.Line($"private static void __Canonical{helperMethodName}Post({PostReturnParameter(model.Signature)})");
         writer.Line("{");
         writer.Indent();

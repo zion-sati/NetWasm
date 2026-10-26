@@ -23,15 +23,18 @@ const targetLayout = Object.freeze({
   stringDataOffset: 8,
   arrayLengthOffset: 4,
   arrayDataPointerOffset: 8,
+  spanReferenceOffset: 0,
+  spanLengthOffset: 4,
 });
 const descriptor = (name, result) => Object.freeze({
+  call: "status",
   module: "consumer",
   name,
   parameters: Object.freeze([]),
   result,
 });
 const manifest = imports => Object.freeze({
-  version: 1,
+  version: 2,
   target: "wasm32",
   statusAbi,
   targetLayout,

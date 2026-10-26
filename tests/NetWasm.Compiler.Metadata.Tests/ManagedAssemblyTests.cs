@@ -403,9 +403,9 @@ public sealed class ManagedAssemblyTests
                 [JSImport("local")] public static extern int ImportLocal();
                 [JSImportPromise("promise", "consumer.async")] public static extern int ImportPromise();
                 [JSExport] public static int ExportDefault(int value) => value;
-                [WitImport("", "import-value")] public static extern int ImportValue();
+                [WitImport("import-value")] public static extern int ImportValue();
                 [WitExport("example:api", "export-value")] public static int ExportValue(int value) => value;
-                [WitPostReturn("", "post-value")] public static void PostReturn() { }
+                [WitPostReturn("post-value")] public static void PostReturn() { }
             }
             """);
         using var assembly = ManagedAssemblyTestFactory.Load(assemblyPath);
@@ -419,8 +419,35 @@ public sealed class ManagedAssemblyTests
         Assert.True(methods["ImportPromise"].JSImport!.IsPromise);
         Assert.Null(methods["ExportDefault"].JSExport!.ExportName);
         Assert.Equal("import-value", methods["ImportValue"].WitImport!.FunctionName);
+        Assert.Equal(string.Empty, methods["ImportValue"].WitImport!.InterfaceName);
         Assert.Equal("example:api", methods["ExportValue"].WitExport!.InterfaceName);
         Assert.Equal("post-value", methods["PostReturn"].WitPostReturn!.FunctionName);
+    }
+
+    // A world's own function takes the one-argument form; the empty interface
+    // is not a second spelling of it.
+    [Theory]
+    [InlineData("WitImport")]
+    [InlineData("WitExport")]
+    [InlineData("WitPostReturn")]
+    public void ManagedAssemblyRejectsAnEmptyInterfaceName(string attribute)
+    {
+        using var assets = TestAssets.Create();
+        var assemblyPath = assets.CompileSource(
+            "EmptyWitInterface",
+            $$"""
+            using System.Runtime.InteropServices.WebAssembly;
+
+            public static class EmptyWitInterface
+            {
+                [{{attribute}}("", "value")] public static extern int Value();
+            }
+            """);
+
+        var error = Assert.Throws<CompilerException>(() => ManagedAssemblyTestFactory.Load(assemblyPath));
+
+        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
+        Assert.Contains($"[{attribute}(\"value\")]", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -555,7 +582,7 @@ public sealed class ManagedAssemblyTests
             {
                 [JSImport("sum")] public static extern int Import(int value);
                 [JSExport("export-unique")] public static int Export(int value) => value;
-                [WitImport("", "import")] public static extern int WitImport(int value);
+                [WitImport("import")] public static extern int WitImport(int value);
             }
             """);
         using var valid = ManagedAssemblyTestFactory.Load(validPath);
@@ -627,9 +654,9 @@ public sealed class ManagedAssemblyTests
     [Theory]
     [InlineData("System.Runtime.InteropServices.JavaScript.JSImport(\"one\")", "System.Runtime.InteropServices.JavaScript.JSImport(\"two\")")]
     [InlineData("System.Runtime.InteropServices.JavaScript.JSExport(\"one\")", "System.Runtime.InteropServices.JavaScript.JSExport(\"two\")")]
-    [InlineData("System.Runtime.InteropServices.WebAssembly.WitImport(\"\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitImport(\"\", \"two\")")]
+    [InlineData("System.Runtime.InteropServices.WebAssembly.WitImport(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitImport(\"api\", \"two\")")]
     [InlineData("System.Runtime.InteropServices.WebAssembly.WitExport(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitExport(\"api\", \"two\")")]
-    [InlineData("System.Runtime.InteropServices.WebAssembly.WitPostReturn(\"\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitPostReturn(\"\", \"two\")")]
+    [InlineData("System.Runtime.InteropServices.WebAssembly.WitPostReturn(\"api\", \"one\")", "System.Runtime.InteropServices.WebAssembly.WitPostReturn(\"api\", \"two\")")]
     public void ManagedAssemblyRejectsDuplicateInteropDeclarations(
         string first,
         string second)

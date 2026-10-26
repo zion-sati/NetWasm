@@ -11,12 +11,12 @@ import {
   valueArrayConstructor,
 } from "./interop-abi-types.mjs";
 import {
-  readManagedInteropString,
-  readManagedInteropValueArray,
+  readString,
+  readValueArray,
 } from "./managed-interop-memory-codec.mjs";
 import {
-  liftInteropScalar,
-  lowerInteropScalar,
+  liftScalar,
+  lowerScalar,
 } from "./interop-scalar-codec.mjs";
 import { observeManagedAsyncExport } from "./managed-async-export-observer.mjs";
 
@@ -105,10 +105,8 @@ export function createManagedInteropExport(request) {
         result = observeAsyncExport({
           name: descriptor.name,
           readStatus: () => instance.exports[descriptor.statusExport](normalizedHandle),
-          readResult: () => descriptor.result === "void" ? undefined : liftInteropScalar({
-            type: descriptor.result,
-            value: instance.exports[descriptor.resultExport](normalizedHandle),
-          }),
+          readResult: () => descriptor.result === "void" ? undefined : liftScalar(
+            descriptor.result, instance.exports[descriptor.resultExport](normalizedHandle)),
           complete: () => consumeExceptionPayload(instance.exports[descriptor.completeExport](normalizedHandle)),
         });
       } else {
@@ -154,7 +152,7 @@ function lowerArgument(type, value, handles, argumentHandles, objectHandles) {
     objectHandles.push(handle);
     return handle;
   }
-  if (!isTransferAbiType(type)) return lowerInteropScalar({ type, value });
+  if (!isTransferAbiType(type)) return lowerScalar(type, value);
   if (value === null) return 0;
   if (type === "string" && typeof value !== "string") {
     throw new NetWasmHostError("string value must be a string or null");
@@ -170,16 +168,10 @@ function lowerArgument(type, value, handles, argumentHandles, objectHandles) {
 function liftResult(type, value, getMemory, handles, target, targetLayout) {
   // The managed JSObject keeps its handle; the caller only receives the object.
   if (type === "object") return value === 0 ? null : handles.get(value);
-  if (!isTransferAbiType(type)) return liftInteropScalar({ type, value });
-  const request = {
-    memory: getMemory(),
-    reference: value,
-    target,
-    targetLayout,
-  };
+  if (!isTransferAbiType(type)) return liftScalar(type, value);
   return type === "string"
-    ? readManagedInteropString(request)
-    : readManagedInteropValueArray(request, valueArrayConstructor(type));
+    ? readString(value, target, targetLayout, getMemory())
+    : readValueArray(value, target, targetLayout, getMemory(), valueArrayConstructor(type));
 }
 
 function createLowLevelManagedExport(instance, name) {

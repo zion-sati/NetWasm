@@ -358,7 +358,7 @@ public sealed class AsyncJSExportFunctionEmitterTests
                 layouts,
                 layouts,
                 imports,
-                CreateRuntimeStateInitializer(layouts, imports),
+                CreateRuntimeStateInitializer(),
                 new ImplicitExceptionEmitter(layouts, layouts),
                 CreateReferenceComparisons(layouts),
                 new GeneratedFunctionWriterFactory(),

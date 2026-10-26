@@ -15,9 +15,11 @@ internal static class WitBindingToolCompositionRoot
             wasmTools);
         return new WitBindingCommand(
             new WitBindingOptionsReader(),
+            new WitInputStager(Console.In),
             documents,
             WitBindingCompositionRoot.Create(),
             new WitBindingSourceAccessibilityRewriter(),
-            new SystemTextFileWriter());
+            new SystemTextFileWriter(),
+            Console.Out);
     }
 }

@@ -22,16 +22,7 @@ internal sealed class ModuleImportCollector(
             .Concat(emission.JSImportMethods.Select(method => new WasmFunctionImport(
                 method.JSImport!.ModuleName ?? RuntimeAbi.HostModule,
                 method.JSImport.FunctionName,
-                WasmFunctionType.Create(
-                    CliValueKind.I4,
-                    [.. method.Signature.ParameterSignatureTypes.Select((type, index) =>
-                        javaScriptParameterTypes.Resolve(
-                            type,
-                            request.HostCallbacks.ContainsKey((method.Key, index)))),
-                        .. emission.JavaScriptAsyncBindings.ContainsKey(method.Key)
-                            ? [CliValueKind.I4]
-                            : Array.Empty<CliValueKind>(),
-                        CliValueKind.ManagedAddress])))).ToArray();
+                JSImportType(request, method)))).ToArray();
         var canonicalImports = emission.ComponentContract.Imports
             .ToImmutableDictionary(function => function.Identity);
         return [.. imports.Concat(emission.WitImportMethods
@@ -57,5 +48,31 @@ internal sealed class ModuleImportCollector(
                     RuntimeAbi.RuntimeModule,
                     callback.GetterName!,
                     WasmFunctionType.Create(CliValueKind.NativeInt))))];
+    }
+
+    // A direct import takes the managed arguments and returns the managed
+    // result. A status import also takes the value frame, after the async
+    // binding's operation id, and returns the status.
+    private WasmFunctionType JSImportType(
+        ModuleImportCollectionRequest request,
+        MethodDefinitionModel method)
+    {
+        if (JavaScriptDirectImport.Applies(method))
+        {
+            return WasmFunctionType.Create(
+                method.Signature.ReturnType,
+                [.. method.Signature.ParameterSignatureTypes.Select(type =>
+                    javaScriptParameterTypes.Resolve(type, false))]);
+        }
+        return WasmFunctionType.Create(
+            CliValueKind.I4,
+            [.. method.Signature.ParameterSignatureTypes.Select((type, index) =>
+                javaScriptParameterTypes.Resolve(
+                    type,
+                    request.HostCallbacks.ContainsKey((method.Key, index)))),
+                .. request.Emission.JavaScriptAsyncBindings.ContainsKey(method.Key)
+                    ? [CliValueKind.I4]
+                    : Array.Empty<CliValueKind>(),
+                CliValueKind.ManagedAddress]);
     }
 }

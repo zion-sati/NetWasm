@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Layout;
 
 namespace NetWasm.Compiler.Interop;
@@ -12,7 +13,8 @@ public interface IHostInteropManifestBuilder
     HostInteropManifest Build(
         ReachableProgram program,
         ImmutableArray<ProgramExport> exports,
-        ManagedLayoutSnapshot layouts);
+        ManagedLayoutSnapshot layouts,
+        ImmutableArray<string> importModules);
 }
 
 internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
@@ -20,10 +22,18 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
     public HostInteropManifest Build(
         ReachableProgram program,
         ImmutableArray<ProgramExport> exports,
-        ManagedLayoutSnapshot layouts)
+        ManagedLayoutSnapshot layouts,
+        ImmutableArray<string> importModules)
     {
         ArgumentNullException.ThrowIfNull(program);
         ArgumentNullException.ThrowIfNull(layouts);
+        if (importModules.IsDefault || importModules.Any(module =>
+                string.IsNullOrWhiteSpace(module) || module.Contains('\0') ||
+                NativeDeclarationValidator.IsReservedImportModule(module)))
+        {
+            throw new CompilerException(new(DiagnosticCode.NativeInterop,
+                "An import module must be named and cannot be a NetWasm or WASI import module."));
+        }
         var imports = program.JSImportMethods
             .Select(method => BuildImport(program, method, layouts))
             .OrderBy(import => import.Module, StringComparer.Ordinal)
@@ -66,12 +76,15 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
                 layouts.StringLengthOffset,
                 layouts.StringDataOffset,
                 layouts.ArrayLengthOffset,
-                layouts.ArrayDataPointerOffset),
+                layouts.ArrayDataPointerOffset,
+                ManagedLayoutSnapshot.SpanReferenceOffset,
+                layouts.SpanLengthOffset),
             imports,
             managedExports)
         {
             Callbacks = callbacks,
             WitImports = witImports,
+            ImportModules = [.. importModules.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
         };
     }
 
@@ -92,6 +105,7 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
                 ? "promise"
                 : ToAsyncAbiType(asyncReturn, method.Signature.ReturnSignatureType, layouts))
         {
+            Call = JavaScriptDirectImport.Applies(method) ? JavaScriptDirectImport.DirectCall : JavaScriptDirectImport.StatusCall,
             AsyncReturn = asyncReturn.IsAsync ? ToAsyncKind(asyncReturn) : null,
             ResolveExport = asyncReturn.IsAsync
                 ? JavaScriptAsyncAbiNames.Resolve(method.Key)
@@ -164,6 +178,7 @@ internal sealed class HostInteropManifestBuilder : IHostInteropManifestBuilder
         "primitive:nativeuint" => layouts.Target.UsesMemory64 ? "u64" : "u32",
         _ when IsString(type) => "string",
         _ when JavaScriptValueArray.IsSupported(type) => JavaScriptValueArray.GetAbiType(type),
+        _ when JavaScriptMemoryView.IsSupported(type) => JavaScriptMemoryView.GetAbiType(type),
         _ when IsJSObject(type) => "object",
         _ when IsJSSubscription(type) => "subscription",
         _ => throw new InvalidOperationException(

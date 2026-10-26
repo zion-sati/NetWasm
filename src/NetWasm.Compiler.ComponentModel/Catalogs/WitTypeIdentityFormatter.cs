@@ -7,10 +7,18 @@ using NetWasm.Compiler.ComponentModel.Worlds;
 namespace NetWasm.Compiler.ComponentModel.Catalogs;
 
 public sealed class WitTypeIdentityFormatter(
-    IWitInterfaceSpecifierFormatter interfaces) : IWitTypeIdentityFormatter
+    IWitInterfaceSpecifierFormatter interfaces,
+    IWitWorldSpecifierFormatter worlds) : IWitTypeIdentityFormatter
 {
     private readonly IWitInterfaceSpecifierFormatter _interfaces = interfaces ??
         throw new ArgumentNullException(nameof(interfaces));
+    private readonly IWitWorldSpecifierFormatter _worlds = worlds ??
+        throw new ArgumentNullException(nameof(worlds));
+
+    public WitTypeIdentityFormatter(IWitInterfaceSpecifierFormatter interfaces)
+        : this(interfaces, new WitWorldSpecifierFormatter())
+    {
+    }
 
     public string Format(WitDocument document, WitTypeReference reference)
     {
@@ -74,14 +82,20 @@ public sealed class WitTypeIdentityFormatter(
         }
     }
 
+    // A type is named within the interface or world that declares it.
     private string FormatNamedType(WitDocument document, WitTypeDefinition definition)
     {
+        if (!string.IsNullOrWhiteSpace(definition.Name) && definition.OwnerInterface is null &&
+            definition.OwnerWorld is { } world && !document.Worlds.IsDefault && (uint)world < (uint)document.Worlds.Length)
+        {
+            return $"{_worlds.Format(document.Worlds[world])}#{definition.Name}";
+        }
         if (string.IsNullOrWhiteSpace(definition.Name)
             || definition.OwnerInterface is not { } owner
             || (uint)owner >= (uint)document.Interfaces.Length)
         {
             throw ComponentException.Invalid(
-                "named WIT type identity requires an owning interface");
+                "named WIT type identity requires an owning interface or world");
         }
         var ownerDefinition = document.Interfaces[owner] ?? throw ComponentException.Invalid(
             "named WIT type identity references a missing interface");

@@ -10,6 +10,8 @@ const layout = Object.freeze({
   stringDataOffset: 8,
   arrayLengthOffset: 4,
   arrayDataPointerOffset: 8,
+  spanReferenceOffset: 0,
+  spanLengthOffset: 4,
 });
 
 test("composes selected generated and supplied built-in services", async () => {

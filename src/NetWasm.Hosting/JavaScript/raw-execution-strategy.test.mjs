@@ -7,7 +7,7 @@ const application = Buffer.from(
   "AGFzbQEAAAABDQJgAAF/YAR/f39/AX8CGwEPbmV0d2FzbS5ob3N0LnYxB3NlcnZpY2UAAAMDAgEABQMBAAEHMQQGbWVtb3J5AgANY20zMnAyX21lbW9yeQIADmNtMzJwMl9yZWFsbG9jAAEDcnVuAAIKCwIEAEEICwQAEAALAEkEbmFtZQEYAwAHc2VydmljZQEHcmVhbGxvYwIDcnVuBB0CAAxzZXJ2aWNlLXR5cGUBDHJlYWxsb2MtdHlwZQYJAQAGbWVtb3J5",
   "base64");
 const fingerprint = `sha256:${"1".repeat(64)}`;
-const manifest = Object.freeze({ version: 1, target: "wasm32" });
+const manifest = Object.freeze({ version: 2, target: "wasm32" });
 const diagnosticArtifacts = Object.freeze({ marker: "verified deployment closure" });
 const terminalActions = Object.freeze({
   consumeTerminalEvent() {},
@@ -21,7 +21,7 @@ const release = (code, action) => ({
 
 function emptyAdapter() {
   const metadata = Object.freeze({
-    abiVersion: 1,
+    abiVersion: 2,
     bindingIdentities: Object.freeze([]),
     requiredCapabilities: Object.freeze([]),
     target: "wasm32",

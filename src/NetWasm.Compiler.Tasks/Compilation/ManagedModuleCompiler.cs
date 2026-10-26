@@ -46,7 +46,10 @@ internal sealed class ManagedModuleCompiler(
             PathMap: request.PathMap,
             StructuredDiagnostics: request.StructuredDiagnostics,
             Optimization: FinalWasmOptimizationParser.Parse(request.Optimization),
-            OptimizationOverrides: request.OptimizationOverrides));
+            OptimizationOverrides: request.OptimizationOverrides)
+        {
+            ImportModules = request.ImportModules,
+        });
         // The recorded entry ABI describes the export the compiler produced, which hosts follow.
         return compilation with
         {

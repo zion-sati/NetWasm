@@ -44,6 +44,29 @@ public sealed class RuntimeLinkedImportValidatorTests
         Assert.All(_profiles.Requests, request => Assert.Equal((profile, target), request));
     }
 
+    // A native archive may import any core-typed function from a module the
+    // project declares; an import from any other module names the remedy.
+    [Fact]
+    public void AcceptsArchiveImportsFromDeclaredImportModules()
+    {
+        var validator = CreateValidator();
+        var profile = RuntimePackTestData.NativeProfile("wasm32") with { Imports = [] };
+        var module = Module() with
+        {
+            FunctionTypes = [new([0x7f], [0x7e]), new([0x7b], [])],
+            Imports = [new("host_ui", "create_node", 0, 0)],
+        };
+
+        validator.Validate(profile, module, importModules: new HashSet<string> { "host_ui" });
+        var undeclared = Assert.Throws<InvalidOperationException>(() => validator.Validate(profile, module));
+        Assert.Contains("host_ui.create_node", undeclared.Message);
+        Assert.Contains("<NetWasmImportModule Include=\"host_ui\" />", undeclared.Message);
+        Assert.Throws<InvalidOperationException>(() => validator.Validate(profile, module with
+        {
+            Imports = [new("host_ui", "create_node", 0, 1)],
+        }, importModules: new HashSet<string> { "host_ui" }));
+    }
+
     [Fact]
     public void RejectsUninitializedOrMalformedContracts()
     {

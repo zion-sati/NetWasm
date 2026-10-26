@@ -316,7 +316,7 @@ public sealed class EntryPointEmitterTests
         return new EntryPointEmitter(
             layouts,
             imports,
-            CreateRuntimeStateInitializer(layouts, imports),
+            CreateRuntimeStateInitializer(),
             terminal,
             new ManagedTerminalTrapBoundaryEmitter(
                 layouts,

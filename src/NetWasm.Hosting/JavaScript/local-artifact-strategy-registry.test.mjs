@@ -24,7 +24,7 @@ export function instantiate() {
 `);
 const rawAdapterSource = encoder.encode(`
 export const rawAdapterMetadata = Object.freeze({
-  abiVersion: 1,
+  abiVersion: 2,
   bindingIdentities: Object.freeze([]),
   requiredCapabilities: Object.freeze([]),
   target: "wasm32",
@@ -47,7 +47,7 @@ const runtimeLayout = encoder.encode(JSON.stringify({
     completionShape: "synchronous",
   },
 }));
-const interopManifest = encoder.encode(JSON.stringify({ version: 1, target: "wasm32" }));
+const interopManifest = encoder.encode(JSON.stringify({ version: 2, target: "wasm32" }));
 const coreModule = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
 
 test("composes exactly raw and location-bound component execution locally", async () => {
@@ -81,7 +81,7 @@ test("composes exactly raw and location-bound component execution locally", asyn
       contractKey: commandExecutionContract,
       providers: {},
       prepareInterop({ manifest }) {
-        assert.equal(manifest.version, 1);
+        assert.equal(manifest.version, 2);
         calls.push("prepare");
         return {
           consumeTerminalEvent() {},

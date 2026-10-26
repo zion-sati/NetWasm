@@ -26,6 +26,16 @@ internal sealed class ScalarCallLifetimePlanner(
         }
 
         var header = method.Header;
+        // A try that constant branches leave unreachable has no exception group,
+        // but its leave and handler instructions remain, and the graph below is
+        // built without exception regions. Such a method keeps exact lifetimes,
+        // as one with a reachable region does.
+        if (header.Instructions.Any(instruction => instruction.Operation is
+                CilOperation.Leave or CilOperation.EndFinally or CilOperation.EndFilter or
+                CilOperation.Rethrow))
+        {
+            return ScalarCallLifetimePlan.Empty;
+        }
         var candidates = header.LocalSignatureTypes
             .Select((type, index) => (type, index))
             // Preserve the numeric classes with measured cross-call spill

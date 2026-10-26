@@ -67,7 +67,10 @@ internal sealed class CompileCliCommand(
             EntryPointKind: options.EntryPointKind,
             UseJavaScriptExportBoundary: options.UseJavaScriptExportBoundary,
             Optimization: options.Optimization,
-            OptimizationOverrides: overrides));
+            OptimizationOverrides: overrides)
+        {
+            ImportModules = options.ImportModules,
+        });
         var artifacts = _artifacts.Plan(options, result);
         if (artifacts.DeleteNativeCallbackObject)
         {

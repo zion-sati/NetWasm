@@ -95,8 +95,6 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
     private static ImmutableArray<ReachabilityExceptionRequirement> ConvertRequirements(
         MethodDefinitionModel method) => method.Name switch
         {
-            "InternalToType" or "System.IConvertible.ToType" =>
-                [ArgumentNull, InvalidCast],
             "InternalToDateTime" => [InvalidCast],
             _ => [],
         };

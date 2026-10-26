@@ -1,24 +1,27 @@
 import {
   describeValueArray,
   isHostObject,
+  isMemoryViewAbiType,
   isScalarAbiType,
   isValueArrayAbiType,
+  memoryViewConstructor,
   valueArrayConstructor,
 } from "./interop-abi-types.mjs";
 import { normalizeInteropHandle } from "./interop-handle-table.mjs";
 import {
-  liftInteropScalar,
-  lowerInteropScalar,
-  writeInteropScalarResult,
+  liftScalar,
+  lowerScalar,
+  writeScalarResult,
 } from "./interop-scalar-codec.mjs";
 import {
   createManagedInteropCallback,
   releaseManagedInteropCallback,
 } from "./managed-interop-callback.mjs";
 import {
-  projectManagedInteropMemoryOffset,
-  readManagedInteropString,
-  readManagedInteropValueArray,
+  managedInteropMemoryOffset,
+  readMemoryView,
+  readString,
+  readValueArray,
 } from "./managed-interop-memory-codec.mjs";
 import { NetWasmHostError } from "./managed-errors.mjs";
 
@@ -52,6 +55,11 @@ export function createInteropStatusService(
     throw new TypeError("interop status-service pending-operation registry is invalid");
   }
 
+  // Each parameter's value-array or memory-view type, found once rather than on every call.
+  const arrayConstructors = request.descriptor.parameters.map(
+    type => isValueArrayAbiType(type) ? valueArrayConstructor(type) : null);
+  const viewConstructors = request.descriptor.parameters.map(
+    type => isMemoryViewAbiType(type) ? memoryViewConstructor(type) : null);
   return Object.freeze((...argumentsWithDescriptor) => {
     const descriptorAddress = argumentsWithDescriptor.pop();
     try {
@@ -60,7 +68,8 @@ export function createInteropStatusService(
         : normalizeInteropHandle(argumentsWithDescriptor.pop());
       const callbackHandles = [];
       const argumentsForService = argumentsWithDescriptor.map((value, index) =>
-        liftArgument(request, value, index, callbackHandles, observeAsyncCompletion, isImportActive));
+        liftArgument(request, value, index, callbackHandles, observeAsyncCompletion, isImportActive,
+          arrayConstructors[index], viewConstructors[index]));
       let result;
       if (request.descriptor.asyncReturn != null) {
         return startAsyncOperation(request, asyncHandle, argumentsForService, observeAsyncCompletion);
@@ -93,23 +102,18 @@ export function createInteropStatusService(
   });
 }
 
-function liftArgument(request, value, index, callbackHandles, observeAsyncCompletion, isImportActive) {
+function liftArgument(
+  request, value, index, callbackHandles, observeAsyncCompletion, isImportActive, arrayConstructor,
+  viewConstructor) {
   const type = request.descriptor.parameters[index];
   if (type === "string") {
-    return readManagedInteropString({
-      reference: value,
-      target: request.target,
-      targetLayout: request.targetLayout,
-      memory: request.getMemory(),
-    });
+    return readString(value, request.target, request.targetLayout, request.getMemory());
   }
-  if (isValueArrayAbiType(type)) {
-    return readManagedInteropValueArray({
-      reference: value,
-      target: request.target,
-      targetLayout: request.targetLayout,
-      memory: request.getMemory(),
-    }, valueArrayConstructor(type));
+  if (arrayConstructor !== null) {
+    return readValueArray(value, request.target, request.targetLayout, request.getMemory(), arrayConstructor);
+  }
+  if (viewConstructor !== null) {
+    return readMemoryView(value, request.target, request.targetLayout, request.getMemory(), viewConstructor);
   }
   if (type === "object" || type === "subscription") {
     return value === 0 ? null : request.handles.get(value);
@@ -152,7 +156,7 @@ function liftArgument(request, value, index, callbackHandles, observeAsyncComple
       return result;
     });
   }
-  return liftInteropScalar({ type, value });
+  return liftScalar(type, value);
 }
 
 function startAsyncOperation(request, asyncHandle, argumentsForService, observeAsyncCompletion) {
@@ -210,7 +214,7 @@ function prepareAsyncResolution(request, asyncHandle, resolve, value) {
   const { descriptor: { result }, handles } = request;
   if (result === "void") return () => resolve(asyncHandle);
   if (isScalarAbiType(result)) {
-    const normalized = lowerInteropScalar({ type: result, value });
+    const normalized = lowerScalar(result, value);
     return () => resolve(asyncHandle, normalized);
   }
   requireTransferResult(result, value);
@@ -267,16 +271,9 @@ function writeResult(request, result, descriptorAddress, callbackHandles) {
   const { descriptor, handles, statusAbi, target } = request;
   if (descriptor.result === "void") return;
   const memory = request.getMemory();
-  const byteOffset = projectManagedInteropMemoryOffset({
-    address: descriptorAddress, target, memory,
-  }) + statusAbi.scalarResultOffset;
+  const byteOffset = managedInteropMemoryOffset(descriptorAddress, target, memory) + statusAbi.scalarResultOffset;
   if (isScalarAbiType(descriptor.result)) {
-    writeInteropScalarResult({
-      memory,
-      byteOffset,
-      type: descriptor.result,
-      value: lowerInteropScalar({ type: descriptor.result, value: result }),
-    });
+    writeScalarResult(memory, byteOffset, descriptor.result, lowerScalar(descriptor.result, result));
     return;
   }
   if (descriptor.result === "string" || descriptor.result === "object"

@@ -4,19 +4,30 @@ const readKeys = ["memory", "reference", "target", "targetLayout"];
 const writeKeys = ["memory", "reference", "target", "targetLayout", "value"];
 const offsetKeys = ["address", "memory", "target"];
 
+// The request forms check an object a caller built. The runtime's own calls,
+// one per JSImport or JSExport call, pass the values directly: checking an
+// object the runtime has just built made most of a call's cost.
 export function projectManagedInteropMemoryOffset(request) {
   assertExactDataObject(request, offsetKeys, "managed interop memory-offset projection");
   return toMemoryOffset(request.address, request.target, request.memory);
 }
 
+export function managedInteropMemoryOffset(address, target, memory) {
+  return toMemoryOffset(address, target, memory);
+}
+
 export function readManagedInteropString(request) {
   assertExactDataObject(request, readKeys, "managed interop string read");
-  if (isNullReference(request.reference, request.target)) return null;
-  const address = toMemoryOffset(request.reference, request.target, request.memory);
-  const view = new DataView(request.memory.buffer);
-  const length = view.getInt32(address + request.targetLayout.stringLengthOffset, true);
-  const end = address + request.targetLayout.stringDataOffset + length * 2;
-  if (length < 0 || !Number.isSafeInteger(end) || end > request.memory.buffer.byteLength) {
+  return readString(request.reference, request.target, request.targetLayout, request.memory);
+}
+
+export function readString(reference, target, targetLayout, memory) {
+  if (isNullReference(reference, target)) return null;
+  const address = toMemoryOffset(reference, target, memory);
+  const view = memoryView(memory);
+  const length = view.getInt32(address + targetLayout.stringLengthOffset, true);
+  const end = address + targetLayout.stringDataOffset + length * 2;
+  if (length < 0 || !Number.isSafeInteger(end) || end > memory.buffer.byteLength) {
     throw new NetWasmHostError("managed string is outside linear memory");
   }
   const chunks = [];
@@ -25,7 +36,7 @@ export function readManagedInteropString(request) {
     const codeUnits = [];
     for (let index = start; index < limit; index++) {
       codeUnits.push(view.getUint16(
-        address + request.targetLayout.stringDataOffset + index * 2,
+        address + targetLayout.stringDataOffset + index * 2,
         true));
     }
     chunks.push(String.fromCharCode(...codeUnits));
@@ -70,13 +81,42 @@ export function writeManagedInteropBytes(request) {
 // Copies a managed array of primitive numbers out as a typed array.
 export function readManagedInteropValueArray(request, constructor) {
   assertExactDataObject(request, readKeys, "managed interop value-array read");
+  return readValueArray(request.reference, request.target, request.targetLayout, request.memory, constructor);
+}
+
+export function readValueArray(reference, target, targetLayout, memory, constructor) {
   if (typeof constructor?.BYTES_PER_ELEMENT !== "number") {
     throw new TypeError("managed interop value-array type is invalid");
   }
-  if (isNullReference(request.reference, request.target)) return null;
-  const { byteOffset, length } = readElementRange(request, constructor.BYTES_PER_ELEMENT);
-  return new constructor(request.memory.buffer.slice(
+  if (isNullReference(reference, target)) return null;
+  const { byteOffset, length } = readElementRange(
+    { reference, target, targetLayout, memory }, constructor.BYTES_PER_ELEMENT);
+  return new constructor(memory.buffer.slice(
     byteOffset, byteOffset + length * constructor.BYTES_PER_ELEMENT));
+}
+
+// A Span<T> argument: a typed array over the span's elements in linear memory,
+// so nothing is copied and writes reach the guest. It is valid until the
+// import returns or memory grows. `reference` is the span's own address.
+export function readMemoryView(reference, target, targetLayout, memory, constructor) {
+  if (typeof constructor?.BYTES_PER_ELEMENT !== "number") {
+    throw new TypeError("managed interop memory-view type is invalid");
+  }
+  const address = toMemoryOffset(reference, target, memory);
+  const view = memoryView(memory);
+  const length = view.getInt32(address + targetLayout.spanLengthOffset, true);
+  const dataAddress = target === "wasm32"
+    ? view.getUint32(address + targetLayout.spanReferenceOffset, true)
+    : Number(view.getBigUint64(address + targetLayout.spanReferenceOffset, true));
+  if (length === 0) return new constructor(memory.buffer, 0, 0);
+  const end = dataAddress + length * constructor.BYTES_PER_ELEMENT;
+  if (length < 0 || !Number.isSafeInteger(end) || end > memory.buffer.byteLength) {
+    throw new NetWasmHostError("managed span is outside linear memory");
+  }
+  if (dataAddress % constructor.BYTES_PER_ELEMENT !== 0) {
+    throw new NetWasmHostError("managed span is not aligned to its element size");
+  }
+  return new constructor(memory.buffer, dataAddress, length);
 }
 
 // Copies a typed array into a managed array the guest allocated with its length.
@@ -96,7 +136,7 @@ export function writeManagedInteropValueArray(request) {
 
 function readElementRange(request, elementSize) {
   const address = toMemoryOffset(request.reference, request.target, request.memory);
-  const view = new DataView(request.memory.buffer);
+  const view = memoryView(request.memory);
   const length = view.getInt32(address + request.targetLayout.arrayLengthOffset, true);
   const dataAddress = request.target === "wasm32"
     ? view.getUint32(address + request.targetLayout.arrayDataPointerOffset, true)
@@ -124,6 +164,18 @@ function toMemoryOffset(address, target, memory) {
     throw new NetWasmHostError("host result descriptor is outside linear memory");
   }
   return value;
+}
+
+// A view stays valid until memory grows and replaces its buffer.
+let viewedBuffer;
+let cachedView;
+
+function memoryView(memory) {
+  if (memory.buffer !== viewedBuffer) {
+    viewedBuffer = memory.buffer;
+    cachedView = new DataView(viewedBuffer);
+  }
+  return cachedView;
 }
 
 function validateTarget(target) {

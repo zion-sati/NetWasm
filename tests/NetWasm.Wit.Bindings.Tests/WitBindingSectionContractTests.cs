@@ -68,7 +68,7 @@ public sealed class WitBindingSectionContractTests
         var exports = AsExports(WitBindingWriterFixture.CreateExports())
             .Generate(document, world);
 
-        Assert.Contains("public static class ApiImports", imports.Source);
+        Assert.Contains("public static partial class ApiImports", imports.Source);
         Assert.Contains("public static partial class TestExports", exports.Source);
         Assert.Contains("Ping();", exports.Source);
         Assert.DoesNotContain("ExampleTest100Api_Ping();", exports.Source);

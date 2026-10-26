@@ -1,10 +1,13 @@
 import {
   isAbiType,
+  isMemoryViewAbiType,
   isScalarAbiType,
   isTransferAbiType,
   isValueArrayAbiType,
 } from "./interop-abi-types.mjs";
 import { NetWasmHostError } from "./managed-errors.mjs";
+
+const hostModule = "netwasm.host.v1";
 
 const targetLayouts = Object.freeze({
   wasm32: Object.freeze({
@@ -13,6 +16,8 @@ const targetLayouts = Object.freeze({
     stringDataOffset: 8,
     arrayLengthOffset: 4,
     arrayDataPointerOffset: 8,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 4,
   }),
   wasm64: Object.freeze({
     managedReferenceSize: 8,
@@ -20,11 +25,14 @@ const targetLayouts = Object.freeze({
     stringDataOffset: 12,
     arrayLengthOffset: 8,
     arrayDataPointerOffset: 16,
+    spanReferenceOffset: 0,
+    spanLengthOffset: 8,
   }),
 });
 
 export function parseInteropManifest(manifest) {
-  if (manifest == null || manifest.version !== 1) {
+  // Version 2 calls scalar JSImports directly.
+  if (manifest == null || manifest.version !== 2) {
     throw new NetWasmHostError("unsupported NetWasm interop manifest version");
   }
   const expectedLayout = targetLayouts[manifest.target];
@@ -36,7 +44,32 @@ export function parseInteropManifest(manifest) {
   validateImports(manifest.imports);
   validateExports(manifest.exports);
   validateCallbacks(manifest.imports, manifest.callbacks ?? []);
+  validateImportModules(manifest.importModules ?? []);
   return manifest;
+}
+
+// The modules a host supplies: those [JSImport]s name, and those whose
+// functions the final module imports unchanged ([WasmImportLinkage] imports
+// and the imports of the project's native archives).
+export function requiredImportModules(manifest) {
+  return new Set([
+    ...manifest.imports.map(descriptor => descriptor.module).filter(module => module !== hostModule),
+    ...(manifest.importModules ?? []),
+  ]);
+}
+
+function validateImportModules(modules) {
+  if (!Array.isArray(modules)
+      || modules.some(module => typeof module !== "string" || module.length === 0 || isReservedModule(module))
+      || new Set(modules).size !== modules.length) {
+    throw new NetWasmHostError("interop manifest contains an invalid import module");
+  }
+}
+
+// NetWasm's own modules and WASI interfaces are never application imports.
+function isReservedModule(module) {
+  return module.startsWith("netwasm.") || module.startsWith("netwasm:")
+    || module.startsWith("wasi:") || module.startsWith("wasi_");
 }
 
 function validateEnvelope(manifest) {
@@ -81,9 +114,24 @@ function validateImportDescriptor(descriptor) {
       || typeof descriptor.name !== "string" || descriptor.name.length === 0
       || !Array.isArray(descriptor.parameters)
       || !isAbiType(descriptor.result)
-      || descriptor.parameters.some(type => !isAbiType(type))) {
+      || descriptor.parameters.some(type => !isAbiType(type))
+      || descriptor.call !== "status" && descriptor.call !== "direct") {
     throw new NetWasmHostError(
       "interop manifest contains an invalid import descriptor");
+  }
+  // A span view is valid only during a synchronous call, and only as an argument.
+  if (isMemoryViewAbiType(descriptor.result)
+      || descriptor.asyncReturn != null && descriptor.parameters.some(isMemoryViewAbiType)) {
+    throw new NetWasmHostError(
+      "interop manifest contains an invalid span import descriptor");
+  }
+  // A direct import passes primitive scalars as WebAssembly values.
+  if (descriptor.call === "direct"
+      && (descriptor.asyncReturn != null
+        || descriptor.parameters.some(type => !isScalarAbiType(type))
+        || descriptor.result !== "void" && !isScalarAbiType(descriptor.result))) {
+    throw new NetWasmHostError(
+      "interop manifest contains an invalid direct import descriptor");
   }
   if (descriptor.asyncReturn != null
       && (descriptor.asyncReturn !== "task" && descriptor.asyncReturn !== "value-task"

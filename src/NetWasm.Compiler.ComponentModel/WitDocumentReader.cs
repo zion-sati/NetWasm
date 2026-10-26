@@ -110,7 +110,10 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
                     ? null
                     : item.GetProperty("name").GetString(),
                 item.GetProperty("kind").Clone(),
-                ReadOwner(item.GetProperty("owner"))))
+                ReadOwner(item.GetProperty("owner"), "interface"))
+            {
+                OwnerWorld = ReadOwner(item.GetProperty("owner"), "world"),
+            })
             .ToImmutableArray();
         return new WitDocument(packages, interfaces, worlds, types, normalizedJson);
     }
@@ -137,16 +140,26 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
         ImmutableArray<WitPackage> packages)
     {
         var packageId = item.GetProperty("package").GetInt32();
+        var imports = item.GetProperty("imports");
         return new WitWorld(
             id,
             item.GetProperty("name").GetString()!,
             packages[packageId].Name,
-            ReadWorldItems(item.GetProperty("imports")),
-            ReadWorldItems(item.GetProperty("exports")));
+            ReadWorldItems(imports),
+            ReadWorldItems(item.GetProperty("exports")))
+        {
+            // A type the world declares is listed among its imports.
+            Types = imports.EnumerateObject()
+                .Where(static entry => entry.Value.TryGetProperty("type", out _))
+                .ToImmutableDictionary(
+                    static entry => entry.Name,
+                    static entry => entry.Value.GetProperty("type").GetInt32(),
+                    StringComparer.Ordinal),
+        };
     }
 
     private static ImmutableArray<WitWorldItem> ReadWorldItems(JsonElement items) =>
-        items.EnumerateObject().Select(item =>
+        items.EnumerateObject().Where(static item => !item.Value.TryGetProperty("type", out _)).Select(item =>
         {
             if (item.Value.TryGetProperty("interface", out var interfaceValue))
             {
@@ -196,14 +209,15 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
             pair => pair.Value.GetInt32(),
             StringComparer.Ordinal);
 
-    private static int? ReadOwner(JsonElement owner)
+    // The interface or world, by `kind`, that owns a type.
+    private static int? ReadOwner(JsonElement owner, string kind)
     {
         if (owner.ValueKind == JsonValueKind.Null)
         {
             return null;
         }
-        return owner.TryGetProperty("interface", out var interfaceId)
-            ? interfaceId.GetInt32()
+        return owner.TryGetProperty(kind, out var ownerId)
+            ? ownerId.GetInt32()
             : null;
     }
 

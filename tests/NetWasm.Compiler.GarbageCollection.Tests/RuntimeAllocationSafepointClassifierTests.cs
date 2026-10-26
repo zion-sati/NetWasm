@@ -36,8 +36,6 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.Enum", "ToString")]
     [InlineData("System.Enum", "InternalToString")]
     [InlineData("System.Enum", "InternalFormat")]
-    [InlineData("System.Enum", "InternalToType")]
-    [InlineData("System.Enum", "System.IConvertible.ToType")]
     public void ClassifyRecognizesEveryRuntimeAllocationBoundary(
         string typeName,
         string methodName)

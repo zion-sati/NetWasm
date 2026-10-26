@@ -137,10 +137,6 @@ public sealed class RootMapTests
     [InlineData("InternalToString", true)]
     [InlineData("InternalFormat", false)]
     [InlineData("InternalFormat", true)]
-    [InlineData("InternalToType", false)]
-    [InlineData("InternalToType", true)]
-    [InlineData("System.IConvertible.ToType", false)]
-    [InlineData("System.IConvertible.ToType", true)]
     public void EnumIntrinsicsPublishLiveReferencesAndPropagateThroughManagedWrappers(
         string methodName, bool instanceOperand)
     {
@@ -199,12 +195,6 @@ public sealed class RootMapTests
     [InlineData("ToString", true, 0, true)]
     [InlineData("ToString", true, 1, true)]
     [InlineData("ToString", true, 2, true)]
-    [InlineData("System.IConvertible.ToType", false, 0, true)]
-    [InlineData("System.IConvertible.ToType", false, 1, true)]
-    [InlineData("System.IConvertible.ToType", false, 2, true)]
-    [InlineData("System.IConvertible.ToType", true, 0, true)]
-    [InlineData("System.IConvertible.ToType", true, 1, true)]
-    [InlineData("System.IConvertible.ToType", true, 2, true)]
     [InlineData("InternalToInt32", false, 0, false)]
     [InlineData("InternalToInt32", true, 0, false)]
     public void IntrinsicAllocationPrecedesDispatchAndIncludesIntrinsicDispatchTargets(
