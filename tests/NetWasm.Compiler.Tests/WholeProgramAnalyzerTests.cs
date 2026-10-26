@@ -41,7 +41,7 @@ public sealed class WholeProgramAnalyzerTests
     }
 
     [Fact]
-    public void IntegerConsoleOutputPreservesTheSmallNumberCacheButDropsUnobservedPopulation()
+    public void IntegerConsoleOutputInitializesOnlyTheSmallNumberCache()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileOptimizedSource("ConsoleReachability", """
@@ -65,16 +65,23 @@ public sealed class WholeProgramAnalyzerTests
         Assert.Contains(initializer.Body.Instructions, instruction =>
             instruction.Operation == CilOperation.StoreStaticField &&
             instruction.Operand is CilOperand.Entity field && field.Key == cache.Key);
-        Assert.Equal(original.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray),
-            initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray));
-        Assert.Contains(original.Instructions, instruction => instruction.Operation == CilOperation.StoreArrayElement);
-        Assert.DoesNotContain(initializer.Body.Instructions, instruction => instruction.Operation == CilOperation.StoreArrayElement);
-        // Standalone readonly values and reference allocations still initialize;
-        // eliminating unobserved array population does not eliminate those calls.
-        Assert.True(initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewObject) <
-            original.Instructions.Count(instruction => instruction.Operation == CilOperation.NewObject));
+        // Number's initializer allocates only the cache. The floating-point tables
+        // live in holder classes that only floating-point formatting and math
+        // initialize, so integer output never runs them (pay-for-play formatting).
+        // StaticArrayPopulationCompilationTests covers dropping unobserved population.
+        Assert.Equal(1, original.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray));
+        Assert.Equal(1, initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray));
+        Assert.DoesNotContain(original.Instructions, instruction =>
+            instruction.Operation is CilOperation.StoreArrayElement or CilOperation.NewObject);
         Assert.Equal(original.Instructions.Count(instruction => instruction.Operation == CilOperation.StoreStaticField),
             initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.StoreStaticField));
+        var floatingTables = compilation.Snapshot.Types
+            .Where(type => type.FullName.StartsWith("System.Number", StringComparison.Ordinal) &&
+                type.FullName.EndsWith("Tables", StringComparison.Ordinal))
+            .Select(type => type.Key)
+            .ToHashSet();
+        Assert.NotEmpty(floatingTables);
+        Assert.DoesNotContain(program.Methods.Values, body => floatingTables.Contains(body.Method.Definition.DeclaringType));
     }
 
     [Fact]
