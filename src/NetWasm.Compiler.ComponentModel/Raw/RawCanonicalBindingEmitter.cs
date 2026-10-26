@@ -223,17 +223,17 @@ internal sealed class RawCanonicalBindingEmitter
             case "tuple":
                 return "[" + string.Join(", ", type.Fields.Select(field => LiftFlat(field.Type, slots))) + "]";
             case "option" or "result" or "variant":
-            {
-                var count = 1 + _planner.JoinedSlots(type.SelectionTypes).Length;
-                var values = Enumerable.Range(0, count).Select(_ => slots.Dequeue().Name);
-                return $"{FlatVariantLifter(type)}(memory, lift, {string.Join(", ", values)})";
-            }
+                {
+                    var count = 1 + _planner.JoinedSlots(type.SelectionTypes).Length;
+                    var values = Enumerable.Range(0, count).Select(_ => slots.Dequeue().Name);
+                    return $"{FlatVariantLifter(type)}(memory, lift, {string.Join(", ", values)})";
+                }
             case "enum": return $"rcEnumCase({Names(type.Cases.Select(item => item.Name))}, {slots.Dequeue().Name} >>> 0)";
             case "flags":
-            {
-                var words = _planner.Flatten(type).Select(_ => $"{slots.Dequeue().Name} >>> 0");
-                return $"rcFlags({Names(type.Flags)}, [{string.Join(", ", words)}])";
-            }
+                {
+                    var words = _planner.Flatten(type).Select(_ => $"{slots.Dequeue().Name} >>> 0");
+                    return $"rcFlags({Names(type.Flags)}, [{string.Join(", ", words)}])";
+                }
             case "owned-resource": return $"lift.own({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)";
             case "borrowed-resource": return $"lift.borrow({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)";
             default: throw Unsupported(type);
@@ -348,37 +348,37 @@ internal sealed class RawCanonicalBindingEmitter
                     Read(field.Type, Offset("index", layout.FieldOffsets[item]))))).AppendLine("];");
                 break;
             case "option" or "result" or "variant":
-            {
-                var caseTypes = type.SelectionTypes;
-                body.Append("  switch (").Append(Discriminant(layout.DiscriminantSize, "index")).AppendLine(") {");
-                for (var item = 0; item < caseTypes.Length; item++)
                 {
-                    var payload = caseTypes[item] is { } caseType
-                        ? Read(caseType, Offset("index", layout.PayloadOffset))
-                        : null;
-                    body.Append("    case ").Append(Int(item)).Append(": return ")
-                        .Append(Selected(type, item, payload)).AppendLine(";");
+                    var caseTypes = type.SelectionTypes;
+                    body.Append("  switch (").Append(Discriminant(layout.DiscriminantSize, "index")).AppendLine(") {");
+                    for (var item = 0; item < caseTypes.Length; item++)
+                    {
+                        var payload = caseTypes[item] is { } caseType
+                            ? Read(caseType, Offset("index", layout.PayloadOffset))
+                            : null;
+                        body.Append("    case ").Append(Int(item)).Append(": return ")
+                            .Append(Selected(type, item, payload)).AppendLine(";");
+                    }
+                    body.AppendLine("    default: throw new TypeError(\"raw canonical variant discriminant is invalid\");");
+                    body.AppendLine("  }");
+                    break;
                 }
-                body.AppendLine("    default: throw new TypeError(\"raw canonical variant discriminant is invalid\");");
-                body.AppendLine("  }");
-                break;
-            }
             case "enum":
                 body.Append("  return rcEnumCase(").Append(Names(type.Cases.Select(item => item.Name))).Append(", ")
                     .Append(Discriminant(layout.Size, "index")).AppendLine(");");
                 break;
             case "flags":
-            {
-                var words = layout.Size switch
                 {
-                    1 => "rcView(memory).getUint8(index)",
-                    2 => "rcView(memory).getUint16(index, true)",
-                    _ => string.Join(", ", Enumerable.Range(0, layout.Size / 4)
-                        .Select(word => $"rcView(memory).getUint32({Offset("index", word * 4)}, true)")),
-                };
-                body.Append("  return rcFlags(").Append(Names(type.Flags)).Append(", [").Append(words).AppendLine("]);");
-                break;
-            }
+                    var words = layout.Size switch
+                    {
+                        1 => "rcView(memory).getUint8(index)",
+                        2 => "rcView(memory).getUint16(index, true)",
+                        _ => string.Join(", ", Enumerable.Range(0, layout.Size / 4)
+                            .Select(word => $"rcView(memory).getUint32({Offset("index", word * 4)}, true)")),
+                    };
+                    body.Append("  return rcFlags(").Append(Names(type.Flags)).Append(", [").Append(words).AppendLine("]);");
+                    break;
+                }
             default:
                 throw Unsupported(type);
         }
@@ -437,18 +437,18 @@ internal sealed class RawCanonicalBindingEmitter
         switch (type.Kind)
         {
             case "list":
-            {
-                var element = type.Element!.Underlying.Kind;
-                var snapshot = NumericListArrays.TryGetValue(element, out var typedArray)
-                    ? $"rcNumberList(value, {typedArray})"
-                    : "rcArray(value, undefined, \"list\")";
-                body.Append("  const values = ").Append(snapshot).AppendLine(";");
-                body.Append("  const byteLength = rcLoweredListByteLength(")
-                    .Append(Int(_planner.Layout(type.Element!).Size)).AppendLine(", values.length);");
-                body.Append("  return { items: values.map(item => (").Append(Plan(type.Element!, "item"))
-                    .Append(")), byteLength, length: values.length, address: ").Append(Zero).AppendLine(" };");
-                break;
-            }
+                {
+                    var element = type.Element!.Underlying.Kind;
+                    var snapshot = NumericListArrays.TryGetValue(element, out var typedArray)
+                        ? $"rcNumberList(value, {typedArray})"
+                        : "rcArray(value, undefined, \"list\")";
+                    body.Append("  const values = ").Append(snapshot).AppendLine(";");
+                    body.Append("  const byteLength = rcLoweredListByteLength(")
+                        .Append(Int(_planner.Layout(type.Element!).Size)).AppendLine(", values.length);");
+                    body.Append("  return { items: values.map(item => (").Append(Plan(type.Element!, "item"))
+                        .Append(")), byteLength, length: values.length, address: ").Append(Zero).AppendLine(" };");
+                    break;
+                }
             case "record":
                 body.Append("  const values = rcObject(value, ")
                     .Append(Names(type.Fields.Select(field => field.JavaScriptName!))).AppendLine(", \"record\");");
@@ -465,34 +465,34 @@ internal sealed class RawCanonicalBindingEmitter
                     .Append(Plan(type.Element!, "value")).AppendLine(" };");
                 break;
             case "option" or "result" or "variant":
-            {
-                var caseTypes = type.SelectionTypes;
-                var tags = type.Kind switch
                 {
-                    "option" => ["none", "some"],
-                    "result" => ["ok", "err"],
-                    _ => type.Cases.Select(item => item.Name).ToArray(),
-                };
-                body.Append("  const selected = rcTagged(value, ").Append(Names(tags)).Append(", [")
-                    .Append(string.Join(", ", caseTypes.Select(caseType => Bool(caseType is not null))))
-                    .Append("], ").Append(Json(type.Kind)).AppendLine(");");
-                body.AppendLine("  switch (selected.index) {");
-                for (var item = 0; item < caseTypes.Length; item++)
-                {
-                    body.Append("    case ").Append(Int(item)).Append(": return ");
-                    if (caseTypes[item] is { } caseType)
+                    var caseTypes = type.SelectionTypes;
+                    var tags = type.Kind switch
                     {
-                        body.Append("{ index: ").Append(Int(item)).Append(", payload: ")
-                            .Append(Plan(caseType, "selected.value")).AppendLine(" };");
-                    }
-                    else
+                        "option" => ["none", "some"],
+                        "result" => ["ok", "err"],
+                        _ => type.Cases.Select(item => item.Name).ToArray(),
+                    };
+                    body.Append("  const selected = rcTagged(value, ").Append(Names(tags)).Append(", [")
+                        .Append(string.Join(", ", caseTypes.Select(caseType => Bool(caseType is not null))))
+                        .Append("], ").Append(Json(type.Kind)).AppendLine(");");
+                    body.AppendLine("  switch (selected.index) {");
+                    for (var item = 0; item < caseTypes.Length; item++)
                     {
-                        body.Append("{ index: ").Append(Int(item)).AppendLine(" };");
+                        body.Append("    case ").Append(Int(item)).Append(": return ");
+                        if (caseTypes[item] is { } caseType)
+                        {
+                            body.Append("{ index: ").Append(Int(item)).Append(", payload: ")
+                                .Append(Plan(caseType, "selected.value")).AppendLine(" };");
+                        }
+                        else
+                        {
+                            body.Append("{ index: ").Append(Int(item)).AppendLine(" };");
+                        }
                     }
+                    body.AppendLine("  }");
+                    break;
                 }
-                body.AppendLine("  }");
-                break;
-            }
             default:
                 throw Unsupported(type);
         }
@@ -514,20 +514,20 @@ internal sealed class RawCanonicalBindingEmitter
                 body.AppendLine("  if (length !== 0) new Uint8Array(memory.buffer, rcIndex(memory, plan.address, 1, length), length).set(plan.bytes);");
                 break;
             case "list":
-            {
-                var element = _planner.Layout(type.Element!);
-                body.Append("  plan.address = tx.allocate(").Append(Int(element.Alignment)).AppendLine(", plan.byteLength);");
-                if (type.Element!.Allocates)
                 {
-                    body.Append("  for (const item of plan.items) ").Append(Materializer(type.Element!)).AppendLine("(memory, item, tx);");
+                    var element = _planner.Layout(type.Element!);
+                    body.Append("  plan.address = tx.allocate(").Append(Int(element.Alignment)).AppendLine(", plan.byteLength);");
+                    if (type.Element!.Allocates)
+                    {
+                        body.Append("  for (const item of plan.items) ").Append(Materializer(type.Element!)).AppendLine("(memory, item, tx);");
+                    }
+                    body.AppendLine("  if (plan.byteLength !== 0) {");
+                    body.Append("    const base = rcIndex(memory, plan.address, ").Append(Int(element.Alignment)).AppendLine(", plan.byteLength);");
+                    body.Append("    for (let item = 0; item < plan.length; item++) ")
+                        .AppendLine(Write(type.Element!, $"base + item * {Int(element.Size)}", "plan.items[item]"));
+                    body.AppendLine("  }");
+                    break;
                 }
-                body.AppendLine("  if (plan.byteLength !== 0) {");
-                body.Append("    const base = rcIndex(memory, plan.address, ").Append(Int(element.Alignment)).AppendLine(", plan.byteLength);");
-                body.Append("    for (let item = 0; item < plan.length; item++) ")
-                    .AppendLine(Write(type.Element!, $"base + item * {Int(element.Size)}", "plan.items[item]"));
-                body.AppendLine("  }");
-                break;
-            }
             case "record" or "tuple":
                 for (var item = 0; item < type.Fields.Length; item++)
                 {
@@ -537,16 +537,16 @@ internal sealed class RawCanonicalBindingEmitter
                 }
                 break;
             case "option" or "result" or "variant":
-            {
-                var caseTypes = type.SelectionTypes;
-                for (var item = 0; item < caseTypes.Length; item++)
                 {
-                    if (caseTypes[item]?.Allocates != true) continue;
-                    body.Append("  if (plan.index === ").Append(Int(item)).Append(") ")
-                        .Append(Materializer(caseTypes[item]!)).AppendLine("(memory, plan.payload, tx);");
+                    var caseTypes = type.SelectionTypes;
+                    for (var item = 0; item < caseTypes.Length; item++)
+                    {
+                        if (caseTypes[item]?.Allocates != true) continue;
+                        body.Append("  if (plan.index === ").Append(Int(item)).Append(") ")
+                            .Append(Materializer(caseTypes[item]!)).AppendLine("(memory, plan.payload, tx);");
+                    }
+                    break;
                 }
-                break;
-            }
             default:
                 throw Unsupported(type);
         }
@@ -585,12 +585,12 @@ internal sealed class RawCanonicalBindingEmitter
         switch (type.Kind)
         {
             case "text" or "list":
-            {
-                var length = type.Kind == "text" || type.Element!.Underlying.Kind == "u8" ? "plan.bytes.length" : "plan.length";
-                body.Append("  ").Append(PointerWrite("index", "plan.address")).AppendLine(";");
-                body.Append("  ").Append(PointerWrite($"index + {Int(_planner.AddressSize)}", length)).AppendLine(";");
-                break;
-            }
+                {
+                    var length = type.Kind == "text" || type.Element!.Underlying.Kind == "u8" ? "plan.bytes.length" : "plan.length";
+                    body.Append("  ").Append(PointerWrite("index", "plan.address")).AppendLine(";");
+                    body.Append("  ").Append(PointerWrite($"index + {Int(_planner.AddressSize)}", length)).AppendLine(";");
+                    break;
+                }
             case "record" or "tuple":
                 for (var item = 0; item < type.Fields.Length; item++)
                 {
@@ -599,17 +599,17 @@ internal sealed class RawCanonicalBindingEmitter
                 }
                 break;
             case "option" or "result" or "variant":
-            {
-                var caseTypes = type.SelectionTypes;
-                for (var item = 0; item < caseTypes.Length; item++)
                 {
-                    if (caseTypes[item] is not { } caseType) continue;
-                    body.Append("  if (plan.index === ").Append(Int(item)).Append(") ")
-                        .AppendLine(Write(caseType, Offset("index", layout.PayloadOffset), "plan.payload"));
+                    var caseTypes = type.SelectionTypes;
+                    for (var item = 0; item < caseTypes.Length; item++)
+                    {
+                        if (caseTypes[item] is not { } caseType) continue;
+                        body.Append("  if (plan.index === ").Append(Int(item)).Append(") ")
+                            .AppendLine(Write(caseType, Offset("index", layout.PayloadOffset), "plan.payload"));
+                    }
+                    body.Append("  ").Append(DiscriminantWrite(layout.DiscriminantSize, "index", "plan.index")).AppendLine(";");
+                    break;
                 }
-                body.Append("  ").Append(DiscriminantWrite(layout.DiscriminantSize, "index", "plan.index")).AppendLine(";");
-                break;
-            }
             case "flags":
                 if (layout.Size == 1) body.AppendLine("  rcView(memory).setUint8(index, plan[0]);");
                 else if (layout.Size == 2) body.AppendLine("  rcView(memory).setUint16(index, plan[0], true);");
