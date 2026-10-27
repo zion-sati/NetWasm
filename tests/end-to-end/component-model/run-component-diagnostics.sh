@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 artifact_root="$repo_root/tests/end-to-end/component-model/artifacts/component-diagnostics"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit_bindgen="$repo_root/tools/NetWasm.Wit.Bindings/bin/Release/net10.0/NetWasm.Wit.Bindings.dll"
 async_wit="$repo_root/tests/NetWasm.Compiler.Tests/Fixtures/async-component.wit"
 scalar_wit="$repo_root/tests/NetWasm.Compiler.Tests/Fixtures/scalar-component.wit"
@@ -25,7 +25,9 @@ expect_failure() {
         exit 1
     fi
     local diagnostic
-    diagnostic="$(<"$artifact_root/command.stderr")"
+    # nwc writes diagnostics to standard output, as csc does; the WIT bindings
+    # generator writes them to standard error.
+    diagnostic="$(cat "$artifact_root/command.stdout" "$artifact_root/command.stderr")"
     case "$diagnostic" in
         *"$expected"*) ;;
         *)
@@ -51,10 +53,10 @@ expect_failure \
     "$component" \
     "$compiler" \
     componentize \
-    --optimization none \
-    --core-module "$artifact_root/not-read-before-validation.wasm" \
-    --wit "$async_wit" --target wasm32 \
-    --output "$component" --manifest "$component.manifest"
+    -optimize:none \
+    -coremodule:"$artifact_root/not-read-before-validation.wasm" \
+    -wit:"$async_wit" -platform:wasm32 \
+    -out:"$component" -manifest:"$component.manifest"
 
 mismatched="$artifact_root/mismatched.component.wasm"
 expect_failure \
@@ -62,10 +64,10 @@ expect_failure \
     "$mismatched" \
     "$compiler" \
     componentize \
-    --optimization none \
-    --core-module "$artifact_root/not-read-before-manifest-validation.wasm" \
-    --wit "$scalar_wit" --target wasm32 \
-    --interop-manifest "$repo_root/tests/end-to-end/component-model/fixtures/mismatched-interop.json" \
-    --output "$mismatched" --manifest "$mismatched.manifest"
+    -optimize:none \
+    -coremodule:"$artifact_root/not-read-before-manifest-validation.wasm" \
+    -wit:"$scalar_wit" -platform:wasm32 \
+    -interopmanifest:"$repo_root/tests/end-to-end/component-model/fixtures/mismatched-interop.json" \
+    -out:"$mismatched" -manifest:"$mismatched.manifest"
 
 printf 'Component Model component diagnostic atomicity PASS\n'

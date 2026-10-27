@@ -2,29 +2,22 @@ using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace NetWasm.Compiler.Diagnostics;
 
 internal sealed class CompilerDiagnosticJsonArtifactWriter :
     ICompilerDiagnosticJsonArtifactWriter
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        Converters = { new JsonStringEnumConverter() },
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        NewLine = "\n",
-    };
-
-    public void WriteJson(string path, object value)
+    public void WriteJson<T>(string path, T value, JsonTypeInfo<T> typeInfo)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(typeInfo);
         CreateParentDirectory(path);
         File.WriteAllText(
             path,
-            JsonSerializer.Serialize(value, SerializerOptions) + "\n",
+            JsonSerializer.Serialize(value, typeInfo) + "\n",
             new UTF8Encoding(false));
     }
 

@@ -45,11 +45,12 @@ internal sealed class CompilerEmissionDiagnosticArtifactWriter(
                 _paths.ResolvePath(options, "06-emission.wat.error.txt")!,
                 exception.ToString());
         }
-        _json.WriteJson(_paths.ResolvePath(options, "06-emission.json")!, new
-        {
-            Length = bytes.Length,
-            Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
-            WatWritten = _files.Exists(watPath),
-        });
+        _json.WriteJson(
+            _paths.ResolvePath(options, "06-emission.json")!,
+            new CompilerEmissionArtifact(
+                bytes.Length,
+                Convert.ToHexStringLower(SHA256.HashData(bytes)),
+                _files.Exists(watPath)),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerEmissionArtifact);
     }
 }

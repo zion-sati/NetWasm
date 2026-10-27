@@ -3,7 +3,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CS0436</NoWarn>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>

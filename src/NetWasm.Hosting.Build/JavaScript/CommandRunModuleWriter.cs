@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -94,7 +95,7 @@ public sealed partial class CommandRunModuleWriter : ICommandRunModuleWriter
         }
     }
 
-    private static string Json(string value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
 
     private static void Write(string path, string source)
     {

@@ -141,8 +141,8 @@ interop payload boundaries](diagnostics.md#managed-exceptions-and-diagnostic-pro
 
 SDK Debug builds enable managed stack instrumentation and its deterministic
 symbol sidecar by default; Release builds leave it out unless
-`NetWasmManagedStackTrace=true`. The compiler CLI enables the same behavior
-with `--stack-trace-symbols <path>`. `Exception.StackTrace` then reports the
+`NetWasmManagedStackTrace=true`. `nwc` enables the same behavior
+with `-stacktracesymbols:<path>`. `Exception.StackTrace` then reports the
 captured managed frames without adding general reflection or type-name metadata
 to the Wasm image. This is diagnostic stack-trace support, not source-level
 debugging or DWARF; see
@@ -208,8 +208,9 @@ available application dependencies or promises of a future API shape.
 
 | Area | Current boundary |
 | --- | --- |
-| Portable diagnostics | DP01–DP06 are implemented and locally qualified for in-process `DiagnosticSource`, `Activity`, propagation and Metrics under the single-reactor contract. Public package/reference-pack distribution remains incomplete. OS tracing, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
+| Portable diagnostics | DP01–DP06 are implemented and locally qualified for in-process `DiagnosticSource`, `Activity`, propagation and Metrics under the single-reactor contract. `Debug` exposes the ten documented assertion, failure and `WriteLine` overloads: retained calls are conditional on `DEBUG`, failures throw catchable `InvalidOperationException`, and output uses standard error. Debugger attributes retain ordinary metadata and string-valued contracts, but resolving a `Type` to an assembly-qualified debugger name fails with `PlatformNotSupportedException`. Public package/reference-pack distribution remains incomplete. OS tracing, attached-debugger/provider behavior, background exporters, process/runtime metrics and reflection payload inspection are excluded. |
 | `System.Uri` | U01/U02 are implemented and locally qualified for the selected portable parsing, resolution, escaping, builder and IDN/IRI profile. Public reference-pack distribution remains incomplete. |
+| Credentials | `NetworkCredential` retains string-based username, password and domain values, with null values normalized to empty strings. `ICredentials` and `ICredentialsByHost` lookup return the same credential object without validating or contacting the endpoint. `SecureString` constructors, `SecurePassword` and secure-string marshaling are outside this profile. |
 
 ## Deferred SIMD and Packed SIMD target-option design
 

@@ -167,6 +167,7 @@
       <Output TaskParameter="WasmLdPath" PropertyName="NetWasmWasmLdPath" />
       <Output TaskParameter="WasmLdSource" PropertyName="NetWasmWasmLdSource" />
       <Output TaskParameter="WasmLdVersion" PropertyName="NetWasmWasmLdVersion" />
+      <Output TaskParameter="CompilerPath" PropertyName="_NetWasmResolvedCompilerPath" />
       <Output TaskParameter="ToolchainPackageId" PropertyName="NetWasmResolvedToolchainPackageId" />
       <Output TaskParameter="ToolchainPackageVersion" PropertyName="NetWasmResolvedToolchainPackageVersion" />
       <Output TaskParameter="CommandWitPackagePath" PropertyName="NetWasmResolvedCommandWitPackagePath" />
@@ -197,6 +198,8 @@
     <Message Importance="Normal"
              Text="NetWasm host tools: Node=$(NetWasmNodeSource) $(NetWasmNodeVersion); wasm-ld=$(NetWasmWasmLdSource) $(NetWasmWasmLdVersion); Binaryen=$(NetWasmBinaryenWasmOptImplementation)." />
     <PropertyGroup>
+      <!-- A project may name another nwc, such as one built from source. -->
+      <NetWasmCompilerPath Condition="'$(NetWasmCompilerPath)' == ''">$(_NetWasmResolvedCompilerPath)</NetWasmCompilerPath>
       <NetWasmWitPath Condition="'$(NetWasmWitPath)' == '' AND '$(NetWasmComponentContract)' == 'async-command'">$(NetWasmResolvedAsyncCommandWitPackagePath)</NetWasmWitPath>
       <NetWasmWitPath Condition="'$(NetWasmWitPath)' == '' AND '$(_NetWasmWorkerKind)' == ''">$(NetWasmResolvedCommandWitPackagePath)</NetWasmWitPath>
       <NetWasmCompilerWitPath Condition="'$(NetWasmCompilerWitPath)' == '' AND '$(_NetWasmWorkerKind)' != 'wit'">$(NetWasmResolvedCompilerWitPackagePath)</NetWasmCompilerWitPath>

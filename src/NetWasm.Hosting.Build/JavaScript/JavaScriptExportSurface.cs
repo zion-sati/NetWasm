@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -108,7 +109,7 @@ internal static class JavaScriptExportSurface
             .Select((type, index) =>
                 $"{names[index]}: {TypeScriptType(type, allowVoid: false, export.IsNullableParameter(index))}")
             .Concat(trailing);
-        return $"{JsonSerializer.Serialize(export.Name)}({string.Join(", ", parameters)})";
+        return $"{JsonSerializer.Serialize(export.Name, HostingBuildJsonContext.Default.String)}({string.Join(", ", parameters)})";
     }
 
     public static void Validate(IJavaScriptExportRealm realm, IEnumerable<WorkerJavaScriptExport> exports)

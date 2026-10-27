@@ -1,4 +1,4 @@
-using NetWasm.Compiler.Cli;
+using NetWasm.Compiler.Cli.Tests.TestSupport;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
@@ -6,123 +6,74 @@ namespace NetWasm.Compiler.Cli.Tests;
 
 public sealed class ComponentizeCliOptionsTests
 {
-    [Fact]
-    public void RejectsDuplicateHintOptions()
-    {
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--managed-inlining-hints", "Preserve", "--managed-inlining-hints", "Auto",
-        ]));
-    }
+    private static readonly string[] Required =
+        ["-coremodule:application.wasm", "-wit:contract.wit", "-out:component.wasm", "-manifest:component.json"];
 
     [Fact]
-    public void DefaultsToWasm32AndRetainsAdapterProvenance()
+    public void ReadsEveryOption()
     {
-        var options = ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm",
-            "--runtime-module", "runtime.wasm",
-            "--wit", "contract.wit",
-            "--world", "example:test/main",
-            "--output", "component.wasm",
-            "--manifest", "component.json",
-            "--target", "wasm64",
-            "--interop-manifest", "interop.json",
-            "--jco-version", "1.2.3",
-            "--preview2-shim-version", "4.5.6",
-            "--optimization", "none",
+        var options = Parse([
+            .. Required, "-runtimemodule:runtime.wasm", "-world:example:test/main", "-platform:wasm64",
+            "-interopmanifest:interop.json", "-jcoversion:1.2.3", "-preview2shimversion:4.5.6", "-optimize:none",
+            "-managedinlininghints:Preserve",
         ]);
 
-        Assert.Equal(WasmTarget.Wasm64, options.Target);
+        Assert.Equal("application.wasm", options.CoreModule);
+        Assert.Equal("runtime.wasm", options.RuntimeModule);
+        Assert.Equal("contract.wit", options.Wit);
         Assert.Equal("example:test/main", options.World);
+        Assert.Equal("component.wasm", options.Output);
+        Assert.Equal("component.json", options.Manifest);
+        Assert.Equal(WasmTarget.Wasm64, options.Platform);
         Assert.Equal("interop.json", options.InteropManifest);
         Assert.Equal("1.2.3", options.JcoVersion);
         Assert.Equal("4.5.6", options.Preview2ShimVersion);
         Assert.Equal(FinalWasmOptimization.None, options.Optimization);
+        Assert.Equal("Preserve", options.ManagedInliningHints);
     }
 
     [Fact]
-    public void RejectsUnsupportedTargetWidth()
+    public void DefaultsTheOptionalOptions()
     {
-        var exception = Assert.Throws<CompilerException>(() =>
-            ComponentizeCliOptions.Parse([
-                "--core-module", "application.wasm",
-                "--wit", "contract.wit",
-                "--output", "component.wasm",
-                "--manifest", "component.json",
-                "--target", "wasm128",
-            ]));
+        var options = Parse(Required);
 
-        Assert.Contains("wasm32", exception.Diagnostic.Message);
-    }
-
-    [Fact]
-    public void DefaultsToOzOptimizationAndRejectsUnsupportedValue()
-    {
-        var options = ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm",
-            "--wit", "contract.wit",
-            "--output", "component.wasm",
-            "--manifest", "component.json",
-        ]);
+        Assert.Null(options.RuntimeModule);
+        Assert.Null(options.World);
+        Assert.Equal(WasmTarget.Wasm32, options.Platform);
+        Assert.Null(options.InteropManifest);
+        Assert.Null(options.JcoVersion);
+        Assert.Null(options.Preview2ShimVersion);
         Assert.Equal(FinalWasmOptimization.Oz, options.Optimization);
-
-        var exception = Assert.Throws<CompilerException>(() =>
-            ComponentizeCliOptions.Parse([
-                "--core-module", "application.wasm",
-                "--wit", "contract.wit",
-                "--output", "component.wasm",
-                "--manifest", "component.json",
-                "--optimization", "speed",
-            ]));
-        Assert.Contains("none", exception.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Null(options.ManagedInliningHints);
     }
 
     [Theory]
-    [InlineData("None", FinalWasmOptimization.None)]
-    [InlineData("none", FinalWasmOptimization.None)]
-    [InlineData("O0", FinalWasmOptimization.O0)]
-    [InlineData("O1", FinalWasmOptimization.O1)]
-    [InlineData("O2", FinalWasmOptimization.O2)]
-    [InlineData("O3", FinalWasmOptimization.O3)]
-    [InlineData("Os", FinalWasmOptimization.Os)]
-    [InlineData("Oz", FinalWasmOptimization.Oz)]
-    public void AcceptsCanonicalOptimizationModes(
-        string value,
-        FinalWasmOptimization expected)
+    [InlineData("componentize takes no input files: App.dll", "App.dll")]
+    [InlineData("no core module was specified (-coremodule)", "-coremodule")]
+    [InlineData("no WIT package was specified (-wit)", "-wit")]
+    [InlineData("no output file was specified (-out)", "-out")]
+    [InlineData("no manifest file was specified (-manifest)", "-manifest")]
+    [InlineData("-platform must be 'wasm32' or 'wasm64'", "-platform:wasm128")]
+    [InlineData("-optimize must be 'None', 'O0', 'O1', 'O2', 'O3', 'Os' or 'Oz'", "-optimize:speed")]
+    [InlineData("option '-managedinlininghints' was specified more than once",
+        "-managedinlininghints:Preserve", "-managedinlininghints:Auto")]
+    public void RejectsAnInvalidCommandLine(string message, params string[] change)
     {
-        var options = ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm",
-            "--wit", "contract.wit",
-            "--output", "component.wasm",
-            "--manifest", "component.json",
-            "--optimization", value,
-        ]);
+        // Each case drops the required option it names, or adds what it lists.
+        string[] arguments = change[0] is "-coremodule" or "-wit" or "-out" or "-manifest"
+            ? [.. Required.Where(argument => !argument.StartsWith(change[0] + ":", StringComparison.Ordinal))]
+            : [.. Required, .. change];
 
-        Assert.Equal(expected, options.Optimization);
+        var exception = Assert.Throws<CompilerException>(() => Parse(arguments));
+
+        Assert.Equal(DiagnosticCode.InvalidCommandLine, exception.Diagnostic.Code);
+        Assert.Equal(message, exception.Diagnostic.Message);
     }
 
     [Fact]
-    public void RejectsUnknownOptionAndMissingValues()
-    {
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--unknown", "value"]));
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--core-module"]));
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm", "--wit", "contract.wit",
-            "--output", "component.wasm", "--manifest", "component.json",
-            "--core-module", "duplicate.wasm"]));
-    }
+    public void RejectsMissingArguments() =>
+        Assert.Throws<ArgumentNullException>(() => ComponentizeCliOptions.Parse(null!));
 
-    [Fact]
-    public void RejectsMissingRequiredFields()
-    {
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([]));
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm"]));
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm", "--wit", "contract.wit"]));
-        Assert.Throws<CompilerException>(() => ComponentizeCliOptions.Parse([
-            "--core-module", "application.wasm", "--wit", "contract.wit",
-            "--output", "component.wasm"]));
-    }
+    private static ComponentizeCliOptions Parse(string[] arguments) =>
+        ComponentizeCliOptions.Parse(NwcTestArguments.Read(ComponentizeCliOptions.Names, arguments));
 }

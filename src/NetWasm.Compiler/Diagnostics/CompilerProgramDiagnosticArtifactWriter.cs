@@ -23,7 +23,7 @@ internal sealed class CompilerProgramDiagnosticArtifactWriter(
         var path = _paths.ResolvePath(options, "03-program.json");
         if (path is not null)
         {
-            _json.WriteJson(path, _snapshot.BuildProgram(symbols, program));
+            _json.WriteJson(path, _snapshot.BuildProgram(symbols, program), CompilerDiagnosticArtifactJsonContext.Default.CompilerProgramArtifact);
         }
     }
 }

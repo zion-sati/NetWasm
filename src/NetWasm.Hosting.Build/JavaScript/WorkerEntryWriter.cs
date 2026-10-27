@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -141,7 +142,7 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
     {
         ValidateClient(request);
         var exports = request.Exports.OrderBy(export => export.Name, StringComparer.Ordinal).ToArray();
-        var operations = JsonSerializer.Serialize(exports.Select(export => export.Name));
+        var operations = JsonSerializer.Serialize([.. exports.Select(export => export.Name)], HostingBuildJsonContext.Default.StringArray);
         var source = new StringBuilder();
         AppendLine(source, $"import {{ createWorkerSessionClient }} from {JavaScriptRuntime.Quoted(JavaScriptRuntime.WorkerClient)};");
         source.AppendLine();
@@ -263,9 +264,8 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
 
     private static string ModuleSpecifier(string path) => BrowserHostSource.ModuleSpecifier(path);
 
-    private static string Json(string value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
 
-    private static string Json<T>(IEnumerable<T> value) => JsonSerializer.Serialize(value);
 
     private static void AppendLine(StringBuilder builder, FormattableString value) =>
         builder.AppendLine(value.ToString(CultureInfo.InvariantCulture));

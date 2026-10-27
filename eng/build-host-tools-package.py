@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -45,6 +46,39 @@ def set_staged_version(stage: Path, version: str) -> None:
     path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 
+def publish_compiler(rid: str, environment: dict[str, str]) -> Path:
+    """Publish nwc with Native AOT for rid, which must be this host's.
+
+    The build has its own fixed artifacts root, so it shares no output with other
+    builds, and the paths its objects record are the same on every repeat; Apple's
+    linker records object times unless ZERO_AR_DATE is set.
+    """
+    output = ROOT / "artifacts/host-tools" / f"nwc-{rid}"
+    shutil.rmtree(output, ignore_errors=True)
+    environment = environment | {"ZERO_AR_DATE": "1"}
+    subprocess.run(
+        [
+            "dotnet", "publish",
+            str(ROOT / "src/NetWasm.Compiler.Cli/NetWasm.Compiler.Cli.csproj"),
+            "-c", "Release",
+            "-r", rid,
+            "-p:PublishAot=true",
+            "-p:ContinuousIntegrationBuild=true",
+            "--artifacts-path", str(output / "artifacts"),
+            "-o", str(output / "publish"),
+            "--disable-build-servers",
+            "--nologo",
+        ],
+        check=True,
+        cwd=ROOT,
+        env=environment,
+    )
+    compiler = output / "publish" / ("nwc.exe" if rid.startswith("win-") else "nwc")
+    if not compiler.is_file():
+        raise ValueError(f"Native AOT nwc was not produced: {compiler}")
+    return compiler
+
+
 def build_many(
     rid: str, versions: list[str], output: Path, cache: Path,
 ) -> list[Path]:
@@ -59,17 +93,19 @@ def build_many(
     epoch = subprocess.check_output(
         ["git", "-C", str(ROOT), "show", "-s", "--format=%ct", "HEAD"], text=True
     ).strip()
+    environment = os.environ.copy()
+    environment["SOURCE_DATE_EPOCH"] = epoch
     with tempfile.TemporaryDirectory(prefix="netwasm-host-tools-") as temporary:
         stage = Path(temporary) / "stage"
+        compiler = publish_compiler(rid, environment)
         subprocess.run(
             [sys.executable, str(ROOT / "eng/stage-host-tools.py"),
              "--rid", rid, "--version", versions[0],
-             "--output", str(stage), "--cache", str(cache), "--probe"],
+             "--output", str(stage), "--cache", str(cache), "--probe",
+             "--compiler", str(compiler)],
             check=True,
             cwd=ROOT,
         )
-        environment = os.environ.copy()
-        environment["SOURCE_DATE_EPOCH"] = epoch
         results = []
         for version in versions:
             set_staged_version(stage, version)

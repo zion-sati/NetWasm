@@ -8,5 +8,11 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
     <ProjectReference Include="../../src/NetWasm.Compiler.Cli/NetWasm.Compiler.Cli.csproj" />
+    <ProjectReference Include="../../src/NetWasm.CoreLib/NetWasm.CoreLib.csproj"
+                      ReferenceOutputAssembly="false"
+                      AdditionalProperties="Configuration=Release" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestSupport/TestAssets.cs" />
   </ItemGroup>
 </Project>

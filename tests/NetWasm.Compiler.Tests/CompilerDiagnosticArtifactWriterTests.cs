@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using NetWasm.Compiler.Diagnostics;
 using NetWasm.TestInfrastructure;
 
@@ -6,6 +7,9 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class CompilerDiagnosticArtifactWriterTests
 {
+    private static readonly JsonTypeInfo<CompilerStatusArtifact> StatusJson =
+        CompilerDiagnosticArtifactJsonContext.Default.CompilerStatusArtifact;
+
     [Fact]
     public void WritesJsonTextBytesAndCopiedFilesBelowTheirRequestedPaths()
     {
@@ -20,7 +24,8 @@ public sealed class CompilerDiagnosticArtifactWriterTests
 
         new CompilerDiagnosticJsonArtifactWriter().WriteJson(
             jsonPath,
-            new { Status = "ready" });
+            new CompilerStatusArtifact("ready", "test"),
+            StatusJson);
         new CompilerDiagnosticTextArtifactWriter().WriteText(textPath, "text");
         new CompilerDiagnosticBinaryArtifactWriter().WriteBinary(bytesPath, [1, 2, 3]);
         new CompilerDiagnosticSourceArtifactCopier().CopySource(
@@ -38,9 +43,11 @@ public sealed class CompilerDiagnosticArtifactWriterTests
         Assert.Equal(expected, File.ReadAllBytes(bytesPath));
         Assert.Equal("source", File.ReadAllText(sourcePath));
         Assert.Throws<ArgumentException>(() =>
-            new CompilerDiagnosticJsonArtifactWriter().WriteJson("", new { }));
+            new CompilerDiagnosticJsonArtifactWriter().WriteJson("", new CompilerStatusArtifact("ready", "test"), StatusJson));
         Assert.Throws<ArgumentNullException>(() =>
-            new CompilerDiagnosticJsonArtifactWriter().WriteJson(jsonPath, null!));
+            new CompilerDiagnosticJsonArtifactWriter().WriteJson(jsonPath, null!, StatusJson));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CompilerDiagnosticJsonArtifactWriter().WriteJson(jsonPath, new CompilerStatusArtifact("ready", "test"), null!));
         Assert.Throws<ArgumentNullException>(() =>
             new CompilerDiagnosticTextArtifactWriter().WriteText(textPath, null!));
         Assert.Throws<ArgumentNullException>(() =>
@@ -53,7 +60,7 @@ public sealed class CompilerDiagnosticArtifactWriterTests
         var rootSource = rootName + ".cs";
         try
         {
-            new CompilerDiagnosticJsonArtifactWriter().WriteJson(rootJson, new { Status = "root" });
+            new CompilerDiagnosticJsonArtifactWriter().WriteJson(rootJson, new CompilerStatusArtifact("root", "test"), StatusJson);
             new CompilerDiagnosticTextArtifactWriter().WriteText(rootText, "root");
             new CompilerDiagnosticBinaryArtifactWriter().WriteBinary(rootBytes, [4]);
             new CompilerDiagnosticSourceArtifactCopier().CopySource(

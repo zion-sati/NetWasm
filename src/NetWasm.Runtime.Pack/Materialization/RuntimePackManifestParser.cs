@@ -184,4 +184,7 @@ internal sealed class RuntimePackManifestParser : IRuntimePackManifestParser
 
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(RuntimePackManifest))]
+[JsonSerializable(typeof(RuntimeLayout))]
+[JsonSerializable(typeof(RuntimeNativeCacheEvidence))]
+[JsonSerializable(typeof(ImmutableArray<RuntimeLinkExport>))]
 internal sealed partial class RuntimePackJsonContext : JsonSerializerContext;

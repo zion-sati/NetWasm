@@ -22,11 +22,12 @@ internal sealed class CompilerEntryDiagnosticArtifactWriter(
         var path = _paths.ResolvePath(options, "02-entry.json");
         if (path is not null)
         {
-            _json.WriteJson(path, new
-            {
-                EntryPoint = entry.EntryPoint is { } entryPoint ? symbols.Format(entryPoint) : null,
-                Exports = entry.Exports.OrderBy(export => export.Name, StringComparer.Ordinal),
-            });
+            _json.WriteJson(
+                path,
+                new CompilerEntryArtifact(
+                    entry.EntryPoint is { } entryPoint ? symbols.Format(entryPoint) : null,
+                    [.. entry.Exports.OrderBy(export => export.Name, StringComparer.Ordinal)]),
+                CompilerDiagnosticArtifactJsonContext.Default.CompilerEntryArtifact);
         }
     }
 }

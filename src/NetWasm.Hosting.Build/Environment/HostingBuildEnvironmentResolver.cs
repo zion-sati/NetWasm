@@ -139,7 +139,10 @@ public sealed class HostingBuildEnvironmentResolver(
             _packagePaths.Resolve(
                 Path.GetFullPath(request.ToolchainPackageRoot),
                 node.Executable,
-                node.Compatibility));
+                node.Compatibility))
+        {
+            CompilerPath = package.Roles.GetValueOrDefault("nwc"),
+        };
     }
 
     private NativeBinaryenTool? ResolveOptionalTool(

@@ -27,10 +27,10 @@ internal sealed class PortableTestHostAssetResolver : IPortableTestHostAssetReso
         TestHostFileName,
         RuntimeConfigurationFileName,
     ];
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly PortableTestHostJsonContext Json = new(new()
     {
         PropertyNameCaseInsensitive = false,
-    };
+    });
     private readonly string _extensionRoot;
 
     internal PortableTestHostAssetResolver(string extensionRoot)
@@ -52,9 +52,9 @@ internal sealed class PortableTestHostAssetResolver : IPortableTestHostAssetReso
         PortableTestHostManifest manifest;
         try
         {
-            manifest = JsonSerializer.Deserialize<PortableTestHostManifest>(
+            manifest = JsonSerializer.Deserialize(
                 File.ReadAllBytes(manifestPath),
-                JsonOptions)
+                Json.PortableTestHostManifest)
                 ?? throw new InvalidDataException();
         }
         catch (Exception exception) when (exception is IOException or JsonException)

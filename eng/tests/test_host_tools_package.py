@@ -59,8 +59,17 @@ class HostToolsPackageTests(unittest.TestCase):
 
         def run(command, **_kwargs):
             command = [str(value) for value in command]
-            if command[1].endswith("stage-host-tools.py"):
+            if command[:2] == ["dotnet", "publish"]:
+                events.append("publish")
+                self.assertIn("-p:PublishAot=true", command)
+                self.assertEqual("1", _kwargs["env"]["ZERO_AR_DATE"])
+                self.assertEqual("win-x64", command[command.index("-r") + 1])
+                compiler = Path(command[command.index("-o") + 1]) / "nwc.exe"
+                compiler.parent.mkdir(parents=True)
+                compiler.write_bytes(b"nwc")
+            elif command[1].endswith("stage-host-tools.py"):
                 events.append("stage")
+                self.assertTrue(Path(command[command.index("--compiler") + 1]).is_file())
                 stage_root = Path(command[command.index("--output") + 1])
                 version = command[command.index("--version") + 1]
                 (stage_root / "tools/bin").mkdir(parents=True)
@@ -99,11 +108,13 @@ class HostToolsPackageTests(unittest.TestCase):
             build_host_tools.subprocess,
             "check_output",
             side_effect=("a" * 40 + "\n", "1\n"),
-        ), patch.object(build_host_tools.subprocess, "run", side_effect=run):
+        ), patch.object(build_host_tools.subprocess, "run", side_effect=run), \
+                patch.object(build_host_tools, "ROOT", Path(self.temporary.name) / "repository"):
             results = build_host_tools.build_many(
                 "win-x64", ["0.5.0-preview.1", "0.5.0"], output, cache
             )
 
+        self.assertEqual(["publish", "stage"], events[:2])
         self.assertEqual(1, events.count("stage"))
         self.assertEqual(
             [("pack", "0.5.0-preview.1"), ("pack", "0.5.0")],
@@ -132,6 +143,7 @@ class HostToolsPackageTests(unittest.TestCase):
             "licenses/LLVM-BLAKE3-LICENSE": b"blake3 notice",
             "licenses/LLVM-ThirdParty-NOTICES.txt": b"embedded notices",
             "licenses/Binaryen-LICENSE": b"binaryen notice",
+            **{packaged: (ROOT / source).read_bytes() for packaged, source in verify.COMPILER_NOTICES.items()},
             **{f"tools/bin/{role}": executable for role in verify.ROLES},
         }
         roles = {role: f"tools/bin/{role}" for role in verify.ROLES}
@@ -175,6 +187,13 @@ class HostToolsPackageTests(unittest.TestCase):
             del payload["licenses/Node-LICENSE"]
         if defect == "extra-binary":
             payload["tools/bin/unexpected"] = executable
+        if defect == "changed-compiler-notice":
+            payload["licenses/nwc-THIRD-PARTY-NOTICES.txt"] = b"changed"
+            data = payload["licenses/nwc-THIRD-PARTY-NOTICES.txt"]
+            file = next(item for item in manifest["files"]
+                        if item["path"] == "licenses/nwc-THIRD-PARTY-NOTICES.txt")
+            file["size"] = len(data)
+            file["sha256"] = hashlib.sha256(data).hexdigest()
         with zipfile.ZipFile(self.package, "w") as archive:
             metadata = {
                 "[Content_Types].xml": b"",
@@ -246,7 +265,7 @@ class HostToolsPackageTests(unittest.TestCase):
     def test_missing_notice_extra_binary_bad_hash_architecture_symlink_and_host_fail(self):
         for defect in (
             "missing-notice", "extra-binary", "wrong-hash",
-            "wrong-architecture", "symlink", "wrong-host",
+            "wrong-architecture", "symlink", "wrong-host", "changed-compiler-notice",
         ):
             with self.subTest(defect=defect):
                 self.make_package(defect=defect)
@@ -441,6 +460,7 @@ class HostToolsPackageTests(unittest.TestCase):
             "licenses/LLVM-BLAKE3-LICENSE": b"blake3 notice",
             "licenses/LLVM-ThirdParty-NOTICES.txt": b"embedded notices",
             "licenses/Binaryen-LICENSE": b"binaryen notice",
+            **{packaged: (ROOT / source).read_bytes() for packaged, source in verify.COMPILER_NOTICES.items()},
             **{path: bytes(binary) for path in roles.values()},
         }
         artifacts = self.pins["hostArtifacts"]

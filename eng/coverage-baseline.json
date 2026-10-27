@@ -32,7 +32,7 @@
       "line": 1.0,
       "branch": 1.0
     },
-    "NetWasm.Compiler.Cli.dll": {
+    "nwc.dll": {
       "line": 1.0,
       "branch": 1.0
     }

@@ -30,23 +30,23 @@ internal sealed class CompilerFailureDiagnosticArtifactWriter(
             return;
         }
         var directory = Path.GetFullPath(options.DiagnosticTracePath + ".passes");
-        _json.WriteJson(failure, new
-        {
-            Status = "failed",
-            Stage = stage,
-            Exception = exception.GetType().FullName,
-            exception.Message,
-            exception.StackTrace,
-            Diagnostic = exception is CompilerException compiler
-                ? compiler.Diagnostic.ToString()
-                : null,
-            Reproduce = _reproductionCommands.Build(options),
-            AvailableArtifacts = _artifacts.Enumerate(directory),
-        });
-        _json.WriteJson(_paths.ResolvePath(options, "observations.json")!, new
-        {
-            Desktop = "recorded by the differential correctness harness when available",
-            NetWasm = $"compiler failed during {stage}",
-        });
+        _json.WriteJson(
+            failure,
+            new CompilerFailureArtifact(
+                "failed",
+                stage,
+                exception.GetType().FullName,
+                exception.Message,
+                exception.StackTrace,
+                exception is CompilerException compiler ? compiler.Diagnostic.ToString() : null,
+                _reproductionCommands.Build(options),
+                _artifacts.Enumerate(directory)),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerFailureArtifact);
+        _json.WriteJson(
+            _paths.ResolvePath(options, "observations.json")!,
+            new CompilerObservationsArtifact(
+                "recorded by the differential correctness harness when available",
+                $"compiler failed during {stage}"),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerObservationsArtifact);
     }
 }

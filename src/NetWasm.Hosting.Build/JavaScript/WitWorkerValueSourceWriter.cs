@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Globalization;
 using NetWasm.Hosting.Deployment;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -10,7 +11,7 @@ public sealed record WitWorkerValueSource(string JavaScript, string TypeScript);
 public sealed record WitWorkerValueSourceRequest(
     int Id, WitWorkerValueLayout Layout, ImmutableDictionary<int, WitWorkerValueLayout> Layouts)
 {
-    public static string Json(string value) => JsonSerializer.Serialize(value);
+    public static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
     public static string Copy(WitWorkerValueReference reference, string expression) =>
         $"{(reference.Definition is { } id ? $"copyType{id.ToString(CultureInfo.InvariantCulture)}" : $"copy{reference.Primitive}")}({expression})";
     public string Type(WitWorkerValueReference reference) => reference.Definition is { } id

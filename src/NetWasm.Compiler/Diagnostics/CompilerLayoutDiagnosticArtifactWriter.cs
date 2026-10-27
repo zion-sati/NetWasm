@@ -22,7 +22,7 @@ internal sealed class CompilerLayoutDiagnosticArtifactWriter(
         var path = _paths.ResolvePath(options, "04-layouts.json");
         if (path is not null)
         {
-            _json.WriteJson(path, _snapshot.BuildLayouts(layouts));
+            _json.WriteJson(path, _snapshot.BuildLayouts(layouts), CompilerDiagnosticArtifactJsonContext.Default.CompilerLayoutsArtifact);
         }
     }
 }

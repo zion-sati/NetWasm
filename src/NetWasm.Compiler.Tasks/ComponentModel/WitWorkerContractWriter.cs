@@ -1,7 +1,7 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using NetWasm.Compiler.ComponentModel.Catalogs;
 using NetWasm.Compiler.Tasks.Artifacts;
+using NetWasm.Compiler.Tasks.MsBuild;
 
 namespace NetWasm.Compiler.Tasks.ComponentModel;
 
@@ -13,11 +13,6 @@ internal interface IWitWorkerContractWriter
 internal sealed class WitWorkerContractWriter(
     IByteArtifactWriter artifacts) : IWitWorkerContractWriter
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
     private readonly IByteArtifactWriter _artifacts = artifacts ??
         throw new ArgumentNullException(nameof(artifacts));
 
@@ -25,7 +20,7 @@ internal sealed class WitWorkerContractWriter(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(contract);
-        var serialized = JsonSerializer.SerializeToUtf8Bytes(contract, JsonOptions);
+        var serialized = JsonSerializer.SerializeToUtf8Bytes(contract, TaskJsonContext.CamelCaseMetadata.WitWorkerContract);
         var content = new byte[serialized.Length + 1];
         serialized.CopyTo(content, 0);
         content[^1] = (byte)'\n';

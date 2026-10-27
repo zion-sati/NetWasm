@@ -39,6 +39,7 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal(PathFor("binaryen.js"), task.BinaryenPath);
         Assert.Equal(PathFor("wasm-ld"), task.WasmLdPath);
         Assert.Equal("24.0.0", task.WasmLdVersion);
+        Assert.Empty(task.CompilerPath);
         Assert.Equal("NetWasm.Toolchain", task.ToolchainPackageId);
         Assert.Equal("0.1.0-preview.29", task.ToolchainPackageVersion);
         Assert.Equal(PathFor("command.wit.wasm"), task.CommandWitPackagePath);
@@ -55,6 +56,20 @@ public sealed class NetWasmResolveBuildEnvironmentTaskTests
         Assert.Equal(PathFor("bundle.mjs"), task.HostingBundleCommandPath);
         Assert.Equal("1.2.4", task.RolldownVersion);
         Assert.Equal("1.256.0", task.WasmToolsVersion);
+    }
+
+    [Fact]
+    public void ExecuteProjectsTheRestoredCompiler()
+    {
+        var task = new NetWasmResolveBuildEnvironmentTask(
+            new RecordingResolver(CreateEnvironment() with { CompilerPath = PathFor("nwc") }))
+        {
+            ToolchainPackageRoot = Root,
+        };
+
+        Assert.True(task.Execute());
+
+        Assert.Equal(PathFor("nwc"), task.CompilerPath);
     }
 
     [Fact]

@@ -35,7 +35,9 @@ command builds the 13 core packages from the audited checked-in runtime pack;
 it never regenerates native assets, pushes, or publishes them.
 The five native `NetWasm.HostTools.<host RID>` packages are produced and
 qualified separately on matching CI hosts, then verified alongside the neutral
-packages before publication. The Windows ARM64 `wasm-ld` binary is built once
+packages before publication. Each carries `nwc`, the compiler, published with
+Native AOT on its own host, so packaging needs that platform's Native AOT
+prerequisites, such as clang and zlib on Linux. The Windows ARM64 `wasm-ld` binary is built once
 by [NetWasm.NativeTools](https://github.com/zion-sati/NetWasm.NativeTools) from
 pinned LLVM source and published as a versioned release. This repository pins
 the exact release archive SHA-256 and verifies its native ARM64 build receipt

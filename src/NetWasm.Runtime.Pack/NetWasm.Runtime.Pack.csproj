@@ -12,7 +12,6 @@
     <IsPackable>true</IsPackable>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <NoPackageAnalysis>true</NoPackageAnalysis>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <NetWasmRuntimePackAssetRoot Condition="'$(NetWasmRuntimePackAssetRoot)' == ''">$(MSBuildThisFileDirectory)runtime</NetWasmRuntimePackAssetRoot>
   </PropertyGroup>

@@ -1,13 +1,14 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Execution;
 
 /// <summary>Decodes a strict transport-safe execution result.</summary>
 public sealed class NetWasmExecutionResultReader : INetWasmExecutionResultReader
 {
-    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly HostingJsonContext Json = new(CreateJsonOptions());
     private readonly INetWasmExecutionResultValidator _validator;
 
     public NetWasmExecutionResultReader(INetWasmExecutionResultValidator validator)
@@ -17,7 +18,7 @@ public sealed class NetWasmExecutionResultReader : INetWasmExecutionResultReader
 
     public NetWasmExecutionResult Read(ReadOnlyMemory<byte> utf8Json)
     {
-        var result = JsonSerializer.Deserialize<NetWasmExecutionResult>(utf8Json.Span, JsonOptions)
+        var result = JsonSerializer.Deserialize(utf8Json.Span, Json.NetWasmExecutionResult)
             ?? throw new JsonException("A NetWasm execution result must be a JSON object.");
         _validator.Validate(result);
         return result;

@@ -54,7 +54,7 @@ internal sealed class RuntimeMaterializationCacheReader : IRuntimeMaterializatio
             var evidenceBytes = reader.ReadBytes(evidenceLength);
             if (!string.Equals(CalculateDigest(evidenceBytes), evidenceDigest, StringComparison.OrdinalIgnoreCase))
                 return Corrupt();
-            var nativeEvidence = JsonSerializer.Deserialize<RuntimeNativeCacheEvidence>(evidenceBytes);
+            var nativeEvidence = JsonSerializer.Deserialize(evidenceBytes, RuntimePackJsonContext.Default.RuntimeNativeCacheEvidence);
 
             var bytes = new byte[(int)length];
             stream.ReadExactly(bytes);

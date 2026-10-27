@@ -1,13 +1,14 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Execution;
 
 /// <summary>Produces a deterministic transport-safe execution result as UTF-8 without BOM and with LF formatting.</summary>
 public sealed class NetWasmExecutionResultWriter : INetWasmExecutionResultWriter
 {
-    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly HostingJsonContext Json = new(CreateJsonOptions());
     private readonly INetWasmExecutionResultValidator _validator;
 
     public NetWasmExecutionResultWriter(INetWasmExecutionResultValidator validator)
@@ -19,7 +20,7 @@ public sealed class NetWasmExecutionResultWriter : INetWasmExecutionResultWriter
     {
         ArgumentNullException.ThrowIfNull(result);
         _validator.Validate(result);
-        return JsonSerializer.SerializeToUtf8Bytes(result, JsonOptions);
+        return JsonSerializer.SerializeToUtf8Bytes(result, Json.NetWasmExecutionResult);
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

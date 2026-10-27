@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using NetWasm.Hosting.Execution;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -101,9 +102,8 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
     private static string ModuleSpecifier(string path) =>
         Json(new Uri(Path.GetFullPath(path)).AbsoluteUri);
 
-    private static string Json(string value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
 
-    private static string Json<T>(IEnumerable<T> value) => JsonSerializer.Serialize(value);
 
     private static void AppendLine(StringBuilder builder, FormattableString value) =>
         builder.AppendLine(value.ToString(CultureInfo.InvariantCulture));

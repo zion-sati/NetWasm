@@ -6,7 +6,7 @@ artifacts="${NETWASM_INSTANCE_LIFETIME_ARTIFACT_DIR:-$(mktemp -d "${TMPDIR:-/tmp
 sdk_root="${DOTNET_ROOT:-/usr/local/share/dotnet}"
 sdk_version="$(node -p "require(process.argv[1]).sdk.version" "$repo_root/global.json")"
 csc="$sdk_root/sdk/$sdk_version/Roslyn/bincore/csc.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
 profile="${NETWASM_INSTANCE_LIFETIME_CIL:-all}"
 case "$profile" in
@@ -32,10 +32,10 @@ for configuration in "${configurations[@]}"; do
     (
       set -e
       prefix="$artifacts/$configuration-$target"
-      dotnet "$compiler" --input "$assembly" --reference "$corelib" \
-        --entry 'NetWasm.Fixtures.InstanceLifetime.EntryPoint::Run' \
-        --target "$target" --output "$prefix.application.wasm" \
-        --interop-manifest "$prefix.manifest.json" --runtime-layout "$prefix.layout.json"
+      dotnet "$compiler" "$assembly" -r:"$corelib" \
+        -target:function -entry:'NetWasm.Fixtures.InstanceLifetime.EntryPoint::Run' \
+        -platform:"$target" -out:"$prefix.application.wasm" \
+        -interopmanifest:"$prefix.manifest.json" -runtimelayout:"$prefix.layout.json"
       bash "$repo_root/eng/build-netwasm-runtime.sh" --runtime-layout "$prefix.layout.json" \
         --target "$target" --configuration release --output "$prefix.runtime.wasm"
       features=(--enable-exception-handling --enable-bulk-memory --enable-multimemory \

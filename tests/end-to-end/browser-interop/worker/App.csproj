@@ -6,7 +6,6 @@
     <AssemblyName>BrowserWorker</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <NetWasmJavaScriptModule Include="notifications.mjs" Module="app.host" />

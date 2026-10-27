@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -11,10 +10,6 @@ namespace NetWasm.Compiler.Tasks.MsBuild;
 
 public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.Task
 {
-    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
     private readonly IWitFunctionProjectionSessionFactory _sessions;
     private readonly IWitWorkerContractWriter _workerContracts;
 
@@ -101,10 +96,10 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
         item.SetMetadata("Name", function.Name);
         item.SetMetadata("Parameters", JsonSerializer.Serialize(
             function.Parameters,
-            MetadataJsonOptions));
+            TaskJsonContext.Metadata.ImmutableArrayString));
         item.SetMetadata("Results", JsonSerializer.Serialize(
             function.Results,
-            MetadataJsonOptions));
+            TaskJsonContext.Metadata.ImmutableArrayString));
         return item;
     }
 

@@ -42,4 +42,9 @@ public sealed record HostingBuildEnvironment(
     ResolvedHostExecutable WasmLd,
     ValidatedHostToolCompatibility WasmLdCompatibility,
     NativeBinaryenTools Binaryen,
-    ToolchainPackagePaths Toolchain);
+    ToolchainPackagePaths Toolchain)
+{
+    // nwc, the NetWasm compiler, from the restored host tools; null when the tools
+    // come from the host or predate it.
+    public string? CompilerPath { get; init; }
+}

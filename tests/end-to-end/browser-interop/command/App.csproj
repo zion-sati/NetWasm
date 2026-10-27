@@ -5,7 +5,6 @@
     <AssemblyName>BrowserCommand</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NetWasmRawWasm>true</NetWasmRawWasm>
     <NetWasmComponentContract>async-command</NetWasmComponentContract>
     <NetWasmPublishTarget>browser</NetWasmPublishTarget>

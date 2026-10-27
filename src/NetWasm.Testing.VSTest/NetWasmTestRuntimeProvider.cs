@@ -4,6 +4,7 @@ using Microsoft.VisualStudio.TestPlatform.ObjectModel.Host;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel.Logging;
 using NetWasm.Testing.VSTest.Configuration;
 using NetWasm.Testing.VSTest.Hosting;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NetWasm.Testing.VSTest;
 
@@ -28,6 +29,10 @@ public sealed class NetWasmTestRuntimeProvider : ITestRuntimeProvider2
     private bool _launching;
     private bool _hostExitedRaised;
 
+    [UnconditionalSuppressMessage(
+        "SingleFile",
+        "IL3000:Avoid accessing Assembly file path when publishing as a single file",
+        Justification = "The test platform loads this extension from its package folder, never from a single-file bundle.")]
     public NetWasmTestRuntimeProvider()
         : this(
             new NetWasmRunSettingsReader(),

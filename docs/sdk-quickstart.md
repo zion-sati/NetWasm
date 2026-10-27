@@ -46,9 +46,10 @@ release containing this change before relying on it in a published SDK.
 For an ordinary application or test project, no separate Emscripten, Node.js,
 LLVM/LLD, Binaryen, Git or Python installation is needed. `dotnet restore`
 selects one host-tools NuGet package for the machine doing the build. That
-package supplies the pinned Node, `wasm-ld`, `wasm-merge` and `wasm-opt` tools.
-The first restore downloads the package (about 79 MB compressed on macOS
-ARM64, plus the other NetWasm dependencies); NuGet caches it for subsequent
+package supplies `nwc`, the NetWasm compiler, as a native executable, and the
+pinned Node, `wasm-ld`, `wasm-merge` and `wasm-opt` tools. The first restore
+downloads the package (about 87 MB compressed on macOS ARM64, plus the other
+NetWasm dependencies); NuGet caches it for subsequent
 projects. Package sizes differ by host. Builds do not download tools.
 
 After a successful restore, `dotnet build --no-restore`, `dotnet run

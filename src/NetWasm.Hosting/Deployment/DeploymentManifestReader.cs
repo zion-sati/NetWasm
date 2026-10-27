@@ -1,13 +1,14 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Deployment;
 
 /// <summary>Decodes a strict publish-safe deployment manifest without accessing files or tools.</summary>
 public sealed class DeploymentManifestReader : IDeploymentManifestReader
 {
-    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly HostingJsonContext Json = new(CreateJsonOptions());
     private readonly IDeploymentManifestValidator _validator;
 
     public DeploymentManifestReader(IDeploymentManifestValidator validator)
@@ -17,7 +18,7 @@ public sealed class DeploymentManifestReader : IDeploymentManifestReader
 
     public DeploymentManifest Read(ReadOnlyMemory<byte> utf8Json)
     {
-        var manifest = JsonSerializer.Deserialize<DeploymentManifest>(utf8Json.Span, JsonOptions)
+        var manifest = JsonSerializer.Deserialize(utf8Json.Span, Json.DeploymentManifest)
             ?? throw new JsonException("A NetWasm deployment manifest must be a JSON object.");
         _validator.Validate(manifest);
         return manifest;

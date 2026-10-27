@@ -1,8 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <AssemblyName>nwc</AssemblyName>
+    <RootNamespace>NetWasm.Compiler.Cli</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- The compiler reads no culture data, so a Native AOT nwc needs no ICU on the host. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+  <!-- MSVC's linker stamps the time into each image unless /Brepro, which a
+       repeatable Native AOT nwc needs. -->
+  <ItemGroup Condition="'$(PublishAot)' == 'true' AND $(RuntimeIdentifier.StartsWith('win-'))">
+    <LinkerArg Include="/Brepro" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />

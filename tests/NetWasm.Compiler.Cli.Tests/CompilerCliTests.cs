@@ -1,69 +1,131 @@
-using Microsoft.Extensions.DependencyInjection;
-using NetWasm.Compiler.Cli;
+using System.Collections.Frozen;
+using NetWasm.Compiler.Cli.Tests.TestSupport;
+using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Cli.Tests;
 
 public sealed class CompilerCliTests
 {
-    [Fact]
-    public void RoutesNamedCommandsWithoutTheirCommandToken()
-    {
-        var compile = new RecordingCommand(CompileCliCommand.CommandName);
-        var componentize = new RecordingCommand("componentize");
-        var cli = new CompilerCli([compile, componentize]);
+    private const string Banner = "Copyright (C) 2026 Zion Sati. All rights reserved.";
 
-        var result = cli.Run(["componentize", "--wit", "contract.wit"]);
+    [Fact]
+    public void RoutesANamedCommandWithItsOwnOptions()
+    {
+        var compile = new RecordingCommand(string.Empty, "out");
+        var componentize = new RecordingCommand("componentize", "coremodule");
+        var cli = Create(new RecordingConsole(), compile, componentize);
+
+        var result = cli.Run(["componentize", "-nologo", "-coremodule:app.wasm"]);
 
         Assert.Equal(17, result);
-        Assert.NotNull(componentize.Arguments);
-        Assert.Equal(["--wit", "contract.wit"], componentize.Arguments);
+        Assert.Equal("app.wasm", componentize.Arguments!.Options[^1].Value);
         Assert.Null(compile.Arguments);
     }
 
-    [Fact]
-    public void RoutesUnprefixedArgumentsToTheCompileCommand()
+    [Theory]
+    [InlineData("App.dll")]
+    [InlineData("")]
+    public void RoutesEverythingElseToCompile(string first)
     {
-        var compile = new RecordingCommand(CompileCliCommand.CommandName);
-        var cli = new CompilerCli([compile]);
+        var compile = new RecordingCommand(string.Empty, "out");
+        var cli = Create(new RecordingConsole(), compile, new RecordingCommand("componentize"));
 
-        cli.Run(["--input", "application.dll"]);
+        cli.Run([first, "-nologo"]);
 
-        Assert.NotNull(compile.Arguments);
-        Assert.Equal(["--input", "application.dll"], compile.Arguments);
+        Assert.Equal([first], compile.Arguments!.Inputs);
     }
 
     [Fact]
-    public void RejectsNullArguments()
+    public void PrintsTheBannerFirstUnlessNoLogo()
     {
-        var cli = new CompilerCli([]);
+        var console = new RecordingConsole();
+        var compile = new RecordingCommand(string.Empty);
+        var files = new InMemoryTextFiles(new() { ["quiet.rsp"] = "-nologo" });
+        var cli = new CompilerCli([compile], files, console, NwcTestArguments.ConsoleLogger<CompilerCli>(console));
 
-        Assert.Throws<ArgumentNullException>(() => cli.Run(null!));
+        cli.Run([]);
+        var bannerLines = console.Lines.ToArray();
+        cli.Run(["-nologo"]);
+        cli.Run(["@quiet.rsp"]);
+
+        Assert.Equal(3, bannerLines.Length);
+        Assert.StartsWith("NetWasm Compiler version ", bannerLines[0], StringComparison.Ordinal);
+        Assert.Equal([Banner, string.Empty], bannerLines[1..]);
+        Assert.Equal(bannerLines, console.Lines);
     }
 
     [Fact]
-    public void RegistersCommandsAndCapabilities()
+    public void ReportsEveryArgumentErrorAfterTheBannerWithoutRunningTheCommand()
     {
-        var services = new ServiceCollection();
-        services.AddNetWasmCompilerCli();
+        var console = new RecordingConsole();
+        var compile = new RecordingCommand(string.Empty);
+        var cli = Create(console, compile);
 
-        Assert.Contains(services, descriptor =>
-            descriptor.ServiceType == typeof(ITextFileReader));
+        var result = cli.Run(["-unknown", "@missing.rsp", "-help"]);
+
+        Assert.Equal(1, result);
+        Assert.Null(compile.Arguments);
+        Assert.Equal(
+            [
+                Banner,
+                string.Empty,
+                "error NW1000: unrecognized option '-unknown'",
+                "error NW1000: cannot read response file 'missing.rsp': Could not find file 'missing.rsp'.",
+            ],
+            console.Lines[1..]);
+    }
+
+    [Theory]
+    [InlineData("-help")]
+    [InlineData("/?")]
+    public void HelpSummarizesTheOptionsWithoutRunningTheCommand(string help)
+    {
+        var console = new RecordingConsole();
+        var componentize = new RecordingCommand("componentize");
+        var cli = Create(console, new RecordingCommand(string.Empty), componentize);
+
+        var result = cli.Run(["componentize", "-nologo", help]);
+
+        Assert.Equal(0, result);
+        Assert.Null(componentize.Arguments);
+        Assert.Equal("                             NetWasm Compiler Options", console.Lines[0]);
     }
 
     [Fact]
-    public void ProgramConvertsCompilerDiagnosticsToExitCode()
+    public void ACommonFlagTakesNoValue()
     {
-        var exitCode = Program.Main(["--unknown", "value"]);
+        var cli = Create(new RecordingConsole(), new RecordingCommand(string.Empty));
 
-        Assert.Equal(1, exitCode);
+        var exception = Assert.Throws<CompilerException>(() => cli.Run(["-nologo:yes"]));
+
+        Assert.Equal("option '-nologo:yes' takes no value", exception.Diagnostic.Message);
     }
 
-    private sealed class RecordingCommand(string name) : ICompilerCliCommand
+    [Fact]
+    public void RejectsMissingInputs()
+    {
+        var console = new RecordingConsole();
+        var files = new InMemoryTextFiles();
+        var logger = NwcTestArguments.ConsoleLogger<CompilerCli>(console);
+
+        Assert.Throws<ArgumentNullException>(() => Create(console).Run(null!));
+        Assert.Throws<ArgumentNullException>(() => new CompilerCli([], null!, console, logger));
+        Assert.Throws<ArgumentNullException>(() => new CompilerCli([], files, null!, logger));
+        Assert.Throws<ArgumentNullException>(() => new CompilerCli([], files, console, null!));
+    }
+
+    private static CompilerCli Create(RecordingConsole console, params ICompilerCliCommand[] commands) =>
+        new(commands, new InMemoryTextFiles(), console, NwcTestArguments.ConsoleLogger<CompilerCli>(console));
+
+    private sealed class RecordingCommand(string name, params string[] options) : ICompilerCliCommand
     {
         public string Name => name;
-        public string[]? Arguments { get; private set; }
 
-        public int Run(string[] arguments)
+        public FrozenSet<string> Options { get; } = options.ToFrozenSet(StringComparer.Ordinal);
+
+        public NwcArguments? Arguments { get; private set; }
+
+        public int Run(NwcArguments arguments)
         {
             Arguments = arguments;
             return 17;

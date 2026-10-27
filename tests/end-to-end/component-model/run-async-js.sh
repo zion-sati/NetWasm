@@ -6,7 +6,7 @@ artifact_root="${NETWASM_COMPONENT_ASYNC_JS_ARTIFACT_DIR:-$repo_root/tests/end-t
 toolchain="$repo_root/eng/toolchain.json"
 sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit="$repo_root/tests/end-to-end/component-model/fixtures/async-js-wit"
 compatibility_host="$repo_root/src/NetWasm.Runtime/browser-host.mjs"
 
@@ -23,15 +23,15 @@ dotnet "$csc" -nologo -noconfig -nostdlib -langversion:latest \
 for target in wasm32 wasm64; do
     for repeat in first second; do
         dotnet "$compiler" \
-            --input "$artifact_root/AsyncJavaScriptInterop.dll" \
-            --reference "$corelib" \
-            --entry 'NetWasm.Fixtures.JavaScriptInterop.EntryPoint::Run' \
-            --wit "$wit" \
-            --javascript-export-boundary true \
-            --target "$target" \
-            --output "$artifact_root/application.$target.$repeat.wasm" \
-            --interop-manifest "$artifact_root/interop.$target.$repeat.json" \
-            --runtime-layout "$artifact_root/runtime-layout.$target.$repeat.json"
+            "$artifact_root/AsyncJavaScriptInterop.dll" \
+            -r:"$corelib" \
+            -target:function -entry:'NetWasm.Fixtures.JavaScriptInterop.EntryPoint::Run' \
+            -wit:"$wit" \
+            -jsexportboundary+ \
+            -platform:"$target" \
+            -out:"$artifact_root/application.$target.$repeat.wasm" \
+            -interopmanifest:"$artifact_root/interop.$target.$repeat.json" \
+            -runtimelayout:"$artifact_root/runtime-layout.$target.$repeat.json"
     done
     cmp "$artifact_root/application.$target.first.wasm" \
         "$artifact_root/application.$target.second.wasm"

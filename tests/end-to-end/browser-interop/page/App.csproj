@@ -6,7 +6,6 @@
     <AssemblyName>BrowserPage</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>

@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -9,10 +8,6 @@ namespace NetWasm.Compiler.Tasks.MsBuild;
 
 public sealed class NetWasmReadRawBindingManifestTask : Microsoft.Build.Utilities.Task
 {
-    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
     private readonly IRawBindingManifestReader _reader;
 
     public NetWasmReadRawBindingManifestTask() : this(new RawBindingManifestReader()) { }
@@ -60,8 +55,8 @@ public sealed class NetWasmReadRawBindingManifestTask : Microsoft.Build.Utilitie
         var item = new TaskItem($"{function.Interface}/{function.Name}");
         item.SetMetadata("Interface", function.Interface);
         item.SetMetadata("Name", function.Name);
-        item.SetMetadata("Parameters", JsonSerializer.Serialize(function.Parameters, MetadataJsonOptions));
-        item.SetMetadata("Results", JsonSerializer.Serialize(function.Results, MetadataJsonOptions));
+        item.SetMetadata("Parameters", JsonSerializer.Serialize(function.Parameters, TaskJsonContext.Metadata.ImmutableArrayString));
+        item.SetMetadata("Results", JsonSerializer.Serialize(function.Results, TaskJsonContext.Metadata.ImmutableArrayString));
         return item;
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Linq;
 using System.Text.Json;
 using NetWasm.Compiler.ComponentModel;
@@ -31,13 +32,15 @@ internal sealed class ComponentizeCliCommand(
     private readonly IManagedInliningHintsParser _inlineHints = inlineHints ??
         throw new ArgumentNullException(nameof(inlineHints));
 
-    public string Name => "componentize";
+    public string Name => ComponentizeCliOptions.CommandName;
 
-    public int Run(string[] arguments)
+    public FrozenSet<string> Options => ComponentizeCliOptions.Names;
+
+    public int Run(NwcArguments arguments)
     {
         var options = ComponentizeCliOptions.Parse(arguments);
         var optimizationOverrides = _inlineHints.Parse(options.ManagedInliningHints);
-        var target = options.Target == WasmTarget.Wasm32
+        var target = options.Platform == WasmTarget.Wasm32
             ? ComponentTarget.Wasm32Wasi02
             : ComponentTarget.Wasm64Wasi02;
         var document = _documents.Read(options.Wit);
@@ -57,7 +60,7 @@ internal sealed class ComponentizeCliCommand(
             options.RuntimeModule,
             Optimization: options.Optimization)
         { OptimizationOverrides = optimizationOverrides });
-        _textFiles.Write(options.Manifest, CliJson.Serialize(manifest));
+        _textFiles.Write(options.Manifest, JsonSerializer.Serialize(manifest, CliJsonContext.Default.ComponentManifest));
         return 0;
     }
 }
@@ -69,11 +72,6 @@ internal interface IComponentManifestInputReader
 
 internal sealed class ComponentManifestInputReader : IComponentManifestInputReader
 {
-    private static readonly JsonSerializerOptions ReadOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly ITextFileReader _textFiles;
 
     public ComponentManifestInputReader(ITextFileReader textFiles)
@@ -86,14 +84,14 @@ internal sealed class ComponentManifestInputReader : IComponentManifestInputRead
         ArgumentNullException.ThrowIfNull(options);
         var interop = options.InteropManifest is null
             ? null
-            : JsonSerializer.Deserialize<HostInteropManifest>(
+            : JsonSerializer.Deserialize(
                 _textFiles.Read(options.InteropManifest),
-                ReadOptions)
+                CliReadJsonContext.Default.HostInteropManifest)
               ?? throw CliOptionException.Create(
                   $"interop manifest '{options.InteropManifest}' is empty");
         if (interop is not null)
         {
-            var expectedTarget = options.Target == WasmTarget.Wasm64
+            var expectedTarget = options.Platform == WasmTarget.Wasm64
                 ? "wasm64"
                 : "wasm32";
             if (interop.Target != expectedTarget)

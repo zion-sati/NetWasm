@@ -7,7 +7,6 @@
     <NetWasmTimeZoneMode>Selected</NetWasmTimeZoneMode>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <NetWasmTimeZone Include="Australia/Melbourne;America/New_York" />

@@ -29,7 +29,7 @@ internal sealed class CompilerMetadataDiagnosticArtifactWriter(
         var path = _paths.ResolvePath(options, "01-metadata.json");
         if (path is not null)
         {
-            _json.WriteJson(path, _snapshot.BuildMetadata(metadata, bodies, symbols));
+            _json.WriteJson(path, _snapshot.BuildMetadata(metadata, bodies, symbols), CompilerDiagnosticArtifactJsonContext.Default.CompilerMetadataArtifact);
         }
     }
 }

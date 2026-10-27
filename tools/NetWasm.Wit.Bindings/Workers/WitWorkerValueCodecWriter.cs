@@ -16,7 +16,7 @@ public sealed record WitWorkerValueCodecRequest(
     public string Type(JsonElement reference) => Type(WitWorkerValueLayoutPlanner.ReadReference(reference));
     public string Name => Type(new WitWorkerValueReference("defined", null, Id));
     public string Identifier(string value) => Syntax.Format(new WitBindingSyntaxRequest.Identifier(value));
-    public static string Json(string value) => JsonSerializer.Serialize(value);
+    public static string Json(string value) => JsonSerializer.Serialize(value, WitWorkerJsonContext.Default.String);
     public static string Suffix(WitWorkerValueReference reference) => reference.Definition is { } id
         ? "Type" + id.ToString(CultureInfo.InvariantCulture) : reference.Primitive!;
     public static string Suffix(JsonElement reference) => Suffix(WitWorkerValueLayoutPlanner.ReadReference(reference));
@@ -135,7 +135,7 @@ public sealed class WitWorkerEnumValueCodecWriter : IWitWorkerValueCodecWriter
     {
         var cases = request.Layout.Value.GetProperty("cases").EnumerateArray()
             .Select(item => item.GetProperty("name").GetString()!).ToArray();
-        var names = JsonSerializer.Serialize(cases);
+        var names = JsonSerializer.Serialize(cases, WitWorkerJsonContext.Default.StringArray);
         return new($"var tag = (uint)value; if (tag >= {cases.Length}u) throw InvalidWire(); Writeu32(writer, tag);",
             $"var tag = Readu32(reader); if (tag >= {cases.Length}u) throw InvalidWire(); return ({request.Name})tag;",
             $"const tag = {names}.indexOf(value); if (tag < 0) throw invalidWire(); writeu32(writer, tag);",

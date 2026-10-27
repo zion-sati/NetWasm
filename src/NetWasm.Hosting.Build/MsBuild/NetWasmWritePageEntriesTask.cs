@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Microsoft.Build.Framework;
 using NetWasm.Hosting.Build.JavaScript;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.MsBuild;
 
@@ -122,7 +123,7 @@ internal static class JavaScriptExportItems
                 : ReadSignature(item.GetMetadata("ParameterNames")),
             NonNullableParameters = string.IsNullOrWhiteSpace(item.GetMetadata("NonNullableParameters"))
                 ? []
-                : [.. JsonSerializer.Deserialize<bool[]>(item.GetMetadata("NonNullableParameters"))
+                : [.. JsonSerializer.Deserialize(item.GetMetadata("NonNullableParameters"), HostingBuildJsonContext.Default.BooleanArray)
                     ?? throw new ArgumentException("JavaScript export nullability must be a JSON array.")],
             NonNullableResult = item.GetMetadata("NonNullableResult") == "true",
         })];
@@ -137,7 +138,7 @@ internal static class JavaScriptExportItems
 
     private static ImmutableArray<string> ReadSignature(string json)
     {
-        var values = JsonSerializer.Deserialize<string[]>(json) ??
+        var values = JsonSerializer.Deserialize(json, HostingBuildJsonContext.Default.StringArray) ??
             throw new ArgumentException("JavaScript export signatures must be JSON arrays.");
         if (values.Any(value => value is null))
         {

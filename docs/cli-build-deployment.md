@@ -1,8 +1,8 @@
 # CLI, build, and deployment entry points
 
 For application development, see the [SDK quickstart](sdk-quickstart.md).
-This page covers source builds and the low-level compiler CLI at
-`src/NetWasm.Compiler.Cli/bin/<Configuration>/net10.0/NetWasm.Compiler.Cli.dll`.
+This page covers source builds and the compiler, `nwc`, built from source at
+`src/NetWasm.Compiler.Cli/bin/<Configuration>/net10.0/nwc.dll`.
 
 ## Build
 
@@ -21,30 +21,50 @@ Ninja, Git, Python 3 and the repository's pinned validation tools. Set
 `NETWASM_EMSDK_ROOT` only for repository workflows that intentionally select an
 Emscripten root outside the activated shell.
 
-## CLI commands
+## The compiler, nwc
 
-The default command is compilation. Its required options are
-`--input <assembly>`, `--entry Namespace.Type::Method`, and
-`--output <core-module>`. Repeat `--reference <assembly>` for the closed
-reference closure. `--target wasm32|wasm64` defaults to wasm32.
+`nwc` compiles one managed assembly to a core WebAssembly module. Its command
+line follows `csc`: an option starts with `-` (or `/`), takes its value after a
+colon, a switch ends in `+` or `-`, and `@file` reads more options from a
+response file.
 
-Optional compile options are `--export name=Namespace.Type::Method`,
-`--interop-manifest`, `--host-adapter`, `--runtime-layout`,
-`--diagnostic-log`, `--diagnostic-trace`, `--stack-trace-symbols`, `--wit`, `--world`, and
-`--source`. `[JSImport]`/`[JSExport]` declarations describe the generated raw
-JavaScript boundary; WIT declarations require a selected world.
+```sh
+nwc -out:application.wasm -r:NetWasm.CoreLib.dll -runtimelayout:layout.json App.dll
+```
 
-`--diagnostic-log <path>` enables the structured compiler `ILogger` stream
-and writes JSON Lines to that file. `--diagnostic-trace <path>` enables the
+`-target:exe`, the default, compiles an executable from the assembly's entry
+point, `-target:library` a library, and `-target:function` a module entered
+through the static method `-entry:Namespace.Type::Method` names.
+`-export:name=Namespace.Type::Method` exports more static methods. `-r:<assembly>`
+references the closed reference closure; repeat it or separate files with `,`
+or `;`. `-platform:wasm32|wasm64` defaults to wasm32 and
+`-optimize:None|O0|O1|O2|O3|Os|Oz` to Oz.
+
+The sidecars are written only when an option names them: `-interopmanifest`,
+`-runtimelayout`, `-compilermetadata`, `-exceptiontypemap` and
+`-stacktracesymbols`. Native callbacks need `-runtimelayout`; their object file
+is the output's name with `.callbacks.o` unless `-callbackobject:<file>` names
+it. `-wit` and `-world` select the WIT package and world, and `-source` names a
+source file for stack traces. `[JSImport]`/`[JSExport]` declarations describe
+the generated raw JavaScript boundary; WIT declarations require a selected
+world.
+
+`nwc` prints its banner unless `-nologo`, reports a failure as
+`error NW1234: message`, the form MSBuild reads as a build error, and exits
+with code 1. `nwc -help` lists every option.
+
+`-diagnosticlog:<path>` enables the structured compiler `ILogger` stream
+and writes JSON Lines to that file. `-diagnostictrace:<path>` enables the
 full compiler support trace and automatically writes the same log to
 `<path>.passes/compiler.log.jsonl` unless an explicit diagnostic-log path is
 also supplied. Both facilities are disabled by default. See
 [compiler diagnostics](diagnostics.md#compiler-support-bundles) before
 sharing these artifacts.
 
-`--stack-trace-symbols <path>` enables opt-in managed stack-trace
-instrumentation and writes its symbol sidecar. It is not DWARF/source-level
-debug information; see the [support status and roadmap](support-status.md#managed-stack-traces).
+`-stacktracesymbols:<path>` is opt-in managed stack-trace instrumentation:
+it writes the symbol sidecar needed to resolve captured managed frames. It is
+not DWARF or source-level debug information. See the [support status and
+roadmap](support-status.md#managed-stack-traces).
 
 The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
 bindings; the compiler CLI does not generate C# source. Install and invoke it:
@@ -67,9 +87,9 @@ The optional `--accessibility public|internal` selects generated top-level
 accessibility (default: public). See [WIT-to-C# bindings](wit-bindings.md) for a
 complete contract, type mappings, dependencies, and regeneration.
 
-`componentize` accepts required `--core-module`, `--wit`, `--output`, and
-`--manifest`, plus optional `--runtime-module`, `--world`, `--target`,
-`--interop-manifest`, `--jco-version`, and `--preview2-shim-version`. Current
+`nwc componentize` accepts required `-coremodule`, `-wit`, `-out`, and
+`-manifest`, plus optional `-runtimemodule`, `-world`, `-platform`,
+`-interopmanifest`, `-jcoversion`, and `-preview2shimversion`. Current
 Component output is wasm32 + WASI 0.2; wasm64 fails with `NW1010` rather than
 downgrading. The SDK validates generated products with its packaged,
 integrity-checked wasm-tools module.

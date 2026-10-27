@@ -1,3 +1,4 @@
+using NetWasm.Sdk.Pack;
 namespace NetWasm.Sdk.Pack.Diagnostics;
 
 public sealed class FilePackDiagnosticWriter : IPackDiagnosticWriter
@@ -13,7 +14,9 @@ public sealed class FilePackDiagnosticWriter : IPackDiagnosticWriter
         {
             var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
             Directory.CreateDirectory(directory!);
-            var json = System.Text.Json.JsonSerializer.Serialize(new { code = code.ToString(), message });
+            var json = System.Text.Json.JsonSerializer.Serialize(
+                new PackDiagnosticFile(code.ToString(), message),
+                SdkPackJsonContext.Default.PackDiagnosticFile);
             File.WriteAllText(outputPath, json);
         }
         catch (Exception)
@@ -23,3 +26,7 @@ public sealed class FilePackDiagnosticWriter : IPackDiagnosticWriter
         }
     }
 }
+
+internal sealed record PackDiagnosticFile(
+    [property: System.Text.Json.Serialization.JsonPropertyName("code")] string Code,
+    [property: System.Text.Json.Serialization.JsonPropertyName("message")] string Message);

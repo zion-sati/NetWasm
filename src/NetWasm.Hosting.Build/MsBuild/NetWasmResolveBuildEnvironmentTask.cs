@@ -34,6 +34,8 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
     [Output] public string WasmLdPath { get; private set; } = string.Empty;
     [Output] public string WasmLdSource { get; private set; } = string.Empty;
     [Output] public string WasmLdVersion { get; private set; } = string.Empty;
+    // nwc, the NetWasm compiler, when the restored host tools carry it.
+    [Output] public string CompilerPath { get; private set; } = string.Empty;
     [Output] public string ToolchainPackageId { get; private set; } = string.Empty;
     [Output] public string ToolchainPackageVersion { get; private set; } = string.Empty;
     [Output] public string CommandWitPackagePath { get; private set; } = string.Empty;
@@ -81,6 +83,7 @@ public sealed class NetWasmResolveBuildEnvironmentTask : Microsoft.Build.Utiliti
             WasmLdPath = result.WasmLd.AbsolutePath;
             WasmLdSource = result.WasmLd.Source.ToString();
             WasmLdVersion = result.WasmLdCompatibility.Version.ToString();
+            CompilerPath = result.CompilerPath ?? string.Empty;
             ToolchainPackageId = result.Toolchain.PackageId;
             ToolchainPackageVersion = result.Toolchain.PackageVersion;
             CommandWitPackagePath = result.Toolchain.WitPackages.CommandPath;

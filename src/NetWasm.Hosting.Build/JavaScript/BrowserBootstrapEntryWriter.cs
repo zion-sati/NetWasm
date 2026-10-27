@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -45,7 +46,7 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
         builder.AppendLine("});");
         builder.AppendLine();
         var moduleBindings = string.Join(", ", modules.Select((module, index) =>
-            $"[{JsonSerializer.Serialize(module.Module)}]: consumerModule{index}"));
+            $"[{JsonSerializer.Serialize(module.Module, HostingBuildJsonContext.Default.String)}]: consumerModule{index}"));
         builder.AppendLine("export const executeNetWasm = createBrowserNetWasmBootstrap({");
         builder.AppendLine("  manifestUrl,");
         builder.AppendLine("  preview2,");

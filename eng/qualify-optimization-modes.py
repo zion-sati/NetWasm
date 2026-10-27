@@ -51,6 +51,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Released host-tools version when it differs from the candidate version.",
     )
     parser.add_argument(
+        "--compiler",
+        type=Path,
+        help="The candidate's nwc, or nwc.dll; required with released host tools, "
+        "whose nwc is the released compiler.",
+    )
+    parser.add_argument(
         "--artifact-directory",
         type=Path,
         help="New directory in which to retain the complete qualification evidence.",
@@ -60,7 +66,10 @@ def parse_arguments() -> argparse.Namespace:
         type=Path,
         help="Write the path-free qualification receipt to this file.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.host_tools_version not in (None, args.version) and args.compiler is None:
+        parser.error("--host-tools-version supplies the released nwc; name the candidate's with --compiler")
+    return args
 
 
 def run(
@@ -283,7 +292,9 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
         stdout_path=logs / "app-create.log",
     )
     project = app / "NetWasmApp.csproj"
-    host_tools_property = f"-p:NetWasmHostToolsPackageVersion={host_tools_version}"
+    consumer_properties = [f"-p:NetWasmHostToolsPackageVersion={host_tools_version}"]
+    if args.compiler is not None:
+        consumer_properties.append(f"-p:NetWasmCompilerPath={args.compiler.resolve()}")
     run(
         [
             "dotnet",
@@ -293,7 +304,7 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
             str(nuget_config),
             "--disable-build-servers",
             "--nologo",
-            host_tools_property,
+            *consumer_properties,
         ],
         environment=environment,
         cwd=app,
@@ -308,7 +319,7 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
             "-target:NetWasmSdkResolveBuildEnvironment",
             "-getProperty:NetWasmNativeBinaryenWasmOptPath",
             "-nologo",
-            host_tools_property,
+            *consumer_properties,
         ],
         environment=environment,
         cwd=app,
@@ -356,7 +367,7 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
         )
         properties = [
             f"-p:NetWasmOptimization={mode}",
-            host_tools_property,
+            *consumer_properties,
             f"-p:BaseIntermediateOutputPath={intermediate}{os.sep}",
             f"-p:BaseOutputPath={binaries}{os.sep}",
         ]

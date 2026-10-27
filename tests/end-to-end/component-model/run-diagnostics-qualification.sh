@@ -10,7 +10,7 @@ wasmtime_version="$(node -p 'require(process.argv[1]).wasmtime' "$toolchain")"
 jco_version="$(node -p 'require(process.argv[1]).jco' "$toolchain")"
 shim_version="$(node -p 'require(process.argv[1]).preview2Shim' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit="$repo_root/tests/end-to-end/component-model/fixtures/diagnostics-wasi-wit"
 fixture="$repo_root/tests/end-to-end/component-model/fixtures/DiagnosticsComponent.cs"
 oracle="$repo_root/tests/end-to-end/component-model/run-jco-diagnostics-browser.mjs"
@@ -91,10 +91,10 @@ for configuration in debug release; do
 
     for target in wasm32 wasm64; do
         prefix="$artifact_root/$configuration.$target"
-        dotnet "$compiler" --input "$fixture_dll" --reference "$corelib" \
-            --entry 'NetWasm.Diagnostics.Components.DiagnosticsComponent::Run' \
-            --wit "$wit" --target "$target" \
-            --output "$prefix.core.wasm" --runtime-layout "$prefix.layout.json" \
+        dotnet "$compiler" "$fixture_dll" -r:"$corelib" \
+            -target:function -entry:'NetWasm.Diagnostics.Components.DiagnosticsComponent::Run' \
+            -wit:"$wit" -platform:"$target" \
+            -out:"$prefix.core.wasm" -runtimelayout:"$prefix.layout.json" \
             > "$prefix.compile.stdout" 2> "$prefix.compile.stderr"
         wasm-tools validate "$prefix.core.wasm" --features all \
             > "$prefix.core.validate.stdout" 2> "$prefix.core.validate.stderr"
@@ -104,13 +104,13 @@ for configuration in debug release; do
             --output "$prefix.runtime.wasm" \
             > "$prefix.runtime.stdout" 2> "$prefix.runtime.stderr"
         if ! dotnet "$compiler" componentize \
-            --optimization none \
-            --core-module "$prefix.core.wasm" --runtime-module "$prefix.runtime.wasm" \
-            --wit "$wit" --target "$target" --jco-version "$jco_version" \
-            --preview2-shim-version "$shim_version" \
-            --output "$prefix.component.wasm" --manifest "$prefix.manifest.json" \
+            -optimize:none \
+            -coremodule:"$prefix.core.wasm" -runtimemodule:"$prefix.runtime.wasm" \
+            -wit:"$wit" -platform:"$target" -jcoversion:"$jco_version" \
+            -preview2shimversion:"$shim_version" \
+            -out:"$prefix.component.wasm" -manifest:"$prefix.manifest.json" \
             > "$prefix.componentize.stdout" 2> "$prefix.componentize.stderr"; then
-            if [[ "$target" = wasm64 ]] && grep -q '^NW1010:' "$prefix.componentize.stderr"; then
+            if [[ "$target" = wasm64 ]] && grep -q '^error NW1010:' "$prefix.componentize.stdout"; then
                 blocked_cells=$((blocked_cells + 2))
                 printf 'capability-boundary=cm64p2-component-encoder configuration=%s\n' "$configuration" >&2
                 continue

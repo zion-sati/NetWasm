@@ -6,7 +6,6 @@
     <AssemblyName>BrowserHosts</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <NetWasmJavaScriptModule Include="labels.mjs" Module="app.labels" />

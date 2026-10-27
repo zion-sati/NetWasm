@@ -28,7 +28,7 @@ internal sealed class RuntimeMaterializationCacheWriter : IRuntimeMaterializatio
             throw new InvalidOperationException("The NetWasm runtime cache artifact digest is invalid.");
         }
 
-        var evidenceBytes = JsonSerializer.SerializeToUtf8Bytes(nativeEvidence);
+        var evidenceBytes = JsonSerializer.SerializeToUtf8Bytes(nativeEvidence, RuntimePackJsonContext.Default.RuntimeNativeCacheEvidence);
         var evidenceDigest = CalculateDigest(evidenceBytes);
         var path = RuntimeMaterializationCachePaths.Entry(cacheDirectory, slot);
         var directory = Path.GetDirectoryName(path)!;

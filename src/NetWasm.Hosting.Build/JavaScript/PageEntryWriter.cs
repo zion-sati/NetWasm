@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -86,7 +87,7 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         source.Append("  manifestSha256: ").Append(Json(request.ManifestSha256)).AppendLine(",");
         source.AppendLine("});");
         source.Append("const exports = Object.freeze(")
-            .Append(JsonSerializer.Serialize(exports.Select(export => export.Name))).AppendLine(");");
+            .Append(JsonSerializer.Serialize([.. exports.Select(export => export.Name)], HostingBuildJsonContext.Default.StringArray)).AppendLine(");");
         source.AppendLine("export function open(options) {");
         source.AppendLine("  return openPage(Object.freeze({ exports, options, startup }));");
         source.AppendLine("}");
@@ -176,7 +177,7 @@ public sealed partial class PageEntryWriter : IPageEntryWriter
         }
     }
 
-    private static string Json(string value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
 
     private static void Write(string path, string source)
     {

@@ -264,11 +264,10 @@ mean “desktop .NET, but in Wasm.” The main remaining themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.10.4:** WIT bindings pass enums, flags, records, tuples,
-options, results, variants and type aliases across a call as their flat
-values, without a temporary buffer: an aliased `u64` or an enum argument is
-about 7 times faster per call.
-[Release notes](docs/releases/0.10.4.md)
+**New in NetWasm 0.10.5:** the compiler is `nwc`, a native executable for
+each supported development host that restores with the host tools, with a
+command line that follows `csc`.
+[Release notes](docs/releases/0.10.5.md)
 
 **In progress:** broader compatibility with existing .NET Standard
 2.1 library binaries and NuGet assets. The target is to consume libraries

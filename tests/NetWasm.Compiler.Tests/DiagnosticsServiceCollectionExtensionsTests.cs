@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.Emission;
 using NetWasm.Compiler.Diagnostics;
@@ -33,7 +34,9 @@ public sealed class DiagnosticsServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<global::Microsoft.Extensions.Logging.ILogger>();
 
-        Assert.IsType<CompilerLogger<CompilerDiagnosticCompilationDecorator>>(logger);
+        Assert.IsType<Logger<CompilerDiagnosticCompilationDecorator>>(logger);
+        Assert.IsType<CompilerDiagnosticFileLoggerProvider>(
+            Assert.Single(provider.GetServices<ILoggerProvider>()));
     }
 
     [Fact]

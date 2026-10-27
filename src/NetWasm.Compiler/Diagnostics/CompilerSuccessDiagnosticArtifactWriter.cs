@@ -19,11 +19,15 @@ internal sealed class CompilerSuccessDiagnosticArtifactWriter(
         {
             return;
         }
-        _json.WriteJson(success, new { Status = "success", Stage = "complete" });
-        _json.WriteJson(_paths.ResolvePath(options, "observations.json")!, new
-        {
-            Desktop = "recorded by the differential correctness harness",
-            NetWasm = "compilation succeeded; execution is recorded by the caller",
-        });
+        _json.WriteJson(
+            success,
+            new CompilerStatusArtifact("success", "complete"),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerStatusArtifact);
+        _json.WriteJson(
+            _paths.ResolvePath(options, "observations.json")!,
+            new CompilerObservationsArtifact(
+                "recorded by the differential correctness harness",
+                "compilation succeeded; execution is recorded by the caller"),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerObservationsArtifact);
     }
 }

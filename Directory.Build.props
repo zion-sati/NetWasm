@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
     <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NetWasmRepositorySourceRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</NetWasmRepositorySourceRoot>
     <PathMap Condition="'$(PathMap)' == ''">$(NetWasmRepositorySourceRoot)=/_/</PathMap>
     <NetWasmPackageCacheRoot Condition="'$(NUGET_PACKAGES)' != ''">$([System.IO.Path]::GetFullPath('$(NUGET_PACKAGES)'))</NetWasmPackageCacheRoot>

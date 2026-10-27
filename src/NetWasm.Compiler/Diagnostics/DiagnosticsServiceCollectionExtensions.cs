@@ -21,7 +21,10 @@ internal static class DiagnosticsServiceCollectionExtensions
         services.AddSingleton<ICompilerDiagnosticSink, CompilerDiagnosticFileSink>();
         services.AddSingleton<IStructuredBlockOwnershipAnalyzer, StructuredBlockOwnershipAnalyzer>();
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(typeof(ILogger<>), typeof(CompilerLogger<>));
+        // Every entry goes to each provider, which decides what it keeps: the
+        // diagnostic log keeps everything inside an enabled compilation scope.
+        services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Trace));
+        services.AddSingleton<ILoggerProvider, CompilerDiagnosticFileLoggerProvider>();
         services.AddSingleton<ILogger>(static provider =>
             provider.GetRequiredService<ILogger<CompilerDiagnosticCompilationDecorator>>());
 

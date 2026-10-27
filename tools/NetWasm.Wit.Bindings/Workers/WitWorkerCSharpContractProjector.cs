@@ -41,7 +41,7 @@ public sealed class WitWorkerCSharpContractProjector(IWitWorkerValueLayoutPlanne
             Remap(kind);
             var name = layouts[item.Key].Name;
             return new WitTypeDefinition(ids[item.Key], name,
-                JsonSerializer.SerializeToElement(kind), 0);
+                JsonSerializer.SerializeToElement(kind, WitWorkerJsonContext.Default.JsonNode), 0);
         }).ToImmutableArray();
         var @interface = new WitInterface(0, "values", "netwasm:worker-client",
             types.ToImmutableDictionary(type => type.Name!, type => type.Id), []);

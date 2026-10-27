@@ -21,8 +21,21 @@ public sealed class HostToolsPackageResolverTests
         Assert.Equal("26.7.0", result.NodeVersion);
         Assert.Equal("24.0.0", result.WasmLdVersion);
         Assert.Equal("132", result.BinaryenVersion);
-        Assert.Equal(4, result.Roles.Count);
+        Assert.Equal(5, result.Roles.Count);
         Assert.Equal(Path.Combine(Root, "tools", "bin", "node"), result.Roles["node"]);
+        Assert.Equal(Path.Combine(Root, "tools", "bin", "nwc"), result.Roles["nwc"]);
+        Assert.Equal(16, fixture.Files.ReadPaths.Count);
+    }
+
+    [Fact]
+    public void ResolvesAnOlderPackageThatCarriesNoCompiler()
+    {
+        var fixture = Fixture.Create("without-compiler");
+
+        var result = fixture.Resolver.Resolve(Request());
+
+        Assert.Equal(4, result.Roles.Count);
+        Assert.False(result.Roles.ContainsKey("nwc"));
         Assert.Equal(13, fixture.Files.ReadPaths.Count);
     }
 
@@ -32,8 +45,8 @@ public sealed class HostToolsPackageResolverTests
         var request = Request("linux-x64");
         var valid = Fixture.Create(rid: "linux-x64");
 
-        Assert.Equal(4, valid.Resolver.Resolve(request).Roles.Count);
-        Assert.Equal(17, valid.Files.ReadPaths.Count);
+        Assert.Equal(5, valid.Resolver.Resolve(request).Roles.Count);
+        Assert.Equal(20, valid.Files.ReadPaths.Count);
         Assert.Throws<InvalidDataException>(() =>
             Fixture.Create("missing-libatomic", "linux-x64").Resolver.Resolve(request));
         Assert.Throws<InvalidDataException>(() =>
@@ -46,6 +59,7 @@ public sealed class HostToolsPackageResolverTests
     [InlineData("wrong-host")]
     [InlineData("bad-tool-version")]
     [InlineData("missing-role")]
+    [InlineData("compiler-without-notices")]
     [InlineData("missing-notice")]
     [InlineData("duplicate-file")]
     public void ResolveRejectsInvalidManifestBeforeReadingPayload(string defect)
@@ -119,10 +133,15 @@ public sealed class HostToolsPackageResolverTests
                     ["wasm-ld"] = "tools/bin/wasm-ld",
                     ["wasm-opt"] = "tools/bin/wasm-opt",
                     ["wasm-merge"] = "tools/bin/wasm-merge",
+                    ["nwc"] = "tools/bin/nwc",
                 });
             if (defect == "missing-role")
             {
                 roles = roles.Remove("wasm-merge");
+            }
+            if (defect == "without-compiler")
+            {
+                roles = roles.Remove("nwc");
             }
             var payload = new Dictionary<string, byte[]>(StringComparer.Ordinal)
             {
@@ -139,6 +158,15 @@ public sealed class HostToolsPackageResolverTests
                 ["tools/bin/wasm-opt"] = "opt"u8.ToArray(),
                 ["tools/bin/wasm-merge"] = "merge"u8.ToArray(),
             };
+            if (defect != "without-compiler")
+            {
+                payload["tools/bin/nwc"] = "nwc"u8.ToArray();
+                if (defect != "compiler-without-notices")
+                {
+                    payload["licenses/NetWasm-LICENSE.txt"] = "netwasm license"u8.ToArray();
+                    payload["licenses/nwc-THIRD-PARTY-NOTICES.txt"] = "nwc notices"u8.ToArray();
+                }
+            }
             if (rid.StartsWith("linux-", StringComparison.Ordinal))
             {
                 payload["tools/bin/libatomic.so.1"] = "libatomic"u8.ToArray();
