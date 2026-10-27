@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
-using NetWasm.Wit.Bindings.FlatSlots;
 using NetWasm.Compiler.Core;
+using NetWasm.Wit.Bindings.Aliases;
+using NetWasm.Wit.Bindings.FlatSlots;
 
 namespace NetWasm.Wit.Bindings;
 
@@ -32,8 +33,7 @@ public abstract class WitBindingMethodSectionBase(
     protected void WriteImports(
         CodeWriter writer,
         WitDocument document,
-        WitWorld world,
-        FlatBindingTypeSet typeSet)
+        WitWorld world)
     {
         foreach (var item in world.Imports)
         {
@@ -45,8 +45,7 @@ public abstract class WitBindingMethodSectionBase(
                     document,
                     _syntax.Format(new WitBindingSyntaxRequest.Identifier(@interface.Name)) + "Imports",
                     $"{@interface.Package}/{@interface.Name}",
-                    @interface.Functions,
-                    typeSet);
+                    @interface.Functions);
             }
         }
 
@@ -59,8 +58,7 @@ public abstract class WitBindingMethodSectionBase(
                 document,
                 _syntax.Format(new WitBindingSyntaxRequest.Identifier(world.Name)) + "Imports",
                 string.Empty,
-                functions,
-                typeSet);
+                functions);
         }
     }
 
@@ -69,15 +67,14 @@ public abstract class WitBindingMethodSectionBase(
         WitDocument document,
         string className,
         string interfaceName,
-        IEnumerable<WitFunction> functions,
-        FlatBindingTypeSet typeSet)
+        IEnumerable<WitFunction> functions)
     {
         writer.Line($"public static partial class {className}");
         writer.Line("{");
         writer.Indent();
         foreach (var function in functions)
         {
-            WriteImport(writer, document, interfaceName, function, typeSet);
+            WriteImport(writer, document, interfaceName, function);
             writer.Line();
         }
         writer.Unindent();
@@ -89,9 +86,9 @@ public abstract class WitBindingMethodSectionBase(
         CodeWriter writer,
         WitDocument document,
         string interfaceName,
-        WitFunction function,
-        FlatBindingTypeSet typeSet)
+        WitFunction function)
     {
+        function = TransparentAliases.Resolve(document, function);
         var model = Model(
             document,
             interfaceName,
@@ -178,13 +175,13 @@ public abstract class WitBindingMethodSectionBase(
             writer.Line(call + ";");
             writer.Line("__canonicalResultInitialized = true;");
             WriteLiftImportResult(writer, document, function.Result,
-                model.Signature, "__canonicalResult", "__managedResult", typeSet);
+                model.Signature, "__canonicalResult", "__managedResult");
         }
         else
         {
             writer.Line("var __canonicalResult = " + call + ";");
             WriteLiftImportResult(writer, document, function.Result,
-                model.Signature, "__canonicalResult", "__managedResult", typeSet);
+                model.Signature, "__canonicalResult", "__managedResult");
         }
         if (model.Signature.IndirectResult)
         {
@@ -249,8 +246,7 @@ public abstract class WitBindingMethodSectionBase(
     protected void WriteExports(
         CodeWriter writer,
         WitDocument document,
-        WitWorld world,
-        FlatBindingTypeSet typeSet)
+        WitWorld world)
     {
         writer.Line($"public static partial class {_syntax.Format(new WitBindingSyntaxRequest.Identifier(world.Name))}Exports");
         writer.Line("{");
@@ -259,7 +255,7 @@ public abstract class WitBindingMethodSectionBase(
         {
             if (item.Function is not null)
             {
-                WriteExport(writer, document, string.Empty, item.Function, typeSet);
+                WriteExport(writer, document, string.Empty, item.Function);
                 writer.Line();
                 continue;
             }
@@ -270,8 +266,7 @@ public abstract class WitBindingMethodSectionBase(
                     writer,
                     document,
                     $"{@interface.Package}/{@interface.Name}",
-                    function,
-                    typeSet);
+                    function);
                 writer.Line();
             }
         }
@@ -283,9 +278,9 @@ public abstract class WitBindingMethodSectionBase(
         CodeWriter writer,
         WitDocument document,
         string interfaceName,
-        WitFunction function,
-        FlatBindingTypeSet typeSet)
+        WitFunction function)
     {
+        function = TransparentAliases.Resolve(document, function);
         var model = Model(
             document,
             interfaceName,
@@ -305,8 +300,7 @@ public abstract class WitBindingMethodSectionBase(
             document,
             function,
             model.Function,
-            model.Signature,
-            typeSet);
+            model.Signature);
         var hasCleanup = lifted.Cleanup.Length != 0;
         if (hasCleanup)
         {
@@ -327,8 +321,7 @@ public abstract class WitBindingMethodSectionBase(
                 document,
                 function.Result,
                 model.Signature,
-                "__managedResult",
-                typeSet);
+                "__managedResult");
         }
         if (hasCleanup)
         {
@@ -356,88 +349,6 @@ public abstract class WitBindingMethodSectionBase(
         writer.Line("}");
     }
 
-    protected void WriteFlatBindingMethods(
-        CodeWriter writer,
-        WitDocument document,
-        FlatBindingTypeSet typeSet)
-    {
-        if (typeSet.Lift.Count == 0 && typeSet.Lower.Count == 0)
-        {
-            return;
-        }
-        writer.Line();
-        writer.Line("internal static class __CanonicalFlat");
-        writer.Line("{");
-        writer.Indent();
-        foreach (var id in typeSet.Lift.Concat(typeSet.Lower).Distinct().Order())
-        {
-            var reference = new WitTypeReference.Defined(id);
-            var type = _types.Resolve(document, reference);
-            var typeName = _syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference));
-            var flat = _flattener.Flatten(type);
-            if (typeSet.Lower.Contains(id))
-            {
-                writer.Line($"internal static {RawType(flat.Single())} LowerType{id}({typeName} value)");
-                writer.Line("{");
-                writer.Indent();
-                writer.Line($"var buffer = __CanonicalMarshalling.LowerType{id}(value, true);");
-                writer.Line("try");
-                writer.Line("{");
-                writer.Indent();
-                writer.Line("return " + ReadFlat(document, reference,
-                    "buffer.Address", "0").Single() + ";");
-                writer.Unindent();
-                writer.Line("}");
-                writer.Line("finally");
-                writer.Line("{");
-                writer.Indent();
-                writer.Line($"__CanonicalMarshalling.FreeType{id}(buffer.Address);");
-                writer.Unindent();
-                writer.Line("}");
-                writer.Unindent();
-                writer.Line("}");
-                writer.Line();
-            }
-            if (typeSet.Lift.Contains(id))
-            {
-                var parameters = string.Join(", ", flat
-                    .Select((kind, index) => $"{RawType(kind)} value{index}")
-                    .Append("bool exportBoundary"));
-                writer.Line($"internal static {typeName} LiftType{id}({parameters})");
-                writer.Line("{");
-                writer.Indent();
-                writer.Line($"var address = CanonicalAbi.Allocate({Size(type)}, {Alignment(type)});");
-                writer.Line("try");
-                writer.Line("{");
-                writer.Indent();
-                foreach (var statement in WriteFlat(
-                             document,
-                             reference,
-                             "address",
-                             "0",
-                             [.. Enumerable.Range(0, flat.Length)
-                                 .Select(index => $"value{index}")]))
-                {
-                    writer.Line(statement);
-                }
-                writer.Line($"return __CanonicalMarshalling.LiftType{id}(address, exportBoundary);");
-                writer.Unindent();
-                writer.Line("}");
-                writer.Line("finally");
-                writer.Line("{");
-                writer.Indent();
-                writer.Line("CanonicalAbi.Free(address);");
-                writer.Unindent();
-                writer.Line("}");
-                writer.Unindent();
-                writer.Line("}");
-                writer.Line();
-            }
-        }
-        writer.Unindent();
-        writer.Line("}");
-    }
-
     private ParameterLowering LowerParameter(
         WitDocument document,
         WitParameter parameter,
@@ -446,22 +357,6 @@ public abstract class WitBindingMethodSectionBase(
         var high = _syntax.Format(new WitBindingSyntaxRequest.Variable(parameter.Name));
         var type = _types.Resolve(document, parameter.Type);
         var prefix = $"__p{index}";
-        if (parameter.Type is WitTypeReference.Primitive primitive)
-        {
-            if (primitive.Name == "string")
-            {
-                return new(
-                    [.. new[] { $"CanonicalBuffer {prefix} = default;" }],
-                    [$"{prefix} = CanonicalAbi.LowerString({high});"],
-                    [$"{prefix}.Address", $"{prefix}.Length"],
-                    [$"{prefix}.Dispose();"],
-                    false,
-                    high);
-            }
-            return new([], [], [LowerPrimitive(primitive.Name, high)], [], false, high);
-        }
-
-        var defined = (WitTypeReference.Defined)parameter.Type;
         if (type.Kind is CanonicalAbiTypeKind.OwnedResource or
             CanonicalAbiTypeKind.BorrowedResource)
         {
@@ -478,18 +373,8 @@ public abstract class WitBindingMethodSectionBase(
                 transfersOwnership,
                 high);
         }
-        var list = type.Kind == CanonicalAbiTypeKind.List;
-        return new(
-            [$"CanonicalBuffer {prefix} = default;"],
-            [$"{prefix} = __CanonicalMarshalling.LowerType{defined.Id}({high}, false);"],
-            list
-                ? [$"{prefix}.Address", $"{prefix}.Length"]
-                : [.. ReadFlat(document, parameter.Type, $"{prefix}.Address", "0")],
-            list
-                ? [$"if ({prefix}.Address != 0) __CanonicalMarshalling.FreeType{defined.Id}({prefix}.Address, {prefix}.Length);"]
-                : [$"if ({prefix}.Address != 0) __CanonicalMarshalling.FreeType{defined.Id}({prefix}.Address);"],
-            false,
-            high);
+        var flat = LowerFlat(document, parameter.Type, high, prefix, exportBoundary: false);
+        return new(flat.Declarations, flat.Setup, flat.Values, flat.Cleanup, false, high);
     }
 
     private void WriteLiftImportResult(
@@ -498,12 +383,11 @@ public abstract class WitBindingMethodSectionBase(
         WitTypeReference result,
         CanonicalAbiCoreSignature signature,
         string canonical,
-        string destination,
-        FlatBindingTypeSet typeSet)
+        string destination)
     {
         if (!signature.IndirectResult)
         {
-            writer.Line($"{destination} = {LiftDirect(document, result, [canonical], typeSet)};");
+            writer.Line($"{destination} = {LiftFlat(document, result, [canonical], exportResource: false)};");
             return;
         }
         writer.Line($"{destination} = {LiftFromMemory(document, result, canonical)};");
@@ -514,8 +398,7 @@ public abstract class WitBindingMethodSectionBase(
         WitDocument document,
         WitFunction witFunction,
         CanonicalAbiFunction function,
-        CanonicalAbiCoreSignature signature,
-        FlatBindingTypeSet typeSet)
+        CanonicalAbiCoreSignature signature)
     {
         var arguments = ImmutableArray.CreateBuilder<string>();
         var cleanup = ImmutableArray.CreateBuilder<string>();
@@ -550,11 +433,10 @@ public abstract class WitBindingMethodSectionBase(
                 var values = Enumerable.Range(flatIndex, count)
                     .Select(slot => $"__f{slot}")
                     .ToArray();
-                expression = LiftDirect(
+                expression = LiftFlat(
                     document,
                     sourceReference,
                     values,
-                    typeSet,
                     exportResource: true);
                 flatIndex += count;
             }
@@ -574,13 +456,18 @@ public abstract class WitBindingMethodSectionBase(
         WitDocument document,
         WitTypeReference result,
         CanonicalAbiCoreSignature signature,
-        string value,
-        FlatBindingTypeSet typeSet)
+        string value)
     {
         if (!signature.IndirectResult)
         {
-            var lowering = LowerResultDirect(document, result, value, typeSet);
-            writer.Line("return " + lowering.Expression + ";");
+            // A result that fits one flat value holds no string or list, so
+            // it leaves nothing to clean up.
+            var lowering = LowerFlat(document, result, value, "__flat", exportBoundary: true);
+            foreach (var line in lowering.Declarations.Concat(lowering.Setup))
+            {
+                writer.Line(line);
+            }
+            writer.Line("return " + lowering.Values.Single() + ";");
             return;
         }
 
@@ -643,62 +530,260 @@ public abstract class WitBindingMethodSectionBase(
         writer.Line($"__CanonicalMarshalling.FreeType{defined.Id}({address});");
     }
 
-    private DirectLowering LowerResultDirect(
-        WitDocument document,
-        WitTypeReference result,
-        string value,
-        FlatBindingTypeSet typeSet)
-    {
-        if (result is WitTypeReference.Primitive primitive)
-        {
-            return new(LowerPrimitive(primitive.Name, value));
-        }
-        var type = _types.Resolve(document, result);
-        if (type.Kind is CanonicalAbiTypeKind.OwnedResource or
-            CanonicalAbiTypeKind.BorrowedResource)
-        {
-            return new($"unchecked((int)({value}).LowerExport())");
-        }
-        var defined = (WitTypeReference.Defined)result;
-        typeSet.Lower.Add(defined.Id);
-        return new($"__CanonicalFlat.LowerType{defined.Id}({value})");
-    }
-
-    private string LiftDirect(
+    // A WIT value lifted from its flat values with nothing in between, as the
+    // canonical ABI's lift_flat does: a record or variant is built from the
+    // values themselves. Strings and lists live in the memory their two flat
+    // values point at, and lift from there.
+    private string LiftFlat(
         WitDocument document,
         WitTypeReference reference,
         string[] values,
-        FlatBindingTypeSet typeSet,
-        bool exportResource = false)
+        bool exportResource)
     {
+        reference = TransparentAliases.Resolve(document, reference);
         if (reference is WitTypeReference.Primitive primitive)
         {
-            if (primitive.Name == "string")
-            {
-                return $"CanonicalAbi.LiftString({values[0]}, {values[1]})";
-            }
-            return LiftPrimitive(primitive.Name, values[0]);
+            return primitive.Name == "string"
+                ? $"CanonicalAbi.LiftString({values[0]}, {values[1]})"
+                : LiftPrimitive(primitive.Name, values[0]);
         }
         var type = _types.Resolve(document, reference);
-        var defined = (WitTypeReference.Defined)reference;
-        if (type.Kind is CanonicalAbiTypeKind.OwnedResource or
-            CanonicalAbiTypeKind.BorrowedResource)
+        var typeName = _syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference));
+        var id = ((WitTypeReference.Defined)reference).Id;
+        if (type.Kind is CanonicalAbiTypeKind.OwnedResource or CanonicalAbiTypeKind.BorrowedResource)
         {
-            if (exportResource)
-            {
-                return $"{_syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference))}.LiftExport(unchecked((uint){values[0]}), {(type.Kind == CanonicalAbiTypeKind.OwnedResource ? "true" : "false")})";
-            }
-            return $"new {_syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference))}(unchecked((uint){values[0]}), {(type.Kind == CanonicalAbiTypeKind.OwnedResource ? "true" : "false")})";
+            var owns = type.Kind == CanonicalAbiTypeKind.OwnedResource ? "true" : "false";
+            return exportResource
+                ? $"{typeName}.LiftExport(unchecked((uint){values[0]}), {owns})"
+                : $"new {typeName}(unchecked((uint){values[0]}), {owns})";
         }
-        if (type.Kind == CanonicalAbiTypeKind.List)
+        var kind = document.Types[id].Kind.EnumerateObject().Single();
+        switch (type.Kind)
         {
-            // A direct list is only lifted for an exported parameter; imported
-            // list results use the indirect memory path below.
-            return $"__CanonicalMarshalling.LiftType{defined.Id}({values[0]}, {values[1]}, true)";
+            case CanonicalAbiTypeKind.List:
+                return $"__CanonicalMarshalling.LiftType{id}({values[0]}, {values[1]}, {(exportResource ? "true" : "false")})";
+            case CanonicalAbiTypeKind.Enum:
+                return $"({typeName})CanonicalAbi.LiftDiscriminant({values[0]}, {kind.Value.GetProperty("cases").GetArrayLength()})";
+            case CanonicalAbiTypeKind.Flags:
+                return LiftFlagsFlat(typeName, kind.Value.GetProperty("flags").GetArrayLength(), values);
+            case CanonicalAbiTypeKind.Record or CanonicalAbiTypeKind.Tuple:
+                var fields = AggregateFields(document, reference);
+                var arguments = new List<string>(fields.Length);
+                var next = 0;
+                foreach (var field in fields)
+                {
+                    var width = _flattener.Flatten(_types.Resolve(document, field)).Length;
+                    arguments.Add(LiftFlat(document, field, [.. values.Skip(next).Take(width)], exportResource));
+                    next += width;
+                }
+                var joinedArguments = string.Join(", ", arguments);
+                return type.Kind == CanonicalAbiTypeKind.Tuple && fields.Length >= 2
+                    ? $"({joinedArguments})"
+                    : $"new {typeName}({joinedArguments})";
         }
+        // An option, result or variant: the discriminant, then the case's
+        // values, each taken from the joined slot that carries it.
+        var tag = $"CanonicalAbi.LiftDiscriminant({values[0]}, {VariantCases(type).Length})";
+        var payloads = VariantCasePayloads(document, reference, type, values, exportResource);
+        return type.Kind switch
+        {
+            CanonicalAbiTypeKind.Option => $"{tag} == 0 ? {typeName}.None : new {typeName}({payloads[1]})",
+            CanonicalAbiTypeKind.Result =>
+                $"{tag} == 0 ? {typeName}.FromOk({payloads[0] ?? "default"}) : {typeName}.FromError({payloads[1] ?? "default"})",
+            _ => $"{tag} switch {{ {string.Join(", ", kind.Value.GetProperty("cases").EnumerateArray().Select((item, index) =>
+                $"{index} => {typeName}.{_syntax.Format(new WitBindingSyntaxRequest.Identifier(item.GetProperty("name").GetString()!))}({payloads[index]})"))}, _ => throw new ArgumentException() }}",
+        };
+    }
 
-        typeSet.Lift.Add(defined.Id);
-        return $"__CanonicalFlat.LiftType{defined.Id}({string.Join(", ", values.Append(exportResource ? "true" : "false"))})";
+    // Each case's lifted payload, or null for a case without one.
+    private string?[] VariantCasePayloads(
+        WitDocument document,
+        WitTypeReference reference,
+        CanonicalAbiType type,
+        string[] values,
+        bool exportResource)
+    {
+        var joined = _flattener.Flatten(type);
+        var cases = VariantCases(type);
+        var references = VariantCaseReferences(document, reference);
+        return [.. cases.Select((@case, index) => references[index] is not { } caseReference
+            ? null
+            : LiftFlat(document, caseReference, [.. _flattener.Flatten(@case.Type!).Select((caseKind, slot) =>
+                _slotCoercions.Format(new WitFlatSlotCoercionRequest(values[slot + 1], joined[slot + 1], caseKind)))],
+                exportResource))];
+    }
+
+    private static string LiftFlagsFlat(string typeName, int count, string[] values)
+    {
+        if (count <= 32)
+        {
+            return $"({typeName})CanonicalAbi.LiftFlagsWord(unchecked((uint){values[0]}), {count})";
+        }
+        if (count <= 64)
+        {
+            return $"({typeName})(unchecked((ulong)(uint){values[0]}) | (ulong)CanonicalAbi.LiftFlagsWord(unchecked((uint){values[1]}), {count - 32}) << 32)";
+        }
+        var words = values.Select((value, index) => index + 1 == values.Length && count % 32 != 0
+            ? $"CanonicalAbi.LiftFlagsWord(unchecked((uint){value}), {count % 32})"
+            : $"unchecked((uint){value})");
+        return $"{typeName}.FromWords(new uint[] {{ {string.Join(", ", words)} }})";
+    }
+
+    // A WIT value lowered to its flat values with nothing in between, as the
+    // canonical ABI's lower_flat does: a record contributes its fields' values
+    // and a variant its discriminant and the slots its case sets, the others
+    // left zero. Strings and lists still copy their contents into memory.
+    private FlatLowering LowerFlat(
+        WitDocument document,
+        WitTypeReference reference,
+        string value,
+        string prefix,
+        bool exportBoundary)
+    {
+        reference = TransparentAliases.Resolve(document, reference);
+        if (reference is WitTypeReference.Primitive primitive)
+        {
+            return primitive.Name == "string"
+                ? new([$"CanonicalBuffer {prefix} = default;"], [$"{prefix} = CanonicalAbi.LowerString({value});"],
+                    [$"{prefix}.Address", $"{prefix}.Length"], [$"{prefix}.Dispose();"])
+                : new([], [], [LowerPrimitive(primitive.Name, value)], []);
+        }
+        var type = _types.Resolve(document, reference);
+        var id = ((WitTypeReference.Defined)reference).Id;
+        if (type.Kind is CanonicalAbiTypeKind.OwnedResource or CanonicalAbiTypeKind.BorrowedResource)
+        {
+            var owns = type.Kind == CanonicalAbiTypeKind.OwnedResource ? "true" : "false";
+            return new([], [], [exportBoundary
+                ? $"unchecked((int){value}.LowerExport())"
+                : $"unchecked((int){value}.LowerImport({owns}))"], []);
+        }
+        var kind = document.Types[id].Kind.EnumerateObject().Single();
+        switch (type.Kind)
+        {
+            case CanonicalAbiTypeKind.List:
+                return new(
+                    [$"CanonicalBuffer {prefix} = default;"],
+                    [$"{prefix} = __CanonicalMarshalling.LowerType{id}({value}, {(exportBoundary ? "true" : "false")});"],
+                    [$"{prefix}.Address", $"{prefix}.Length"],
+                    [$"if ({prefix}.Address != 0) __CanonicalMarshalling.FreeType{id}({prefix}.Address, {prefix}.Length);"]);
+            case CanonicalAbiTypeKind.Enum:
+                return new([], [], [$"(int){value}"], []);
+            case CanonicalAbiTypeKind.Flags:
+                return new([], [], LowerFlagsFlat(kind.Value.GetProperty("flags").GetArrayLength(), value), []);
+            case CanonicalAbiTypeKind.Record or CanonicalAbiTypeKind.Tuple:
+                var names = kind.Name == "record"
+                    ? [.. kind.Value.GetProperty("fields").EnumerateArray().Select(field =>
+                        _syntax.Format(new WitBindingSyntaxRequest.Identifier(field.GetProperty("name").GetString()!)))]
+                    : Enumerable.Range(1, kind.Value.GetProperty("types").GetArrayLength()).Select(index => $"Item{index}").ToArray();
+                return Concatenate([.. AggregateFields(document, reference).Select((field, index) =>
+                    LowerFlat(document, field, $"{value}.{names[index]}", $"{prefix}_{index}", exportBoundary))]);
+        }
+        return LowerVariantFlat(document, reference, type, kind, value, prefix, exportBoundary);
+    }
+
+    // An option, result or variant sets its discriminant and its case's slots
+    // in the arm that case takes, from locals declared before it.
+    private FlatLowering LowerVariantFlat(
+        WitDocument document,
+        WitTypeReference reference,
+        CanonicalAbiType type,
+        JsonProperty kind,
+        string value,
+        string prefix,
+        bool exportBoundary)
+    {
+        var joined = _flattener.Flatten(type);
+        var cases = VariantCases(type);
+        var references = VariantCaseReferences(document, reference);
+        var declarations = ImmutableArray.CreateBuilder<string>();
+        var cleanup = ImmutableArray.CreateBuilder<string>();
+        declarations.AddRange(joined.Select((slot, index) => $"{RawType(slot)} {prefix}_{index} = default;"));
+        var arms = new List<ImmutableArray<string>>(cases.Length);
+        for (var index = 0; index < cases.Length; index++)
+        {
+            var arm = ImmutableArray.CreateBuilder<string>();
+            arm.Add($"{prefix}_0 = {index};");
+            if (references[index] is { } caseReference)
+            {
+                var payload = LowerFlat(document, caseReference, CasePayload(type, kind, value, index),
+                    $"{prefix}_c{index}", exportBoundary);
+                declarations.AddRange(payload.Declarations);
+                arm.AddRange(payload.Setup);
+                var caseKinds = _flattener.Flatten(cases[index].Type!);
+                arm.AddRange(payload.Values.Select((slotValue, slot) =>
+                    $"{prefix}_{slot + 1} = {_slotCoercions.Format(new WitFlatSlotCoercionRequest(slotValue, caseKinds[slot], joined[slot + 1]))};"));
+                cleanup.AddRange(payload.Cleanup);
+            }
+            arms.Add(arm.ToImmutable());
+        }
+        var setup = ImmutableArray.CreateBuilder<string>();
+        if (type.Kind is CanonicalAbiTypeKind.Option or CanonicalAbiTypeKind.Result)
+        {
+            setup.Add(type.Kind == CanonicalAbiTypeKind.Option ? $"if (!{value}.HasValue)" : $"if ({value}.IsOk)");
+            setup.Add("{");
+            setup.AddRange(arms[0].Select(Indented));
+            setup.Add("}");
+            setup.Add("else");
+            setup.Add("{");
+            setup.AddRange(arms[1].Select(Indented));
+            setup.Add("}");
+        }
+        else
+        {
+            var typeName = _syntax.Format(new WitBindingSyntaxRequest.TypeName(document, reference));
+            setup.Add($"switch ({value}.Tag)");
+            setup.Add("{");
+            foreach (var (item, index) in kind.Value.GetProperty("cases").EnumerateArray().Select((item, index) => (item, index)))
+            {
+                setup.Add($"    case {typeName}Tag.{CaseName(item)}:");
+                setup.AddRange(arms[index].Select(line => "        " + line));
+                setup.Add("        break;");
+            }
+            setup.Add("    default: throw new ArgumentException();");
+            setup.Add("}");
+        }
+        return new(declarations.ToImmutable(), setup.ToImmutable(),
+            [.. joined.Select((_, index) => $"{prefix}_{index}")], cleanup.ToImmutable());
+    }
+
+    private string CasePayload(CanonicalAbiType type, JsonProperty kind, string value, int index) => type.Kind switch
+    {
+        CanonicalAbiTypeKind.Option => $"{value}.Value",
+        CanonicalAbiTypeKind.Result => index == 0 ? $"{value}.Ok" : $"{value}.Error",
+        _ => $"{value}.{CaseName(kind.Value.GetProperty("cases")[index])}Value",
+    };
+
+    private string CaseName(JsonElement item) =>
+        _syntax.Format(new WitBindingSyntaxRequest.Identifier(item.GetProperty("name").GetString()!));
+
+    private static string Indented(string line) => "    " + line;
+
+    private static ImmutableArray<string> LowerFlagsFlat(int count, string value)
+    {
+        if (count <= 32)
+        {
+            return [$"unchecked((int){value})"];
+        }
+        if (count <= 64)
+        {
+            return [$"unchecked((int)(uint)(ulong){value})", $"unchecked((int)((ulong){value} >> 32))"];
+        }
+        return [.. Enumerable.Range(0, (count + 31) / 32).Select(index => $"unchecked((int){value}.GetWord({index}))")];
+    }
+
+    private static FlatLowering Concatenate(IReadOnlyList<FlatLowering> parts) => new(
+        [.. parts.SelectMany(part => part.Declarations)],
+        [.. parts.SelectMany(part => part.Setup)],
+        [.. parts.SelectMany(part => part.Values)],
+        [.. parts.SelectMany(part => part.Cleanup)]);
+
+    // A record's field types or a tuple's element types, in order.
+    private static WitTypeReference[] AggregateFields(WitDocument document, WitTypeReference reference)
+    {
+        var kind = document.Types[((WitTypeReference.Defined)reference).Id].Kind.EnumerateObject().Single();
+        return kind.Name == "record"
+            ? [.. kind.Value.GetProperty("fields").EnumerateArray().Select(field => Reference(field.GetProperty("type")))]
+            : [.. kind.Value.GetProperty("types").EnumerateArray().Select(Reference)];
     }
 
     private string LiftFromMemory(
@@ -1287,14 +1372,9 @@ public abstract class WitBindingMethodSectionBase(
         ImmutableArray<string> Arguments,
         ImmutableArray<string> Cleanup);
 
-    private sealed record DirectLowering(string Expression);
-
-    protected sealed record FlatBindingTypeSet(
-        HashSet<int> Lift,
-        HashSet<int> Lower)
-    {
-        public FlatBindingTypeSet() : this([], [])
-        {
-        }
-    }
+    private sealed record FlatLowering(
+        ImmutableArray<string> Declarations,
+        ImmutableArray<string> Setup,
+        ImmutableArray<string> Values,
+        ImmutableArray<string> Cleanup);
 }

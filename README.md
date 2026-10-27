@@ -264,13 +264,11 @@ mean “desktop .NET, but in Wasm.” The main remaining themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.10.3:** faster interop and smaller apps. Scalar
-`[JSImport]` calls are direct WebAssembly imports, spans reach JavaScript as
-typed-array views without a copy, and `[WasmImportLinkage]` calls host
-functions directly. A page application's runtime bundle holds only what the
-application links, WIT bindings are generated during the build, and number
-formatting is pay-for-play.
-[Release notes](docs/releases/0.10.3.md)
+**New in NetWasm 0.10.4:** WIT bindings pass enums, flags, records, tuples,
+options, results, variants and type aliases across a call as their flat
+values, without a temporary buffer: an aliased `u64` or an enum argument is
+about 7 times faster per call.
+[Release notes](docs/releases/0.10.4.md)
 
 **In progress:** broader compatibility with existing .NET Standard
 2.1 library binaries and NuGet assets. The target is to consume libraries

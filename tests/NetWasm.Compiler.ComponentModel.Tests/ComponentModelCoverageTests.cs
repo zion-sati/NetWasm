@@ -190,7 +190,6 @@ public sealed class ComponentModelCoverageTests
         var syntax = new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier());
         var imports = new NoopImports();
         var exportsSection = new NoopExportsSection();
-        var flat = new NoopFlat();
         var marshallingTypes = new NoopMarshallingTypes();
         var declarations = new NoopDeclarations();
         var methods = new NoopMethods();
@@ -278,11 +277,9 @@ public sealed class ComponentModelCoverageTests
             new NetWasm.Wit.Bindings.Aliases.WitAliasValidator(new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier())),
                 new WitTypeDefinitionClassifier()));
         Assert.Throws<ArgumentNullException>(() => new WitBindingMethodWriter(
-            null!, exportsSection, flat));
+            null!, exportsSection));
         Assert.Throws<ArgumentNullException>(() => new WitBindingMethodWriter(
-            imports, null!, flat));
-        Assert.Throws<ArgumentNullException>(() => new WitBindingMethodWriter(
-            imports, exportsSection, null!));
+            imports, null!));
         var coreTypes = new WitCanonicalTypeResolver();
         var coreFlattener = new CanonicalAbiTypeFlattener();
         var coreSignatures = new CanonicalAbiSignaturePlanner(coreFlattener);
@@ -293,9 +290,6 @@ public sealed class ComponentModelCoverageTests
             coreTypes, coreFlattener, coreLayouts, coreModels, syntax,
             slotCoercions, null!));
         Assert.Throws<ArgumentNullException>(() => new WitBindingExportSectionWriter(
-            coreTypes, coreFlattener, coreLayouts, coreModels, syntax,
-            slotCoercions, null!));
-        Assert.Throws<ArgumentNullException>(() => new WitBindingFlatSectionWriter(
             coreTypes, coreFlattener, coreLayouts, coreModels, syntax,
             slotCoercions, null!));
         Assert.Throws<ArgumentNullException>(() => new CoverageMethodSection(
@@ -348,7 +342,7 @@ public sealed class ComponentModelCoverageTests
             validator, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
             syntax, null!));
 
-        var methodWriter = new WitBindingMethodWriter(imports, exportsSection, flat);
+        var methodWriter = new WitBindingMethodWriter(imports, exportsSection);
         Assert.Throws<ArgumentNullException>(() => methodWriter.Generate(null!, new WitWorld(
             0, "world", "example:test@1.0.0", [], [])));
         Assert.Throws<ArgumentNullException>(() => methodWriter.Generate(
@@ -545,21 +539,12 @@ public sealed class ComponentModelCoverageTests
 
     private sealed class NoopImports : IWitBindingImportSectionWriter
     {
-        public WitBindingSectionSource Generate(WitDocument document, WitWorld world) =>
-            new(string.Empty, [], []);
+        public string Generate(WitDocument document, WitWorld world) => string.Empty;
     }
 
     private sealed class NoopExportsSection : IWitBindingExportSectionWriter
     {
-        public WitBindingSectionSource Generate(WitDocument document, WitWorld world) =>
-            new(string.Empty, [], []);
-    }
-
-    private sealed class NoopFlat : IWitBindingFlatSectionWriter
-    {
-        public WitBindingSectionSource Generate(WitDocument document,
-            IReadOnlyCollection<int> lift, IReadOnlyCollection<int> lower) =>
-            new(string.Empty, [], []);
+        public string Generate(WitDocument document, WitWorld world) => string.Empty;
     }
 
     private sealed class NoopMarshallingTypes : IWitCanonicalMarshallingTypeSectionWriter

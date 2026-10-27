@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
+using NetWasm.Wit.Bindings.Aliases;
 
 namespace NetWasm.Wit.Bindings;
 
@@ -19,7 +20,8 @@ public sealed class WitCanonicalTypeReachabilityResolver :
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(world);
         var reachable = new HashSet<int>();
-        foreach (var function in Functions(document, world))
+        // A function's aliases cross as the types they name, which need no marshalling of their own.
+        foreach (var function in Functions(document, world).Select(function => TransparentAliases.Resolve(document, function)))
         {
             foreach (var parameter in function.Parameters)
             {

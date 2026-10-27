@@ -86,6 +86,11 @@ interface host {
     round-trip-scalars: func(value: scalar-values) -> scalar-values;
 
     boundary-probes: func() -> u32;
+
+    // Results that fit one flat value cross without memory.
+    select: func(mode: mode, permissions: permissions) -> mode;
+
+    widen: func(value: wide-permissions) -> wide-permissions;
 }
 
 world test-canonical {
