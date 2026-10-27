@@ -337,6 +337,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "release-train.py verify",
             '--channel "$channel"',
             "release-train.py extract",
+            # A stable tag resolves only with the preview it promotes.
+            '--source-tags "$PREVIEW_TAG"',
             "verify-release-packages.py",
         ):
             self.assertIn(contract, retained)
