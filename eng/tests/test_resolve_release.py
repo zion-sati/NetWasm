@@ -48,17 +48,43 @@ class ResolveReleaseTests(unittest.TestCase):
             "artifactName": "netwasm-release-train-0.5.0",
         }, identity)
 
+    def test_a_later_preview_builds_its_own_train(self) -> None:
+        identity = MODULE.resolve_train_identity("0.5.0-preview.2", "v")
+
+        self.assertEqual("build", identity["mode"])
+        self.assertEqual("v0.5.0-preview.2", identity["previewTag"])
+        self.assertEqual("0.5.0", identity["stableVersion"])
+        self.assertEqual("netwasm-release-train-0.5.0", identity["artifactName"])
+
     def test_stable_release_promotes_the_preview_one_train(self) -> None:
-        identity = MODULE.resolve_train_identity("0.5.0", "v")
+        identity = MODULE.resolve_train_identity("0.5.0", "v", ["v0.5.0-preview.1"])
 
         self.assertEqual("promote", identity["mode"])
         self.assertEqual("v0.5.0-preview.1", identity["previewTag"])
         self.assertEqual("v0.5.0", identity["stableTag"])
 
+    def test_stable_release_promotes_the_newest_preview_of_its_source(self) -> None:
+        identity = MODULE.resolve_train_identity(
+            "0.5.0",
+            "netwasm-v",
+            ["netwasm-v0.5.0", "netwasm-v0.5.0-preview.2", "netwasm-v0.5.0-preview.10",
+             "v0.5.0-preview.11", "netwasm-v0.4.0-preview.12", "netwasm-v0.5.0-rc.13"],
+        )
+
+        self.assertEqual("0.5.0-preview.10", identity["previewVersion"])
+        self.assertEqual("netwasm-v0.5.0-preview.10", identity["previewTag"])
+
+    def test_stable_release_requires_a_preview_of_its_source(self) -> None:
+        for tags in ([], ["v0.5.0"], ["v0.4.0-preview.1"]):
+            with self.subTest(tags=tags), self.assertRaisesRegex(
+                ValueError, "no v0.5.0-preview.N tag points at it"
+            ):
+                MODULE.resolve_train_identity("0.5.0", "v", tags)
+
     def test_other_prerelease_shapes_are_rejected(self) -> None:
-        for version in ("0.5.0-preview.2", "0.5.0-rc.1", "0.5.0-alpha"):
+        for version in ("0.5.0-preview.0", "0.5.0-rc.1", "0.5.0-alpha", "0.5.0-preview.1.1"):
             with self.subTest(version=version), self.assertRaisesRegex(
-                ValueError, "preview.1"
+                ValueError, "preview.N"
             ):
                 MODULE.resolve_train_identity(version, "v")
 
