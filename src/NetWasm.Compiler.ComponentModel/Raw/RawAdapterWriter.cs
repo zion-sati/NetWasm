@@ -35,9 +35,9 @@ public sealed class RawAdapterWriter(
     // The helpers the emitted bindings call, without their test-facing exports.
     private static readonly Lazy<string> RuntimeSource = new(() =>
     {
+        // The project embeds the runtime under this name.
         using var stream = typeof(RawAdapterWriter).Assembly.GetManifestResourceStream(
-            "NetWasm.Compiler.ComponentModel.Raw.raw-adapter-runtime.mjs")
-            ?? throw new InvalidOperationException("The raw adapter runtime is not embedded.");
+            "NetWasm.Compiler.ComponentModel.Raw.raw-adapter-runtime.mjs")!;
         using var reader = new System.IO.StreamReader(stream, Encoding.UTF8);
         return System.Text.RegularExpressions.Regex.Replace(
             reader.ReadToEnd(), "^export ", "", System.Text.RegularExpressions.RegexOptions.Multiline);

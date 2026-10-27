@@ -67,12 +67,29 @@ public sealed class WitTypeIdentityFormatterTests
     }
 
     [Fact]
+    public void NamesAWorldsOwnTypeWithinTheWorld()
+    {
+        var world = new WitWorld(0, "app", "wasi:test@1.2.3", [], []);
+        var owned = Type(0, "mode", """{"enum":{"cases":[{"name":"fast"}]}}""") with { OwnerWorld = 0 };
+        var document = Document(owned) with { Worlds = [world] };
+
+        Assert.Equal(
+            $"{new WitWorldSpecifierFormatter().Format(world)}#mode",
+            Create().Format(document, new WitTypeReference.Defined(0)));
+        AssertContractFailure(() => Create().Format(
+            document with { Worlds = default }, new WitTypeReference.Defined(0)));
+        AssertContractFailure(() => Create().Format(
+            document with { Types = [owned with { OwnerWorld = 1 }] }, new WitTypeReference.Defined(0)));
+    }
+
+    [Fact]
     public void RejectsInvalidArgumentsCollectionsReferencesAndNamedOwners()
     {
         var formatter = Create();
         var valid = Document();
 
         Assert.Throws<ArgumentNullException>(() => new WitTypeIdentityFormatter(null!));
+        Assert.Throws<ArgumentNullException>(() => new WitTypeIdentityFormatter(new WitInterfaceSpecifierFormatter(), null!));
         Assert.Throws<ArgumentNullException>(() => formatter.Format(null!, new WitTypeReference.Primitive("u8")));
         Assert.Throws<ArgumentNullException>(() => formatter.Format(valid, null!));
         AssertContractFailure(() => formatter.Format(

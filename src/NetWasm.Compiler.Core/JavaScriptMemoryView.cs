@@ -36,7 +36,7 @@ public static class JavaScriptMemoryView
     {
         ArgumentNullException.ThrowIfNull(type);
         return type.Shape == CliTypeShape.GenericInstantiation
-            && type.ElementType?.FullName is "System.Span`1" or "System.ReadOnlySpan`1"
+            && type.ElementType!.FullName is "System.Span`1" or "System.ReadOnlySpan`1"
             && type.TypeArguments.Length == 1
             && Elements.ContainsKey(type.TypeArguments[0].CanonicalName);
     }

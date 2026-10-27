@@ -203,6 +203,24 @@ public sealed class AsyncJSImportCompletionEmitterTests
     }
 
     [Fact]
+    public void ResolvesANullableDateAsItsPresenceAndUnixMilliseconds()
+    {
+        var date = CliTypeIdentity.Named(Assembly, "System", "DateTime", isValueType: true);
+        var binding = CreateBinding(CliValueKind.I4) with
+        {
+            Return = new JavaScriptAsyncReturn(
+                JavaScriptAsyncReturnKind.Task,
+                CliTypeIdentity.GenericInstantiation(
+                    CliTypeIdentity.Named(Assembly, "System", "Nullable`1", isValueType: true), [date])),
+        };
+
+        var type = ((IAsyncJSImportResolveTypeResolver)new AsyncJSImportResolveTypeResolver(
+            new RecordingLayoutProvider())).Resolve(binding);
+
+        Assert.Equal([CliValueKind.I4, CliValueKind.I4, CliValueKind.F8], type.Parameters.ToArray());
+    }
+
+    [Fact]
     public void ResolvesVoidAsyncCompletionWithoutAResultParameter()
     {
         var binding = CreateBinding(CliValueKind.I4) with

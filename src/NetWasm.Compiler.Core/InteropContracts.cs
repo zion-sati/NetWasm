@@ -115,10 +115,10 @@ public static class JavaScriptMarshalAsRules
                     ? Fits(result, value, invoke)
                     : value is { Name: "Void", Arguments.IsEmpty: true });
         }
-        if (type.Shape == CliTypeShape.SzArray && type.ElementType is { } element &&
-            (JavaScriptValueArray.IsSupported(type) || JavaScriptConversion.IsHandleValue(type)))
+        if (JavaScriptValueArray.IsSupported(type) ||
+            (JavaScriptConversion.IsHandleValue(type) && type.Shape == CliTypeShape.SzArray))
         {
-            return marker is { Name: "Array", Arguments: [var item] } && Fits(element, item, invoke);
+            return marker is { Name: "Array", Arguments: [var item] } && Fits(type.ElementType!, item, invoke);
         }
         return marker.Arguments.IsEmpty && Simple(type).Contains(marker.Name);
     }
@@ -362,7 +362,7 @@ public static class JavaScriptNullable
     public static CliTypeIdentity? Underlying(CliTypeIdentity type)
     {
         ArgumentNullException.ThrowIfNull(type);
-        return type.Shape == CliTypeShape.GenericInstantiation && type.ElementType?.FullName == "System.Nullable`1" &&
+        return type.Shape == CliTypeShape.GenericInstantiation && type.ElementType!.FullName == "System.Nullable`1" &&
             type.TypeArguments is [var underlying] &&
             (JavaScriptDirectImport.IsScalar(underlying) || JavaScriptConversion.IsDate(underlying))
                 ? underlying
