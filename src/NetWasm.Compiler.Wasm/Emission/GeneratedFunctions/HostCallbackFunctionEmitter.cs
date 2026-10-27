@@ -18,6 +18,7 @@ internal sealed class HostCallbackFunctionEmitter(
     IRuntimeStateInitializer runtimeInitialization,
     IImplicitExceptionEmitter exceptions,
     IJavaScriptReferenceArgumentEmitter referenceArguments,
+    IJavaScriptValueFramePlanner valueFramePlanner,
     IJavaScriptValueFrameEmitter valueFrames,
     IManagedTerminalExceptionBoundaryEmitter terminalExceptions,
     IAddressInstructionEmitter addresses,
@@ -49,7 +50,7 @@ internal sealed class HostCallbackFunctionEmitter(
         var hasResult = invoke.Signature.ReturnType != CliValueKind.Void;
         var hostObjectResult = InteropTypeClassifier.IsJSObject(invoke.Signature.ReturnSignatureType);
         var handleValueResult = InteropTypeClassifier.IsHandleValue(invoke.Signature.ReturnSignatureType);
-        var converted = valueFrames.Plan(invoke.Signature.ParameterSignatureTypes, invoke.Signature.ReturnSignatureType);
+        var converted = valueFramePlanner.Plan(invoke.Signature.ParameterSignatureTypes, invoke.Signature.ReturnSignatureType);
         var resultKind = hostObjectResult || handleValueResult
             ? CliValueKind.I4
             : converted?.Result is { } convertedResult
@@ -128,10 +129,10 @@ internal sealed class HostCallbackFunctionEmitter(
                 // The invoke helper takes a value-type result's address first, then the delegate.
                 if (converted is not null)
                 {
-                    valueFrames.EmitEnter(
-                        code.Instructions, converted, valueFrameLocal, index => parameterLocals[index], interopImports);
+                    valueFrames.Emit(
+                        code.Instructions, new JavaScriptValueFrameEnter(converted, valueFrameLocal, [.. parameterLocals], interopImports));
                     if (converted.Result is { } resultSlot)
-                        valueFrames.EmitAddress(code.Instructions, valueFrameLocal, resultSlot.Offset);
+                        valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(valueFrameLocal, resultSlot.Offset));
                 }
                 WriteLocalGet(code, delegateLocal);
                 for (var index = 0; index < invoke.Signature.ParameterSignatureTypes.Length; index++)
@@ -143,7 +144,7 @@ internal sealed class HostCallbackFunctionEmitter(
                             slot * layouts.Target.ObjectReferenceSize, layouts.Target.ObjectReferenceSize);
                     }
                     else if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
-                        valueFrames.EmitAddress(code.Instructions, valueFrameLocal, valueSlot.Offset);
+                        valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(valueFrameLocal, valueSlot.Offset));
                     else WriteLocalGet(code, parameterLocals[index]);
                 }
                 WriteCall(code, functionIndices.GetDelegateInvokeHelper(invoke.DeclaringType.CanonicalName).Value);
@@ -158,7 +159,7 @@ internal sealed class HostCallbackFunctionEmitter(
                 }
                 else if (converted?.Result is not null)
                 {
-                    valueFrames.EmitResult(code.Instructions, converted, valueFrameLocal, interopImports);
+                    valueFrames.Emit(code.Instructions, new JavaScriptValueFrameResult(converted, valueFrameLocal, interopImports));
                 }
                 if (hasResult)
                 {
@@ -166,7 +167,7 @@ internal sealed class HostCallbackFunctionEmitter(
                 }
                 // A nullable result's record stays where it is until the host reads it on return.
                 if (converted is not null)
-                    valueFrames.EmitLeave(code.Instructions, valueFrameLocal);
+                    valueFrames.Emit(code.Instructions, new JavaScriptValueFrameLeave(valueFrameLocal));
                 if (referenceParameters.Length != 0)
                 {
                     WriteLocalGet(code, rootFrameLocal);

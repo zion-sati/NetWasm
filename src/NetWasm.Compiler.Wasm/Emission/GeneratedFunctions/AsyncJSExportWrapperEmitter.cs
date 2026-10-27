@@ -17,6 +17,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
     IReferenceComparisonEmitter references,
     IGeneratedFunctionWriterFactory writers,
     IJavaScriptReferenceArgumentEmitter referenceArguments,
+    IJavaScriptValueFramePlanner valueFramePlanner,
     IJavaScriptValueFrameEmitter valueFrames) : IAsyncJSExportWrapperEmitter
 {
     public byte[] Emit(
@@ -59,7 +60,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
         // Date and nullable parameters become structs in a value frame that lives until
         // the method returns its task. The result is read from the task later.
         var converted = argumentFactory is null && interopImports is not null
-            ? valueFrames.Plan(method.Signature.ParameterSignatureTypes, CliTypeIdentity.FromStackKind(CliValueKind.Void))
+            ? valueFramePlanner.Plan(method.Signature.ParameterSignatureTypes, CliTypeIdentity.FromStackKind(CliValueKind.Void))
             : null;
         var convertedFrameLocal = referenceParameters.Length == 0 ? argumentFrameLocal : argumentLocal + 1;
         var code = writers.Create();
@@ -121,8 +122,8 @@ internal sealed class AsyncJSExportWrapperEmitter(
             }
         }
         if (converted is not null)
-            valueFrames.EmitEnter(
-                code.Instructions, converted, convertedFrameLocal, index => parameterLocals[index], interopImports!);
+            valueFrames.Emit(
+                code.Instructions, new JavaScriptValueFrameEnter(converted, convertedFrameLocal, [.. parameterLocals], interopImports!));
         if (binding.Return.Kind == JavaScriptAsyncReturnKind.ValueTask)
         {
             var valueLayout = valueLayouts.GetValueLayout(
@@ -194,7 +195,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
                 WasmInstructionOperand.Unsigned((uint)taskLocal)));
         }
         if (converted is not null)
-            valueFrames.EmitLeave(code.Instructions, convertedFrameLocal);
+            valueFrames.Emit(code.Instructions, new JavaScriptValueFrameLeave(convertedFrameLocal));
         // Normal completion leaves the argument frame and skips the handler.
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         if (referenceParameters.Length != 0)
@@ -348,7 +349,7 @@ internal sealed class AsyncJSExportWrapperEmitter(
             }
             if (converted?.Parameters.TryGetValue(index, out var valueSlot) == true)
             {
-                valueFrames.EmitAddress(code.Instructions, convertedFrameLocal, valueSlot.Offset);
+                valueFrames.Emit(code.Instructions, new JavaScriptValueFrameAddress(convertedFrameLocal, valueSlot.Offset));
                 continue;
             }
             code.Instructions.Write(WasmInstruction.WithOperand(

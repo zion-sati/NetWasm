@@ -405,6 +405,7 @@ public sealed class AsyncJSExportFunctionEmitterTests
                     strings ?? new RecordingStringArguments(),
                     arrays ?? new RecordingArrayArguments(),
                     objects ?? new RecordingObjectArguments()),
+                EmitterTestSupport.ValueFramePlanner(layouts),
                 EmitterTestSupport.ValueFrames(layouts, imports)),
         }.Cast<IAsyncJSExportWrapperEmitter>().Single();
 

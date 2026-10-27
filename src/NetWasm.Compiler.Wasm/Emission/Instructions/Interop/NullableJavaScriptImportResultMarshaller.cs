@@ -19,11 +19,12 @@ internal sealed class NullableJavaScriptImportResultMarshaller(
         var destination = stackLocals.Resolve(context, request.ArgumentBase, CliValueKind.ValueType);
         addresses.Emit(code, context, context.ValueLayout.TemporaryOffsets[request.Offset]);
         Local(code, WasmOpcodes.LocalSet, destination);
-        nullables.EmitFromRecord(
+        nullables.Emit(
             code,
-            request.Signature.ReturnSignatureType,
-            () => Local(code, WasmOpcodes.LocalGet, destination),
-            () => Local(code, WasmOpcodes.LocalGet, context.InteropDescriptor),
+            new JavaScriptNullableFromRecord(
+                request.Signature.ReturnSignatureType,
+                Struct: new(destination),
+                Record: new(context.InteropDescriptor)),
             request.Target.Imports);
         Local(code, WasmOpcodes.LocalGet, context.InteropDescriptor);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned(

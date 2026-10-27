@@ -85,6 +85,7 @@ public sealed class HostCallbackFunctionEmitterTests
                 new ImplicitExceptionEmitter(layouts, layouts),
                 new JavaScriptReferenceArgumentEmitter(
                     stringMarshaller, byteMarshaller, new RecordingHostObjectMarshaller()),
+                EmitterTestSupport.ValueFramePlanner(layouts),
                 EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 terminalBoundary,
                 new AddressInstructionEmitter(layouts),
@@ -156,6 +157,7 @@ public sealed class HostCallbackFunctionEmitterTests
             new HostCallbackFunctionEmitter(
                 layouts, runtimeImports, new RecordingRuntimeInitializer(), new ImplicitExceptionEmitter(layouts, layouts),
                 new JavaScriptReferenceArgumentEmitter(strings, new RecordingByteArrayMarshaller(), objects),
+                EmitterTestSupport.ValueFramePlanner(layouts),
                 EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 new PassthroughTerminalBoundary(),
                 new AddressInstructionEmitter(layouts), new GeneratedFunctionWriterFactory()),
@@ -211,6 +213,7 @@ public sealed class HostCallbackFunctionEmitterTests
                 new ImplicitExceptionEmitter(layouts, layouts),
                 new JavaScriptReferenceArgumentEmitter(
                     new RecordingStringMarshaller(), new RecordingByteArrayMarshaller(), new RecordingHostObjectMarshaller()),
+                EmitterTestSupport.ValueFramePlanner(layouts),
                 EmitterTestSupport.ValueFrames(layouts, runtimeImports),
                 terminalBoundary,
                 new AddressInstructionEmitter(layouts),

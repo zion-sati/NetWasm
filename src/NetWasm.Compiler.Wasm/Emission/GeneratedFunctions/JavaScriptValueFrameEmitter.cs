@@ -25,36 +25,42 @@ internal sealed record JavaScriptValueFrame(
 /// <summary>A struct's slot, and for a nullable result the slot of its record.</summary>
 internal sealed record JavaScriptValueSlot(CliTypeIdentity Type, int Offset, int RecordOffset = 0);
 
-internal interface IJavaScriptValueFrameEmitter
+internal interface IJavaScriptValueFramePlanner
 {
     /// <summary>The frame for a boundary's converted values, or null when it has none.</summary>
     JavaScriptValueFrame? Plan(IReadOnlyList<CliTypeIdentity> parameters, CliTypeIdentity result);
-
-    /// <summary>
-    /// Enters the frame and converts each parameter into its slot from its transport,
-    /// whose first Wasm local <paramref name="parameterLocal"/> gives.
-    /// </summary>
-    void EmitEnter(
-        IWasmInstructionWriter code,
-        JavaScriptValueFrame frame,
-        int frameLocal,
-        Func<int, int> parameterLocal,
-        InteropImportPlan interop);
-
-    void EmitAddress(IWasmInstructionWriter code, int frameLocal, int offset);
-
-    /// <summary>Leaves the result's transport: a date's milliseconds or a nullable's record address.</summary>
-    void EmitResult(IWasmInstructionWriter code, JavaScriptValueFrame frame, int frameLocal, InteropImportPlan interop);
-
-    void EmitLeave(IWasmInstructionWriter code, int frameLocal);
 }
 
-internal sealed class JavaScriptValueFrameEmitter(
-    ITargetLayout layouts,
-    IValueLayoutProvider values,
-    IRuntimeImportResolver runtimeImports,
-    IAddressInstructionEmitter addresses,
-    IJavaScriptNullableEmitter nullables) : IJavaScriptValueFrameEmitter
+internal interface IJavaScriptValueFrameEmitter
+{
+    void Emit(IWasmInstructionWriter code, JavaScriptValueFrameStep step);
+}
+
+/// <summary>One step of a boundary's value frame, held in <see cref="FrameLocal"/>.</summary>
+internal abstract record JavaScriptValueFrameStep(int FrameLocal);
+
+/// <summary>
+/// Enters the frame and converts each parameter into its slot from its transport,
+/// whose first Wasm local <see cref="ParameterLocals"/> gives by parameter index.
+/// </summary>
+internal sealed record JavaScriptValueFrameEnter(
+    JavaScriptValueFrame Frame,
+    int FrameLocal,
+    ImmutableArray<int> ParameterLocals,
+    InteropImportPlan Interop) : JavaScriptValueFrameStep(FrameLocal);
+
+/// <summary>Leaves the address of the slot at <see cref="Offset"/>.</summary>
+internal sealed record JavaScriptValueFrameAddress(int FrameLocal, int Offset) : JavaScriptValueFrameStep(FrameLocal);
+
+/// <summary>Leaves the result's transport: a date's milliseconds or a nullable's record address.</summary>
+internal sealed record JavaScriptValueFrameResult(
+    JavaScriptValueFrame Frame,
+    int FrameLocal,
+    InteropImportPlan Interop) : JavaScriptValueFrameStep(FrameLocal);
+
+internal sealed record JavaScriptValueFrameLeave(int FrameLocal) : JavaScriptValueFrameStep(FrameLocal);
+
+internal sealed class JavaScriptValueFramePlanner(IValueLayoutProvider values) : IJavaScriptValueFramePlanner
 {
     public JavaScriptValueFrame? Plan(IReadOnlyList<CliTypeIdentity> parameters, CliTypeIdentity result)
     {
@@ -91,63 +97,87 @@ internal sealed class JavaScriptValueFrameEmitter(
         }
         return slots.Count == 0 && resultSlot is null ? null : new(slots.ToImmutable(), resultSlot, size);
     }
+}
 
-    public void EmitEnter(
-        IWasmInstructionWriter code,
-        JavaScriptValueFrame frame,
-        int frameLocal,
-        Func<int, int> parameterLocal,
-        InteropImportPlan interop)
+internal sealed class JavaScriptValueFrameEmitter(
+    ITargetLayout layouts,
+    IRuntimeImportResolver runtimeImports,
+    IAddressInstructionEmitter addresses,
+    IJavaScriptNullableEmitter nullables) : IJavaScriptValueFrameEmitter
+{
+    public void Emit(IWasmInstructionWriter code, JavaScriptValueFrameStep step)
     {
-        ManagedMemoryEmitter.EmitAddressConstant(code, layouts.Target, frame.Size);
-        WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)frameLocal)));
-        foreach (var (index, slot) in frame.Parameters)
+        switch (step)
         {
-            var local = parameterLocal(index);
-            if (InteropTypeClassifier.IsNullable(slot.Type))
-            {
-                nullables.EmitFromPair(
-                    code, slot.Type, () => EmitAddress(code, frameLocal, slot.Offset), local, local + 1, interop);
-                continue;
-            }
-            EmitAddress(code, frameLocal, slot.Offset);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));
-            WriteCall(code, interop.ToManaged(slot.Type));
+            case JavaScriptValueFrameEnter enter:
+                Enter(code, enter);
+                break;
+            case JavaScriptValueFrameAddress address:
+                Address(code, address.FrameLocal, address.Offset);
+                break;
+            case JavaScriptValueFrameResult result:
+                Result(code, result);
+                break;
+            case JavaScriptValueFrameLeave leave:
+                Local(code, leave.FrameLocal);
+                WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(step), step, "unknown value frame step");
         }
     }
 
-    public void EmitAddress(IWasmInstructionWriter code, int frameLocal, int offset)
+    private void Enter(IWasmInstructionWriter code, JavaScriptValueFrameEnter step)
     {
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)frameLocal)));
+        ManagedMemoryEmitter.EmitAddressConstant(code, layouts.Target, step.Frame.Size);
+        WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)step.FrameLocal)));
+        foreach (var (index, slot) in step.Frame.Parameters)
+        {
+            var local = step.ParameterLocals[index];
+            if (InteropTypeClassifier.IsNullable(slot.Type))
+            {
+                nullables.Emit(
+                    code,
+                    new JavaScriptNullableFromPair(slot.Type, new(step.FrameLocal, slot.Offset), local),
+                    step.Interop);
+                continue;
+            }
+            Address(code, step.FrameLocal, slot.Offset);
+            Local(code, local);
+            WriteCall(code, step.Interop.ToManaged(slot.Type));
+        }
+    }
+
+    private void Result(IWasmInstructionWriter code, JavaScriptValueFrameResult step)
+    {
+        var result = step.Frame.Result ?? throw new InvalidOperationException("the boundary has no converted result");
+        if (InteropTypeClassifier.IsNullable(result.Type))
+        {
+            nullables.Emit(
+                code,
+                new JavaScriptNullableToRecord(
+                    result.Type,
+                    Struct: new(step.FrameLocal, result.Offset),
+                    Record: new(step.FrameLocal, result.RecordOffset)),
+                step.Interop);
+            Address(code, step.FrameLocal, result.RecordOffset);
+            return;
+        }
+        Address(code, step.FrameLocal, result.Offset);
+        WriteCall(code, step.Interop.FromManaged(result.Type));
+    }
+
+    private void Address(IWasmInstructionWriter code, int frameLocal, int offset)
+    {
+        Local(code, frameLocal);
         if (offset == 0) return;
         addresses.Emit(code, offset);
         addresses.Emit(code, AddressOperation.Add);
     }
 
-    public void EmitResult(IWasmInstructionWriter code, JavaScriptValueFrame frame, int frameLocal, InteropImportPlan interop)
-    {
-        var result = frame.Result ?? throw new InvalidOperationException("the boundary has no converted result");
-        if (InteropTypeClassifier.IsNullable(result.Type))
-        {
-            nullables.EmitRecord(
-                code,
-                result.Type,
-                () => EmitAddress(code, frameLocal, result.RecordOffset),
-                () => EmitAddress(code, frameLocal, result.Offset),
-                interop);
-            EmitAddress(code, frameLocal, result.RecordOffset);
-            return;
-        }
-        EmitAddress(code, frameLocal, result.Offset);
-        WriteCall(code, interop.FromManaged(result.Type));
-    }
-
-    public void EmitLeave(IWasmInstructionWriter code, int frameLocal)
-    {
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)frameLocal)));
-        WriteCall(code, runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave));
-    }
+    private static void Local(IWasmInstructionWriter code, int local) =>
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));
 
     private static void WriteCall(IWasmInstructionWriter code, int function) =>
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)function)));
