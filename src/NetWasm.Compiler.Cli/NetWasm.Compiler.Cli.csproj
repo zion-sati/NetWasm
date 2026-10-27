@@ -3,6 +3,7 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>nwc</AssemblyName>
     <RootNamespace>NetWasm.Compiler.Cli</RootNamespace>
+    <Version>0.4.2</Version>
     <IsPackable>false</IsPackable>
     <!-- The compiler reads no culture data, so a Native AOT nwc needs no ICU on the host. -->
     <InvariantGlobalization>true</InvariantGlobalization>

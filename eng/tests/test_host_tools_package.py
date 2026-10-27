@@ -35,24 +35,7 @@ build_host_tools = load("netwasm_build_host_tools", "build-host-tools-package.py
 
 
 class HostToolsPackageTests(unittest.TestCase):
-    def test_staged_manifest_version_can_be_repacked_without_restaging_payload(self):
-        stage = Path(self.temporary.name) / "staged"
-        manifest = stage / "tools/host-tools-manifest.json"
-        manifest.parent.mkdir(parents=True)
-        manifest.write_text(json.dumps({
-            "packageVersion": "0.5.0-preview.1",
-            "files": [{"path": "tools/bin/node", "sha256": "same"}],
-        }))
-
-        build_host_tools.set_staged_version(stage, "0.5.0")
-
-        updated = json.loads(manifest.read_text())
-        self.assertEqual("0.5.0", updated["packageVersion"])
-        self.assertEqual(
-            [{"path": "tools/bin/node", "sha256": "same"}], updated["files"]
-        )
-
-    def test_release_train_stages_and_probes_native_payload_once(self):
+    def test_release_train_publishes_and_stages_nwc_for_each_version(self):
         output = Path(self.temporary.name) / "output"
         cache = Path(self.temporary.name) / "cache"
         events = []
@@ -60,7 +43,9 @@ class HostToolsPackageTests(unittest.TestCase):
         def run(command, **_kwargs):
             command = [str(value) for value in command]
             if command[:2] == ["dotnet", "publish"]:
-                events.append("publish")
+                events.append(("publish", next(
+                    value.removeprefix("-p:Version=") for value in command
+                    if value.startswith("-p:Version="))))
                 self.assertIn("-p:PublishAot=true", command)
                 self.assertEqual("1", _kwargs["env"]["ZERO_AR_DATE"])
                 self.assertEqual("win-x64", command[command.index("-r") + 1])
@@ -68,7 +53,7 @@ class HostToolsPackageTests(unittest.TestCase):
                 compiler.parent.mkdir(parents=True)
                 compiler.write_bytes(b"nwc")
             elif command[1].endswith("stage-host-tools.py"):
-                events.append("stage")
+                events.append(("stage", command[command.index("--version") + 1]))
                 self.assertTrue(Path(command[command.index("--compiler") + 1]).is_file())
                 stage_root = Path(command[command.index("--output") + 1])
                 version = command[command.index("--version") + 1]
@@ -114,11 +99,12 @@ class HostToolsPackageTests(unittest.TestCase):
                 "win-x64", ["0.5.0-preview.1", "0.5.0"], output, cache
             )
 
-        self.assertEqual(["publish", "stage"], events[:2])
-        self.assertEqual(1, events.count("stage"))
         self.assertEqual(
-            [("pack", "0.5.0-preview.1"), ("pack", "0.5.0")],
-            [event for event in events if isinstance(event, tuple) and event[0] == "pack"],
+            [
+                ("publish", "0.5.0-preview.1"), ("stage", "0.5.0-preview.1"), ("pack", "0.5.0-preview.1"),
+                ("publish", "0.5.0"), ("stage", "0.5.0"), ("pack", "0.5.0"),
+            ],
+            [event for event in events if event[0] != "verify"],
         )
         self.assertEqual(2, len(results))
 
