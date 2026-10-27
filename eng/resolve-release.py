@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -17,23 +18,28 @@ SEMVER = re.compile(
     r"(?:-(?:0|[1-9][0-9]*|[0-9]*[a-z-][0-9a-z-]*)"
     r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-z-][0-9a-z-]*))*)?"
 )
-TRAIN_PREVIEW_SUFFIX = "-preview.1"
+TRAIN_PREVIEW = re.compile(r"(?P<stable>.+)-preview\.(?P<number>[1-9][0-9]*)")
 
 
-def resolve_train_identity(version: str, tag_prefix: str) -> dict[str, str]:
-    if version.endswith(TRAIN_PREVIEW_SUFFIX):
-        stable_version = version.removesuffix(TRAIN_PREVIEW_SUFFIX)
+def resolve_train_identity(
+    version: str, tag_prefix: str, source_tags: Sequence[str] = ()
+) -> dict[str, str]:
+    """A preview.N tag builds a train; a stable tag promotes its source's newest preview."""
+    preview = TRAIN_PREVIEW.fullmatch(version)
+    if preview is not None:
+        stable_version = preview["stable"]
+        preview_version = version
         mode = "build"
     elif "-" not in version:
         stable_version = version
+        preview_version = newest_source_preview(stable_version, tag_prefix, source_tags)
         mode = "promote"
     else:
         raise ValueError(
-            "Release trains must start at preview.1 and finish at the stable version."
+            "Release trains build from a preview.N tag and finish at the stable version."
         )
     if SEMVER.fullmatch(stable_version) is None or "-" in stable_version:
         raise ValueError("Release train base version must be stable semantic version.")
-    preview_version = stable_version + TRAIN_PREVIEW_SUFFIX
     return {
         "mode": mode,
         "previewVersion": preview_version,
@@ -42,6 +48,24 @@ def resolve_train_identity(version: str, tag_prefix: str) -> dict[str, str]:
         "stableTag": tag_prefix + stable_version,
         "artifactName": f"netwasm-release-train-{stable_version}",
     }
+
+
+def newest_source_preview(
+    stable_version: str, tag_prefix: str, source_tags: Sequence[str]
+) -> str:
+    numbers = [
+        int(match["number"])
+        for tag in source_tags
+        if tag.startswith(tag_prefix)
+        and (match := TRAIN_PREVIEW.fullmatch(tag[len(tag_prefix) :])) is not None
+        and match["stable"] == stable_version
+    ]
+    if not numbers:
+        raise ValueError(
+            "A stable release promotes a preview of the same source commit, and no "
+            f"{tag_prefix}{stable_version}-preview.N tag points at it."
+        )
+    return f"{stable_version}-preview.{max(numbers)}"
 
 
 def write_train_manifests(
@@ -113,6 +137,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--train-directory", type=Path)
+    parser.add_argument(
+        "--source-tags",
+        nargs="*",
+        default=[],
+        help="Tags that point at the source commit; a stable release promotes the newest preview among them.",
+    )
     arguments = parser.parse_args()
 
     manifest = json.loads(arguments.manifest.read_text(encoding="utf-8"))
@@ -121,7 +151,9 @@ def main() -> int:
     )
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(resolved, indent=2) + "\n", encoding="utf-8")
-    identity = resolve_train_identity(str(resolved["releaseVersion"]), arguments.tag_prefix)
+    identity = resolve_train_identity(
+        str(resolved["releaseVersion"]), arguments.tag_prefix, arguments.source_tags
+    )
     if arguments.train_directory is not None:
         write_train_manifests(arguments.train_directory, resolved, identity)
     if arguments.github_output is not None:
