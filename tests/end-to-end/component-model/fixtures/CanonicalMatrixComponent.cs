@@ -34,6 +34,12 @@ public static partial class TestCanonicalExports
     public static partial ScalarValues RoundTripScalars(ScalarValues value) =>
         HostImports.RoundTripScalars(value);
 
+    public static partial Mode Select(Mode mode, Permissions permissions) =>
+        HostImports.Select(mode, permissions);
+
+    public static partial WidePermissions Widen(WidePermissions value) =>
+        HostImports.Widen(value);
+
     public static partial WitResult<(uint, string), string> Transform(
         Item[] values,
         WitOption<Choice> selected,

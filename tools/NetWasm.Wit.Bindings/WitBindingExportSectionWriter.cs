@@ -5,7 +5,7 @@ namespace NetWasm.Wit.Bindings;
 
 public interface IWitBindingExportSectionWriter
 {
-    WitBindingSectionSource Generate(WitDocument document, WitWorld world);
+    string Generate(WitDocument document, WitWorld world);
 }
 
 public sealed class WitBindingExportSectionWriter(
@@ -23,13 +23,12 @@ public sealed class WitBindingExportSectionWriter(
     private readonly ICodeWriterFactory _writers = writers ??
         throw new ArgumentNullException(nameof(writers));
 
-    public WitBindingSectionSource Generate(WitDocument document, WitWorld world)
+    public string Generate(WitDocument document, WitWorld world)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(world);
-        var typeSet = new FlatBindingTypeSet();
         var writer = _writers.Create();
-        WriteExports(writer, document, world, typeSet);
-        return new(writer.Text, [.. typeSet.Lift], [.. typeSet.Lower]);
+        WriteExports(writer, document, world);
+        return writer.Text;
     }
 }

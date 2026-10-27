@@ -19,14 +19,11 @@ public sealed class WitBindingMethodWriterTests
     {
         var imports = WitBindingWriterFixture.CreateImports();
         var exports = WitBindingWriterFixture.CreateExports();
-        var flat = WitBindingWriterFixture.CreateFlat();
 
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingMethodWriter(null!, exports, flat));
+            new WitBindingMethodWriter(null!, exports));
         Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingMethodWriter(imports, null!, flat));
-        Assert.Throws<ArgumentNullException>(() =>
-            new WitBindingMethodWriter(imports, exports, null!));
+            new WitBindingMethodWriter(imports, null!));
     }
 
     [Fact]
@@ -159,10 +156,13 @@ public sealed class WitBindingMethodWriterTests
         Assert.Contains("CanonicalAbi.ReadDouble", bindings);
     }
 
+    // Flags cross as their 32-bit words, lowered from and lifted into the
+    // managed value directly.
     [Theory]
-    [InlineData(16, "CanonicalAbi.ReadUInt16")]
-    [InlineData(65, "CanonicalAbi.ReadInt32")]
-    public void FlagsUseTheCanonicalWordReader(int count, string expectedReader)
+    [InlineData(16, "unchecked((int)value)", "CanonicalAbi.LiftFlagsWord(unchecked((uint)__f0), 16)")]
+    [InlineData(65, "unchecked((int)value.GetWord(2))",
+        "FromWords(new uint[] { unchecked((uint)__f0), unchecked((uint)__f1), CanonicalAbi.LiftFlagsWord(unchecked((uint)__f2), 1) })")]
+    public void FlagsCrossAsTheirWords(int count, string lowered, string lifted)
     {
         var function = new WitFunction(
             "flags",
@@ -187,7 +187,9 @@ public sealed class WitBindingMethodWriterTests
 
         var bindings = WitBindingWriterFixture.Create().Generate(document, world);
 
-        Assert.Contains(expectedReader, bindings);
+        Assert.Contains(lowered, bindings);
+        Assert.Contains(lifted, bindings);
+        Assert.DoesNotContain("CanonicalAbi.Allocate", bindings);
     }
 
     [Fact]
@@ -219,7 +221,7 @@ public sealed class WitBindingMethodWriterTests
     }
 
     [Fact]
-    public async Task ConcurrentGenerationKeepsFlatBindingMethodsInvocationLocal()
+    public async Task ConcurrentGenerationKeepsEachDocumentsTypes()
     {
         var first = RecordResultDocument("first");
         var second = RecordResultDocument("second");
@@ -237,7 +239,7 @@ public sealed class WitBindingMethodWriterTests
             var own = index % 2 == 0 ? "First" : "Second";
             var other = index % 2 == 0 ? "Second" : "First";
             Assert.Contains($"public static {own} Read()", results[index]);
-            Assert.Contains($"internal static {own} LiftType0", results[index]);
+            Assert.Contains($"__managedResult = new {own}(__canonicalResult);", results[index]);
             Assert.DoesNotContain(other, results[index]);
         }
     }

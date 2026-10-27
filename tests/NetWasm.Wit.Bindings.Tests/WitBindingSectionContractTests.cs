@@ -37,8 +37,6 @@ public sealed class WitBindingSectionContractTests
             types, flattener, layouts, models, syntax, slotCoercions, null!));
         Assert.Throws<ArgumentNullException>(() => new WitBindingExportSectionWriter(
             types, flattener, layouts, models, syntax, slotCoercions, null!));
-        Assert.Throws<ArgumentNullException>(() => new WitBindingFlatSectionWriter(
-            types, flattener, layouts, models, syntax, slotCoercions, null!));
     }
 
     [Fact]
@@ -68,12 +66,10 @@ public sealed class WitBindingSectionContractTests
         var exports = AsExports(WitBindingWriterFixture.CreateExports())
             .Generate(document, world);
 
-        Assert.Contains("public static partial class ApiImports", imports.Source);
-        Assert.Contains("public static partial class TestExports", exports.Source);
-        Assert.Contains("Ping();", exports.Source);
-        Assert.DoesNotContain("ExampleTest100Api_Ping();", exports.Source);
-        Assert.Empty(imports.LiftTypes);
-        Assert.Empty(exports.LowerTypes);
+        Assert.Contains("public static partial class ApiImports", imports);
+        Assert.Contains("public static partial class TestExports", exports);
+        Assert.Contains("Ping();", exports);
+        Assert.DoesNotContain("ExampleTest100Api_Ping();", exports);
     }
 
     [Fact]
@@ -92,7 +88,7 @@ public sealed class WitBindingSectionContractTests
             [new WitWorldItem(function.Name, null, function)]);
         var document = new WitDocument([], [], [world], [], "{}");
 
-        var source = WitBindingWriterFixture.CreateExports().Generate(document, world).Source;
+        var source = WitBindingWriterFixture.CreateExports().Generate(document, world);
 
         Assert.Contains("public static partial string EchoBack(string value);", source);
         Assert.Contains("var __managedResult = EchoBack(__managed0);", source);
@@ -120,7 +116,7 @@ public sealed class WitBindingSectionContractTests
             [new WitWorldItem(function.Name, null, function)]);
         var document = new WitDocument([], [], [world], [type], "{}");
 
-        var source = WitBindingWriterFixture.CreateExports().Generate(document, world).Source;
+        var source = WitBindingWriterFixture.CreateExports().Generate(document, world);
 
         Assert.Contains("public static partial Pair RoundTrip(Pair value);", source);
         Assert.Contains("var __managedResult = RoundTrip(__managed0);", source);

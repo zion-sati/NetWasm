@@ -138,6 +138,66 @@ public sealed class WitCSharpBindingGeneratorTests
         Assert.Contains("public static partial class HostImports", bindings, StringComparison.Ordinal);
     }
 
+    // A type alias crosses as the type it names: an alias of u64, or an alias
+    // of that alias, is the cast u64 is, not a copy through memory, whether a
+    // world's own function or an interface's takes or returns it.
+    [Fact]
+    public void AnAliasCrossesAsTheTypeItNames()
+    {
+        var u64 = new WitTypeReference.Primitive("u64");
+        var count = new WitTypeReference.Defined(2);
+        var total = new WitTypeReference.Defined(3);
+        static WitFunction Function(string name, WitTypeReference type) =>
+            new(name, [new WitParameter("value", type)], type, new WitFunctionKind("freestanding"));
+        var document = Document(Function("plain", u64), Function("run", u64));
+        document = document with
+        {
+            Interfaces =
+            [
+                document.Interfaces[0] with
+                {
+                    Types = document.Interfaces[0].Types.Add("count", 2),
+                    Functions = [Function("plain", u64), Function("counted", count)],
+                },
+            ],
+            Types =
+            [
+                .. document.Types,
+                new WitTypeDefinition(2, "count", Json("""{"type":"u64"}"""), 0),
+                new WitTypeDefinition(3, "total", Json("""{"type":2}"""), null) { OwnerWorld = 0 },
+            ],
+        };
+        var world = document.Worlds[0] with
+        {
+            Imports =
+            [
+                new WitWorldItem("host", 0, null),
+                new WitWorldItem("direct", null, Function("direct", u64)),
+                new WitWorldItem("aliased", null, Function("aliased", total)),
+            ],
+            Exports = [new WitWorldItem("run", null, Function("run", u64)), new WitWorldItem("served", null, Function("served", total))],
+            Types = ImmutableDictionary<string, int>.Empty.Add("total", 3),
+        };
+
+        var bindings = CreateGenerator().Generate(document, world);
+
+        Assert.DoesNotContain("__CanonicalFlat", bindings, StringComparison.Ordinal);
+        Assert.DoesNotContain("__CanonicalMarshalling", bindings, StringComparison.Ordinal);
+        Assert.Equal(Method(bindings, "Plain"), Method(bindings, "Counted").Replace("Counted", "Plain"));
+        Assert.Equal(Method(bindings, "Direct"), Method(bindings, "Aliased").Replace("Aliased", "Direct"));
+        Assert.Equal(Method(bindings, "__Canonical__Run"),
+            Method(bindings, "__Canonical__Served").Replace("Served", "Run"));
+    }
+
+    // The text of the generated method with this name, up to its closing brace.
+    private static string Method(string bindings, string name)
+    {
+        var start = bindings.IndexOf($" {name}(", StringComparison.Ordinal);
+        Assert.True(start >= 0, $"no method {name}");
+        var end = bindings.IndexOf("\n    }\n", start, StringComparison.Ordinal);
+        return bindings[start..end];
+    }
+
     [Fact]
     public void UsesTheSelectedNamespace()
     {

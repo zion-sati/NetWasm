@@ -357,6 +357,10 @@ public sealed class ComponentCompilationTests
 
                 public static partial uint BoundaryProbes() => 0;
 
+                public static partial Mode Select(Mode mode, Permissions permissions) => mode;
+
+                public static partial WidePermissions Widen(WidePermissions value) => value;
+
                 public static partial WitResult<(uint, string), string> Transform(
                     Item[] values,
                     WitOption<Choice> selected,

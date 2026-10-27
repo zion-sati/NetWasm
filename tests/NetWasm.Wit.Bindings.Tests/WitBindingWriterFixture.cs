@@ -15,22 +15,15 @@ internal static class WitBindingWriterFixture
     public static IWitBindingExportSectionWriter CreateExports() =>
         CreateSections().Exports;
 
-    public static IWitBindingFlatSectionWriter CreateFlat() =>
-        CreateSections().Flat;
-
     public static IWitBindingMethodWriter Create()
     {
         var sections = CreateSections();
-        return new WitBindingMethodWriter(
-            sections.Imports,
-            sections.Exports,
-            sections.Flat);
+        return new WitBindingMethodWriter(sections.Imports, sections.Exports);
     }
 
     private static (
         IWitBindingImportSectionWriter Imports,
-        IWitBindingExportSectionWriter Exports,
-        IWitBindingFlatSectionWriter Flat) CreateSections()
+        IWitBindingExportSectionWriter Exports) CreateSections()
     {
         var syntax = new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier());
         var types = new WitCanonicalTypeResolver();
@@ -49,14 +42,6 @@ internal static class WitBindingWriterFixture
                 slotCoercions,
                 new CodeWriterFactory()),
             new WitBindingExportSectionWriter(
-                types,
-                flattener,
-                layouts,
-                models,
-                syntax,
-                slotCoercions,
-                new CodeWriterFactory()),
-            new WitBindingFlatSectionWriter(
                 types,
                 flattener,
                 layouts,

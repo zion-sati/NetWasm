@@ -35,15 +35,7 @@ public static class WitBindingCompositionRoot
             syntax,
             slotCoercions,
             writers);
-        var flat = new WitBindingFlatSectionWriter(
-            canonicalTypes,
-            flattener,
-            layouts,
-            models,
-            syntax,
-            slotCoercions,
-            writers);
-        var methods = new WitBindingMethodWriter(imports, exports, flat);
+        var methods = new WitBindingMethodWriter(imports, exports);
         var types = new WitTypeDeclarationWriter(
             syntax,
             writers,
