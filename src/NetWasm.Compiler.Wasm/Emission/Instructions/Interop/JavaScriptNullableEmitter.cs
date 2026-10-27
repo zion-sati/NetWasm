@@ -15,46 +15,63 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Interop;
 /// </summary>
 internal interface IJavaScriptNullableEmitter
 {
-    /// <summary>Leaves hasValue (i32) and the value of the struct at the pushed address.</summary>
-    void EmitPair(IWasmInstructionWriter code, CliTypeIdentity type, Action pushStruct, InteropImportPlan interop);
-
-    /// <summary>Writes the struct at the pushed address from the pair in two locals.</summary>
-    void EmitFromPair(
-        IWasmInstructionWriter code,
-        CliTypeIdentity type,
-        Action pushStruct,
-        int hasValueLocal,
-        int valueLocal,
-        InteropImportPlan interop);
-
-    /// <summary>Writes the struct at the pushed address from the record at the other.</summary>
-    void EmitFromRecord(
-        IWasmInstructionWriter code,
-        CliTypeIdentity type,
-        Action pushStruct,
-        Action pushRecord,
-        InteropImportPlan interop);
-
-    /// <summary>Writes the record at the pushed address from the struct at the other.</summary>
-    void EmitRecord(
-        IWasmInstructionWriter code,
-        CliTypeIdentity type,
-        Action pushRecord,
-        Action pushStruct,
-        InteropImportPlan interop);
+    void Emit(IWasmInstructionWriter code, JavaScriptNullableMove move, InteropImportPlan interop);
 }
+
+/// <summary>The address held in Wasm local <see cref="Local"/>, plus <see cref="Offset"/>.</summary>
+internal readonly record struct WasmLocalAddress(int Local, int Offset = 0);
+
+/// <summary>One move of the nullable whose struct is at <see cref="Struct"/>.</summary>
+internal abstract record JavaScriptNullableMove(CliTypeIdentity Type, WasmLocalAddress Struct);
+
+/// <summary>Leaves hasValue (i32) and the struct's value.</summary>
+internal sealed record JavaScriptNullableToPair(CliTypeIdentity Type, WasmLocalAddress Struct)
+    : JavaScriptNullableMove(Type, Struct);
+
+/// <summary>Writes the struct from the pair in <see cref="HasValueLocal"/> and the local after it.</summary>
+internal sealed record JavaScriptNullableFromPair(CliTypeIdentity Type, WasmLocalAddress Struct, int HasValueLocal)
+    : JavaScriptNullableMove(Type, Struct);
+
+/// <summary>Writes the record at <see cref="Record"/> from the struct.</summary>
+internal sealed record JavaScriptNullableToRecord(CliTypeIdentity Type, WasmLocalAddress Struct, WasmLocalAddress Record)
+    : JavaScriptNullableMove(Type, Struct);
+
+/// <summary>Writes the struct from the record at <see cref="Record"/>.</summary>
+internal sealed record JavaScriptNullableFromRecord(CliTypeIdentity Type, WasmLocalAddress Struct, WasmLocalAddress Record)
+    : JavaScriptNullableMove(Type, Struct);
 
 internal sealed class JavaScriptNullableEmitter(
     ITargetLayout layouts,
     IValueLayoutProvider values,
     IAddressInstructionEmitter addresses) : IJavaScriptNullableEmitter
 {
-    public void EmitPair(IWasmInstructionWriter code, CliTypeIdentity type, Action pushStruct, InteropImportPlan interop)
+    public void Emit(IWasmInstructionWriter code, JavaScriptNullableMove move, InteropImportPlan interop)
     {
-        var (underlying, valueOffset, valueSize) = Layout(type);
-        pushStruct();
+        switch (move)
+        {
+            case JavaScriptNullableToPair toPair:
+                ToPair(code, toPair, interop);
+                break;
+            case JavaScriptNullableFromPair fromPair:
+                FromPair(code, fromPair, interop);
+                break;
+            case JavaScriptNullableToRecord toRecord:
+                ToRecord(code, toRecord, interop);
+                break;
+            case JavaScriptNullableFromRecord fromRecord:
+                FromRecord(code, fromRecord, interop);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(move), move, "unknown nullable move");
+        }
+    }
+
+    private void ToPair(IWasmInstructionWriter code, JavaScriptNullableToPair move, InteropImportPlan interop)
+    {
+        var (underlying, valueOffset, valueSize) = Layout(move.Type);
+        Push(code, move.Struct);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load8Unsigned, WasmInstructionOperand.Memory(0, 0)));
-        pushStruct();
+        Push(code, move.Struct);
         if (JavaScriptConversion.IsDate(underlying))
         {
             Offset(code, valueOffset);
@@ -64,50 +81,39 @@ internal sealed class JavaScriptNullableEmitter(
         ManagedMemoryEmitter.EmitLoadByType(code, layouts.Target, valueOffset, underlying, valueSize);
     }
 
-    public void EmitFromPair(
-        IWasmInstructionWriter code,
-        CliTypeIdentity type,
-        Action pushStruct,
-        int hasValueLocal,
-        int valueLocal,
-        InteropImportPlan interop)
+    private void FromPair(IWasmInstructionWriter code, JavaScriptNullableFromPair move, InteropImportPlan interop)
     {
-        var (underlying, valueOffset, valueSize) = Layout(type);
-        Clear(code, type, pushStruct);
-        Local(code, WasmOpcodes.LocalGet, hasValueLocal);
+        var (underlying, valueOffset, valueSize) = Layout(move.Type);
+        Clear(code, move);
+        Local(code, WasmOpcodes.LocalGet, move.HasValueLocal);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        MarkPresent(code, pushStruct);
-        pushStruct();
+        MarkPresent(code, move);
+        Push(code, move.Struct);
         if (JavaScriptConversion.IsDate(underlying))
         {
             Offset(code, valueOffset);
-            Local(code, WasmOpcodes.LocalGet, valueLocal);
+            Local(code, WasmOpcodes.LocalGet, move.HasValueLocal + 1);
             Call(code, interop.ToManaged(underlying));
         }
         else
         {
-            Local(code, WasmOpcodes.LocalGet, valueLocal);
+            Local(code, WasmOpcodes.LocalGet, move.HasValueLocal + 1);
             ManagedMemoryEmitter.EmitStoreByType(code, layouts.Target, valueOffset, underlying, valueSize);
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
-    public void EmitFromRecord(
-        IWasmInstructionWriter code,
-        CliTypeIdentity type,
-        Action pushStruct,
-        Action pushRecord,
-        InteropImportPlan interop)
+    private void FromRecord(IWasmInstructionWriter code, JavaScriptNullableFromRecord move, InteropImportPlan interop)
     {
-        var (underlying, valueOffset, valueSize) = Layout(type);
-        Clear(code, type, pushStruct);
-        pushRecord();
+        var (underlying, valueOffset, valueSize) = Layout(move.Type);
+        Clear(code, move);
+        Push(code, move.Record);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, JavaScriptNullable.HasValueOffset)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        MarkPresent(code, pushStruct);
-        pushStruct();
+        MarkPresent(code, move);
+        Push(code, move.Struct);
         Offset(code, valueOffset);
-        pushRecord();
+        Push(code, move.Record);
         if (JavaScriptConversion.IsDate(underlying))
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.F64Load, WasmInstructionOperand.Memory(3, JavaScriptNullable.ValueOffset)));
@@ -122,29 +128,24 @@ internal sealed class JavaScriptNullableEmitter(
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
-    public void EmitRecord(
-        IWasmInstructionWriter code,
-        CliTypeIdentity type,
-        Action pushRecord,
-        Action pushStruct,
-        InteropImportPlan interop)
+    private void ToRecord(IWasmInstructionWriter code, JavaScriptNullableToRecord move, InteropImportPlan interop)
     {
-        var (underlying, valueOffset, valueSize) = Layout(type);
-        pushRecord();
-        pushStruct();
+        var (underlying, valueOffset, valueSize) = Layout(move.Type);
+        Push(code, move.Record);
+        Push(code, move.Struct);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load8Unsigned, WasmInstructionOperand.Memory(0, 0)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Store, WasmInstructionOperand.Memory(2, JavaScriptNullable.HasValueOffset)));
-        pushRecord();
+        Push(code, move.Record);
         if (JavaScriptConversion.IsDate(underlying))
         {
-            pushStruct();
+            Push(code, move.Struct);
             Offset(code, valueOffset);
             Call(code, interop.FromManaged(underlying));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.F64Store, WasmInstructionOperand.Memory(3, JavaScriptNullable.ValueOffset)));
             return;
         }
         Offset(code, JavaScriptNullable.ValueOffset);
-        pushStruct();
+        Push(code, move.Struct);
         Offset(code, valueOffset);
         addresses.Emit(code, valueSize);
         Copy(code);
@@ -159,19 +160,25 @@ internal sealed class JavaScriptNullableEmitter(
         return (underlying, layout.Alignment, layout.Size);
     }
 
-    private void Clear(IWasmInstructionWriter code, CliTypeIdentity type, Action pushStruct)
+    private void Clear(IWasmInstructionWriter code, JavaScriptNullableMove move)
     {
-        pushStruct();
+        Push(code, move.Struct);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-        addresses.Emit(code, values.GetValueLayout(type).Size);
+        addresses.Emit(code, values.GetValueLayout(move.Type).Size);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
     }
 
-    private static void MarkPresent(IWasmInstructionWriter code, Action pushStruct)
+    private void MarkPresent(IWasmInstructionWriter code, JavaScriptNullableMove move)
     {
-        pushStruct();
+        Push(code, move.Struct);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(1)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Store8, WasmInstructionOperand.Memory(0, 0)));
+    }
+
+    private void Push(IWasmInstructionWriter code, WasmLocalAddress address)
+    {
+        Local(code, WasmOpcodes.LocalGet, address.Local);
+        Offset(code, address.Offset);
     }
 
     private void Offset(IWasmInstructionWriter code, int offset)

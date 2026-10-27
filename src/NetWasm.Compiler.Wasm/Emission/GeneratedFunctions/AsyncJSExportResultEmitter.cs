@@ -50,11 +50,9 @@ internal sealed class AsyncJSExportResultEmitter(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter))));
             Local(code, WasmOpcodes.LocalSet, 2);
-            nullables.EmitRecord(
+            nullables.Emit(
                 code.Instructions,
-                resultType,
-                () => Local(code, WasmOpcodes.LocalGet, 2),
-                () => Local(code, WasmOpcodes.LocalGet, 1),
+                new JavaScriptNullableToRecord(resultType, Struct: new(1), Record: new(2)),
                 interop);
             Local(code, WasmOpcodes.LocalGet, 2);
             code.Instructions.Write(WasmInstruction.WithOperand(

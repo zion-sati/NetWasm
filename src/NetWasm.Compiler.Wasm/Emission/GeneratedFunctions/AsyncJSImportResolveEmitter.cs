@@ -85,8 +85,9 @@ internal sealed class AsyncJSImportResolveEmitter(
             WriteLocal(code, WasmOpcodes.LocalSet, valueLocal);
             if (InteropTypeClassifier.IsNullable(result!))
             {
-                nullables.EmitFromPair(
-                    code.Instructions, result!, () => WriteLocal(code, WasmOpcodes.LocalGet, valueLocal), 1, 2,
+                nullables.Emit(
+                    code.Instructions,
+                    new JavaScriptNullableFromPair(result!, new(valueLocal), HasValueLocal: 1),
                     interopImports);
             }
             else

@@ -50,6 +50,7 @@ public sealed class SynchronousJSExportEmitterTests
             imports,
             runtime,
             new JavaScriptReferenceArgumentEmitter(strings, byteArrays, new RecordingHostObjectMarshaller()),
+            EmitterTestSupport.ValueFramePlanner(layouts),
             EmitterTestSupport.ValueFrames(layouts, imports),
             terminal,
             terminal,
@@ -128,6 +129,7 @@ public sealed class SynchronousJSExportEmitterTests
             new RecordingRuntimeInitializer(),
             new JavaScriptReferenceArgumentEmitter(
                 new RecordingStringMarshaller(), new RecordingByteArrayMarshaller(), hostObjects),
+            EmitterTestSupport.ValueFramePlanner(layouts),
             EmitterTestSupport.ValueFrames(layouts, imports),
             terminal,
             terminal,

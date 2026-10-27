@@ -21,8 +21,7 @@ internal sealed class JavaScriptImportArgumentEmitter(
         if (InteropTypeClassifier.IsNullable(type))
         {
             // The local holds the struct's address; JavaScript receives its presence and value.
-            nullables.EmitPair(code, type, () => code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local))), interop);
+            nullables.Emit(code, new JavaScriptNullableToPair(type, new(local)), interop);
             return;
         }
         if (InteropTypeClassifier.IsHandleValue(type))

@@ -71,6 +71,8 @@ internal static class GeneratedFunctionServiceCollectionExtensions
             AsyncJSExportHelperAppender>();
         services.AddSingleton<IOutwardMethodFunctionAppender,
             OutwardMethodFunctionAppender>();
+        services.AddSingleton<IJavaScriptValueFramePlanner,
+            JavaScriptValueFramePlanner>();
         services.AddSingleton<IJavaScriptValueFrameEmitter,
             JavaScriptValueFrameEmitter>();
         services.AddSingleton<ISynchronousJSExportEmitter,

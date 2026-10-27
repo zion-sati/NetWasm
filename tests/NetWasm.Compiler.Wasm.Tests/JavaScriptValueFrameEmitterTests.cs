@@ -34,7 +34,7 @@ public sealed class JavaScriptValueFrameEmitterTests
     [Fact]
     public void PlansSlotsInParameterOrderThenTheResult()
     {
-        var frame = CreateEmitter().Plan([DateTimeOffset, Int32, DateTime], DateTime);
+        var frame = Planner().Plan([DateTimeOffset, Int32, DateTime], DateTime);
 
         Assert.NotNull(frame);
         Assert.Equal([(0, 0), (2, 16)], frame.Parameters.Select(slot => (slot.Key, slot.Value.Offset)));
@@ -46,7 +46,7 @@ public sealed class JavaScriptValueFrameEmitterTests
     [Fact]
     public void NullableResultHasARecordAfterItsStruct()
     {
-        var frame = CreateEmitter().Plan([NullableInt32], NullableInt32);
+        var frame = Planner().Plan([NullableInt32], NullableInt32);
 
         Assert.NotNull(frame);
         Assert.Equal(0, frame.Parameters[0].Offset);
@@ -57,26 +57,27 @@ public sealed class JavaScriptValueFrameEmitterTests
 
     [Fact]
     public void BoundaryWithoutConvertedValuesHasNoFrame() =>
-        Assert.Null(CreateEmitter().Plan([Int32], Int32));
+        Assert.Null(Planner().Plan([Int32], Int32));
 
     [Fact]
     public void DateWithoutReachableConversionsIsAnInvariantFailure()
     {
-        var emitter = CreateEmitter();
-        var frame = emitter.Plan([DateTime], Int32)!;
+        var emitter = Emitter();
+        var frame = Planner().Plan([DateTime], Int32)!;
 
-        Assert.Throws<InvalidOperationException>(() => emitter.EmitEnter(
-            new EmitterTestSupport.RecordingInstructionWriter(), frame, 9, index => index, Interop(ImmutableDictionary<string, int>.Empty)));
+        Assert.Throws<InvalidOperationException>(() => emitter.Emit(
+            new EmitterTestSupport.RecordingInstructionWriter(),
+            new JavaScriptValueFrameEnter(frame, 9, [0], Interop(ImmutableDictionary<string, int>.Empty))));
     }
 
     [Fact]
     public void EnteringConvertsEachDateParameterIntoItsSlot()
     {
-        var emitter = CreateEmitter();
-        var frame = emitter.Plan([DateTimeOffset, Int32, DateTime], Int32)!;
+        var emitter = Emitter();
+        var frame = Planner().Plan([DateTimeOffset, Int32, DateTime], Int32)!;
         var code = new EmitterTestSupport.RecordingInstructionWriter();
 
-        emitter.EmitEnter(code, frame, 9, index => 100 + index, Interop(Conversions));
+        emitter.Emit(code, new JavaScriptValueFrameEnter(frame, 9, [100, 101, 102], Interop(Conversions)));
 
         var enter = (uint)WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.ValueFrameEnter);
         Assert.Equal(
@@ -92,11 +93,12 @@ public sealed class JavaScriptValueFrameEmitterTests
     [Fact]
     public void EnteringBuildsANullableFromItsPair()
     {
-        var emitter = CreateEmitter();
-        var frame = emitter.Plan([Int32, NullableInt32], Int32)!;
+        var emitter = Emitter();
+        var frame = Planner().Plan([Int32, NullableInt32], Int32)!;
         var code = new EmitterTestSupport.RecordingInstructionWriter();
 
-        emitter.EmitEnter(code, frame, 9, index => index == 0 ? 100 : 101, Interop(ImmutableDictionary<string, int>.Empty));
+        emitter.Emit(
+            code, new JavaScriptValueFrameEnter(frame, 9, [100, 101], Interop(ImmutableDictionary<string, int>.Empty)));
 
         var locals = CallsAndLocals(code).Where(item => item.Opcode == WasmOpcodes.LocalGet)
             .Select(item => item.Operand).ToArray();
@@ -107,11 +109,11 @@ public sealed class JavaScriptValueFrameEmitterTests
     [Fact]
     public void ResultLeavesItsUnixMilliseconds()
     {
-        var emitter = CreateEmitter();
-        var frame = emitter.Plan([], DateTimeOffset)!;
+        var emitter = Emitter();
+        var frame = Planner().Plan([], DateTimeOffset)!;
         var code = new EmitterTestSupport.RecordingInstructionWriter();
 
-        emitter.EmitResult(code, frame, 9, Interop(Conversions));
+        emitter.Emit(code, new JavaScriptValueFrameResult(frame, 9, Interop(Conversions)));
 
         var instructions = code.ToInstructions();
         Assert.Equal((WasmOpcodes.LocalGet, 9U), (instructions[0].Opcode, instructions[0].Operand.UnsignedValue));
@@ -121,11 +123,11 @@ public sealed class JavaScriptValueFrameEmitterTests
     [Fact]
     public void NullableResultLeavesItsRecordAddress()
     {
-        var emitter = CreateEmitter();
-        var frame = emitter.Plan([], NullableInt32)!;
+        var emitter = Emitter();
+        var frame = Planner().Plan([], NullableInt32)!;
         var code = new EmitterTestSupport.RecordingInstructionWriter();
 
-        emitter.EmitResult(code, frame, 9, Interop(ImmutableDictionary<string, int>.Empty));
+        emitter.Emit(code, new JavaScriptValueFrameResult(frame, 9, Interop(ImmutableDictionary<string, int>.Empty)));
 
         var instructions = code.ToInstructions();
         Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
@@ -133,18 +135,36 @@ public sealed class JavaScriptValueFrameEmitterTests
         Assert.Equal(WasmOpcodes.I32Add, instructions[^1].Opcode);
     }
 
+    [Fact]
+    public void AddressAndLeaveUseTheFrameLocal()
+    {
+        var emitter = Emitter();
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        emitter.Emit(code, new JavaScriptValueFrameAddress(9, 0));
+        emitter.Emit(code, new JavaScriptValueFrameAddress(9, 16));
+        emitter.Emit(code, new JavaScriptValueFrameLeave(9));
+
+        var leave = (uint)WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.ValueFrameLeave);
+        Assert.Equal(
+            [(WasmOpcodes.LocalGet, 9U), (WasmOpcodes.LocalGet, 9U), (WasmOpcodes.LocalGet, 9U), (WasmOpcodes.Call, leave)],
+            CallsAndLocals(code));
+        Assert.Equal(WasmOpcodes.I32Add, code.ToInstructions()[3].Opcode);
+    }
+
     private static (byte Opcode, uint Operand)[] CallsAndLocals(EmitterTestSupport.RecordingInstructionWriter code) =>
         [.. code.ToInstructions()
             .Where(instruction => instruction.Opcode is WasmOpcodes.Call or WasmOpcodes.LocalGet)
             .Select(instruction => (instruction.Opcode, instruction.Operand.UnsignedValue))];
 
-    private static JavaScriptValueFrameEmitter CreateEmitter()
+    private static JavaScriptValueFramePlanner Planner() => new(new BoundaryLayouts());
+
+    private static JavaScriptValueFrameEmitter Emitter()
     {
         var layouts = new RecordingLayoutProvider();
-        var values = new BoundaryLayouts();
         var addresses = new AddressInstructionEmitter(layouts);
-        return new(layouts, values, WasmRuntimeImports.CreateCatalog(), addresses,
-            new JavaScriptNullableEmitter(layouts, values, addresses));
+        return new(layouts, WasmRuntimeImports.CreateCatalog(), addresses,
+            new JavaScriptNullableEmitter(layouts, new BoundaryLayouts(), addresses));
     }
 
     private static InteropImportPlan Interop(ImmutableDictionary<string, int> conversions) =>
