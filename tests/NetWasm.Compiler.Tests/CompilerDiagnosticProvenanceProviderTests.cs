@@ -36,10 +36,10 @@ public sealed class CompilerDiagnosticProvenanceProviderTests
         var provenance = JsonSerializer.Serialize(provenanceProvider.ProvideProvenance(options));
 
         Assert.Equal(Path.GetFullPath(source), Assert.Single(sources));
-        Assert.Contains("--source", command);
+        Assert.Contains("-source:", command);
         Assert.Contains("'\"'\"'", command);
-        Assert.Contains("--wit", command);
-        Assert.Contains("--world", command);
+        Assert.Contains("-wit:", command);
+        Assert.Contains("-world:", command);
         Assert.Contains(
             Convert.ToHexStringLower(SHA256.HashData(
                 File.ReadAllBytes(options.EntryAssemblyPath))),

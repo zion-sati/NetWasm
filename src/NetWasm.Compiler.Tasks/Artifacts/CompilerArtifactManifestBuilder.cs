@@ -126,26 +126,24 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
         ImmutableArray<CompilerArtifactManifestInput> inputs,
         ImmutableArray<CompilerArtifactOutputIdentity> outputs)
     {
-        var identity = JsonSerializer.Serialize(new
-        {
-            schemaVersion = SchemaVersion,
-            request.Profile,
-            request.Target,
-            request.FeatureSet,
-            request.SdkVersion,
-            request.CompilerVersion,
-            request.RuntimeAbiVersion,
-            request.RuntimeVersion,
-            inputs,
-            outputs = outputs.Select(output => new
-            {
-                output.Kind,
-                output.MediaType,
-                output.Path,
-                output.Sha256,
-                output.CopyToPublishDirectory,
-            }),
-        });
+        var identity = JsonSerializer.Serialize(
+            new CompilerArtifactBuildIdentity(
+                SchemaVersion,
+                request.Profile,
+                request.Target,
+                request.FeatureSet,
+                request.SdkVersion,
+                request.CompilerVersion,
+                request.RuntimeAbiVersion,
+                request.RuntimeVersion,
+                inputs,
+                [.. outputs.Select(output => new CompilerArtifactBuildIdentityOutput(
+                    output.Kind,
+                    output.MediaType,
+                    output.Path,
+                    output.Sha256,
+                    output.CopyToPublishDirectory))]),
+            CompilerArtifactIdentityJsonContext.Default.CompilerArtifactBuildIdentity);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
     }
 

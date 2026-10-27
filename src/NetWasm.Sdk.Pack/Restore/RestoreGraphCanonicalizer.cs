@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using NuGet.Frameworks;
+using NetWasm.Sdk.Pack;
 
 namespace NetWasm.Sdk.Pack.Restore;
 
@@ -26,7 +27,7 @@ public sealed class RestoreGraphCanonicalizer : IRestoreGraphCanonicalizer
             CanonicalizeFrameworks(metadata, profiles);
         }
 
-        return JsonSerializer.SerializeToUtf8Bytes(document);
+        return JsonSerializer.SerializeToUtf8Bytes(document, SdkPackJsonContext.Default.JsonObject);
     }
 
     private static void CanonicalizeFrameworks(

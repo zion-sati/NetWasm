@@ -6,7 +6,7 @@ artifact_root="${NETWASM_COMPONENT_TRIMMING_ARTIFACT_DIR:-$repo_root/tests/end-t
 toolchain="$repo_root/eng/toolchain.json"
 sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit="$repo_root/wit/netwasm-platform-1.0.0"
 
 mkdir -p "$artifact_root"
@@ -36,17 +36,17 @@ for target in wasm32 wasm64; do
         if [[ "$profile" = clock ]]; then
             entry="NetWasm.Fixtures.ComponentModel.ClockTrimmingComponent::Run"
             wit_arguments=(
-                --wit "$wit"
-                --world "netwasm:platform@1.0.0/platform"
-                --export "run=$entry")
+                -wit:"$wit"
+                -world:"netwasm:platform@1.0.0/platform"
+                -export:"run=$entry")
         fi
         for repeat in first second; do
             dotnet "$compiler" \
-                --input "$artifact_root/TrimmingComponent.release.dll" \
-                --reference "$corelib" --entry "$entry" --target "$target" \
+                "$artifact_root/TrimmingComponent.release.dll" \
+                -r:"$corelib" -target:function -entry:"$entry" -platform:"$target" \
                 "${wit_arguments[@]}" \
-                --output "$artifact_root/$profile.$target.$repeat.wasm" \
-                --runtime-layout "$artifact_root/$profile.$target.$repeat.json"
+                -out:"$artifact_root/$profile.$target.$repeat.wasm" \
+                -runtimelayout:"$artifact_root/$profile.$target.$repeat.json"
         done
         cmp "$artifact_root/$profile.$target.first.wasm" \
             "$artifact_root/$profile.$target.second.wasm"
@@ -87,16 +87,16 @@ for target in wasm32 wasm64; do
         if [[ "$profile" = clock ]]; then
             entry="NetWasm.Fixtures.ComponentModel.ClockTrimmingComponent::Run"
             wit_arguments=(
-                --wit "$wit"
-                --world "netwasm:platform@1.0.0/platform"
-                --export "run=$entry")
+                -wit:"$wit"
+                -world:"netwasm:platform@1.0.0/platform"
+                -export:"run=$entry")
         fi
         dotnet "$compiler" \
-            --input "$artifact_root/TrimmingComponent.debug.dll" \
-            --reference "$corelib" --entry "$entry" --target "$target" \
+            "$artifact_root/TrimmingComponent.debug.dll" \
+            -r:"$corelib" -target:function -entry:"$entry" -platform:"$target" \
             "${wit_arguments[@]}" \
-            --output "$artifact_root/$profile.$target.debug.application.wasm" \
-            --runtime-layout "$artifact_root/$profile.$target.debug.json"
+            -out:"$artifact_root/$profile.$target.debug.application.wasm" \
+            -runtimelayout:"$artifact_root/$profile.$target.debug.json"
         "$repo_root/eng/build-netwasm-runtime.sh" \
             --runtime-layout "$artifact_root/$profile.$target.debug.json" \
             --target "$target" --configuration debug \

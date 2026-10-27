@@ -5,7 +5,6 @@
     <RootNamespace>NetWasm.Hosting.Build</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PackageId>NetWasm.Hosting.Build</PackageId>
     <Version>0.4.2</Version>
     <Description>Build-time composition for public NetWasm Hosting and Toolchain packages.</Description>

@@ -52,7 +52,7 @@ reported by `NW1010`, see the [support status and roadmap](support-status.md).
 
 | Code | Exact scope | Cause and action |
 | --- | --- | --- |
-| `NW1000` `InvalidCommandLine` | CLI parsing and export selection | Unknown/missing/repeated/malformed options, invalid target or method syntax, or duplicate export. Correct the command (`Namespace.Type::Method`; target `wasm32` or `wasm64`). |
+| `NW1000` `InvalidCommandLine` | `nwc` command line, response files and export selection | Unknown/missing/repeated/malformed options, an unreadable response file, invalid target, platform or method syntax, or duplicate export. Correct the command (`Namespace.Type::Method`; platform `wasm32` or `wasm64`). |
 | `NW1001` `UnsupportedCil` | CIL dispatch/lowering, exception lowering, module-data emission, and unsupported address/atomic/calli shapes | Valid CIL has no current lowering. Rewrite the reachable code or library to a supported shape; retain method/IL location when reporting an expected feature. |
 | `NW1002` `InvalidCil` | Method-body decoding, token decoding, stack validation, CFG and exception-region validation | The body/token stream is malformed. Rebuild with a conforming compiler or remove the malformed method; do not treat malformed input as a feature gap. |
 | `NW1003` `UnsupportedMetadata` | Metadata, interop declarations, closed-world analysis, and type/layout resolution | Readable metadata uses an unsupported signature/token/layout, open generic body, or interop shape. Compile against NetWasm.CoreLib, close generics, or adapt the API shape. |
@@ -66,6 +66,7 @@ reported by `NW1010`, see the [support status and roadmap](support-status.md).
 | `NW1011` `CompilerInvariant` | Metadata, reachability, structured-program, layout, roots, emission, and complexity validators | Compiler state violated an internal invariant. Report it as a compiler defect, not an ordinary compatibility error. |
 | `NW1012` `NativeInterop` | Static native declarations, ABI layouts, imports, callback exports, and reachability | A reachable declaration is outside the documented static C profile or conflicts with another export. Use a supported shape or isolate it from the closed world. |
 | `NW1013` `FunctionBodyLimit` | Module encoding, right after emission and before linking or optimization | A method compiles to a WebAssembly function body over 7,654,321 bytes, which browsers and Node refuse to compile. The diagnostic names the method and its size. Split the method into smaller methods. |
+| `NW1014` `HostFailure` | `nwc` reading inputs and writing outputs | The host failed outside the compiler, such as a missing input or an unwritable output directory. Correct the path or permission the message names. |
 | `NWA2001` `GenericExpansion` | Identifier formatting only; no current production emitter | The enum reserves this identifier but no current source path emits it. Preserve and report the exact value if observed. |
 
 When available, method and IL offset are part of the diagnostic. The CLI also
@@ -74,12 +75,12 @@ paths; these are diagnostic artifacts rather than deployment outputs.
 
 ## Compiler support bundles
 
-Use `--diagnostic-log <path>` when only the structured `ILogger` event stream
+Use `-diagnosticlog:<path>` when only the structured `ILogger` event stream
 is needed. It writes flushed JSON Lines and is disabled when the option is
 absent.
 
-For a reproducible compiler report, use `--diagnostic-trace <path>` and pass
-each relevant source with `--source <path>`. The compiler writes the primary
+For a reproducible compiler report, use `-diagnostictrace:<path>` and pass
+each relevant source with `-source:<path>`. The compiler writes the primary
 trace to `<path>` and progressive artifacts to `<path>.passes/`. That
 directory includes the structured compiler log, normalized options,
 toolchain provenance, copied source inputs, stage snapshots, emitted Wasm,

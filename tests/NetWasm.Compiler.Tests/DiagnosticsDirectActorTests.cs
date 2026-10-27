@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.EntryPoints;
@@ -44,8 +45,8 @@ public sealed class DiagnosticsDirectActorTests
 
         Assert.Equal(0, symbols.MethodsFormatted);
         using var entry = JsonDocument.Parse(json.LastJson!);
-        Assert.Equal(JsonValueKind.Null, entry.RootElement.GetProperty("EntryPoint").ValueKind);
-        Assert.Equal("value", entry.RootElement.GetProperty("Exports")[0].GetProperty("Name").GetString());
+        Assert.Equal(JsonValueKind.Null, entry.RootElement.GetProperty("entryPoint").ValueKind);
+        Assert.Equal("value", entry.RootElement.GetProperty("exports")[0].GetProperty("name").GetString());
 
         var snapshot = new[] { new CompilerProgramSnapshotBuilder(new CompilerCilOperandFormatter()) }
             .Cast<ICompilerProgramSnapshotBuilder>().Single();
@@ -55,26 +56,19 @@ public sealed class DiagnosticsDirectActorTests
     }
 
     [Theory]
-    [InlineData(CompilerEntryPointKind.RawFunction, true, "")]
-    [InlineData(CompilerEntryPointKind.ManagedExecutable, true, "managed-executable")]
+    [InlineData(CompilerEntryPointKind.RawFunction, true, "function")]
+    [InlineData(CompilerEntryPointKind.ManagedExecutable, false, "exe")]
     [InlineData(CompilerEntryPointKind.Library, false, "library")]
     public void ReproductionCommandPreservesTheCompilationMode(
-        CompilerEntryPointKind kind, bool hasEntry, string spelling)
+        CompilerEntryPointKind kind, bool hasEntry, string target)
     {
         var builder = new[] { new CompilerReproductionCommandBuilder(new RecordingSourcePaths()) }
             .Cast<ICompilerReproductionCommandBuilder>().Single();
         var command = builder.Build(new CompilerOptions("worker.dll", [], "Worker", "Run", [],
             EntryPointKind: kind));
 
-        Assert.Equal(hasEntry, command.Contains("'--entry'", StringComparison.Ordinal));
-        if (spelling.Length != 0)
-        {
-            Assert.Contains($"'--entry-kind' '{spelling}'", command);
-        }
-        else
-        {
-            Assert.DoesNotContain("'--entry-kind'", command);
-        }
+        Assert.Equal(hasEntry, command.Contains("'-entry:Worker::Run'", StringComparison.Ordinal));
+        Assert.Contains($"'-target:{target}'", command);
     }
 
     [Fact]
@@ -93,8 +87,8 @@ public sealed class DiagnosticsDirectActorTests
 
         var command = builder.Build(options);
 
-        Assert.Contains("'--wit' 'worker.wit'", command);
-        Assert.Contains("'--javascript-export-boundary' 'true'", command);
+        Assert.Contains("'-wit:worker.wit'", command);
+        Assert.Contains("'-jsexportboundary+'", command);
     }
 
     [Fact]
@@ -377,9 +371,9 @@ public sealed class DiagnosticsDirectActorTests
         public int Writes { get; private set; }
         public string? LastJson { get; private set; }
 
-        public void WriteJson(string path, object value)
+        public void WriteJson<T>(string path, T value, JsonTypeInfo<T> typeInfo)
         {
-            LastJson = JsonSerializer.Serialize(value);
+            LastJson = JsonSerializer.Serialize(value, typeInfo);
             Writes++;
         }
     }
@@ -432,36 +426,36 @@ public sealed class DiagnosticsDirectActorTests
     {
         public int Calls { get; private set; }
 
-        public object ProvideProvenance(CompilerOptions options)
+        public CompilerProvenanceArtifact ProvideProvenance(CompilerOptions options)
         {
             Calls++;
-            return new { Status = "ok" };
+            return new("compiler", "dotnet", "runtime", "os", "arch", null, []);
         }
     }
 
     private sealed class RecordingMetadataSnapshot : ICompilerMetadataSnapshotBuilder
     {
-        public object BuildMetadata(
+        public CompilerMetadataArtifact BuildMetadata(
             MetadataCompilationSnapshot metadata,
             IMethodBodyReader bodies,
-            ISymbolFormatter symbols) => new { Status = "ok" };
+            ISymbolFormatter symbols) => new("entry", [], []);
     }
 
     private sealed class RecordingProgramSnapshot : ICompilerProgramSnapshotBuilder
     {
-        public object BuildProgram(ISymbolFormatter symbols, ReachableProgram program) =>
-            new { Status = "ok" };
+        public CompilerProgramArtifact BuildProgram(ISymbolFormatter symbols, ReachableProgram program) =>
+            new(null, [], [], [], [], [], [], [], [], [], [], [], []);
     }
 
     private sealed class RecordingLayoutSnapshot : ICompilerLayoutSnapshotBuilder
     {
-        public object BuildLayouts(NetWasm.Compiler.Layout.ManagedLayoutSnapshot layouts) =>
-            new { Status = "ok" };
+        public CompilerLayoutsArtifact BuildLayouts(NetWasm.Compiler.Layout.ManagedLayoutSnapshot layouts) =>
+            new(WasmTarget.Wasm32, 4, 4, 0, [], [], [], [], []);
     }
 
     private sealed class RecordingRootMapSnapshot : ICompilerRootMapSnapshotBuilder
     {
-        public object BuildRootMaps(ReachableProgram program) => new { Status = "ok" };
+        public CompilerRootMapsArtifact BuildRootMaps(ReachableProgram program) => new([], []);
     }
 
     private sealed class RecordingBinary : ICompilerDiagnosticBinaryArtifactWriter

@@ -4,5 +4,5 @@ namespace NetWasm.Compiler.Diagnostics;
 
 internal interface ICompilerLayoutSnapshotBuilder
 {
-    object BuildLayouts(ManagedLayoutSnapshot layouts);
+    CompilerLayoutsArtifact BuildLayouts(ManagedLayoutSnapshot layouts);
 }

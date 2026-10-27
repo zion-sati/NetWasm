@@ -12,7 +12,7 @@ shim_version="$(node -p 'require(process.argv[1]).preview2Shim' "$toolchain")"
 wasi_http_version="$(node -p 'require(process.argv[1]).wasiHttpWit' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
 system_net_http="$repo_root/src/NetWasm.System.Net.Http/bin/Release/netwasm0.1/System.Net.Http.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit="$repo_root/tests/end-to-end/component-model/fixtures/wasi-http-wit"
 fixture="$repo_root/tests/end-to-end/component-model/fixtures/WasiHttpQualificationComponent.cs"
 host_manifest="$repo_root/tests/end-to-end/component-model/hosts/wasmtime-scalar/Cargo.toml"
@@ -72,11 +72,11 @@ for configuration in debug release; do
 
     for target in wasm32 wasm64; do
         prefix="$artifact_root/$configuration.$target"
-        dotnet "$compiler" --input "$fixture_dll" --reference "$corelib" \
-            --reference "$system_net_http" \
-            --entry 'NetWasm.Fixtures.ComponentModel.WasiHttpQualificationComponent::Run' \
-            --wit "$wit" --world 'netwasm:http-spike@1.0.0/test-http-spike' \
-            --target "$target" --output "$prefix.core.wasm" --runtime-layout "$prefix.layout.json" \
+        dotnet "$compiler" "$fixture_dll" -r:"$corelib" \
+            -r:"$system_net_http" \
+            -target:function -entry:'NetWasm.Fixtures.ComponentModel.WasiHttpQualificationComponent::Run' \
+            -wit:"$wit" -world:'netwasm:http-spike@1.0.0/test-http-spike' \
+            -platform:"$target" -out:"$prefix.core.wasm" -runtimelayout:"$prefix.layout.json" \
             > "$prefix.compile.stdout" 2> "$prefix.compile.stderr"
         wasm-tools validate "$prefix.core.wasm" --features all \
             > "$prefix.core.validate.stdout" 2> "$prefix.core.validate.stderr"
@@ -90,16 +90,16 @@ for configuration in debug release; do
 
         if [[ "$target" = wasm64 ]]; then
             if dotnet "$compiler" componentize \
-                --optimization none \
-                --core-module "$prefix.core.wasm" --runtime-module "$prefix.runtime.wasm" \
-                --wit "$wit" --world test-http-spike --target "$target" \
-                --jco-version "$jco_version" --preview2-shim-version "$shim_version" \
-                --output "$prefix.component.wasm" --manifest "$prefix.manifest.json" \
+                -optimize:none \
+                -coremodule:"$prefix.core.wasm" -runtimemodule:"$prefix.runtime.wasm" \
+                -wit:"$wit" -world:test-http-spike -platform:"$target" \
+                -jcoversion:"$jco_version" -preview2shimversion:"$shim_version" \
+                -out:"$prefix.component.wasm" -manifest:"$prefix.manifest.json" \
                 > "$prefix.componentize.stdout" 2> "$prefix.componentize.stderr"; then
                 echo "wasm64 componentize unexpectedly succeeded" >&2
                 exit 93
             fi
-            grep -q '^NW1010:' "$prefix.componentize.stderr" || {
+            grep -q '^error NW1010:' "$prefix.componentize.stdout" || {
                 echo "wasm64 componentize did not preserve NW1010 boundary" >&2
                 exit 93
             }
@@ -116,11 +116,11 @@ for configuration in debug release; do
         fi
 
         dotnet "$compiler" componentize \
-            --optimization none \
-            --core-module "$prefix.core.wasm" --runtime-module "$prefix.runtime.wasm" \
-            --wit "$wit" --world test-http-spike --target "$target" \
-            --jco-version "$jco_version" --preview2-shim-version "$shim_version" \
-            --output "$prefix.component.wasm" --manifest "$prefix.manifest.json" \
+            -optimize:none \
+            -coremodule:"$prefix.core.wasm" -runtimemodule:"$prefix.runtime.wasm" \
+            -wit:"$wit" -world:test-http-spike -platform:"$target" \
+            -jcoversion:"$jco_version" -preview2shimversion:"$shim_version" \
+            -out:"$prefix.component.wasm" -manifest:"$prefix.manifest.json" \
             > "$prefix.componentize.stdout" 2> "$prefix.componentize.stderr"
         wasm-tools validate "$prefix.component.wasm" --features all \
             > "$prefix.component.validate.stdout" 2> "$prefix.component.validate.stderr"

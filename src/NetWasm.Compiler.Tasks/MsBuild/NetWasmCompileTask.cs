@@ -1,54 +1,22 @@
-using System.Collections.Immutable;
 using Microsoft.Build.Framework;
-using NetWasm.Compiler.ComponentModel.Optimization;
-using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Tasks.Artifacts;
-using NetWasm.Compiler.Tasks.Compilation;
-using NetWasm.Compiler.Tasks.Composition;
+using Microsoft.Build.Utilities;
 
 namespace NetWasm.Compiler.Tasks.MsBuild;
 
-public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
+// Runs nwc, the NetWasm compiler, as the Csc task runs csc: every option goes in
+// a response file, and each line nwc writes is logged, its banner and stages at
+// high importance and its "error NW1234: message" lines as errors.
+public sealed class NetWasmCompileTask : ToolTask
 {
-    private readonly IManagedModuleCompilationSessionFactory _compilers;
-    private readonly ICompilerArtifactWriter _artifacts;
-    private readonly ICompilerArtifactManifestTaskRequestBuilder _manifestRequestBuilder;
-    private readonly ICompilerArtifactManifestBuilder _manifestBuilder;
-    private readonly ICompilerArtifactManifestWriter _manifestWriter;
-    private readonly ICompilerBuildMessageWriter _messages;
-    private readonly IManagedCompilerOptimizationOverridesParser _optimizationOverrides;
+    public NetWasmCompileTask() => LogStandardErrorAsError = true;
 
-    public NetWasmCompileTask()
-    {
-        _messages = new CompilerBuildMessageWriter(Log);
-        _compilers = CompilerTaskComposition.CreateManagedModuleCompilationSessionFactory(
-            new CompilerBuildProgressReporter(_messages));
-        _artifacts = CompilerTaskComposition.CreateArtifactWriter();
-        _manifestRequestBuilder =
-            CompilerTaskComposition.CreateArtifactManifestTaskRequestBuilder();
-        _manifestBuilder = CompilerTaskComposition.CreateArtifactManifestBuilder();
-        _manifestWriter = CompilerTaskComposition.CreateArtifactManifestWriter();
-        _optimizationOverrides = new ManagedCompilerOptimizationOverridesParser();
-    }
+    // nwc's native executable, which the host tools provide, or nwc.dll, which
+    // the dotnet host on the PATH runs, as a source build does.
+    [Required]
+    public string CompilerPath { get; set; } = string.Empty;
 
-    internal NetWasmCompileTask(
-        IManagedModuleCompilationSessionFactory compilers,
-        ICompilerArtifactWriter artifacts,
-        ICompilerArtifactManifestTaskRequestBuilder manifestRequestBuilder,
-        ICompilerArtifactManifestBuilder manifestBuilder,
-        ICompilerArtifactManifestWriter manifestWriter,
-        ICompilerBuildMessageWriter messages,
-        IManagedCompilerOptimizationOverridesParser optimizationOverrides)
-    {
-        _compilers = compilers ?? throw new ArgumentNullException(nameof(compilers));
-        _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
-        _manifestRequestBuilder = manifestRequestBuilder ?? throw new ArgumentNullException(nameof(manifestRequestBuilder));
-        _manifestBuilder = manifestBuilder ?? throw new ArgumentNullException(nameof(manifestBuilder));
-        _manifestWriter = manifestWriter ?? throw new ArgumentNullException(nameof(manifestWriter));
-        _messages = messages ?? throw new ArgumentNullException(nameof(messages));
-        _optimizationOverrides = optimizationOverrides ??
-            throw new ArgumentNullException(nameof(optimizationOverrides));
-    }
+    [Required]
+    public string InputAssemblyPath { get; set; } = string.Empty;
 
     [Required]
     public string CoreModulePath { get; set; } = string.Empty;
@@ -65,16 +33,37 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     [Required]
     public string NativeCallbackObjectPath { get; set; } = string.Empty;
 
+    // Where nwc caches the compiled metadata of unchanged references.
+    [Required]
+    public string IntermediateDirectory { get; set; } = string.Empty;
+
+    [Required]
+    public string WasmToolsNodePath { get; set; } = string.Empty;
+
+    [Required]
+    public string WasmToolsCommandPath { get; set; } = string.Empty;
+
+    [Required]
+    public string WasmToolsModulePath { get; set; } = string.Empty;
+
+    public ITaskItem[] References { get; set; } = [];
+    public ITaskItem[] Sources { get; set; } = [];
+    public string Target { get; set; } = "wasm32";
+    public string? ExceptionTypeMapPath { get; set; }
+    public string? StackTraceSymbolsPath { get; set; }
     public string? DiagnosticTracePath { get; set; }
     public string? DiagnosticLogPath { get; set; }
     public string? WitPath { get; set; }
     public string? WitWorld { get; set; }
     // Modules the project's native archives import from (<NetWasmImportModule>).
     public ITaskItem[] ImportModules { get; set; } = [];
+    public string? ProjectDirectory { get; set; }
+    public string? PathMap { get; set; }
     public bool EmitStackTrace { get; set; }
     public bool StructuredDiagnostics { get; set; }
     public bool CompileAsLibrary { get; set; }
     public bool UseJavaScriptExportBoundary { get; set; }
+    public bool NoLogo { get; set; }
     public string Optimization { get; set; } = "Oz";
     public string ManagedLoopInvariantFieldHoisting { get; set; } = "Auto";
     public string ManagedStaticDataViewElimination { get; set; } = "Auto";
@@ -92,109 +81,131 @@ public sealed class NetWasmCompileTask : CompilerArtifactManifestTaskBase
     public string ManagedAllocationElimination { get; set; } = "Auto";
     public string ManagedLoopRotation { get; set; } = "Auto";
     public string ManagedArrayStoreCheckElimination { get; set; } = "Auto";
-    public string? StackTraceSymbolsPath { get; set; }
-    public string? ExceptionTypeMapPath { get; set; }
-    public bool NoLogo { get; set; }
-    public string? PathMap { get; set; }
 
-    [Required]
-    public string WasmToolsNodePath { get; set; } = string.Empty;
+    protected override string ToolName => "nwc";
 
-    [Required]
-    public string WasmToolsCommandPath { get; set; } = string.Empty;
+    protected override MessageImportance StandardOutputLoggingImportance => MessageImportance.High;
 
-    [Required]
-    public string WasmToolsModulePath { get; set; } = string.Empty;
+    private bool RunsOnTheDotNetHost => CompilerPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
 
     public override bool Execute()
     {
-        try
+        Log.LogMessage(
+            MessageImportance.High,
+            "NetWasm: Compiling {0} for {1}...",
+            Path.GetFileName(InputAssemblyPath),
+            Target);
+        if (!base.Execute())
         {
-            if (!NoLogo)
-            {
-                _messages.Write($"NetWasm Compiler version {CompilerVersion}");
-                _messages.Write("Copyright © 2026 Zion Sati");
-            }
-            _messages.Write(
-                $"NetWasm: Compiling {Path.GetFileName(InputAssemblyPath)} for {Target}...");
-            using var compiler = _compilers.Create(
-                CompilerTaskComposition.CreateWasmToolsCommand(
-                    WasmToolsNodePath,
-                    WasmToolsCommandPath,
-                    WasmToolsModulePath));
-            var optimizationOverrides = _optimizationOverrides.Parse(
-                ManagedLoopInvariantFieldHoisting,
-                ManagedStaticDataViewElimination,
-                ManagedAddressTakenValuePromotion,
-                ManagedMethodInlining,
-                ManagedBranchPrefixDuplication,
-                ManagedScalarCallPreservation,
-                ManagedArrayBoundsCheckElimination,
-                ManagedLoopUnrolling,
-                ManagedConstantArgumentPropagation,
-                ManagedStaticArrayPopulationElimination,
-                ManagedConstantCallFolding,
-                ManagedSwitchBitTests,
-                ManagedDevirtualization,
-                ManagedAllocationElimination,
-                ManagedLoopRotation,
-                ManagedArrayStoreCheckElimination);
-            var compilation = compiler.Compile(new(
-                InputAssemblyPath,
-                References.Select(static item => item.ItemSpec).ToImmutableArray(),
-                Sources.Select(static item => item.ItemSpec).ToImmutableArray(),
-                Target,
-                DiagnosticTracePath,
-                DiagnosticLogPath,
-                EmitStackTrace,
-                Optimization,
-                Path.GetDirectoryName(CompilerMetadataPath),
-                WitPath,
-                WitWorld,
-                CompileAsLibrary,
-                UseJavaScriptExportBoundary,
-                ProjectDirectory,
-                PathMap,
-                StructuredDiagnostics,
-                optimizationOverrides)
-            {
-                ImportModules = [.. ImportModules.Select(static item => item.ItemSpec)],
-            });
-            _artifacts.Write(new(
-                compilation,
-                CoreModulePath,
-                RuntimeLayoutPath,
-                InteropManifestPath,
-                CompilerMetadataPath,
-                NativeCallbackObjectPath,
-                StackTraceSymbolsPath)
-            {
-                ExceptionTypeMapPath = ExceptionTypeMapPath,
-            });
-            if (!string.IsNullOrWhiteSpace(ArtifactManifestPath))
-            {
-                var callbackArtifacts = compilation.NativeCallbackSupport is null
-                    ? ImmutableArray<CompilerArtifactManifestTaskArtifact>.Empty
-                    : [CreateNativeCallbackSupportArtifact(
-                        NativeCallbackObjectPath)];
-                var buildResult = _manifestBuilder.Build(
-                    _manifestRequestBuilder.Build(CreateManifestTaskInput(callbackArtifacts)));
-                _manifestWriter.Write(new(ArtifactManifestPath, buildResult.Manifest));
-                SetResolvedArtifacts(buildResult);
-            }
-            _messages.Write($"NetWasm: Wrote {Path.GetFullPath(CoreModulePath)}.");
-            return true;
-        }
-        catch (CompilerException exception)
-        {
-            Log.LogError(exception.Diagnostic.ToString());
             return false;
         }
-        catch (Exception exception)
-        {
-            Log.LogErrorFromException(exception, showStackTrace: false);
-            return false;
-        }
+        Log.LogMessage(MessageImportance.High, "NetWasm: Wrote {0}.", Path.GetFullPath(CoreModulePath));
+        return true;
     }
 
+    internal string FullPathToTool => GenerateFullPathToTool();
+
+    internal string CommandLineCommands => GenerateCommandLineCommands();
+
+    internal string ResponseFileCommands => GenerateResponseFileCommands();
+
+    protected override string GenerateFullPathToTool() => RunsOnTheDotNetHost ? "dotnet" : CompilerPath;
+
+    protected override string GenerateCommandLineCommands()
+    {
+        var builder = new CommandLineBuilder();
+        if (RunsOnTheDotNetHost)
+        {
+            builder.AppendFileNameIfNotNull(CompilerPath);
+        }
+        return builder.ToString();
+    }
+
+    protected override string GenerateResponseFileCommands()
+    {
+        var builder = new CommandLineBuilder(quoteHyphensOnCommandLine: false, useNewLineSeparator: true);
+        if (NoLogo)
+        {
+            builder.AppendSwitch("-nologo");
+        }
+        builder.AppendFileNameIfNotNull(InputAssemblyPath);
+        builder.AppendSwitch(CompileAsLibrary ? "-target:library" : "-target:exe");
+        builder.AppendSwitchIfNotNull("-platform:", Target);
+        builder.AppendSwitchIfNotNull("-optimize:", Optimization);
+        builder.AppendSwitchIfNotNull("-out:", CoreModulePath);
+        foreach (var reference in References)
+        {
+            builder.AppendSwitchIfNotNull("-r:", reference.ItemSpec);
+        }
+        foreach (var source in Sources)
+        {
+            builder.AppendSwitchIfNotNull("-source:", source.ItemSpec);
+        }
+        builder.AppendSwitchIfNotNull("-runtimelayout:", RuntimeLayoutPath);
+        builder.AppendSwitchIfNotNull("-interopmanifest:", InteropManifestPath);
+        builder.AppendSwitchIfNotNull("-compilermetadata:", CompilerMetadataPath);
+        builder.AppendSwitchIfNotNull("-callbackobject:", NativeCallbackObjectPath);
+        AppendIfNotEmpty(builder, "-exceptiontypemap:", ExceptionTypeMapPath);
+        if (EmitStackTrace)
+        {
+            AppendIfNotEmpty(builder, "-stacktracesymbols:", StackTraceSymbolsPath);
+        }
+        AppendIfNotEmpty(builder, "-wit:", WitPath);
+        AppendIfNotEmpty(builder, "-world:", WitWorld);
+        foreach (var module in ImportModules)
+        {
+            builder.AppendSwitchIfNotNull("-importmodule:", module.ItemSpec);
+        }
+        AppendIfNotEmpty(builder, "-diagnostictrace:", DiagnosticTracePath);
+        AppendIfNotEmpty(builder, "-diagnosticlog:", DiagnosticLogPath);
+        if (UseJavaScriptExportBoundary)
+        {
+            builder.AppendSwitch("-jsexportboundary+");
+        }
+        if (StructuredDiagnostics)
+        {
+            builder.AppendSwitch("-structureddiagnostics+");
+        }
+        AppendIfNotEmpty(builder, "-projectdirectory:", ProjectDirectory);
+        AppendIfNotEmpty(builder, "-pathmap:", PathMap);
+        builder.AppendSwitchIfNotNull("-intermediatedirectory:", IntermediateDirectory);
+        builder.AppendSwitchIfNotNull("-wasmtoolsnode:", WasmToolsNodePath);
+        builder.AppendSwitchIfNotNull("-wasmtoolscommand:", WasmToolsCommandPath);
+        builder.AppendSwitchIfNotNull("-wasmtoolsmodule:", WasmToolsModulePath);
+        // Auto is nwc's own default for each managed optimization.
+        foreach (var (name, value) in new[]
+                 {
+                     ("loopinvariantfieldhoisting", ManagedLoopInvariantFieldHoisting),
+                     ("staticdataviewelimination", ManagedStaticDataViewElimination),
+                     ("addresstakenvaluepromotion", ManagedAddressTakenValuePromotion),
+                     ("methodinlining", ManagedMethodInlining),
+                     ("branchprefixduplication", ManagedBranchPrefixDuplication),
+                     ("scalarcallpreservation", ManagedScalarCallPreservation),
+                     ("arrayboundscheckelimination", ManagedArrayBoundsCheckElimination),
+                     ("loopunrolling", ManagedLoopUnrolling),
+                     ("constantargumentpropagation", ManagedConstantArgumentPropagation),
+                     ("staticarraypopulationelimination", ManagedStaticArrayPopulationElimination),
+                     ("constantcallfolding", ManagedConstantCallFolding),
+                     ("switchbittests", ManagedSwitchBitTests),
+                     ("devirtualization", ManagedDevirtualization),
+                     ("allocationelimination", ManagedAllocationElimination),
+                     ("looprotation", ManagedLoopRotation),
+                     ("arraystorecheckelimination", ManagedArrayStoreCheckElimination),
+                 })
+        {
+            if (value is not ("" or "Auto"))
+            {
+                builder.AppendSwitchIfNotNull($"-managed{name}:", value);
+            }
+        }
+        return builder.ToString();
+    }
+
+    private static void AppendIfNotEmpty(CommandLineBuilder builder, string option, string? value)
+    {
+        if (!string.IsNullOrEmpty(value))
+        {
+            builder.AppendSwitchIfNotNull(option, value);
+        }
+    }
 }

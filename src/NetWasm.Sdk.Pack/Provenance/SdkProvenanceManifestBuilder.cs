@@ -4,6 +4,7 @@ using System.Text.Json;
 
 using NetWasm.Sdk.Pack.Archives;
 using NetWasm.Sdk.Pack.Packages;
+using NetWasm.Sdk.Pack;
 
 namespace NetWasm.Sdk.Pack.Provenance;
 
@@ -41,7 +42,7 @@ public sealed class SdkProvenanceManifestBuilder : ISdkProvenanceManifestBuilder
             sourceEntries,
             Digest(packageEntries),
             Digest(sourceEntries));
-        return JsonSerializer.SerializeToUtf8Bytes(document, Options);
+        return JsonSerializer.SerializeToUtf8Bytes(document, Json.ManifestDocument);
     }
 
     private ManifestEntry[] ReadEntries(
@@ -130,14 +131,14 @@ public sealed class SdkProvenanceManifestBuilder : ISdkProvenanceManifestBuilder
         }
     }
 
-    private static readonly JsonSerializerOptions Options = new()
+    private static readonly SdkPackJsonContext Json = new(new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
         NewLine = "\n",
-    };
+    });
 
-    private sealed record ManifestDocument(
+    internal sealed record ManifestDocument(
         int SchemaVersion,
         string PackageId,
         string PackageVersion,
@@ -150,7 +151,7 @@ public sealed class SdkProvenanceManifestBuilder : ISdkProvenanceManifestBuilder
         string PackageContentDigest,
         string SourceContentDigest);
 
-    private sealed record ManifestEntry(
+    internal sealed record ManifestEntry(
         string Path,
         string PackagePath,
         long Length,

@@ -24,29 +24,24 @@ internal sealed class CompilerDiagnosticProvenanceProvider :
         _bytes = bytes ?? throw new ArgumentNullException(nameof(bytes));
     }
 
-    public object ProvideProvenance(CompilerOptions options)
+    public CompilerProvenanceArtifact ProvideProvenance(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        return new
-        {
-            Compiler = typeof(NetWasmCompiler).Assembly.GetName().Version!.ToString(),
-            DotNet = Environment.Version.ToString(),
-            Runtime = RuntimeInformation.FrameworkDescription,
-            OperatingSystem = RuntimeInformation.OSDescription,
-            Architecture = RuntimeInformation.ProcessArchitecture.ToString(),
-            WasmTools = ReadToolVersion(),
-            Assemblies = new[] { options.EntryAssemblyPath }
+        return new CompilerProvenanceArtifact(
+            typeof(NetWasmCompiler).Assembly.GetName().Version!.ToString(),
+            Environment.Version.ToString(),
+            RuntimeInformation.FrameworkDescription,
+            RuntimeInformation.OSDescription,
+            RuntimeInformation.ProcessArchitecture.ToString(),
+            ReadToolVersion(),
+            [.. new[] { options.EntryAssemblyPath }
                 .Concat(options.ReferencePaths)
-                .Select(path => new
-                {
-                    Path = Path.GetFullPath(path),
-                    Sha256 = _files.Exists(path) ? Hash(path) : null,
-                    PdbSha256 = _files.Exists(Path.ChangeExtension(path, ".pdb"))
+                .Select(path => new CompilerAssemblyProvenanceArtifact(
+                    Path.GetFullPath(path),
+                    _files.Exists(path) ? Hash(path) : null,
+                    _files.Exists(Path.ChangeExtension(path, ".pdb"))
                         ? Hash(Path.ChangeExtension(path, ".pdb"))
-                        : null,
-                })
-                .ToArray(),
-        };
+                        : null))]);
     }
 
     private string Hash(string path) =>

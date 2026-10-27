@@ -4,6 +4,11 @@
              Architecture="CurrentArchitecture"
              TaskFactory="TaskHostFactory"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
+  <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmWriteCompileArtifactManifestTask"
+             Runtime="NET"
+             Architecture="CurrentArchitecture"
+             TaskFactory="TaskHostFactory"
+             AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmValidateArtifactTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
@@ -255,31 +260,24 @@
     <Error Code="NWSDK037"
            Condition="'$(NetWasmNodePath)' == '' OR !Exists('$(NetWasmNodePath)') OR '$(NetWasmWasmToolsCommandPath)' == '' OR !Exists('$(NetWasmWasmToolsCommandPath)') OR '$(NetWasmWasmToolsModulePath)' == '' OR !Exists('$(NetWasmWasmToolsModulePath)')"
            Text="Compilation requires the validated Node executable and pinned platform-neutral NetWasm wasm-tools command." />
-    <NetWasmCompileTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
+    <Error Code="NWSDK092"
+           Condition="'$(NetWasmCompilerPath)' == '' OR !Exists('$(NetWasmCompilerPath)')"
+           Text="Compilation requires nwc, the NetWasm compiler: restore host tools that carry it, or name one with NetWasmCompilerPath." />
+    <NetWasmCompileTask CompilerPath="$(NetWasmCompilerPath)"
+                        InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
                         References="@(_NetWasmManagedLinkReference)"
                         Sources="@(Compile)"
-                        CompilationIdentityPath="$(NetWasmCompilationIdentityPath)"
-                        WitInputs="@(_NetWasmCompilerWitInput)"
                         CompileAsLibrary="$(_NetWasmCompileAsLibrary)"
                         UseJavaScriptExportBoundary="$(NetWasmRawWasm)"
-                        GeneratedSourceRoot="$(BaseIntermediateOutputPath)"
                         Target="$(NetWasmTarget)"
                         CoreModulePath="$(NetWasmCoreModuleOutputPath)"
                         RuntimeLayoutPath="$(NetWasmRuntimeLayoutPath)"
                         InteropManifestPath="$(NetWasmInteropManifestPath)"
                         CompilerMetadataPath="$(NetWasmCompilerMetadataPath)"
                         NativeCallbackObjectPath="$(NetWasmNativeCallbackObjectPath)"
-                        ArtifactManifestPath="$(NetWasmArtifactManifestPath)"
+                        IntermediateDirectory="$(NetWasmIntermediateOutputPath)"
                         ProjectDirectory="$(MSBuildProjectDirectory)"
                         PathMap="$(PathMap)"
-                        Profile="$(NetWasmProfile)"
-                        FeatureSet="$(NetWasmFeatureSet)"
-                        SdkVersion="$(NetWasmSdkVersion)"
-                        CompilerVersion="$(NetWasmCompilerVersion)"
-                        RuntimeAbiVersion="$(NetWasmRuntimeAbiVersion)"
-                        RuntimeVersion="$(NetWasmRuntimeVersion)"
-                        RuntimeAbiManifestPath="$(NetWasmRuntimeAbiManifestPath)"
-                        Artifacts="@(NetWasmArtifact)"
                         DiagnosticTracePath="$(NetWasmDiagnosticTracePath)"
                         DiagnosticLogPath="$(NetWasmDiagnosticLogPath)"
                         WitPath="$(_NetWasmCompilerWitPath)"
@@ -309,10 +307,28 @@
                         ManagedArrayStoreCheckElimination="$(NetWasmManagedArrayStoreCheckElimination)"
                         NoLogo="$(NoLogo)"
                         ExceptionTypeMapPath="$(NetWasmExceptionTypeMapPath)"
-                        StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)">
+                        StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)" />
+    <NetWasmWriteCompileArtifactManifestTask InputAssemblyPath="@(IntermediateAssembly->'%(FullPath)')"
+                                             References="@(_NetWasmManagedLinkReference)"
+                                             Sources="@(Compile)"
+                                             CompilationIdentityPath="$(NetWasmCompilationIdentityPath)"
+                                             WitInputs="@(_NetWasmCompilerWitInput)"
+                                             GeneratedSourceRoot="$(BaseIntermediateOutputPath)"
+                                             Target="$(NetWasmTarget)"
+                                             NativeCallbackObjectPath="$(NetWasmNativeCallbackObjectPath)"
+                                             ArtifactManifestPath="$(NetWasmArtifactManifestPath)"
+                                             ProjectDirectory="$(MSBuildProjectDirectory)"
+                                             Profile="$(NetWasmProfile)"
+                                             FeatureSet="$(NetWasmFeatureSet)"
+                                             SdkVersion="$(NetWasmSdkVersion)"
+                                             CompilerVersion="$(NetWasmCompilerVersion)"
+                                             RuntimeAbiVersion="$(NetWasmRuntimeAbiVersion)"
+                                             RuntimeVersion="$(NetWasmRuntimeVersion)"
+                                             RuntimeAbiManifestPath="$(NetWasmRuntimeAbiManifestPath)"
+                                             Artifacts="@(NetWasmArtifact)">
       <Output TaskParameter="ResolvedArtifacts" ItemName="_NetWasmResolvedArtifact" />
       <Output TaskParameter="SemanticBuildId" PropertyName="NetWasmSemanticBuildId" />
-    </NetWasmCompileTask>
+    </NetWasmWriteCompileArtifactManifestTask>
     <ItemGroup Condition="'@(_NetWasmResolvedArtifact)' != ''">
       <NetWasmArtifact Remove="@(NetWasmArtifact)" />
       <NetWasmArtifact Include="@(_NetWasmResolvedArtifact)" />

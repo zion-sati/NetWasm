@@ -241,6 +241,7 @@ public sealed class HostingBuildEnvironmentResolverTests
             result.Binaryen.WasmOpt?.Executable.Source);
         Assert.Equal(result.Node.AbsolutePath, result.Toolchain.WasmTools.NodePath);
         Assert.Equal(Root, toolchain.PackageRoot);
+        Assert.Equal(Path.Combine(Root, "host-tools", "nwc"), result.CompilerPath);
     }
 
     [Fact]
@@ -282,6 +283,7 @@ public sealed class HostingBuildEnvironmentResolverTests
                     ["wasm-ld"] = Path.Combine(Root, "host-tools", "wasm-ld"),
                     ["wasm-merge"] = Path.Combine(Root, "host-tools", "wasm-merge"),
                     ["wasm-opt"] = Path.Combine(Root, "host-tools", "wasm-opt"),
+                    ["nwc"] = Path.Combine(Root, "host-tools", "nwc"),
                 }.ToImmutableDictionary(StringComparer.Ordinal));
         }
     }

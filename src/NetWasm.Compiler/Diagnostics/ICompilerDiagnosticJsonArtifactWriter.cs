@@ -1,6 +1,8 @@
+using System.Text.Json.Serialization.Metadata;
+
 namespace NetWasm.Compiler.Diagnostics;
 
 internal interface ICompilerDiagnosticJsonArtifactWriter
 {
-    void WriteJson(string path, object value);
+    void WriteJson<T>(string path, T value, JsonTypeInfo<T> typeInfo);
 }

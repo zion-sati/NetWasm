@@ -4,6 +4,7 @@ using Microsoft.Build.Framework;
 using NetWasm.Hosting.Build.Composition;
 using NetWasm.Hosting.Build.Deployment;
 using NetWasm.Hosting.Deployment;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.MsBuild;
 
@@ -106,7 +107,7 @@ public sealed class NetWasmWriteDeploymentTask : Microsoft.Build.Utilities.Task
 
     private static ImmutableArray<string> ReadSignature(string json)
     {
-        var values = JsonSerializer.Deserialize<string[]>(json) ??
+        var values = JsonSerializer.Deserialize(json, HostingBuildJsonContext.Default.StringArray) ??
             throw new ArgumentException("Deployment function signatures must be JSON arrays.");
         if (values.Any(value => value is null))
         {

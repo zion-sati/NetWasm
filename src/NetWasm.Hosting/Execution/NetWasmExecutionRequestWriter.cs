@@ -3,13 +3,14 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Execution;
 
 /// <summary>Produces deterministic ephemeral request JSON while preserving argument order.</summary>
 public sealed class NetWasmExecutionRequestWriter : INetWasmExecutionRequestWriter
 {
-    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly HostingJsonContext Json = new(CreateJsonOptions());
     private readonly INetWasmExecutionRequestValidator _validator;
 
     public NetWasmExecutionRequestWriter(INetWasmExecutionRequestValidator validator)
@@ -33,7 +34,7 @@ public sealed class NetWasmExecutionRequestWriter : INetWasmExecutionRequestWrit
             },
             ApplicationImports = request.ApplicationImports.OrderBy(import => import.Module, StringComparer.Ordinal).ToImmutableArray(),
         };
-        return JsonSerializer.SerializeToUtf8Bytes(canonical, JsonOptions);
+        return JsonSerializer.SerializeToUtf8Bytes(canonical, Json.NetWasmExecutionRequest);
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

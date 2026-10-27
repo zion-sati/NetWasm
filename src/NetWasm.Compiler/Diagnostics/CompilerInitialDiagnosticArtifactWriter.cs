@@ -37,35 +37,39 @@ internal sealed class CompilerInitialDiagnosticArtifactWriter(
             return;
         }
         var sourcePathsValue = _sourcePaths.Provide(options);
-        _json.WriteJson(optionsPath, new
-        {
-            options.EntryAssemblyPath,
-            ReferencePaths = options.ReferencePaths,
-            options.EntryTypeName,
-            options.EntryMethodName,
-            options.Exports,
-            options.Target,
-            options.WitPath,
-            options.WitWorld,
-            SourcePaths = sourcePathsValue,
-            Reproduce = _reproductionCommands.Build(options),
-        });
-        _json.WriteJson(_paths.ResolvePath(options, "00-toolchain.json")!,
-            _provenance.ProvideProvenance(options));
-        var sourceDescriptions = sourcePathsValue.Select((path, index) => new
-        {
-            Path = path,
-            Exists = _files.Exists(path),
-            Copy = _files.Exists(path)
+        _json.WriteJson(
+            optionsPath,
+            new CompilerOptionsArtifact(
+                options.EntryAssemblyPath,
+                options.ReferencePaths,
+                options.EntryTypeName,
+                options.EntryMethodName,
+                options.Exports,
+                options.Target,
+                options.WitPath,
+                options.WitWorld,
+                sourcePathsValue,
+                _reproductionCommands.Build(options)),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerOptionsArtifact);
+        _json.WriteJson(
+            _paths.ResolvePath(options, "00-toolchain.json")!,
+            _provenance.ProvideProvenance(options),
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerProvenanceArtifact);
+        var sourceDescriptions = sourcePathsValue.Select((path, index) => new CompilerSourceArtifact(
+            path,
+            _files.Exists(path),
+            _files.Exists(path)
                 ? $"sources/{index:D4}-{System.IO.Path.GetFileName(path)}"
-                : null,
-        }).ToArray();
+                : null)).ToArray();
         foreach (var source in sourceDescriptions.Where(source => source.Exists))
         {
             _sources.CopySource(
                 new FileInfo(source.Path),
                 _paths.ResolvePath(options, source.Copy!)!);
         }
-        _json.WriteJson(_paths.ResolvePath(options, "00-sources.json")!, sourceDescriptions);
+        _json.WriteJson(
+            _paths.ResolvePath(options, "00-sources.json")!,
+            sourceDescriptions,
+            CompilerDiagnosticArtifactJsonContext.Default.CompilerSourceArtifactArray);
     }
 }

@@ -35,32 +35,26 @@ build_host_tools = load("netwasm_build_host_tools", "build-host-tools-package.py
 
 
 class HostToolsPackageTests(unittest.TestCase):
-    def test_staged_manifest_version_can_be_repacked_without_restaging_payload(self):
-        stage = Path(self.temporary.name) / "staged"
-        manifest = stage / "tools/host-tools-manifest.json"
-        manifest.parent.mkdir(parents=True)
-        manifest.write_text(json.dumps({
-            "packageVersion": "0.5.0-preview.1",
-            "files": [{"path": "tools/bin/node", "sha256": "same"}],
-        }))
-
-        build_host_tools.set_staged_version(stage, "0.5.0")
-
-        updated = json.loads(manifest.read_text())
-        self.assertEqual("0.5.0", updated["packageVersion"])
-        self.assertEqual(
-            [{"path": "tools/bin/node", "sha256": "same"}], updated["files"]
-        )
-
-    def test_release_train_stages_and_probes_native_payload_once(self):
+    def test_release_train_publishes_and_stages_nwc_for_each_version(self):
         output = Path(self.temporary.name) / "output"
         cache = Path(self.temporary.name) / "cache"
         events = []
 
         def run(command, **_kwargs):
             command = [str(value) for value in command]
-            if command[1].endswith("stage-host-tools.py"):
-                events.append("stage")
+            if command[:2] == ["dotnet", "publish"]:
+                events.append(("publish", next(
+                    value.removeprefix("-p:Version=") for value in command
+                    if value.startswith("-p:Version="))))
+                self.assertIn("-p:PublishAot=true", command)
+                self.assertEqual("1", _kwargs["env"]["ZERO_AR_DATE"])
+                self.assertEqual("win-x64", command[command.index("-r") + 1])
+                compiler = Path(command[command.index("-o") + 1]) / "nwc.exe"
+                compiler.parent.mkdir(parents=True)
+                compiler.write_bytes(b"nwc")
+            elif command[1].endswith("stage-host-tools.py"):
+                events.append(("stage", command[command.index("--version") + 1]))
+                self.assertTrue(Path(command[command.index("--compiler") + 1]).is_file())
                 stage_root = Path(command[command.index("--output") + 1])
                 version = command[command.index("--version") + 1]
                 (stage_root / "tools/bin").mkdir(parents=True)
@@ -99,15 +93,18 @@ class HostToolsPackageTests(unittest.TestCase):
             build_host_tools.subprocess,
             "check_output",
             side_effect=("a" * 40 + "\n", "1\n"),
-        ), patch.object(build_host_tools.subprocess, "run", side_effect=run):
+        ), patch.object(build_host_tools.subprocess, "run", side_effect=run), \
+                patch.object(build_host_tools, "ROOT", Path(self.temporary.name) / "repository"):
             results = build_host_tools.build_many(
                 "win-x64", ["0.5.0-preview.1", "0.5.0"], output, cache
             )
 
-        self.assertEqual(1, events.count("stage"))
         self.assertEqual(
-            [("pack", "0.5.0-preview.1"), ("pack", "0.5.0")],
-            [event for event in events if isinstance(event, tuple) and event[0] == "pack"],
+            [
+                ("publish", "0.5.0-preview.1"), ("stage", "0.5.0-preview.1"), ("pack", "0.5.0-preview.1"),
+                ("publish", "0.5.0"), ("stage", "0.5.0"), ("pack", "0.5.0"),
+            ],
+            [event for event in events if event[0] != "verify"],
         )
         self.assertEqual(2, len(results))
 
@@ -132,6 +129,7 @@ class HostToolsPackageTests(unittest.TestCase):
             "licenses/LLVM-BLAKE3-LICENSE": b"blake3 notice",
             "licenses/LLVM-ThirdParty-NOTICES.txt": b"embedded notices",
             "licenses/Binaryen-LICENSE": b"binaryen notice",
+            **{packaged: (ROOT / source).read_bytes() for packaged, source in verify.COMPILER_NOTICES.items()},
             **{f"tools/bin/{role}": executable for role in verify.ROLES},
         }
         roles = {role: f"tools/bin/{role}" for role in verify.ROLES}
@@ -175,6 +173,13 @@ class HostToolsPackageTests(unittest.TestCase):
             del payload["licenses/Node-LICENSE"]
         if defect == "extra-binary":
             payload["tools/bin/unexpected"] = executable
+        if defect == "changed-compiler-notice":
+            payload["licenses/nwc-THIRD-PARTY-NOTICES.txt"] = b"changed"
+            data = payload["licenses/nwc-THIRD-PARTY-NOTICES.txt"]
+            file = next(item for item in manifest["files"]
+                        if item["path"] == "licenses/nwc-THIRD-PARTY-NOTICES.txt")
+            file["size"] = len(data)
+            file["sha256"] = hashlib.sha256(data).hexdigest()
         with zipfile.ZipFile(self.package, "w") as archive:
             metadata = {
                 "[Content_Types].xml": b"",
@@ -246,7 +251,7 @@ class HostToolsPackageTests(unittest.TestCase):
     def test_missing_notice_extra_binary_bad_hash_architecture_symlink_and_host_fail(self):
         for defect in (
             "missing-notice", "extra-binary", "wrong-hash",
-            "wrong-architecture", "symlink", "wrong-host",
+            "wrong-architecture", "symlink", "wrong-host", "changed-compiler-notice",
         ):
             with self.subTest(defect=defect):
                 self.make_package(defect=defect)
@@ -441,6 +446,7 @@ class HostToolsPackageTests(unittest.TestCase):
             "licenses/LLVM-BLAKE3-LICENSE": b"blake3 notice",
             "licenses/LLVM-ThirdParty-NOTICES.txt": b"embedded notices",
             "licenses/Binaryen-LICENSE": b"binaryen notice",
+            **{packaged: (ROOT / source).read_bytes() for packaged, source in verify.COMPILER_NOTICES.items()},
             **{path: bytes(binary) for path in roles.values()},
         }
         artifacts = self.pins["hostArtifacts"]

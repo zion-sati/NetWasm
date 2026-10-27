@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -27,7 +28,7 @@ internal static class JavaScriptRuntime
 
     public static string Specifier(string module) => SpecifierPrefix + module;
 
-    public static string Quoted(string module) => JsonSerializer.Serialize(Specifier(module));
+    public static string Quoted(string module) => JsonSerializer.Serialize(Specifier(module), HostingBuildJsonContext.Default.String);
 
     /// <summary>The runtime module a host imports a Preview 2 shim family from.</summary>
     public static string FamilyModule(string family, string host) =>

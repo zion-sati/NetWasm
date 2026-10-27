@@ -3,12 +3,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Node;
 using NetWasm.Compiler.ComponentModel.Raw;
-using NetWasm.Compiler.Diagnostics;
 using NetWasm.Compiler.Tasks.Artifacts;
 using NetWasm.Compiler.Tasks.ComponentModel;
-using NetWasm.Compiler.Tasks.Compilation;
 using NetWasm.Compiler.Tasks.MsBuild;
-using NetWasm.Compiler.Wasm.Emission.NativeInterop;
 
 namespace NetWasm.Compiler.Tasks.Composition;
 
@@ -17,18 +14,6 @@ internal static class CompilerTaskComposition
     public static IInternalRuntimeExportReader CreateInternalRuntimeExportReader() => new InternalRuntimeExportReader();
     private const string DisableExperimentalWarningOption =
         "--disable-warning=ExperimentalWarning";
-
-    public static IManagedModuleCompilationSessionFactory
-        CreateManagedModuleCompilationSessionFactory(
-            ICompilerProgressReporter progress)
-    {
-        ArgumentNullException.ThrowIfNull(progress);
-        return new ManagedModuleCompilationSessionFactory(
-            command => CreateManagedModuleCompilationSession(command, progress));
-    }
-
-    public static ICompilerArtifactWriter CreateArtifactWriter() =>
-        new CompilerArtifactWriter(new NativeCallbackSupportArtifactValidator());
 
     public static ICompilerArtifactManifestTaskRequestBuilder CreateArtifactManifestTaskRequestBuilder() =>
         new CompilerArtifactManifestTaskRequestBuilder();
@@ -156,22 +141,9 @@ internal static class CompilerTaskComposition
             services.GetRequiredService<NetWasm.Compiler.ComponentModel.Catalogs.IWitWorldFunctionProjector>());
     }
 
-    private static ManagedModuleCompilationSession CreateManagedModuleCompilationSession(
-        ExternalToolCommand wasmToolsCommand,
-        ICompilerProgressReporter progress)
-    {
-        var services = CreateCompilerServices(wasmToolsCommand, progress: progress);
-        var compiler = new ManagedModuleCompiler(
-            new ManagedEntryPointReader(),
-            new WasmTargetResolver(),
-            new NetWasmCompilationInvoker(services.GetRequiredService<INetWasmCompiler>()));
-        return new ManagedModuleCompilationSession(services, compiler);
-    }
-
     private static ServiceProvider CreateCompilerServices(
         ExternalToolCommand wasmToolsCommand,
-        BinaryenToolRunnerConfiguration? binaryenConfiguration = null,
-        ICompilerProgressReporter? progress = null)
+        BinaryenToolRunnerConfiguration? binaryenConfiguration = null)
     {
         var services = new ServiceCollection()
             .AddNetWasmCompiler();
@@ -179,11 +151,6 @@ internal static class CompilerTaskComposition
         services.AddSingleton<IWasmTools>(serviceProvider => new ProcessWasmTools(
             serviceProvider.GetRequiredService<IExternalToolRunner>(),
             wasmToolsCommand));
-        if (progress is not null)
-        {
-            services.RemoveAll<ICompilerProgressReporter>();
-            services.AddSingleton<ICompilerProgressReporter>(progress);
-        }
         if (binaryenConfiguration is not null)
         {
             services.RemoveAll<IBinaryenToolRunner>();

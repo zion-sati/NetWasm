@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Deployment;
 
@@ -277,7 +278,7 @@ public sealed class WitWorkerComponentAdapterWriter(
     private static InvalidDataException Invalid(string message, Exception? inner = null) =>
         new(message, inner);
 
-    private static string Json(string value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) => JsonSerializer.Serialize(value, HostingJsonContext.Default.String);
 
     private static void AppendLine(StringBuilder source, string value = "") =>
         source.Append(value).Append('\n');

@@ -6,15 +6,16 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using NetWasm.Toolchain.Manifest;
+using NetWasm.Toolchain;
 
 namespace NetWasm.Toolchain.Resolution;
 
 internal static class JavaScriptClosureIntegrityVerifier
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
+    private static readonly ToolchainJsonContext Json = new(new()
     {
         PropertyNameCaseInsensitive = true,
-    };
+    });
 
     public static void Verify(
         string packageRoot,
@@ -40,9 +41,9 @@ internal static class JavaScriptClosureIntegrityVerifier
         JcoClosureIntegrityManifest manifest;
         try
         {
-            manifest = JsonSerializer.Deserialize<JcoClosureIntegrityManifest>(
+            manifest = JsonSerializer.Deserialize(
                 File.ReadAllText(manifestPath),
-                SerializerOptions)
+                Json.JcoClosureIntegrityManifest)
                 ?? throw new InvalidDataException(
                     "The JavaScript closure integrity manifest is empty.");
         }

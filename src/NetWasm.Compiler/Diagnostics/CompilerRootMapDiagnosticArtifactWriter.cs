@@ -21,7 +21,7 @@ internal sealed class CompilerRootMapDiagnosticArtifactWriter(
         var path = _paths.ResolvePath(options, "05-root-maps.json");
         if (path is not null)
         {
-            _json.WriteJson(path, _snapshot.BuildRootMaps(program));
+            _json.WriteJson(path, _snapshot.BuildRootMaps(program), CompilerDiagnosticArtifactJsonContext.Default.CompilerRootMapsArtifact);
         }
     }
 }

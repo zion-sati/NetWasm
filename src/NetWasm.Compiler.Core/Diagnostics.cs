@@ -18,6 +18,8 @@ public enum DiagnosticCode
     CompilerInvariant = 1011,
     NativeInterop = 1012,
     FunctionBodyLimit = 1013,
+    // A host could not read or write a file, or failed unexpectedly.
+    HostFailure = 1014,
     GenericExpansion = 2001,
 }
 

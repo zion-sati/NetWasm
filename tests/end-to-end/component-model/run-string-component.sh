@@ -7,7 +7,7 @@ toolchain="$repo_root/eng/toolchain.json"
 sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 wasmtime_version="$(node -p 'require(process.argv[1]).wasmtime' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit_bindgen="$artifact_root/wit-tool/bin/netwasm-wit-bindgen"
 wit="$repo_root/tests/NetWasm.Compiler.Tests/Fixtures/string-component.wit"
 
@@ -32,12 +32,12 @@ dotnet "$csc" -nologo -noconfig -nostdlib -langversion:latest \
     "$repo_root/tests/end-to-end/component-model/fixtures/StringComponent.cs"
 
 for repeat in first second; do
-    dotnet "$compiler" --input "$artifact_root/StringComponent.dll" \
-        --reference "$corelib" \
-        --entry 'NetWasm.Wit.Example.Strings._1._0._0.StringComponent::Run' \
-        --wit "$wit" --target wasm32 \
-        --output "$artifact_root/application.$repeat.wasm" \
-        --runtime-layout "$artifact_root/runtime-layout.$repeat.json"
+    dotnet "$compiler" "$artifact_root/StringComponent.dll" \
+        -r:"$corelib" \
+        -target:function -entry:'NetWasm.Wit.Example.Strings._1._0._0.StringComponent::Run' \
+        -wit:"$wit" -platform:wasm32 \
+        -out:"$artifact_root/application.$repeat.wasm" \
+        -runtimelayout:"$artifact_root/runtime-layout.$repeat.json"
 done
 cmp "$artifact_root/application.first.wasm" "$artifact_root/application.second.wasm"
 cmp "$artifact_root/runtime-layout.first.json" "$artifact_root/runtime-layout.second.json"
@@ -50,12 +50,12 @@ node "$repo_root/tests/end-to-end/component-model/test-component-allocator.mjs" 
     "$artifact_root/runtime.wasm" wasm32
 
 for repeat in first second; do
-    dotnet "$compiler" --input "$artifact_root/StringComponent.dll" \
-        --reference "$corelib" \
-        --entry 'NetWasm.Wit.Example.Strings._1._0._0.StringComponent::Run' \
-        --wit "$wit" --target wasm64 \
-        --output "$artifact_root/application.wasm64.$repeat.wasm" \
-        --runtime-layout "$artifact_root/runtime-layout.wasm64.$repeat.json"
+    dotnet "$compiler" "$artifact_root/StringComponent.dll" \
+        -r:"$corelib" \
+        -target:function -entry:'NetWasm.Wit.Example.Strings._1._0._0.StringComponent::Run' \
+        -wit:"$wit" -platform:wasm64 \
+        -out:"$artifact_root/application.wasm64.$repeat.wasm" \
+        -runtimelayout:"$artifact_root/runtime-layout.wasm64.$repeat.json"
 done
 cmp "$artifact_root/application.wasm64.first.wasm" \
     "$artifact_root/application.wasm64.second.wasm"
@@ -71,12 +71,12 @@ node "$repo_root/tests/end-to-end/component-model/test-component-allocator.mjs" 
 
 for repeat in first second; do
     dotnet "$compiler" componentize \
-        --optimization none \
-        --core-module "$artifact_root/application.first.wasm" \
-        --runtime-module "$artifact_root/runtime.wasm" \
-        --wit "$wit" --target wasm32 \
-        --output "$artifact_root/component.$repeat.wasm" \
-        --manifest "$artifact_root/manifest.$repeat.json"
+        -optimize:none \
+        -coremodule:"$artifact_root/application.first.wasm" \
+        -runtimemodule:"$artifact_root/runtime.wasm" \
+        -wit:"$wit" -platform:wasm32 \
+        -out:"$artifact_root/component.$repeat.wasm" \
+        -manifest:"$artifact_root/manifest.$repeat.json"
 done
 cmp "$artifact_root/component.first.wasm" "$artifact_root/component.second.wasm"
 cmp "$artifact_root/manifest.first.json" "$artifact_root/manifest.second.json"

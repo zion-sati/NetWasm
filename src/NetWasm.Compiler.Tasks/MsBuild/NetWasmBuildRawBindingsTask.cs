@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -13,11 +12,6 @@ namespace NetWasm.Compiler.Tasks.MsBuild;
 
 public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
 {
-    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
     private readonly ICompilerBuildMetadataReader _compilerMetadata;
     private readonly IHostInteropManifestReader _interopManifests;
     private readonly IRawBindingSessionFactory _sessions;
@@ -149,7 +143,7 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
             _artifacts.Write(AdapterPath, result.Adapter);
             _artifacts.Write(BindingManifestPath, JsonSerializer.SerializeToUtf8Bytes(
                 new RawBindingManifest(2, Target, [.. requiredImports], result.ImportModules),
-                MetadataJsonOptions));
+                TaskJsonContext.CamelCaseMetadata.RawBindingManifest));
             Adapters = [CreateAdapterItem()];
             RequiredImports = [.. requiredImports.Select(CreateFunctionItem)];
             RequiredImportModules =
@@ -198,10 +192,10 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
         item.SetMetadata("Name", function.Name);
         item.SetMetadata("Parameters", JsonSerializer.Serialize(
             function.Parameters,
-            MetadataJsonOptions));
+            TaskJsonContext.CamelCaseMetadata.ImmutableArrayString));
         item.SetMetadata("Results", JsonSerializer.Serialize(
             function.Results,
-            MetadataJsonOptions));
+            TaskJsonContext.CamelCaseMetadata.ImmutableArrayString));
         return item;
     }
 

@@ -15,7 +15,12 @@ from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_PACKAGE_BYTES = 240_000_000
-ROLES = ("node", "wasm-ld", "wasm-opt", "wasm-merge")
+ROLES = ("node", "wasm-ld", "wasm-opt", "wasm-merge", "nwc")
+# nwc is NetWasm's own Native AOT build, under these notices from the source tree.
+COMPILER_NOTICES = {
+    "licenses/NetWasm-LICENSE.txt": "LICENSES/LicenseRef-NetWasm-Community-1.0.txt",
+    "licenses/nwc-THIRD-PARTY-NOTICES.txt": "src/NetWasm.Compiler.Cli/THIRD-PARTY-NOTICES.txt",
+}
 
 
 def safe_path(path: str) -> None:
@@ -110,7 +115,7 @@ def inspect(
             "licenses/LLVM-LICENSE.txt", "licenses/LLD-LICENSE.txt",
             "licenses/LLVM-BLAKE3-LICENSE", "licenses/LLVM-ThirdParty-NOTICES.txt",
             "licenses/Binaryen-LICENSE",
-        }
+        } | set(COMPILER_NOTICES)
         if expected_rid.startswith("linux-"):
             required |= {
                 "tools/bin/libatomic.so.1",
@@ -141,6 +146,9 @@ def inspect(
             data = archive.read(item["path"])
             if len(data) != item["size"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
                 raise ValueError(f"Host-tools package payload digest mismatch: {item['path']}")
+        for packaged, source in COMPILER_NOTICES.items():
+            if archive.read(packaged) != (ROOT / source).read_bytes():
+                raise ValueError(f"nwc notice differs from its source: {packaged}")
         for role, relative in expected_roles.items():
             data = archive.read(relative)
             assert_architecture(data, expected_rid, role)

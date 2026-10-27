@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using NetWasm.Hosting.Execution;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -200,5 +201,7 @@ internal static class BrowserHostSource
         foreach (var line in lines) source.Append(indent).AppendLine(line);
     }
 
-    private static string Json<T>(T value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) => JsonSerializer.Serialize(value, HostingBuildJsonContext.Default.String);
+
+    private static string Json(IEnumerable<string> values) => JsonSerializer.Serialize([.. values], HostingBuildJsonContext.Default.StringArray);
 }

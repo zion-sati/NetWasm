@@ -197,10 +197,10 @@ public sealed class RuntimeMaterializationTask : Task
         item.SetMetadata("RuntimeAbi", materialization.RuntimeAbi);
         item.SetMetadata("BuildSeam", materialization.BuildSeam);
         item.SetMetadata("ToolchainFingerprint", materialization.ToolchainFingerprint);
-        ((ITaskItem2)item).SetMetadataValueLiteral("InternalRuntimeExports", JsonSerializer.Serialize(materialization.InternalRuntimeExports));
+        ((ITaskItem2)item).SetMetadataValueLiteral("InternalRuntimeExports", JsonSerializer.Serialize(materialization.InternalRuntimeExports, RuntimePackJsonContext.Default.ImmutableArrayRuntimeLinkExport));
         ((ITaskItem2)item).SetMetadataValueLiteral(
             "InternalApplicationExports",
-            JsonSerializer.Serialize(materialization.InternalApplicationExports));
+            JsonSerializer.Serialize(materialization.InternalApplicationExports, RuntimePackJsonContext.Default.ImmutableArrayRuntimeLinkExport));
         return item;
     }
 

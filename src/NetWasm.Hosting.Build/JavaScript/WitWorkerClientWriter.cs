@@ -3,6 +3,7 @@ using System.Text;
 using System.Globalization;
 using System.Security.Cryptography;
 using NetWasm.Hosting.Deployment;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -62,7 +63,7 @@ public sealed class WitWorkerClientWriter(
         js.AppendLine("const session = createWorkerSessionClient({");
         js.AppendLine("generation: crypto.randomUUID(), worker, onNotification,");
         js.AppendLine("environment: options.environment, stderr: options.stderr, stdout: options.stdout,");
-        js.AppendLine(CultureInfo.InvariantCulture, $"operations: {System.Text.Json.JsonSerializer.Serialize(contract.Exports.Select(export => export!.Operation))},");
+        js.AppendLine(CultureInfo.InvariantCulture, $"operations: {System.Text.Json.JsonSerializer.Serialize([.. contract.Exports.Select(export => export!.Operation)], HostingBuildJsonContext.Default.StringArray)},");
         js.AppendLine(CultureInfo.InvariantCulture, $"startup: {{ buildFingerprint: {Json(request.BuildFingerprint)}, manifestSha256: {Json(request.ManifestSha256)} }},");
         js.AppendLine("}); const abort = () => session.terminate(); signal?.addEventListener('abort', abort, { once: true });");
         js.AppendLine("try { if (signal?.aborted) abort(); await session.ready; } finally { signal?.removeEventListener('abort', abort); } return Object.freeze({");

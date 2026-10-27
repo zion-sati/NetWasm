@@ -185,7 +185,7 @@ public sealed class CompilerDiagnosticTraceTests
         Assert.False(File.Exists(Path.Combine(passes, "03-program.json")));
         var failure = File.ReadAllText(Path.Combine(passes, "failure.json"));
         Assert.Contains("metadata", failure);
-        Assert.Contains("--input", failure);
+        Assert.Contains("-out:reproduction.wasm", failure);
     }
 
     [Fact]

@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using NetWasm.Hosting.Build;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NetWasm.Hosting.Build.JavaScript;
 
@@ -25,19 +27,15 @@ public interface IComponentTranspiler
 public sealed class ComponentTranspiler : IComponentTranspiler
 {
     private const string MetadataFileName = ".netwasm-jco-exports.json";
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly HostingBuildJsonContext Json = new(new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
+    });
     private readonly IJavaScriptProcessRunner _process;
     private readonly string _runnerPath;
 
     public ComponentTranspiler()
-        : this(
-            new JavaScriptProcessRunner(),
-            Path.Combine(
-                Path.GetDirectoryName(typeof(ComponentTranspiler).Assembly.Location)!,
-                "run-jco-transpile.mjs"))
+        : this(new JavaScriptProcessRunner())
     {
     }
 
@@ -46,10 +44,16 @@ public sealed class ComponentTranspiler : IComponentTranspiler
         string? runnerPath = null)
     {
         _process = process ?? throw new ArgumentNullException(nameof(process));
-        _runnerPath = runnerPath ?? Path.Combine(
-            Path.GetDirectoryName(typeof(ComponentTranspiler).Assembly.Location)!,
-            "run-jco-transpile.mjs");
+        _runnerPath = runnerPath ?? DefaultRunnerPath();
     }
+
+    [UnconditionalSuppressMessage(
+        "SingleFile",
+        "IL3000:Avoid accessing Assembly file path when publishing as a single file",
+        Justification = "MSBuild loads this task from its package folder, never from a single-file bundle.")]
+    private static string DefaultRunnerPath() => Path.Combine(
+        Path.GetDirectoryName(typeof(ComponentTranspiler).Assembly.Location)!,
+        "run-jco-transpile.mjs");
 
     public ComponentTranspileResult Transpile(ComponentTranspileRequest request)
     {
@@ -161,9 +165,9 @@ public sealed class ComponentTranspiler : IComponentTranspiler
         JcoTranspileMetadata? metadata;
         try
         {
-            metadata = JsonSerializer.Deserialize<JcoTranspileMetadata>(
+            metadata = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
-                JsonOptions);
+                Json.JcoTranspileMetadata);
         }
         catch (JsonException exception)
         {
@@ -186,7 +190,7 @@ public sealed class ComponentTranspiler : IComponentTranspiler
         return [.. metadata.Exports.Select(value => value!)];
     }
 
-    private sealed record JcoTranspileMetadata
+    internal sealed record JcoTranspileMetadata
     {
         public int SchemaVersion { get; init; }
         public ImmutableArray<JcoComponentRootExport?> Exports { get; init; }

@@ -23,101 +23,83 @@ public sealed class PackRequestFingerprintBuilder : IPackRequestFingerprintBuild
         ArgumentNullException.ThrowIfNull(package);
         var files = BuildFileFingerprints(package.Files, package.Determinism);
         var symbols = BuildSymbolFingerprints(package.Symbols.Files, package.Determinism);
-        var source = package.Source.Files
+        PackSourceFileFingerprint[] source = [.. package.Source.Files
             .OrderBy(static file => file.TargetPath, StringComparer.Ordinal)
-            .Select(file => new
-            {
+            .Select(file => new PackSourceFileFingerprint(
                 file.TargetPath,
                 file.TargetFrameworkAlias,
                 file.ExpectedSha256,
                 file.ExpectedLength,
-                ContentHash = ReadHash(file.SourcePath, package.Determinism.MaxEntryBytes)
-            });
-        var request = new
-        {
-            schema = "1",
-            task = "0.1",
-            identity = package.Identity,
-            output = Path.GetFileName(package.OutputPath),
-            nuspecOutput = Path.GetFileName(package.NuspecOutputPath ?? string.Empty),
-            manifestOutput = Path.GetFileName(package.ManifestOutputPath ?? string.Empty),
-            metadata = new
-            {
-                package.Metadata.Authors,
-                package.Metadata.Description,
-                package.Metadata.Title,
-                package.Metadata.Owners,
-                package.Metadata.Summary,
-                ProjectUrl = package.Metadata.PublishRepositoryUrl ? package.Metadata.ProjectUrl : null,
-                package.Metadata.LicenseExpression,
-                package.Metadata.LicenseFile,
-                package.Metadata.Icon,
-                package.Metadata.Readme,
-                package.Metadata.Copyright,
-                package.Metadata.Tags,
-                package.Metadata.ReleaseNotes,
-                RepositoryUrl = package.Metadata.PublishRepositoryUrl ? package.Metadata.RepositoryUrl : null,
-                RepositoryType = package.Metadata.PublishRepositoryUrl ? package.Metadata.RepositoryType : null,
-                RepositoryBranch = package.Metadata.PublishRepositoryUrl ? package.Metadata.RepositoryBranch : null,
-                RepositoryCommit = package.Metadata.PublishRepositoryUrl ? package.Metadata.RepositoryCommit : null,
-                package.Metadata.PackageTypes,
-                package.Metadata.DevelopmentDependency,
-                package.Metadata.Serviceable,
-                package.Metadata.PublishRepositoryUrl
-            },
-            targets = package.Targets
+                ReadHash(file.SourcePath, package.Determinism.MaxEntryBytes)))];
+        var metadata = package.Metadata;
+        var request = new PackRequestFingerprint(
+            "1",
+            "0.1",
+            package.Identity,
+            Path.GetFileName(package.OutputPath),
+            Path.GetFileName(package.NuspecOutputPath ?? string.Empty),
+            Path.GetFileName(package.ManifestOutputPath ?? string.Empty),
+            new PackMetadataFingerprint(
+                metadata.Authors,
+                metadata.Description,
+                metadata.Title,
+                metadata.Owners,
+                metadata.Summary,
+                metadata.PublishRepositoryUrl ? metadata.ProjectUrl : null,
+                metadata.LicenseExpression,
+                metadata.LicenseFile,
+                metadata.Icon,
+                metadata.Readme,
+                metadata.Copyright,
+                metadata.Tags,
+                metadata.ReleaseNotes,
+                metadata.PublishRepositoryUrl ? metadata.RepositoryUrl : null,
+                metadata.PublishRepositoryUrl ? metadata.RepositoryType : null,
+                metadata.PublishRepositoryUrl ? metadata.RepositoryBranch : null,
+                metadata.PublishRepositoryUrl ? metadata.RepositoryCommit : null,
+                metadata.PackageTypes,
+                metadata.DevelopmentDependency,
+                metadata.Serviceable,
+                metadata.PublishRepositoryUrl),
+            [.. package.Targets
                 .OrderBy(static target => target.Alias, StringComparer.OrdinalIgnoreCase)
-                .Select(static target => new
-                {
+                .Select(static target => new PackTargetFingerprint(
                     target.Alias,
                     target.Identifier,
                     target.Version,
                     target.CanonicalFolder,
-                    target.CanonicalDependencyGroup
-                }),
-            targetIdentities = package.TargetIdentities
-                .OrderBy(static target => target.Alias, StringComparer.OrdinalIgnoreCase),
+                    target.CanonicalDependencyGroup))],
+            [.. package.TargetIdentities.OrderBy(static target => target.Alias, StringComparer.OrdinalIgnoreCase)],
             files,
-            dependencies = package.DependencyGroups
+            [.. package.DependencyGroups
                 .OrderBy(static group => group.TargetFramework, StringComparer.Ordinal)
-                .Select(static group => new
-                {
+                .Select(static group => new PackDependencyGroupFingerprint(
                     group.TargetFramework,
                     group.TargetFrameworkAlias,
-                    Dependencies = group.Dependencies
+                    [.. group.Dependencies
                         .OrderBy(static dependency => dependency.Id, StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(static dependency => dependency.VersionRange, StringComparer.Ordinal)
-                }),
-            symbols = new
-            {
-                package.Symbols.IncludeSymbols,
-                package.Symbols.Format,
-                Files = symbols
-            },
-            source = new
-            {
+                        .ThenBy(static dependency => dependency.VersionRange, StringComparer.Ordinal)]))],
+            new PackSymbolsFingerprint(package.Symbols.IncludeSymbols, package.Symbols.Format, symbols),
+            new PackSourceFingerprint(
                 package.Source.IncludeSource,
                 package.Source.PublishRepositoryUrl,
-                SourceLinkHash = string.IsNullOrWhiteSpace(package.Source.SourceLinkJson)
+                string.IsNullOrWhiteSpace(package.Source.SourceLinkJson)
                     ? null
                     : Hash(Encoding.UTF8.GetBytes(package.Source.SourceLinkJson)),
-                Files = source
-            },
-            restore = new
-            {
+                source),
+            new PackRestoreFingerprint(
                 package.Restore.AssetsFileHash,
                 package.Restore.LockFileHash,
-                TargetKeys = package.Restore.TargetKeys.Order(StringComparer.Ordinal),
+                [.. package.Restore.TargetKeys.Order(StringComparer.Ordinal)],
                 package.Restore.NuGetVersion,
                 package.Restore.SdkVersion,
                 package.Restore.Required,
-                Graph = package.Restore.Graph
+                [.. package.Restore.Graph
                     .OrderBy(static edge => edge.Source, StringComparer.Ordinal)
                     .ThenBy(static edge => edge.TargetFramework, StringComparer.Ordinal)
                     .ThenBy(static edge => edge.Id, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(static edge => edge.Version, StringComparer.Ordinal)
-                    .Select(static edge => new
-                    {
+                    .Select(static edge => new PackRestoreEdgeFingerprint(
                         edge.Id,
                         edge.Version,
                         edge.VersionRange,
@@ -125,21 +107,18 @@ public sealed class PackRequestFingerprintBuilder : IPackRequestFingerprintBuild
                         edge.TargetFramework,
                         edge.IsPrivate,
                         edge.IsDevelopmentDependency,
-                        edge.Source
-                    })
-            },
-            determinism = package.Determinism,
-            package.SuppressDependencies
-        };
+                        edge.Source))]),
+            package.Determinism,
+            package.SuppressDependencies);
 
-        return Hash(JsonSerializer.SerializeToUtf8Bytes(request));
+        return Hash(JsonSerializer.SerializeToUtf8Bytes(request, SdkPackJsonContext.Default.PackRequestFingerprint));
     }
 
-    private FileFingerprint[] BuildFileFingerprints(
+    private PackFileFingerprint[] BuildFileFingerprints(
         IEnumerable<CanonicalPackageFile> packageFiles,
         DeterminismPolicy policy)
     {
-        var result = new List<FileFingerprint>();
+        var result = new List<PackFileFingerprint>();
         var totalBytes = 0L;
         foreach (var file in packageFiles.OrderBy(static file => file.TargetPath, StringComparer.Ordinal))
         {
@@ -151,7 +130,7 @@ public sealed class PackRequestFingerprintBuilder : IPackRequestFingerprintBuild
 
             var bytes = fileReader.Read(file.SourcePath, Math.Min(policy.MaxEntryBytes, remainingBytes));
             totalBytes += bytes.LongLength;
-            result.Add(new FileFingerprint(
+            result.Add(new PackFileFingerprint(
                 file.TargetPath,
                 file.Kind,
                 file.TargetFrameworkAlias,
@@ -163,11 +142,11 @@ public sealed class PackRequestFingerprintBuilder : IPackRequestFingerprintBuild
         return result.ToArray();
     }
 
-    private FileSymbolFingerprint[] BuildSymbolFingerprints(
+    private PackSymbolFileFingerprint[] BuildSymbolFingerprints(
         IEnumerable<SymbolInput> symbolFiles,
         DeterminismPolicy policy)
     {
-        var result = new List<FileSymbolFingerprint>();
+        var result = new List<PackSymbolFileFingerprint>();
         var totalBytes = 0L;
         foreach (var file in symbolFiles.OrderBy(static file => file.TargetPath, StringComparer.Ordinal))
         {
@@ -179,7 +158,7 @@ public sealed class PackRequestFingerprintBuilder : IPackRequestFingerprintBuild
 
             var bytes = fileReader.Read(file.SourcePath, Math.Min(policy.MaxEntryBytes, remainingBytes));
             totalBytes += bytes.LongLength;
-            result.Add(new FileSymbolFingerprint(
+            result.Add(new PackSymbolFileFingerprint(
                 file.TargetPath,
                 file.Format,
                 file.TargetFrameworkAlias,
@@ -199,19 +178,4 @@ public sealed class PackRequestFingerprintBuilder : IPackRequestFingerprintBuild
 
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    private sealed record FileFingerprint(
-        string TargetPath,
-        PackageFileKind Kind,
-        string? TargetFrameworkAlias,
-        string? ExpectedSha256,
-        long? ExpectedLength,
-        string ContentHash);
-
-    private sealed record FileSymbolFingerprint(
-        string TargetPath,
-        string Format,
-        string? TargetFrameworkAlias,
-        string? ExpectedSha256,
-        long? ExpectedLength,
-        string ContentHash);
 }

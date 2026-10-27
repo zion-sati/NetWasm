@@ -13,6 +13,7 @@ internal sealed class CompilerReproductionCommandBuilder(
     public string Build(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        // The nwc command line that repeats this compilation from a source checkout.
         var arguments = new List<string>
         {
             "dotnet",
@@ -20,53 +21,35 @@ internal sealed class CompilerReproductionCommandBuilder(
             "--project",
             "src/NetWasm.Compiler.Cli/NetWasm.Compiler.Cli.csproj",
             "--",
-            "--input",
             options.EntryAssemblyPath,
-            "--output",
-            "reproduction.wasm",
-            "--target",
-            options.Target == Core.WasmTarget.Wasm64 ? "wasm64" : "wasm32",
+            "-out:reproduction.wasm",
+            "-platform:" + (options.Target == Core.WasmTarget.Wasm64 ? "wasm64" : "wasm32"),
+            "-target:" + options.EntryPointKind switch
+            {
+                CompilerEntryPointKind.ManagedExecutable => "exe",
+                CompilerEntryPointKind.Library => "library",
+                _ => "function",
+            },
         };
-        if (options.EntryPointKind != CompilerEntryPointKind.Library)
+        if (options.EntryPointKind == CompilerEntryPointKind.RawFunction)
         {
-            arguments.Add("--entry");
-            arguments.Add($"{options.EntryTypeName}::{options.EntryMethodName}");
+            arguments.Add($"-entry:{options.EntryTypeName}::{options.EntryMethodName}");
         }
-        if (options.EntryPointKind != CompilerEntryPointKind.RawFunction)
-        {
-            arguments.Add("--entry-kind");
-            arguments.Add(options.EntryPointKind == CompilerEntryPointKind.Library
-                ? "library" : "managed-executable");
-        }
-        foreach (var reference in options.ReferencePaths)
-        {
-            arguments.Add("--reference");
-            arguments.Add(reference);
-        }
-        foreach (var export in options.Exports)
-        {
-            arguments.Add("--export");
-            arguments.Add($"{export.Name}={export.TypeName}::{export.MethodName}");
-        }
-        foreach (var source in _sourcePaths.Provide(options))
-        {
-            arguments.Add("--source");
-            arguments.Add(source);
-        }
+        arguments.AddRange(options.ReferencePaths.Select(reference => "-r:" + reference));
+        arguments.AddRange(options.Exports.Select(export =>
+            $"-export:{export.Name}={export.TypeName}::{export.MethodName}"));
+        arguments.AddRange(_sourcePaths.Provide(options).Select(source => "-source:" + source));
         if (options.WitPath is not null)
         {
-            arguments.Add("--wit");
-            arguments.Add(options.WitPath);
+            arguments.Add("-wit:" + options.WitPath);
         }
         if (options.WitWorld is not null)
         {
-            arguments.Add("--world");
-            arguments.Add(options.WitWorld);
+            arguments.Add("-world:" + options.WitWorld);
         }
         if (options.UseJavaScriptExportBoundary)
         {
-            arguments.Add("--javascript-export-boundary");
-            arguments.Add("true");
+            arguments.Add("-jsexportboundary+");
         }
         return string.Join(' ', arguments.Select(Quote));
     }

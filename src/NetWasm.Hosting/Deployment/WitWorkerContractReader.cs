@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Deployment;
 
@@ -13,11 +14,11 @@ public sealed class WitWorkerContractReader(IWitWorkerTypeReferenceReader refere
 {
     private readonly IWitWorkerTypeReferenceReader _references = references ??
         throw new ArgumentNullException(nameof(references));
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly HostingJsonContext Json = new(new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-    };
+    });
     private static readonly ImmutableHashSet<string> Primitives = ImmutableHashSet.Create(
         StringComparer.Ordinal, "bool", "s8", "u8", "s16", "u16", "s32", "u32",
         "s64", "u64", "f32", "f64", "char", "string");
@@ -32,7 +33,7 @@ public sealed class WitWorkerContractReader(IWitWorkerTypeReferenceReader refere
         {
             using var document = JsonDocument.Parse(bytes);
             RejectDuplicateKeys(document.RootElement);
-            contract = document.RootElement.Deserialize<WitWorkerContractArtifact>(JsonOptions)
+            contract = document.RootElement.Deserialize(Json.WitWorkerContractArtifact)
                 ?? throw Invalid("WIT worker contract is empty");
         }
         catch (JsonException exception)

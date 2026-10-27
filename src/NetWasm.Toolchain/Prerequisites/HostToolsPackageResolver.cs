@@ -11,6 +11,10 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
     private static readonly ImmutableArray<string> RequiredRoles =
         ["node", "wasm-ld", "wasm-opt", "wasm-merge"];
 
+    // nwc, the NetWasm compiler, which packages carry from the release that
+    // moved it out of the compiler tasks; a project names one for older tools.
+    private const string CompilerRole = "nwc";
+
     private readonly IHostToolsPackageFileReader _files;
     private readonly IHostToolsPackageManifestReader _manifestReader;
 
@@ -64,8 +68,10 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
         }
 
         var suffix = request.HostRid.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : string.Empty;
-        if (manifest.Roles.Count != RequiredRoles.Length ||
-            RequiredRoles.Any(role => !manifest.Roles.TryGetValue(role, out var path) ||
+        var carriesCompiler = manifest.Roles.ContainsKey(CompilerRole);
+        ImmutableArray<string> roles = carriesCompiler ? [.. RequiredRoles, CompilerRole] : RequiredRoles;
+        if (manifest.Roles.Count != roles.Length ||
+            roles.Any(role => !manifest.Roles.TryGetValue(role, out var path) ||
                 path != $"tools/bin/{role}{suffix}"))
         {
             throw new InvalidDataException("Host-tools package role map is incomplete or unexpected.");
@@ -76,6 +82,10 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
             "licenses/LLVM-LICENSE.txt", "licenses/LLD-LICENSE.txt",
             "licenses/LLVM-BLAKE3-LICENSE", "licenses/LLVM-ThirdParty-NOTICES.txt",
             "licenses/Binaryen-LICENSE"]);
+        if (carriesCompiler)
+        {
+            expectedPaths.UnionWith(["licenses/NetWasm-LICENSE.txt", "licenses/nwc-THIRD-PARTY-NOTICES.txt"]);
+        }
         if (request.HostRid.StartsWith("linux-", StringComparison.Ordinal))
         {
             expectedPaths.UnionWith(["tools/bin/libatomic.so.1",
@@ -108,7 +118,7 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
             {
                 throw new InvalidDataException($"Host-tools package executable lacks permission: {file.RelativePath}");
             }
-            foreach (var role in RequiredRoles)
+            foreach (var role in roles)
             {
                 if (manifest.Roles[role] == file.RelativePath)
                 {

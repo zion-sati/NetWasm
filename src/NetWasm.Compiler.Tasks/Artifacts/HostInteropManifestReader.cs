@@ -5,18 +5,13 @@ namespace NetWasm.Compiler.Tasks.Artifacts;
 
 internal sealed class HostInteropManifestReader : IHostInteropManifestReader
 {
-    private static readonly JsonSerializerOptions ReadOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
     public HostInteropManifest Read(string path, string target)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
-        var interop = JsonSerializer.Deserialize<HostInteropManifest>(
+        var interop = JsonSerializer.Deserialize(
             File.ReadAllText(path),
-            ReadOptions) ?? throw new InvalidOperationException(
+            CompilerArtifactReadJsonContext.Default.HostInteropManifest) ?? throw new InvalidOperationException(
                 "The NetWasm interop manifest is empty.");
         if (!string.Equals(interop.Target, target, StringComparison.Ordinal))
         {

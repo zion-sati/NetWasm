@@ -11,7 +11,7 @@ internal sealed class CompilerMetadataSnapshotBuilder(
     private readonly ICompilerCilOperandFormatter _operandFormatter =
         operandFormatter ?? throw new ArgumentNullException(nameof(operandFormatter));
 
-    public object BuildMetadata(
+    public CompilerMetadataArtifact BuildMetadata(
         MetadataCompilationSnapshot metadata,
         IMethodBodyReader bodies,
         ISymbolFormatter symbols)
@@ -19,82 +19,67 @@ internal sealed class CompilerMetadataSnapshotBuilder(
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(bodies);
         ArgumentNullException.ThrowIfNull(symbols);
-        return new
-        {
-            EntryAssembly = metadata.EntryAssemblyIdentity.ToString(),
-            Types = metadata.Types
+        return new CompilerMetadataArtifact(
+            metadata.EntryAssemblyIdentity.ToString(),
+            [.. metadata.Types
                 .OrderBy(type => type.Key.Assembly.Name, StringComparer.Ordinal)
                 .ThenBy(type => type.Key.MetadataToken)
-                .Select(type => new
-                {
-                    Identity = type.Key.ToString(),
+                .Select(type => new CompilerMetadataTypeArtifact(
+                    type.Key.ToString(),
                     type.FullName,
                     type.IsValueType,
-                    type.GenericArity,
-                })
-                .ToArray(),
-            Methods = metadata.EntryAssemblyMethods
+                    type.GenericArity))],
+            [.. metadata.EntryAssemblyMethods
                 .OrderBy(method => method.Key.MetadataToken)
-                .Select(method => DecodeMethod(bodies, symbols, method))
-                .ToArray(),
-        };
+                .Select(method => DecodeMethod(bodies, symbols, method))]);
     }
 
-    private object DecodeMethod(
+    private CompilerMetadataMethodArtifact DecodeMethod(
         IMethodBodyReader bodies,
         ISymbolFormatter symbols,
         MethodDefinitionModel method)
     {
         if (!method.HasBody)
         {
-            return new
-            {
-                Identity = symbols.Format(method),
-                method.Key.MetadataToken,
-                method.GenericArity,
-                HasBody = false,
-                DecodeError = (string?)null,
-                Instructions = Array.Empty<object>(),
-                ExceptionRegions = Array.Empty<CilExceptionRegion>(),
-            };
+            return Method(symbols, method, hasBody: false, decodeError: null, [], []);
         }
         try
         {
             var body = bodies.ReadMethodBody(method);
-            return new
-            {
-                Identity = symbols.Format(method),
-                method.Key.MetadataToken,
-                method.GenericArity,
-                HasBody = true,
-                DecodeError = (string?)null,
-                Instructions = body.Instructions.Select(BuildInstruction).ToArray(),
-                ExceptionRegions = body.ExceptionRegions.ToArray(),
-            };
+            return Method(
+                symbols,
+                method,
+                hasBody: true,
+                decodeError: null,
+                [.. body.Instructions.Select(BuildInstruction)],
+                [.. body.ExceptionRegions]);
         }
         catch (Exception exception)
         {
-            return new
-            {
-                Identity = symbols.Format(method),
-                method.Key.MetadataToken,
-                method.GenericArity,
-                HasBody = true,
-                DecodeError = exception.ToString(),
-                Instructions = Array.Empty<object>(),
-                ExceptionRegions = Array.Empty<CilExceptionRegion>(),
-            };
+            return Method(symbols, method, hasBody: true, exception.ToString(), [], []);
         }
     }
 
-    private object BuildInstruction(CilInstruction instruction) => new
-    {
+    private static CompilerMetadataMethodArtifact Method(
+        ISymbolFormatter symbols,
+        MethodDefinitionModel method,
+        bool hasBody,
+        string? decodeError,
+        CompilerCilInstructionArtifact[] instructions,
+        CilExceptionRegion[] exceptionRegions) => new(
+        symbols.Format(method),
+        method.Key.MetadataToken,
+        method.GenericArity,
+        hasBody,
+        decodeError,
+        instructions,
+        exceptionRegions);
+
+    private CompilerCilInstructionArtifact BuildInstruction(CilInstruction instruction) => new(
         instruction.Offset,
         instruction.NextOffset,
-        Operation = instruction.Operation.ToString(),
-        Operand = instruction.Operand is CilOperand.None
+        instruction.Operation.ToString(),
+        instruction.Operand is CilOperand.None
             ? null
-            : _operandFormatter.FormatOperand(instruction.Operand),
-    };
-
+            : _operandFormatter.FormatOperand(instruction.Operand));
 }

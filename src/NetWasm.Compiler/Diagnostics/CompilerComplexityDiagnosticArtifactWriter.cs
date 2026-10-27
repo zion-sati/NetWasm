@@ -18,7 +18,7 @@ internal sealed class CompilerComplexityDiagnosticArtifactWriter(
         var path = _paths.ResolvePath(options, "06-complexity.json");
         if (path is not null)
         {
-            _json.WriteJson(path, report);
+            _json.WriteJson(path, report, CompilerDiagnosticArtifactJsonContext.Default.CompilerComplexityReport);
         }
     }
 }

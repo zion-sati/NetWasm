@@ -10,11 +10,15 @@ namespace NetWasm.Runtime.Pack.Materialization;
 
 internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly RuntimePackJsonContext Json = new(new()
     {
         PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
-    };
+        Converters =
+        {
+            new JsonStringEnumConverter<RuntimeNativeValueType>(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
+            new JsonStringEnumConverter<RuntimeFunctionInlinePreference>(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
+        },
+    });
 
     public RuntimeLayout Read(string path)
     {
@@ -32,7 +36,15 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
             ValidateContract(root);
             // ValidateContract already requires an object. The built-in record
             // converter cannot return null for this non-null JSON object.
-            layout = root.Deserialize<RuntimeLayout>(JsonOptions)!;
+            layout = root.Deserialize(Json.RuntimeLayout)!;
+            // The generated contract sets every init property, so a field an older
+            // schema leaves out arrives as a default array rather than the record's
+            // empty one. ValidateContract allows only arrays where a field is present.
+            layout = layout with
+            {
+                NativeImports = layout.NativeImports.IsDefault ? [] : layout.NativeImports,
+                ImportModules = layout.ImportModules.IsDefault ? [] : layout.ImportModules,
+            };
         }
         catch (JsonException exception)
         {

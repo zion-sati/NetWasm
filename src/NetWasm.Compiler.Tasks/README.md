@@ -3,7 +3,10 @@
 `NetWasm.Compiler.Tasks` supplies the MSBuild tasks that compile NetWasm
 projects and write their compiler artifact manifests. It is consumed
 transitively by `NetWasm.Sdk`; application projects normally select it through
-the SDK rather than referencing the task package directly.
+the SDK rather than referencing the task package directly. The compile task
+runs `nwc`, the NetWasm compiler, which the restored host-tools package supplies
+as a native executable. Set `NetWasmCompilerPath` to use another `nwc`, or an
+`nwc.dll` that the `dotnet` host runs.
 
 At the default `dotnet build` verbosity, the compiler writes its version,
 copyright notice, active compilation stage and elapsed time. Use

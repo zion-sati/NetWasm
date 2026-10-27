@@ -319,6 +319,17 @@ def native_host_rid() -> str:
 def probe(stage: Path, rid: str, pins: dict[str, object]) -> None:
     if native_host_rid() != rid:
         raise ValueError(f"Cannot execute {rid} tools on {native_host_rid()}.")
+    compiler = stage / "tools/bin" / executable_name("nwc", rid)
+    if compiler.exists():
+        result = subprocess.run(
+            [str(compiler), "-nologo", "-help"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if "NetWasm Compiler Options" not in result.stdout:
+            raise ValueError(f"nwc did not run: {(result.stdout + result.stderr).strip()}")
     expected = {
         "node": str(pins["node"]),
         "wasm-ld": str(pins["llvmLld"]["version"]),
@@ -341,6 +352,7 @@ def probe(stage: Path, rid: str, pins: dict[str, object]) -> None:
 
 def stage(
     rid: str, version: str, output: Path, cache: Path, probe_native: bool,
+    compiler: Path | None = None,
 ) -> dict[str, object]:
     pins = json.loads(PIN_PATH.read_text(encoding="utf-8"))
     artifacts = pins["hostArtifacts"]
@@ -417,6 +429,8 @@ def stage(
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix="host-tools-stage-", dir=output.parent))
     try:
+        if compiler is not None:
+            tool_files["nwc"] = compiler.read_bytes()
         package_files = {
             f"tools/bin/{executable_name(role, rid)}": data
             for role, data in (tool_files | {"node": node_files["node"]}).items()
@@ -436,7 +450,18 @@ def stage(
                 "licenses/GPL-3.0.txt": gpl3,
                 "licenses/GCC-Libatomic-SOURCE.txt": gcc_source_notice,
             }
-        license_text = b"NetWasm host tools contain upstream software under these notices.\n\n"
+        license_text = b""
+        if compiler is not None:
+            netwasm_license = (ROOT / "LICENSES/LicenseRef-NetWasm-Community-1.0.txt").read_bytes()
+            compiler_notices = (ROOT / "src/NetWasm.Compiler.Cli/THIRD-PARTY-NOTICES.txt").read_bytes()
+            package_files |= {
+                "licenses/NetWasm-LICENSE.txt": netwasm_license,
+                "licenses/nwc-THIRD-PARTY-NOTICES.txt": compiler_notices,
+            }
+            license_text += (b"nwc, the NetWasm compiler, is NetWasm software under its license.\n\n"
+                             b"===== NetWasm =====\n" + netwasm_license + b"\n\n"
+                             b"===== .NET linked into nwc =====\n" + compiler_notices + b"\n\n")
+        license_text += b"NetWasm host tools contain upstream software under these notices.\n\n"
         for label, data in (
             ("Node.js", node_files["license"]),
             ("LLVM/LLD", llvm_license),
@@ -454,7 +479,9 @@ def stage(
         package_files["LICENSE.txt"] = license_text
         package_files["README.md"] = (
             f"# NetWasm host tools for {rid}\n\n"
-            "Private SDK build tools: Node, wasm-ld, wasm-opt and wasm-merge. "
+            + ("nwc, the NetWasm compiler, and private SDK build tools: "
+               if compiler is not None else "Private SDK build tools: ")
+            + "Node, wasm-ld, wasm-opt and wasm-merge. "
             "This package does not contribute application runtime assets.\n" +
             ("The Linux Node executable loads bundled libatomic.so.1 from its own directory. "
              "See licenses/GCC-Libatomic-SOURCE.txt for corresponding source.\n"
@@ -492,7 +519,7 @@ def stage(
             },
             "roles": {
                 role: f"tools/bin/{executable_name(role, rid)}"
-                for role in ("node", "wasm-ld", "wasm-opt", "wasm-merge")
+                for role in ("node", "wasm-ld", "wasm-opt", "wasm-merge") + (("nwc",) if compiler else ())
             },
             "files": manifest_files,
         }
@@ -519,9 +546,11 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--compiler", type=Path,
+                        help="the Native AOT nwc executable published for --rid")
     args = parser.parse_args()
     manifest = stage(args.rid, args.version, args.output.resolve(), args.cache.resolve(),
-                     args.probe)
+                     args.probe, args.compiler.resolve() if args.compiler else None)
     print(f"Staged {manifest['packageId']} {manifest['packageVersion']} "
           f"({sum(item['size'] for item in manifest['files']):,} bytes).")
     return 0

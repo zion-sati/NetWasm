@@ -25,6 +25,40 @@ public sealed partial class SdkToolchainContractTests
     }
 
     [Fact]
+    public void CompileTargetRunsTheRestoredNwcThenRecordsItsArtifacts()
+    {
+        var targetNamespace = XNamespace.Get(
+            "http://schemas.microsoft.com/developer/msbuild/2003");
+        var tasks = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"));
+        var compile = Assert.Single(tasks.Descendants(targetNamespace + "NetWasmCompileTask"));
+        var manifest = Assert.Single(tasks.Descendants(
+            targetNamespace + "NetWasmWriteCompileArtifactManifestTask"));
+        var missing = Assert.Single(compile.ElementsBeforeSelf(targetNamespace + "Error"),
+            error => (string?)error.Attribute("Code") == "NWSDK092");
+        var toolchain = LoadSdkTarget("NetWasm.Toolchain.targets");
+        var resolved = Assert.Single(toolchain.Descendants(targetNamespace + "Output"),
+            output => (string?)output.Attribute("TaskParameter") == "CompilerPath");
+        var compilerPath = Assert.Single(toolchain.Descendants(targetNamespace + "NetWasmCompilerPath"));
+
+        Assert.Equal("$(NetWasmCompilerPath)", (string?)compile.Attribute("CompilerPath"));
+        Assert.Equal("$(NetWasmIntermediateOutputPath)", (string?)compile.Attribute("IntermediateDirectory"));
+        Assert.Empty(compile.Elements());
+        Assert.Contains("$(NetWasmCompilerPath)", (string?)missing.Attribute("Condition"), StringComparison.Ordinal);
+        Assert.Same(compile.Parent, manifest.Parent);
+        Assert.True(compile.IsBefore(manifest));
+        Assert.Equal("$(NetWasmNativeCallbackObjectPath)", (string?)manifest.Attribute("NativeCallbackObjectPath"));
+        Assert.Equal("$(NetWasmArtifactManifestPath)", (string?)manifest.Attribute("ArtifactManifestPath"));
+        Assert.Equal(
+            ["ResolvedArtifacts", "SemanticBuildId"],
+            manifest.Elements(targetNamespace + "Output").Select(output => (string?)output.Attribute("TaskParameter")));
+        Assert.Equal("_NetWasmResolvedCompilerPath", (string?)resolved.Attribute("PropertyName"));
+        Assert.Equal("'$(NetWasmCompilerPath)' == ''", (string?)compilerPath.Attribute("Condition"));
+        Assert.Equal("$(_NetWasmResolvedCompilerPath)", compilerPath.Value);
+    }
+
+    [Fact]
     public void ToolchainTargetExposesThePinnedComponentLifecycleSeams()
     {
         var document = LoadSdkTarget("NetWasm.Toolchain.targets");

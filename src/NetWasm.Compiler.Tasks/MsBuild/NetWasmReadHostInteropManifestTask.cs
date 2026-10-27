@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -10,10 +9,6 @@ namespace NetWasm.Compiler.Tasks.MsBuild;
 
 public sealed class NetWasmReadHostInteropManifestTask : Microsoft.Build.Utilities.Task
 {
-    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
     private readonly IHostInteropManifestReader _manifests;
 
     public NetWasmReadHostInteropManifestTask()
@@ -72,9 +67,9 @@ public sealed class NetWasmReadHostInteropManifestTask : Microsoft.Build.Utiliti
     {
         var item = CreateFunction(export.Name, export.Parameters, export.Result, export.AsyncReturn);
         item.SetMetadata("ParameterNames", JsonSerializer.Serialize(
-            export.ParameterNames.IsDefault ? [] : export.ParameterNames, MetadataJsonOptions));
+            export.ParameterNames.IsDefault ? [] : export.ParameterNames, TaskJsonContext.Metadata.ImmutableArrayString));
         item.SetMetadata("NonNullableParameters", JsonSerializer.Serialize(
-            export.NonNullableParameters.IsDefault ? [] : export.NonNullableParameters, MetadataJsonOptions));
+            export.NonNullableParameters.IsDefault ? [] : export.NonNullableParameters, TaskJsonContext.Metadata.ImmutableArrayBoolean));
         item.SetMetadata("NonNullableResult", export.NonNullableResult ? "true" : "false");
         return item;
     }
@@ -87,7 +82,7 @@ public sealed class NetWasmReadHostInteropManifestTask : Microsoft.Build.Utiliti
     {
         var item = new TaskItem(name);
         item.SetMetadata("Name", name);
-        item.SetMetadata("Parameters", JsonSerializer.Serialize(parameters, MetadataJsonOptions));
+        item.SetMetadata("Parameters", JsonSerializer.Serialize([.. parameters], TaskJsonContext.Metadata.StringArray));
         item.SetMetadata("Result", result);
         item.SetMetadata("AsyncReturn", asyncReturn ?? string.Empty);
         return item;

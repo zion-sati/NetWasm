@@ -3,13 +3,14 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NetWasm.Hosting;
 
 namespace NetWasm.Hosting.Deployment;
 
 /// <summary>Produces a canonical publish-safe deployment manifest as UTF-8 without BOM and with LF formatting.</summary>
 public sealed class DeploymentManifestWriter : IDeploymentManifestWriter
 {
-    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly HostingJsonContext Json = new(CreateJsonOptions());
     private readonly IDeploymentManifestValidator _validator;
 
     public DeploymentManifestWriter(IDeploymentManifestValidator validator)
@@ -29,7 +30,7 @@ public sealed class DeploymentManifestWriter : IDeploymentManifestWriter
             RequiredImports = OrderFunctions(manifest.RequiredImports),
             Exports = OrderFunctions(manifest.Exports),
         };
-        return JsonSerializer.SerializeToUtf8Bytes(canonical, JsonOptions);
+        return JsonSerializer.SerializeToUtf8Bytes(canonical, Json.DeploymentManifest);
     }
 
     private static ImmutableArray<DeploymentFunction> OrderFunctions(ImmutableArray<DeploymentFunction> functions) =>

@@ -1,4 +1,17 @@
 <Project>
+  <!--
+    NetWasm's own tooling is AOT-compatible: the compiler also runs ahead-of-time
+    compiled in the browser, and reflection is unsupported in NetWasm. The trim
+    and AOT analyzers report reflection, such as a JsonSerializer call without a
+    source-generated contract, and every build treats warnings as errors.
+  -->
+  <PropertyGroup Condition="'$(IsAotCompatible)' == '' and
+                            ($([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(NetWasmRepositorySourceRoot)src')) or
+                             $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(NetWasmRepositorySourceRoot)tools'))) and
+                            $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
   <Target Name="UseCanonicalNetWasmSourceLinkRepository"
           AfterTargets="InitializeSourceControlInformationFromSourceControlManager"
           BeforeTargets="TranslateGitHubUrlsInSourceControlInformation"

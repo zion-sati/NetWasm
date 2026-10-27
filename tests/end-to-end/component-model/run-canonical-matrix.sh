@@ -7,7 +7,7 @@ toolchain="$repo_root/eng/toolchain.json"
 sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 wasmtime_version="$(node -p 'require(process.argv[1]).wasmtime' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit_bindgen="$artifact_root/wit-tool/bin/netwasm-wit-bindgen"
 wit="$repo_root/tests/NetWasm.Compiler.Tests/Fixtures/composite-component.wit"
 
@@ -38,11 +38,11 @@ entry='NetWasm.Wit.Netwasm.Test.Canonical._1._0._0.CanonicalMatrixComponent::Run
 for target in wasm32 wasm64; do
     for repeat in first second; do
         dotnet "$compiler" \
-            --input "$artifact_root/CanonicalMatrixComponent.dll" \
-            --reference "$corelib" --entry "$entry" --wit "$wit" \
-            --target "$target" \
-            --output "$artifact_root/application.$target.$repeat.wasm" \
-            --runtime-layout "$artifact_root/runtime-layout.$target.$repeat.json"
+            "$artifact_root/CanonicalMatrixComponent.dll" \
+            -r:"$corelib" -target:function -entry:"$entry" -wit:"$wit" \
+            -platform:"$target" \
+            -out:"$artifact_root/application.$target.$repeat.wasm" \
+            -runtimelayout:"$artifact_root/runtime-layout.$target.$repeat.json"
     done
     cmp "$artifact_root/application.$target.first.wasm" \
         "$artifact_root/application.$target.second.wasm"
@@ -58,12 +58,12 @@ done
 
 for repeat in first second; do
     dotnet "$compiler" componentize \
-        --optimization none \
-        --core-module "$artifact_root/application.wasm32.first.wasm" \
-        --runtime-module "$artifact_root/runtime.wasm32.wasm" \
-        --wit "$wit" --target wasm32 \
-        --output "$artifact_root/component.$repeat.wasm" \
-        --manifest "$artifact_root/manifest.$repeat.json"
+        -optimize:none \
+        -coremodule:"$artifact_root/application.wasm32.first.wasm" \
+        -runtimemodule:"$artifact_root/runtime.wasm32.wasm" \
+        -wit:"$wit" -platform:wasm32 \
+        -out:"$artifact_root/component.$repeat.wasm" \
+        -manifest:"$artifact_root/manifest.$repeat.json"
 done
 cmp "$artifact_root/component.first.wasm" "$artifact_root/component.second.wasm"
 cmp "$artifact_root/manifest.first.json" "$artifact_root/manifest.second.json"

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 using NetWasm.Hosting.Build.JavaScript;
+using NetWasm.Hosting.Build;
 
 namespace NetWasm.Hosting.Build.MsBuild;
 
@@ -81,10 +82,12 @@ public sealed class NetWasmBundleJavaScriptTask : Microsoft.Build.Utilities.Task
             throw new InvalidOperationException($"The JavaScript runtime has no module '{missing}'.");
         }
         var importsPath = request.EntryPath + ".runtime-imports.json";
-        File.WriteAllText(importsPath, JsonSerializer.Serialize(used.ToDictionary(
-            JavaScriptRuntime.Specifier,
-            module => RuntimeUrlPrefix + modules[module].File,
-            StringComparer.Ordinal)));
+        File.WriteAllText(importsPath, JsonSerializer.Serialize(
+            used.ToDictionary(
+                JavaScriptRuntime.Specifier,
+                module => RuntimeUrlPrefix + modules[module].File,
+                StringComparer.Ordinal),
+            HostingBuildJsonContext.Default.DictionaryStringString));
         var directory = Path.GetDirectoryName(manifestPath)!;
         var files = used.SelectMany(module => modules[module].Files)
             .Distinct(StringComparer.Ordinal)

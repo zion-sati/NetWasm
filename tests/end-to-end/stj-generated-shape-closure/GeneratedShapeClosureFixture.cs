@@ -634,7 +634,7 @@ public static class EntryPoint
 
         IArgumentReader reader = new AllocatingArgumentReader();
         object third = reader.Read(ref frame);
-        ((object?[])frame.State.Arguments!)[3] = third;
+        ((object?[])frame.State!.Arguments!)[3] = third;
 
         return ((object?[])frame.State.Arguments!)[2] is GeneratedMixedChild child &&
             child.Value == "rooted";

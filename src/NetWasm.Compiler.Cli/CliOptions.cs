@@ -1,125 +1,66 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Cli;
 
-internal sealed record ComponentizeCliOptions(
-    string CoreModule,
-    string? RuntimeModule,
-    string Wit,
-    string? World,
-    string Output,
-    string Manifest,
-    WasmTarget Target,
-    string? InteropManifest,
-    string? JcoVersion,
-    string? Preview2ShimVersion,
-    FinalWasmOptimization Optimization)
+// What nwc builds, as csc's -target: an executable with a managed entry point,
+// a library, or a module whose entry is one static method (-entry).
+internal enum NwcTarget
 {
-    public string? ManagedInliningHints { get; init; }
-    public static ComponentizeCliOptions Parse(string[] arguments)
-    {
-        string? coreModule = null;
-        string? runtimeModule = null;
-        string? wit = null;
-        string? world = null;
-        string? output = null;
-        string? manifest = null;
-        string? target = null;
-        string? interopManifest = null;
-        string? jcoVersion = null;
-        string? preview2ShimVersion = null;
-        string? optimization = null;
-        string? managedInliningHints = null;
-        CliOptionReader.Read(arguments, (option, value) =>
-        {
-            switch (option)
-            {
-                case "--core-module": coreModule = SetOnce(coreModule, value, option); break;
-                case "--runtime-module": runtimeModule = SetOnce(runtimeModule, value, option); break;
-                case "--wit": wit = SetOnce(wit, value, option); break;
-                case "--world": world = SetOnce(world, value, option); break;
-                case "--output": output = SetOnce(output, value, option); break;
-                case "--manifest": manifest = SetOnce(manifest, value, option); break;
-                case "--target": target = SetOnce(target, value, option); break;
-                case "--interop-manifest": interopManifest = SetOnce(interopManifest, value, option); break;
-                case "--jco-version": jcoVersion = SetOnce(jcoVersion, value, option); break;
-                case "--preview2-shim-version": preview2ShimVersion = SetOnce(preview2ShimVersion, value, option); break;
-                case "--optimization": optimization = SetOnce(optimization, value, option); break;
-                case "--managed-inlining-hints": managedInliningHints = SetOnce(managedInliningHints, value, option); break;
-                default:
-                    throw CliOptionException.Create(
-                    $"unknown componentize option '{option}'");
-            }
-        });
-        return new ComponentizeCliOptions(
-            coreModule ?? throw CliOptionException.Create("missing required option '--core-module'"),
-            runtimeModule,
-            wit ?? throw CliOptionException.Create("missing required option '--wit'"),
-            world,
-            output ?? throw CliOptionException.Create("missing required option '--output'"),
-            manifest ?? throw CliOptionException.Create("missing required option '--manifest'"),
-            ParseTarget(target),
-            interopManifest,
-            jcoVersion,
-            preview2ShimVersion,
-            ParseOptimization(optimization))
-        { ManagedInliningHints = managedInliningHints };
-    }
-
-    private static WasmTarget ParseTarget(string? value) => value switch
-    {
-        null or "wasm32" => WasmTarget.Wasm32,
-        "wasm64" => WasmTarget.Wasm64,
-        _ => throw CliOptionException.Create("target must be 'wasm32' or 'wasm64'"),
-    };
-
-    private static FinalWasmOptimization ParseOptimization(string? value) => value switch
-    {
-        null or "Oz" => FinalWasmOptimization.Oz,
-        "None" or "none" => FinalWasmOptimization.None,
-        "O0" => FinalWasmOptimization.O0,
-        "O1" => FinalWasmOptimization.O1,
-        "O2" => FinalWasmOptimization.O2,
-        "O3" => FinalWasmOptimization.O3,
-        "Os" => FinalWasmOptimization.Os,
-        _ => throw CliOptionException.Create(
-            "optimization must be 'none', 'O0', 'O1', 'O2', 'O3', 'Os' or 'Oz'"),
-    };
-
-    private static string SetOnce(string? current, string value, string option) =>
-        current is null
-            ? value
-            : throw CliOptionException.Create(
-                $"option '{option}' was specified more than once");
+    Exe,
+    Library,
+    Function,
 }
 
 internal sealed record CompileCliOptions(
     string Input,
     string Output,
+    NwcTarget Target,
     string EntryType,
     string EntryMethod,
     ImmutableArray<string> References,
     ImmutableArray<RequestedExport> Exports,
-    WasmTarget Target,
-    string? InteropManifest,
-    string? RuntimeLayout,
-    string? DiagnosticTrace,
-    string? DiagnosticLog,
-    string? StackTraceSymbols,
-    string? Wit,
-    string? World,
-    ImmutableArray<string> Sources,
-    CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
-    bool UseJavaScriptExportBoundary = false)
+    WasmTarget Platform)
 {
-    public FinalWasmOptimization Optimization { get; init; } =
-        FinalWasmOptimization.Oz;
+    public static readonly FrozenSet<string> Names = new[]
+    {
+        "out", "reference", "r", "target", "entry", "export", "platform", "optimize", "pathmap", "source", "interopmanifest", "runtimelayout", "compilermetadata",
+        "exceptiontypemap", "stacktracesymbols", "callbackobject", "wit", "world", "importmodule",
+        "diagnostictrace", "diagnosticlog", "jsexportboundary", "structureddiagnostics",
+        "projectdirectory", "intermediatedirectory", "wasmtoolsnode", "wasmtoolscommand",
+        "wasmtoolsmodule", "managedloopinvariantfieldhoisting", "managedstaticdataviewelimination",
+        "managedaddresstakenvaluepromotion", "managedmethodinlining", "managedbranchprefixduplication",
+        "managedscalarcallpreservation", "managedarrayboundscheckelimination", "managedloopunrolling",
+        "managedconstantargumentpropagation", "managedstaticarraypopulationelimination",
+        "managedconstantcallfolding", "managedswitchbittests", "manageddevirtualization",
+        "managedallocationelimination", "managedlooprotation", "managedarraystorecheckelimination",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
+    public string? PathMap { get; init; }
+    public ImmutableArray<string> Sources { get; init; } = [];
+    public string? InteropManifest { get; init; }
+    public string? RuntimeLayout { get; init; }
+    public string? CompilerMetadata { get; init; }
+    public string? ExceptionTypeMap { get; init; }
+    public string? StackTraceSymbols { get; init; }
+    public string? CallbackObject { get; init; }
+    public string? Wit { get; init; }
+    public string? World { get; init; }
     // Modules the input's native archives import from; the host supplies them.
     public ImmutableArray<string> ImportModules { get; init; } = [];
+    public string? DiagnosticTrace { get; init; }
+    public string? DiagnosticLog { get; init; }
+    public bool UseJavaScriptExportBoundary { get; init; }
+    public bool StructuredDiagnostics { get; init; }
+    public string? ProjectDirectory { get; init; }
+    public string? IntermediateDirectory { get; init; }
+    public ExternalToolCommand? WasmTools { get; init; }
     public string? ManagedLoopInvariantFieldHoisting { get; init; }
     public string? ManagedStaticDataViewElimination { get; init; }
     public string? ManagedAddressTakenValuePromotion { get; init; }
@@ -137,229 +78,120 @@ internal sealed record CompileCliOptions(
     public string? ManagedLoopRotation { get; init; }
     public string? ManagedArrayStoreCheckElimination { get; init; }
 
-    public static CompileCliOptions Parse(string[] arguments)
+    public static CompileCliOptions Parse(NwcArguments arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        string? input = null;
-        string? output = null;
-        string? entry = null;
-        string? entryKind = null;
-        string? target = null;
-        string? interopManifest = null;
-        string? runtimeLayout = null;
-        string? diagnosticTrace = null;
-        string? diagnosticLog = null;
-        string? stackTraceSymbols = null;
-        string? wit = null;
-        string? world = null;
-        string? javaScriptExportBoundary = null;
-        string? optimization = null;
-        string? managedLoopInvariantFieldHoisting = null;
-        string? managedStaticDataViewElimination = null;
-        string? managedAddressTakenValuePromotion = null;
-        string? managedMethodInlining = null;
-        string? managedBranchPrefixDuplication = null;
-        string? managedScalarCallPreservation = null;
-        string? managedArrayBoundsCheckElimination = null;
-        string? managedLoopUnrolling = null;
-        string? managedConstantArgumentPropagation = null;
-        string? managedStaticArrayPopulationElimination = null;
-        string? managedConstantCallFolding = null;
-        string? managedSwitchBitTests = null;
-        string? managedDevirtualization = null;
-        string? managedAllocationElimination = null;
-        string? managedLoopRotation = null;
-        string? managedArrayStoreCheckElimination = null;
-        var references = ImmutableArray.CreateBuilder<string>();
-        var exports = ImmutableArray.CreateBuilder<RequestedExport>();
-        var sources = ImmutableArray.CreateBuilder<string>();
-        var importModules = ImmutableArray.CreateBuilder<string>();
-        CliOptionReader.Read(arguments, (option, value) =>
+        var options = new NwcOptionValues(arguments);
+        var input = arguments.Inputs.Length switch
         {
-            switch (option)
-            {
-                case "--input": input = SetOnce(input, value, option); break;
-                case "--output": output = SetOnce(output, value, option); break;
-                case "--entry": entry = SetOnce(entry, value, option); break;
-                case "--entry-kind": entryKind = SetOnce(entryKind, value, option); break;
-                case "--target": target = SetOnce(target, value, option); break;
-                case "--interop-manifest": interopManifest = SetOnce(interopManifest, value, option); break;
-                case "--runtime-layout": runtimeLayout = SetOnce(runtimeLayout, value, option); break;
-                case "--diagnostic-trace": diagnosticTrace = SetOnce(diagnosticTrace, value, option); break;
-                case "--diagnostic-log": diagnosticLog = SetOnce(diagnosticLog, value, option); break;
-                case "--stack-trace-symbols": stackTraceSymbols = SetOnce(stackTraceSymbols, value, option); break;
-                case "--wit": wit = SetOnce(wit, value, option); break;
-                case "--world": world = SetOnce(world, value, option); break;
-                case "--javascript-export-boundary":
-                    javaScriptExportBoundary =
-                    SetOnce(javaScriptExportBoundary, value, option); break;
-                case "--optimization":
-                    optimization = SetOnce(optimization, value, option); break;
-                case "--managed-loop-invariant-field-hoisting":
-                    managedLoopInvariantFieldHoisting = SetOnce(
-                        managedLoopInvariantFieldHoisting,
-                        value,
-                        option);
-                    break;
-                case "--managed-static-data-view-elimination":
-                    managedStaticDataViewElimination = SetOnce(
-                        managedStaticDataViewElimination,
-                        value,
-                        option);
-                    break;
-                case "--managed-address-taken-value-promotion":
-                    managedAddressTakenValuePromotion = SetOnce(
-                        managedAddressTakenValuePromotion,
-                        value,
-                        option);
-                    break;
-                case "--managed-method-inlining":
-                    managedMethodInlining = SetOnce(
-                        managedMethodInlining,
-                        value,
-                        option);
-                    break;
-                case "--managed-branch-prefix-duplication":
-                    managedBranchPrefixDuplication = SetOnce(
-                        managedBranchPrefixDuplication,
-                        value,
-                        option);
-                    break;
-                case "--managed-scalar-call-preservation":
-                    managedScalarCallPreservation = SetOnce(
-                        managedScalarCallPreservation,
-                        value,
-                        option);
-                    break;
-                case "--managed-array-bounds-check-elimination":
-                    managedArrayBoundsCheckElimination = SetOnce(managedArrayBoundsCheckElimination, value, option);
-                    break;
-                case "--managed-loop-unrolling":
-                    managedLoopUnrolling = SetOnce(managedLoopUnrolling, value, option);
-                    break;
-                case "--managed-constant-argument-propagation":
-                    managedConstantArgumentPropagation = SetOnce(managedConstantArgumentPropagation, value, option);
-                    break;
-                case "--managed-static-array-population-elimination":
-                    managedStaticArrayPopulationElimination = SetOnce(managedStaticArrayPopulationElimination, value, option);
-                    break;
-                case "--managed-constant-call-folding":
-                    managedConstantCallFolding = SetOnce(managedConstantCallFolding, value, option);
-                    break;
-                case "--managed-switch-bit-tests":
-                    managedSwitchBitTests = SetOnce(managedSwitchBitTests, value, option);
-                    break;
-                case "--managed-devirtualization":
-                    managedDevirtualization = SetOnce(managedDevirtualization, value, option);
-                    break;
-                case "--managed-allocation-elimination":
-                    managedAllocationElimination = SetOnce(managedAllocationElimination, value, option);
-                    break;
-                case "--managed-loop-rotation":
-                    managedLoopRotation = SetOnce(managedLoopRotation, value, option);
-                    break;
-                case "--managed-array-store-check-elimination":
-                    managedArrayStoreCheckElimination = SetOnce(managedArrayStoreCheckElimination, value, option);
-                    break;
-                case "--reference": references.Add(value); break;
-                case "--export": exports.Add(ParseExport(value)); break;
-                case "--source": sources.Add(value); break;
-                case "--import-module": importModules.Add(value); break;
-                default: throw CliOptionException.Create($"unknown option '{option}'");
-            }
-        });
-
-        var selectedEntryKind = entryKind switch
-        {
-            null or "raw-function" => CompilerEntryPointKind.RawFunction,
-            "managed-executable" => CompilerEntryPointKind.ManagedExecutable,
-            "library" => CompilerEntryPointKind.Library,
+            1 => arguments.Inputs[0],
+            0 => throw CliOptionException.Create("no input assembly was specified"),
             _ => throw CliOptionException.Create(
-                "entry kind must be 'raw-function', 'managed-executable' or 'library'"),
+                $"only one input assembly can be compiled: {string.Join(", ", arguments.Inputs)}"),
         };
-        if (selectedEntryKind == CompilerEntryPointKind.Library && entry is not null)
+        var target = options.Single("target") switch
         {
-            throw CliOptionException.Create("library compilation cannot specify '--entry'");
-        }
-        (var entryType, var entryMethod) = selectedEntryKind == CompilerEntryPointKind.Library
-            ? (string.Empty, string.Empty)
-            : ParseMethod(entry ?? throw CliOptionException.Create("missing required option '--entry'"));
-        return new CompileCliOptions(
-            input ?? throw CliOptionException.Create("missing required option '--input'"),
-            output ?? throw CliOptionException.Create("missing required option '--output'"),
+            null or "exe" => NwcTarget.Exe,
+            "library" => NwcTarget.Library,
+            "function" => NwcTarget.Function,
+            _ => throw CliOptionException.Create("-target must be 'exe', 'library' or 'function'"),
+        };
+        var entry = options.Single("entry");
+        (var entryType, var entryMethod) = target == NwcTarget.Function
+            ? ParseMethod(entry ?? throw CliOptionException.Create("-target:function requires -entry:Type::Method"))
+            : entry is null
+                ? (string.Empty, string.Empty)
+                : throw CliOptionException.Create("-entry is only valid with -target:function");
+        return new(
+            input,
+            options.Single("out") ?? throw CliOptionException.Create("no output file was specified (-out)"),
+            target,
             entryType,
             entryMethod,
-            references.ToImmutable(),
-            exports.ToImmutable(),
-            target switch
-            {
-                null or "wasm32" => WasmTarget.Wasm32,
-                "wasm64" => WasmTarget.Wasm64,
-                _ => throw CliOptionException.Create("target must be 'wasm32' or 'wasm64'"),
-            },
-            interopManifest,
-            runtimeLayout,
-            diagnosticTrace,
-            diagnosticLog,
-            stackTraceSymbols,
-            wit,
-            world,
-            sources.ToImmutable(),
-            selectedEntryKind,
-            javaScriptExportBoundary switch
-            {
-                null or "false" => false,
-                "true" => true,
-                _ => throw CliOptionException.Create(
-                    "javascript export boundary must be 'true' or 'false'"),
-            })
+            options.List("reference", "r"),
+            [.. options.Many("export").Select(ParseExport)],
+            ParsePlatform(options.Single("platform")))
         {
-            Optimization = ParseOptimization(optimization),
-            ManagedLoopInvariantFieldHoisting = managedLoopInvariantFieldHoisting,
-            ManagedStaticDataViewElimination = managedStaticDataViewElimination,
-            ManagedAddressTakenValuePromotion = managedAddressTakenValuePromotion,
-            ManagedMethodInlining = managedMethodInlining,
-            ManagedBranchPrefixDuplication = managedBranchPrefixDuplication,
-            ManagedScalarCallPreservation = managedScalarCallPreservation,
-            ManagedArrayBoundsCheckElimination = managedArrayBoundsCheckElimination,
-            ManagedLoopUnrolling = managedLoopUnrolling,
-            ManagedConstantArgumentPropagation = managedConstantArgumentPropagation,
-            ManagedStaticArrayPopulationElimination = managedStaticArrayPopulationElimination,
-            ManagedConstantCallFolding = managedConstantCallFolding,
-            ManagedSwitchBitTests = managedSwitchBitTests,
-            ImportModules = importModules.ToImmutable(),
-            ManagedDevirtualization = managedDevirtualization,
-            ManagedAllocationElimination = managedAllocationElimination,
-            ManagedLoopRotation = managedLoopRotation,
-            ManagedArrayStoreCheckElimination = managedArrayStoreCheckElimination,
+            Optimization = ParseOptimization(options.Single("optimize")),
+            PathMap = options.Single("pathmap"),
+            Sources = options.Many("source"),
+            InteropManifest = options.Single("interopmanifest"),
+            RuntimeLayout = options.Single("runtimelayout"),
+            CompilerMetadata = options.Single("compilermetadata"),
+            ExceptionTypeMap = options.Single("exceptiontypemap"),
+            StackTraceSymbols = options.Single("stacktracesymbols"),
+            CallbackObject = options.Single("callbackobject"),
+            Wit = options.Single("wit"),
+            World = options.Single("world"),
+            ImportModules = options.Many("importmodule"),
+            DiagnosticTrace = options.Single("diagnostictrace"),
+            DiagnosticLog = options.Single("diagnosticlog"),
+            UseJavaScriptExportBoundary = options.Toggle("jsexportboundary"),
+            StructuredDiagnostics = options.Toggle("structureddiagnostics"),
+            ProjectDirectory = options.Single("projectdirectory"),
+            IntermediateDirectory = options.Single("intermediatedirectory"),
+            WasmTools = ParseWasmTools(
+                options.Single("wasmtoolsnode"),
+                options.Single("wasmtoolscommand"),
+                options.Single("wasmtoolsmodule")),
+            ManagedLoopInvariantFieldHoisting = options.Single("managedloopinvariantfieldhoisting"),
+            ManagedStaticDataViewElimination = options.Single("managedstaticdataviewelimination"),
+            ManagedAddressTakenValuePromotion = options.Single("managedaddresstakenvaluepromotion"),
+            ManagedMethodInlining = options.Single("managedmethodinlining"),
+            ManagedBranchPrefixDuplication = options.Single("managedbranchprefixduplication"),
+            ManagedScalarCallPreservation = options.Single("managedscalarcallpreservation"),
+            ManagedArrayBoundsCheckElimination = options.Single("managedarrayboundscheckelimination"),
+            ManagedLoopUnrolling = options.Single("managedloopunrolling"),
+            ManagedConstantArgumentPropagation = options.Single("managedconstantargumentpropagation"),
+            ManagedStaticArrayPopulationElimination = options.Single("managedstaticarraypopulationelimination"),
+            ManagedConstantCallFolding = options.Single("managedconstantcallfolding"),
+            ManagedSwitchBitTests = options.Single("managedswitchbittests"),
+            ManagedDevirtualization = options.Single("manageddevirtualization"),
+            ManagedAllocationElimination = options.Single("managedallocationelimination"),
+            ManagedLoopRotation = options.Single("managedlooprotation"),
+            ManagedArrayStoreCheckElimination = options.Single("managedarraystorecheckelimination"),
         };
     }
+
+    // wasm-tools runs as the toolchain's JavaScript build under node; without
+    // these, nwc runs the wasm-tools on the PATH.
+    private static ExternalToolCommand? ParseWasmTools(string? node, string? command, string? module) =>
+        (node, command, module) switch
+        {
+            (null, null, null) => null,
+            ({ } executable, { } script, { } component) =>
+                new(executable, ["--disable-warning=ExperimentalWarning", script, component]),
+            _ => throw CliOptionException.Create(
+                "-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together"),
+        };
 
     private static RequestedExport ParseExport(string value)
     {
         var separator = value.IndexOf('=', StringComparison.Ordinal);
         if (separator <= 0 || separator == value.Length - 1)
         {
-            throw CliOptionException.Create(
-                "export must use 'name=Namespace.Type::Method' syntax");
+            throw CliOptionException.Create("-export must use 'name=Namespace.Type::Method' syntax");
         }
-        var name = value[..separator];
         var (type, method) = ParseMethod(value[(separator + 1)..]);
-        return new RequestedExport(name, type, method);
+        return new RequestedExport(value[..separator], type, method);
     }
 
     private static (string Type, string Method) ParseMethod(string value)
     {
         var parts = value.Split("::", 2, StringSplitOptions.None);
-        if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0)
-        {
-            throw CliOptionException.Create(
-                "method must use 'Namespace.Type::Method' syntax");
-        }
-        return (parts[0], parts[1]);
+        return parts.Length == 2 && parts[0].Length != 0 && parts[1].Length != 0
+            ? (parts[0], parts[1])
+            : throw CliOptionException.Create("a method must use 'Namespace.Type::Method' syntax");
     }
 
-    private static FinalWasmOptimization ParseOptimization(string? value) => value switch
+    internal static WasmTarget ParsePlatform(string? value) => value switch
+    {
+        null or "wasm32" => WasmTarget.Wasm32,
+        "wasm64" => WasmTarget.Wasm64,
+        _ => throw CliOptionException.Create("-platform must be 'wasm32' or 'wasm64'"),
+    };
+
+    internal static FinalWasmOptimization ParseOptimization(string? value) => value switch
     {
         null or "Oz" => FinalWasmOptimization.Oz,
         "None" or "none" => FinalWasmOptimization.None,
@@ -369,30 +201,118 @@ internal sealed record CompileCliOptions(
         "O3" => FinalWasmOptimization.O3,
         "Os" => FinalWasmOptimization.Os,
         _ => throw CliOptionException.Create(
-            "optimization must be 'none', 'O0', 'O1', 'O2', 'O3', 'Os' or 'Oz'"),
+            "-optimize must be 'None', 'O0', 'O1', 'O2', 'O3', 'Os' or 'Oz'"),
     };
-
-    private static string SetOnce(string? current, string value, string option) =>
-        current is null
-            ? value
-            : throw CliOptionException.Create(
-                $"option '{option}' was specified more than once");
 }
 
-internal static class CliOptionReader
+internal sealed record ComponentizeCliOptions(
+    string CoreModule,
+    string? RuntimeModule,
+    string Wit,
+    string? World,
+    string Output,
+    string Manifest,
+    WasmTarget Platform,
+    string? InteropManifest,
+    string? JcoVersion,
+    string? Preview2ShimVersion,
+    FinalWasmOptimization Optimization)
 {
-    public static void Read(string[] arguments, Action<string, string> read)
+    public const string CommandName = "componentize";
+
+    public static readonly FrozenSet<string> Names = new[]
+    {
+        "coremodule", "runtimemodule", "wit", "world", "out", "manifest", "platform",
+        "interopmanifest", "jcoversion", "preview2shimversion", "optimize", "managedinlininghints",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public string? ManagedInliningHints { get; init; }
+
+    public static ComponentizeCliOptions Parse(NwcArguments arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        ArgumentNullException.ThrowIfNull(read);
-        for (var index = 0; index < arguments.Length; index++)
+        if (arguments.Inputs.Length != 0)
         {
-            var option = arguments[index];
-            var value = index + 1 < arguments.Length
-                ? arguments[++index]
-                : throw CliOptionException.Create($"option '{option}' requires a value");
-            read(option, value);
+            throw CliOptionException.Create(
+                $"componentize takes no input files: {string.Join(", ", arguments.Inputs)}");
         }
+        var options = new NwcOptionValues(arguments);
+        return new(
+            options.Single("coremodule") ?? throw CliOptionException.Create("no core module was specified (-coremodule)"),
+            options.Single("runtimemodule"),
+            options.Single("wit") ?? throw CliOptionException.Create("no WIT package was specified (-wit)"),
+            options.Single("world"),
+            options.Single("out") ?? throw CliOptionException.Create("no output file was specified (-out)"),
+            options.Single("manifest") ?? throw CliOptionException.Create("no manifest file was specified (-manifest)"),
+            CompileCliOptions.ParsePlatform(options.Single("platform")),
+            options.Single("interopmanifest"),
+            options.Single("jcoversion"),
+            options.Single("preview2shimversion"),
+            CompileCliOptions.ParseOptimization(options.Single("optimize")))
+        {
+            ManagedInliningHints = options.Single("managedinlininghints"),
+        };
+    }
+}
+
+// Reads the options of one command: each value option at most once, a list
+// option any number of times, a flag without a value, and a toggle as -name,
+// -name+ or -name-.
+internal sealed class NwcOptionValues(NwcArguments arguments)
+{
+    private readonly ILookup<string, NwcOption> _options = arguments.Options.ToLookup(option => option.Name);
+
+    public string? Single(string name)
+    {
+        var options = _options[name].ToArray();
+        return options.Length switch
+        {
+            0 => null,
+            1 => Value(options[0]),
+            _ => throw CliOptionException.Create($"option '-{name}' was specified more than once"),
+        };
     }
 
+    public ImmutableArray<string> Many(string name) => [.. _options[name].Select(Value)];
+
+    // A reference list, as csc reads one: several per option, separated by ',' or
+    // ';' outside quotes, in command-line order whichever of the names each
+    // option uses.
+    public ImmutableArray<string> List(params string[] names) =>
+    [
+        .. arguments.Options.Where(option => names.Contains(option.Name))
+            .SelectMany(option => NwcArgumentReader.SplitList(RequireValue(option))),
+    ];
+
+    public bool Flag(string name)
+    {
+        foreach (var option in _options[name])
+        {
+            if (option.Value is not null)
+            {
+                throw CliOptionException.Create($"option '{option.Spelling}' takes no value");
+            }
+        }
+        return _options[name].Any();
+    }
+
+    public bool Toggle(string name) => _options[name].LastOrDefault() switch
+    {
+        null => false,
+        { Value: null or "+" } => true,
+        { Value: "-" } => false,
+        var option => throw CliOptionException.Create($"option '{option.Spelling}' takes '+' or '-', not a value"),
+    };
+
+    private static string Value(NwcOption option) => NwcArgumentReader.Unquote(RequireValue(option)) is { Length: > 0 } value
+        ? value
+        : throw RequiresAValue(option);
+
+    // The value an option was written with, quotes included.
+    private static string RequireValue(NwcOption option) => option.Value is { Length: > 0 } value && value is not ("+" or "-")
+        ? value
+        : throw RequiresAValue(option);
+
+    private static CompilerException RequiresAValue(NwcOption option) =>
+        CliOptionException.Create($"option '{option.Spelling}' requires a value");
 }

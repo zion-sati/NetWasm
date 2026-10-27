@@ -697,9 +697,11 @@ internal sealed class RawCanonicalBindingEmitter
 
     private static string Offset(string index, int offset) => offset == 0 ? index : $"{index} + {Int(offset)}";
 
-    private static string Names(IEnumerable<string> names) => JsonSerializer.Serialize(names);
+    private static string Names(IEnumerable<string> names) =>
+        JsonSerializer.Serialize([.. names], RawCanonicalBindingJsonContext.Default.StringArray);
 
-    private static string Json(string value) => JsonSerializer.Serialize(value);
+    private static string Json(string value) =>
+        JsonSerializer.Serialize(value, RawCanonicalBindingJsonContext.Default.String);
 
     private static string Bool(bool value) => value ? "true" : "false";
 

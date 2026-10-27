@@ -6,7 +6,7 @@ artifact_root="${NETWASM_COMPONENT_MIXED_ARTIFACT_DIR:-$repo_root/tests/end-to-e
 toolchain="$repo_root/eng/toolchain.json"
 sdk_version="$(node -p 'require(process.argv[1]).dotnetSdk' "$toolchain")"
 corelib="$repo_root/src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll"
-compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/NetWasm.Compiler.Cli.dll"
+compiler="$repo_root/src/NetWasm.Compiler.Cli/bin/Release/net10.0/nwc.dll"
 wit="$repo_root/tests/end-to-end/component-model/fixtures/mixed-boundary-wit"
 compatibility_host="$repo_root/src/NetWasm.Runtime/browser-host.mjs"
 
@@ -23,13 +23,13 @@ dotnet "$csc" -nologo -noconfig -nostdlib -langversion:latest \
 for target in wasm32 wasm64; do
     for repeat in first second; do
         dotnet "$compiler" \
-            --input "$artifact_root/MixedBoundaryComponent.dll" \
-            --reference "$corelib" \
-            --entry 'NetWasm.Fixtures.ComponentModel.MixedBoundaryComponent::Run' \
-            --wit "$wit" --target "$target" \
-            --output "$artifact_root/application.$target.$repeat.wasm" \
-            --interop-manifest "$artifact_root/interop.$target.$repeat.json" \
-            --runtime-layout "$artifact_root/runtime-layout.$target.$repeat.json"
+            "$artifact_root/MixedBoundaryComponent.dll" \
+            -r:"$corelib" \
+            -target:function -entry:'NetWasm.Fixtures.ComponentModel.MixedBoundaryComponent::Run' \
+            -wit:"$wit" -platform:"$target" \
+            -out:"$artifact_root/application.$target.$repeat.wasm" \
+            -interopmanifest:"$artifact_root/interop.$target.$repeat.json" \
+            -runtimelayout:"$artifact_root/runtime-layout.$target.$repeat.json"
     done
     for artifact in application interop runtime-layout; do
         suffix=wasm

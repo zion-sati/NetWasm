@@ -5,7 +5,6 @@
     <IsTestProject>true</IsTestProject>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +20,8 @@
     <ProjectReference Include="../../src/NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../../src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj" />
+    <!-- nwc.dll, which the compile task's tests run. -->
+    <ProjectReference Include="../../src/NetWasm.Compiler.Cli/NetWasm.Compiler.Cli.csproj" />
     <ProjectReference Include="../../src/NetWasm.Runtime.Pack/NetWasm.Runtime.Pack.csproj" />
     <ProjectReference Include="../../src/NetWasm.CoreLib/NetWasm.CoreLib.csproj"
                       ReferenceOutputAssembly="false"

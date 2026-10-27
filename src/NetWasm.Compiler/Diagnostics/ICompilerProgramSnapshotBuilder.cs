@@ -4,5 +4,5 @@ namespace NetWasm.Compiler.Diagnostics;
 
 internal interface ICompilerProgramSnapshotBuilder
 {
-    object BuildProgram(ISymbolFormatter symbols, ReachableProgram program);
+    CompilerProgramArtifact BuildProgram(ISymbolFormatter symbols, ReachableProgram program);
 }
