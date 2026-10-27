@@ -534,10 +534,12 @@ jobs:
           python3 infrastructure/eng/release-train.py extract \
             --bundle "$bundle" \
             --output "$candidate"
+          # The build job resolved the preview this stable release promotes.
           python3 infrastructure/eng/resolve-release.py \
             --manifest infrastructure/eng/release-manifest.json \
             --tag "$release_tag" \
             --source-commit "$SOURCE_COMMIT" \
+            --source-tags "$PREVIEW_TAG" \
             --output "$candidate/release-manifest.json"
           python3 infrastructure/eng/verify-release-packages.py \
             --manifest "$candidate/release-manifest.json" \
