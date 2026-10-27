@@ -152,6 +152,23 @@ public sealed class JavaScriptValueFrameEmitterTests
         Assert.Equal(WasmOpcodes.I32Add, code.ToInstructions()[3].Opcode);
     }
 
+    [Fact]
+    public void ResultOfAFrameWithoutAConvertedResultIsAnInvariantFailure()
+    {
+        var frame = Planner().Plan([DateTime], Int32)!;
+
+        Assert.Throws<InvalidOperationException>(() => Emitter().Emit(
+            new EmitterTestSupport.RecordingInstructionWriter(),
+            new JavaScriptValueFrameResult(frame, 9, Interop(Conversions))));
+    }
+
+    [Fact]
+    public void RejectsAStepItDoesNotKnow() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => Emitter().Emit(
+            new EmitterTestSupport.RecordingInstructionWriter(), new UnknownStep(9)));
+
+    private sealed record UnknownStep(int FrameLocal) : JavaScriptValueFrameStep(FrameLocal);
+
     private static (byte Opcode, uint Operand)[] CallsAndLocals(EmitterTestSupport.RecordingInstructionWriter code) =>
         [.. code.ToInstructions()
             .Where(instruction => instruction.Opcode is WasmOpcodes.Call or WasmOpcodes.LocalGet)

@@ -311,6 +311,39 @@ public sealed class AsyncJSExportFunctionEmitterTests
         Assert.Equal<byte>([WasmOpcodes.I32Load, 2, 0, WasmOpcodes.End, WasmOpcodes.End], body[^5..]);
     }
 
+    [Theory]
+    [InlineData("nullable")]
+    [InlineData("date")]
+    [InlineData("strings")]
+    public void ResultEmitterReadsAConvertedResultOnlyAtAJavaScriptBoundary(string kind)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var result = kind switch
+        {
+            "nullable" => CliTypeIdentity.GenericInstantiation(
+                CliTypeIdentity.Named(Assembly, "System", "Nullable`1", isValueType: true),
+                [CliTypeIdentity.Primitive("i4", CliValueKind.I4)]),
+            "date" => CliTypeIdentity.Named(Assembly, "System", "DateTime", isValueType: true),
+            _ => CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false)),
+        };
+        var binding = CreateBinding(new FakeProgram(), CliValueKind.I4) with
+        {
+            Return = new JavaScriptAsyncReturn(JavaScriptAsyncReturnKind.Task, result),
+        };
+        var emitter = new AsyncJSExportResultEmitter(
+            layouts,
+            layouts,
+            WasmRuntimeImports.CreateCatalog(),
+            CreateAddressInstructions(layouts),
+            new JavaScriptNullableEmitter(layouts, layouts, CreateAddressInstructions(layouts)),
+            new GeneratedFunctionWriterFactory());
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ((IAsyncJSExportResultEmitter)emitter).Emit(binding));
+
+        Assert.Contains("only at a JavaScript boundary", exception.Message);
+    }
+
     [Fact]
     public void ResultEmitterRejectsAResultlessTask()
     {

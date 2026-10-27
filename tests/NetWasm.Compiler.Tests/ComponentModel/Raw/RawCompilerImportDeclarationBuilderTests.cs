@@ -38,6 +38,22 @@ public sealed class RawCompilerImportDeclarationBuilderTests
     }
 
     [Fact]
+    public void CarriesTheImportModulesTheManifestDeclares()
+    {
+        var source = Compilation();
+        var declared = source with
+        {
+            InteropManifest = source.InteropManifest with { ImportModules = ["env", "libc", "env"] },
+        };
+        var undeclared = source with { InteropManifest = source.InteropManifest with { ImportModules = default } };
+
+        Assert.Equal(
+            ["env", "libc"],
+            CreateBuilder().Build(new(declared, Catalog())).ImportModules.Order(StringComparer.Ordinal));
+        Assert.Empty(CreateBuilder().Build(new(undeclared, Catalog())).ImportModules);
+    }
+
+    [Fact]
     public void RejectsMissingRequestOrRequiredObjects()
     {
         var builder = CreateBuilder();

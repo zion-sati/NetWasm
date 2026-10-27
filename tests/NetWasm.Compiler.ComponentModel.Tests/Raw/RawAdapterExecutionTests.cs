@@ -260,6 +260,229 @@ public sealed class RawAdapterExecutionTests
         Assert.DoesNotContain("export function rc", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void LowersEveryKindThatFitsOneCoreValueAsAFlatResult(WasmTarget target)
+    {
+        Run(target, [
+            ("file-handle", "\"resource\""),
+            (null, """{"handle":{"own":0}}"""),
+            (null, """{"handle":{"borrow":0}}"""),
+            ("color", """{"enum":{"cases":[{"name":"red"},{"name":"green"},{"name":"blue"}]}}"""),
+            ("perms", """{"flags":{"flags":[{"name":"read"},{"name":"write-all"},{"name":"exec"}]}}"""),
+            ("small", """{"type":"u16"}"""),
+            ("only", """{"record":{"fields":[{"name":"value","type":"s16"}]}}"""),
+            ("single", """{"tuple":{"types":["u8"]}}"""),
+            ("status", """{"result":{"ok":null,"err":null}}"""),
+            ("pick", """{"variant":{"cases":[{"name":"first","type":null},{"name":"second","type":null}]}}"""),
+            ("lent", """{"record":{"fields":[{"name":"handle","type":2},{"name":"count","type":"u32"}]}}"""),
+        ], [
+            Function("rbool", [], P("bool")),
+            Function("rsbyte", [], P("s8")),
+            Function("rbyte", [], P("u8")),
+            Function("rshort", [], P("s16")),
+            Function("rushort", [], P("u16")),
+            Function("rint", [], P("s32")),
+            Function("rlong", [], P("s64")),
+            Function("rulong", [], P("u64")),
+            Function("rsingle", [], P("f32")),
+            Function("rdouble", [], P("f64")),
+            Function("rchar", [], P("char")),
+            Function("renum", [], D(3)),
+            Function("rflags", [], D(4)),
+            Function("ralias", [], D(5)),
+            Function("rrecord", [], D(6)),
+            Function("rtuple", [], D(7)),
+            Function("rresult", [], D(8)),
+            Function("rvariant", [], D(9)),
+            Function("rown", [], D(1)),
+            Function("rborrow", [], D(2)),
+            Function("rlent", [], D(10)),
+        ], """
+            class FileHandle {}
+            const owned = new FileHandle();
+            let failing = false;
+            const values = {
+              rbool: true, rsbyte: -5, rbyte: 200, rshort: -300, rushort: 60000, rint: -7, rlong: -2n,
+              rulong: 18446744073709551615n, rsingle: 1.1, rdouble: Math.PI, rchar: "\u{1f600}", renum: "green",
+              rflags: { read: true, writeAll: false, exec: true }, ralias: 1234, rrecord: { value: -9 }, rtuple: [7],
+              rvariant: { tag: "second" }, rown: owned, rborrow: owned, rlent: { handle: owned, count: 1 },
+            };
+            const providers = Object.fromEntries(Object.entries(values).map(([name, value]) => [name, () => value]));
+            providers.rresult = () => {
+              if (failing) throw Object.assign(new Error("no"), { payload: undefined });
+            };
+            const harness = await open({ "sample:raw/api@1.0.0": { FileHandle, ...providers } });
+            const { imports } = harness;
+            assert.deepEqual(
+              ["rbool", "rsbyte", "rbyte", "rshort", "rushort", "rint", "rlong", "rulong", "rsingle", "rdouble",
+                "rchar", "renum", "rflags", "ralias", "rrecord", "rtuple", "rvariant", "rresult"].map(name => imports[name]()),
+              [1, -5, 200, -300, 60000, -7, -2n, -1n, Math.fround(1.1), Math.PI, 0x1f600, 1, 5, 1234, -9, 7, 1, 0]);
+            failing = true;
+            assert.equal(imports.rresult(), 1);
+            assert.equal(harness.borrow(0, imports.rown()), owned);
+            assert.throws(() => imports.rborrow(), /borrowed resources cannot be lowered/);
+            assert.throws(() => imports.rlent(harness.address(64)), /borrowed resources cannot be lowered/);
+            """);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void LiftsAliasesUnitPayloadsAndJoinedVariantSlots(WasmTarget target)
+    {
+        Run(target, [
+            ("small", """{"type":"u16"}"""),
+            ("status", """{"result":{"ok":null,"err":null}}"""),
+            ("float-int", """{"variant":{"cases":[{"name":"a","type":"f32"},{"name":"b","type":"u32"}]}}"""),
+            ("long-int", """{"variant":{"cases":[{"name":"a","type":"s64"},{"name":"b","type":"u32"}]}}"""),
+            ("long-float", """{"variant":{"cases":[{"name":"a","type":"s64"},{"name":"b","type":"f32"}]}}"""),
+            ("long-double", """{"variant":{"cases":[{"name":"a","type":"s64"},{"name":"b","type":"f64"}]}}"""),
+            ("float-double", """{"variant":{"cases":[{"name":"a","type":"f32"},{"name":"b","type":"f64"}]}}"""),
+        ], [
+            Function("flat", [
+                ("small", D(0)), ("status", D(1)), ("float-int", D(2)), ("long-int", D(3)),
+                ("long-float", D(4)), ("long-double", D(5)), ("float-double", D(6)),
+            ], null),
+        ], """
+            let received;
+            const harness = await open({ "sample:raw/api@1.0.0": { flat(...values) { received = values; } } });
+            const bits = new DataView(new ArrayBuffer(8));
+            bits.setFloat32(0, 1.5, true);
+            const single = bits.getInt32(0, true);
+            bits.setFloat32(0, -0.5, true);
+            const wideSingle = BigInt(bits.getUint32(0, true));
+            bits.setFloat64(0, 2.25, true);
+            const wideDouble = bits.getBigInt64(0, true);
+            assert.equal(harness.imports.flat(1234, 1, 0, single, 1, 7n, 1, wideSingle, 1, wideDouble, 0, 0.75), undefined);
+            assert.deepEqual(received, [
+              1234,
+              { tag: "err", val: undefined },
+              { tag: "a", val: 1.5 },
+              { tag: "b", val: 7 },
+              { tag: "b", val: -0.5 },
+              { tag: "b", val: 2.25 },
+              { tag: "a", val: 0.75 },
+            ]);
+            """);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void RoundTripsEveryKindThroughLinearMemory(WasmTarget target)
+    {
+        static string Names(string prefix, int count) =>
+            string.Join(",", Enumerable.Range(0, count).Select(index => $$"""{"name":"{{prefix}}{{index}}"}"""));
+        static string Flags(int count) => """{"flags":{"flags":[""" + Names("f", count) + "]}}";
+        static string Cases(int count, string firstType) =>
+            string.Join(",", Enumerable.Range(0, count).Select(index =>
+                $$"""{"name":"case{{index}}","type":{{(index == 0 ? firstType : "null")}}}"""));
+        Run(target, [
+            ("file-handle", "\"resource\""),
+            (null, """{"handle":{"own":0}}"""),
+            (null, """{"handle":{"borrow":0}}"""),
+            ("small", """{"type":"u16"}"""),
+            ("point", """{"record":{"fields":[{"name":"x","type":"s32"},{"name":"y","type":"f64"}]}}"""),
+            ("pair", """{"tuple":{"types":["u8","string"]}}"""),
+            ("maybe", """{"option":"u8"}"""),
+            ("nested", """{"option":6}"""),
+            ("status", """{"result":{"ok":null,"err":"u8"}}"""),
+            ("named", """{"result":{"ok":"string","err":null}}"""),
+            ("shape", """{"variant":{"cases":[{"name":"circle","type":"f32"},{"name":"label","type":"string"},{"name":"empty","type":null}]}}"""),
+            ("color", """{"enum":{"cases":[{"name":"red"},{"name":"green"},{"name":"blue"}]}}"""),
+            ("tiny", """{"flags":{"flags":[{"name":"a"},{"name":"b"},{"name":"c"}]}}"""),
+            ("short", Flags(12)),
+            ("word", Flags(20)),
+            ("wide", Flags(40)),
+            ("bytes", """{"list":"u8"}"""),
+            ("words", """{"list":"u16"}"""),
+            ("names", """{"list":"string"}"""),
+            ("wide-enum", """{"enum":{"cases":[""" + Names("case", 300) + "]}}"),
+            ("wide-variant", """{"variant":{"cases":[""" + Cases(300, "\"u32\"") + "]}}"),
+            ("everything", """
+                {"record":{"fields":[
+                  {"name":"flag","type":"bool"},{"name":"tiny-int","type":"s8"},{"name":"byte","type":"u8"},
+                  {"name":"short-int","type":"s16"},{"name":"half","type":"u16"},{"name":"int","type":"s32"},
+                  {"name":"word-value","type":"u32"},{"name":"long","type":"s64"},{"name":"ulong","type":"u64"},
+                  {"name":"single","type":"f32"},{"name":"double","type":"f64"},{"name":"letter","type":"char"},
+                  {"name":"small","type":3},{"name":"text","type":"string"},{"name":"bytes","type":16},
+                  {"name":"words","type":17},{"name":"names","type":18},{"name":"point","type":4},
+                  {"name":"pair","type":5},{"name":"maybe","type":6},{"name":"nested","type":7},
+                  {"name":"status","type":8},{"name":"named","type":9},{"name":"shape","type":10},
+                  {"name":"color","type":11},{"name":"tiny","type":12},{"name":"short","type":13},
+                  {"name":"word","type":14},{"name":"wide","type":15},{"name":"handle","type":1},
+                  {"name":"wide-enum","type":19},{"name":"wide-variant","type":20},
+                  {"name":"title","type":23},{"name":"smalls","type":24}]}}
+                """),
+            ("borrows", """{"list":2}"""),
+            ("label", """{"type":"string"}"""),
+            ("halves", """{"list":3}"""),
+        ], [
+            Function("make", [], D(21)),
+            Function("take", [("value", D(21))], null),
+            Function("peek", [("handles", D(22))], P("u32")),
+        ], """
+            class FileHandle { constructor(name) { this.name = name; } }
+            const flags = (count, set) => Object.fromEntries(
+              Array.from({ length: count }, (_, index) => [`f${index}`, set.includes(index)]));
+            let made;
+            let received;
+            let peeked;
+            const harness = await open({ "sample:raw/api@1.0.0": {
+              FileHandle,
+              make() { return made; },
+              take(value) { received = value; },
+              peek(handles) { peeked = handles; return handles.length; },
+            } });
+            const { imports, address, wasm64 } = harness;
+            // make lowers the value at 256; take lifts it back from there.
+            const round = (value, lifted = value) => {
+              made = value;
+              assert.equal(imports.make(address(256)), undefined);
+              assert.equal(imports.take(address(256)), undefined);
+              const { handle, ...rest } = received;
+              const { handle: expectedHandle, ...expected } = lifted;
+              assert.equal(handle, expectedHandle);
+              assert.deepEqual(rest, expected);
+            };
+            const first = {
+              flag: true, tinyInt: -5, byte: 200, shortInt: -300, half: 60000, int: -70000, wordValue: 4000000000,
+              long: -(2n ** 40n), ulong: 2n ** 63n, single: Math.fround(1.1), double: Math.PI, letter: "\u{1f600}",
+              small: 1234, text: "héllo", bytes: new Uint8Array([1, 2, 3]), words: [1, 65535], names: ["a", "βγ"],
+              point: { x: -3, y: 2.5 }, pair: [7, "q"], maybe: 9, nested: { tag: "some", val: 4 },
+              status: { tag: "ok", val: undefined }, named: { tag: "ok", val: "n" }, shape: { tag: "label", val: "sq" },
+              color: "blue", tiny: { a: true, b: false, c: true }, short: flags(12, [0, 11]), word: flags(20, [19]),
+              wide: flags(40, [1, 39]), handle: new FileHandle("first"), wideEnum: "case299",
+              wideVariant: { tag: "case0", val: 77 }, title: "t", smalls: [1, 2],
+            };
+            round(first);
+            const second = {
+              flag: false, tinyInt: 127, byte: 0, shortInt: 32767, half: 0, int: 2147483647, wordValue: 0,
+              long: 9223372036854775807n, ulong: 0n, single: -0.5, double: -1e300, letter: "z",
+              small: 65535, text: "", bytes: new Uint8Array(0), words: [], names: [],
+              point: { x: 0, y: 0 }, pair: [0, ""], maybe: undefined, nested: { tag: "none" },
+              status: { tag: "err", val: 3 }, named: { tag: "err", val: undefined }, shape: { tag: "empty" },
+              color: "red", tiny: { a: false, b: false, c: false }, short: flags(12, []), word: flags(20, []),
+              wide: flags(40, []), handle: new FileHandle("second"), wideEnum: "case0", wideVariant: { tag: "case299" },
+              title: "", smalls: new Uint16Array([65535]),
+            };
+            // A numeric list may arrive as its typed array; it lifts as an array.
+            round(second, { ...second, smalls: [65535] });
+            const third = { ...second, nested: { tag: "some", val: undefined }, shape: { tag: "circle", val: 1.5 },
+              handle: new FileHandle("third") };
+            round(third, { ...third, smalls: [65535] });
+            const one = harness.register(new FileHandle("one"));
+            const two = harness.register(new FileHandle("two"));
+            harness.view().setUint32(1024, one, true);
+            harness.view().setUint32(1028, two, true);
+            assert.equal(imports.peek(address(1024), wasm64 ? 2n : 2), 2);
+            assert.deepEqual(peeked.map(handle => handle.name), ["one", "two"]);
+            assert.equal(harness.borrow(0, one).name, "one");
+            """);
+    }
+
     private static WitTypeReference.Primitive P(string name) => new(name);
 
     private static WitTypeReference.Defined D(int id) => new(id);

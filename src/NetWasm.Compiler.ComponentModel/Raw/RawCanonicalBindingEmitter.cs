@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.ComponentModel.Raw;
 
@@ -105,7 +106,7 @@ internal sealed class RawCanonicalBindingEmitter
         }
         else
         {
-            if (result.Kind == "result")
+            if (result.Kind == CanonicalAbiTypeKind.Result)
             {
                 // A provider returns a result's ok payload and throws its error.
                 source.AppendLine("    let value;");
@@ -197,46 +198,45 @@ internal sealed class RawCanonicalBindingEmitter
     {
         switch (type.Kind)
         {
-            case "unit": return "undefined";
-            case "bool": return $"({slots.Dequeue().Name} !== 0)";
-            case "s8": return $"({slots.Dequeue().Name} << 24 >> 24)";
-            case "u8": return $"({slots.Dequeue().Name} & 0xff)";
-            case "s16": return $"({slots.Dequeue().Name} << 16 >> 16)";
-            case "u16": return $"({slots.Dequeue().Name} & 0xffff)";
-            case "s32": return $"({slots.Dequeue().Name} | 0)";
-            case "u32": return $"({slots.Dequeue().Name} >>> 0)";
-            case "s64": return $"BigInt.asIntN(64, {slots.Dequeue().Name})";
-            case "u64": return $"BigInt.asUintN(64, {slots.Dequeue().Name})";
-            case "f32": return $"Math.fround({slots.Dequeue().Name})";
-            case "f64": return slots.Dequeue().Name;
-            case "character": return $"rcCharacter({slots.Dequeue().Name} >>> 0)";
-            case "alias": return LiftFlat(type.Element!, slots);
-            case "text":
+            case CanonicalAbiTypeKind.Unit: return "undefined";
+            case CanonicalAbiTypeKind.Bool: return $"({slots.Dequeue().Name} !== 0)";
+            case CanonicalAbiTypeKind.S8: return $"({slots.Dequeue().Name} << 24 >> 24)";
+            case CanonicalAbiTypeKind.U8: return $"({slots.Dequeue().Name} & 0xff)";
+            case CanonicalAbiTypeKind.S16: return $"({slots.Dequeue().Name} << 16 >> 16)";
+            case CanonicalAbiTypeKind.U16: return $"({slots.Dequeue().Name} & 0xffff)";
+            case CanonicalAbiTypeKind.S32: return $"({slots.Dequeue().Name} | 0)";
+            case CanonicalAbiTypeKind.U32: return $"({slots.Dequeue().Name} >>> 0)";
+            case CanonicalAbiTypeKind.S64: return $"BigInt.asIntN(64, {slots.Dequeue().Name})";
+            case CanonicalAbiTypeKind.U64: return $"BigInt.asUintN(64, {slots.Dequeue().Name})";
+            case CanonicalAbiTypeKind.F32: return $"Math.fround({slots.Dequeue().Name})";
+            case CanonicalAbiTypeKind.F64: return slots.Dequeue().Name;
+            case CanonicalAbiTypeKind.Character: return $"rcCharacter({slots.Dequeue().Name} >>> 0)";
+            case CanonicalAbiTypeKind.Alias: return LiftFlat(type.Element!, slots);
+            case CanonicalAbiTypeKind.Text:
                 return $"rcReadText(memory, {slots.Dequeue().Name}, {slots.Dequeue().Name})";
-            case "list":
-                return type.Element!.Underlying.Kind == "u8"
+            case CanonicalAbiTypeKind.List:
+                return type.Element!.Underlying.Kind == CanonicalAbiTypeKind.U8
                     ? $"rcReadBytes(memory, {slots.Dequeue().Name}, {slots.Dequeue().Name})"
                     : $"{ListReader(type)}(memory, {slots.Dequeue().Name}, {slots.Dequeue().Name}, lift)";
-            case "record":
+            case CanonicalAbiTypeKind.Record:
                 return "{ " + string.Join(", ", type.Fields.Select(field =>
                     $"{Json(field.JavaScriptName!)}: {LiftFlat(field.Type, slots)}")) + " }";
-            case "tuple":
+            case CanonicalAbiTypeKind.Tuple:
                 return "[" + string.Join(", ", type.Fields.Select(field => LiftFlat(field.Type, slots))) + "]";
-            case "option" or "result" or "variant":
+            case CanonicalAbiTypeKind.Option or CanonicalAbiTypeKind.Result or CanonicalAbiTypeKind.Variant:
                 {
                     var count = 1 + _planner.JoinedSlots(type.SelectionTypes).Length;
                     var values = Enumerable.Range(0, count).Select(_ => slots.Dequeue().Name);
                     return $"{FlatVariantLifter(type)}(memory, lift, {string.Join(", ", values)})";
                 }
-            case "enum": return $"rcEnumCase({Names(type.Cases.Select(item => item.Name))}, {slots.Dequeue().Name} >>> 0)";
-            case "flags":
+            case CanonicalAbiTypeKind.Enum: return $"rcEnumCase({Names(type.Cases.Select(item => item.Name))}, {slots.Dequeue().Name} >>> 0)";
+            case CanonicalAbiTypeKind.Flags:
                 {
                     var words = _planner.Flatten(type).Select(_ => $"{slots.Dequeue().Name} >>> 0");
                     return $"rcFlags({Names(type.Flags)}, [{string.Join(", ", words)}])";
                 }
-            case "owned-resource": return $"lift.own({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)";
-            case "borrowed-resource": return $"lift.borrow({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)";
-            default: throw Unsupported(type);
+            case CanonicalAbiTypeKind.OwnedResource: return $"lift.own({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)";
+            default: return $"lift.borrow({Int(type.ResourceType)}, {slots.Dequeue().Name} >>> 0)"; // A borrowed resource.
         }
     }
 
@@ -269,7 +269,7 @@ internal sealed class RawCanonicalBindingEmitter
         return body.ToString();
     });
 
-    private static string Coerce(string value, string joined, string selected) => (joined, selected) switch
+    internal static string Coerce(string value, string joined, string selected) => (joined, selected) switch
     {
         _ when joined == selected => value,
         ("i32", "f32") => $"rcF32FromI32({value})",
@@ -283,14 +283,14 @@ internal sealed class RawCanonicalBindingEmitter
     // A lifted option, result or variant case: none is undefined unless options nest.
     private static string Selected(RawAdapterValueType type, int index, string? payload)
     {
-        if (type.Kind == "option" && type.Element!.Underlying.Kind != "option")
+        if (type.Kind == CanonicalAbiTypeKind.Option && type.Element!.Underlying.Kind != CanonicalAbiTypeKind.Option)
         {
             return index == 0 ? "undefined" : payload!;
         }
         var tag = type.Kind switch
         {
-            "option" => index == 0 ? "none" : "some",
-            "result" => index == 0 ? "ok" : "err",
+            CanonicalAbiTypeKind.Option => index == 0 ? "none" : "some",
+            CanonicalAbiTypeKind.Result => index == 0 ? "ok" : "err",
             _ => type.Cases[index].Name,
         };
         return payload is null ? $"{{ tag: {Json(tag)} }}" : $"{{ tag: {Json(tag)}, val: {payload} }}";
@@ -299,55 +299,55 @@ internal sealed class RawCanonicalBindingEmitter
     // An expression reading a value of `type` at byte `index` of linear memory.
     private string Read(RawAdapterValueType type, string index) => type.Kind switch
     {
-        "unit" => "undefined",
-        "bool" => $"(rcView(memory).getUint8({index}) !== 0)",
-        "s8" => $"rcView(memory).getInt8({index})",
-        "u8" => $"rcView(memory).getUint8({index})",
-        "s16" => $"rcView(memory).getInt16({index}, true)",
-        "u16" => $"rcView(memory).getUint16({index}, true)",
-        "s32" => $"rcView(memory).getInt32({index}, true)",
-        "u32" => $"rcView(memory).getUint32({index}, true)",
-        "s64" => $"rcView(memory).getBigInt64({index}, true)",
-        "u64" => $"rcView(memory).getBigUint64({index}, true)",
-        "f32" => $"rcView(memory).getFloat32({index}, true)",
-        "f64" => $"rcView(memory).getFloat64({index}, true)",
-        "character" => $"rcCharacter(rcView(memory).getUint32({index}, true))",
-        "alias" => Read(type.Element!, index),
-        "owned-resource" => $"lift.own({Int(type.ResourceType)}, rcView(memory).getUint32({index}, true))",
-        "borrowed-resource" => $"lift.borrow({Int(type.ResourceType)}, rcView(memory).getUint32({index}, true))",
+        CanonicalAbiTypeKind.Unit => "undefined",
+        CanonicalAbiTypeKind.Bool => $"(rcView(memory).getUint8({index}) !== 0)",
+        CanonicalAbiTypeKind.S8 => $"rcView(memory).getInt8({index})",
+        CanonicalAbiTypeKind.U8 => $"rcView(memory).getUint8({index})",
+        CanonicalAbiTypeKind.S16 => $"rcView(memory).getInt16({index}, true)",
+        CanonicalAbiTypeKind.U16 => $"rcView(memory).getUint16({index}, true)",
+        CanonicalAbiTypeKind.S32 => $"rcView(memory).getInt32({index}, true)",
+        CanonicalAbiTypeKind.U32 => $"rcView(memory).getUint32({index}, true)",
+        CanonicalAbiTypeKind.S64 => $"rcView(memory).getBigInt64({index}, true)",
+        CanonicalAbiTypeKind.U64 => $"rcView(memory).getBigUint64({index}, true)",
+        CanonicalAbiTypeKind.F32 => $"rcView(memory).getFloat32({index}, true)",
+        CanonicalAbiTypeKind.F64 => $"rcView(memory).getFloat64({index}, true)",
+        CanonicalAbiTypeKind.Character => $"rcCharacter(rcView(memory).getUint32({index}, true))",
+        CanonicalAbiTypeKind.Alias => Read(type.Element!, index),
+        CanonicalAbiTypeKind.OwnedResource => $"lift.own({Int(type.ResourceType)}, rcView(memory).getUint32({index}, true))",
+        CanonicalAbiTypeKind.BorrowedResource => $"lift.borrow({Int(type.ResourceType)}, rcView(memory).getUint32({index}, true))",
         _ => $"{Reader(type)}(memory, {index}, lift)",
     };
 
     // readN(memory, index, lift) for a value that is not a scalar.
-    private string Reader(RawAdapterValueType type) => type.Kind == "alias" ? Reader(type.Element!) : Shared("read", type, name =>
+    private string Reader(RawAdapterValueType type) => Shared("read", type, name =>
     {
         var body = new StringBuilder();
         body.Append("function ").Append(name).AppendLine("(memory, index, lift) {");
         var layout = _planner.Layout(type);
         switch (type.Kind)
         {
-            case "text":
+            case CanonicalAbiTypeKind.Text:
                 body.Append("  return rcReadText(memory, ").Append(PointerRead("index")).Append(", ")
                     .Append(PointerRead($"index + {Int(_planner.AddressSize)}")).AppendLine(");");
                 break;
-            case "list" when type.Element!.Underlying.Kind == "u8":
+            case CanonicalAbiTypeKind.List when type.Element!.Underlying.Kind == CanonicalAbiTypeKind.U8:
                 body.Append("  return rcReadBytes(memory, ").Append(PointerRead("index")).Append(", ")
                     .Append(PointerRead($"index + {Int(_planner.AddressSize)}")).AppendLine(");");
                 break;
-            case "list":
+            case CanonicalAbiTypeKind.List:
                 body.Append("  return ").Append(ListReader(type)).Append("(memory, ").Append(PointerRead("index"))
                     .Append(", ").Append(PointerRead($"index + {Int(_planner.AddressSize)}")).AppendLine(", lift);");
                 break;
-            case "record":
+            case CanonicalAbiTypeKind.Record:
                 body.Append("  return { ").Append(string.Join(", ", type.Fields.Select((field, item) =>
                     $"{Json(field.JavaScriptName!)}: {Read(field.Type, Offset("index", layout.FieldOffsets[item]))}")))
                     .AppendLine(" };");
                 break;
-            case "tuple":
+            case CanonicalAbiTypeKind.Tuple:
                 body.Append("  return [").Append(string.Join(", ", type.Fields.Select((field, item) =>
                     Read(field.Type, Offset("index", layout.FieldOffsets[item]))))).AppendLine("];");
                 break;
-            case "option" or "result" or "variant":
+            case CanonicalAbiTypeKind.Option or CanonicalAbiTypeKind.Result or CanonicalAbiTypeKind.Variant:
                 {
                     var caseTypes = type.SelectionTypes;
                     body.Append("  switch (").Append(Discriminant(layout.DiscriminantSize, "index")).AppendLine(") {");
@@ -363,12 +363,13 @@ internal sealed class RawCanonicalBindingEmitter
                     body.AppendLine("  }");
                     break;
                 }
-            case "enum":
+            case CanonicalAbiTypeKind.Enum:
                 body.Append("  return rcEnumCase(").Append(Names(type.Cases.Select(item => item.Name))).Append(", ")
                     .Append(Discriminant(layout.Size, "index")).AppendLine(");");
                 break;
-            case "flags":
+            default:
                 {
+                    // The remaining kind, flags.
                     var words = layout.Size switch
                     {
                         1 => "rcView(memory).getUint8(index)",
@@ -379,8 +380,6 @@ internal sealed class RawCanonicalBindingEmitter
                     body.Append("  return rcFlags(").Append(Names(type.Flags)).Append(", [").Append(words).AppendLine("]);");
                     break;
                 }
-            default:
-                throw Unsupported(type);
         }
         body.AppendLine("}");
         return body.ToString();
@@ -406,26 +405,26 @@ internal sealed class RawCanonicalBindingEmitter
     // An expression validating a host value of `type` into its lowering plan.
     private string Plan(RawAdapterValueType type, string value) => type.Kind switch
     {
-        "unit" => $"rcUnit({value})",
-        "bool" => $"rcBool({value})",
-        "s8" => $"rcInteger({value}, -128, 127, \"s8\")",
-        "u8" => $"rcInteger({value}, 0, 255, \"u8\")",
-        "s16" => $"rcInteger({value}, -32768, 32767, \"s16\")",
-        "u16" => $"rcInteger({value}, 0, 65535, \"u16\")",
-        "s32" => $"rcInteger({value}, -2147483648, 2147483647, \"s32\")",
-        "u32" => $"rcInteger({value}, 0, 4294967295, \"u32\")",
-        "s64" => $"rcBigInteger({value}, -9223372036854775808n, 9223372036854775807n, \"s64\")",
-        "u64" => $"rcBigInteger({value}, 0n, 18446744073709551615n, \"u64\")",
-        "f32" => $"rcFloat32({value})",
-        "f64" => $"rcFloat64({value})",
-        "character" => $"rcCodePoint({value})",
-        "text" => $"{{ bytes: rcEncodeText({value}), address: {Zero} }}",
-        "list" when type.Element!.Underlying.Kind == "u8" => $"{{ bytes: rcByteList({value}), address: {Zero} }}",
-        "alias" => Plan(type.Element!, value),
-        "enum" => $"rcEnumIndex({value}, {Names(type.Cases.Select(item => item.Name))})",
-        "flags" => $"rcFlagWords({value}, {Names(type.Flags)}, {Int(_planner.Flatten(type).Length)})",
-        "owned-resource" => $"tx.acquire({Int(type.ResourceType)}, {value})",
-        "borrowed-resource" => "rcBorrowedResult()",
+        CanonicalAbiTypeKind.Unit => $"rcUnit({value})",
+        CanonicalAbiTypeKind.Bool => $"rcBool({value})",
+        CanonicalAbiTypeKind.S8 => $"rcInteger({value}, -128, 127, \"s8\")",
+        CanonicalAbiTypeKind.U8 => $"rcInteger({value}, 0, 255, \"u8\")",
+        CanonicalAbiTypeKind.S16 => $"rcInteger({value}, -32768, 32767, \"s16\")",
+        CanonicalAbiTypeKind.U16 => $"rcInteger({value}, 0, 65535, \"u16\")",
+        CanonicalAbiTypeKind.S32 => $"rcInteger({value}, -2147483648, 2147483647, \"s32\")",
+        CanonicalAbiTypeKind.U32 => $"rcInteger({value}, 0, 4294967295, \"u32\")",
+        CanonicalAbiTypeKind.S64 => $"rcBigInteger({value}, -9223372036854775808n, 9223372036854775807n, \"s64\")",
+        CanonicalAbiTypeKind.U64 => $"rcBigInteger({value}, 0n, 18446744073709551615n, \"u64\")",
+        CanonicalAbiTypeKind.F32 => $"rcFloat32({value})",
+        CanonicalAbiTypeKind.F64 => $"rcFloat64({value})",
+        CanonicalAbiTypeKind.Character => $"rcCodePoint({value})",
+        CanonicalAbiTypeKind.Text => $"{{ bytes: rcEncodeText({value}), address: {Zero} }}",
+        CanonicalAbiTypeKind.List when type.Element!.Underlying.Kind == CanonicalAbiTypeKind.U8 => $"{{ bytes: rcByteList({value}), address: {Zero} }}",
+        CanonicalAbiTypeKind.Alias => Plan(type.Element!, value),
+        CanonicalAbiTypeKind.Enum => $"rcEnumIndex({value}, {Names(type.Cases.Select(item => item.Name))})",
+        CanonicalAbiTypeKind.Flags => $"rcFlagWords({value}, {Names(type.Flags)}, {Int(_planner.Flatten(type).Length)})",
+        CanonicalAbiTypeKind.OwnedResource => $"tx.acquire({Int(type.ResourceType)}, {value})",
+        CanonicalAbiTypeKind.BorrowedResource => "rcBorrowedResult()",
         _ => $"{Planner(type)}({value}, tx)",
     };
 
@@ -436,7 +435,7 @@ internal sealed class RawCanonicalBindingEmitter
         body.Append("function ").Append(name).AppendLine("(value, tx) {");
         switch (type.Kind)
         {
-            case "list":
+            case CanonicalAbiTypeKind.List:
                 {
                     var element = type.Element!.Underlying.Kind;
                     var snapshot = NumericListArrays.TryGetValue(element, out var typedArray)
@@ -449,33 +448,34 @@ internal sealed class RawCanonicalBindingEmitter
                         .Append(")), byteLength, length: values.length, address: ").Append(Zero).AppendLine(" };");
                     break;
                 }
-            case "record":
+            case CanonicalAbiTypeKind.Record:
                 body.Append("  const values = rcObject(value, ")
                     .Append(Names(type.Fields.Select(field => field.JavaScriptName!))).AppendLine(", \"record\");");
                 body.Append("  return [").Append(string.Join(", ", type.Fields.Select((field, item) =>
                     Plan(field.Type, $"values[{Int(item)}]")))).AppendLine("];");
                 break;
-            case "tuple":
+            case CanonicalAbiTypeKind.Tuple:
                 body.Append("  const values = rcArray(value, ").Append(Int(type.Fields.Length)).AppendLine(", \"tuple\");");
                 body.Append("  return [").Append(string.Join(", ", type.Fields.Select((field, item) =>
                     Plan(field.Type, $"values[{Int(item)}]")))).AppendLine("];");
                 break;
-            case "option" when type.Element!.Underlying.Kind != "option":
+            case CanonicalAbiTypeKind.Option when type.Element!.Underlying.Kind != CanonicalAbiTypeKind.Option:
                 body.Append("  return value === undefined ? { index: 0 } : { index: 1, payload: ")
                     .Append(Plan(type.Element!, "value")).AppendLine(" };");
                 break;
-            case "option" or "result" or "variant":
+            default:
                 {
+                    // An option of an option, a result or a variant.
                     var caseTypes = type.SelectionTypes;
-                    var tags = type.Kind switch
+                    var (kind, tags) = type.Kind switch
                     {
-                        "option" => ["none", "some"],
-                        "result" => ["ok", "err"],
-                        _ => type.Cases.Select(item => item.Name).ToArray(),
+                        CanonicalAbiTypeKind.Option => ("option", (string[])["none", "some"]),
+                        CanonicalAbiTypeKind.Result => ("result", ["ok", "err"]),
+                        _ => ("variant", type.Cases.Select(item => item.Name).ToArray()),
                     };
                     body.Append("  const selected = rcTagged(value, ").Append(Names(tags)).Append(", [")
                         .Append(string.Join(", ", caseTypes.Select(caseType => Bool(caseType is not null))))
-                        .Append("], ").Append(Json(type.Kind)).AppendLine(");");
+                        .Append("], ").Append(Json(kind)).AppendLine(");");
                     body.AppendLine("  switch (selected.index) {");
                     for (var item = 0; item < caseTypes.Length; item++)
                     {
@@ -493,27 +493,25 @@ internal sealed class RawCanonicalBindingEmitter
                     body.AppendLine("  }");
                     break;
                 }
-            default:
-                throw Unsupported(type);
         }
         body.AppendLine("}");
         return body.ToString();
     });
 
     // materializeN(memory, plan, tx): allocates a plan's sequences and fills those of a list.
-    private string Materializer(RawAdapterValueType type) => type.Kind == "alias" ? Materializer(type.Element!) : Shared("materialize", type, name =>
+    private string Materializer(RawAdapterValueType type) => type.Kind == CanonicalAbiTypeKind.Alias ? Materializer(type.Element!) : Shared("materialize", type, name =>
     {
         var body = new StringBuilder();
         body.Append("function ").Append(name).AppendLine("(memory, plan, tx) {");
         switch (type.Kind)
         {
-            case "text":
-            case "list" when type.Element!.Underlying.Kind == "u8":
+            case CanonicalAbiTypeKind.Text:
+            case CanonicalAbiTypeKind.List when type.Element!.Underlying.Kind == CanonicalAbiTypeKind.U8:
                 body.AppendLine("  const length = plan.bytes.length;");
                 body.AppendLine("  plan.address = tx.allocate(1, length);");
                 body.AppendLine("  if (length !== 0) new Uint8Array(memory.buffer, rcIndex(memory, plan.address, 1, length), length).set(plan.bytes);");
                 break;
-            case "list":
+            case CanonicalAbiTypeKind.List:
                 {
                     var element = _planner.Layout(type.Element!);
                     body.Append("  plan.address = tx.allocate(").Append(Int(element.Alignment)).AppendLine(", plan.byteLength);");
@@ -528,7 +526,7 @@ internal sealed class RawCanonicalBindingEmitter
                     body.AppendLine("  }");
                     break;
                 }
-            case "record" or "tuple":
+            case CanonicalAbiTypeKind.Record or CanonicalAbiTypeKind.Tuple:
                 for (var item = 0; item < type.Fields.Length; item++)
                 {
                     if (!type.Fields[item].Type.Allocates) continue;
@@ -536,8 +534,9 @@ internal sealed class RawCanonicalBindingEmitter
                         .Append("(memory, plan[").Append(Int(item)).AppendLine("], tx);");
                 }
                 break;
-            case "option" or "result" or "variant":
+            default:
                 {
+                    // An option, result or variant.
                     var caseTypes = type.SelectionTypes;
                     for (var item = 0; item < caseTypes.Length; item++)
                     {
@@ -547,8 +546,6 @@ internal sealed class RawCanonicalBindingEmitter
                     }
                     break;
                 }
-            default:
-                throw Unsupported(type);
         }
         body.AppendLine("}");
         return body.ToString();
@@ -557,22 +554,22 @@ internal sealed class RawCanonicalBindingEmitter
     // A statement writing a lowering plan of `type` at byte `index` of linear memory.
     private string Write(RawAdapterValueType type, string index, string plan) => type.Kind switch
     {
-        "unit" => ";",
-        "bool" or "u8" => $"rcView(memory).setUint8({index}, {plan});",
-        "s8" => $"rcView(memory).setInt8({index}, {plan});",
-        "s16" => $"rcView(memory).setInt16({index}, {plan}, true);",
-        "u16" => $"rcView(memory).setUint16({index}, {plan}, true);",
-        "s32" => $"rcView(memory).setInt32({index}, {plan}, true);",
-        "u32" or "character" => $"rcView(memory).setUint32({index}, {plan}, true);",
-        "s64" => $"rcView(memory).setBigInt64({index}, {plan}, true);",
-        "u64" => $"rcView(memory).setBigUint64({index}, {plan}, true);",
-        "f32" => $"rcView(memory).setFloat32({index}, {plan}, true);",
-        "f64" => $"rcView(memory).setFloat64({index}, {plan}, true);",
-        "alias" => Write(type.Element!, index, plan),
-        "enum" => $"{DiscriminantWrite(_planner.Layout(type).Size, index, plan)};",
-        "owned-resource" => $"rcView(memory).setUint32({index}, {plan}.handle, true);",
+        CanonicalAbiTypeKind.Unit => ";",
+        CanonicalAbiTypeKind.Bool or CanonicalAbiTypeKind.U8 => $"rcView(memory).setUint8({index}, {plan});",
+        CanonicalAbiTypeKind.S8 => $"rcView(memory).setInt8({index}, {plan});",
+        CanonicalAbiTypeKind.S16 => $"rcView(memory).setInt16({index}, {plan}, true);",
+        CanonicalAbiTypeKind.U16 => $"rcView(memory).setUint16({index}, {plan}, true);",
+        CanonicalAbiTypeKind.S32 => $"rcView(memory).setInt32({index}, {plan}, true);",
+        CanonicalAbiTypeKind.U32 or CanonicalAbiTypeKind.Character => $"rcView(memory).setUint32({index}, {plan}, true);",
+        CanonicalAbiTypeKind.S64 => $"rcView(memory).setBigInt64({index}, {plan}, true);",
+        CanonicalAbiTypeKind.U64 => $"rcView(memory).setBigUint64({index}, {plan}, true);",
+        CanonicalAbiTypeKind.F32 => $"rcView(memory).setFloat32({index}, {plan}, true);",
+        CanonicalAbiTypeKind.F64 => $"rcView(memory).setFloat64({index}, {plan}, true);",
+        CanonicalAbiTypeKind.Alias => Write(type.Element!, index, plan),
+        CanonicalAbiTypeKind.Enum => $"{DiscriminantWrite(_planner.Layout(type).Size, index, plan)};",
+        CanonicalAbiTypeKind.OwnedResource => $"rcView(memory).setUint32({index}, {plan}.handle, true);",
         // Planning a borrowed handle as a result already threw.
-        "borrowed-resource" => ";",
+        CanonicalAbiTypeKind.BorrowedResource => ";",
         _ => $"{Writer(type)}(memory, {index}, {plan});",
     };
 
@@ -584,21 +581,21 @@ internal sealed class RawCanonicalBindingEmitter
         var layout = _planner.Layout(type);
         switch (type.Kind)
         {
-            case "text" or "list":
+            case CanonicalAbiTypeKind.Text or CanonicalAbiTypeKind.List:
                 {
-                    var length = type.Kind == "text" || type.Element!.Underlying.Kind == "u8" ? "plan.bytes.length" : "plan.length";
+                    var length = type.Kind == CanonicalAbiTypeKind.Text || type.Element!.Underlying.Kind == CanonicalAbiTypeKind.U8 ? "plan.bytes.length" : "plan.length";
                     body.Append("  ").Append(PointerWrite("index", "plan.address")).AppendLine(";");
                     body.Append("  ").Append(PointerWrite($"index + {Int(_planner.AddressSize)}", length)).AppendLine(";");
                     break;
                 }
-            case "record" or "tuple":
+            case CanonicalAbiTypeKind.Record or CanonicalAbiTypeKind.Tuple:
                 for (var item = 0; item < type.Fields.Length; item++)
                 {
                     body.Append("  ").AppendLine(Write(type.Fields[item].Type,
                         Offset("index", layout.FieldOffsets[item]), $"plan[{Int(item)}]"));
                 }
                 break;
-            case "option" or "result" or "variant":
+            case CanonicalAbiTypeKind.Option or CanonicalAbiTypeKind.Result or CanonicalAbiTypeKind.Variant:
                 {
                     var caseTypes = type.SelectionTypes;
                     for (var item = 0; item < caseTypes.Length; item++)
@@ -610,7 +607,8 @@ internal sealed class RawCanonicalBindingEmitter
                     body.Append("  ").Append(DiscriminantWrite(layout.DiscriminantSize, "index", "plan.index")).AppendLine(";");
                     break;
                 }
-            case "flags":
+            default:
+                // The remaining kind, flags.
                 if (layout.Size == 1) body.AppendLine("  rcView(memory).setUint8(index, plan[0]);");
                 else if (layout.Size == 2) body.AppendLine("  rcView(memory).setUint16(index, plan[0], true);");
                 else
@@ -618,8 +616,6 @@ internal sealed class RawCanonicalBindingEmitter
                     body.AppendLine("  for (let word = 0; word < plan.length; word++) rcView(memory).setUint32(index + word * 4, plan[word], true);");
                 }
                 break;
-            default:
-                throw Unsupported(type);
         }
         body.AppendLine("}");
         return body.ToString();
@@ -628,20 +624,20 @@ internal sealed class RawCanonicalBindingEmitter
     // The single core value of a flat result's lowering plan.
     private string FlatResult(RawAdapterValueType type, string plan) => type.Kind switch
     {
-        "bool" or "s8" or "u8" or "s16" or "u16" or "s32" or "u32" or "character" => $"{plan} | 0",
-        "s64" or "u64" => $"BigInt.asIntN(64, {plan})",
-        "f32" or "f64" or "enum" => plan,
-        "flags" => $"{plan}[0] | 0",
-        "owned-resource" => $"{plan}.handle | 0",
-        "borrowed-resource" => "0",
-        "alias" => FlatResult(type.Element!, plan),
-        "record" or "tuple" => type.Fields
+        CanonicalAbiTypeKind.Bool or CanonicalAbiTypeKind.S8 or CanonicalAbiTypeKind.U8 or CanonicalAbiTypeKind.S16 or CanonicalAbiTypeKind.U16 or CanonicalAbiTypeKind.S32 or CanonicalAbiTypeKind.U32 or CanonicalAbiTypeKind.Character => $"{plan} | 0",
+        CanonicalAbiTypeKind.S64 or CanonicalAbiTypeKind.U64 => $"BigInt.asIntN(64, {plan})",
+        CanonicalAbiTypeKind.F32 or CanonicalAbiTypeKind.F64 or CanonicalAbiTypeKind.Enum => plan,
+        CanonicalAbiTypeKind.Flags => $"{plan}[0] | 0",
+        CanonicalAbiTypeKind.OwnedResource => $"{plan}.handle | 0",
+        CanonicalAbiTypeKind.BorrowedResource => "0",
+        CanonicalAbiTypeKind.Alias => FlatResult(type.Element!, plan),
+        CanonicalAbiTypeKind.Record or CanonicalAbiTypeKind.Tuple => type.Fields
             .Select((field, item) => (field, item))
             .Where(entry => _planner.Flatten(entry.field.Type).Length == 1)
             .Select(entry => FlatResult(entry.field.Type, $"{plan}[{Int(entry.item)}]"))
             .Single(),
-        "option" or "result" or "variant" => $"{plan}.index",
-        _ => throw Unsupported(type),
+        // An option, result or variant whose cases carry no flat payload.
+        _ => $"{plan}.index",
     };
 
     private string PointerRead(string index) => _wasm64
@@ -668,11 +664,11 @@ internal sealed class RawCanonicalBindingEmitter
 
     private static bool HoldsResource(RawAdapterValueType type) => type.Kind switch
     {
-        "owned-resource" or "borrowed-resource" => true,
-        "alias" or "list" or "option" => HoldsResource(type.Element!),
-        "record" or "tuple" => type.Fields.Any(field => HoldsResource(field.Type)),
-        "result" => type.Ok is { } ok && HoldsResource(ok) || type.Error is { } error && HoldsResource(error),
-        "variant" => type.Cases.Any(item => item.Type is { } payload && HoldsResource(payload)),
+        CanonicalAbiTypeKind.OwnedResource or CanonicalAbiTypeKind.BorrowedResource => true,
+        CanonicalAbiTypeKind.Alias or CanonicalAbiTypeKind.List or CanonicalAbiTypeKind.Option => HoldsResource(type.Element!),
+        CanonicalAbiTypeKind.Record or CanonicalAbiTypeKind.Tuple => type.Fields.Any(field => HoldsResource(field.Type)),
+        CanonicalAbiTypeKind.Result => type.Ok is { } ok && HoldsResource(ok) || type.Error is { } error && HoldsResource(error),
+        CanonicalAbiTypeKind.Variant => type.Cases.Any(item => item.Type is { } payload && HoldsResource(payload)),
         _ => false,
     };
 
@@ -686,17 +682,17 @@ internal sealed class RawCanonicalBindingEmitter
         return name;
     }
 
-    private static readonly Dictionary<string, string> NumericListArrays = new(StringComparer.Ordinal)
+    private static readonly Dictionary<CanonicalAbiTypeKind, string> NumericListArrays = new()
     {
-        ["s8"] = "Int8Array",
-        ["u16"] = "Uint16Array",
-        ["s16"] = "Int16Array",
-        ["u32"] = "Uint32Array",
-        ["s32"] = "Int32Array",
-        ["u64"] = "BigUint64Array",
-        ["s64"] = "BigInt64Array",
-        ["f32"] = "Float32Array",
-        ["f64"] = "Float64Array",
+        [CanonicalAbiTypeKind.S8] = "Int8Array",
+        [CanonicalAbiTypeKind.U16] = "Uint16Array",
+        [CanonicalAbiTypeKind.S16] = "Int16Array",
+        [CanonicalAbiTypeKind.U32] = "Uint32Array",
+        [CanonicalAbiTypeKind.S32] = "Int32Array",
+        [CanonicalAbiTypeKind.U64] = "BigUint64Array",
+        [CanonicalAbiTypeKind.S64] = "BigInt64Array",
+        [CanonicalAbiTypeKind.F32] = "Float32Array",
+        [CanonicalAbiTypeKind.F64] = "Float64Array",
     };
 
     private static string Offset(string index, int offset) => offset == 0 ? index : $"{index} + {Int(offset)}";
@@ -708,9 +704,6 @@ internal sealed class RawCanonicalBindingEmitter
     private static string Bool(bool value) => value ? "true" : "false";
 
     private static string Int(int value) => value.ToString(CultureInfo.InvariantCulture);
-
-    private static InvalidOperationException Unsupported(RawAdapterValueType type) =>
-        new($"Raw adapter type '{type.Kind}' cannot be emitted here.");
 
     private sealed record Slot(string Name, string Core);
 }
