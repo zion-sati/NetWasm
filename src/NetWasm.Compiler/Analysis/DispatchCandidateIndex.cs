@@ -75,7 +75,7 @@ internal sealed class DispatchCandidateIndex(ITypeRelationshipClassifier relatio
         var declarations = new List<IndexedDeclaration>();
         foreach (var group in _groupOrder)
         {
-            if (!_relationships.Classify(candidate.Receiver, group.Contract).IsHierarchyAssignable)
+            if (!_relationships.Classify(candidate.Receiver, group.Contract).IsAssignmentCompatible)
             {
                 continue;
             }
@@ -109,7 +109,7 @@ internal sealed class DispatchCandidateIndex(ITypeRelationshipClassifier relatio
         var compatibleReceivers = new List<CliTypeIdentity>();
         foreach (var receiver in _receiverOrder)
         {
-            if (_relationships.Classify(receiver, contract).IsHierarchyAssignable)
+            if (_relationships.Classify(receiver, contract).IsAssignmentCompatible)
             {
                 compatibleReceivers.Add(receiver);
             }

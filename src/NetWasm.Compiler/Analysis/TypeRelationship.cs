@@ -4,11 +4,6 @@ internal readonly record struct TypeRelationship(TypeRelationshipCharacteristics
 {
     public bool IsAssignmentCompatible => Characteristics is not TypeRelationshipCharacteristics.None;
 
-    public bool IsHierarchyAssignable =>
-        (Characteristics &
-         (TypeRelationshipCharacteristics.Hierarchy |
-          TypeRelationshipCharacteristics.SzArrayGenericInterface)) is not 0;
-
     public bool RequiresVariantMethodResolution =>
         (Characteristics & TypeRelationshipCharacteristics.GenericVariance) is not 0;
 

@@ -974,11 +974,11 @@ public sealed class DispatchActorTests
             CliTypeIdentity candidate,
             CliTypeIdentity target) => new((candidate == target ||
                                 candidate == receiver && target == requestedInterface ||
-                                candidate == implementedInterface && target == requestedInterface ||
-                                candidate == implementationReturn && target == declarationReturn
+                                candidate == implementedInterface && target == requestedInterface
                     ? TypeRelationshipCharacteristics.Hierarchy
                     : TypeRelationshipCharacteristics.None) |
-                    (candidate == implementedInterface && target == requestedInterface
+                    (candidate == implementedInterface && target == requestedInterface ||
+                     candidate == implementationReturn && target == declarationReturn
                     ? TypeRelationshipCharacteristics.GenericVariance
                     : TypeRelationshipCharacteristics.None));
     }

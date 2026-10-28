@@ -29,21 +29,28 @@ internal sealed class TypeRelationshipClassifier(
         }
 
         var arrayInterface = IsSzArrayGenericInterface(candidate, target);
+        var hierarchy = IsHierarchyAssignable(candidate, target, out var throughVariance);
         relationship = new TypeRelationship(
             (arrayInterface
                 ? TypeRelationshipCharacteristics.SzArrayGenericInterface
                 : TypeRelationshipCharacteristics.None) |
-            (IsHierarchyAssignable(candidate, target)
+            (hierarchy
                 ? TypeRelationshipCharacteristics.Hierarchy
                 : TypeRelationshipCharacteristics.None) |
-            (IsVariantCompatible(candidate, target)
+            (throughVariance
                 ? TypeRelationshipCharacteristics.GenericVariance
                 : TypeRelationshipCharacteristics.None));
         return _relationships.GetOrAdd(key, relationship);
     }
 
-    private bool IsHierarchyAssignable(CliTypeIdentity candidate, CliTypeIdentity target)
+    // Whether the candidate is assignable to the target through the CLI type hierarchy: the same type, an
+    // array of compatible elements, a base type, an implemented interface, or a variant instantiation of
+    // any of those (IEnumerator<string> to IEnumerator<object>, Func<string> to Func<object>, a class
+    // implementing IEnumerable<string> to IEnumerable<object>). throughVariance says the match needed
+    // generic variance, so an interface slot's signature differs from its implementation's.
+    private bool IsHierarchyAssignable(CliTypeIdentity candidate, CliTypeIdentity target, out bool throughVariance)
     {
+        throughVariance = false;
         if (SameType(candidate, target))
         {
             return true;
@@ -66,7 +73,7 @@ internal sealed class TypeRelationshipClassifier(
         var targetDefinition = typeDefinitions.ResolveTypeIdentity(target);
         if (targetDefinition.IsInterface)
         {
-            return ImplementsInterface(candidate, target);
+            return ImplementsInterface(candidate, target, out throughVariance);
         }
 
         for (var current = candidate;
@@ -75,6 +82,11 @@ internal sealed class TypeRelationshipClassifier(
         {
             if (SameType(current, target))
             {
+                return true;
+            }
+            if (IsVariantCompatible(current, target))
+            {
+                throughVariance = true;
                 return true;
             }
         }
@@ -193,12 +205,20 @@ internal sealed class TypeRelationshipClassifier(
 
     private bool ImplementsInterface(
         CliTypeIdentity candidate,
-        CliTypeIdentity target)
+        CliTypeIdentity target,
+        out bool throughVariance)
     {
+        throughVariance = false;
         if (candidate.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
         {
             candidate = identities.GetTypeIdentity(
                 types.FindType("System.Array").Key);
+        }
+        else if (IsVariantCompatible(candidate, target))
+        {
+            // The candidate is itself a variant instantiation of the target interface.
+            throughVariance = true;
+            return true;
         }
 
         var interfaceClosure = GetInterfaceClosure(candidate);
@@ -211,6 +231,7 @@ internal sealed class TypeRelationshipClassifier(
         {
             if (IsVariantCompatible(implementedInterface, target))
             {
+                throughVariance = true;
                 return true;
             }
         }
@@ -250,15 +271,12 @@ internal sealed class TypeRelationshipClassifier(
         return _interfaceClosures.GetOrAdd(candidate, closure);
     }
 
+    // Callers have already ruled out the same type, so identical type arguments only pass here when an
+    // interface in a closure is the target under another identity.
     private bool IsVariantCompatible(
         CliTypeIdentity candidate,
         CliTypeIdentity target)
     {
-        if (SameType(candidate, target))
-        {
-            return false;
-        }
-
         if (candidate.Shape != CliTypeShape.GenericInstantiation ||
             target.Shape != CliTypeShape.GenericInstantiation ||
             !SameType(candidate.ElementType!, target.ElementType!) ||
