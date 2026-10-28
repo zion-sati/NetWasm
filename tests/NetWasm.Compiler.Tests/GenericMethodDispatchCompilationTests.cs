@@ -280,6 +280,95 @@ public sealed class GenericMethodDispatchCompilationTests
         Assert.Equal(1, ExecuteWithNode(result.ApplicationModule, assets.Directory, 0));
     }
 
+    // A variant interface instantiation is assignable to its variant target (IEnumerator<string> to
+    // IEnumerator<object>) wherever a type is. The classifier used to report that pair as variance alone,
+    // without hierarchy assignability, so an implicit implementation whose return or parameter type is such
+    // an instantiation was never accepted for the variant slot (the cast then failed at run time), and a
+    // method group with such a return type could not bind to a delegate. Explicit implementations and
+    // class-typed returns took other paths and worked.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void VariantInterfaceInstantiationsAreAssignableInImplicitSlotsAndDelegates(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "VariantInstantiationFixture",
+            """
+            using System;
+            using System.Collections;
+            using System.Collections.Generic;
+            namespace VariantInstantiationFixture;
+            public interface INamed<out T> : IEnumerable<T>
+            {
+                T First { get; }
+            }
+            public sealed class Names : INamed<string>
+            {
+                private readonly string[] _items = ["a", "bb"];
+                public string First => _items[0];
+                // Implicit implementation; the IEnumerable<object> slot returns IEnumerator<object>.
+                public IEnumerator<string> GetEnumerator() => ((IEnumerable<string>)_items).GetEnumerator();
+                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+            }
+            public interface IAccepts<in T>
+            {
+                int Accept(IEnumerable<T> items);
+            }
+            public sealed class Acceptor : IAccepts<object>
+            {
+                // Implicit implementation; the IAccepts<string> slot takes IEnumerable<string>.
+                public int Accept(IEnumerable<object> items)
+                {
+                    var length = 0;
+                    foreach (var item in items) length += ((string)item).Length;
+                    return length;
+                }
+            }
+            public static class EntryPoint
+            {
+                private static IEnumerable<string> Produce() => ["dddd"];
+
+                public static int Run(int input)
+                {
+                    INamed<string> names = new Names();
+                    IEnumerable<object> objects = names;
+                    INamed<object> named = names;
+                    var length = 0;
+                    foreach (var value in objects)
+                        length += ((string)value).Length;
+                    foreach (var value in named)
+                        length += ((string)value).Length;
+                    length += ((string)named.First).Length;
+                    if (names is IEnumerable<object>) length += 10;
+
+                    IAccepts<string> acceptor = new Acceptor();
+                    length += acceptor.Accept(["ccc"]);
+
+                    Func<IEnumerable<object>> produce = Produce;
+                    foreach (var value in produce())
+                        length += ((string)value).Length;
+
+                    IEnumerable<string>[] arrays = [names];
+                    IEnumerable<object>[] objectArrays = arrays;
+                    return length + objectArrays.Length;
+                }
+            }
+            """);
+
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "VariantInstantiationFixture.EntryPoint",
+            "Run",
+            [new("run", "VariantInstantiationFixture.EntryPoint", "Run")],
+            Target: target,
+            WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
+            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+
+        Assert.Equal(25, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target, result.StaticDataEnd));
+    }
+
     [Fact]
     public void NestedGenericValueTypeParticipatesInCovariantInterfaceAssignability()
     {
@@ -321,7 +410,7 @@ public sealed class GenericMethodDispatchCompilationTests
             interfaceDefinition,
             [objectType]);
 
-        Assert.True(relationships.Classify(enumerator, target).IsHierarchyAssignable);
+        Assert.True(relationships.Classify(enumerator, target).IsAssignmentCompatible);
     }
 
     [Fact]
@@ -374,13 +463,13 @@ public sealed class GenericMethodDispatchCompilationTests
 
         Assert.True(relationships.Classify(
             both,
-            CliTypeIdentity.GenericInstantiation(input, [derived])).IsHierarchyAssignable);
+            CliTypeIdentity.GenericInstantiation(input, [derived])).IsAssignmentCompatible);
         Assert.True(relationships.Classify(
             both,
-            CliTypeIdentity.GenericInstantiation(output, [baseType])).IsHierarchyAssignable);
+            CliTypeIdentity.GenericInstantiation(output, [baseType])).IsAssignmentCompatible);
         Assert.False(relationships.Classify(
             valueOutput,
-            CliTypeIdentity.GenericInstantiation(output, [objectType])).IsHierarchyAssignable);
+            CliTypeIdentity.GenericInstantiation(output, [objectType])).IsAssignmentCompatible);
 
     }
 

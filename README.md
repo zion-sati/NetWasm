@@ -264,9 +264,12 @@ mean “desktop .NET, but in Wasm.” The main remaining themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.10.5:** the compiler is `nwc`, a native executable for
-each supported development host that restores with the host tools, with a
-command line that follows `csc`.
+**New in NetWasm 0.10.6:** generic variance works through implicitly
+implemented interface members, so a class implementing `IEnumerable<string>`
+enumerates as an `IEnumerable<object>`.
+[Release notes](docs/releases/0.10.6.md). NetWasm 0.10.5 made the compiler
+`nwc`, a native executable for each supported development host that restores
+with the host tools, with a command line that follows `csc`.
 [Release notes](docs/releases/0.10.5.md)
 
 **In progress:** broader compatibility with existing .NET Standard

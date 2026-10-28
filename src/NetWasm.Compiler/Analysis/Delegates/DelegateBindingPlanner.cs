@@ -98,7 +98,7 @@ internal sealed class DelegateBindingPlanner(
 
         return source.StackKind == CliValueKind.ManagedReference &&
                target.StackKind == CliValueKind.ManagedReference &&
-               _relationships.Classify(source, target).IsHierarchyAssignable
+               _relationships.Classify(source, target).IsAssignmentCompatible
             ? new(source, target, ManagedDelegateAdaptation.ReferenceConversion)
             : null;
     }

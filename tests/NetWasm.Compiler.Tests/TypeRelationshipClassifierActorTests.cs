@@ -20,7 +20,7 @@ public sealed class TypeRelationshipClassifierActorTests
         var vector = CliTypeIdentity.SzArray(element);
         var rankOne = CliTypeIdentity.Array(element, 1);
 
-        Assert.True(classifier.Classify(vector, rankOne).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(vector, rankOne).IsAssignmentCompatible);
         Assert.False(classifier.Classify(rankOne, vector).IsAssignmentCompatible);
         Assert.False(classifier.Classify(vector, CliTypeIdentity.Array(element, 2)).IsAssignmentCompatible);
     }
@@ -64,8 +64,8 @@ public sealed class TypeRelationshipClassifierActorTests
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var results = await Task.WhenAll(first, second);
 
-        Assert.True(results[0].IsHierarchyAssignable);
-        Assert.Equal(sameTarget, results[1].IsHierarchyAssignable);
+        Assert.True(results[0].IsAssignmentCompatible);
+        Assert.Equal(sameTarget, results[1].IsAssignmentCompatible);
         Assert.Equal(results[0], ((ITypeRelationshipClassifier)classifier).Classify(candidate, target));
         Assert.Equal(results[1], ((ITypeRelationshipClassifier)classifier).Classify(candidate, secondTarget));
     }
@@ -156,6 +156,41 @@ public sealed class TypeRelationshipClassifierActorTests
     }
 
     [Fact]
+    public void VariantInstantiationsAreAssignableToTheirVariantTargets()
+    {
+        // The pair IEnumerator<string> to IEnumerator<object> is one assignable relationship that needs variant
+        // method resolution, whether the candidate is the interface itself, a delegate, or a type implementing it.
+        var output = Generic("IOutput`1");
+        var producer = Generic("Producer`1");
+        var candidate = Named("Candidate");
+        var classifier = new TypeRelationshipClassifier(
+            new ArrayTypeFinder(),
+            new DefinitionResolver(
+                Definition(ObjectType, 1),
+                Definition(StringType, 2),
+                Definition(candidate, 3),
+                Definition(output, 4, CliGenericVariance.Covariant),
+                Definition(producer, 5, CliGenericVariance.Covariant)),
+            new ArrayTypeIdentityResolver(),
+            new InterfaceResolver((candidate, Instantiate(output, StringType))),
+            new BaseResolver((StringType, ObjectType)));
+
+        foreach (var (source, target) in new[]
+        {
+            (Instantiate(output, StringType), Instantiate(output, ObjectType)),
+            (Instantiate(producer, StringType), Instantiate(producer, ObjectType)),
+            (candidate, Instantiate(output, ObjectType)),
+        })
+        {
+            var relationship = classifier.Classify(source, target);
+            Assert.True(relationship.IsAssignmentCompatible);
+            Assert.True(relationship.RequiresVariantMethodResolution);
+        }
+        Assert.False(classifier.Classify(Instantiate(output, ObjectType), Instantiate(output, StringType)).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(candidate, Instantiate(output, StringType)).RequiresVariantMethodResolution);
+    }
+
+    [Fact]
     public void ExactGenericInterfaceMatchUsesHierarchyWithoutVariantResolution()
     {
         var output = Generic("IOutput`1");
@@ -168,7 +203,7 @@ public sealed class TypeRelationshipClassifierActorTests
         var relationship = classifier.Classify(exact, exact);
 
         Assert.True(relationship.IsAssignmentCompatible);
-        Assert.True(relationship.IsHierarchyAssignable);
+        Assert.True(relationship.IsAssignmentCompatible);
         Assert.False(relationship.RequiresVariantMethodResolution);
     }
 
@@ -253,7 +288,7 @@ public sealed class TypeRelationshipClassifierActorTests
             var relationship = classifier.Classify(
                 strings,
                 Instantiate(interfaceType, StringType));
-            Assert.True(relationship.IsHierarchyAssignable);
+            Assert.True(relationship.IsAssignmentCompatible);
             Assert.True(relationship.IsSzArrayGenericInterface);
         }
         Assert.False(classifier.Classify(
@@ -262,25 +297,25 @@ public sealed class TypeRelationshipClassifierActorTests
         Assert.True(classifier.Classify(
             strings,
             Instantiate(interfaces[0], ObjectType)).IsSzArrayGenericInterface);
-        Assert.True(classifier.Classify(strings, CliTypeIdentity.SzArray(StringType)).IsHierarchyAssignable);
-        Assert.True(classifier.Classify(strings, CliTypeIdentity.SzArray(ObjectType)).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(strings, CliTypeIdentity.SzArray(StringType)).IsAssignmentCompatible);
+        Assert.True(classifier.Classify(strings, CliTypeIdentity.SzArray(ObjectType)).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             strings,
-            CliTypeIdentity.SzArray(CliTypeIdentity.SzArray(StringType))).IsHierarchyAssignable);
-        Assert.False(classifier.Classify(StringType, CliTypeIdentity.SzArray(StringType)).IsHierarchyAssignable);
+            CliTypeIdentity.SzArray(CliTypeIdentity.SzArray(StringType))).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(StringType, CliTypeIdentity.SzArray(StringType)).IsAssignmentCompatible);
         Assert.True(classifier.Classify(
             CliTypeIdentity.Array(StringType, 2),
-            CliTypeIdentity.Array(StringType, 2)).IsHierarchyAssignable);
+            CliTypeIdentity.Array(StringType, 2)).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             CliTypeIdentity.Array(StringType, 2),
-            CliTypeIdentity.Array(StringType, 3)).IsHierarchyAssignable);
+            CliTypeIdentity.Array(StringType, 3)).IsAssignmentCompatible);
         Assert.True(classifier.Classify(
             strings,
-            CliTypeIdentity.Array(StringType, 1)).IsHierarchyAssignable);
+            CliTypeIdentity.Array(StringType, 1)).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             CliTypeIdentity.Array(StringType, 1),
-            strings).IsHierarchyAssignable);
-        Assert.False(classifier.Classify(strings, ObjectType).IsHierarchyAssignable);
+            strings).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(strings, ObjectType).IsAssignmentCompatible);
     }
 
     [Fact]
@@ -325,7 +360,7 @@ public sealed class TypeRelationshipClassifierActorTests
         CliTypeIdentity candidate,
         CliTypeIdentity target) => classifier.Classify(
             CliTypeIdentity.SzArray(candidate),
-            CliTypeIdentity.SzArray(target)).IsHierarchyAssignable;
+            CliTypeIdentity.SzArray(target)).IsAssignmentCompatible;
 
     [Fact]
     public void ReferenceArrayCovarianceRecursesAcrossJaggedAndRankedArrays()
@@ -351,26 +386,26 @@ public sealed class TypeRelationshipClassifierActorTests
         var markerArray = CliTypeIdentity.SzArray(marker);
         var interfaceArray = CliTypeIdentity.SzArray(markerInterface);
 
-        Assert.True(classifier.Classify(markerArray, interfaceArray).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(markerArray, interfaceArray).IsAssignmentCompatible);
         Assert.True(classifier.Classify(
             CliTypeIdentity.SzArray(markerArray),
-            CliTypeIdentity.SzArray(interfaceArray)).IsHierarchyAssignable);
+            CliTypeIdentity.SzArray(interfaceArray)).IsAssignmentCompatible);
         Assert.True(classifier.Classify(
             CliTypeIdentity.Array(marker, 2),
-            CliTypeIdentity.Array(markerInterface, 2)).IsHierarchyAssignable);
-        Assert.False(classifier.Classify(interfaceArray, markerArray).IsHierarchyAssignable);
+            CliTypeIdentity.Array(markerInterface, 2)).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(interfaceArray, markerArray).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             CliTypeIdentity.Array(marker, 2),
-            CliTypeIdentity.Array(markerInterface, 3)).IsHierarchyAssignable);
+            CliTypeIdentity.Array(markerInterface, 3)).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             CliTypeIdentity.SzArray(ValueType),
-            CliTypeIdentity.SzArray(ObjectType)).IsHierarchyAssignable);
+            CliTypeIdentity.SzArray(ObjectType)).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             CliTypeIdentity.SzArray(ObjectType),
-            CliTypeIdentity.SzArray(ValueType)).IsHierarchyAssignable);
+            CliTypeIdentity.SzArray(ValueType)).IsAssignmentCompatible);
         var genericParameterArray = CliTypeIdentity.SzArray(
             CliTypeIdentity.GenericParameter(method: true, index: 0));
-        Assert.True(classifier.Classify(genericParameterArray, genericParameterArray).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(genericParameterArray, genericParameterArray).IsAssignmentCompatible);
     }
 
     [Fact]
@@ -401,11 +436,11 @@ public sealed class TypeRelationshipClassifierActorTests
                 (cycle, cyclicCandidate)),
             new BaseResolver((candidate, cycle)));
 
-        Assert.True(classifier.Classify(candidate, inherited).IsHierarchyAssignable);
-        Assert.True(classifier.Classify(cyclicCandidate, inherited).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(candidate, inherited).IsAssignmentCompatible);
+        Assert.True(classifier.Classify(cyclicCandidate, inherited).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             cyclicCandidate,
-            missingInterface).IsHierarchyAssignable);
+            missingInterface).IsAssignmentCompatible);
     }
 
     [Fact]
@@ -431,10 +466,10 @@ public sealed class TypeRelationshipClassifierActorTests
 
         Assert.True(classifier.Classify(
             candidate,
-            covariantObject).IsHierarchyAssignable);
+            covariantObject).IsAssignmentCompatible);
         Assert.False(classifier.Classify(
             candidate,
-            unrelated).IsHierarchyAssignable);
+            unrelated).IsAssignmentCompatible);
     }
 
     [Fact]
@@ -454,13 +489,13 @@ public sealed class TypeRelationshipClassifierActorTests
             interfaces,
             new BaseResolver());
 
-        Assert.True(classifier.Classify(candidate, target).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(candidate, target).IsAssignmentCompatible);
         var callsAfterFirstClassification = interfaces.CallCount;
-        Assert.True(classifier.Classify(candidate, target).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(candidate, target).IsAssignmentCompatible);
 
         Assert.Equal(2, callsAfterFirstClassification);
         Assert.Equal(callsAfterFirstClassification, interfaces.CallCount);
-        Assert.False(classifier.Classify(candidate, unrelatedTarget).IsHierarchyAssignable);
+        Assert.False(classifier.Classify(candidate, unrelatedTarget).IsAssignmentCompatible);
         Assert.Equal(callsAfterFirstClassification, interfaces.CallCount);
     }
 

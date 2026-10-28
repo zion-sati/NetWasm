@@ -40,7 +40,7 @@ internal sealed class DispatchTargetResolver(
         MethodInstanceModel declaration,
         CliTypeIdentity receiver)
     {
-        if (!relationships.Classify(receiver, declaration.DeclaringType).IsHierarchyAssignable)
+        if (!relationships.Classify(receiver, declaration.DeclaringType).IsAssignmentCompatible)
         {
             return null;
         }
@@ -235,5 +235,5 @@ internal sealed class DispatchTargetResolver(
     private bool IsAssignableOrEqual(
         CliTypeIdentity candidate,
         CliTypeIdentity target) =>
-        candidate.Equals(target) || relationships.Classify(candidate, target).IsHierarchyAssignable;
+        candidate.Equals(target) || relationships.Classify(candidate, target).IsAssignmentCompatible;
 }

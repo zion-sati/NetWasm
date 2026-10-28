@@ -129,10 +129,10 @@ public sealed class MethodDependencyResolverTests
             CliTypeIdentity.Primitive("i8", CliValueKind.I8));
         var rankTwo = CliTypeIdentity.Array(element, 2);
 
-        Assert.True(classifier.Classify(same, same).IsHierarchyAssignable);
-        Assert.False(classifier.Classify(same, different).IsHierarchyAssignable);
-        Assert.False(classifier.Classify(same, rankTwo).IsHierarchyAssignable);
-        Assert.False(classifier.Classify(Type, same).IsHierarchyAssignable);
+        Assert.True(classifier.Classify(same, same).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(same, different).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(same, rankTwo).IsAssignmentCompatible);
+        Assert.False(classifier.Classify(Type, same).IsAssignmentCompatible);
     }
 
     private static CilInstruction Instruction(
