@@ -407,7 +407,7 @@ jobs:
             rid: linux-x64
           - runner: ubuntu-24.04-arm
             rid: linux-arm64
-          - runner: macos-14
+          - runner: macos-15
             rid: osx-arm64
           - runner: windows-2025
             rid: win-x64
@@ -573,7 +573,7 @@ jobs:
             rid: linux-arm64
             architecture: arm64
           - host: macos-arm64
-            runner: macos-14
+            runner: macos-15
             rid: osx-arm64
             architecture: arm64
           - host: windows-x64
@@ -696,7 +696,6 @@ jobs:
           - host: linux-arm64
             runner: ubuntu-24.04-arm
             rid: linux-arm64
-          # Playwright's WebKit for macOS 14 is frozen and hangs on these pages.
           - host: macos-arm64
             runner: macos-15
             rid: osx-arm64

@@ -112,7 +112,8 @@ def mono_aot(workload, root, dotnet_root, wasi_sdk):
     # wasi-sdk's clang runs any wasm-opt on PATH after linking; keep only the
     # toolchain the Mono workload expects.
     env = dict(run.isolated_environment(root / 'mono-aot'), DOTNET_ROOT=str(dotnet_root),
-               DOTNET_MULTILEVEL_LOOKUP='0', WASI_SDK_PATH=str(wasi_sdk),
+               # .NET 11's targets append bin/clang to the path as written.
+               DOTNET_MULTILEVEL_LOOKUP='0', WASI_SDK_PATH=str(wasi_sdk) + os.sep,
                PATH=os.pathsep.join([str(dotnet_root), '/usr/bin', '/bin', '/usr/sbin', '/sbin']))
     run.run([str(dotnet), 'publish', f'{name}.csproj', '-c', 'Release', '--nologo'], cell, env,
             cell / 'publish.log')

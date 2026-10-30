@@ -210,7 +210,7 @@ jobs:
             rid: linux-x64
           - runner: ubuntu-24.04-arm
             rid: linux-arm64
-          - runner: macos-14
+          - runner: macos-15
             rid: osx-arm64
           - runner: windows-2025
             rid: win-x64
