@@ -90,7 +90,7 @@ internal sealed class ExactObjectTypeRewriter(
         if (receiver.Operation == CilOperation.NewObject)
         {
             return _calledMethods.Resolve(receiver) is { } constructor && Closed(constructor.DeclaringType, body) is
-                { IsValueType: false, Shape: not CliTypeShape.SzArray } created
+            { IsValueType: false, Shape: not CliTypeShape.SzArray } created
                 ? created
                 : null;
         }

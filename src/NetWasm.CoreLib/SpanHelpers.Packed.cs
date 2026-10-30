@@ -251,12 +251,12 @@ namespace System
                     Vector128<byte> packedValue = Vector128.Create((byte)value);
 
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibConditionParsing // A negated IsSupported condition isn't parseable by the intrinsics analyzer, but in this case, it is only used in combination
-                                                                         // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
-                                                                         // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
-                                                                         // not generating dead code.
+                    // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
+                    // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
+                    // not generating dead code.
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough // This is paired with the check above, and since these if statements are contained in 1 function, the code
-                                                                                   // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
-                                                                                   // This logic MUST NOT be extracted to a helper function
+                    // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
+                    // This logic MUST NOT be extracted to a helper function
                     if (!Avx2.IsSupported && length > 2 * Vector128<short>.Count)
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibConditionParsing
@@ -452,12 +452,12 @@ namespace System
                     Vector128<byte> packedValue = Vector128.Create((byte)value);
 
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibConditionParsing // A negated IsSupported condition isn't parseable by the intrinsics analyzer, but in this case, it is only used in combination
-                                                                         // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
-                                                                         // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
-                                                                         // not generating dead code.
+                    // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
+                    // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
+                    // not generating dead code.
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough // This is paired with the check above, and since these if statements are contained in 1 function, the code
-                                                                                   // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
-                                                                                   // This logic MUST NOT be extracted to a helper function
+                    // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
+                    // This logic MUST NOT be extracted to a helper function
                     if (!Avx2.IsSupported && length > 2 * Vector128<short>.Count)
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibConditionParsing
@@ -666,12 +666,12 @@ namespace System
                     Vector128<byte> packedValue1 = Vector128.Create((byte)value1);
 
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibConditionParsing // A negated IsSupported condition isn't parseable by the intrinsics analyzer, but in this case, it is only used in combination
-                                                                         // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
-                                                                         // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
-                                                                         // not generating dead code.
+                    // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
+                    // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
+                    // not generating dead code.
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough // This is paired with the check above, and since these if statements are contained in 1 function, the code
-                                                                                   // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
-                                                                                   // This logic MUST NOT be extracted to a helper function
+                    // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
+                    // This logic MUST NOT be extracted to a helper function
                     if (!Avx2.IsSupported && length > 2 * Vector128<short>.Count)
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibConditionParsing
@@ -884,12 +884,12 @@ namespace System
                     Vector128<byte> packedValue2 = Vector128.Create((byte)value2);
 
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibConditionParsing // A negated IsSupported condition isn't parseable by the intrinsics analyzer, but in this case, it is only used in combination
-                                                                         // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
-                                                                         // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
-                                                                         // not generating dead code.
+                    // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
+                    // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
+                    // not generating dead code.
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough // This is paired with the check above, and since these if statements are contained in 1 function, the code
-                                                                                   // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
-                                                                                   // This logic MUST NOT be extracted to a helper function
+                    // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
+                    // This logic MUST NOT be extracted to a helper function
                     if (!Avx2.IsSupported && length > 2 * Vector128<short>.Count)
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibConditionParsing
@@ -1079,12 +1079,12 @@ namespace System
                     Vector128<byte> rangeVector = Vector128.Create((byte)rangeInclusive);
 
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibConditionParsing // A negated IsSupported condition isn't parseable by the intrinsics analyzer, but in this case, it is only used in combination
-                                                                         // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
-                                                                         // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
-                                                                         // not generating dead code.
+                    // with the check above of Avx2.IsSupported && length > Vector256<short>.Count which makes the logic
+                    // in this if statement dead code when Avx2.IsSupported. Presumably this negated IsSupported check is to assist the JIT in
+                    // not generating dead code.
 #pragma warning disable IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough // This is paired with the check above, and since these if statements are contained in 1 function, the code
-                                                                                   // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
-                                                                                   // This logic MUST NOT be extracted to a helper function
+                    // may take a dependence on the JIT compiler producing a consistent value for the result of a call to IsSupported
+                    // This logic MUST NOT be extracted to a helper function
                     if (!Avx2.IsSupported && length > 2 * Vector128<short>.Count)
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibAttributeNotSpecificEnough
 #pragma warning restore IntrinsicsInSystemPrivateCoreLibConditionParsing

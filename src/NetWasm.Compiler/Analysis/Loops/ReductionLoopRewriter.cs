@@ -31,6 +31,7 @@ internal interface IReductionLoopRewriter
 internal sealed class ReductionLoopRewriter(
     ICalledMethodResolver calledMethods,
     IArrayLoopMethodResolver methods,
+    ISpanLengthResolver spanLengths,
     bool enabled) : IReductionLoopRewriter
 {
     private const int MaximumOffset = 1 << 16;
@@ -38,6 +39,7 @@ internal sealed class ReductionLoopRewriter(
 
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IArrayLoopMethodResolver _methods = methods ?? throw new ArgumentNullException(nameof(methods));
+    private readonly ISpanLengthResolver _spanLengths = spanLengths ?? throw new ArgumentNullException(nameof(spanLengths));
 
     // An element the body reads: an array or span at the counter plus Offset.
     private sealed record Access(CilInstruction Base, MethodInstanceModel? Indexer, CliTypeIdentity Element, int Offset);
@@ -401,7 +403,7 @@ internal sealed class ReductionLoopRewriter(
             Copy(access.Base);
             if (access.Indexer is { } indexer)
             {
-                Add(CilOperation.Call, new CilOperand.MethodInstance(_methods.SpanLength(indexer)));
+                Add(CilOperation.Call, new CilOperand.MethodInstance(_spanLengths.Resolve(indexer)));
                 return;
             }
             Add(CilOperation.LoadArrayLength);
@@ -447,7 +449,7 @@ internal sealed class ReductionLoopRewriter(
             Bound();
             Add(CilOperation.LoadLocal, new CilOperand.Index(counter));
             Add(CilOperation.Subtract);
-            Add(CilOperation.Call, new CilOperand.MethodInstance(_methods.Reduction(fold.Helper, fold.Lane)));
+            Add(CilOperation.Call, new CilOperand.MethodInstance(_methods.Resolve(fold.Helper, fold.Lane)));
             foreach (var conversion in fold.Widening) Copy(conversion);
             Copy(fold.Combine);
             if (fold.Truncation is { } truncation) Copy(truncation);

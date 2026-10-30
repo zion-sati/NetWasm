@@ -212,7 +212,7 @@ namespace System.Text.Unicode
                             // A low surrogate is a surrogate that is not a high surrogate.
 
                             nuint maskHigh = GetSurrogateMask(Vector128.LessThan(utf16Data, vector0400));
-                            nuint maskLow  = ~maskHigh & maskSurr;
+                            nuint maskLow = ~maskHigh & maskSurr;
 
                             if (!IsSurrogatesMatch(maskHigh, maskLow))
                             {

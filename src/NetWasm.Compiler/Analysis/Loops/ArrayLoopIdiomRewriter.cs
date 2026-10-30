@@ -92,7 +92,7 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
             return
             [
                 Copy(instructions[jump + 1]), counterLoad, .. end, Copy(instructions[jump + 3]),
-                Call(_methods.Fill(element)), storeCounter,
+                Call(_methods.Resolve("Fill", element)), storeCounter,
             ];
         }
         // destination[j] = source[j]
@@ -105,7 +105,7 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
             return
             [
                 Copy(instructions[jump + 1]), Copy(instructions[jump + 3]), counterLoad, .. end,
-                Call(_methods.Copy(element)), storeCounter,
+                Call(_methods.Resolve("Copy", element)), storeCounter,
             ];
         }
         return null;

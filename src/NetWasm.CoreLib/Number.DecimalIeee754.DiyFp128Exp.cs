@@ -205,161 +205,161 @@ internal static partial class Number
             goto CheckShift64To127;
         }
 
-        ShiftGE128:
-            shift += shiftIncrement;
-            index++;
-            count--;
-            if (shift >= 128)
-            {
-                goto ShiftGE128;
-            }
+    ShiftGE128:
+        shift += shiftIncrement;
+        index++;
+        count--;
+        if (shift >= 128)
+        {
+            goto ShiftGE128;
+        }
 
-        CheckShift64To127:
-            if (shift < 64)
-            {
-                goto CheckShift1To63;
-            }
-            if (sLow != 0)
-            {
-                goto Shift64To127;
-            }
+    CheckShift64To127:
+        if (shift < 64)
+        {
+            goto CheckShift1To63;
+        }
+        if (sLow != 0)
+        {
+            goto Shift64To127;
+        }
 
-        Shift64To127ZeroLoop:
-            sLow = coefficients[index].High >> (int)(shift - 64);
-            shift += shiftIncrement;
-            index++;
-            count--;
-            if (shift < 64)
-            {
-                goto CheckShift1To63;
-            }
-            if (sLow == 0)
-            {
-                goto Shift64To127ZeroLoop;
-            }
+    Shift64To127ZeroLoop:
+        sLow = coefficients[index].High >> (int)(shift - 64);
+        shift += shiftIncrement;
+        index++;
+        count--;
+        if (shift < 64)
+        {
+            goto CheckShift1To63;
+        }
+        if (sLow == 0)
+        {
+            goto Shift64To127ZeroLoop;
+        }
 
-        Shift64To127:
-            p1 = DiyFp128MultiplyHigh(sLow, xHigh);
-            cLow = coefficients[index].High >> (int)(shift - 64);
-            shift += shiftIncrement;
-            index++;
-            count--;
-            sLow = cLow + p1;
-            if (shift >= 64)
-            {
-                goto Shift64To127;
-            }
+    Shift64To127:
+        p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+        cLow = coefficients[index].High >> (int)(shift - 64);
+        shift += shiftIncrement;
+        index++;
+        count--;
+        sLow = cLow + p1;
+        if (shift >= 64)
+        {
+            goto Shift64To127;
+        }
         sHigh = (sLow < p1) ? 1UL : 0UL;
 
-        CheckShift1To63:
-            exponent = 0;
-            if (shift == 0)
-            {
-                goto ShiftEQ0;
-            }
-            if (sHigh != 0)
-            {
-                goto Shift1To63;
-            }
+    CheckShift1To63:
+        exponent = 0;
+        if (shift == 0)
+        {
+            goto ShiftEQ0;
+        }
+        if (sHigh != 0)
+        {
+            goto Shift1To63;
+        }
 
-        Shift1To63ZeroLoop:
-            p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+    Shift1To63ZeroLoop:
+        p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+        cHigh = coefficients[index].High;
+        cLow = coefficients[index].Low;
+        cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
+        sHigh = cHigh >> (int)shift;
+        shift += shiftIncrement;
+        index++;
+        count--;
+        sLow = cLow + p1;
+        sHigh += (sLow < p1) ? 1UL : 0UL;
+        if (shift == 0)
+        {
+            goto ShiftEQ0;
+        }
+        if (sHigh == 0)
+        {
+            goto Shift1To63ZeroLoop;
+        }
+
+    Shift1To63:
+        while (count >= 0)
+        {
+            p1 = sHigh * xHigh;
             cHigh = coefficients[index].High;
             cLow = coefficients[index].Low;
             cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
-            sHigh = cHigh >> (int)shift;
-            shift += shiftIncrement;
-            index++;
+            cHigh >>= (int)shift;
+
+            p2 = DiyFp128MultiplyHigh(sHigh, xLow);
+            cLow += p1;
+            carry = (cLow < p1) ? 1UL : 0UL;
             count--;
+
+            p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+            cLow += p2;
+            carry += (cLow < p2) ? 1UL : 0UL;
+            shift += shiftIncrement;
+
+            p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
             sLow = cLow + p1;
-            sHigh += (sLow < p1) ? 1UL : 0UL;
+            carry += (sLow < p1) ? 1UL : 0UL;
+            cHigh += carry;
+            carry = (cHigh < carry) ? 1UL : 0UL;
+            index++;
+
+            sHigh = cHigh + p2;
+            carry += (sHigh < p2) ? 1UL : 0UL;
+            if (carry != 0)
+            {
+                sLow = (sLow >> 1) | (sHigh << 63);
+                sHigh = (sHigh >> 1) | UxMsb;
+                shift++;
+                exponent++;
+            }
             if (shift == 0)
             {
-                goto ShiftEQ0;
+                break;
             }
-            if (sHigh == 0)
+        }
+
+    ShiftEQ0:
+        while (count >= 0)
+        {
+            p1 = sHigh * xHigh;
+            cHigh = coefficients[index].High;
+            cLow = coefficients[index].Low;
+
+            p2 = DiyFp128MultiplyHigh(sHigh, xLow);
+            cLow += p1;
+            carry = (cLow < p1) ? 1UL : 0UL;
+            count--;
+
+            p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+            cLow += p2;
+            carry += (cLow < p2) ? 1UL : 0UL;
+
+            p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
+            sLow = cLow + p1;
+            carry += (sLow < p1) ? 1UL : 0UL;
+            cHigh += carry;
+            carry = (cHigh < carry) ? 1UL : 0UL;
+            index++;
+
+            sHigh = cHigh + p2;
+            carry += (sHigh < p2) ? 1UL : 0UL;
+            if (carry != 0)
             {
-                goto Shift1To63ZeroLoop;
-            }
-
-        Shift1To63:
-            while (count >= 0)
-            {
-                p1 = sHigh * xHigh;
-                cHigh = coefficients[index].High;
-                cLow = coefficients[index].Low;
-                cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
-                cHigh >>= (int)shift;
-
-                p2 = DiyFp128MultiplyHigh(sHigh, xLow);
-                cLow += p1;
-                carry = (cLow < p1) ? 1UL : 0UL;
-                count--;
-
-                p1 = DiyFp128MultiplyHigh(sLow, xHigh);
-                cLow += p2;
-                carry += (cLow < p2) ? 1UL : 0UL;
-                shift += shiftIncrement;
-
-                p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
-                sLow = cLow + p1;
-                carry += (sLow < p1) ? 1UL : 0UL;
-                cHigh += carry;
-                carry = (cHigh < carry) ? 1UL : 0UL;
-                index++;
-
-                sHigh = cHigh + p2;
-                carry += (sHigh < p2) ? 1UL : 0UL;
-                if (carry != 0)
+                sLow = (sLow >> 1) | (sHigh << 63);
+                sHigh = (sHigh >> 1) | UxMsb;
+                shift = 1;
+                exponent++;
+                if (count >= 0)
                 {
-                    sLow = (sLow >> 1) | (sHigh << 63);
-                    sHigh = (sHigh >> 1) | UxMsb;
-                    shift++;
-                    exponent++;
-                }
-                if (shift == 0)
-                {
-                    break;
+                    goto Shift1To63;
                 }
             }
-
-        ShiftEQ0:
-            while (count >= 0)
-            {
-                p1 = sHigh * xHigh;
-                cHigh = coefficients[index].High;
-                cLow = coefficients[index].Low;
-
-                p2 = DiyFp128MultiplyHigh(sHigh, xLow);
-                cLow += p1;
-                carry = (cLow < p1) ? 1UL : 0UL;
-                count--;
-
-                p1 = DiyFp128MultiplyHigh(sLow, xHigh);
-                cLow += p2;
-                carry += (cLow < p2) ? 1UL : 0UL;
-
-                p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
-                sLow = cLow + p1;
-                carry += (sLow < p1) ? 1UL : 0UL;
-                cHigh += carry;
-                carry = (cHigh < carry) ? 1UL : 0UL;
-                index++;
-
-                sHigh = cHigh + p2;
-                carry += (sHigh < p2) ? 1UL : 0UL;
-                if (carry != 0)
-                {
-                    sLow = (sLow >> 1) | (sHigh << 63);
-                    sHigh = (sHigh >> 1) | UxMsb;
-                    shift = 1;
-                    exponent++;
-                    if (count >= 0)
-                    {
-                        goto Shift1To63;
-                    }
-                }
-            }
+        }
 
         result = new DiyFp128(0, (int)exponent, sHigh, sLow);
     }
@@ -380,87 +380,115 @@ internal static partial class Number
             goto CheckShift64To127;
         }
 
-        ShiftGE128:
-            shift += shiftIncrement;
-            index++;
-            count--;
-            if (shift >= 128)
-            {
-                goto ShiftGE128;
-            }
+    ShiftGE128:
+        shift += shiftIncrement;
+        index++;
+        count--;
+        if (shift >= 128)
+        {
+            goto ShiftGE128;
+        }
 
-        CheckShift64To127:
-            if (shift < 64)
-            {
-                goto CheckShift1To63;
-            }
-            if (sLow != 0)
-            {
-                goto Shift64To127;
-            }
+    CheckShift64To127:
+        if (shift < 64)
+        {
+            goto CheckShift1To63;
+        }
+        if (sLow != 0)
+        {
+            goto Shift64To127;
+        }
 
-        Shift64To127ZeroLoop:
-            sLow = coefficients[index].High >> (int)(shift - 64);
-            shift += shiftIncrement;
-            index++;
-            count--;
-            if (shift < 64)
-            {
-                goto CheckShift1To63;
-            }
-            if (sLow == 0)
-            {
-                goto Shift64To127ZeroLoop;
-            }
+    Shift64To127ZeroLoop:
+        sLow = coefficients[index].High >> (int)(shift - 64);
+        shift += shiftIncrement;
+        index++;
+        count--;
+        if (shift < 64)
+        {
+            goto CheckShift1To63;
+        }
+        if (sLow == 0)
+        {
+            goto Shift64To127ZeroLoop;
+        }
 
-        Shift64To127:
-            p1 = DiyFp128MultiplyHigh(sLow, xHigh);
-            cLow = coefficients[index].High >> (int)(shift - 64);
-            shift += shiftIncrement;
-            index++;
-            count--;
-            sLow = cLow - p1;
-            if (shift >= 64)
-            {
-                goto Shift64To127;
-            }
+    Shift64To127:
+        p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+        cLow = coefficients[index].High >> (int)(shift - 64);
+        shift += shiftIncrement;
+        index++;
+        count--;
+        sLow = cLow - p1;
+        if (shift >= 64)
+        {
+            goto Shift64To127;
+        }
 
-        CheckShift1To63:
-            if (shift == 0)
-            {
-                goto ShiftEQ0;
-            }
-            if (sHigh != 0)
-            {
-                goto Shift1To63;
-            }
+    CheckShift1To63:
+        if (shift == 0)
+        {
+            goto ShiftEQ0;
+        }
+        if (sHigh != 0)
+        {
+            goto Shift1To63;
+        }
 
-        Shift1To63ZeroLoop:
-            p1 = DiyFp128MultiplyHigh(sLow, xHigh);
-            cHigh = coefficients[index].High;
-            cLow = coefficients[index].Low;
-            cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
-            sHigh = cHigh >> (int)shift;
-            shift += shiftIncrement;
-            index++;
-            count--;
-            sLow = cLow - p1;
-            sHigh -= (sLow > cLow) ? 1UL : 0UL;
-            if (shift == 0)
-            {
-                goto ShiftEQ0;
-            }
-            if (sHigh == 0)
-            {
-                goto Shift1To63ZeroLoop;
-            }
+    Shift1To63ZeroLoop:
+        p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+        cHigh = coefficients[index].High;
+        cLow = coefficients[index].Low;
+        cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
+        sHigh = cHigh >> (int)shift;
+        shift += shiftIncrement;
+        index++;
+        count--;
+        sLow = cLow - p1;
+        sHigh -= (sLow > cLow) ? 1UL : 0UL;
+        if (shift == 0)
+        {
+            goto ShiftEQ0;
+        }
+        if (sHigh == 0)
+        {
+            goto Shift1To63ZeroLoop;
+        }
 
-        Shift1To63:
+    Shift1To63:
+        p1 = sHigh * xHigh;
+        cHigh = coefficients[index].High;
+        cLow = coefficients[index].Low;
+        cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
+        cHigh >>= (int)shift;
+
+        p2 = DiyFp128MultiplyHigh(sHigh, xLow);
+        tmp = cLow - p1;
+        cHigh -= (tmp > cLow) ? 1UL : 0UL;
+        count--;
+
+        p1 = DiyFp128MultiplyHigh(sLow, xHigh);
+        cLow = tmp - p2;
+        cHigh -= (cLow > tmp) ? 1UL : 0UL;
+        shift += shiftIncrement;
+
+        p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
+        sLow = cLow - p1;
+        cHigh -= (sLow > cLow) ? 1UL : 0UL;
+        index++;
+
+        sHigh = cHigh - p2;
+        if (shift != 0)
+        {
+            goto Shift1To63;
+        }
+
+    ShiftEQ0:
+        while (count >= 0)
+        {
             p1 = sHigh * xHigh;
             cHigh = coefficients[index].High;
             cLow = coefficients[index].Low;
-            cLow = (cLow >> (int)shift) | (cHigh << (int)(64 - shift));
-            cHigh >>= (int)shift;
 
             p2 = DiyFp128MultiplyHigh(sHigh, xLow);
             tmp = cLow - p1;
@@ -470,7 +498,6 @@ internal static partial class Number
             p1 = DiyFp128MultiplyHigh(sLow, xHigh);
             cLow = tmp - p2;
             cHigh -= (cLow > tmp) ? 1UL : 0UL;
-            shift += shiftIncrement;
 
             p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
             sLow = cLow - p1;
@@ -478,34 +505,7 @@ internal static partial class Number
             index++;
 
             sHigh = cHigh - p2;
-            if (shift != 0)
-            {
-                goto Shift1To63;
-            }
-
-        ShiftEQ0:
-            while (count >= 0)
-            {
-                p1 = sHigh * xHigh;
-                cHigh = coefficients[index].High;
-                cLow = coefficients[index].Low;
-
-                p2 = DiyFp128MultiplyHigh(sHigh, xLow);
-                tmp = cLow - p1;
-                cHigh -= (tmp > cLow) ? 1UL : 0UL;
-                count--;
-
-                p1 = DiyFp128MultiplyHigh(sLow, xHigh);
-                cLow = tmp - p2;
-                cHigh -= (cLow > tmp) ? 1UL : 0UL;
-
-                p2 = DiyFp128MultiplyHigh(sHigh, xHigh);
-                sLow = cLow - p1;
-                cHigh -= (sLow > cLow) ? 1UL : 0UL;
-                index++;
-
-                sHigh = cHigh - p2;
-            }
+        }
 
         result = new DiyFp128(0, 0, sHigh, sLow);
     }

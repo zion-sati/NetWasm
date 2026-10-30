@@ -72,8 +72,11 @@ public sealed class CalleeArgumentRootingClassifier(
         MethodDefinitionModel method,
         MethodInstanceModel? instance,
         RootDecisionRequest request) =>
-        method is { HasBody: true, UnsafeAccessor: null, IsDelegateAsynchronousCall: false,
-            JSImport: null, NativeImport: null, WitImport: null } &&
+        method is
+        {
+            HasBody: true, UnsafeAccessor: null, IsDelegateAsynchronousCall: false,
+            JSImport: null, NativeImport: null, WitImport: null
+        } &&
         !(instance is null ? _runtimeSafepoints.Classify(method, _types) : _runtimeSafepoints.Classify(instance)) &&
         !(_initializationTriggers.Classify(method) &&
             TypeInitializerAllocation.IsAllocating(_types, _methods, method.DeclaringType, instance?.DeclaringType,

@@ -182,25 +182,25 @@ namespace System.Numerics
                     switch (row)
                     {
                         case 0:
-                        {
-                            return impl.X;
-                        }
+                            {
+                                return impl.X;
+                            }
 
                         case 1:
-                        {
-                            return impl.Y;
-                        }
+                            {
+                                return impl.Y;
+                            }
 
                         case 2:
-                        {
-                            return impl.Z;
-                        }
+                            {
+                                return impl.Z;
+                            }
 
                         default:
-                        {
-                            ThrowHelper.ThrowArgumentOutOfRangeException();
-                            return default;
-                        }
+                            {
+                                ThrowHelper.ThrowArgumentOutOfRangeException();
+                                return default;
+                            }
                     }
                 }
                 else
@@ -223,28 +223,28 @@ namespace System.Numerics
                     switch (row)
                     {
                         case 0:
-                        {
-                            impl.X = value;
-                            break;
-                        }
+                            {
+                                impl.X = value;
+                                break;
+                            }
 
                         case 1:
-                        {
-                            impl.Y = value;
-                            break;
-                        }
+                            {
+                                impl.Y = value;
+                                break;
+                            }
 
                         case 2:
-                        {
-                            impl.Z = value;
-                            break;
-                        }
+                            {
+                                impl.Z = value;
+                                break;
+                            }
 
                         default:
-                        {
-                            ThrowHelper.ThrowArgumentOutOfRangeException();
-                            break;
-                        }
+                            {
+                                ThrowHelper.ThrowArgumentOutOfRangeException();
+                                break;
+                            }
                     }
                 }
                 else
@@ -287,25 +287,25 @@ namespace System.Numerics
                     switch (row)
                     {
                         case 0:
-                        {
-                            return impl.X.GetElement(column);
-                        }
+                            {
+                                return impl.X.GetElement(column);
+                            }
 
                         case 1:
-                        {
-                            return impl.Y.GetElement(column);
-                        }
+                            {
+                                return impl.Y.GetElement(column);
+                            }
 
                         case 2:
-                        {
-                            return impl.Z.GetElement(column);
-                        }
+                            {
+                                return impl.Z.GetElement(column);
+                            }
 
                         default:
-                        {
-                            ThrowHelper.ThrowArgumentOutOfRangeException();
-                            return default;
-                        }
+                            {
+                                ThrowHelper.ThrowArgumentOutOfRangeException();
+                                return default;
+                            }
                     }
                 }
                 else
@@ -328,28 +328,28 @@ namespace System.Numerics
                     switch (row)
                     {
                         case 0:
-                        {
-                            impl.X = impl.X.WithElement(column, value);
-                            break;
-                        }
+                            {
+                                impl.X = impl.X.WithElement(column, value);
+                                break;
+                            }
 
                         case 1:
-                        {
-                            impl.Y = impl.Y.WithElement(column, value);
-                            break;
-                        }
+                            {
+                                impl.Y = impl.Y.WithElement(column, value);
+                                break;
+                            }
 
                         case 2:
-                        {
-                            impl.Z = impl.Z.WithElement(column, value);
-                            break;
-                        }
+                            {
+                                impl.Z = impl.Z.WithElement(column, value);
+                                break;
+                            }
 
                         default:
-                        {
-                            ThrowHelper.ThrowArgumentOutOfRangeException();
-                            break;
-                        }
+                            {
+                                ThrowHelper.ThrowArgumentOutOfRangeException();
+                                break;
+                            }
                     }
                 }
                 else

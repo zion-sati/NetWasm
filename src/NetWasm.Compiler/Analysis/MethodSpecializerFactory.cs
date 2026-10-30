@@ -115,7 +115,8 @@ internal sealed class MethodSpecializerFactory(
             new BoxedTypeTestRewriter(_graphBuilders.Create(), new NullableTypeResolver(), relationships),
             new NonReturningCallRewriter(calledMethods, methodBodies, intrinsics),
             new KnownSizeRewriter(calledMethods),
-            new ConstantBranchFolding(_graphBuilders.Create()),
+            new BitCastCallRewriter(calledMethods, types, methods, methodInstances, symbols),
+            ConstantBranchFoldingFactory.Create(_graphBuilders.Create()),
         ]);
     }
 }

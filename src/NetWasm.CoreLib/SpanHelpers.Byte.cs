@@ -294,8 +294,8 @@ namespace System
             }
             return -1;
 
-        // Based on http://0x80.pl/articles/simd-strfind.html#algorithm-1-generic-simd "Algorithm 1: Generic SIMD" by Wojciech Mula
-        // Some details about the implementation can also be found in https://github.com/dotnet/runtime/pull/63285
+            // Based on http://0x80.pl/articles/simd-strfind.html#algorithm-1-generic-simd "Algorithm 1: Generic SIMD" by Wojciech Mula
+            // Some details about the implementation can also be found in https://github.com/dotnet/runtime/pull/63285
         SEARCH_TWO_BYTES:
             if (Vector512.IsHardwareAccelerated && searchSpaceMinusValueTailLength >= Vector512<byte>.Count)
             {
@@ -342,7 +342,7 @@ namespace System
                     // Overlap with the current chunk if there is not enough room for the next one
                     if (offset < 0)
                         offset = 0;
-                } while (true) ;
+                } while (true);
             }
             else if (Vector256.IsHardwareAccelerated && searchSpaceMinusValueTailLength >= Vector256<byte>.Count)
             {
@@ -813,8 +813,8 @@ namespace System
 
         Result:
             return result;
-        // When the sequence is equal; which is the longest execution, we want it to determine that
-        // as fast as possible so we do not want the early outs to be "predicted not taken" branches.
+            // When the sequence is equal; which is the longest execution, we want it to determine that
+            // as fast as possible so we do not want the early outs to be "predicted not taken" branches.
         Equal:
             return true;
 

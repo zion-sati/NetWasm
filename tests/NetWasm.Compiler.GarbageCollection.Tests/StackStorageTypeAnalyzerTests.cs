@@ -1172,10 +1172,12 @@ public sealed class StackStorageTypeAnalyzerTests
         Assert.Empty(analysis.Entries[end]);
     }
 
+    // `ref T local = ref *pointer` stores an unmanaged pointer: the local keeps
+    // its declared type, and the memory it addresses has no backing to root.
     [Theory]
     [InlineData(4)]
     [InlineData(8)]
-    public void NativeAddressStoredInByrefLocalDoesNotAcquireItsDeclaredPointeeIdentity(int pointerSize)
+    public void NativeAddressStoredInByrefLocalKeepsItsDeclaredTypeWithNoBackingToRoot(int pointerSize)
     {
         var repository = new Repository(pointerSize);
         var method = Body(repository, Method(EntryKey, Void), [CliTypeIdentity.ManagedByReference(Pair)],
@@ -1187,9 +1189,9 @@ public sealed class StackStorageTypeAnalyzerTests
 
         var analysis = AnalyzeStorage(repository, method);
         var slot = Assert.Single(analysis.Entries[4]);
-        Assert.Null(slot.Type);
-        Assert.False(slot.BackingCovered);
-        Assert.False(slot.CompleteBackingKnown);
+        Assert.Equal(CliTypeIdentity.ManagedByReference(Pair), slot.Type);
+        Assert.True(slot.BackingCovered);
+        Assert.True(slot.CompleteBackingKnown);
         Assert.Empty(slot.BackingOwners);
         Assert.Empty(slot.CapturedBackings);
     }

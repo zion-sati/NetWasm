@@ -6,26 +6,77 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis.Loops;
 
-internal interface IVectorLoopMethodResolver
+// A method a vectorized loop calls: the type that declares it, its name, which
+// overload it is and how a lane or element type instantiates it.
+internal abstract record VectorLoopMethod(string Type, string Name)
 {
-    // MemoryMarshal.GetArrayDataReference<T>(T[]).
-    MethodInstanceModel ArrayData(CliTypeIdentity element);
+    public static VectorLoopMethod ArrayData { get; } = new GenericMethod(
+        "System.Runtime.InteropServices.MemoryMarshal", "GetArrayDataReference", 1);
 
     // Vector128.LoadUnsafe<T>(ref readonly T, nuint) and
     // StoreUnsafe<T>(Vector128<T>, ref T, nuint).
-    MethodInstanceModel Load(CliTypeIdentity lane);
+    public static VectorLoopMethod Load { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "LoadUnsafe", 2);
 
-    MethodInstanceModel Store(CliTypeIdentity lane);
+    public static VectorLoopMethod Store { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "StoreUnsafe", 3);
 
     // Vector128.Create<T>(T): every lane the value.
-    MethodInstanceModel Broadcast(CliTypeIdentity lane);
+    public static VectorLoopMethod Broadcast { get; } = new BroadcastMethod();
 
-    // Vector128.Create(int, int, int, int): lanes 0, 1, 2 and 3 from the arguments.
-    MethodInstanceModel CreateInt32();
+    // Vector128.Create(int, int, int, int): lanes 0, 1, 2 and 3 from the
+    // arguments, whatever the lane type.
+    public static VectorLoopMethod CreateInt32 { get; } = new CreateInt32Method();
 
-    // A Vector128<T> operator by name, op_Addition or op_LeftShift for
-    // instance; binary operators take two vectors and shifts a vector and an int.
-    MethodInstanceModel Operator(string name, CliTypeIdentity lane);
+    public abstract bool Matches(MethodDefinitionModel method);
+
+    public abstract CliGenericContext Context(CliTypeIdentity lane);
+
+    // A generic method with Parameters parameters, instantiated for the lane.
+    private sealed record GenericMethod(string Type, string Name, int Parameters) : VectorLoopMethod(Type, Name)
+    {
+        public override bool Matches(MethodDefinitionModel method) =>
+            method.GenericArity == 1 && method.Signature.ParameterSignatureTypes.Length == Parameters;
+
+        public override CliGenericContext Context(CliTypeIdentity lane) => new([], [lane]);
+    }
+
+    private sealed record BroadcastMethod() : VectorLoopMethod("System.Runtime.Intrinsics.Vector128", "Create")
+    {
+        public override bool Matches(MethodDefinitionModel method) =>
+            method.GenericArity == 1 &&
+            method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericMethodParameter }];
+
+        public override CliGenericContext Context(CliTypeIdentity lane) => new([], [lane]);
+    }
+
+    private sealed record CreateInt32Method() : VectorLoopMethod("System.Runtime.Intrinsics.Vector128", "Create")
+    {
+        public override bool Matches(MethodDefinitionModel method) =>
+            method.GenericArity == 0 &&
+            method.Signature.ParameterSignatureTypes is { Length: 4 } parameters &&
+            parameters.All(static parameter => parameter.CanonicalName == "primitive:i4");
+
+        public override CliGenericContext Context(CliTypeIdentity lane) => new([], []);
+    }
+}
+
+// A Vector128<T> operator by name, op_Addition or op_LeftShift for instance:
+// binary operators take two vectors and shifts a vector and an int.
+internal sealed record VectorLoopOperator(string Name) : VectorLoopMethod("System.Runtime.Intrinsics.Vector128`1", Name)
+{
+    public override bool Matches(MethodDefinitionModel method) =>
+        method.IsStatic &&
+        (Name is "op_UnaryNegation" or "op_OnesComplement"
+            ? method.Signature.ParameterSignatureTypes.Length == 1
+            : Name is "op_LeftShift" or "op_RightShift" or "op_UnsignedRightShift"
+                ? method.Signature.ParameterSignatureTypes is [_, { CanonicalName: "primitive:i4" }]
+                : method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericInstantiation }, { Shape: CliTypeShape.GenericInstantiation }]);
+
+    public override CliGenericContext Context(CliTypeIdentity lane) => new([lane], []);
+}
+
+internal interface IVectorLoopMethodResolver
+{
+    MethodInstanceModel Resolve(VectorLoopMethod method, CliTypeIdentity lane);
 }
 
 internal sealed class VectorLoopMethodResolver(
@@ -34,59 +85,14 @@ internal sealed class VectorLoopMethodResolver(
     IMethodInstanceResolver instances,
     ISymbolFormatter symbols) : IVectorLoopMethodResolver
 {
-    private readonly ConcurrentDictionary<(string Name, string Lane), MethodInstanceModel> _instances = new();
+    private readonly ConcurrentDictionary<(VectorLoopMethod Method, string Lane), MethodInstanceModel> _instances = new();
 
-    public MethodInstanceModel ArrayData(CliTypeIdentity element) =>
-        Generic("System.Runtime.InteropServices.MemoryMarshal", "GetArrayDataReference", element,
-            static method => method.GenericArity == 1);
-
-    public MethodInstanceModel Load(CliTypeIdentity lane) =>
-        Generic("System.Runtime.Intrinsics.Vector128", "LoadUnsafe", lane,
-            static method => method.Signature.ParameterSignatureTypes.Length == 2);
-
-    public MethodInstanceModel Store(CliTypeIdentity lane) =>
-        Generic("System.Runtime.Intrinsics.Vector128", "StoreUnsafe", lane,
-            static method => method.Signature.ParameterSignatureTypes.Length == 3);
-
-    public MethodInstanceModel Broadcast(CliTypeIdentity lane) =>
-        Generic("System.Runtime.Intrinsics.Vector128", "Create", lane,
-            static method => method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericMethodParameter }]);
-
-    public MethodInstanceModel CreateInt32() =>
-        _instances.GetOrAdd(("Create4", "primitive:i4"), _ =>
+    public MethodInstanceModel Resolve(VectorLoopMethod method, CliTypeIdentity lane) =>
+        _instances.GetOrAdd((method, lane.CanonicalName), _ =>
         {
-            var method = Find("System.Runtime.Intrinsics.Vector128", "Create", static method =>
-                method.GenericArity == 0 &&
-                method.Signature.ParameterSignatureTypes is { Length: 4 } parameters &&
-                parameters.All(static parameter => parameter.CanonicalName == "primitive:i4"));
-            return Instantiate(method, new CliGenericContext([], []));
+            var definition = types.FindType(method.Type).Methods.Select(methods.GetMethod)
+                .Single(candidate => candidate.Name == method.Name && method.Matches(candidate));
+            return instances.ResolveMethodInstance(definition.Key.Assembly, definition.Key.MetadataToken,
+                symbols.Format(definition), 0, method.Context(lane));
         });
-
-    public MethodInstanceModel Operator(string name, CliTypeIdentity lane) =>
-        _instances.GetOrAdd((name, lane.CanonicalName), _ =>
-        {
-            var method = Find("System.Runtime.Intrinsics.Vector128`1", name, method =>
-                method.IsStatic &&
-                (name is "op_UnaryNegation" or "op_OnesComplement"
-                    ? method.Signature.ParameterSignatureTypes.Length == 1
-                    : name is "op_LeftShift" or "op_RightShift" or "op_UnsignedRightShift"
-                        ? method.Signature.ParameterSignatureTypes is [_, { CanonicalName: "primitive:i4" }]
-                        : method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericInstantiation }, { Shape: CliTypeShape.GenericInstantiation }]));
-            return Instantiate(method, new CliGenericContext([lane], []));
-        });
-
-    private MethodInstanceModel Generic(
-        string type,
-        string name,
-        CliTypeIdentity argument,
-        Func<MethodDefinitionModel, bool> select) =>
-        _instances.GetOrAdd((type + "." + name, argument.CanonicalName), _ =>
-            Instantiate(Find(type, name, method => method.GenericArity == 1 && select(method)),
-                new CliGenericContext([], [argument])));
-
-    private MethodDefinitionModel Find(string type, string name, Func<MethodDefinitionModel, bool> select) =>
-        types.FindType(type).Methods.Select(methods.GetMethod).Single(method => method.Name == name && select(method));
-
-    private MethodInstanceModel Instantiate(MethodDefinitionModel method, CliGenericContext context) =>
-        instances.ResolveMethodInstance(method.Key.Assembly, method.Key.MetadataToken, symbols.Format(method), 0, context);
 }

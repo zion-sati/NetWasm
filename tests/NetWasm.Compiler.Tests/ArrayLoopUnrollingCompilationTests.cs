@@ -21,7 +21,10 @@ public sealed class ArrayLoopUnrollingCompilationTests
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target,
             Optimization: FinalWasmOptimization.O3,
-            OptimizationOverrides: new(LoopUnrolling: enabled ? ManagedLoopUnrolling.Enabled : ManagedLoopUnrolling.Disabled)));
+            // Bulk idioms off: Sum would otherwise fold into one ArrayLoops call.
+            OptimizationOverrides: new(
+                LoopUnrolling: enabled ? ManagedLoopUnrolling.Enabled : ManagedLoopUnrolling.Disabled,
+                ArrayLoopIdioms: ManagedArrayLoopIdioms.Disabled)));
         var floating = compilation.Program.Methods.Values.Single(method => method.Method.Definition.Name == "FloatSum");
         Assert.Equal(enabled ? 5 : 1,
             floating.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.LoadArrayElement));

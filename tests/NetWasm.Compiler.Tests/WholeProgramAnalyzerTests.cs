@@ -54,34 +54,40 @@ public sealed class WholeProgramAnalyzerTests
         using var compilation = MetadataCompilationTestFactory.Load(assembly, [assets.CoreLib]);
         var program = Analyze(compilation, "ConsoleReachability.EntryPoint", "Run");
         var number = compilation.Snapshot.Types.Single(type => type.FullName == "System.Number");
+        var holder = compilation.Snapshot.Types.Single(type => type.FullName == "System.Number+SmallNumberCache");
 
-        Assert.True(number.IsBeforeFieldInit);
-        var initializer = Assert.Single(program.Methods.Values,
+        // Number keeps no initializer of its own: its formatting tables are
+        // switches, and the cache lives in a holder class that only small
+        // integer formatting initializes.
+        Assert.DoesNotContain(program.Methods.Values,
             body => body.Method.Definition.DeclaringType == number.Key && body.Method.Definition.Name == ".cctor");
+        Assert.True(holder.IsBeforeFieldInit);
+        var initializer = Assert.Single(program.Methods.Values,
+            body => body.Method.Definition.DeclaringType == holder.Key && body.Method.Definition.Name == ".cctor");
         var original = MetadataCompilationTestActors.MethodBodies(compilation.Snapshot).ReadMethodBody(initializer.Method);
         var fields = MetadataCompilationTestActors.Fields(compilation.Snapshot);
-        var cache = number.Fields.Select(fields.GetField).Single(field => field.Name == "s_smallNumberCache");
+        var cache = holder.Fields.Select(fields.GetField).Single(field => field.Name == "Value");
         Assert.Contains(cache.Key, program.Fields);
         Assert.Contains(initializer.Body.Instructions, instruction =>
             instruction.Operation == CilOperation.StoreStaticField &&
             instruction.Operand is CilOperand.Entity field && field.Key == cache.Key);
-        // Number's initializer allocates only the cache. The floating-point tables
-        // live in holder classes that only floating-point formatting and math
-        // initialize, so integer output never runs them (pay-for-play formatting).
-        // StaticArrayPopulationCompilationTests covers dropping unobserved population.
+        // The holder's initializer allocates only the cache. The floating-point
+        // tables live in holder classes that only floating-point formatting and
+        // math initialize, so integer output never runs them (pay-for-play
+        // formatting). StaticArrayPopulationCompilationTests covers dropping
+        // unobserved population.
         Assert.Equal(1, original.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray));
         Assert.Equal(1, initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.NewArray));
         Assert.DoesNotContain(original.Instructions, instruction =>
             instruction.Operation is CilOperation.StoreArrayElement or CilOperation.NewObject);
-        Assert.Equal(original.Instructions.Count(instruction => instruction.Operation == CilOperation.StoreStaticField),
-            initializer.Body.Instructions.Count(instruction => instruction.Operation == CilOperation.StoreStaticField));
-        var floatingTables = compilation.Snapshot.Types
-            .Where(type => type.FullName.StartsWith("System.Number", StringComparison.Ordinal) &&
-                type.FullName.EndsWith("Tables", StringComparison.Ordinal))
+        // The IEEE decimal arithmetic and its coefficient tables, read-only
+        // spans of static data, belong to decimal floating-point formatting.
+        var decimalArithmetic = compilation.Snapshot.Types
+            .Where(type => type.FullName.StartsWith("System.Number+DiyFp128", StringComparison.Ordinal))
             .Select(type => type.Key)
             .ToHashSet();
-        Assert.NotEmpty(floatingTables);
-        Assert.DoesNotContain(program.Methods.Values, body => floatingTables.Contains(body.Method.Definition.DeclaringType));
+        Assert.NotEmpty(decimalArithmetic);
+        Assert.DoesNotContain(program.Methods.Values, body => decimalArithmetic.Contains(body.Method.Definition.DeclaringType));
     }
 
     [Fact]

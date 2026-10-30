@@ -169,7 +169,7 @@ namespace System
                 1e80
             ];
 
-#region Decimal Math Helpers
+            #region Decimal Math Helpers
 
             private static void UInt64x64To128(ulong a, ulong b, ref DecCalc result)
             {
@@ -217,11 +217,11 @@ namespace System
                     remainder = bufNum.U1;
                     bufNum.U1 = 0;
                     goto Div1Word;
-Div3Word:
+                Div3Word:
                     (bufNum.U2, remainder) = X86.X86Base.DivRem(bufNum.U2, remainder, den);
-Div2Word:
+                Div2Word:
                     (bufNum.U1, remainder) = X86.X86Base.DivRem(bufNum.U1, remainder, den);
-Div1Word:
+                Div1Word:
                     (bufNum.U0, remainder) = X86.X86Base.DivRem(bufNum.U0, remainder, den);
                     return remainder;
                 }
@@ -524,7 +524,7 @@ Div1Word:
                             break; // detected carry
                     }
                 }
-PosRem:
+            PosRem:
 
                 bufNum.Low64 = num;
                 bufNum.U2 = remainder;
@@ -911,7 +911,7 @@ PosRem:
                 if (resHi == powerOvfl[curScale - 1].Hi && resMidLo > powerOvfl[curScale - 1].MidLo)
                     curScale--;
 
-                HaveScale:
+            HaveScale:
                 // curScale = largest power of 10 we can scale by without overflow,
                 // curScale < 9.  See if this is enough to make scale factor
                 // positive if it isn't already.
@@ -1153,7 +1153,7 @@ PosRem:
                             }
                         }
                     }
-NoCarry:
+                NoCarry:
 
                     bufNum.Low64 = low64;
                     bufNum.U2 = high;
@@ -1164,7 +1164,7 @@ NoCarry:
                     goto ReturnResult;
                 }
 
-SignFlip:
+            SignFlip:
                 {
                     // Got negative result.  Flip its sign.
                     flags ^= SignMask;
@@ -1175,7 +1175,7 @@ SignFlip:
                     goto ReturnResult;
                 }
 
-AlignedScale:
+            AlignedScale:
                 {
                     // The addition carried above 96 bits.
                     // Divide the value by 10, dropping the scale factor.
@@ -1206,7 +1206,7 @@ AlignedScale:
                     goto ReturnResult;
                 }
 
-AlignedAdd:
+            AlignedAdd:
                 {
                     ulong d1Low64 = low64;
                     uint d1High = high;
@@ -1249,14 +1249,14 @@ AlignedAdd:
                     goto ReturnResult;
                 }
 
-ReturnResult:
+            ReturnResult:
                 d1.uflags = flags;
                 d1.High = high;
                 d1.Low64 = low64;
                 return;
             }
 
-#endregion
+            #endregion
 
             /// <summary>
             /// Convert Decimal to Currency (similar to OleAut32 api.)
@@ -1295,7 +1295,7 @@ ReturnResult:
 
                 return value;
 
-ThrowOverflow:
+            ThrowOverflow:
                 throw new OverflowException(SR.Overflow_Currency);
             }
 
@@ -1542,7 +1542,7 @@ ThrowOverflow:
                     hiProd--;
                 }
 
-SkipScan:
+            SkipScan:
                 if (hiProd > 2 || scale > DEC_SCALE_MAX)
                 {
                     scale = ScaleResult(&bufProd, hiProd, scale);
@@ -1553,7 +1553,7 @@ SkipScan:
                 d1.uflags = ((d2.uflags ^ d1.uflags) & SignMask) | ((uint)scale << ScaleShift);
                 return;
 
-ReturnZero:
+            ReturnZero:
                 d1 = default;
             }
 
@@ -1822,7 +1822,7 @@ ReturnZero:
                             break;
                         }
 
-                        HaveScale:
+                    HaveScale:
                         power = UInt32Powers10[curScale];
                         scale += curScale;
 
@@ -1900,7 +1900,7 @@ ReturnZero:
                                 break;
                             }
 
-                            HaveScale64:
+                        HaveScale64:
                             power = UInt32Powers10[curScale];
                             scale += curScale;
 
@@ -1971,7 +1971,7 @@ ReturnZero:
                                 break;
                             }
 
-                            HaveScale96:
+                        HaveScale96:
                             power = UInt32Powers10[curScale];
                             scale += curScale;
 
@@ -1989,7 +1989,7 @@ ReturnZero:
                     }
                 }
 
-Unscale:
+            Unscale:
                 if (unscale)
                 {
                     uint low = bufQuo.U0;
@@ -2008,7 +2008,7 @@ Unscale:
                 d1.uflags = ((d1.uflags ^ d2.uflags) & SignMask) | ((uint)scale << ScaleShift);
                 return;
 
-RoundUp:
+            RoundUp:
                 {
                     if (++bufQuo.Low64 == 0 && ++bufQuo.U2 == 0)
                     {
@@ -2281,7 +2281,7 @@ RoundUp:
                     }
                 }
 
-checkRemainder:
+            checkRemainder:
                 if (mode == MidpointRounding.ToZero)
                     goto done;
                 else if (mode == MidpointRounding.ToEven)
@@ -2315,7 +2315,7 @@ checkRemainder:
                 }
                 if (++d.Low64 == 0)
                     d.uhi++;
-done:
+            done:
                 return;
             }
 

@@ -28,7 +28,7 @@ public sealed class DeadJumpRewriterTests
         Assert.Equal(
             [CilOperation.LoadInt32, CilOperation.Nop, CilOperation.Nop, CilOperation.Nop, CilOperation.LoadInt32],
             rewritten.Instructions.Take(5).Select(static instruction => instruction.Operation));
-        var folded = new ConstantBranchFolding(new ControlFlowGraphBuilderFactory().Create()).Rewrite(body);
+        var folded = ConstantBranchFoldingFactory.Create(new ControlFlowGraphBuilderFactory().Create()).Rewrite(body);
         Assert.Equal(CilOperation.Nop, folded.Instructions[5].Operation);
     }
 

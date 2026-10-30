@@ -6,7 +6,8 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // of a class, struct or static, an array element, a box, a generic argument, a
 // closure, an async state machine, an iterator, an exception region and filter,
 // default values, reinterpretation and the vectors' own fields. The results
-// match desktop.
+// match desktop, whose Vector<T> is as wide as its host's vectors, so a
+// Vector<T> sum counts per lane.
 [Collection(CorrectnessTestGroup.Name)]
 public sealed class VectorValueShapesCorpusTests(CorrectnessTestRunner runner)
 {
@@ -118,7 +119,7 @@ public sealed class VectorValueShapesCorpusTests(CorrectnessTestRunner runner)
                     var copy = holder;
                     copy.Value = Vector128<int>.Zero;
                     return Sum(holder.Value) + Sum(box.Value) * 10 + Sum(s_shared) * 100 + Sum(copy.Value) +
-                        (int)Vector128.Sum(holder.Scale) * 1000 + Vector.Sum(box.Wide) * 10000 + holder.Tag;
+                        (int)Vector128.Sum(holder.Scale) * 1000 + Vector.Sum(box.Wide) / Vector<int>.Count * 10000 + holder.Tag;
                 }
 
                 private static int Arrays()
@@ -141,7 +142,7 @@ public sealed class VectorValueShapesCorpusTests(CorrectnessTestRunner runner)
                     ValueType asValueType = back + Vector128<int>.One;
                     var again = (Vector128<int>)asValueType;
                     object wide = new Vector<int>(3);
-                    return Sum(back) * 100 + Sum(again) + (boxed is Vector128<int> ? 1000 : 0) + Vector.Sum((Vector<int>)wide);
+                    return Sum(back) * 100 + Sum(again) + (boxed is Vector128<int> ? 1000 : 0) + Vector.Sum((Vector<int>)wide) / Vector<int>.Count;
                 }
 
                 [MethodImpl(MethodImplOptions.NoInlining)]

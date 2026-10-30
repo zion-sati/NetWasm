@@ -243,7 +243,7 @@ internal sealed class ManagedInliningResolver(
             CilOperation.StoreField => IsReceiver(operations, effect - 2),
             CilOperation.Call or CilOperation.CallVirtual =>
                 _calledMethods.Resolve(instruction) is
-                    { Definition: { IsStatic: false, JSImport: null, NativeImport: null, WitImport: null } definition } target &&
+                { Definition: { IsStatic: false, JSImport: null, NativeImport: null, WitImport: null } definition } target &&
                 !target.DeclaringType.IsValueType && !_intrinsics.TryGetIntrinsic(definition.Key, out _) &&
                 IsReceiver(operations, effect - 1 - target.Signature.ParameterTypes.Length) &&
                 (instruction.Operation == CilOperation.CallVirtual ||

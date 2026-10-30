@@ -144,7 +144,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             ? new ConstantCallFoldingRule(ConstantCalls(), new MethodSpecializer(
             [
                 new KnownSizeRewriter(calls),
-                new ConstantBranchFolding(graphBuilders.Create()),
+                ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
             ]))
             : null;
         var optimizer = optimizers.Create(
@@ -170,6 +170,7 @@ internal sealed class WholeProgramAnalyzerFactory(
             new FinalizerResolver(typeDefinitions, methodRepository, baseTypes),
             typeDefinitions,
             new Loops.ArrayLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
+            new Loops.SpanLengthResolver(typeFinder, methodRepository, methodInstances, symbols),
             new Loops.VectorLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
             optimizationSettings);
         var concurrency = SelectConcurrency(
@@ -283,7 +284,7 @@ internal sealed class WholeProgramAnalyzerFactory(
                 [
                     ConstantCalls(),
                     new KnownSizeRewriter(calls),
-                    new ConstantBranchFolding(graphBuilders.Create()),
+                    ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
                 ])));
         }
         if (constantCallFolding is not null)

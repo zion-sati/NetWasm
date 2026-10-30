@@ -268,29 +268,29 @@ internal sealed class ElementwiseLoopVectorizer(
                     stack.Add(new Invariant([Copy(instruction)], CliValueKind.F8));
                     break;
                 case CilOperation.LoadArrayElement when instruction.Operand is CilOperand.TypeIdentity { Value: var loaded }:
-                {
-                    if (stack.Count < 2 || Pop() is not Linear { Scale: 1, Offset: var offset } ||
-                        Pop() is not Invariant { Code: [var array] } || !IsArray(array) ||
-                        Lane(loaded) == CliValueKind.Unknown || Math.Abs(offset) >= MaximumOffset)
                     {
-                        return null;
+                        if (stack.Count < 2 || Pop() is not Linear { Scale: 1, Offset: var offset } ||
+                            Pop() is not Invariant { Code: [var array] } || !IsArray(array) ||
+                            Lane(loaded) == CliValueKind.Unknown || Math.Abs(offset) >= MaximumOffset)
+                        {
+                            return null;
+                        }
+                        stack.Add(new Element(array, offset, loaded));
+                        break;
                     }
-                    stack.Add(new Element(array, offset, loaded));
-                    break;
-                }
                 case CilOperation.StoreArrayElement when instruction.Operand is CilOperand.TypeIdentity { Value: var stored }:
-                {
-                    if (stack.Count < 3) return null;
-                    var value = Pop();
-                    if (Pop() is not Linear { Scale: 1, Offset: var offset } ||
-                        Pop() is not Invariant { Code: [var array] } || !IsArray(array) ||
-                        Lane(stored) == CliValueKind.Unknown || Math.Abs(offset) >= MaximumOffset)
                     {
-                        return null;
+                        if (stack.Count < 3) return null;
+                        var value = Pop();
+                        if (Pop() is not Linear { Scale: 1, Offset: var offset } ||
+                            Pop() is not Invariant { Code: [var array] } || !IsArray(array) ||
+                            Lane(stored) == CliValueKind.Unknown || Math.Abs(offset) >= MaximumOffset)
+                        {
+                            return null;
+                        }
+                        stores.Add(new Store(array, offset, stored, value));
+                        break;
                     }
-                    stores.Add(new Store(array, offset, stored, value));
-                    break;
-                }
                 case CilOperation.StoreLocal when instruction.Operand is CilOperand.Index { Value: var local }:
                     // k = i + c, which later index and value expressions read.
                     if (stack.Count < 1 || local == counter || Pop() is not Linear { Scale: not 0 } copy) return null;
@@ -298,62 +298,62 @@ internal sealed class ElementwiseLoopVectorizer(
                     break;
                 case CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.Divide or
                     CilOperation.BitwiseAnd or CilOperation.BitwiseOr or CilOperation.BitwiseXor:
-                {
-                    if (stack.Count < 2) return null;
-                    var right = Pop();
-                    if (Combine(instruction.Operation, Pop(), right) is not { } combined) return null;
-                    stack.Add(combined);
-                    break;
-                }
-                case CilOperation.ShiftLeft or CilOperation.ShiftRightSigned or CilOperation.ShiftRightUnsigned:
-                {
-                    if (stack.Count < 2 || Pop() is not Linear { Scale: 0, Offset: var count }) return null;
-                    var value = Pop();
-                    stack.Add(value is Invariant invariant
-                        ? Hoisted(invariant, Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(count)), Copy(instruction))
-                        : new Shift(instruction.Operation, value, count));
-                    break;
-                }
-                case CilOperation.Negate or CilOperation.OnesComplement:
-                {
-                    if (stack.Count < 1) return null;
-                    var operand = Pop();
-                    stack.Add(operand switch
                     {
-                        Linear { Scale: 0, Offset: var value } => new Linear(0, instruction.Operation == CilOperation.Negate
-                            ? unchecked(-value) : ~value),
-                        Invariant invariant => Hoisted(invariant, Copy(instruction)),
-                        _ => new Unary(instruction.Operation, operand),
-                    });
-                    break;
-                }
-                case CilOperation.ConvertFloat32 or CilOperation.ConvertFloat64 or CilOperation.ConvertInt64:
-                {
-                    // Only of values the loop does not change.
-                    if (stack.Count < 1 || AsInvariant(Pop()) is not { } invariant) return null;
-                    stack.Add(new Invariant([.. invariant.Code, Copy(instruction)], instruction.Operation switch
-                    {
-                        CilOperation.ConvertFloat32 => CliValueKind.F4,
-                        CilOperation.ConvertFloat64 => CliValueKind.F8,
-                        _ => CliValueKind.I8,
-                    }));
-                    break;
-                }
-                case CilOperation.Call:
-                {
-                    if (_calledMethods.Resolve(instruction) is not { } target || !LoopInvariantCallHoister.IsPure(target)) return null;
-                    var count = target.Signature.ParameterTypes.Length;
-                    if (stack.Count < count) return null;
-                    var arguments = new List<Invariant>();
-                    for (var index = 0; index < count; index++)
-                    {
-                        if (AsInvariant(Pop()) is not { } argument) return null;
-                        arguments.Insert(0, argument);
+                        if (stack.Count < 2) return null;
+                        var right = Pop();
+                        if (Combine(instruction.Operation, Pop(), right) is not { } combined) return null;
+                        stack.Add(combined);
+                        break;
                     }
-                    stack.Add(new Invariant([.. arguments.SelectMany(static argument => argument.Code), Copy(instruction)],
-                        target.Signature.ReturnType));
-                    break;
-                }
+                case CilOperation.ShiftLeft or CilOperation.ShiftRightSigned or CilOperation.ShiftRightUnsigned:
+                    {
+                        if (stack.Count < 2 || Pop() is not Linear { Scale: 0, Offset: var count }) return null;
+                        var value = Pop();
+                        stack.Add(value is Invariant invariant
+                            ? Hoisted(invariant, Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(count)), Copy(instruction))
+                            : new Shift(instruction.Operation, value, count));
+                        break;
+                    }
+                case CilOperation.Negate or CilOperation.OnesComplement:
+                    {
+                        if (stack.Count < 1) return null;
+                        var operand = Pop();
+                        stack.Add(operand switch
+                        {
+                            Linear { Scale: 0, Offset: var value } => new Linear(0, instruction.Operation == CilOperation.Negate
+                                ? unchecked(-value) : ~value),
+                            Invariant invariant => Hoisted(invariant, Copy(instruction)),
+                            _ => new Unary(instruction.Operation, operand),
+                        });
+                        break;
+                    }
+                case CilOperation.ConvertFloat32 or CilOperation.ConvertFloat64 or CilOperation.ConvertInt64:
+                    {
+                        // Only of values the loop does not change.
+                        if (stack.Count < 1 || AsInvariant(Pop()) is not { } invariant) return null;
+                        stack.Add(new Invariant([.. invariant.Code, Copy(instruction)], instruction.Operation switch
+                        {
+                            CilOperation.ConvertFloat32 => CliValueKind.F4,
+                            CilOperation.ConvertFloat64 => CliValueKind.F8,
+                            _ => CliValueKind.I8,
+                        }));
+                        break;
+                    }
+                case CilOperation.Call:
+                    {
+                        if (_calledMethods.Resolve(instruction) is not { } target || !LoopInvariantCallHoister.IsPure(target)) return null;
+                        var count = target.Signature.ParameterTypes.Length;
+                        if (stack.Count < count) return null;
+                        var arguments = new List<Invariant>();
+                        for (var index = 0; index < count; index++)
+                        {
+                            if (AsInvariant(Pop()) is not { } argument) return null;
+                            arguments.Insert(0, argument);
+                        }
+                        stack.Add(new Invariant([.. arguments.SelectMany(static argument => argument.Code), Copy(instruction)],
+                            target.Signature.ReturnType));
+                        break;
+                    }
                 default:
                     return null;
             }
@@ -514,13 +514,13 @@ internal sealed class ElementwiseLoopVectorizer(
         // Values the loop does not change, broadcast once; the lanes' own counter
         // offsets 0, 1, 2 and 3 for a value that reads the counter.
         var broadcasts = new Dictionary<string, int>();
-        var vectorType = _methods.Broadcast(lane).Signature.ReturnSignatureType;
+        var vectorType = _methods.Resolve(VectorLoopMethod.Broadcast, lane).Signature.ReturnSignatureType;
         int Broadcast(ImmutableArray<CilInstruction> code)
         {
             var key = string.Join(';', code.Select(static instruction => $"{instruction.Operation}:{instruction.Operand}"));
             if (broadcasts.TryGetValue(key, out var existing)) return existing;
             Emit(code);
-            Call(_methods.Broadcast(lane));
+            Call(_methods.Resolve(VectorLoopMethod.Broadcast, lane));
             var local = NewLocal(vectorType);
             Add(CilOperation.StoreLocal, new CilOperand.Index(local));
             return broadcasts[key] = local;
@@ -543,7 +543,7 @@ internal sealed class ElementwiseLoopVectorizer(
                         Constant(1);
                         Constant(2);
                         Constant(3);
-                        Call(_methods.CreateInt32());
+                        Call(_methods.Resolve(VectorLoopMethod.CreateInt32, lane));
                         iota = NewLocal(vectorType);
                         Add(CilOperation.StoreLocal, new CilOperand.Index(iota.Value));
                     }
@@ -578,10 +578,10 @@ internal sealed class ElementwiseLoopVectorizer(
             {
                 case Element element:
                     prefix.Add(Copy(element.Array));
-                    Call(_methods.ArrayData(element.Type));
+                    Call(_methods.Resolve(VectorLoopMethod.ArrayData, element.Type));
                     Counter(element.Offset);
                     Add(CilOperation.ConvertNativeUInt);
-                    Call(_methods.Load(lane));
+                    Call(_methods.Resolve(VectorLoopMethod.Load, lane));
                     break;
                 case Invariant invariant:
                     Add(CilOperation.LoadLocal, new CilOperand.Index(Broadcast(invariant.Code)));
@@ -593,30 +593,30 @@ internal sealed class ElementwiseLoopVectorizer(
                 case Linear linear:
                     // scale * (i + lane) + offset.
                     Counter(0);
-                    Call(_methods.Broadcast(lane));
+                    Call(_methods.Resolve(VectorLoopMethod.Broadcast, lane));
                     Add(CilOperation.LoadLocal, new CilOperand.Index(iota!.Value));
-                    Call(_methods.Operator("op_Addition", lane));
+                    Call(_methods.Resolve(new VectorLoopOperator("op_Addition"), lane));
                     if (linear.Scale != 1)
                     {
                         Add(CilOperation.LoadLocal, new CilOperand.Index(
                             Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(linear.Scale))])));
-                        Call(_methods.Operator("op_Multiply", lane));
+                        Call(_methods.Resolve(new VectorLoopOperator("op_Multiply"), lane));
                     }
                     if (linear.Offset != 0)
                     {
                         Add(CilOperation.LoadLocal, new CilOperand.Index(
                             Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(linear.Offset))])));
-                        Call(_methods.Operator("op_Addition", lane));
+                        Call(_methods.Resolve(new VectorLoopOperator("op_Addition"), lane));
                     }
                     break;
                 case Unary unary:
                     Value(unary.Operand);
-                    Call(_methods.Operator(unary.Operation == CilOperation.Negate ? "op_UnaryNegation" : "op_OnesComplement", lane));
+                    Call(_methods.Resolve(new VectorLoopOperator(unary.Operation == CilOperation.Negate ? "op_UnaryNegation" : "op_OnesComplement"), lane));
                     break;
                 case Binary binary:
                     Value(binary.Left);
                     Value(binary.Right);
-                    Call(_methods.Operator(binary.Operation switch
+                    Call(_methods.Resolve(new VectorLoopOperator(binary.Operation switch
                     {
                         CilOperation.Add => "op_Addition",
                         CilOperation.Subtract => "op_Subtraction",
@@ -625,17 +625,17 @@ internal sealed class ElementwiseLoopVectorizer(
                         CilOperation.BitwiseAnd => "op_BitwiseAnd",
                         CilOperation.BitwiseOr => "op_BitwiseOr",
                         _ => "op_ExclusiveOr",
-                    }, lane));
+                    }), lane));
                     break;
                 case Shift shift:
                     Value(shift.Value);
                     Constant(shift.Count);
-                    Call(_methods.Operator(shift.Operation switch
+                    Call(_methods.Resolve(new VectorLoopOperator(shift.Operation switch
                     {
                         CilOperation.ShiftLeft => "op_LeftShift",
                         CilOperation.ShiftRightSigned => "op_RightShift",
                         _ => "op_UnsignedRightShift",
-                    }, lane));
+                    }), lane));
                     break;
             }
         }
@@ -643,10 +643,10 @@ internal sealed class ElementwiseLoopVectorizer(
         {
             Value(store.Value);
             prefix.Add(Copy(store.Array));
-            Call(_methods.ArrayData(store.Type));
+            Call(_methods.Resolve(VectorLoopMethod.ArrayData, store.Type));
             Counter(store.Offset);
             Add(CilOperation.ConvertNativeUInt);
-            Call(_methods.Store(lane));
+            Call(_methods.Resolve(VectorLoopMethod.Store, lane));
         }
         // A counter copy keeps the last iteration's value, as the loop leaves it.
         foreach (var (local, alias) in loop.Aliases)

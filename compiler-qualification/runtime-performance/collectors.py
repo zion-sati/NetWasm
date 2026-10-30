@@ -11,9 +11,9 @@ capacity. Results go to <output>/summary.json and a Markdown table is printed.
 (`jit`) and NativeAOT (`aot`), for scale. Desktop runs native code for the host
 CPU, so it has no linear memory or component size.
 
---mono-aot adds Mono, compiled ahead of time for wasi-wasm and run by the same
-Wasmtime: the same .NET-on-Wasm comparison. It names a .NET SDK root with the
-wasi-experimental workload and the wasi-sdk it requires.
+--mono-aot adds Mono, compiled ahead of time for wasi-wasm with Wasm SIMD and
+run by the same Wasmtime: the same .NET-on-Wasm comparison. It names a .NET SDK
+root with the wasi-experimental workload and the wasi-sdk it requires.
 
 This produces the figures in docs/runtime-garbage-collection.md.
 """
@@ -91,15 +91,23 @@ def mono_aot(workload, root, dotnet_root, wasi_sdk):
     cell.mkdir(parents=True)
     name = run.NAMES[workload]
     shutil.copyfile(run.ROOT / 'workloads' / workload / 'Program.cs', cell / 'Program.cs')
-    (cell / f'{name}.csproj').write_text(
-        '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType>'
-        '<TargetFramework>net10.0</TargetFramework><RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>'
-        '<RunAOTCompilation>true</RunAOTCompilation><WasmSingleFileBundle>true</WasmSingleFileBundle>'
-        '<InvariantGlobalization>true</InvariantGlobalization><Nullable>enable</Nullable>'
-        '<Optimize>true</Optimize><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup></Project>\n')
     dotnet = dotnet_root / 'dotnet'
     sdk = subprocess.run([dotnet, '--version'], capture_output=True, text=True, check=True,
                          cwd=dotnet_root).stdout.strip()
+    framework = f"net{sdk.split('.')[0]}.0"
+    # Wasm SIMD, as NetWasm uses it: WasiApp.targets leaves -msimd128 out of
+    # the clang flags, so without it the SIMD bitcode fails to compile.
+    # .NET 11's WorkloadManifest.Wasi.targets enables the workload through
+    # WasiNativeWorkload10 while its wasi-experimental pack sets
+    # WasiNativeWorkload11.
+    (cell / f'{name}.csproj').write_text(
+        '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType>'
+        f'<TargetFramework>{framework}</TargetFramework><RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>'
+        '<RunAOTCompilation>true</RunAOTCompilation><WasmSingleFileBundle>true</WasmSingleFileBundle>'
+        '<InvariantGlobalization>true</InvariantGlobalization><Nullable>enable</Nullable>'
+        '<WasmEnableSIMD>true</WasmEnableSIMD><WasiClangFlags>-msimd128</WasiClangFlags>'
+        + ('<WasiNativeWorkload10>true</WasiNativeWorkload10>' if framework == 'net11.0' else '') +
+        '<Optimize>true</Optimize><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup></Project>\n')
     (cell / 'global.json').write_text(json.dumps({'sdk': {'version': sdk, 'rollForward': 'disable'}}))
     # wasi-sdk's clang runs any wasm-opt on PATH after linking; keep only the
     # toolchain the Mono workload expects.
@@ -108,7 +116,7 @@ def mono_aot(workload, root, dotnet_root, wasi_sdk):
                PATH=os.pathsep.join([str(dotnet_root), '/usr/bin', '/bin', '/usr/sbin', '/sbin']))
     run.run([str(dotnet), 'publish', f'{name}.csproj', '-c', 'Release', '--nologo'], cell, env,
             cell / 'publish.log')
-    return cell / 'bin' / 'Release' / 'net10.0' / 'wasi-wasm' / 'AppBundle' / f'{name}.wasm'
+    return cell / 'bin' / 'Release' / framework / 'wasi-wasm' / 'AppBundle' / f'{name}.wasm'
 
 
 def build_memory_host(root):

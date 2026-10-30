@@ -1643,7 +1643,7 @@ namespace System.Text
             if (typeof(T) == typeof(byte))
             {
                 return
-                    Avx.IsSupported ? (vector.AsByte() & Vector256.Create((byte)0x80)) == Vector256<byte>.Zero:
+                    Avx.IsSupported ? (vector.AsByte() & Vector256.Create((byte)0x80)) == Vector256<byte>.Zero :
                     vector.AsByte().ExtractMostSignificantBits() == 0;
             }
             else

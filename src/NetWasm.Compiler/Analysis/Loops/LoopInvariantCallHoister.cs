@@ -198,8 +198,10 @@ internal sealed class LoopInvariantCallHoister(ICalledMethodResolver calledMetho
                 Argument(body, argument),
             { Operation: CilOperation.Call } when _calledMethods.Resolve(instructions[index]) is { } target =>
                 target.Signature.ReturnType,
-            { Operation: CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.Divide or
-                CilOperation.Negate } => Kind(instructions, body, index - 1),
+            {
+                Operation: CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.Divide or
+                CilOperation.Negate
+            } => Kind(instructions, body, index - 1),
             _ => CliValueKind.Unknown,
         };
 

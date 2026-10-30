@@ -34,6 +34,7 @@ internal sealed class ManagedMethodOptimizerFactory(
         IFinalizerResolver finalizers,
         ITypeDefinitionResolver typeDefinitions,
         IArrayLoopMethodResolver arrayLoopMethods,
+        ISpanLengthResolver spanLengths,
         IVectorLoopMethodResolver vectorLoopMethods,
         WasmOptimizationSettings settings)
     {
@@ -49,6 +50,7 @@ internal sealed class ManagedMethodOptimizerFactory(
         ArgumentNullException.ThrowIfNull(finalizers);
         ArgumentNullException.ThrowIfNull(typeDefinitions);
         ArgumentNullException.ThrowIfNull(arrayLoopMethods);
+        ArgumentNullException.ThrowIfNull(spanLengths);
         ArgumentNullException.ThrowIfNull(vectorLoopMethods);
         ArgumentNullException.ThrowIfNull(settings);
         var graphBuilder = _graphBuilders.Create();
@@ -112,7 +114,7 @@ internal sealed class ManagedMethodOptimizerFactory(
             new IdempotentLoopCollapser(graphBuilder, stackValidator, intrinsics,
                 settings.IdempotentLoopCollapse == IdempotentLoopCollapsePolicy.CountedLoops),
             new ArrayLoopIdiomRewriter(arrayLoopMethods, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
-            new ReductionLoopRewriter(calledMethods, arrayLoopMethods, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
+            new ReductionLoopRewriter(calledMethods, arrayLoopMethods, spanLengths, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
             new LoopInvariantCallHoister(calledMethods, settings.LoopVectorization == LoopVectorizationPolicy.CountedLoops),
             new ElementwiseLoopVectorizer(vectorLoopMethods, calledMethods,
                 settings.LoopVectorization == LoopVectorizationPolicy.CountedLoops),
