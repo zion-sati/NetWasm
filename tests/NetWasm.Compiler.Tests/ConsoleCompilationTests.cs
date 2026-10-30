@@ -109,7 +109,7 @@ public sealed class ConsoleCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         var reachableNames = result.Program.Methods.Values
@@ -154,7 +154,7 @@ public sealed class ConsoleCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         var reachableMethods = result.Program.Methods.Values
             .Select(method => method.Method.Definition.Name)
@@ -165,7 +165,7 @@ public sealed class ConsoleCompilationTests
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:io@0.2.11/streams",
+                InterfaceName: "wasi:io/streams@0.2.11",
                 FunctionName: "[method]output-stream.blocking-write-and-flush",
             });
         Assert.True(
@@ -208,18 +208,18 @@ public sealed class ConsoleCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli@0.2.11/stderr",
+                InterfaceName: "wasi:cli/stderr@0.2.11",
                 FunctionName: "get-stderr",
             });
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli@0.2.11/stdout",
+                InterfaceName: "wasi:cli/stdout@0.2.11",
                 FunctionName: "get-stdout",
             });
     }
@@ -257,7 +257,7 @@ public sealed class ConsoleCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform",
+            WitWorld: "netwasm:platform/platform@1.0.0",
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
         var exports = WasmModuleInspection.ReadExportNames(result.ApplicationModule);
@@ -268,7 +268,7 @@ public sealed class ConsoleCompilationTests
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli@0.2.11/environment",
+                InterfaceName: "wasi:cli/environment@0.2.11",
                 FunctionName: "get-arguments",
             });
         Assert.True(
@@ -308,13 +308,13 @@ public sealed class ConsoleCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform",
+            WitWorld: "netwasm:platform/platform@1.0.0",
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:cli@0.2.11/environment",
+                InterfaceName: "wasi:cli/environment@0.2.11",
                 FunctionName: "get-arguments",
             });
     }

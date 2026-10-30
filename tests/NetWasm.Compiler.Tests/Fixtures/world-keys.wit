@@ -1,0 +1,21 @@
+package my:ns;
+
+interface host {
+  hello: func() -> u32;
+}
+
+interface math {
+  add: func(a: u32, b: u32) -> u32;
+}
+
+world keys {
+  import api: interface {
+    some-func: func(value: u32);
+  }
+  import host;
+  import calc: math;
+  export run: interface {
+    go: func(x: u32) -> u32;
+  }
+  export math;
+}

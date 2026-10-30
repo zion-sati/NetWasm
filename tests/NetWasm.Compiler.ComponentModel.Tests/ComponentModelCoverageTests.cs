@@ -326,21 +326,25 @@ public sealed class ComponentModelCoverageTests
             coreTypes, coreLayouts, new WitCanonicalTypeReachabilityResolver(), syntax, null!));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             null!, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
-            syntax, new CodeWriterFactory()));
+            syntax, new CodeWriterFactory(), new WitTypeDefinitionClassifier()));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             validator, null!, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
-            syntax, new CodeWriterFactory()));
+            syntax, new CodeWriterFactory(), new WitTypeDefinitionClassifier()));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             validator, declarations, null!, new WitCanonicalMarshallingWriter(marshallingTypes),
-            syntax, new CodeWriterFactory()));
+            syntax, new CodeWriterFactory(), new WitTypeDefinitionClassifier()));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
-            validator, declarations, methods, null!, syntax, new CodeWriterFactory()));
-        Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
-            validator, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
-            null!, new CodeWriterFactory()));
+            validator, declarations, methods, null!, syntax, new CodeWriterFactory(),
+            new WitTypeDefinitionClassifier()));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             validator, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
-            syntax, null!));
+            null!, new CodeWriterFactory(), new WitTypeDefinitionClassifier()));
+        Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
+            validator, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
+            syntax, null!, new WitTypeDefinitionClassifier()));
+        Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
+            validator, declarations, methods, new WitCanonicalMarshallingWriter(marshallingTypes),
+            syntax, new CodeWriterFactory(), null!));
 
         var methodWriter = new WitBindingMethodWriter(imports, exportsSection);
         Assert.Throws<ArgumentNullException>(() => methodWriter.Generate(null!, new WitWorld(
@@ -358,7 +362,8 @@ public sealed class ComponentModelCoverageTests
             methods,
             marshallingWriter,
             syntax,
-            new CodeWriterFactory());
+            new CodeWriterFactory(),
+            new WitTypeDefinitionClassifier());
         Assert.Throws<ArgumentNullException>(() => generator.Generate(null!, new WitWorld(
             0, "world", "example:test@1.0.0", [], [])));
         Assert.Throws<ArgumentNullException>(() => generator.Generate(

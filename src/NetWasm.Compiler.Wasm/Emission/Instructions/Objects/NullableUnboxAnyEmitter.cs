@@ -1,5 +1,6 @@
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -75,10 +76,8 @@ internal sealed class NullableUnboxAnyEmitter(
             layouts.Target.ObjectHeaderSize,
             underlying.Alignment));
         addresses.Emit(code, AddressOperation.Add);
-        addresses.Emit(code, underlying.Size);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Prefixed,
-            WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, underlying.Size,
+            writer => addresses.Emit(writer, underlying.Size));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
 
         code.Write(WasmInstruction.WithOperand(

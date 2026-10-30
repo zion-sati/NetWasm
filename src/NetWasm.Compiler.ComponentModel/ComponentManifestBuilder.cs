@@ -76,8 +76,7 @@ public sealed class ComponentManifestBuilder(IWasmTools tools) : IComponentManif
         WitDocument document,
         ImmutableArray<WitWorldItem> items) => [.. items
         .Where(item => item.InterfaceId is not null)
-        .Select(item => document.Interfaces[item.InterfaceId!.Value])
-        .Select(item => $"{item.Package}/{item.Name}")
+        .Select(item => item.Name)
         .Order(StringComparer.Ordinal)];
 
     private static ImmutableArray<string> FunctionNames(
@@ -94,7 +93,7 @@ public sealed class ComponentManifestBuilder(IWasmTools tools) : IComponentManif
             }
             var @interface = document.Interfaces[item.InterfaceId!.Value];
             names.AddRange(@interface.Functions.Select(interfaceFunction =>
-                $"{@interface.Package}/{@interface.Name}#{interfaceFunction.Name}"));
+                $"{item.Name}#{interfaceFunction.Name}"));
         }
         return [.. names.Order(StringComparer.Ordinal)];
     }

@@ -58,7 +58,8 @@ internal sealed class ValueFrameEntryEmitter(
                 var layout = values.GetValueLayout(argumentType);
                 copies.Emit(code, context.ObjectTemporary, layout.Size, layout.Alignment,
                     writer => writer.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
-                        WasmInstructionOperand.Unsigned((uint)argumentLocal))));
+                        WasmInstructionOperand.Unsigned((uint)argumentLocal))),
+                    context);
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
                     WasmInstructionOperand.Unsigned((uint)context.ObjectTemporary)));
                 code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,

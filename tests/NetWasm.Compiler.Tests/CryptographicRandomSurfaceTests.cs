@@ -47,7 +47,7 @@ public sealed class CryptographicRandomSurfaceTests
         // No WIT world is selected: an accidentally retained secure import fails compilation.
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", []));
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport?.InterfaceName == "wasi:random@0.2.11/random");
+            method.WitImport?.InterfaceName == "wasi:random/random@0.2.11");
         Assert.DoesNotContain(result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values), body =>
             body.Method.DeclaringType.FullName == "System.Security.Cryptography.RandomNumberGeneratorImplementation");
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
@@ -73,10 +73,10 @@ public sealed class CryptographicRandomSurfaceTests
             """);
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
         Assert.Contains(result.Program.WitImportMethods, method => method.WitImport is
         {
-            InterfaceName: "wasi:random@0.2.11/random",
+            InterfaceName: "wasi:random/random@0.2.11",
             FunctionName: "get-random-bytes",
         });
         var names = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
@@ -108,11 +108,11 @@ public sealed class CryptographicRandomSurfaceTests
             "Run",
             [],
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.Contains(result.Program.WitImportMethods, method => method.WitImport is
         {
-            InterfaceName: "wasi:random@0.2.11/random",
+            InterfaceName: "wasi:random/random@0.2.11",
             FunctionName: "get-random-bytes",
         });
         Assert.Contains(result.Program.Methods.Values, body =>

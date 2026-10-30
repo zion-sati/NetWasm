@@ -39,10 +39,10 @@ public sealed class EphemeronHandleIntrinsicEmitterTests
             [WasmOpcodes.LocalGet, WasmOpcodes.LocalGet, WasmOpcodes.Call, WasmOpcodes.LocalSet],
             writer.Instructions.Select(instruction => instruction.Opcode));
         Assert.Equal(
-            (uint)((memory64 ? locals.ReferenceBase : locals.I4Base) + argumentBase),
+            (uint)((memory64 ? locals.I8Base : locals.I4Base) + argumentBase),
             writer.Instructions[0].Operand.UnsignedValue);
         Assert.Equal(
-            (uint)((memory64 ? locals.ReferenceBase : locals.I4Base) + argumentBase + 1),
+            (uint)((memory64 ? locals.I8Base : locals.I4Base) + argumentBase + 1),
             writer.Instructions[1].Operand.UnsignedValue);
         Assert.Equal(
             (uint)imports.Resolve(

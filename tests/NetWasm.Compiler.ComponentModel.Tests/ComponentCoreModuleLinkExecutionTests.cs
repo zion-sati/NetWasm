@@ -88,7 +88,7 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             stages.Optimization);
         Assert.Equal(
             [
-                ("application", "sanitized", WasmInlineAnnotationSelection.SizeAware),
+                ("application", "sanitized", WasmInlineAnnotationSelection.Preserve),
                 ("runtime", "runtime-sanitized", WasmInlineAnnotationSelection.SizeAware),
             ],
             stages.Inlinings);

@@ -18,7 +18,7 @@ public sealed class DiagnosticOutputCompilationTests
         var assembly = assets.CompileSource("DiagnosticOutput", (debug ? "#define DEBUG\n" : "") + source);
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         var methods = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values)
             .Select(body => body.Method).ToArray();
         var output = methods.Where(method => method.DeclaringType.FullName == "System.Diagnostics.Debug").ToArray();

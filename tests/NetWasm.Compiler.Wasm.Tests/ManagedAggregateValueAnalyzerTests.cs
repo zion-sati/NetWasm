@@ -279,7 +279,34 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var materialization = Assert.Single(analysis.Materializations);
         Assert.Equal(3, materialization.InstructionOffset);
         Assert.Equal(storage.Id, materialization.Storage);
+        Assert.False(materialization.ReloadAfter);
+        // The store is in no loop the lanes are read in, so it would only add a
+        // flush and a reload.
         Assert.Empty(fixture.Analyze(fixture.LocalValueMethod(storeWholeValue: true)).Storages);
+    }
+
+    // An enumerator assigned before the loop that moves it: the lanes reload
+    // once after the store and serve every iteration.
+    [Fact]
+    public void WholeValueStoresOutsideTheLoopThatReadsTheLanesReloadThem()
+    {
+        var fixture = new Fixture();
+
+        var analysis = fixture.Analyze(fixture.StoreThenLoopMethod(storeInLoop: false));
+
+        Assert.Single(analysis.Storages);
+        Assert.Contains(analysis.Materializations, item => item is { InstructionOffset: 1, ReloadAfter: true });
+        Assert.Empty(fixture.Analyze(fixture.StoreThenLoopMethod(storeInLoop: true)).Storages);
+    }
+
+    [Fact]
+    public void ExcludedLocalsAreNoStorage()
+    {
+        var fixture = new Fixture();
+        var method = fixture.LocalValueMethod(storeWholeValue: true);
+
+        Assert.Same(ManagedAggregateValueAnalysis.Empty, fixture.Analyzer.Analyze(
+            fixture.Request(method, fixture.EmptyRootMap()) with { ExcludedLocals = [0] }));
     }
 
     [Theory]
@@ -404,11 +431,16 @@ public sealed class ManagedAggregateValueAnalyzerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void InitializeObjectOfAFieldRejectsTheStorage(bool high)
+    public void InitializeObjectOfAFieldClearsItsLane(bool high)
     {
         var fixture = new Fixture();
 
-        Assert.Empty(fixture.Analyze(fixture.FieldClearMethod(high ? fixture.High : fixture.Low)).Storages);
+        var analysis = fixture.Analyze(fixture.FieldClearMethod(high ? fixture.High : fixture.Low));
+
+        Assert.Single(analysis.Storages);
+        var clear = analysis.LaneAccesses[2];
+        Assert.True(clear.Writes);
+        Assert.Equal(high ? 4 : 0, Assert.Single(clear.LaneOffsets));
     }
 
     [Fact]
@@ -1332,6 +1364,34 @@ public sealed class ManagedAggregateValueAnalyzerTests
             return SingleBlock(steps);
         }
 
+        // The whole value is loaded and stored back, then a loop reads a field;
+        // the store sits before the loop or inside it.
+        public StructuredMethod StoreThenLoopMethod(bool storeInLoop)
+        {
+            var store = new StructuredBlockId(0);
+            var loop = new StructuredBlockId(1);
+            var storeSteps = new[]
+            {
+                Step(I(0, CilOperation.LoadLocal, new CilOperand.Index(0))),
+                Step(I(1, CilOperation.StoreLocal, new CilOperand.Index(0)), CliValueKind.ValueType),
+            };
+            var loopSteps = new[]
+            {
+                Step(I(2, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
+                Step(I(3, CilOperation.LoadField, new CilOperand.FieldInstance(Low)), CliValueKind.ManagedAddress),
+                Step(I(4, CilOperation.Pop), CliValueKind.I4),
+            };
+            StructuredRegion Code(StructuredBlockId id) => new StructuredCode(new(id, StructuredBlockRole.Owner));
+            StructuredRegion Loop(params StructuredRegion[] body) =>
+                new StructuredLoop(null, false, new([.. body]), StructuredSequence.Empty, StructuredSequence.Empty);
+            return Graph(store,
+                ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
+                    .Add(store, Block(store, storeSteps, new StructuredFallthroughExit(loop)))
+                    .Add(loop, Block(loop, loopSteps, new StructuredFallthroughExit(null))),
+                [.. storeSteps, .. loopSteps], [CliValueKind.ValueType], [Aggregate],
+                new(storeInLoop ? [Loop(Code(store), Code(loop))] : [Code(store), Loop(Code(loop))]));
+        }
+
         public StructuredMethod LocalValueMethod(bool storeWholeValue)
         {
             var id = new StructuredBlockId(0);
@@ -1957,7 +2017,8 @@ public sealed class ManagedAggregateValueAnalyzerTests
             ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition> blocks,
             IEnumerable<InstructionStep> steps,
             ImmutableArray<CliValueKind> locals,
-            ImmutableArray<CliTypeIdentity> localTypes)
+            ImmutableArray<CliTypeIdentity> localTypes,
+            StructuredSequence? body = null)
         {
             var all = steps.ToImmutableArray();
             return new(
@@ -1970,7 +2031,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
                     [.. all.Select(step => step.Instruction)]),
                 entry,
                 blocks,
-                StructuredSequence.Empty,
+                body ?? StructuredSequence.Empty,
                 [],
                 [],
                 all.ToImmutableDictionary(

@@ -28,7 +28,7 @@ internal static class ConstantRewriteTestSupport
     internal static ConstantComparisonEvaluator Comparisons(MethodFacts facts) => new(facts);
 
     internal static ConstantCallEvaluator Evaluator(MethodFacts facts) =>
-        new(facts, facts, facts, facts, facts, Operands(facts), Comparisons(facts));
+        new(facts, facts, facts, facts, facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([]));
 
     internal static IControlFlowGraphBuilder Graph(CilMethodBody body) => new FixedGraph(
         new ControlFlowGraphBuilderFactory().Create().Build(body));

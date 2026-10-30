@@ -22,6 +22,24 @@ unsupported native or host APIs and named-culture globalization remain outside
 the initial slice. Results attach to a package version, selected assets and
 the functionality an application actually uses.
 
+## Planned: WASI 0.3 and plain core modules
+
+Two output changes are planned together.
+
+**WASI 0.3.** The WASI and Component Model integration moves to WASI 0.3, whose
+native async (async functions, streams and futures) lets C# `async` code map
+onto the Component Model directly instead of through NetWasm's own completion
+boundaries, and the set of WASI capabilities ordinary C# can use widens with it.
+
+**Plain core modules.** Some hosts embed a WebAssembly engine without the
+Component Model, such as plugin systems in games and native applications, and
+use WIT only to describe the interface. For them NetWasm will also produce a
+plain core module: a world's imports become core imports and its exports core
+exports, named and passed with the canonical ABI as wit-bindgen's core-module
+bindings do, so records, variants, enums and the other WIT types work on both
+sides. Beyond the world's own imports, such a module needs only a small,
+documented contract from its host.
+
 ## Release gates
 
 | Area | The v1.0 bar |

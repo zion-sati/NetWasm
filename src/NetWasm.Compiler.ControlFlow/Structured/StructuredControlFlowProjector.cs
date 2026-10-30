@@ -62,6 +62,13 @@ internal sealed class StructuredControlFlowProjector : IStructuredControlFlowPro
             Draft.StructuredLoopBreakDraft => new StructuredLoopBreak(),
             Draft.StructuredLoopContinueDraft => new StructuredLoopContinue(),
             Draft.StructuredDispatcherContinueDraft continuation => new StructuredDispatcherContinue(new(continuation.TargetBlock)),
+            Draft.StructuredLabeledBlockDraft block => new StructuredLabeledBlock(
+                new(block.NextBlock),
+                ProjectSequence(block.Body, method, definitions, groupIds, activeGroup)),
+            Draft.StructuredLabeledLoopDraft loop => new StructuredLabeledLoop(
+                new(loop.HeaderBlock),
+                ProjectSequence(loop.Body, method, definitions, groupIds, activeGroup)),
+            Draft.StructuredLabelBranchDraft branch => new StructuredLabelBranch(new(branch.TargetBlock)),
             Draft.StructuredExceptionRegionDraft exception => new StructuredExceptionRegion(
                 groupIds[exception.Group],
                 exception.FallthroughContinuationIndex is int continuation ? new(continuation) : null)

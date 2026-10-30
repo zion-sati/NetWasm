@@ -423,10 +423,7 @@ namespace System
                 capacity = checked(capacity * 2);
             }
             var copy = new Delegate?[capacity];
-            for (var index = 0; index < _invocationCount; index++)
-            {
-                copy[index] = resultList[index];
-            }
+            Array.Copy(resultList, copy, _invocationCount);
             CopyInvocationList(value, copy, _invocationCount);
             return NewMulticastDelegate(copy, resultCount);
         }
@@ -644,10 +641,9 @@ namespace System
                 destination[destinationIndex] = value;
                 return;
             }
-            for (var index = 0; index < value._invocationCount; index++)
-            {
-                destination[destinationIndex + index] = value._invocationList[index];
-            }
+            // One copy of the whole list: an element store into a Delegate[]
+            // that is not known to be exactly that would test each element.
+            Array.Copy(value._invocationList, 0, destination, destinationIndex, value._invocationCount);
         }
 
         private static bool TrySetInvocationList(

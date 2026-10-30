@@ -903,8 +903,8 @@ wasm_consumer_root="$consumer_root/transitive-wasm"
 desktop_consumer_root="$consumer_root/transitive-desktop"
 mkdir -p "$wasm_consumer_root" "$desktop_consumer_root"
 cp "$app_root/global.json" "$wasm_consumer_root/global.json"
-cat > "$wasm_consumer_root/TransitiveWasm.csproj" <<'EOF'
-<Project Sdk="NetWasm.Sdk">
+cat > "$wasm_consumer_root/TransitiveWasm.csproj" <<EOF
+<Project Sdk="NetWasm.Sdk/${version}">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netwasm0.1</TargetFramework>
@@ -984,8 +984,8 @@ fi
 mkdir -p "$test_log_root"
 mkdir -p "$test_root"
 cp "$app_root/global.json" "$test_root/global.json"
-cat > "$test_root/RuntimeHostTests.csproj" <<'EOF'
-<Project Sdk="NetWasm.Sdk">
+printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$test_root/RuntimeHostTests.csproj"
+cat >> "$test_root/RuntimeHostTests.csproj" <<'EOF'
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
     <IsTestProject>true</IsTestProject>
@@ -1198,7 +1198,7 @@ vstest_project="$vstest_root/GenericVSTest.csproj"
 mkdir -p "$vstest_root"
 cp "$app_root/global.json" "$vstest_root/global.json"
 cat > "$vstest_project" <<EOF
-<Project Sdk="NetWasm.Sdk">
+<Project Sdk="NetWasm.Sdk/${version}">
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
     <OutputType>Exe</OutputType>
@@ -1260,8 +1260,8 @@ if [[ "$test_collectors" == false ]]; then
   wit_root="$consumer_root/wit bindings"
   mkdir -p "$wit_root/host api" "$wit_root/wit packages/deps"
   cp "$app_root/global.json" "$wit_root/global.json"
-  cat > "$wit_root/WitBindings.csproj" <<'EOF'
-<Project Sdk="NetWasm.Sdk">
+  printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$wit_root/WitBindings.csproj"
+  cat >> "$wit_root/WitBindings.csproj" <<'EOF'
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
     <OutputType>Library</OutputType>
@@ -1333,8 +1333,8 @@ EOF
   exports_root="$consumer_root/PageExports"
   mkdir -p "$exports_root"
   cp "$app_root/global.json" "$exports_root/global.json"
-  cat > "$exports_root/PageExports.csproj" <<'EOF'
-<Project Sdk="NetWasm.Sdk">
+  printf '<Project Sdk="NetWasm.Sdk/%s">\n' "$version" > "$exports_root/PageExports.csproj"
+  cat >> "$exports_root/PageExports.csproj" <<'EOF'
   <PropertyGroup>
     <TargetFramework>netwasm0.1</TargetFramework>
     <OutputType>Library</OutputType>

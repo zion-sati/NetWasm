@@ -296,7 +296,18 @@ public sealed class TestAssets : IDisposable
             .Append(sourcePath)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        Compile(Root, null, output, sources, allowUnsafe: true);
+        // As the CoreLib project, so the upstream intrinsics sources keep
+        // their public surface, with the symbols the SDK defines for it, which
+        // upstream sources test (#if NET).
+        Compile(
+            Root,
+            null,
+            output,
+            sources,
+            allowUnsafe: true,
+            optimize: false,
+            references: [],
+            defines: ["SYSTEM_PRIVATE_CORELIB", "NET", "NETCOREAPP"]);
         return output;
     }
 
@@ -404,6 +415,7 @@ public sealed class TestAssets : IDisposable
         bool warningsAsErrors = false,
         bool emitPortablePdb = false,
         string? sourceLinkPath = null,
+        IReadOnlyList<string>? defines = null,
         IReadOnlyList<string>? analyzers = null)
     {
         var sdkVersion = sdkVersionOverride ?? File.ReadAllText(Path.Combine(root, "global.json"))
@@ -429,7 +441,11 @@ public sealed class TestAssets : IDisposable
             "-noconfig",
             "-nostdlib",
             "-langversion:" + languageVersion,
-            "-define:NETWASM_REF_STRUCT_GENERICS;NETWASM_REGEX_STRING_CREATE;SYSTEM_TEXT_REGULAREXPRESSIONS",
+            "-define:" + string.Join(';', [
+                "NETWASM_REF_STRUCT_GENERICS",
+                "NETWASM_REGEX_STRING_CREATE",
+                "SYSTEM_TEXT_REGULAREXPRESSIONS",
+                .. defines ?? []]),
             "-deterministic+",
             optimize ? "-optimize+" : "-optimize-",
             "-target:library",

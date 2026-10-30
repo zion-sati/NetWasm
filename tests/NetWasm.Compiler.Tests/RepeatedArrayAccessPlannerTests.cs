@@ -23,7 +23,8 @@ public sealed class RepeatedArrayAccessPlannerTests
     // The index already on the stack keeps the value it had before the store.
     [InlineData("index = index + (index = 1); result = values[index] + values[index];", 1, 0)]
     // The loop's induction proof, which covers array locals, is kept beside the repeated access.
-    [InlineData("var local = values; for (var i = 0; i < local.Length; i++) result += local[i]; result += other[index] + other[index];", 2, 0)]
+    // The loop weighs each element by its index, so it is no sum that folds into one call.
+    [InlineData("var local = values; for (var i = 0; i < local.Length; i++) result += local[i] * i; result += other[index] + other[index];", 2, 0)]
     public void ProvesAccessesThatRepeatAnEarlierCheck(string statement, int checkedAccesses, int nonNull)
     {
         using var assets = TestAssets.Create();

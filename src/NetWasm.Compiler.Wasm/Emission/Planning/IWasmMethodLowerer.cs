@@ -9,5 +9,7 @@ internal interface IWasmMethodLowerer
     StructuredMethod Lower(
         ManagedMethodBody method,
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware);
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled);
 }

@@ -39,6 +39,8 @@ internal sealed record CompileCliOptions(
         "managedconstantargumentpropagation", "managedstaticarraypopulationelimination",
         "managedconstantcallfolding", "managedswitchbittests", "manageddevirtualization",
         "managedallocationelimination", "managedlooprotation", "managedarraystorecheckelimination",
+        "manageddispatcherelimination", "managedemptyfinallyremoval", "managedstructscalarreplacement", "managedallocationscalarreplacement",
+        "managedidempotentloopcollapse", "managedloopstoreforwarding", "managedarrayloopidioms", "managedloopvectorization",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -77,6 +79,14 @@ internal sealed record CompileCliOptions(
     public string? ManagedAllocationElimination { get; init; }
     public string? ManagedLoopRotation { get; init; }
     public string? ManagedArrayStoreCheckElimination { get; init; }
+    public string? ManagedDispatcherElimination { get; init; }
+    public string? ManagedEmptyFinallyRemoval { get; init; }
+    public string? ManagedStructScalarReplacement { get; init; }
+    public string? ManagedAllocationScalarReplacement { get; init; }
+    public string? ManagedIdempotentLoopCollapse { get; init; }
+    public string? ManagedLoopStoreForwarding { get; init; }
+    public string? ManagedArrayLoopIdioms { get; init; }
+    public string? ManagedLoopVectorization { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -150,6 +160,14 @@ internal sealed record CompileCliOptions(
             ManagedAllocationElimination = options.Single("managedallocationelimination"),
             ManagedLoopRotation = options.Single("managedlooprotation"),
             ManagedArrayStoreCheckElimination = options.Single("managedarraystorecheckelimination"),
+            ManagedDispatcherElimination = options.Single("manageddispatcherelimination"),
+            ManagedEmptyFinallyRemoval = options.Single("managedemptyfinallyremoval"),
+            ManagedStructScalarReplacement = options.Single("managedstructscalarreplacement"),
+            ManagedAllocationScalarReplacement = options.Single("managedallocationscalarreplacement"),
+            ManagedIdempotentLoopCollapse = options.Single("managedidempotentloopcollapse"),
+            ManagedLoopStoreForwarding = options.Single("managedloopstoreforwarding"),
+            ManagedArrayLoopIdioms = options.Single("managedarrayloopidioms"),
+            ManagedLoopVectorization = options.Single("managedloopvectorization"),
         };
     }
 

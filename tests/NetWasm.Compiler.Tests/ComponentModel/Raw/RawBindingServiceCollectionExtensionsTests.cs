@@ -76,7 +76,8 @@ public sealed class RawBindingServiceCollectionExtensionsTests
         Assert.Contains($"\"destructor\":\"{prefix}|output-alias|file_dtor\"",
             source,
             StringComparison.Ordinal);
-        Assert.Contains("\"interface\":\"example:files/api@1.0.0\"",
+        // The deployment names the placement as the world does, as Jco imports it.
+        Assert.Contains("\"interface\":\"input-alias\"",
             source,
             StringComparison.Ordinal);
     }
@@ -91,7 +92,7 @@ public sealed class RawBindingServiceCollectionExtensionsTests
         using var resourceJson = JsonDocument.Parse("\"resource\"");
         var resource = new WitTypeDefinition(0, "file", resourceJson.RootElement.Clone(), 0);
         var definition = new WitInterface(0, "api", "example:files@1.0.0", ImmutableDictionary<string, int>.Empty.Add("file", 0), []);
-        var world = new WitWorld(0, "main", "example:files@1.0.0", [new("api", 0, null)], [new("api", 0, null)]);
+        var world = new WitWorld(0, "main", "example:files@1.0.0", [new("example:files/api@1.0.0", 0, null)], [new("example:files/api@1.0.0", 0, null)]);
         var document = new WitDocument([], [definition], [world], [resource], "{}");
 
         var catalog = provider.GetRequiredService<IRawWitImportCatalogBuilder>().Build(document, world, target);
@@ -200,7 +201,7 @@ public sealed class RawBindingServiceCollectionExtensionsTests
             0,
             "command",
             "wasi:cli@0.2.11",
-            [new("environment", 0, null)],
+            [new("wasi:cli/environment@0.2.11", 0, null)],
             []);
         var document = new WitDocument([], [definition], [world], [], "{}");
         var services = new ServiceCollection().AddNetWasmCompiler();
@@ -223,7 +224,7 @@ public sealed class RawBindingServiceCollectionExtensionsTests
             .Project(validated, "runtime-wit", "command");
         var projected = Assert.Single(projection.RequiredImports);
 
-        Assert.Equal("wasi:cli@0.2.11/environment",
+        Assert.Equal("wasi:cli/environment@0.2.11",
             Assert.IsType<RawWitImportDeclaration.Callable>(catalog.Imports[identity])
                 .InterfaceName);
         Assert.Equal("wasi:cli/environment@0.2.11", projected.Interface);
@@ -257,7 +258,7 @@ public sealed class RawBindingServiceCollectionExtensionsTests
             0,
             "runtime",
             "example:runtime@1.2.3",
-            [new("api", 0, null)],
+            [new("example:runtime/api@1.2.3", 0, null)],
             []);
         var runtimeDocument = new WitDocument(
             [],

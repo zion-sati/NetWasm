@@ -24,4 +24,20 @@ public sealed record WasmOptimizationOverrides(
     ManagedAllocationElimination AllocationElimination = ManagedAllocationElimination.Auto,
     ManagedLoopRotation LoopRotation = ManagedLoopRotation.Auto,
     ManagedArrayStoreCheckElimination ArrayStoreCheckElimination =
-        ManagedArrayStoreCheckElimination.Auto);
+        ManagedArrayStoreCheckElimination.Auto,
+    ManagedDispatcherElimination DispatcherElimination =
+        ManagedDispatcherElimination.Auto,
+    ManagedEmptyFinallyRemoval EmptyFinallyRemoval =
+        ManagedEmptyFinallyRemoval.Auto,
+    ManagedStructScalarReplacement StructScalarReplacement =
+        ManagedStructScalarReplacement.Auto,
+    ManagedAllocationScalarReplacement AllocationScalarReplacement =
+        ManagedAllocationScalarReplacement.Auto,
+    ManagedIdempotentLoopCollapse IdempotentLoopCollapse =
+        ManagedIdempotentLoopCollapse.Auto,
+    ManagedLoopStoreForwarding LoopStoreForwarding =
+        ManagedLoopStoreForwarding.Auto,
+    ManagedArrayLoopIdioms ArrayLoopIdioms =
+        ManagedArrayLoopIdioms.Auto,
+    ManagedLoopVectorization LoopVectorization =
+        ManagedLoopVectorization.Auto);

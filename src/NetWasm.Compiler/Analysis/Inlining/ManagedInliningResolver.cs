@@ -18,7 +18,8 @@ internal sealed class ManagedInliningResolver(
     IMethodInitializationTriggerClassifier initializationTriggers,
     IRuntimeIntrinsicRegistry intrinsics,
     int smallBodyInstructionLimit,
-    int leafBodyInstructionLimit) : IManagedInliningResolver
+    int leafBodyInstructionLimit,
+    int loopBodyInstructionLimit) : IManagedInliningResolver
 {
     private readonly IMethodBodyReader _methodBodies = methodBodies ??
         throw new ArgumentNullException(nameof(methodBodies));
@@ -35,7 +36,9 @@ internal sealed class ManagedInliningResolver(
     private readonly ManagedMethodInliningPolicy _policy = policy switch
     {
         ManagedMethodInliningPolicy.Disabled or
-        ManagedMethodInliningPolicy.Speed => policy,
+        ManagedMethodInliningPolicy.Speed or
+        ManagedMethodInliningPolicy.Loops or
+        ManagedMethodInliningPolicy.Aggressive => policy,
         _ => throw new ArgumentOutOfRangeException(nameof(policy)),
     };
     private readonly int _smallBodyInstructionLimit = smallBodyInstructionLimit >= 0
@@ -44,6 +47,9 @@ internal sealed class ManagedInliningResolver(
     private readonly int _leafBodyInstructionLimit = leafBodyInstructionLimit >= 0
         ? leafBodyInstructionLimit
         : throw new ArgumentOutOfRangeException(nameof(leafBodyInstructionLimit));
+    private readonly int _loopBodyInstructionLimit = loopBodyInstructionLimit >= 0
+        ? loopBodyInstructionLimit
+        : throw new ArgumentOutOfRangeException(nameof(loopBodyInstructionLimit));
     // Whether a callee qualifies depends only on the callee, so each is examined once.
     private readonly ConcurrentDictionary<string, Candidate?> _candidates = new(StringComparer.Ordinal);
 
@@ -60,6 +66,19 @@ internal sealed class ManagedInliningResolver(
     // pressure of the rest of its caller. A tuple swap of two array elements is
     // seventeen instructions.
     internal const int LeafBodyInstructionLimit = 32;
+
+    // .NET's JIT weighs callees of up to 128 IL bytes and seven basic blocks
+    // (JitExtDefaultPolicyMaxIL and JitExtDefaultPolicyMaxBB), and more at a
+    // profiled hot call site. A call inside a loop is this compiler's hot call
+    // site, so a callee there may also branch forward, within about 128 IL
+    // bytes: fifty-six instructions at the 2.3 bytes per instruction of a
+    // shading helper with a clamp. Its calls must be ones the next round
+    // inlines, so the loop keeps no call of its own. A branching callee no
+    // larger than a leaf stays a call: Binaryen inlines it after turning its
+    // branches into selects, which kept a set-membership test branch-free that
+    // this inliner left branching (sparse-set took 32% longer).
+    internal const int LoopBodyInstructionLimit = 56;
+    internal const int LoopBodyBranchLimit = 6;
 
     public ManagedInliningPlan? Resolve(ManagedInliningRequest request)
     {
@@ -86,9 +105,18 @@ internal sealed class ManagedInliningResolver(
         // not allocating ones: a lazily initialized getter inlined through its
         // allocating initializer put that cold path into every caller.
         if (candidate is null ||
-            !(candidate.Small && !(request.Nested && candidate.Allocates) ||
-              candidate.Leaf && request.InLoop ||
-              (request.Nested ? method.Definition.IsAggressiveInlining : candidate.Priority)) ||
+            !(_policy == ManagedMethodInliningPolicy.Aggressive
+                // Only what the callee asks for.
+                ? method.Definition.IsAggressiveInlining
+                : _policy == ManagedMethodInliningPolicy.Loops
+                // A field accessor inlines to the load the call's receiver
+                // check already precedes, so it only shrinks its caller.
+                ? method.Definition.IsAggressiveInlining || candidate.Accessor ||
+                  request.InLoop && (candidate.Small && !(request.Nested && candidate.Allocates) ||
+                                     candidate.Leaf || candidate.LoopBody)
+                : candidate.Small && !(request.Nested && candidate.Allocates) ||
+                  (candidate.Leaf || candidate.LoopBody) && request.InLoop ||
+                  (request.Nested ? method.Definition.IsAggressiveInlining : candidate.Priority)) ||
             // A callvirt checks its receiver for null before the callee runs.
             !method.Definition.IsStatic && request.Call.Operation == CilOperation.CallVirtual &&
             !DereferencesReceiverFirst(candidate.Plan.Body))
@@ -108,30 +136,69 @@ internal sealed class ManagedInliningResolver(
         {
             return null;
         }
+        var accessor = !method.Definition.IsStatic && IsReferenceFieldAccessor(body);
         var priority = method.Definition.IsStatic
             ? IsPriorityCandidate(method, body)
-            : method.Definition.IsAggressiveInlining || IsReferenceFieldAccessor(body);
+            : method.Definition.IsAggressiveInlining || accessor;
         var small = IsSmall(body);
         var leaf = IsLeaf(body);
-        return priority || small || leaf
-            ? new(new(method, body) { InstructionEntryStacks = _bodyValidator.Validate(body) }, priority, small, leaf,
-                Enumerable.Range(0, body.Instructions.Length).Any(index => Allocates(body, index)))
+        var loopBody = !leaf && IsLoopBody(body);
+        return priority || small || leaf || loopBody
+            ? new(new(method, body) { InstructionEntryStacks = _bodyValidator.Validate(body) }, priority, accessor, small,
+                leaf, loopBody, Enumerable.Range(0, body.Instructions.Length).Any(index => Allocates(body, index)))
             : null;
     }
 
-    private sealed record Candidate(ManagedInliningPlan Plan, bool Priority, bool Small, bool Leaf, bool Allocates);
+    private sealed record Candidate(
+        ManagedInliningPlan Plan, bool Priority, bool Accessor, bool Small, bool Leaf, bool LoopBody, bool Allocates);
 
     // A straight-line leaf makes no calls, not even to methods the compiler
     // replaces, since some of those allocate. It does not branch, allocate or
     // throw: without a branch a throw is unconditional, and inlining a throw
-    // helper puts its cold path into every caller, as .NET's JIT avoids.
+    // helper puts its cold path into every caller, as .NET's JIT avoids. It may
+    // construct a value, as an operator returning a new struct does, when the
+    // next round inlines the constructor: that only initializes storage.
     private bool IsLeaf(CilMethodBody body) =>
         body.Instructions.Count(static instruction => instruction.Operation != CilOperation.Nop) <= _leafBodyInstructionLimit &&
         Enumerable.Range(0, body.Instructions.Length).All(index =>
-            body.Instructions[index].Operation is not (
-                CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject or CilOperation.Throw) &&
+            body.Instructions[index] is var instruction &&
+            (instruction.Operation is not (
+                CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject or CilOperation.Throw) ||
+                instruction.Operation == CilOperation.NewObject && InlinedInTheNextRound(instruction)) &&
             !Allocates(body, index) &&
-            body.Instructions[index].Operand is not (CilOperand.BranchTarget or CilOperand.SwitchTargets));
+            instruction.Operand is not (CilOperand.BranchTarget or CilOperand.SwitchTargets));
+
+    // A loop body is larger than a leaf and may branch forward but not loop,
+    // and neither allocates nor throws; each call it makes is to an aggressive
+    // callee or to a small one that does not allocate, which the next round
+    // inlines.
+    private bool IsLoopBody(CilMethodBody body) =>
+        body.Instructions.Count(static instruction => instruction.Operation != CilOperation.Nop) is var size &&
+        size > _leafBodyInstructionLimit && size <= _loopBodyInstructionLimit &&
+        body.Instructions.Count(static instruction => instruction.Operand is CilOperand.BranchTarget or CilOperand.SwitchTargets) <=
+            LoopBodyBranchLimit &&
+        Enumerable.Range(0, body.Instructions.Length).All(index =>
+            body.Instructions[index] is var instruction &&
+            instruction.Operation != CilOperation.Throw && !Allocates(body, index) &&
+            instruction.Operand switch
+            {
+                CilOperand.BranchTarget target => target.Offset > instruction.Offset,
+                CilOperand.SwitchTargets targets => targets.Offsets.All(offset => offset > instruction.Offset),
+                _ => true,
+            } &&
+            (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject) ||
+                InlinedInTheNextRound(instruction)));
+
+    // A value type's constructor counts as such a call: newobj runs it on
+    // storage the caller provides.
+    private bool InlinedInTheNextRound(CilInstruction call) =>
+        _calledMethods.Resolve(call) is { Definition: { HasManagedBody: true, IsNoInlining: false } definition } target &&
+        (call.Operation == CilOperation.Call ||
+            call.Operation == CilOperation.NewObject && target.DeclaringType.IsValueType) &&
+        !_intrinsics.TryGetIntrinsic(definition.Key, out _) &&
+        (definition.IsAggressiveInlining ||
+            _methodBodies.ReadMethodBody(target) is var body && CountsAsSmall(body) &&
+            !Enumerable.Range(0, body.Instructions.Length).Any(index => Allocates(body, index)));
 
     // A wrapper of a large explicit priority callee is as large as that callee
     // once the priority tier composes it, so it does not count as small. A
@@ -160,19 +227,33 @@ internal sealed class ManagedInliningResolver(
 
     // Inlined code keeps the callvirt null check's order only when its first
     // effect, after pure pushes, dereferences the receiver.
-    private static bool DereferencesReceiverFirst(CilMethodBody body)
+    // The receiver faults first when the body's first effect reads or writes
+    // one of its fields, makes a callvirt on it, which checks it, or calls a
+    // method on it that does either first, as reading an auto-property does.
+    private bool DereferencesReceiverFirst(CilMethodBody body, int depth = 0)
     {
         var operations = body.Instructions.Where(static instruction => instruction.Operation != CilOperation.Nop).ToArray();
         // A supported body ends in ret, so an effect always exists.
         var effect = Array.FindIndex(operations, static instruction =>
             instruction.Operation is not (CilOperation.LoadArgument or CilOperation.LoadInt32 or CilOperation.LoadNull));
-        return operations[effect].Operation switch
+        var instruction = operations[effect];
+        return instruction.Operation switch
         {
             CilOperation.LoadField or CilOperation.LoadFieldAddress => IsReceiver(operations, effect - 1),
             CilOperation.StoreField => IsReceiver(operations, effect - 2),
+            CilOperation.Call or CilOperation.CallVirtual =>
+                _calledMethods.Resolve(instruction) is
+                { Definition: { IsStatic: false, JSImport: null, NativeImport: null, WitImport: null } definition } target &&
+                !target.DeclaringType.IsValueType && !_intrinsics.TryGetIntrinsic(definition.Key, out _) &&
+                IsReceiver(operations, effect - 1 - target.Signature.ParameterTypes.Length) &&
+                (instruction.Operation == CilOperation.CallVirtual ||
+                    depth < MaximumReceiverCallDepth && definition.HasBody &&
+                    DereferencesReceiverFirst(_methodBodies.ReadMethodBody(target), depth + 1)),
             _ => false,
         };
     }
+
+    private const int MaximumReceiverCallDepth = 2;
 
     private static bool IsReceiver(CilInstruction[] operations, int index) =>
         index >= 0 && operations[index] is { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index { Value: 0 } };
@@ -303,6 +384,7 @@ internal sealed class ManagedInliningResolver(
     private static bool IsOpen(CilOperand operand) => operand switch
     {
         CilOperand.TypeIdentity type => type.Value.ContainsGenericParameters,
+        CilOperand.ExactType type => type.Value.ContainsGenericParameters,
         CilOperand.MethodInstance method => method.Value.DeclaringType.ContainsGenericParameters ||
             method.Value.MethodArguments.Any(static type => type.ContainsGenericParameters),
         CilOperand.FieldInstance field => field.Value.DeclaringType.ContainsGenericParameters ||

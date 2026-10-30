@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // IUtfChar members from dotnet/runtime Byte.cs and Char.cs at
-// 811225a482702af7ecc35d817966bc70b88a3a23.
+// 474ed963699fc29809015392738a15231aaae2de.
 
 namespace System;
 

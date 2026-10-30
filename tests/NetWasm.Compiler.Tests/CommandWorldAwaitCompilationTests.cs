@@ -13,7 +13,7 @@ namespace NetWasm.Compiler.Tests;
 // deferred work, while an asynchronous Main runs its own wasi:io/poll event loop to completion.
 public sealed class CommandWorldAwaitCompilationTests
 {
-    private const string ReactorHost = "netwasm:runtime@1.0.0/reactor-host";
+    private const string ReactorHost = "netwasm:runtime/reactor-host@1.0.0";
 
     public static TheoryData<bool, WasmTarget> Configurations => new()
     {
@@ -37,7 +37,7 @@ public sealed class CommandWorldAwaitCompilationTests
             [new("run", "SyncAwaitFixture.EntryPoint", "Run")],
             target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
             method.WitImport!.InterfaceName == ReactorHost);
@@ -60,7 +60,7 @@ public sealed class CommandWorldAwaitCompilationTests
             [],
             target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform",
+            WitWorld: "netwasm:platform/platform@1.0.0",
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
@@ -86,7 +86,7 @@ public sealed class CommandWorldAwaitCompilationTests
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
             method.WitImport!.InterfaceName == ReactorHost);
         Assert.Contains(result.Program.WitImportMethods, method =>
-            method.WitImport is { InterfaceName: "wasi:io@0.2.11/poll", FunctionName: "poll" });
+            method.WitImport is { InterfaceName: "wasi:io/poll@0.2.11", FunctionName: "poll" });
         Assert.DoesNotContain("wake", WasmModuleInspection.ReadExportNames(result.ApplicationModule));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(
@@ -153,7 +153,7 @@ public sealed class CommandWorldAwaitCompilationTests
             [new("run", "SyncAwaitFixture.EntryPoint", "Run")],
             WasmTarget.Wasm32,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
 
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is { InterfaceName: ReactorHost, FunctionName: "watch" });
@@ -186,7 +186,7 @@ public sealed class CommandWorldAwaitCompilationTests
             [],
             target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform",
+            WitWorld: "netwasm:platform/platform@1.0.0",
             EntryMethodToken: token,
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
     }

@@ -1,8 +1,9 @@
 // Adapted from dotnet/runtime System.Private.CoreLib Math.cs and MathF.cs.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
-// Source reference: dotnet/runtime commit 811225a482702af7ecc35d817966bc70b88a3a23.
-using System.Numerics;
+// Source reference: dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de.
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace System
 {
@@ -55,25 +56,6 @@ namespace System
 
         public static decimal Abs(decimal value) => decimal.Abs(value);
 
-        public static double Acos(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value > 1 || value < -1) return double.NaN;
-            if (value == 1) return 0;
-            if (value == -1) return PI;
-            return Atan2(Sqrt((1 - value) * (1 + value)), value);
-        }
-
-        public static double Asin(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (value > 1 || value < -1) return double.NaN;
-            if (value == 0) return value;
-            if (value == 1) return PI / 2;
-            if (value == -1) return -PI / 2;
-            return Atan2(value, Sqrt((1 - value) * (1 + value)));
-        }
-
         public static double Asinh(double value)
         {
             if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
@@ -83,45 +65,6 @@ namespace System
                 ? Log(absolute) + 0.6931471805599453
                 : Log(absolute + Sqrt(absolute * absolute + 1));
             return value < 0 ? -result : result;
-        }
-
-        public static double Atan(double value)
-        {
-            if (IsNaN(value)) return value;
-            if (IsInfinity(value)) return value < 0 ? -PI / 2 : PI / 2;
-            if (value == 0) return value;
-            var negative = value < 0;
-            var absolute = negative ? -value : value;
-            var result = absolute > 1
-                ? PI / 2 - AtanPolynomial(1 / absolute)
-                : AtanPolynomial(absolute);
-            return negative ? -result : result;
-        }
-
-        public static double Atan2(double y, double x)
-        {
-            if (IsNaN(y)) return y;
-            if (IsNaN(x)) return x;
-            var yNegative = IsNegative(y);
-            var xNegative = IsNegative(x);
-            if (IsInfinity(y))
-            {
-                if (IsInfinity(x))
-                {
-                    if (xNegative) return yNegative ? -3 * PI / 4 : 3 * PI / 4;
-                    return yNegative ? -PI / 4 : PI / 4;
-                }
-                return yNegative ? -PI / 2 : PI / 2;
-            }
-            if (IsInfinity(x)) return xNegative ? (yNegative ? -PI : PI) : CopySign(0, y);
-            if (x > 0) return Atan(y / x);
-            if (x < 0)
-            {
-                var angle = Atan(y / x);
-                return yNegative ? angle - PI : angle + PI;
-            }
-            if (y == 0) return xNegative ? (yNegative ? -PI : PI) : y;
-            return yNegative ? -PI / 2 : PI / 2;
         }
 
         public static double Atanh(double value)
@@ -179,36 +122,268 @@ namespace System
             return BitConverter.UInt64BitsToDouble(bits);
         }
 
-        public static double Cbrt(double value)
-        {
-            if (IsNaN(value) || IsInfinity(value) || value == 0) return value;
-            var negative = value < 0;
-            var absolute = negative ? -value : value;
-            // Exp(Log(x) / 3) stays in range for every finite double x; use it
-            // only as a seed, then converge on the correctly scaled value.
-            var result = Exp(Log(absolute) / 3);
-            for (var iteration = 0; iteration < 5; iteration++)
-            {
-                result = (2 * result + absolute / (result * result)) / 3;
-            }
-            return negative ? -result : result;
-        }
-
         public static decimal Ceiling(decimal value) => decimal.Ceiling(value);
 
-        public static byte Clamp(byte value, byte minimum, byte maximum) => ClampCore(value, minimum, maximum);
-        public static short Clamp(short value, short minimum, short maximum) => ClampCore(value, minimum, maximum);
-        public static int Clamp(int value, int minimum, int maximum) => ClampCore(value, minimum, maximum);
-        public static long Clamp(long value, long minimum, long maximum) => ClampCore(value, minimum, maximum);
-        public static nint Clamp(nint value, nint minimum, nint maximum) => ClampCore(value, minimum, maximum);
-        public static sbyte Clamp(sbyte value, sbyte minimum, sbyte maximum) => ClampCore(value, minimum, maximum);
-        public static ushort Clamp(ushort value, ushort minimum, ushort maximum) => ClampCore(value, minimum, maximum);
-        public static uint Clamp(uint value, uint minimum, uint maximum) => ClampCore(value, minimum, maximum);
-        public static ulong Clamp(ulong value, ulong minimum, ulong maximum) => ClampCore(value, minimum, maximum);
-        public static nuint Clamp(nuint value, nuint minimum, nuint maximum) => ClampCore(value, minimum, maximum);
-        public static float Clamp(float value, float minimum, float maximum) => ClampCore(value, minimum, maximum);
-        public static double Clamp(double value, double minimum, double maximum) => ClampCore(value, minimum, maximum);
-        public static decimal Clamp(decimal value, decimal minimum, decimal maximum) => ClampCore(value, minimum, maximum);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static byte Clamp(byte value, byte minimum, byte maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static short Clamp(short value, short minimum, short maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int Clamp(int value, int minimum, int maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long Clamp(long value, long minimum, long maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static nint Clamp(nint value, nint minimum, nint maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static sbyte Clamp(sbyte value, sbyte minimum, sbyte maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ushort Clamp(ushort value, ushort minimum, ushort maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint Clamp(uint value, uint minimum, uint maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong Clamp(ulong value, ulong minimum, ulong maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static nuint Clamp(nuint value, nuint minimum, nuint maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float Clamp(float value, float minimum, float maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double Clamp(double value, double minimum, double maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal Clamp(decimal value, decimal minimum, decimal maximum)
+        {
+            if (minimum > maximum)
+            {
+                ThrowMinMaxException();
+            }
+
+            if (value < minimum)
+            {
+                return minimum;
+            }
+            else if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
 
         public static double CopySign(double value, double sign)
         {
@@ -316,110 +491,6 @@ namespace System
         }
 
         public static decimal Floor(decimal value) => decimal.Floor(value);
-
-        public static double FusedMultiplyAdd(double left, double right, double addend)
-        {
-            if (!double.IsFinite(left) || !double.IsFinite(right) || !double.IsFinite(addend))
-            {
-                return left * right + addend;
-            }
-
-            // Upstream delegates to a native fused instruction. WebAssembly has
-            // no scalar FMA, so retain the exact integer value and round once.
-            DecomposeFiniteDouble(left, out var leftSignificand, out var leftExponent, out var leftNegative);
-            DecomposeFiniteDouble(right, out var rightSignificand, out var rightExponent, out var rightNegative);
-            DecomposeFiniteDouble(addend, out var addendSignificand, out var addendExponent, out var addendNegative);
-
-            var product = new BigInteger(leftSignificand) * new BigInteger(rightSignificand);
-            var productNegative = leftNegative != rightNegative;
-            if (productNegative) product = -product;
-
-            var addendValue = new BigInteger(addendSignificand);
-            if (addendNegative) addendValue = -addendValue;
-
-            var productExponent = leftExponent + rightExponent;
-            var commonExponent = Min(productExponent, addendExponent);
-            var exact = (product << (productExponent - commonExponent)) +
-                (addendValue << (addendExponent - commonExponent));
-
-            if (exact.IsZero)
-            {
-                var bothTermsAreNegativeZero = product.IsZero && addendValue.IsZero &&
-                    productNegative && addendNegative;
-                return bothTermsAreNegativeZero ? double.NegativeZero : 0;
-            }
-
-            return RoundExactBinaryToDouble(exact, commonExponent);
-        }
-
-        private static void DecomposeFiniteDouble(
-            double value,
-            out ulong significand,
-            out int exponent,
-            out bool negative)
-        {
-            var bits = BitConverter.DoubleToUInt64Bits(value);
-            negative = (bits & 0x8000000000000000UL) != 0;
-            var exponentBits = (int)((bits >> 52) & 0x7FF);
-            significand = bits & 0x000FFFFFFFFFFFFFUL;
-            if (exponentBits == 0)
-            {
-                exponent = -1074;
-                return;
-            }
-
-            significand |= 0x0010000000000000UL;
-            exponent = exponentBits - 1023 - 52;
-        }
-
-        private static double RoundExactBinaryToDouble(BigInteger exact, int exponent)
-        {
-            var negative = exact.Sign < 0;
-            var magnitude = BigInteger.Abs(exact);
-            var bitLength = checked((int)magnitude.GetBitLength());
-            var highestExponent = exponent + bitLength - 1;
-
-            ulong bits;
-            if (highestExponent >= -1022)
-            {
-                var significand = RoundRightToEven(magnitude, bitLength - 53);
-                if (significand.GetBitLength() == 54)
-                {
-                    significand >>= 1;
-                    highestExponent++;
-                }
-
-                if (highestExponent > 1023)
-                {
-                    bits = 0x7FF0000000000000UL;
-                }
-                else
-                {
-                    var significandBits = (ulong)significand;
-                    bits = ((ulong)(highestExponent + 1023) << 52) |
-                        (significandBits & 0x000FFFFFFFFFFFFFUL);
-                }
-            }
-            else
-            {
-                var subnormal = RoundRightToEven(magnitude, -(exponent + 1074));
-                bits = (ulong)subnormal;
-            }
-
-            if (negative) bits |= 0x8000000000000000UL;
-            return BitConverter.UInt64BitsToDouble(bits);
-        }
-
-        private static BigInteger RoundRightToEven(BigInteger value, int shift)
-        {
-            if (shift <= 0) return value << -shift;
-
-            var rounded = value >> shift;
-            var remainder = value - (rounded << shift);
-            var halfway = BigInteger.One << (shift - 1);
-            if (remainder > halfway || (remainder == halfway && !rounded.IsEven)) rounded++;
-            return rounded;
-        }
 
         public static double IEEERemainder(double x, double y)
         {
@@ -604,103 +675,11 @@ namespace System
             return value < 0 ? -1 : value > 0 ? 1 : 0;
         }
 
-        public static (double Sin, double Cos) SinCos(double value) => (Sin(value), Cos(value));
-
         public static decimal Truncate(decimal value) => decimal.Truncate(value);
 
-        private static byte ClampCore(byte value, byte minimum, byte maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static short ClampCore(short value, short minimum, short maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static int ClampCore(int value, int minimum, int maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static long ClampCore(long value, long minimum, long maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static nint ClampCore(nint value, nint minimum, nint maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static sbyte ClampCore(sbyte value, sbyte minimum, sbyte maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static ushort ClampCore(ushort value, ushort minimum, ushort maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static uint ClampCore(uint value, uint minimum, uint maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static ulong ClampCore(ulong value, ulong minimum, ulong maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static nuint ClampCore(nuint value, nuint minimum, nuint maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static float ClampCore(float value, float minimum, float maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static double ClampCore(double value, double minimum, double maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static decimal ClampCore(decimal value, decimal minimum, decimal maximum)
-        {
-            if (minimum > maximum) throw new ArgumentException();
-            return value < minimum ? minimum : value > maximum ? maximum : value;
-        }
-
-        private static double AtanPolynomial(double value)
-        {
-            if (value > 0.5) return PI / 4 + AtanPolynomial((value - 1) / (value + 1));
-            var square = value * value;
-            var term = value;
-            var result = value;
-            var subtract = true;
-            for (var denominator = 3; denominator <= 51; denominator += 2)
-            {
-                term *= square;
-                result += subtract ? -term / denominator : term / denominator;
-                subtract = !subtract;
-            }
-            return result;
-        }
+        // The throw stays out of line, so each clamp inlines into its caller.
+        [DoesNotReturn]
+        private static void ThrowMinMaxException() => throw new ArgumentException();
 
         private static double TruncateCore(double value)
         {
@@ -781,7 +760,7 @@ namespace System
     }
 
     /// <summary>Single-precision counterparts of <see cref="Math"/> operations.</summary>
-    public static class MathF
+    public static partial class MathF
     {
         public const float E = 2.7182817f;
         public const float PI = 3.1415927f;
@@ -823,11 +802,9 @@ namespace System
             BitConverter.UInt32BitsToSingle(
                 (BitConverter.SingleToUInt32Bits(value) & 0x7FFFFFFFU) |
                 (BitConverter.SingleToUInt32Bits(sign) & 0x80000000U));
-        public static float Cos(float value) => (float)Math.Cos(value);
         public static float Cosh(float value) => (float)Math.Cosh(value);
-        public static float Exp(float value) => (float)Math.Exp(value);
-        public static float FusedMultiplyAdd(float left, float right, float addend) =>
-            (float)Math.FusedMultiplyAdd((double)left, right, addend);
+        // A float product is exact in double, and rounding the double sum to odd
+        // keeps enough bits that rounding it to float rounds the exact result once.
         public static float IEEERemainder(float x, float y)
         {
             if (float.IsNaN(x)) return x;
@@ -845,10 +822,8 @@ namespace System
             return Abs(alternative) < Abs(regular) ? alternative : regular;
         }
         public static int ILogB(float value) => Math.ILogB(value);
-        public static float Log(float value) => (float)Math.Log(value);
         public static float Log(float value, float newBase) => (float)Math.Log(value, newBase);
         public static float Log10(float value) => (float)Math.Log10(value);
-        public static float Log2(float value) => (float)Math.Log2(value);
 
         public static float Min(float left, float right)
         {
@@ -880,7 +855,6 @@ namespace System
             return right;
         }
 
-        public static float Pow(float x, float y) => (float)Math.Pow(x, y);
         public static float ReciprocalEstimate(float value) => 1 / value;
         public static float ReciprocalSqrtEstimate(float value) => 1 / Sqrt(value);
         public static float Round(float value, int digits)
@@ -904,10 +878,7 @@ namespace System
         }
         public static float ScaleB(float value, int n) => (float)Math.ScaleB(value, n);
 
-        public static float Sin(float value) => (float)Math.Sin(value);
-        public static (float Sin, float Cos) SinCos(float value) => ((float)Math.Sin(value), (float)Math.Cos(value));
         public static float Sinh(float value) => (float)Math.Sinh(value);
-        public static float Tan(float value) => (float)Math.Tan(value);
         public static float Tanh(float value) => (float)Math.Tanh(value);
 
         public static float Clamp(float value, float minimum, float maximum)

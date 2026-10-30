@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 
 namespace NetWasm.Compiler.Core;
@@ -118,6 +119,18 @@ public interface IStaticDataLayout
     ImmutableArray<DataSegment> DataSegments { get; }
     int TypeFactsTableAddress => 0;
     int TypeFactsTableCount => 0;
+
+    // Each type's static Type object by canonical name, which typeof uses
+    // instead of asking the runtime.
+    IReadOnlyDictionary<string, int> TypeObjectAddresses => ImmutableDictionary<string, int>.Empty;
+
+    // The static Type objects, contiguous and TypeObjectSize bytes apart.
+    int TypeObjectTableAddress => 0;
+    // A word the runtime initializer fills with the address of the runtime's
+    // Type object cache, indexed by type id; zero when no GetType needs it.
+    int TypeObjectCacheAddress => 0;
+    int TypeObjectCount => 0;
+    int TypeObjectSize => 0;
 }
 
 public interface IMemberDescriptorLayout
@@ -170,6 +183,10 @@ public readonly record struct RectangularArrayLayout(
             0,
             sizeof(int));
     }
+
+    // The shape holds each dimension's length and stride, then the lower
+    // bounds, which stay zero in an array allocated without bounds.
+    public int LowerBoundOffset(int rank, int dimension) => rank * DimensionSize + dimension * sizeof(int);
 }
 
 public interface IRectangularArrayLayoutProvider
@@ -246,6 +263,8 @@ public static class RuntimeAbi
     public const string RuntimeArrayClone = "array_clone";
     public const string RuntimeAllocateString = "allocate_string";
     public const string RuntimeGetTypeObject = "get_type_object";
+    public const string RuntimeRegisterTypeObjects = "register_type_objects";
+    public const string RuntimeTypeObjectCache = "type_object_cache_address";
     public const string RuntimeHandleNew = "handle_new";
     public const string RuntimeHandleGet = "handle_get";
     public const string RuntimeHandleRelease = "handle_release";

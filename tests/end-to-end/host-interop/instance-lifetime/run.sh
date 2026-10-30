@@ -39,7 +39,7 @@ for configuration in "${configurations[@]}"; do
       bash "$repo_root/eng/build-netwasm-runtime.sh" --runtime-layout "$prefix.layout.json" \
         --target "$target" --configuration release --output "$prefix.runtime.wasm"
       features=(--enable-exception-handling --enable-bulk-memory --enable-multimemory \
-        --enable-nontrapping-float-to-int)
+        --enable-nontrapping-float-to-int --enable-simd)
       if [[ "$target" == wasm64 ]]; then features+=(--enable-memory64); fi
       wasm-merge "$prefix.application.wasm" netwasm.application.v1 \
         "$prefix.runtime.wasm" netwasm.runtime.v1 "${features[@]}" -g -o "$prefix.linked.wasm"

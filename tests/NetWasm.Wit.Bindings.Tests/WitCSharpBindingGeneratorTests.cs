@@ -40,11 +40,11 @@ public sealed class WitCSharpBindingGeneratorTests
         Assert.Contains("public readonly struct Point", first, StringComparison.Ordinal);
         Assert.Contains("public static WitResult<Point, string> TransformValue(Point inputValue)",
             first, StringComparison.Ordinal);
-        Assert.Contains("private static extern void __CanonicalExampleSmoke100Host_TransformValue(int __f0, nuint __result);",
+        Assert.Contains("private static extern void __CanonicalExampleSmokeHost100_TransformValue(int __f0, nuint __result);",
             first, StringComparison.Ordinal);
         Assert.Contains("[WitExport(\"run\")]", first,
             StringComparison.Ordinal);
-        Assert.Contains("[WitImport(\"example:smoke@1.0.0/host\", \"transform-value\")]",
+        Assert.Contains("[WitImport(\"example:smoke/host@1.0.0\", \"transform-value\")]",
             first, StringComparison.Ordinal);
         Assert.Contains("public static partial uint Run(uint value);", first,
             StringComparison.Ordinal);
@@ -75,22 +75,25 @@ public sealed class WitCSharpBindingGeneratorTests
 
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             null!, valid.TypeDeclarations, valid.BindingMethods, valid.Marshalling,
-            valid.Syntax, valid.Writers));
+            valid.Syntax, valid.Writers, valid.Definitions));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             valid.Validator, null!, valid.BindingMethods, valid.Marshalling,
-            valid.Syntax, valid.Writers));
+            valid.Syntax, valid.Writers, valid.Definitions));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             valid.Validator, valid.TypeDeclarations, null!, valid.Marshalling,
-            valid.Syntax, valid.Writers));
+            valid.Syntax, valid.Writers, valid.Definitions));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             valid.Validator, valid.TypeDeclarations, valid.BindingMethods, null!,
-            valid.Syntax, valid.Writers));
+            valid.Syntax, valid.Writers, valid.Definitions));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             valid.Validator, valid.TypeDeclarations, valid.BindingMethods, valid.Marshalling,
-            null!, valid.Writers));
+            null!, valid.Writers, valid.Definitions));
         Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
             valid.Validator, valid.TypeDeclarations, valid.BindingMethods, valid.Marshalling,
-            valid.Syntax, null!));
+            valid.Syntax, null!, valid.Definitions));
+        Assert.Throws<ArgumentNullException>(() => new WitCSharpBindingGenerator(
+            valid.Validator, valid.TypeDeclarations, valid.BindingMethods, valid.Marshalling,
+            valid.Syntax, valid.Writers, null!));
     }
 
     [Fact]
@@ -127,7 +130,7 @@ public sealed class WitCSharpBindingGeneratorTests
         var document = Document(ping, ping);
         var world = document.Worlds[0] with
         {
-            Imports = [new WitWorldItem("ping", null, ping), new WitWorldItem("host", 0, null), new WitWorldItem("pong", null, pong)],
+            Imports = [new WitWorldItem("ping", null, ping), new WitWorldItem("example:smoke/host@1.0.0", 0, null), new WitWorldItem("pong", null, pong)],
         };
 
         var bindings = CreateGenerator().Generate(document, world);
@@ -171,7 +174,7 @@ public sealed class WitCSharpBindingGeneratorTests
         {
             Imports =
             [
-                new WitWorldItem("host", 0, null),
+                new WitWorldItem("example:smoke/host@1.0.0", 0, null),
                 new WitWorldItem("direct", null, Function("direct", u64)),
                 new WitWorldItem("aliased", null, Function("aliased", total)),
             ],
@@ -265,7 +268,7 @@ public sealed class WitCSharpBindingGeneratorTests
             0,
             "smoke",
             "example:smoke@1.0.0",
-            [new WitWorldItem("host", 0, null)],
+            [new WitWorldItem("example:smoke/host@1.0.0", 0, null)],
             [new WitWorldItem("run", null, export)]);
         return new WitDocument(
             [new WitPackage(0, "example:smoke@1.0.0",
@@ -284,7 +287,8 @@ public sealed class WitCSharpBindingGeneratorTests
             WitBindingWriterFixture.Create(),
             WitCanonicalMarshallingWriterFixture.Create(),
             new WitBindingSyntaxFormatter(new WitTypeDefinitionClassifier()),
-            new CodeWriterFactory());
+            new CodeWriterFactory(),
+            new WitTypeDefinitionClassifier());
 
     private static (
         IWitWorldValidator Validator,
@@ -292,7 +296,8 @@ public sealed class WitCSharpBindingGeneratorTests
         IWitBindingMethodWriter BindingMethods,
         IWitCanonicalMarshallingWriter Marshalling,
         IWitBindingSyntaxFormatter Syntax,
-        ICodeWriterFactory Writers) CreateCapabilities()
+        ICodeWriterFactory Writers,
+        IWitTypeDefinitionClassifier Definitions) CreateCapabilities()
     {
         var definitions = new WitTypeDefinitionClassifier();
         var syntax = new WitBindingSyntaxFormatter(definitions);
@@ -306,7 +311,8 @@ public sealed class WitCSharpBindingGeneratorTests
             WitBindingWriterFixture.Create(),
             WitCanonicalMarshallingWriterFixture.Create(),
             syntax,
-            new CodeWriterFactory());
+            new CodeWriterFactory(),
+            definitions);
     }
 
     private static JsonElement Json(string value)

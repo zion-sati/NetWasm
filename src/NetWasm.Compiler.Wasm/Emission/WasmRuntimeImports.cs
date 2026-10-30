@@ -158,6 +158,18 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeRandomSeed,
             WasmFunctionType.Create(CliValueKind.I8))),
+        new(RuntimeImportSymbol.RegisterTypeObjects, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeRegisterTypeObjects,
+            WasmFunctionType.Create(
+                CliValueKind.Void,
+                CliValueKind.ManagedAddress,
+                CliValueKind.I4,
+                CliValueKind.I4))),
+        new(RuntimeImportSymbol.TypeObjectCache, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeTypeObjectCache,
+            WasmFunctionType.Create(CliValueKind.ManagedAddress))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>

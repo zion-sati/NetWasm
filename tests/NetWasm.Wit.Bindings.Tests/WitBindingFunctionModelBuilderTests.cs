@@ -16,12 +16,12 @@ public sealed class WitBindingFunctionModelBuilderTests
         var document = new WitDocument([], [], [], [], "{}");
         var declaration = new WitFunction("run", [], null, new("freestanding"));
 
-        var model = builder.Build(document, "example:test@1.0.0/api", declaration, direction);
+        var model = builder.Build(document, "example:test/api@1.0.0", declaration, direction);
 
         Assert.Same(dependencies.Function, model.Function);
         Assert.Same(dependencies.Signature, model.Signature);
         Assert.Equal(["function", "signature"], dependencies.Calls);
-        Assert.Equal((document, "example:test@1.0.0/api", declaration), dependencies.FunctionRequest);
+        Assert.Equal((document, "example:test/api@1.0.0", declaration), dependencies.FunctionRequest);
         Assert.Equal((dependencies.Function, direction), dependencies.SignatureRequest);
     }
 

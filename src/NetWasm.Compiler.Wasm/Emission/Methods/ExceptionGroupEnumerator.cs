@@ -139,6 +139,18 @@ internal sealed class ExceptionGroupEnumerator : IExceptionGroupEnumerator
                         yield return nested;
                     }
                     break;
+                case StructuredLabeledBlock labeled:
+                    foreach (var nested in EnumerateSequence(labeled.Body, method, seen))
+                    {
+                        yield return nested;
+                    }
+                    break;
+                case StructuredLabeledLoop labeled:
+                    foreach (var nested in EnumerateSequence(labeled.Body, method, seen))
+                    {
+                        yield return nested;
+                    }
+                    break;
                 case StructuredDispatcher dispatcher:
                     foreach (var exit in dispatcher.Exits)
                     {

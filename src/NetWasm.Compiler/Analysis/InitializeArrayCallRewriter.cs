@@ -6,7 +6,6 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Analysis;
 
 internal sealed class InitializeArrayCallRewriter(
-    IFieldRepository fields,
     ICalledMethodResolver calledMethods,
     ISymbolFormatter symbols) : IMethodRewriteRule
 {
@@ -31,13 +30,8 @@ internal sealed class InitializeArrayCallRewriter(
             {
                 continue;
             }
-            var data = token.Operand switch
-            {
-                CilOperand.Entity fieldToken => fields.GetField(fieldToken.Key).InitialData,
-                CilOperand.FieldInstance fieldToken => fieldToken.Value.Definition.InitialData,
-                _ => default,
-            };
-            if (data.IsDefaultOrEmpty)
+            if (token.Operand is not CilOperand.FieldInstance { Value: var field } ||
+                field.Definition.InitialData.IsDefaultOrEmpty)
             {
                 throw new CompilerException(new CompilerDiagnostic(
                     DiagnosticCode.UnsupportedMetadata,
@@ -51,7 +45,7 @@ internal sealed class InitializeArrayCallRewriter(
             instructions[index] = call with
             {
                 Operation = CilOperation.InitializeArrayData,
-                Operand = new CilOperand.ByteData(data),
+                Operand = new CilOperand.ArrayInitializerData(field),
             };
             changed = true;
         }

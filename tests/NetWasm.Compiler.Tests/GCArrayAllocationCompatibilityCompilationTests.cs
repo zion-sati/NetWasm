@@ -65,22 +65,23 @@ public static class EntryPoint
         {
         }
 
-        try
+        // Objects never move, so a pinned array is an ordinary array that
+        // keeps its contents across collections, whatever its element type.
+        var pinned = GC.AllocateArray<int>(4, pinned: true);
+        pinned[3] = 7;
+        GC.Collect();
+        if (pinned.Length != 4 || pinned[0] != 0 || pinned[3] != 7)
         {
-            _ = GC.AllocateArray<int>(1, pinned: true);
             return 4;
         }
-        catch (PlatformNotSupportedException)
-        {
-        }
 
-        try
+        var pinnedReferences = GC.AllocateUninitializedArray<Payload>(2, pinned: true);
+        pinnedReferences[1] = new Payload { Value = 5 };
+        GC.Collect();
+        if (pinnedReferences[0] is not null || pinnedReferences[1].Value != 5 ||
+            GC.AllocateUninitializedArray<byte>(3, pinned: true).Length != 3)
         {
-            _ = GC.AllocateUninitializedArray<int>(1, pinned: true);
             return 5;
-        }
-        catch (PlatformNotSupportedException)
-        {
         }
 
         return input;

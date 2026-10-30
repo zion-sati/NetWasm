@@ -49,7 +49,7 @@ public sealed class WitBindingMethodWriterTests
             0,
             "test",
             "example:test@1.0.0",
-            [new WitWorldItem("api", 0, null)],
+            [new WitWorldItem("example:test/api@1.0.0", 0, null)],
             []);
         var document = new WitDocument(
             [],
@@ -66,7 +66,7 @@ public sealed class WitBindingMethodWriterTests
         var invalidate = bindings.IndexOf(
             "value.Invalidate();",
             StringComparison.Ordinal);
-        var call = bindings.IndexOf("__CanonicalExampleTest100Api_Consume(__p0Handle);",
+        var call = bindings.IndexOf("__CanonicalExampleTestApi100_Consume(__p0Handle);",
             StringComparison.Ordinal);
 
         Assert.True(capture >= 0);

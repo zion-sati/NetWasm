@@ -23,7 +23,7 @@ public sealed class ComponentManifestInputsReaderTests
         Assert.Equal("1.28.1", result.Adapters.Jco);
         Assert.Equal("0.20.1", result.Adapters.Preview2Shim);
         var witImport = Assert.Single(result.WitImports);
-        Assert.Equal("wasi:http@0.2.11/outgoing-handler", witImport.Interface);
+        Assert.Equal("wasi:http/outgoing-handler@0.2.11", witImport.Interface);
         Assert.Equal("handle", witImport.Function);
     }
 
@@ -86,7 +86,7 @@ public sealed class ComponentManifestInputsReaderTests
           ],
           "witImports": [
             {
-              "interface": "wasi:http@0.2.11/outgoing-handler",
+              "interface": "wasi:http/outgoing-handler@0.2.11",
               "function": "handle"
             }
           ]

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 
@@ -16,7 +17,7 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
             if (key != block.Id) throw new InvalidOperationException("A structured block key does not match its identity.");
             ValidateExit(block.Exit, method);
         }
-        Visit(method.Body, method, activeGroup: null, loopDepth: 0, dispatcherDepth: 0, []);
+        Visit(method.Body, method, activeGroup: null, loopDepth: 0, dispatcherDepth: 0, [], labels: []);
     }
 
     private static void ValidateExit(StructuredBlockExit exit, StructuredMethod method)
@@ -54,7 +55,8 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
             StructuredContinuationId? FallthroughContinuation,
             string DispatcherContinuations,
             bool HasLoop,
-            bool HasDispatcher)> visitedGroups)
+            bool HasDispatcher)> visitedGroups,
+        ImmutableHashSet<StructuredBlockId> labels)
     {
         foreach (var region in sequence.Regions)
         {
@@ -98,8 +100,8 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
                 case StructuredIf conditional:
                     ValidateOccurrence(conditional.Condition, method, activeGroup, allowConditional: true);
                     RequireConditional(conditional.Condition.Block, method);
-                    Visit(conditional.WhenTrue, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups);
-                    Visit(conditional.WhenFalse, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups);
+                    Visit(conditional.WhenTrue, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups, labels);
+                    Visit(conditional.WhenFalse, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups, labels);
                     break;
                 case StructuredLoop loop:
                     if (loop.Condition is { } condition)
@@ -111,17 +113,30 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
                     {
                         throw new InvalidOperationException("An unconditional structured loop has a continuation or exit body.");
                     }
-                    Visit(loop.Body, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups);
-                    Visit(loop.ContinueBody, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups);
-                    Visit(loop.ExitBody, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups);
+                    Visit(loop.Body, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups, labels);
+                    Visit(loop.ContinueBody, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups, labels);
+                    Visit(loop.ExitBody, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups, labels);
                     break;
                 case StructuredPostTestLoop loop:
                     ValidateOccurrence(loop.Condition, method, activeGroup, allowConditional: true);
                     RequireConditional(loop.Condition.Block, method);
-                    Visit(loop.Body, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups);
-                    Visit(loop.ContinueBody, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups);
-                    Visit(loop.ExitBody, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups);
+                    Visit(loop.Body, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups, labels);
+                    Visit(loop.ContinueBody, method, activeGroup, loopDepth + 1, dispatcherDepth, visitedGroups, labels);
+                    Visit(loop.ExitBody, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups, labels);
                     break;
+                case StructuredLabeledBlock block:
+                    // Leaving the body's end reaches Next's code, which follows.
+                    RequireBlock(block.Next, method);
+                    Visit(block.Body, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups, labels.Add(block.Next));
+                    break;
+                case StructuredLabeledLoop loop:
+                    RequireBlock(loop.Header, method);
+                    RequireTransferAtEnd(loop.Body, method);
+                    Visit(loop.Body, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups, labels.Add(loop.Header));
+                    break;
+                case StructuredLabelBranch branch when !labels.Contains(branch.Target):
+                    throw new InvalidOperationException(
+                        "A structured label branch has no enclosing labeled block or loop for its target.");
                 case StructuredDispatcher dispatcher:
                     ValidateDispatcher(dispatcher, method, activeGroup, loopDepth, dispatcherDepth, visitedGroups);
                     break;
@@ -160,7 +175,7 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
             switch (part)
             {
                 case StructuredExceptionCode code:
-                    Visit(code.Body, method, groupId, 0, 0, visitedGroups);
+                    Visit(code.Body, method, groupId, 0, 0, visitedGroups, labels: []);
                     break;
                 case StructuredNestedExceptionGroup nested:
                     if (!method.ExceptionGroups.ContainsKey(nested.Group))
@@ -173,8 +188,8 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
         foreach (var clause in group.Clauses)
         {
             if (clause.FilterBody is not null)
-                Visit(clause.FilterBody, method, groupId, 0, 0, visitedGroups);
-            Visit(clause.HandlerBody, method, groupId, 0, 0, visitedGroups);
+                Visit(clause.FilterBody, method, groupId, 0, 0, visitedGroups, labels: []);
+            Visit(clause.HandlerBody, method, groupId, 0, 0, visitedGroups, labels: []);
         }
         if (group.ContinuationDispatcher is null)
         {
@@ -186,7 +201,7 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
                 {
                     continue;
                 }
-                Visit(continuation.Body, method, group.Parent, loopDepth, 0, visitedGroups);
+                Visit(continuation.Body, method, group.Parent, loopDepth, 0, visitedGroups, labels: []);
             }
         }
         if (group.ContinuationDispatcher is not null)
@@ -225,9 +240,40 @@ internal sealed class StructuredTargetValidator : IStructuredTargetValidator
         foreach (var exit in dispatcher.Exits)
         {
             RequireBlock(exit.Target, method);
-            Visit(exit.Body, method, activeGroup, loopDepth, dispatcherDepth + 1, visitedGroups);
+            Visit(exit.Body, method, activeGroup, loopDepth, dispatcherDepth + 1, visitedGroups, labels: []);
         }
     }
+
+    // Control leaving a labeled loop's end would leave the loop, so every
+    // path through its body ends in a transfer.
+    private static void RequireTransferAtEnd(StructuredSequence sequence, StructuredMethod method)
+    {
+        if (!EndsInTransfer(sequence, method))
+            throw new InvalidOperationException("A labeled structured body can reach its end.");
+    }
+
+    private static bool EndsInTransfer(StructuredSequence sequence, StructuredMethod method) =>
+        !sequence.Regions.IsEmpty && sequence.Regions[^1] switch
+        {
+            StructuredLabelBranch or StructuredLoopBreak or StructuredLoopContinue or
+                StructuredDispatcherContinue or StructuredLabeledLoop => true,
+            StructuredCode code => method.Blocks[code.Occurrence.Block].Exit is StructuredTerminalExit,
+            StructuredIf conditional =>
+                EndsInTransfer(conditional.WhenTrue, method) && EndsInTransfer(conditional.WhenFalse, method),
+            // A break would leave it at its end; labeled structure has none.
+            StructuredLoop { Condition: not null } loop =>
+                EndsInTransfer(loop.ExitBody, method) && !ContainsBreak(loop.Body) && !ContainsBreak(loop.ContinueBody),
+            _ => false,
+        };
+
+    private static bool ContainsBreak(StructuredSequence sequence) => sequence.Regions.Any(region => region switch
+    {
+        StructuredLoopBreak => true,
+        StructuredIf conditional => ContainsBreak(conditional.WhenTrue) || ContainsBreak(conditional.WhenFalse),
+        StructuredLabeledBlock labeled => ContainsBreak(labeled.Body),
+        StructuredLabeledLoop labeled => ContainsBreak(labeled.Body),
+        _ => false,
+    });
 
     private static void ValidateDispatcherTarget(
         StructuredBlockId? target,

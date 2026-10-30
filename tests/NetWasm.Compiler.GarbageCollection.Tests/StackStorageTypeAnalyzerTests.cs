@@ -85,7 +85,7 @@ public sealed class StackStorageTypeAnalyzerTests
                 [new(CliTypeIdentity.ManagedByReference(scalar), false) { CapturedBackings = [Pair] }]), []));
         var anchors = new RecordingAnchorPlanner();
         var analyzer = new IRootMapAnalyzer[] { new RootMapAnalyzer(repository, storage,
-            new StackStorageContinuationAnalyzer(), anchors, new CollectDecision(), new RootSlotAllocator()) }[0];
+            new StackStorageContinuationAnalyzer(), anchors, new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }[0];
         Assert.Throws<CompilerException>(() => analyzer.Analyze(new(method,
             new HashSet<EntityKey> { CollectKey }, new HashSet<string>())));
         Assert.Equal(0, anchors.Calls);
@@ -114,7 +114,7 @@ public sealed class StackStorageTypeAnalyzerTests
         });
         var anchors = new RecordingAnchorPlanner();
         var analyzer = new IRootMapAnalyzer[] { new RootMapAnalyzer(repository, storage,
-            new StackStorageContinuationAnalyzer(), anchors, new CollectDecision(), new RootSlotAllocator()) }[0];
+            new StackStorageContinuationAnalyzer(), anchors, new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }[0];
         Assert.Throws<CompilerException>(() => analyzer.Analyze(new(method,
             new HashSet<EntityKey> { CollectKey }, new HashSet<string>())));
         Assert.Equal(0, anchors.Calls);
@@ -1061,7 +1061,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var storage = new RecordingStorage();
         var analyzer = new[] { new RootMapAnalyzer(repository, storage, new StackStorageContinuationAnalyzer(),
             new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
-            new CollectDecision(), new RootSlotAllocator()) }
+            new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }
             .Cast<IRootMapAnalyzer>().Single();
         Assert.Empty(analyzer.Analyze(new(method, new HashSet<EntityKey>(), new HashSet<string>())).Safepoints);
         Assert.Equal(0, storage.Calls);
@@ -1172,10 +1172,12 @@ public sealed class StackStorageTypeAnalyzerTests
         Assert.Empty(analysis.Entries[end]);
     }
 
+    // `ref T local = ref *pointer` stores an unmanaged pointer: the local keeps
+    // its declared type, and the memory it addresses has no backing to root.
     [Theory]
     [InlineData(4)]
     [InlineData(8)]
-    public void NativeAddressStoredInByrefLocalDoesNotAcquireItsDeclaredPointeeIdentity(int pointerSize)
+    public void NativeAddressStoredInByrefLocalKeepsItsDeclaredTypeWithNoBackingToRoot(int pointerSize)
     {
         var repository = new Repository(pointerSize);
         var method = Body(repository, Method(EntryKey, Void), [CliTypeIdentity.ManagedByReference(Pair)],
@@ -1187,9 +1189,9 @@ public sealed class StackStorageTypeAnalyzerTests
 
         var analysis = AnalyzeStorage(repository, method);
         var slot = Assert.Single(analysis.Entries[4]);
-        Assert.Null(slot.Type);
-        Assert.False(slot.BackingCovered);
-        Assert.False(slot.CompleteBackingKnown);
+        Assert.Equal(CliTypeIdentity.ManagedByReference(Pair), slot.Type);
+        Assert.True(slot.BackingCovered);
+        Assert.True(slot.CompleteBackingKnown);
         Assert.Empty(slot.BackingOwners);
         Assert.Empty(slot.CapturedBackings);
     }
@@ -1207,7 +1209,7 @@ public sealed class StackStorageTypeAnalyzerTests
             new StackStorageTypeAnalyzer(repository, repository, repository, repository, new StackStorageContinuationAnalyzer()),
             new StackStorageContinuationAnalyzer(),
             new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
-            new CollectDecision(), new RootSlotAllocator()) }[0];
+            new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }[0];
 
     private static ManagedMethodBody Body(Repository repository, MethodDefinitionModel entry,
         ImmutableArray<CliTypeIdentity> locals, params CilInstruction[] instructions)
@@ -1238,6 +1240,11 @@ public sealed class StackStorageTypeAnalyzerTests
     private sealed class CollectDecision : IRootDecisionClassifier
     {
         public bool Decide(RootDecisionRequest request) => request.Instruction.Operand is CilOperand.Entity entity && entity.Key == CollectKey;
+    }
+
+    private sealed class CallerRootsArguments : ICalleeArgumentRootingClassifier
+    {
+        public int Classify(RootDecisionRequest request) => 0;
     }
 
     private sealed class Repository(int pointerSize) : ITypeRepository, IFieldRepository, IMethodRepository, IValueLayoutProvider

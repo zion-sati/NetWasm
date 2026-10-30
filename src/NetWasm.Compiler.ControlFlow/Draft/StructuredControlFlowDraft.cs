@@ -56,6 +56,19 @@ internal sealed record StructuredLoopContinueDraft : StructuredRegionDraft;
 
 internal sealed record StructuredDispatcherContinueDraft(int TargetBlock) : StructuredRegionDraft;
 
+// A branch to NextBlock inside Body leaves the block, and NextBlock's code
+// follows it.
+internal sealed record StructuredLabeledBlockDraft(int NextBlock, StructuredSequenceDraft Body)
+    : StructuredRegionDraft;
+
+// A branch to HeaderBlock inside Body starts Body again; Body begins with
+// HeaderBlock's code and never reaches its end.
+internal sealed record StructuredLabeledLoopDraft(int HeaderBlock, StructuredSequenceDraft Body)
+    : StructuredRegionDraft;
+
+// A branch to the enclosing labeled block or loop that names TargetBlock.
+internal sealed record StructuredLabelBranchDraft(int TargetBlock) : StructuredRegionDraft;
+
 internal sealed record StructuredExceptionRegionDraft(
     StructuredExceptionGroupDraft Group,
     int? FallthroughContinuationIndex) : StructuredRegionDraft

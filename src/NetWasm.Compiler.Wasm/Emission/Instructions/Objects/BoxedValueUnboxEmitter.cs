@@ -1,6 +1,7 @@
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
@@ -89,10 +90,8 @@ internal sealed class BoxedValueUnboxEmitter(
             WasmInstructionOperand.Unsigned((uint)objectLocal)));
         addresses.Emit(code, payloadOffset);
         addresses.Emit(code, AddressOperation.Add);
-        addresses.Emit(code, value.Size);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Prefixed,
-            WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, value.Size,
+            writer => addresses.Emit(writer, value.Size));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));

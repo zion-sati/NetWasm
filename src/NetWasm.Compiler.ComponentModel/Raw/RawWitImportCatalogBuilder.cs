@@ -62,9 +62,9 @@ public sealed class RawWitImportCatalogBuilder(
                 continue;
             }
             var definition = document.Interfaces[item.InterfaceId!.Value];
-            var interfaceName = $"{definition.Package}/{definition.Name}";
+            var interfaceName = item.Name;
             var coreInterfaceName = item.CoreBindingName ?? interfaceName;
-            var deploymentInterfaceName = _interfaceSpecifiers.Format(definition);
+            var deploymentInterfaceName = item.Name;
             foreach (var function in definition.Functions)
             {
                 AddFunction(imports, interfaceName, coreInterfaceName,
@@ -77,9 +77,9 @@ public sealed class RawWitImportCatalogBuilder(
         {
             if (item.InterfaceId is not { } id) continue;
             var definition = document.Interfaces[id];
-            var interfaceName = $"{definition.Package}/{definition.Name}";
+            var interfaceName = item.Name;
             var coreInterfaceName = item.CoreBindingName ?? interfaceName;
-            var deploymentInterfaceName = _interfaceSpecifiers.Format(definition);
+            var deploymentInterfaceName = item.Name;
             foreach (var kind in ExportedResourceImports)
             {
                 AddResources(imports, document, definition, interfaceName, coreInterfaceName,

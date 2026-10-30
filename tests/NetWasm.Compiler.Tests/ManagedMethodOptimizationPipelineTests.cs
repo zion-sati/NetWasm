@@ -4,6 +4,7 @@ using NetWasm.Compiler.Analysis.AddressTakenValues;
 using NetWasm.Compiler.Analysis.Inlining;
 using NetWasm.Compiler.Analysis.Arrays;
 using NetWasm.Compiler.Analysis.Devirtualization;
+using NetWasm.Compiler.Analysis.Loops;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 
@@ -48,13 +49,14 @@ public sealed class ManagedMethodOptimizationPipelineTests
             graphBuilder,
             stackValidator,
             accessors,
-            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding())
+            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds())
             .Optimize(method);
 
         Assert.Same(final, result);
-        // The second round finds nothing more to inline.
+        // Accessors are canonicalized before each round and after the last;
+        // the second round finds nothing more to inline.
         Assert.Equal(
-            ["optimize", "inline", "graph", "validate", "optimize", "inline", "accessors"],
+            ["optimize", "accessors", "inline", "graph", "validate", "optimize", "accessors", "inline", "accessors"],
             events);
         Assert.Equal(2, optimizer.Received.Count);
         Assert.Same(method, optimizer.Received[0]);
@@ -64,7 +66,7 @@ public sealed class ManagedMethodOptimizationPipelineTests
         Assert.Same(first, inliner.ReceivedBody);
         Assert.Same(method.Method, inliner.ReceivedCaller);
         Assert.Empty(inliner.ReceivedInstructionEntryStacks!);
-        Assert.Same(postInlining, accessors.Received);
+        Assert.Equal([first, postInlining, final], accessors.Received);
     }
 
     [Fact]
@@ -86,7 +88,7 @@ public sealed class ManagedMethodOptimizationPipelineTests
             graphBuilder,
             stackValidator,
             new RecordingCanonicalizer(method.Body, method.Body),
-            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding())
+            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds())
             .Optimize(method);
 
         Assert.Same(method.Body, result);
@@ -114,7 +116,7 @@ public sealed class ManagedMethodOptimizationPipelineTests
             new ControlFlowGraphBuilderFactory().Create(),
             new PassThroughStackValidator(method.ControlFlow),
             new IdentityCanonicalizer(),
-            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), devirtualizer, new NoFolding())
+            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), devirtualizer, new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds())
             .Optimize(method);
 
         // Each round devirtualizes before inlining, and the last round's inlined
@@ -145,7 +147,7 @@ public sealed class ManagedMethodOptimizationPipelineTests
             new RecordingGraphBuilder(method.Body, method.ControlFlow.Graph),
             new RecordingStackValidator(method.ControlFlow.Graph, method.ControlFlow),
             new RecordingCanonicalizer(folded, folded),
-            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding())
+            new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds())
             .Optimize(method);
 
         Assert.Same(folded, result);
@@ -171,11 +173,12 @@ public sealed class ManagedMethodOptimizationPipelineTests
                 new RecordingGraphBuilder(inlined, graph),
                 new ThrowingStackValidator(),
                 accessors,
-                new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding())
+                new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds())
                 .Optimize(method));
 
         Assert.Single(optimizer.Received);
-        Assert.Null(accessors.Received);
+        // Only the canonicalization before the first round ran.
+        Assert.Equal([method.Body], accessors.Received);
     }
 
     [Fact]
@@ -194,44 +197,84 @@ public sealed class ManagedMethodOptimizationPipelineTests
 
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                null!, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                null!, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, null!, inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, null!, inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), null!, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), null!, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, null!, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), inliner, null!, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, null!, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), inliner, graphBuilder, null!, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new NoFolding()));
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityDevirtualizer(), new NoFolding()));
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), null!));
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedMethodOptimizationPipeline(
-                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding())
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!, new IdentityArrayBounds()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodOptimizationPipeline(
+                optimizer, new NoFolding(), inliner, graphBuilder, stackValidator, accessors, new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityDevirtualizer(), new NoFolding(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds(), new IdentityArrayBounds())
                 .Optimize(null!));
     }
 
-    private sealed class IdentityArrayBounds : IArrayBoundsCheckEliminator, IArrayLoopUnroller, IRepeatedArrayAccessEliminator
+    private sealed class IdentityArrayBounds : IArrayBoundsCheckEliminator, IArrayLoopUnroller, IRepeatedArrayAccessEliminator,
+        IRvaSpanLocalEliminator, ILocalAddressDereferenceFolder, IIdempotentLoopCollapser, IArrayLoopIdiomRewriter,
+        IReductionLoopRewriter, ILoopInvariantCallHoister, IElementwiseLoopVectorizer, ILoopStoreForwarder,
+        IBeforeFieldInitEntryInitializer, IEmptyFinallyRemover,
+        IStructLocalScalarReplacer, NetWasm.Compiler.Analysis.Allocations.INonEscapingAllocationReplacer
     {
         public CilMethodBody Rewrite(CilMethodBody body) => body;
     }
@@ -308,19 +351,19 @@ public sealed class ManagedMethodOptimizationPipelineTests
         }
     }
 
+    // Canonicalizes the expected body to the result and leaves others as they are.
     private sealed class RecordingCanonicalizer(
         CilMethodBody expected,
         CilMethodBody result,
         List<string>? events = null) : ISimpleValueTypeAccessorCanonicalizer
     {
-        public CilMethodBody? Received { get; private set; }
+        public List<CilMethodBody> Received { get; } = [];
 
         public CilMethodBody Canonicalize(CilMethodBody body)
         {
-            Assert.Same(expected, body);
-            Received = body;
+            Received.Add(body);
             events?.Add("accessors");
-            return result;
+            return ReferenceEquals(body, expected) ? result : body;
         }
     }
 

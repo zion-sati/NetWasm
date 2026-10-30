@@ -280,7 +280,7 @@ public sealed class WasmModulePlanInvariantValidatorTests
             [
                 program.GetMethod(StringLengthKey) with
                 {
-                    WitImport = new("example:host@1.0.0/api", "read"),
+                    WitImport = new("example:host/api@1.0.0", "read"),
                 },
             ],
             ConstructedMethods = new Dictionary<string, StructuredMethod>
@@ -327,7 +327,7 @@ public sealed class WasmModulePlanInvariantValidatorTests
             [
                 program.GetMethod(StringLengthKey) with
                 {
-                    WitImport = new("example:host@1.0.0/api", "read"),
+                    WitImport = new("example:host/api@1.0.0", "read"),
                 },
             ],
         };
@@ -354,7 +354,7 @@ public sealed class WasmModulePlanInvariantValidatorTests
     public void RejectsWitImportGroupWithDifferentFunctionIndices()
     {
         var program = new FakeProgram();
-        var import = new WitImportDeclaration("example:host@1.0.0/api", "read");
+        var import = new WitImportDeclaration("example:host/api@1.0.0", "read");
         var request = CreateRequest(program) with
         {
             WitImportMethods =

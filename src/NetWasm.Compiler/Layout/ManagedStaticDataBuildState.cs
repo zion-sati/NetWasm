@@ -13,6 +13,11 @@ internal sealed class ManagedStaticDataBuildState
     public Dictionary<string, StringLayout> Strings { get; } =
         new(StringComparer.Ordinal);
     public Dictionary<ManagedExceptionKind, int> ExceptionObjects { get; } = [];
+    public Dictionary<string, int> TypeObjects { get; } = new(StringComparer.Ordinal);
+    public int TypeObjectTableAddress { get; set; }
+    public int TypeObjectCacheAddress { get; set; }
+    public int TypeObjectCount { get; set; }
+    public int TypeObjectSize { get; set; }
     public ImmutableArray<DataSegment>.Builder Segments { get; } =
         ImmutableArray.CreateBuilder<DataSegment>();
     public ImmutableArray<TypeDescriptorLayout>.Builder TypeDescriptors { get; } =

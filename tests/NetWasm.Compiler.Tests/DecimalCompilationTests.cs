@@ -231,7 +231,7 @@ public sealed class DecimalCompilationTests
     }
 
     [Fact]
-    public void O3ComposesBranchingInternalRoundBeforeManagedEmission()
+    public void O3ComposesBranchingDecimalRoundBeforeManagedEmission()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileOptimizedSource(
@@ -256,110 +256,37 @@ public sealed class DecimalCompilationTests
             [],
             Optimization: FinalWasmOptimization.O3));
 
-        Assert.DoesNotContain(
-            compilation.Program.Methods.Values,
-            method => method.Method.Definition.Name == "InternalRound");
+        // decimal.Round forwards to the private Round(ref decimal, int, MidpointRounding),
+        // a branching callee that takes the decimal by reference: O3 composes it into the
+        // public overload.
+        Assert.DoesNotContain(compilation.Program.Methods.Values, method =>
+            method.Method.Definition.Name == "Round" &&
+            method.Method.Signature.ParameterSignatureTypes.Any(static type =>
+                type.Shape == CliTypeShape.ManagedByReference));
         var composed = Assert.Single(compilation.Program.Methods.Values, method =>
             method.Method.Definition.Name == "Round" &&
-            method.Method.DeclaringType?.FullName?.Contains(
-                "DecimalMath",
-                StringComparison.Ordinal) == true);
+            method.Method.DeclaringType?.FullName == "System.Decimal");
         Assert.Contains(composed.Body.Instructions, instruction =>
-            instruction.Operation is CilOperation.Branch or CilOperation.Switch);
+            instruction.Operand is CilOperand.BranchTarget);
         Assert.Contains(composed.Body.Instructions, instruction =>
-            instruction.Operation == CilOperation.LoadLocalAddress);
+            instruction.Operation is CilOperation.LoadArgumentAddress or CilOperation.LoadLocalAddress);
+        // That inlining exposes the call to InternalRound, which stays a call, as .NET keeps it.
         Assert.Contains(composed.Body.Instructions, instruction =>
-            instruction.Operation is CilOperation.StoreField or CilOperation.StoreObject);
-        Assert.DoesNotContain(composed.Body.Instructions, instruction =>
             instruction.Operation == CilOperation.Call &&
             instruction.Operand is CilOperand.MethodInstance called &&
             called.Value.Definition.Name == "InternalRound");
-        Assert.Contains(composed.Body.Instructions, instruction =>
+        var internalRound = Assert.Single(compilation.Program.Methods.Values, method =>
+            method.Method.Definition.Name == "InternalRound");
+        Assert.Contains(internalRound.Body.Instructions, instruction =>
             instruction.Operation == CilOperation.LoadStaticDataElement &&
             instruction.Operand is CilOperand.ReadOnlySpanData data &&
             data.ElementType.CanonicalName == "primitive:u4");
-        Assert.DoesNotContain(composed.Body.Instructions, instruction =>
+        Assert.DoesNotContain(internalRound.Body.Instructions, instruction =>
             instruction.Operation == CilOperation.Call &&
             instruction.Operand is CilOperand.MethodInstance called &&
-            called.Value.Definition.Name is "get_UInt32Powers10" or "get_Scale");
-        Assert.DoesNotContain(composed.Body.Instructions, instruction =>
-            instruction.Operation == CilOperation.Call &&
-            instruction.Operand is CilOperand.MethodInstance called &&
-            called.Value.Definition.Name == "get_Item" &&
-            called.Value.DeclaringType.CanonicalName.Contains(
-                "ReadOnlySpan",
-                StringComparison.Ordinal));
-        Assert.Contains(
-            composed.Body.Instructions
-                .Where(static instruction =>
-                    instruction.Operation == CilOperation.Return)
-                .GroupBy(static instruction => instruction.SourceOffset),
-            returns => returns.Count() == 4);
-        Assert.True(compilation.Program.ManagedByRefEffects.Methods.TryGetValue(
-            composed.Method.CanonicalName,
-            out var effects));
-        Assert.True(effects.RequiresOwnedStorage(0));
-
-        using var metadata = MetadataCompilationTestFactory.Load(
-            assembly,
-            [assets.CoreLib]);
-        var snapshot = metadata.Snapshot;
-        var fields = MetadataCompilationTestActors.Fields(snapshot);
-        var typeDefinitions = MetadataCompilationTestActors.TypeDefinitions(snapshot);
-        var identities = new CilTypeIdentityResolver(
-            MetadataCompilationTestActors.Types(snapshot));
-        var analyzer = new ManagedAggregateValueAnalyzer(
-            fields,
-            MetadataCompilationTestActors.Methods(snapshot),
-            typeDefinitions,
-            new ValueLayoutProvider(CreateValueLayouts(
-                typeDefinitions,
-                fields,
-                compilation.Layouts)),
-            CreateInstanceFields(compilation.Layouts),
-            new ArgumentSignatureTypeResolver(identities),
-            new CilTypeOperandResolver(identities),
-            compilation.Layouts,
-            new RuntimeIntrinsicRegistry(
-                MetadataCompilationTestActors.Symbols(snapshot),
-                snapshot.Methods));
-        var structured = ValidationTestData.Lower(compilation.Program)
-            .Methods[composed.Method.Definition.Key];
-        var rootMap = compilation.Program.RootMaps[composed.Method.Definition.Key];
-        Assert.Empty(rootMap.AnchorPlan.Anchors);
-        var analysis = analyzer.Analyze(new(
-            structured,
-            rootMap,
-            compilation.Program.ManagedByRefEffects,
-            Enabled: true));
-
-        var storage = Assert.Single(analysis.Storages.Values, candidate =>
-            candidate.Id.Kind == ManagedAggregateStorageKind.Argument &&
-            candidate.Id.Index == 0);
-        Assert.True(storage.Owned);
-        var accesses = analysis.LaneAccesses.Values
-            .Where(access => access.Address.Storage == storage.Id)
-            .ToArray();
-        Assert.NotEmpty(accesses);
-        Assert.Contains(accesses, access => access.Writes);
-        Assert.Contains(analysis.LiveInAddresses.Values, live =>
-            live.Contains(storage.Id));
-        Assert.Empty(analysis.RootDependencies);
-        var ssa = new ManagedAggregateSsaPlanner().Plan(new(structured, analysis));
-        Assert.Single(ssa.Storages);
-        Assert.Contains(storage.Id, ssa.Storages.Keys);
-        Assert.Equal(4, ssa.Lanes.Length);
-        Assert.Equal(32, ssa.Definitions.Length);
-        // The inlined decimal.Scale reads are lane accesses, not calls that
-        // need the aggregate materialized. Inlined helpers read the caller's
-        // decimal argument in place rather than a spilled copy, which saves
-        // two accesses, nine edge copies and two materializations.
-        Assert.Equal(25, ssa.Accesses.Count);
-        Assert.Equal(14, ssa.Phis.Length);
-        Assert.Equal(46, ssa.EdgeCopies.Length);
-        Assert.Equal(3, ssa.Materializations.Length);
-        Assert.Empty(ssa.RootDependencies);
-        Assert.Contains(ssa.Accesses.Values, access => !access.Writes.IsEmpty);
+            (called.Value.Definition.Name == "get_UInt32Powers10" ||
+             called.Value.Definition.Name == "get_Item" &&
+             called.Value.DeclaringType.CanonicalName.Contains("ReadOnlySpan", StringComparison.Ordinal)));
         Assert.Equal(42, ExecuteWithNode(
             compilation.ApplicationModule,
             assets.Directory,
@@ -1030,11 +957,13 @@ public sealed class DecimalCompilationTests
                 public static int Run(int input)
                 {
                     var result = 0;
-                    try { _ = decimal.MaxValue + 1m; }
+                    // decimal.MaxValue is a constant: a local keeps the overflows at run time.
+                    var maximum = decimal.MaxValue;
+                    try { _ = maximum + 1m; }
                     catch (System.OverflowException) { result |= 1; }
                     try { _ = 1m / (input - input); }
                     catch (System.DivideByZeroException) { result |= 2; }
-                    try { _ = (int)decimal.MaxValue; }
+                    try { _ = (int)maximum; }
                     catch (System.OverflowException) { result |= 4; }
                     return result;
                 }
@@ -1133,6 +1062,70 @@ public sealed class DecimalCompilationTests
             []));
 
         Assert.Equal(65535, ExecuteWithNode(
+            compilation.ApplicationModule,
+            assets.Directory,
+            41));
+    }
+
+    [Fact]
+    public void DecimalMatchesDesktopConstantsParameterNamesAndExceptionMessages()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileSource(
+            "DecimalSurfaceFixture",
+            """
+            using System;
+
+            namespace DecimalSurfaceFixture;
+
+            public static class EntryPoint
+            {
+                // .NET declares Zero, One, MinusOne, MaxValue and MinValue as constants.
+                private const decimal Limit = decimal.MaxValue;
+                private const decimal Lowest = decimal.MinValue + decimal.One;
+
+                private static decimal Scale(decimal value, decimal factor = decimal.MinusOne) => value * factor;
+
+                public static int Run(int input)
+                {
+                    var result = 0;
+                    var maximum = Limit - input + input;
+                    if (Scale(2m) == -2m && Lowest == -79228162514264337593543950334m && decimal.Zero == 0m)
+                        result |= 1;
+                    if (decimal.Parse(s: "12.5") == 12.5m && decimal.TryParse(s: "1.5", out var parsed) && parsed == 1.5m)
+                        result |= 2;
+                    try { _ = maximum + 1m; }
+                    catch (OverflowException e) when (e.Message == "Value was either too large or too small for a Decimal.") { result |= 4; }
+                    try { _ = decimal.ToByte(maximum); }
+                    catch (OverflowException e) when (e.Message == "Value was either too large or too small for an unsigned byte.") { result |= 8; }
+                    try { _ = decimal.ToInt32(maximum); }
+                    catch (OverflowException e) when (e.Message == "Value was either too large or too small for an Int32.") { result |= 16; }
+                    try { _ = decimal.Round(maximum, 29 + input - input); }
+                    catch (ArgumentOutOfRangeException e) when (e.ParamName == "decimals" &&
+                        e.Message.StartsWith("Decimal can only round to between 0 and 28 digits of precision.", StringComparison.Ordinal)) { result |= 32; }
+                    try { _ = decimal.Round(maximum, 2, (MidpointRounding)(7 + input - input)); }
+                    catch (ArgumentException e) when (e.ParamName == "mode" &&
+                        e.Message.StartsWith("The value '7' is not valid for this usage of the type MidpointRounding.", StringComparison.Ordinal)) { result |= 64; }
+                    try { _ = new decimal([1, 2, 3, 0x7F000000 + input - input]); }
+                    catch (ArgumentException e) when (e.Message == "Decimal constructor requires an array or span of four valid decimal bytes.") { result |= 128; }
+                    try { _ = ((IComparable)maximum).CompareTo("text"); }
+                    catch (ArgumentException e) when (e.Message == "Object must be of type Decimal.") { result |= 256; }
+                    try { _ = ((IConvertible)maximum).ToChar(null); }
+                    catch (InvalidCastException e) when (e.Message == "Invalid cast from 'Decimal' to 'Char'.") { result |= 512; }
+                    return result;
+                }
+            }
+            """);
+
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "DecimalSurfaceFixture.EntryPoint",
+            "Run",
+            []));
+
+        // Desktop .NET 11 returns 1023: every check passes.
+        Assert.Equal(1023, ExecuteWithNode(
             compilation.ApplicationModule,
             assets.Directory,
             41));

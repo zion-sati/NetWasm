@@ -2,7 +2,7 @@
 // dotnet/runtime System.Private.CoreLib primitive sources.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
-// Pinned upstream runtime commit: 811225a482702af7ecc35d817966bc70b88a3a23.
+// Pinned upstream runtime commit: 474ed963699fc29809015392738a15231aaae2de.
 
 using System.Numerics;
 
@@ -123,6 +123,7 @@ internal static class PrimitiveIntegralConversions
             case byte v: sourceSigned = false; unsignedValue = v; break;
             case short v: signedValue = v; break;
             case ushort v: sourceSigned = false; unsignedValue = v; break;
+            case char v: sourceSigned = false; unsignedValue = v; break;
             case int v: signedValue = v; break;
             case uint v: sourceSigned = false; unsignedValue = v; break;
             case long v: signedValue = v; break;
@@ -196,18 +197,6 @@ internal static class PrimitiveIntegralConversions
         return true;
     }
 
-    internal static long CreateSigned<T>(T value, int bits, PrimitiveIntegralConversionKind kind)
-    {
-        if (!TryConvert(value, bits, true, kind, out var result)) throw new OverflowException();
-        return bits == 64 ? unchecked((long)result) : unchecked((long)(result & ((1UL << bits) - 1)));
-    }
-
-    internal static ulong CreateUnsigned<T>(T value, int bits, PrimitiveIntegralConversionKind kind)
-    {
-        if (!TryConvert(value, bits, false, kind, out var result)) throw new OverflowException();
-        return result;
-    }
-
     internal static int Log10Signed(long value) => value < 0 ? throw new ArgumentOutOfRangeException() : Log10((ulong)value);
 
     internal static int Log10(ulong value)
@@ -272,7 +261,9 @@ internal static class PrimitiveIntegralConversions
             truncated %= modulus;
             if (truncated < 0) truncated += modulus;
         }
-        result = unchecked((ulong)truncated) & mask;
+        // A negative value here is in range for a signed target; converting it to
+        // ulong directly saturates to zero, so it goes through long.
+        result = (truncated < 0 ? unchecked((ulong)(long)truncated) : unchecked((ulong)truncated)) & mask;
         return true;
     }
 
@@ -400,10 +391,6 @@ public partial struct Int32
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, ~0, format, provider, destination, out bytesWritten);
     public static long BigMul(int left, int right) => (long)left * right;
-    public static int CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (int)PrimitiveIntegralConversions.CreateSigned(value, 32, PrimitiveIntegralConversionKind.Checked);
-    public static int CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (int)PrimitiveIntegralConversions.CreateSigned(value, 32, PrimitiveIntegralConversionKind.Saturating);
     public static int Log10(int value) => PrimitiveIntegralConversions.Log10Signed(value);
     public static bool TryParse(ReadOnlySpan<char> value, out int result) => TryParse(value, null, out result);
     public static bool TryParse(ReadOnlySpan<byte> value, out int result) => TryParse(value, null, out result);
@@ -446,12 +433,6 @@ public readonly partial struct IntPtr
         low = new IntPtr((long)product)._value;
         return new IntPtr((long)(product >> 64))._value;
     }
-    public static nint CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        new IntPtr(PrimitiveIntegralConversions.CreateSigned(value, Size * 8, PrimitiveIntegralConversionKind.Checked))._value;
-    public static nint CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        new IntPtr(PrimitiveIntegralConversions.CreateSigned(value, Size * 8, PrimitiveIntegralConversionKind.Saturating))._value;
-    public static nint CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        new IntPtr(PrimitiveIntegralConversions.CreateSigned(value, Size * 8, PrimitiveIntegralConversionKind.Truncating))._value;
     public static nint Log10(nint value) => (nint)PrimitiveIntegralConversions.Log10Signed((long)value._value);
     public static nint Parse(ReadOnlySpan<byte> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(PrimitiveScalarContracts.Utf8ToString(value), style, provider);
     public static nint Parse(ReadOnlySpan<byte> value, IFormatProvider? provider) => Parse(value, System.Globalization.NumberStyles.Integer, provider);
@@ -486,12 +467,6 @@ public readonly partial struct UIntPtr
         low = new UIntPtr((ulong)product)._value;
         return new UIntPtr((ulong)(product >> 64))._value;
     }
-    public static nuint CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        new UIntPtr(PrimitiveIntegralConversions.CreateUnsigned(value, Size * 8, PrimitiveIntegralConversionKind.Checked))._value;
-    public static nuint CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        new UIntPtr(PrimitiveIntegralConversions.CreateUnsigned(value, Size * 8, PrimitiveIntegralConversionKind.Saturating))._value;
-    public static nuint CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        new UIntPtr(PrimitiveIntegralConversions.CreateUnsigned(value, Size * 8, PrimitiveIntegralConversionKind.Truncating))._value;
     public static nuint Log10(nuint value) => (nuint)PrimitiveIntegralConversions.Log10((ulong)value._value);
     public static nuint Parse(ReadOnlySpan<byte> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(PrimitiveScalarContracts.Utf8ToString(value), style, provider);
     public static nuint Parse(ReadOnlySpan<byte> value, IFormatProvider? provider) => Parse(value, System.Globalization.NumberStyles.Integer, provider);
@@ -517,10 +492,6 @@ public partial struct UInt32
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out bytesWritten);
     public static ulong BigMul(uint left, uint right) => (ulong)left * right;
-    public static uint CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (uint)PrimitiveIntegralConversions.CreateUnsigned(value, 32, PrimitiveIntegralConversionKind.Checked);
-    public static uint CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (uint)PrimitiveIntegralConversions.CreateUnsigned(value, 32, PrimitiveIntegralConversionKind.Saturating);
     public static uint Log10(uint value) => (uint)PrimitiveIntegralConversions.Log10(value);
     public static bool TryParse(ReadOnlySpan<char> value, out uint result) => TryParse(value, null, out result);
     public static bool TryParse(ReadOnlySpan<byte> value, out uint result) => TryParse(value, null, out result);
@@ -554,12 +525,6 @@ public partial struct Int64
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt64(this, format, provider, destination, out bytesWritten);
     public static Int128 BigMul(long left, long right) => (Int128)left * right;
-    public static long CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        PrimitiveIntegralConversions.CreateSigned(value, 64, PrimitiveIntegralConversionKind.Checked);
-    public static long CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        PrimitiveIntegralConversions.CreateSigned(value, 64, PrimitiveIntegralConversionKind.Saturating);
-    public static long CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        PrimitiveIntegralConversions.CreateSigned(value, 64, PrimitiveIntegralConversionKind.Truncating);
     public static long Log10(long value) => PrimitiveIntegralConversions.Log10Signed(value);
     public static bool TryParse(ReadOnlySpan<char> value, out long result) => TryParse(value, null, out result);
     public static bool TryParse(ReadOnlySpan<byte> value, out long result) => TryParse(value, null, out result);
@@ -593,10 +558,6 @@ public partial struct UInt64
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt64(this, format, provider, destination, out bytesWritten);
     public static UInt128 BigMul(ulong left, ulong right) => (UInt128)left * right;
-    public static ulong CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        PrimitiveIntegralConversions.CreateUnsigned(value, 64, PrimitiveIntegralConversionKind.Checked);
-    public static ulong CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        PrimitiveIntegralConversions.CreateUnsigned(value, 64, PrimitiveIntegralConversionKind.Saturating);
     public static ulong Log10(ulong value) => (ulong)PrimitiveIntegralConversions.Log10(value);
     public static bool TryParse(ReadOnlySpan<char> value, out ulong result) => TryParse(value, null, out result);
     public static bool TryParse(ReadOnlySpan<byte> value, out ulong result) => TryParse(value, null, out result);
@@ -626,9 +587,6 @@ public partial struct UInt64
 
 public partial struct Int32
 {
-    public static int CreateTruncating<TOther>(TOther value)
-        where TOther : Numerics.INumberBase<TOther> =>
-        TryConvert(value, out var result) ? result : throw new NotSupportedException();
 
     public string ToString(IFormatProvider? provider) => Number.FormatInt32(this, 0, null, provider);
 
@@ -650,9 +608,6 @@ public partial struct Int32
 
 public partial struct UInt32
 {
-    public static uint CreateTruncating<TOther>(TOther value)
-        where TOther : Numerics.INumberBase<TOther> =>
-        TryConvert(value, out var result) ? result : throw new NotSupportedException();
 
     public string ToString(IFormatProvider? provider) => Number.UInt32ToDecStr(this);
 
@@ -717,23 +672,6 @@ public partial struct UInt64
         1_000_000_000_000_000_000,
         10_000_000_000_000_000_000,
     ];
-
-    public static ulong CreateTruncating<TOther>(TOther value)
-        where TOther : Numerics.INumberBase<TOther>
-    {
-        ulong result;
-
-        if (typeof(TOther) == typeof(ulong))
-        {
-            result = (ulong)(object)value;
-        }
-        else if (!TryConvertFromTruncating(value, out result) && !TOther.TryConvertToTruncating(value, out result))
-        {
-            throw new NotSupportedException();
-        }
-
-        return result;
-    }
 
     public string ToString(IFormatProvider? provider) => Number.UInt64ToDecStr(this);
 
@@ -846,64 +784,6 @@ public partial struct Single
 
     public static TInteger ConvertToInteger<TInteger>(float value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
     public static TInteger ConvertToIntegerNative<TInteger>(float value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
-
-    public static float CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
-    {
-        if (typeof(TOther) == typeof(float)) return (float)(object)value;
-        // Upstream Single.TryConvertFrom uses the direct Int128 cast for every policy.
-        if (typeof(TOther) == typeof(Int128)) return (float)(Int128)(object)value;
-        if (TryCreate(value, out var result, saturating: false)) return result;
-        if (TOther.TryConvertToChecked(value, out result)) return result;
-        throw new NotSupportedException();
-    }
-
-    public static float CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
-    {
-        if (typeof(TOther) == typeof(float)) return (float)(object)value;
-        if (typeof(TOther) == typeof(Int128)) return (float)(Int128)(object)value;
-        if (TryCreate(value, out var result, saturating: true)) return result;
-        if (TOther.TryConvertToSaturating(value, out result)) return result;
-        throw new NotSupportedException();
-    }
-
-    public static float CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
-    {
-        if (typeof(TOther) == typeof(float)) return (float)(object)value;
-        if (typeof(TOther) == typeof(Int128)) return (float)(Int128)(object)value;
-        if (TryCreate(value, out var result, saturating: true)) return result;
-        if (TOther.TryConvertToTruncating(value, out result)) return result;
-        throw new NotSupportedException();
-    }
-
-    private static bool TryCreate<TOther>(TOther value, out float result, bool saturating) where TOther : Numerics.INumberBase<TOther>
-    {
-        try
-        {
-            var converted = Convert.ToDouble((object?)value);
-            if (double.IsNaN(converted) || double.IsInfinity(converted))
-            {
-                result = (float)converted;
-                return true;
-            }
-            if (converted > MaxValue)
-            {
-                result = saturating ? MaxValue : default;
-                return saturating;
-            }
-            if (converted < MinValue)
-            {
-                result = saturating ? MinValue : default;
-                return saturating;
-            }
-            result = (float)converted;
-            return true;
-        }
-        catch
-        {
-            result = default;
-            return false;
-        }
-    }
 
     public static float ClampNative(float value, float min, float max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
     public static float MaxNative(float left, float right) => left > right ? left : right;
@@ -1041,39 +921,12 @@ public partial struct Double
     public static TInteger ConvertToInteger<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
     public static TInteger ConvertToIntegerNative<TInteger>(double value) where TInteger : Numerics.IBinaryInteger<TInteger> => TInteger.CreateSaturating(value);
 
-    public static double CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
-    {
-        if (typeof(TOther) == typeof(double)) return (double)(object)value;
-        // Upstream Double.TryConvertFrom uses the direct Int128 cast for every policy.
-        if (typeof(TOther) == typeof(Int128)) return (double)(Int128)(object)value;
-        try { return Convert.ToDouble((object?)value); }
-        catch { if (TOther.TryConvertToChecked<double>(value, out var result)) return result; throw new NotSupportedException(); }
-    }
-
-    public static double CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
-    {
-        if (typeof(TOther) == typeof(double)) return (double)(object)value;
-        if (typeof(TOther) == typeof(Int128)) return (double)(Int128)(object)value;
-        try { return Convert.ToDouble((object?)value); }
-        catch { if (TOther.TryConvertToSaturating<double>(value, out var result)) return result; throw new NotSupportedException(); }
-    }
-
-    public static double CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther>
-    {
-        if (typeof(TOther) == typeof(double)) return (double)(object)value;
-        if (typeof(TOther) == typeof(Int128)) return (double)(Int128)(object)value;
-        try { return Convert.ToDouble((object?)value); }
-        catch { if (TOther.TryConvertToTruncating<double>(value, out var result)) return result; throw new NotSupportedException(); }
-    }
-
     public static double ClampNative(double value, double min, double max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
     public static double MaxNative(double left, double right) => left > right ? left : right;
     public static double MinNative(double left, double right) => left < right ? left : right;
     public static double MaxNumber(double left, double right) => left != right ? !IsNaN(right) ? right < left ? left : right : left : IsNegative(right) ? left : right;
     public static double MinNumber(double left, double right) => left != right ? !IsNaN(right) ? left < right ? left : right : left : IsNegative(left) ? left : right;
     public static double Lerp(double value1, double value2, double amount) => MultiplyAddEstimate(value1, 1D - amount, value2 * amount);
-    public static double DegreesToRadians(double value) => value * (Pi / 180D);
-    public static double RadiansToDegrees(double value) => value * (180D / Pi);
     public static double LogP1(double value) => Math.Log(1D + value);
     public static double Log2P1(double value) => Math.Log2(1D + value);
     public static double Log10P1(double value) => Math.Log10(1D + value);
@@ -1131,6 +984,10 @@ public partial struct Single
     internal const uint BiasedExponentMask = 0x7F80_0000;
     internal const int BiasedExponentShift = 23;
     internal const uint TrailingSignificandMask = 0x007F_FFFF;
+    internal const byte ShiftedBiasedExponentMask = (byte)(BiasedExponentMask >> BiasedExponentShift);
+    internal const uint MaxTrailingSignificand = 0x007F_FFFF;
+    internal const uint PositiveInfinityBits = 0x7F80_0000;
+    internal const uint SmallestNormalBits = 0x0080_0000;
     internal const int ExponentBias = 127;
     internal const int TrailingSignificandLength = 23;
     internal const int SignificandLength = TrailingSignificandLength + 1;
@@ -1139,17 +996,15 @@ public partial struct Single
         BitConverter.UInt32BitsToSingle((sign ? SignMask : 0U) |
             ((uint)exponent << BiasedExponentShift) | (significand & TrailingSignificandMask));
 
-    public static float ExpM1(float value) => (float)Math.Exp(value) - 1F;
+    public static float ExpM1(float value) => MathF.Exp(value) - 1F;
     public static float Exp2M1(float value) => Exp2(value) - 1F;
     public static float Exp10M1(float value) => Exp10(value) - 1F;
     public static float Lerp(float value1, float value2, float amount) => MultiplyAddEstimate(value1, 1F - amount, value2 * amount);
     public static float ReciprocalEstimate(float value) => (float)Math.ReciprocalEstimate(value);
     public static float ReciprocalSqrtEstimate(float value) => (float)Math.ReciprocalSqrtEstimate(value);
-    public static float LogP1(float value) => (float)Math.Log(1F + value);
-    public static float Log2P1(float value) => (float)Math.Log2(1F + value);
-    public static float Log10P1(float value) => (float)Math.Log10(1F + value);
-    public static float DegreesToRadians(float value) => value * (Pi / 180F);
-    public static float RadiansToDegrees(float value) => value * (180F / Pi);
+    public static float LogP1(float value) => MathF.Log(value + 1);
+    public static float Log2P1(float value) => MathF.Log2(value + 1);
+    public static float Log10P1(float value) => MathF.Log10(value + 1);
     public static float MultiplyAddEstimate(float left, float right, float addend) =>
         (float)Math.FusedMultiplyAdd(left, right, addend);
     public static float Round(float value) => MathF.Round(value);
@@ -1195,6 +1050,10 @@ public partial struct Double
     internal const ulong BiasedExponentMask = 0x7FF0_0000_0000_0000;
     internal const int BiasedExponentShift = 52;
     internal const ulong TrailingSignificandMask = 0x000F_FFFF_FFFF_FFFF;
+    internal const ushort ShiftedBiasedExponentMask = (ushort)(BiasedExponentMask >> BiasedExponentShift);
+    internal const ulong MaxTrailingSignificand = 0x000F_FFFF_FFFF_FFFF;
+    internal const ulong PositiveInfinityBits = 0x7FF0_0000_0000_0000;
+    internal const ulong SmallestNormalBits = 0x0010_0000_0000_0000;
     internal const int ExponentBias = 1023;
     internal const int TrailingSignificandLength = 52;
     internal const int SignificandLength = TrailingSignificandLength + 1;
@@ -1204,7 +1063,7 @@ public partial struct Double
             ((ulong)exponent << BiasedExponentShift) + significand);
 
     public static double ExpM1(double value) => Math.Exp(value) - 1D;
-    public static double Exp2M1(double value) => Math.Pow(2D, value) - 1D;
+    public static double Exp2M1(double value) => Exp2(value) - 1D;
     public static double Exp10M1(double value) => Math.Pow(10D, value) - 1D;
 
     static int IBinaryFloatParseAndFormatInfo<double>.NumberBufferLength => Number.DoubleNumberBufferLength;
@@ -1458,26 +1317,6 @@ public readonly partial struct IntPtr
     static nint Numerics.IShiftOperators<nint, int, nint>.operator >>(nint value, int amount) => value >> amount;
     static nint Numerics.IShiftOperators<nint, int, nint>.operator >>>(nint value, int amount) => (nint)((nuint)value >> amount);
 
-    private static bool TryConvert<TOther>(TOther value, out nint result) where TOther : Numerics.INumberBase<TOther>
-    {
-        try
-        {
-            result = Size == 8 ? checked((nint)Convert.ToInt64((object?)value)) : checked((nint)Convert.ToInt32((object?)value));
-            return true;
-        }
-        catch { result = 0; return false; }
-    }
-    private static bool TryConvertTo<TOther>(nint value, out TOther result) where TOther : Numerics.INumberBase<TOther>
-    {
-        try { result = TOther.CreateTruncating(value); return true; }
-        catch { result = default!; return false; }
-    }
-    static bool Numerics.INumberBase<nint>.TryConvertFromChecked<TOther>(TOther value, out nint result) => TryConvert(value, out result);
-    static bool Numerics.INumberBase<nint>.TryConvertFromSaturating<TOther>(TOther value, out nint result) => TryConvert(value, out result);
-    static bool Numerics.INumberBase<nint>.TryConvertFromTruncating<TOther>(TOther value, out nint result) => TryConvert(value, out result);
-    static bool Numerics.INumberBase<nint>.TryConvertToChecked<TOther>(nint value, out TOther result) => TryConvertTo(value, out result);
-    static bool Numerics.INumberBase<nint>.TryConvertToSaturating<TOther>(nint value, out TOther result) => TryConvertTo(value, out result);
-    static bool Numerics.INumberBase<nint>.TryConvertToTruncating<TOther>(nint value, out TOther result) => TryConvertTo(value, out result);
 }
 
 public readonly partial struct UIntPtr
@@ -1655,26 +1494,6 @@ public readonly partial struct UIntPtr
     static nuint Numerics.IShiftOperators<nuint, int, nuint>.operator >>(nuint value, int amount) => value >> amount;
     static nuint Numerics.IShiftOperators<nuint, int, nuint>.operator >>>(nuint value, int amount) => value >> amount;
 
-    private static bool TryConvert<TOther>(TOther value, out nuint result) where TOther : Numerics.INumberBase<TOther>
-    {
-        try
-        {
-            result = Size == 8 ? checked((nuint)Convert.ToUInt64((object?)value)) : checked((nuint)Convert.ToUInt32((object?)value));
-            return true;
-        }
-        catch { result = 0; return false; }
-    }
-    private static bool TryConvertTo<TOther>(nuint value, out TOther result) where TOther : Numerics.INumberBase<TOther>
-    {
-        try { result = TOther.CreateTruncating(value); return true; }
-        catch { result = default!; return false; }
-    }
-    static bool Numerics.INumberBase<nuint>.TryConvertFromChecked<TOther>(TOther value, out nuint result) => TryConvert(value, out result);
-    static bool Numerics.INumberBase<nuint>.TryConvertFromSaturating<TOther>(TOther value, out nuint result) => TryConvert(value, out result);
-    static bool Numerics.INumberBase<nuint>.TryConvertFromTruncating<TOther>(TOther value, out nuint result) => TryConvert(value, out result);
-    static bool Numerics.INumberBase<nuint>.TryConvertToChecked<TOther>(nuint value, out TOther result) => TryConvertTo(value, out result);
-    static bool Numerics.INumberBase<nuint>.TryConvertToSaturating<TOther>(nuint value, out TOther result) => TryConvertTo(value, out result);
-    static bool Numerics.INumberBase<nuint>.TryConvertToTruncating<TOther>(nuint value, out TOther result) => TryConvertTo(value, out result);
 }
 
 public partial struct Byte
@@ -1746,12 +1565,6 @@ public partial struct Int16
     public TypeCode GetTypeCode() => TypeCode.Int16;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatInt32(this, 0x0000FFFF, format, provider, destination, out bytesWritten);
-    public static short CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (short)PrimitiveIntegralConversions.CreateSigned(value, 16, PrimitiveIntegralConversionKind.Checked);
-    public static short CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (short)PrimitiveIntegralConversions.CreateSigned(value, 16, PrimitiveIntegralConversionKind.Saturating);
-    public static short CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (short)PrimitiveIntegralConversions.CreateSigned(value, 16, PrimitiveIntegralConversionKind.Truncating);
     public static short Log10(short value) => (short)PrimitiveIntegralConversions.Log10Signed(value);
     public static bool TryParse(ReadOnlySpan<char> value, out short result) => TryParse(value, null, out result);
     public static bool TryParse(ReadOnlySpan<byte> value, out short result) => TryParse(value, null, out result);
@@ -1784,12 +1597,6 @@ public partial struct UInt16
     public TypeCode GetTypeCode() => TypeCode.UInt16;
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Number.TryFormatUInt32(this, format, provider, destination, out bytesWritten);
-    public static ushort CreateChecked<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (ushort)PrimitiveIntegralConversions.CreateUnsigned(value, 16, PrimitiveIntegralConversionKind.Checked);
-    public static ushort CreateSaturating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (ushort)PrimitiveIntegralConversions.CreateUnsigned(value, 16, PrimitiveIntegralConversionKind.Saturating);
-    public static ushort CreateTruncating<TOther>(TOther value) where TOther : Numerics.INumberBase<TOther> =>
-        (ushort)PrimitiveIntegralConversions.CreateUnsigned(value, 16, PrimitiveIntegralConversionKind.Truncating);
     public static ushort Log10(ushort value) => (ushort)PrimitiveIntegralConversions.Log10(value);
     public static bool TryParse(ReadOnlySpan<char> value, out ushort result) => TryParse(value, null, out result);
     public static bool TryParse(ReadOnlySpan<byte> value, out ushort result) => TryParse(value, null, out result);

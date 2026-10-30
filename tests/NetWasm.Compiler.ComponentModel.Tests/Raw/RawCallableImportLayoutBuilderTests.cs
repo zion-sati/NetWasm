@@ -11,7 +11,7 @@ public sealed class RawCallableImportLayoutBuilderTests
     public void ProjectsTheCallableAndWrapsTheExactFunctionLayout(WasmTarget target)
     {
         var functions = new RecordingFunctions();
-        var declaration = new RawWitImportDeclaration.Callable("example:test@1.0.0/api", new("call", [], null, new("freestanding")))
+        var declaration = new RawWitImportDeclaration.Callable("example:test/api@1.0.0", new("call", [], null, new("freestanding")))
         {
             CoreInterfaceName = "api-alias",
         };

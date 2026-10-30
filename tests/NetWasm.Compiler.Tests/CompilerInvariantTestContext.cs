@@ -33,7 +33,7 @@ internal sealed class CompilerInvariantTestContext : IDisposable
                     assets.Root,
                     "wit",
                     "netwasm-platform-1.0.0"),
-                WitWorld = "netwasm:platform@1.0.0/platform",
+                WitWorld = "netwasm:platform/platform@1.0.0",
             };
             if (configureOptions is not null)
                 options = configureOptions(options);

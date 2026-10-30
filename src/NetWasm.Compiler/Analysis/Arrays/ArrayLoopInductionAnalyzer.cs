@@ -66,8 +66,10 @@ internal sealed class ArrayLoopInductionAnalyzer(
                 var exit = bodyEntry == taken ? fallthrough : taken;
                 if (bodyEntry == guardIndex || !loop.Contains(bodyEntry) ||
                     loop.Contains(exit) || loop.Any(b => !dominators[b].Contains(guardIndex)) ||
+                    // A block nothing reaches, such as the code a switch left
+                    // behind its bit test, never enters the loop.
                     loop.Where(b => b != guardIndex).Any(b =>
-                        graph.Predecessors[b].Any(p => !loop.Contains(p))))
+                        graph.Predecessors[b].Any(p => !loop.Contains(p) && graph.ReachableBlocks.Contains(p))))
                     continue;
                 if (body.Instructions.Any(i =>
                         i.Operation == CilOperation.LoadLocalAddress &&

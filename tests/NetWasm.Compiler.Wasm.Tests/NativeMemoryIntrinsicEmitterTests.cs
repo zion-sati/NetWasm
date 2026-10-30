@@ -11,6 +11,115 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 
 public sealed class NativeMemoryIntrinsicEmitterTests
 {
+    // At the speed presets small copies run inline: past 64 bytes the copy is
+    // memory.copy, and below it every case loads all of its chunks before it
+    // stores any, so overlapping blocks copy as memmove does.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InlineCopiesLoadEveryChunkBeforeStoringAndFallBackPastSixtyFourBytes(bool memory64)
+    {
+        var instructions = EmitInline(RuntimeIntrinsic.NativeMemoryCopy, memory64,
+            [CliValueKind.NativeInt, CliValueKind.NativeInt, CliValueKind.NativeInt]);
+
+        Assert.Equal(WasmOpcodes.If, instructions[3].Opcode);
+        Assert.Equal(65, memory64 ? instructions[1].Operand.Signed64Value : instructions[1].Operand.SignedValue);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
+            instruction.Operand.Alignment == WasmOpcodes.MemoryCopy);
+        Assert.Contains(instructions, instruction => IsVector(instruction, WasmSimdOpcodes.V128Store));
+        var segments = new List<List<WasmInstruction>> { new() };
+        foreach (var instruction in instructions)
+        {
+            if (instruction.Opcode is WasmOpcodes.If or WasmOpcodes.Else or WasmOpcodes.End) segments.Add([]);
+            else segments[^1].Add(instruction);
+        }
+        foreach (var segment in segments)
+        {
+            var lastLoad = segment.FindLastIndex(IsLoad);
+            var firstStore = segment.FindIndex(IsStore);
+            Assert.True(firstStore < 0 || lastLoad < firstStore);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InlineFillsStoreTheRepeatedValueAndFallBackPastSixtyFourBytes(bool memory64)
+    {
+        var instructions = EmitInline(RuntimeIntrinsic.NativeMemoryFill, memory64,
+            [CliValueKind.NativeInt, CliValueKind.NativeInt, CliValueKind.I4]);
+
+        Assert.Equal(WasmOpcodes.If, instructions[3].Opcode);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
+            instruction.Operand.Alignment == WasmOpcodes.MemoryFill);
+        Assert.Contains(instructions, instruction => IsVector(instruction, WasmSimdOpcodes.I8x16Splat));
+        Assert.Contains(instructions, instruction => IsVector(instruction, WasmSimdOpcodes.V128Store));
+    }
+
+    // Known-size value copies inline the same way, in exact chunks widest
+    // first with every load before any store; they stay memory.copy past 64
+    // bytes, outside the speed presets, or where the method has no scratch.
+    [Theory]
+    [InlineData(29, true, true, true)]
+    [InlineData(29, false, true, false)]
+    [InlineData(29, true, false, false)]
+    [InlineData(65, true, true, false)]
+    public void KnownSizeCopiesLoadEveryChunkBeforeStoring(int size, bool inline, bool scratch, bool inlined)
+    {
+        var context = CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = inline,
+            CopyDestinationTemporary = scratch ? 30 : -1,
+            CopySourceTemporary = scratch ? 31 : -1,
+        };
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+
+        SmallBlockEmitter.EmitKnownSizeCopy(writer, context, size, code => code.Write(
+            WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(size))));
+
+        List<WasmInstruction> instructions = [.. writer.ToInstructions()];
+        Assert.Equal(!inlined, instructions.Exists(instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
+            instruction.Operand.Alignment == WasmOpcodes.MemoryCopy));
+        if (!inlined)
+        {
+            return;
+        }
+        Assert.True(instructions.FindLastIndex(IsLoad) < instructions.FindIndex(IsStore));
+        Assert.Equal([28U, 24U, 16U, 0U], instructions.Where(IsStore).Select(store =>
+            store.Opcode == WasmOpcodes.SimdPrefixed ? store.Operand.Third : store.Operand.Offset));
+    }
+
+    private static List<WasmInstruction> EmitInline(RuntimeIntrinsic intrinsic, bool memory64, CliValueKind[] stack)
+    {
+        var request = CreateBulkRequest(intrinsic, memory64, stack);
+        var call = request.Call with
+        {
+            Instruction = request.Call.Instruction with
+            {
+                Target = request.Call.Instruction.Target with { InlineSmallBlockOperations = true },
+            },
+        };
+        var emitter = RuntimeIntrinsicEmitterTestFactory.Create(intrinsic, WasmRuntimeImports.CreateCatalog());
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+        emitter.Emit(request with { Call = call }, writer);
+        return [.. writer.ToInstructions()];
+    }
+
+    // Prefixed operands hold a sub-opcode alone, or first in a triple.
+    private static bool IsVector(WasmInstruction instruction, uint opcode) =>
+        instruction.Opcode == WasmOpcodes.SimdPrefixed &&
+        (instruction.Operand.Shape == WasmInstructionOperandShape.PrefixedUnsignedLeb128
+            ? instruction.Operand.UnsignedValue
+            : instruction.Operand.Alignment) == opcode;
+
+    private static bool IsLoad(WasmInstruction instruction) =>
+        IsVector(instruction, WasmSimdOpcodes.V128Load) || instruction.Opcode is WasmOpcodes.I64Load or
+            WasmOpcodes.I32Load or WasmOpcodes.I32Load16Unsigned or WasmOpcodes.I32Load8Unsigned;
+
+    private static bool IsStore(WasmInstruction instruction) =>
+        IsVector(instruction, WasmSimdOpcodes.V128Store) || instruction.Opcode is WasmOpcodes.I64Store or
+            WasmOpcodes.I32Store or WasmOpcodes.I32Store16 or WasmOpcodes.I32Store8;
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

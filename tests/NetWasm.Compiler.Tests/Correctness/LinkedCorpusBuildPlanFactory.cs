@@ -75,6 +75,7 @@ internal sealed class LinkedCorpusBuildPlanFactory : ILinkedCorpusBuildPlanFacto
         [
             "--enable-exception-handling", "--enable-bulk-memory",
             "--enable-multimemory", "--enable-nontrapping-float-to-int",
+            "--enable-simd",
         ];
         if (request.Target == WasmTarget.Wasm64)
             features = features.Add("--enable-memory64");

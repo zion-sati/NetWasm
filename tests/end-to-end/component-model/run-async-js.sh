@@ -46,7 +46,7 @@ for target in wasm32 wasm64; do
         --output "$artifact_root/runtime.$target.wasm"
     merge_features=(
         --enable-exception-handling --enable-reference-types --enable-bulk-memory
-        --enable-multimemory --enable-nontrapping-float-to-int -g)
+        --enable-multimemory --enable-nontrapping-float-to-int --enable-simd -g)
     if [[ "$target" = wasm64 ]]; then
         merge_features+=(--enable-memory64)
     fi

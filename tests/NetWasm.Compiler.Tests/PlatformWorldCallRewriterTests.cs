@@ -98,7 +98,7 @@ public sealed class PlatformWorldCallRewriterTests
         Assert.False(PlatformWorldCapabilities.From(
             Contract(Import("watch"), Import("cancel") with { HasManagedBinding = false })).ReactorHost);
         Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("watch"), Import("cancel", "netwasm:runtime@1.0.0/reactor-guest"))).ReactorHost);
+            Contract(Import("watch"), Import("cancel", "netwasm:runtime/reactor-guest@1.0.0"))).ReactorHost);
         Assert.True(PlatformWorldCapabilities.From(Contract(Import("watch"), Import("cancel"))).ReactorHost);
         Assert.Throws<ArgumentNullException>(() => PlatformWorldCapabilities.From(null!));
     }
@@ -106,8 +106,8 @@ public sealed class PlatformWorldCallRewriterTests
     [Fact]
     public void EventLoopRequiresPollAndTheMonotonicClock()
     {
-        var poll = Import("poll", "wasi:io@0.2.11/poll");
-        var subscribe = Import("subscribe-duration", "wasi:clocks@0.2.11/monotonic-clock");
+        var poll = Import("poll", "wasi:io/poll@0.2.11");
+        var subscribe = Import("subscribe-duration", "wasi:clocks/monotonic-clock@0.2.11");
         Assert.False(PlatformWorldCapabilities.None.EventLoop);
         Assert.False(PlatformWorldCapabilities.From(ComponentBoundaryContract.Empty).EventLoop);
         Assert.False(PlatformWorldCapabilities.From(Contract(poll)).EventLoop);
@@ -115,7 +115,7 @@ public sealed class PlatformWorldCallRewriterTests
         Assert.False(PlatformWorldCapabilities.From(
             Contract(poll with { HasManagedBinding = false }, subscribe)).EventLoop);
         Assert.False(PlatformWorldCapabilities.From(
-            Contract(Import("poll", "wasi:io@0.2.0/poll"), subscribe)).EventLoop);
+            Contract(Import("poll", "wasi:io/poll@0.2.0"), subscribe)).EventLoop);
         var both = PlatformWorldCapabilities.From(Contract(poll, subscribe));
         Assert.True(both.EventLoop);
         Assert.False(both.ReactorHost);
@@ -160,7 +160,7 @@ public sealed class PlatformWorldCallRewriterTests
 
     private static CanonicalAbiFunction Import(
         string function,
-        string interfaceName = "netwasm:runtime@1.0.0/reactor-host") =>
+        string interfaceName = "netwasm:runtime/reactor-host@1.0.0") =>
         new(interfaceName, function, Key(0x06000010), [], null);
 
     private static EntityKey Key(int token) => new(Assembly, token);

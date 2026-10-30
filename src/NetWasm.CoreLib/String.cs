@@ -1,7 +1,7 @@
 // String is isolated from the remaining CoreLib types so its ordinal profile
 // can evolve without turning the CoreLib surface into one monolithic file.
 // Collection/enumeration members are adapted from dotnet/runtime
-// System.Private.CoreLib String at commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// System.Private.CoreLib String at commit 474ed963699fc29809015392738a15231aaae2de.
 // The upstream implementation is licensed under MIT.
 using System.Buffers;
 using System.Collections;
@@ -973,7 +973,7 @@ namespace System
             Buffer.Memmove(
                 ref Unsafe.Add(ref destination.GetRawStringData(), destinationIndex),
                 ref source.GetRawStringData(),
-                source.Length);
+                (uint)source.Length);
 
         private static void SetCharUnchecked(string value, int index, char character)
         {
@@ -1468,7 +1468,10 @@ namespace System
 
         public string Normalize() => throw new PlatformNotSupportedException();
 
-        public string ToLowerOrdinal() => MapLowerInvariant(this);
+        // An unchanged ASCII string returns before the mapping, whose allocation
+        // needs a root frame, so the common case makes no call and keeps no frame.
+        public string ToLowerOrdinal() =>
+            SkipUnchangedAscii(this, toUpper: false) == Length ? this : MapLowerInvariant(this);
 
         public string ToString(IFormatProvider? provider) => this;
 
@@ -1476,7 +1479,8 @@ namespace System
 
         public string ToUpperInvariant() => ToUpperOrdinal();
 
-        public string ToUpperOrdinal() => MapUpperInvariant(this);
+        public string ToUpperOrdinal() =>
+            SkipUnchangedAscii(this, toUpper: true) == Length ? this : MapUpperInvariant(this);
 
         public string Trim(Rune trimRune) => Trim(trimRune.ToString().ToCharArray());
 
@@ -1633,17 +1637,10 @@ namespace System
             return Create(chars);
         }
 
-        public static string Create(
-            IFormatProvider? provider,
-            [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument(nameof(provider))]
-            ref DefaultInterpolatedStringHandler handler) =>
+        public static string Create(IFormatProvider? provider, [InterpolatedStringHandlerArgument(nameof(provider))] ref DefaultInterpolatedStringHandler handler) =>
             handler.ToStringAndClear();
 
-        public static string Create(
-            IFormatProvider? provider,
-            Span<char> initialBuffer,
-            [System.Runtime.CompilerServices.InterpolatedStringHandlerArgument(nameof(provider), nameof(initialBuffer))]
-            ref DefaultInterpolatedStringHandler handler) =>
+        public static string Create(IFormatProvider? provider, Span<char> initialBuffer, [InterpolatedStringHandlerArgument(nameof(provider), nameof(initialBuffer))] ref DefaultInterpolatedStringHandler handler) =>
             handler.ToStringAndClear();
 
         public static bool Equals(string? a, string? b, StringComparison comparisonType)
@@ -1936,12 +1933,53 @@ namespace System
 
         private static char FoldOrdinalIgnoreCase(char value) => char.ToUpperInvariant(value);
 
+        // Skips ASCII characters four at a time, then the last two and the last
+        // one, while none of them would change, as .NET's casing does; the
+        // caller's scalar loop resumes at the block that might.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int SkipUnchangedAscii(string value, bool toUpper)
+        {
+            ref var data = ref value.GetRawStringData();
+            var index = 0;
+            for (; index <= value.Length - 4; index += 4)
+            {
+                var block = Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<char, byte>(ref Unsafe.Add(ref data, index)));
+                if (!Text.Unicode.Utf16Utility.AllCharsInUInt64AreAscii(block) || (toUpper
+                    ? Text.Unicode.Utf16Utility.UInt64ContainsAnyLowercaseAsciiChar(block)
+                    : Text.Unicode.Utf16Utility.UInt64ContainsAnyUppercaseAsciiChar(block)))
+                {
+                    return index;
+                }
+            }
+            // The last two characters, then the last one.
+            if (index <= value.Length - 2)
+            {
+                var pair = Unsafe.ReadUnaligned<uint>(ref Unsafe.As<char, byte>(ref Unsafe.Add(ref data, index)));
+                if (!Text.Unicode.Utf16Utility.AllCharsInUInt32AreAscii(pair) || (toUpper
+                    ? Text.Unicode.Utf16Utility.UInt32ContainsAnyLowercaseAsciiChar(pair)
+                    : Text.Unicode.Utf16Utility.UInt32ContainsAnyUppercaseAsciiChar(pair)))
+                {
+                    return index;
+                }
+                index += 2;
+            }
+            if (index < value.Length)
+            {
+                var last = Unsafe.Add(ref data, index);
+                if (last <= 0x7F && (toUpper ? last is < 'a' or > 'z' : last is < 'A' or > 'Z'))
+                {
+                    index++;
+                }
+            }
+            return index;
+        }
+
         private static string MapLowerInvariant(string value)
         {
             if (value.Length == 0) return Empty;
 
             var changedAt = -1;
-            var readIndex = 0;
+            var readIndex = SkipUnchangedAscii(value, toUpper: false);
             while (readIndex < value.Length)
             {
                 var scalarStart = readIndex;
@@ -1994,7 +2032,7 @@ namespace System
             if (value.Length == 0) return Empty;
 
             var changedAt = -1;
-            var readIndex = 0;
+            var readIndex = SkipUnchangedAscii(value, toUpper: true);
             while (readIndex < value.Length)
             {
                 var scalarStart = readIndex;

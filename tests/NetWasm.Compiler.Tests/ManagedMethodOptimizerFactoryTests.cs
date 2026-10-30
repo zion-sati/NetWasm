@@ -23,6 +23,10 @@ public sealed class ManagedMethodOptimizerFactoryTests
             dependencies,
             dependencies,
             dependencies,
+            dependencies,
+            dependencies,
+            dependencies,
+            dependencies,
             new(
                 NetWasm.Compiler.ComponentModel.FinalWasmOptimization.O3,
                 WasmInlineAnnotationSelection.Preserve,
@@ -54,27 +58,35 @@ public sealed class ManagedMethodOptimizerFactoryTests
                 null!));
 
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
+            null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
+            dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
+            dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
+            dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
+            dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, settings));
+            dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, settings));
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, settings));
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, settings));
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, settings));
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, dependencies, settings));
         Assert.Throws<ArgumentNullException>(() => factory.Create(
-            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!));
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, dependencies, settings));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, dependencies, settings));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, dependencies, settings));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!, settings));
+        Assert.Throws<ArgumentNullException>(() => factory.Create(
+            dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, dependencies, null!));
     }
 
     private static ManagedMethodOptimizerFactory Factory() => new(
@@ -90,8 +102,25 @@ public sealed class ManagedMethodOptimizerFactoryTests
         ICalledMethodResolver,
         NetWasm.Compiler.Core.IRuntimeIntrinsicRegistry,
         IDispatchTargetResolver,
-        IFinalizerResolver
+        IFinalizerResolver,
+        NetWasm.Compiler.Core.ITypeDefinitionResolver,
+        NetWasm.Compiler.Analysis.Loops.IArrayLoopMethodResolver,
+        NetWasm.Compiler.Analysis.Loops.ISpanLengthResolver,
+        NetWasm.Compiler.Analysis.Loops.IVectorLoopMethodResolver
     {
+        public NetWasm.Compiler.Core.MethodInstanceModel Resolve(
+            NetWasm.Compiler.Analysis.Loops.VectorLoopMethod method, NetWasm.Compiler.Core.CliTypeIdentity lane) =>
+            throw new InvalidOperationException();
+
+        public NetWasm.Compiler.Core.MethodInstanceModel Resolve(string name, NetWasm.Compiler.Core.CliTypeIdentity element) =>
+            throw new InvalidOperationException();
+
+        public NetWasm.Compiler.Core.MethodInstanceModel Resolve(NetWasm.Compiler.Core.MethodInstanceModel indexer) =>
+            throw new InvalidOperationException();
+
+        public NetWasm.Compiler.Core.TypeDefinitionModel ResolveTypeIdentity(NetWasm.Compiler.Core.CliTypeIdentity identity) =>
+            throw new NotSupportedException();
+
         public NetWasm.Compiler.Core.MethodInstanceModel? Resolve(NetWasm.Compiler.Core.CliTypeIdentity allocatedType) => null;
 
         public NetWasm.Compiler.Core.DispatchTargetModel? Resolve(

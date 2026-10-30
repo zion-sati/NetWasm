@@ -11,8 +11,9 @@ public sealed class StackLocalResolverTests
     [InlineData(WasmTarget.Wasm32, CliValueKind.ManagedReference, 1)]
     [InlineData(WasmTarget.Wasm32, CliValueKind.ValueType, 1)]
     [InlineData(WasmTarget.Wasm32, CliValueKind.I8, 4)]
-    [InlineData(WasmTarget.Wasm64, CliValueKind.ManagedReference, 13)]
-    [InlineData(WasmTarget.Wasm64, CliValueKind.ValueType, 16)]
+    // Every pointer-sized kind shares the slot's i64 local on Wasm64.
+    [InlineData(WasmTarget.Wasm64, CliValueKind.ManagedReference, 4)]
+    [InlineData(WasmTarget.Wasm64, CliValueKind.ValueType, 4)]
     [InlineData(WasmTarget.Wasm64, CliValueKind.NativeInt, 4)]
     public void ResolvesStackStorageForEachTargetWidth(
         WasmTarget target,

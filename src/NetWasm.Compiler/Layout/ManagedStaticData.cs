@@ -38,4 +38,16 @@ internal sealed partial record ManagedStaticData
 
     public int TypeFactsTableCount { get; init; }
 
+    // Static Type objects by type canonical name, contiguous from the table address.
+    public ImmutableDictionary<string, int> TypeObjects { get; init; } =
+        ImmutableDictionary<string, int>.Empty;
+
+    public int TypeObjectTableAddress { get; init; }
+
+    public int TypeObjectCacheAddress { get; init; }
+
+    public int TypeObjectCount { get; init; }
+
+    public int TypeObjectSize { get; init; }
+
 }

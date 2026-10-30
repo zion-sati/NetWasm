@@ -140,6 +140,16 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.NativeMemoryCopy,
                 ("System.Runtime.InteropServices.NativeMemory", "Fill") =>
                     RuntimeIntrinsic.NativeMemoryFill,
+                ("System.Runtime.CompilerServices.ArrayLoops", "Fill") =>
+                    RuntimeIntrinsic.ArrayLoopFill,
+                ("System.Runtime.CompilerServices.ArrayLoops", "Copy") =>
+                    RuntimeIntrinsic.ArrayLoopCopy,
+                ("System.Runtime.CompilerServices.ArrayLoops", "Xor32" or "Xor64") =>
+                    RuntimeIntrinsic.ArrayLoopXor,
+                ("System.Runtime.CompilerServices.ArrayLoops", "Or32" or "Or64") =>
+                    RuntimeIntrinsic.ArrayLoopOr,
+                ("System.Runtime.CompilerServices.ArrayLoops", "And32" or "And64") =>
+                    RuntimeIntrinsic.ArrayLoopAnd,
                 ("System.Runtime.InteropServices.MemoryMarshal", "GetArrayDataReference") =>
                     RuntimeIntrinsic.GetArrayDataReference,
                 ("System.Nullable", "GetUnderlyingType") =>
@@ -266,11 +276,22 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 (("System.Math", "Sqrt") or ("System.MathF", "Sqrt"))
                     when IsUnaryFloating(method) =>
                     RuntimeIntrinsic.FloatingSquareRoot,
-                ("System.Math", "CopySign") when IsCopySign(method, CliValueKind.F8) =>
+                ("System.Math", "CopySign") when IsFloatingBinary(method, CliValueKind.F8) =>
                     RuntimeIntrinsic.FloatingCopySign,
-                ("System.MathF", "CopySign") when IsCopySign(method, CliValueKind.F4) =>
+                ("System.MathF", "CopySign") when IsFloatingBinary(method, CliValueKind.F4) =>
                     RuntimeIntrinsic.FloatingCopySign,
-                _ => null,
+                ("System.Math", "Max") when IsFloatingBinary(method, CliValueKind.F8) ||
+                    IsFloatingBinary(method, CliValueKind.F4) => RuntimeIntrinsic.FloatingMaximum,
+                ("System.MathF", "Max") when IsFloatingBinary(method, CliValueKind.F4) =>
+                    RuntimeIntrinsic.FloatingMaximum,
+                ("System.Math", "Min") when IsFloatingBinary(method, CliValueKind.F8) ||
+                    IsFloatingBinary(method, CliValueKind.F4) => RuntimeIntrinsic.FloatingMinimum,
+                ("System.MathF", "Min") when IsFloatingBinary(method, CliValueKind.F4) =>
+                    RuntimeIntrinsic.FloatingMinimum,
+                (PackedSimdInstructions.DeclaringType, "get_IsSupported") => RuntimeIntrinsic.PackedSimdIsSupported,
+                (PackedSimdInstructions.DeclaringType, _) when PackedSimdInstructions.TryGet(method, out _) =>
+                    RuntimeIntrinsic.PackedSimdInstruction,
+                (var declaringType, _) => SimdVectorIntrinsicClassifier.Classify(declaringType, method),
             };
             if (intrinsic is not null)
             {
@@ -283,7 +304,7 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
             method.Signature.ParameterTypes.Length == 1 &&
             method.Signature.ParameterTypes[0] is CliValueKind.F4 or CliValueKind.F8;
 
-        static bool IsCopySign(MethodDefinitionModel method, CliValueKind kind) =>
+        static bool IsFloatingBinary(MethodDefinitionModel method, CliValueKind kind) =>
             method.IsStatic &&
             method.GenericArity == 0 &&
             method.Signature.ReturnType == kind &&

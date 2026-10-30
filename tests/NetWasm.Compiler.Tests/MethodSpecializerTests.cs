@@ -356,7 +356,6 @@ public sealed class MethodSpecializerTests
         };
         var error = Assert.Throws<CompilerException>(() => Rewrite(
             new InitializeArrayCallRewriter(
-                new FixedFieldRepository(field),
                 new FixedCalledMethodResolver(target),
                 new FixedSymbolFormatter("System.Runtime.CompilerServices.RuntimeHelpers")),
             Body(
@@ -462,12 +461,6 @@ public sealed class MethodSpecializerTests
         var fieldKey = new EntityKey(new AssemblyIdentity("in-memory"), 131);
         var rewritten = Rewrite(
             new InitializeArrayCallRewriter(
-                new FixedFieldRepository(new FieldDefinitionModel(
-                    fieldKey,
-                    new EntityKey(new AssemblyIdentity("in-memory"), 132),
-                    "Data",
-                    CliValueKind.I4,
-                    true)),
                 new FixedCalledMethodResolver(null!),
                 new FixedSymbolFormatter("System.Runtime.CompilerServices.RuntimeHelpers")),
             Body(
@@ -536,11 +529,8 @@ public sealed class MethodSpecializerTests
         Assert.Equal(CilOperation.Branch, rewritten.Instructions[0].Operation);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void InitializeArrayRuleEmbedsFieldDataThroughItsContract(
-        bool materializedField)
+    [Fact]
+    public void InitializeArrayRuleKeepsTheFieldOfItsData()
     {
         var target = Target(
             "InitializeArray",
@@ -556,19 +546,17 @@ public sealed class MethodSpecializerTests
         {
             InitialData = [1, 2, 3],
         };
-        var operand = materializedField
-            ? (CilOperand)new CilOperand.FieldInstance(new FieldInstanceModel(
-                field,
-                CliTypeIdentity.Named(
-                    new AssemblyIdentity("in-memory"),
-                    "Fixtures",
-                    "DataOwner",
-                    isValueType: false),
-                field.SignatureType))
-            : new CilOperand.Entity(fieldKey);
+        var instance = new FieldInstanceModel(
+            field,
+            CliTypeIdentity.Named(
+                new AssemblyIdentity("in-memory"),
+                "Fixtures",
+                "DataOwner",
+                isValueType: false),
+            field.SignatureType);
+        var operand = new CilOperand.FieldInstance(instance);
         var rewritten = Rewrite(
             new InitializeArrayCallRewriter(
-                new FixedFieldRepository(field),
                 new FixedCalledMethodResolver(target),
                 new FixedSymbolFormatter("System.Runtime.CompilerServices.RuntimeHelpers")),
             Body(
@@ -585,7 +573,8 @@ public sealed class MethodSpecializerTests
 
         Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.InitializeArrayData, rewritten.Instructions[1].Operation);
-        var data = Assert.IsType<CilOperand.ByteData>(rewritten.Instructions[1].Operand);
+        var data = Assert.IsType<CilOperand.ArrayInitializerData>(rewritten.Instructions[1].Operand);
+        Assert.Same(instance, data.Field);
         Assert.True(data.Value.AsSpan().SequenceEqual([(byte)1, (byte)2, (byte)3]));
     }
 
@@ -1222,9 +1211,37 @@ public sealed class MethodSpecializerTests
             Body(new CilInstruction(0, 1, CilOperation.Constrained, new CilOperand.TypeIdentity(type)),
                 new CilInstruction(1, 2, CilOperation.CallVirtual, new CilOperand.Entity(declaration.Key))));
 
-        Assert.Equal(CilOperation.Constrained, rewritten.Instructions[0].Operation);
+        // A value type's own method takes the managed pointer, so its call
+        // drops the prefix and can be inlined like any call on the address.
+        Assert.Equal(valueType ? CilOperation.Nop : CilOperation.Constrained, rewritten.Instructions[0].Operation);
         Assert.Equal(valueType ? CilOperation.Call : CilOperation.CallVirtual, rewritten.Instructions[1].Operation);
         Assert.Equal(implementation,
+            Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[1].Operand).Value.Definition);
+    }
+
+    // A value type that inherits the method passes its address to a body that
+    // expects the object, so the call keeps the prefix that boxes it.
+    [Fact]
+    public void ConstrainedRuleKeepsThePrefixForAnInheritedValueTypeMethod()
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var key = new EntityKey(assembly, 40);
+        var type = CliTypeIdentity.Named(assembly, "Fixtures", "Value", true);
+        var inherited = new MethodDefinitionModel(new EntityKey(assembly, 51), new EntityKey(assembly, 50),
+            "GetHashCode", false, MethodSignatureModel.Create(CliValueKind.I4), 1)
+        {
+            IsVirtual = true,
+        };
+        var definition = new TypeDefinitionModel(key, "Fixtures", "Value", true, [], []) { IsSealed = true };
+        var valueType = new TypeDefinitionModel(inherited.DeclaringType, "System", "ValueType", false, [], [inherited.Key]);
+        var rewritten = Rewrite(CreateConstrainedCallRewriter(new FixedTypeFinder(valueType),
+            new FixedTypeDefinitionResolver(definition), new MapMethodRepository(inherited),
+            new FixedMethodInstanceResolver(inherited, type), new FixedSymbolFormatter("Fixtures.Base")),
+            Body(new CilInstruction(0, 1, CilOperation.Constrained, new CilOperand.TypeIdentity(type)),
+                new CilInstruction(1, 2, CilOperation.CallVirtual, new CilOperand.Entity(inherited.Key))));
+
+        Assert.Equal(CilOperation.Constrained, rewritten.Instructions[0].Operation);
+        Assert.Equal(inherited,
             Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[1].Operand).Value.Definition);
     }
 
@@ -1323,7 +1340,8 @@ public sealed class MethodSpecializerTests
                 new FixedSymbolFormatter("System.Int32")),
             body);
 
-        Assert.Equal(CilOperation.Constrained, rewritten.Instructions[0].Operation);
+        // Int32 declares Equals, so the call takes the managed pointer itself.
+        Assert.Equal(CilOperation.Nop, rewritten.Instructions[0].Operation);
         Assert.Equal(CilOperation.Call, rewritten.Instructions[1].Operation);
         Assert.Equal(
             implementation,
@@ -1746,11 +1764,6 @@ public sealed class MethodSpecializerTests
                     context.TypeArguments,
                     context.MethodArguments));
         }
-    }
-
-    private sealed class FixedFieldRepository(FieldDefinitionModel field) : IFieldRepository
-    {
-        public FieldDefinitionModel GetField(EntityKey key) => field;
     }
 
     private sealed class UnusedTypeFinder : ITypeFinder

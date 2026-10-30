@@ -282,7 +282,7 @@ public sealed class TypedStackValidator(
                 PopAddress(body, instruction, stack);
                 return;
             case CilOperation.InitializeArrayData:
-                if (instruction.Operand is not CilOperand.ByteData { Value.IsDefaultOrEmpty: false })
+                if (instruction.Operand is not CilOperand.ArrayInitializerData { Value.IsDefaultOrEmpty: false })
                 {
                     throw Invalid(body, instruction, "array initializer data is empty");
                 }
@@ -748,7 +748,7 @@ public sealed class TypedStackValidator(
     {
         var actual = Pop(body, instruction, stack);
         if (actual is not (CliValueKind.ManagedReference or CliValueKind.ManagedAddress or
-                CliValueKind.NativeInt or CliValueKind.ValueType))
+                CliValueKind.NativeInt or CliValueKind.ValueType or CliValueKind.V128))
         {
             throw Invalid(
                 body,

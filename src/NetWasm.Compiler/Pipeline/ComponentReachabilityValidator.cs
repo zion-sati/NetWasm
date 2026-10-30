@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
@@ -17,7 +18,7 @@ internal interface IComponentReachabilityValidator
         ISymbolFormatter symbols);
 }
 
-internal sealed class ComponentReachabilityValidator : IComponentReachabilityValidator
+internal sealed partial class ComponentReachabilityValidator : IComponentReachabilityValidator
 {
     public void Validate(
         ReachableProgram program,
@@ -65,15 +66,35 @@ internal sealed class ComponentReachabilityValidator : IComponentReachabilityVal
 
         if (missingImports.Length != 0 || missingExports.Length != 0)
         {
+            var missing = missingImports.Concat(missingExports).ToArray();
+            // Bindings generated before world keys name an interface
+            // `namespace:package@version/interface`, which no world item matches.
+            var packageFirst = missing
+                .Where(binding => PackageFirst().IsMatch(InterfaceName(methods.GetMethod(binding)) ?? string.Empty))
+                .ToArray();
+            if (packageFirst.Length != 0)
+            {
+                var binding = FormatFirstBinding(packageFirst, methods, symbols);
+                var method = packageFirst.Select(methods.GetMethod).First(method => symbols.Format(method) == binding);
+                throw new CompilerException(new CompilerDiagnostic(
+                    DiagnosticCode.ComponentContract,
+                    $"reachable WIT binding names interface '{InterfaceName(method)}' by the package-first key of " +
+                    "bindings generated before world keys; regenerate the bindings with this NetWasm's " +
+                    "netwasm-wit-bindgen or NetWasmWit item, or update the package that contains them",
+                    binding));
+            }
             throw new CompilerException(new CompilerDiagnostic(
                 DiagnosticCode.ComponentContract,
                 "reachable WIT binding is not part of the selected world",
-                FormatFirstBinding(
-                    missingImports.Concat(missingExports),
-                    methods,
-                    symbols)));
+                FormatFirstBinding(missing, methods, symbols)));
         }
     }
+
+    [GeneratedRegex("^[^/@]+:[^/@]+@[^/]+/[^/]+$")]
+    private static partial Regex PackageFirst();
+
+    private static string? InterfaceName(MethodDefinitionModel method) =>
+        method.WitImport?.InterfaceName ?? method.WitExport?.InterfaceName;
 
     private static string FormatFirstBinding(
         IEnumerable<EntityKey> bindings,

@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported from dotnet/runtime System.Private.CoreLib Dictionary.cs at commit
-// 811225a482702af7ecc35d817966bc70b88a3a23. Only the reflection-based
+// 474ed963699fc29809015392738a15231aaae2de. Only the reflection-based
 // legacy formatter surface is omitted from this profile.
 
 using System.Diagnostics;
@@ -330,7 +330,7 @@ namespace System.Collections.Generic
 
             if ((uint)index > (uint)array.Length)
             {
-                ThrowHelper.ThrowIndexArgumentOutOfRange_NeedNonNegNumException();
+                ThrowHelper.ThrowArgumentOutOfRange_IndexMustBeLessOrEqualException();
             }
 
             if (array.Length - index < Count)

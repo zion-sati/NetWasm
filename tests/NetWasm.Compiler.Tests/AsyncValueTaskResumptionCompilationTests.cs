@@ -43,7 +43,7 @@ public sealed class AsyncValueTaskResumptionCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             Exports =
             [
                 new RequestedExport(
@@ -98,7 +98,7 @@ public sealed class AsyncValueTaskResumptionCompilationTests
             DrainReactor = true,
             ObserveExportName = "observe",
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             Exports =
             [
                 new RequestedExport("run", "FilteredValueTaskFixture.EntryPoint", "Run"),

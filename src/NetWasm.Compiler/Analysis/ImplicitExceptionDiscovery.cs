@@ -155,7 +155,7 @@ internal sealed class ImplicitExceptionDiscovery(
             case CilOperation.CallIndirect:
                 requirements.Add(new(ManagedExceptionKind.InvalidCast, "System.InvalidCastException"));
                 break;
-            case CilOperation.MaterializeType:
+            case CilOperation.MaterializeType when !CilTypeMaterialization.IsConstant(instruction):
                 requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
                 break;
             case CilOperation.MaterializeMethod:
@@ -166,7 +166,10 @@ internal sealed class ImplicitExceptionDiscovery(
                 break;
             case CilOperation.GetObjectType:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));
-                requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
+                if (!CilTypeMaterialization.IsExactObjectType(instruction))
+                {
+                    requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
+                }
                 break;
             case CilOperation.Throw:
                 requirements.Add(new(ManagedExceptionKind.NullReference, "System.NullReferenceException"));

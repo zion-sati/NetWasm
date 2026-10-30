@@ -2,6 +2,7 @@ using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission.Methods;
@@ -61,28 +62,85 @@ internal sealed class TypeTestInstructionEmitter(
         EmitReferenceEqualZero(code);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        foreach (var matchingType in site.MatchingTypes)
-        {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(typeLayouts.GetObjectLayout(matchingType).TypeId)));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
-        }
-        if (site.MatchingTypes.IsEmpty)
+        var runs = Runs(site.MatchingTypes);
+        if (runs.Count == 0)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
         }
         else
         {
-            for (var index = 1; index < site.MatchingTypes.Length; index++)
-            {
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Or));
-            }
+            var typeId = request.Context.NumericTemporaryI4Second;
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(0))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)typeId)));
+            EmitMembership(code, typeId, runs, 0, runs.Count);
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         EmitFailedTest(code, valueLocal, returnNullOnFailure, request.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    // The matching type ids as runs of consecutive ids, in order.
+    private List<(int First, int Last)> Runs(ImmutableArray<CliTypeIdentity> matchingTypes)
+    {
+        var runs = new List<(int First, int Last)>();
+        foreach (var id in matchingTypes.Select(type => typeLayouts.GetObjectLayout(type).TypeId).Distinct().Order())
+        {
+            if (runs.Count != 0 && runs[^1].Last + 1 == id)
+            {
+                runs[^1] = (runs[^1].First, id);
+            }
+            else
+            {
+                runs.Add((id, id));
+            }
+        }
+        return runs;
+    }
+
+    // An interface or a widely derived class matches many types, so a test
+    // against each one ran every comparison. A few runs are still tested
+    // together; more are searched, halving them at each branch, so a test
+    // takes a branch per halving and one range check.
+    private const int LinearRuns = 4;
+
+    private static void EmitMembership(
+        IWasmInstructionWriter code, int typeId, List<(int First, int Last)> runs, int start, int end)
+    {
+        if (end - start <= LinearRuns)
+        {
+            for (var index = start; index < end; index++)
+            {
+                var (first, last) = runs[index];
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)typeId)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(first)));
+                if (first == last)
+                {
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+                }
+                else
+                {
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
+                    code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(last - first + 1)));
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanUnsigned));
+                }
+                if (index != start)
+                {
+                    code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Or));
+                }
+            }
+            return;
+        }
+        var middle = start + (end - start) / 2;
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)typeId)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(runs[middle].First)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32LessThanUnsigned));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(0x7f)));
+        EmitMembership(code, typeId, runs, start, middle);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+        EmitMembership(code, typeId, runs, middle, end);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 

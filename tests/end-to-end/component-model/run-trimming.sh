@@ -26,7 +26,7 @@ done
 for target in wasm32 wasm64; do
     optimize_features=(
         --enable-exception-handling --enable-bulk-memory --enable-multimemory
-        --enable-nontrapping-float-to-int)
+        --enable-nontrapping-float-to-int --enable-simd)
     [[ "$target" = wasm64 ]] && optimize_features+=(--enable-memory64)
     merge_features=("${optimize_features[@]}" -g)
 
@@ -79,7 +79,7 @@ done
 for target in wasm32 wasm64; do
     merge_features=(
         --enable-exception-handling --enable-bulk-memory --enable-multimemory
-        --enable-nontrapping-float-to-int -g)
+        --enable-nontrapping-float-to-int --enable-simd -g)
     [[ "$target" = wasm64 ]] && merge_features+=(--enable-memory64)
     for profile in pure clock; do
         entry="NetWasm.Fixtures.ComponentModel.PureTrimmingComponent::Run"

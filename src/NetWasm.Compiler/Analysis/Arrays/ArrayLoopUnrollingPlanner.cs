@@ -64,6 +64,8 @@ internal sealed class ArrayLoopUnrollingPlanner(
         CilOperation.MultiplyChecked, CilOperation.MultiplyCheckedUnsigned,
         CilOperation.Divide, CilOperation.DivideUnsigned, CilOperation.Remainder, CilOperation.RemainderUnsigned,
         CilOperation.LoadArrayLength, CilOperation.LoadArrayElement, CilOperation.StoreArrayElement,
+        // A struct element's fields, read through its address.
+        CilOperation.LoadArrayElementAddress, CilOperation.LoadField,
     }.ToFrozenSet();
 
     private static bool IsNumericBodyInstruction(CilOperation operation) =>

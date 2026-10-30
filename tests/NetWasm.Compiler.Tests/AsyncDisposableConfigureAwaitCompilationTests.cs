@@ -19,7 +19,7 @@ public sealed class AsyncDisposableConfigureAwaitCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "AsyncDisposableConfigureAwaitFixture.EntryPoint",
             "Run", [new("run", "AsyncDisposableConfigureAwaitFixture.EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
 
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, target, result.StaticDataEnd));

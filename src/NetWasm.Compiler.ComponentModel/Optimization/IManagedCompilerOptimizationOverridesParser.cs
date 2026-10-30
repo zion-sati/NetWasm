@@ -18,5 +18,13 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? devirtualization = null,
         string? allocationElimination = null,
         string? loopRotation = null,
-        string? arrayStoreCheckElimination = null);
+        string? arrayStoreCheckElimination = null,
+        string? dispatcherElimination = null,
+        string? emptyFinallyRemoval = null,
+        string? structScalarReplacement = null,
+        string? allocationScalarReplacement = null,
+        string? idempotentLoopCollapse = null,
+        string? loopStoreForwarding = null,
+        string? arrayLoopIdioms = null,
+        string? loopVectorization = null);
 }

@@ -952,6 +952,7 @@ public sealed class ValueFrameLayoutPlannerTests
                      CilOperation.LoadLocal,
                      CilOperation.LoadArrayElement,
                      CilOperation.LoadRectangularArrayElement,
+                     CilOperation.LoadObject,
                  })
             foreach (var consumer in new[]
                      {
@@ -967,7 +968,7 @@ public sealed class ValueFrameLayoutPlannerTests
                     [
                         I(0, operation, operation switch
                     {
-                        CilOperation.LoadArrayElement =>
+                        CilOperation.LoadArrayElement or CilOperation.LoadObject =>
                             new CilOperand.TypeIdentity(fixture.ValueType),
                         CilOperation.LoadRectangularArrayElement =>
                             new CilOperand.TypeIdentity(CliTypeIdentity.Array(fixture.ValueType, 2)),

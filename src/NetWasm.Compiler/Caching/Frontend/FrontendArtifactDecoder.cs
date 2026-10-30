@@ -18,7 +18,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 23;
+    private const ushort SchemaVersion = 25;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -399,12 +399,13 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                         reader.ReadInt32(), ReadBoolean(), ReadBoolean(),
                         ReadBoolean(), ReadBoolean()),
                     14 => new CilOperand.UserString(ReadString()),
-                    15 => new CilOperand.ByteData(ReadBytes()),
+                    15 => new CilOperand.ArrayInitializerData(tables.FieldInstance(reader.ReadInt32())),
                     16 => new CilOperand.ReadOnlySpanData(
                         tables.FieldInstance(reader.ReadInt32()),
                         tables.Type(reader.ReadInt32()),
                         tables.Type(reader.ReadInt32()),
                         reader.ReadInt32()),
+                    17 => new CilOperand.ExactType(tables.Type(reader.ReadInt32())),
                     var tag => throw Invalid($"CIL operand tag {tag} is unsupported."),
                 };
                 return new(offset, nextOffset, operation, operand)
@@ -553,7 +554,8 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                         ReadString(),
                         reader.ReadInt32(),
                         ReadMethodInstance(),
-                        ReadEnum<CilOperation>());
+                        ReadEnum<CilOperation>(),
+                        ReadNullableClass(ReadType));
                     return new ReachabilityDispatch(key, declaration);
                 }),
                 ReadArray(ReadMethodInstance),
@@ -729,6 +731,9 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 ReadBoolean(),
                 ReadSequence(),
                 ReadSequence()),
+            9 => new StructuredLabeledBlock(new StructuredBlockId(reader.ReadInt32()), ReadSequence()),
+            10 => new StructuredLabeledLoop(new StructuredBlockId(reader.ReadInt32()), ReadSequence()),
+            11 => new StructuredLabelBranch(new StructuredBlockId(reader.ReadInt32())),
             var tag => throw Invalid($"Structured region tag {tag} is unsupported."),
         };
 

@@ -6,5 +6,7 @@ public interface IValidatedStructuredMethodBuilderFactory
 {
     IValidatedStructuredMethodBuilder Create(
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware);
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled);
 }

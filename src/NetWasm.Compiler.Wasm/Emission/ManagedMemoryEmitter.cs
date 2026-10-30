@@ -57,6 +57,7 @@ internal static class ManagedMemoryEmitter
             case 2: WriteMemory(code, WasmOpcodes.I32Load16Unsigned, 1, offset); break;
             case 4: WriteMemory(code, WasmOpcodes.I32Load, 2, offset); break;
             case 8: WriteMemory(code, WasmOpcodes.I64Load, 3, offset); break;
+            case 16: WriteSimdMemory(code, WasmSimdOpcodes.V128Load, offset); break;
             default:
                 throw new CompilerException(new CompilerDiagnostic(
                     DiagnosticCode.RuntimeContract,
@@ -76,6 +77,7 @@ internal static class ManagedMemoryEmitter
             case 2: WriteMemory(code, WasmOpcodes.I32Store16, 1, offset); break;
             case 4: WriteMemory(code, WasmOpcodes.I32Store, 2, offset); break;
             case 8: WriteMemory(code, WasmOpcodes.I64Store, 3, offset); break;
+            case 16: WriteSimdMemory(code, WasmSimdOpcodes.V128Store, offset); break;
             default:
                 throw new CompilerException(new CompilerDiagnostic(
                     DiagnosticCode.RuntimeContract,
@@ -114,6 +116,7 @@ internal static class ManagedMemoryEmitter
             "primitive:f4" => WasmValueType.F32,
             "primitive:f8" => WasmValueType.F64,
             "primitive:i8" or "primitive:u8" => WasmValueType.I64,
+            _ when type.StackKind == CliValueKind.V128 => WasmValueType.V128,
             _ => size == 8 ? WasmValueType.I64 : WasmValueType.I32,
         };
     }
@@ -247,6 +250,15 @@ internal static class ManagedMemoryEmitter
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)local)));
+    }
+
+    // A v128 load or store, aligned to the vector's 8-byte halves.
+    private static void WriteSimdMemory(IWasmInstructionWriter code, uint opcode, int offset)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.PrefixedTriple(opcode, 3, (uint)offset)));
     }
 
     private static void WriteMemory(

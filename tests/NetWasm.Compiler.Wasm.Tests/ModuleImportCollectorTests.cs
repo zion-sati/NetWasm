@@ -112,7 +112,7 @@ public sealed class ModuleImportCollectorTests
             Name = "CanonicalImport",
             Signature = MethodSignatureModel.Create(CliValueKind.I4),
             RelativeVirtualAddress = 0,
-            WitImport = new("example:host@1.0.0/api", "read"),
+            WitImport = new("example:host/api@1.0.0", "read"),
         };
         var synchronousJsImport = jsImport with
         {
@@ -121,7 +121,7 @@ public sealed class ModuleImportCollectorTests
             JSImport = new("sync", "custom"),
         };
         var canonical = new CanonicalAbiFunction(
-            "example:host@1.0.0/api",
+            "example:host/api@1.0.0",
             "read",
             witKey,
             [],
@@ -189,11 +189,11 @@ public sealed class ModuleImportCollectorTests
             Key = EmitterTestSupport.Key(0x06000035),
             Signature = MethodSignatureModel.Create(CliValueKind.I4),
             RelativeVirtualAddress = 0,
-            WitImport = new("example:host@1.0.0/api", "read"),
+            WitImport = new("example:host/api@1.0.0", "read"),
         };
         var representative = EmitterTestSupport.Key(0x06000036);
         var canonical = new CanonicalAbiFunction(
-            "example:host@1.0.0/api",
+            "example:host/api@1.0.0",
             "read",
             representative,
             [],
@@ -227,7 +227,7 @@ public sealed class ModuleImportCollectorTests
         {
             Key = EmitterTestSupport.Key(0x06000037),
             RelativeVirtualAddress = 0,
-            WitImport = new("example:host@1.0.0/api", "read"),
+            WitImport = new("example:host/api@1.0.0", "read"),
         };
         var second = first with
         {
@@ -235,7 +235,7 @@ public sealed class ModuleImportCollectorTests
             Name = "EquivalentCanonicalImport",
         };
         var canonical = new CanonicalAbiFunction(
-            "example:host@1.0.0/api",
+            "example:host/api@1.0.0",
             "read",
             first.Key,
             [],
@@ -267,7 +267,7 @@ public sealed class ModuleImportCollectorTests
         var witImport = entry with
         {
             Key = EmitterTestSupport.Key(0x06000033),
-            WitImport = new("example:host@1.0.0/api", "missing"),
+            WitImport = new("example:host/api@1.0.0", "missing"),
         };
         var request = EmitterTestSupport.CreateEmissionRequest(program) with
         {

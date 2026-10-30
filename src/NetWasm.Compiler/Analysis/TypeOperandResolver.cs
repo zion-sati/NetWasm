@@ -12,6 +12,7 @@ internal sealed class TypeOperandResolver(
         var resolved = instruction.Operand switch
         {
             CilOperand.TypeIdentity type => type.Value,
+            CilOperand.ExactType type => type.Value,
             CilOperand.Entity type => types.GetTypeIdentity(type.Key),
             _ => throw new InvalidOperationException(
                 $"IL_{instruction.Offset:x4} has no type operand."),

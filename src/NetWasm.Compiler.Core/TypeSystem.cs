@@ -17,6 +17,8 @@ public enum CliValueKind
     ValueType,
     ManagedAddress,
     Unknown,
+    // Vector128<T> and Vector<T>: 16 bytes in a Wasm v128 value.
+    V128,
 }
 
 public enum CliTypeShape
@@ -120,6 +122,9 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         CliValueKind.ManagedAddress => ManagedByReference(
             Named(new AssemblyIdentity("<unknown>"), "", "value", isValueType: true)),
         CliValueKind.Unknown => GenericParameter(method: false, 0),
+        CliValueKind.V128 => new(
+            "[<unknown>]v128", CliTypeShape.Named, CliValueKind.V128, isValueType: true,
+            assembly: new AssemblyIdentity("<unknown>"), fullName: "v128"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
@@ -181,6 +186,16 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
                 $"[{assembly.Name}]{fullName}",
                 CliTypeShape.Named,
                 CliValueKind.I4,
+                isValueType,
+                assembly: assembly,
+                fullName: fullName),
+            // Vector128<T> and Vector<T> are 16 bytes that move as one Wasm v128
+            // value; their instantiations take this kind from the definition.
+            "System.Runtime.Intrinsics.Vector128`1" or
+            "System.Numerics.Vector`1" => new(
+                $"[{assembly.Name}]{fullName}",
+                CliTypeShape.Named,
+                CliValueKind.V128,
                 isValueType,
                 assembly: assembly,
                 fullName: fullName),
@@ -860,6 +875,11 @@ public enum RuntimeIntrinsic
     NativeMemoryClear,
     NativeMemoryCopy,
     NativeMemoryFill,
+    ArrayLoopFill,
+    ArrayLoopCopy,
+    ArrayLoopXor,
+    ArrayLoopOr,
+    ArrayLoopAnd,
     GetArrayDataReference,
     NullableGetUnderlyingType,
     EnumEquals,
@@ -911,6 +931,63 @@ public enum RuntimeIntrinsic
     EphemeronHandleSetValue,
     EphemeronHandleRelease,
     FloatingCopySign,
+    FloatingMaximum,
+    FloatingMinimum,
+    SimdAdd,
+    SimdSubtract,
+    SimdMultiply,
+    SimdBitwiseAnd,
+    SimdBitwiseOr,
+    SimdExclusiveOr,
+    SimdAndNot,
+    SimdOnesComplement,
+    SimdNegate,
+    SimdAbsolute,
+    SimdMinimum,
+    SimdMaximum,
+    SimdEquals,
+    SimdGreaterThan,
+    SimdGreaterThanOrEqual,
+    SimdLessThan,
+    SimdLessThanOrEqual,
+    SimdConditionalSelect,
+    SimdShiftLeft,
+    SimdShiftRightArithmetic,
+    SimdShiftRightLogical,
+    SimdEqualsAll,
+    SimdNotEqualsAll,
+    SimdEqualsAny,
+    SimdExtractMostSignificantBits,
+    SimdCreateBroadcast,
+    SimdCreateElements,
+    SimdLoad,
+    SimdStore,
+    SimdToScalar,
+    SimdGetElement,
+    SimdSum,
+    SimdDivide,
+    SimdSquareRoot,
+    SimdFloor,
+    SimdCeiling,
+    SimdTruncate,
+    SimdRound,
+    SimdConvert,
+    SimdWidenLower,
+    SimdWidenUpper,
+    SimdNarrow,
+    SimdMultiplyAddEstimate,
+    SimdCompareAll,
+    SimdCompareAny,
+    SimdReinterpret,
+    PackedSimdIsSupported,
+    PackedSimdInstruction,
+}
+
+public static class RuntimeIntrinsicKinds
+{
+    // The portable Vector128<T> and Vector<T> operations lowered to Wasm SIMD.
+    public static bool IsSimdVector(RuntimeIntrinsic intrinsic) =>
+        intrinsic is >= RuntimeIntrinsic.SimdAdd and <= RuntimeIntrinsic.SimdReinterpret;
 }
 
 public interface IRuntimeIntrinsicRegistry

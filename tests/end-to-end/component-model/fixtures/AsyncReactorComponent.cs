@@ -9,7 +9,7 @@ public static class AsyncReactorComponent
 {
     private static Task<int>? _pending;
 
-    [WitExport("netwasm:test-reactor@1.0.0/acceptance", "start")]
+    [WitExport("netwasm:test-reactor/acceptance@1.0.0", "start")]
     public static bool Start(int value, uint delayMilliseconds)
     {
         if (_pending != null && !_pending.IsCompleted)
@@ -21,7 +21,7 @@ public static class AsyncReactorComponent
         return !_pending.IsCompleted;
     }
 
-    [WitExport("netwasm:test-reactor@1.0.0/acceptance", "start-faulted")]
+    [WitExport("netwasm:test-reactor/acceptance@1.0.0", "start-faulted")]
     public static bool StartFaulted(uint delayMilliseconds)
     {
         if (_pending != null && !_pending.IsCompleted)
@@ -33,10 +33,10 @@ public static class AsyncReactorComponent
         return !_pending.IsCompleted;
     }
 
-    [WitExport("netwasm:test-reactor@1.0.0/acceptance", "is-completed")]
+    [WitExport("netwasm:test-reactor/acceptance@1.0.0", "is-completed")]
     public static bool IsCompleted() => _pending?.IsCompleted ?? false;
 
-    [WitExport("netwasm:test-reactor@1.0.0/acceptance", "observe-failure")]
+    [WitExport("netwasm:test-reactor/acceptance@1.0.0", "observe-failure")]
     public static bool ObserveFailure()
     {
         if (_pending == null || !_pending.IsCompleted)
@@ -55,7 +55,7 @@ public static class AsyncReactorComponent
         }
     }
 
-    [WitExport("netwasm:test-reactor@1.0.0/acceptance", "result")]
+    [WitExport("netwasm:test-reactor/acceptance@1.0.0", "result")]
     public static int Result()
     {
         if (_pending == null || !_pending.IsCompleted)
@@ -66,7 +66,7 @@ public static class AsyncReactorComponent
         return _pending.Result;
     }
 
-    [WitExport("netwasm:test-reactor@1.0.0/acceptance", "start-cancelled")]
+    [WitExport("netwasm:test-reactor/acceptance@1.0.0", "start-cancelled")]
     public static bool StartCancelled(uint delayMilliseconds)
     {
         using var source = new CancellationTokenSource();

@@ -39,7 +39,23 @@ public sealed record WitInterface(
     string Name,
     string Package,
     ImmutableDictionary<string, int> Types,
-    ImmutableArray<WitFunction> Functions);
+    ImmutableArray<WitFunction> Functions)
+{
+    // The interface's identity: `namespace:package/name@version`, without the
+    // version for an unversioned package, or the world's own name for an
+    // interface the world declares inline, which is also its Name. A world
+    // places it by this key unless it names it otherwise (`import a: name;`);
+    // a world item's Name is the key it places it by.
+    public string Key { get; init; } = FormatKey(Package, Name);
+
+    public static string FormatKey(string package, string name)
+    {
+        var versionIndex = package.LastIndexOf('@');
+        return versionIndex < 0
+            ? $"{package}/{name}"
+            : $"{package[..versionIndex]}/{name}{package[versionIndex..]}";
+    }
+}
 
 public sealed record WitWorldItem(
     string Name,
@@ -68,6 +84,10 @@ public sealed record WitTypeDefinition(
 {
     // The world that declares the type, when no interface does.
     public int? OwnerWorld { get; init; }
+
+    // The C# name bindings give the type in place of its own, when its own
+    // would collide with another type's.
+    public string? BindingName { get; init; }
 }
 
 public sealed record WitPackage(
@@ -83,6 +103,15 @@ public sealed record WitDocument(
     ImmutableArray<WitTypeDefinition> Types,
     string NormalizedJson)
 {
+    // The key the world imports or exports an interface by; an interface the
+    // world does not place keeps its own.
+    public string InterfaceKey(WitWorld world, int interfaceId)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        return world.Imports.Concat(world.Exports).FirstOrDefault(item => item.InterfaceId == interfaceId)?.Name ??
+            Interfaces[interfaceId].Key;
+    }
+
     public WitWorld SelectWorld(string? requestedWorld)
     {
         if (requestedWorld is null)

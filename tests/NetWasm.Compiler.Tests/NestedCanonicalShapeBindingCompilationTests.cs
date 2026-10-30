@@ -7,7 +7,7 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class NestedCanonicalShapeBindingCompilationTests
 {
-    private const string World = "netwasm:binding-shapes@1.0.0/imports";
+    private const string World = "netwasm:binding-shapes/imports@1.0.0";
 
     [Theory]
     [InlineData(WasmTarget.Wasm32)]

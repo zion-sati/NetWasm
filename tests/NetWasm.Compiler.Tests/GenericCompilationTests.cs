@@ -98,7 +98,7 @@ public sealed class GenericCompilationTests
     }
 
     [Fact]
-    public void CompilerFoldsClosedReferenceContainmentTraitsFromCanonicalLayouts()
+    public void CompilerFoldsClosedReferenceContainmentTraitsBeforeReachability()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSource(
@@ -140,14 +140,10 @@ public sealed class GenericCompilationTests
             []));
 
         Assert.Equal(10, ExecuteWithNode(result.ApplicationModule, assets.Directory, 0));
-        Assert.True(result.Layouts.ValueLayouts[
-            result.Program.ConstructedTypes.Single(type =>
-                type.CanonicalName.Contains("Pair`1<primitive:i4>",
-                    StringComparison.Ordinal))].ReferenceOffsets.IsEmpty);
-        Assert.False(result.Layouts.ValueLayouts[
-            result.Program.ConstructedTypes.Single(type =>
-                type.CanonicalName.Contains("Nested`1<primitive:string>",
-                    StringComparison.Ordinal))].ReferenceOffsets.IsEmpty);
+        // The traits fold before reachability, so the inspected types are never constructed.
+        Assert.DoesNotContain(result.Program.ConstructedTypes, type =>
+            type.CanonicalName.Contains("Pair`1", StringComparison.Ordinal) ||
+            type.CanonicalName.Contains("Nested`1", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -167,6 +163,10 @@ public sealed class GenericCompilationTests
 
             public static class EntryPoint
             {
+                // The boxes escape, so allocation scalar replacement keeps them and
+                // their constructors.
+                private static object Escaped;
+
                 private static T Identity<T>(T value)
                 {
                     T copy = value;
@@ -178,6 +178,8 @@ public sealed class GenericCompilationTests
                     var box = new Box<int>(Identity(input) + 1);
                     // A run-time argument keeps constant call folding from removing this specialization.
                     var text = new Box<string>(Identity(input >= 0 ? "abc" : "xyz"));
+                    Escaped = box;
+                    Escaped = text;
                     return box.Value + text.Value.Length;
                 }
             }

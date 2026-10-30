@@ -1,6 +1,7 @@
 // Managed port of Sun fdlibm s_tan.c. Upstream: biosbits/fdlibm
 // commit dfd9eaed985332a1c3af98c2bab4004eea217d3d.
-// Adaptations: C# bit access, immutable local tables and bounded stack scratch.
+// Adaptations: C# bit access, the reduced argument returned as a value tuple, and
+// huge arguments reduced in a separate method.
 /* @(#)s_tan.c 1.3 95/01/18 */
 /*
  * ====================================================
@@ -43,6 +44,9 @@
  *    TRIG(x) returns trig(x) nearly rounded
  */
 
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+
 namespace System;
 
 public static partial class Math
@@ -50,9 +54,7 @@ public static partial class Math
     public static double Tan(double value)
     {
 
-        Span<double> y = stackalloc double[2];
         var z = 0.0;
-        var n = 0;
         var ix = 0;
 
         /* High word of value. */
@@ -66,11 +68,17 @@ public static partial class Math
         else if (ix >= 0x7ff00000) return value - value;        /* NaN */
 
         /* argument reduction needed */
-        else
-        {
-            n = FdRemPio2(value, y);
-            return FdKernelTan(y[0], y[1], 1 - ((n & 1) << 1)); /*   1 -- n even
-                                -1 -- n odd */
-        }
+        else if (ix > 0x413921fb) return TanLarge(value);
+        else return FdTrigReduced(value, 2).ToScalar();
+    }
+
+    // The huge-argument path, |x| > 2^19*(pi/2), apart so that its reduction
+    // scratch and out parameters stay out of the common path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static double TanLarge(double value)
+    {
+        var hx = FdHigh(value);
+        var n = FdRemPio2Large(value, hx & 0x7fffffff, hx, out var y0, out var y1);
+        return FdKernelTan(y0, y1, 1 - ((n & 1) << 1));
     }
 }

@@ -22,7 +22,7 @@ public sealed class DateTimeRfc3339CompilationTests
                 "DateTimeRfc3339Fixture.EntryPoint",
                 "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
         Assert.Equal(42, result);
     }

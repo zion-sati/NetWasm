@@ -16,7 +16,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 23;
+    private const ushort SchemaVersion = 25;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -291,9 +291,9 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write((byte)14);
                     writer.Write(String(operand.Value));
                     break;
-                case CilOperand.ByteData operand:
+                case CilOperand.ArrayInitializerData operand:
                     writer.Write((byte)15);
-                    WriteBytes(writer, operand.Value);
+                    writer.Write(FieldInstance(operand.Field));
                     break;
                 case CilOperand.ReadOnlySpanData operand:
                     writer.Write((byte)16);
@@ -301,6 +301,10 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write(Type(operand.SpanType));
                     writer.Write(Type(operand.ElementType));
                     writer.Write(operand.ElementCount);
+                    break;
+                case CilOperand.ExactType operand:
+                    writer.Write((byte)17);
+                    writer.Write(Type(operand.Value));
                     break;
                 default:
                     throw new InvalidDataException(
@@ -516,6 +520,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 writer.Write(item.Declaration.IlOffset);
                 WriteMethodInstance(item.Declaration.Declaration);
                 WriteEnum(item.Declaration.Operation);
+                WriteNullable(item.Declaration.ReceiverBound, WriteType);
             });
             WriteArray(analysis.CallableMethods, WriteMethodInstance);
             WriteArray(analysis.CallSites, WriteCallSite);
@@ -685,6 +690,20 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write(item.ContinueWhenConditionTrue);
                     WriteSequence(item.ContinueBody);
                     WriteSequence(item.ExitBody);
+                    break;
+                case StructuredLabeledBlock item:
+                    writer.Write((byte)9);
+                    writer.Write(item.Next.Value);
+                    WriteSequence(item.Body);
+                    break;
+                case StructuredLabeledLoop item:
+                    writer.Write((byte)10);
+                    writer.Write(item.Header.Value);
+                    WriteSequence(item.Body);
+                    break;
+                case StructuredLabelBranch item:
+                    writer.Write((byte)11);
+                    writer.Write(item.Target.Value);
                     break;
                 default:
                     throw new InvalidDataException(

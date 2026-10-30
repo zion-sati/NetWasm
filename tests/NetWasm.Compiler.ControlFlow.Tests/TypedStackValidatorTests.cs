@@ -889,7 +889,7 @@ public sealed class TypedStackValidatorTests
             [],
             I(0, CilOperation.LoadNull),
             I(1, CilOperation.InitializeArrayData,
-                new CilOperand.ByteData([1])),
+                InitializerData([1])),
             I(2, CilOperation.Return)));
 
         AssertDiagnostic(
@@ -899,7 +899,7 @@ public sealed class TypedStackValidatorTests
                 [],
                 I(0, CilOperation.LoadNull),
                 I(1, CilOperation.InitializeArrayData,
-                    new CilOperand.ByteData([])),
+                    InitializerData([])),
                 I(2, CilOperation.Return))),
             "array initializer data is empty");
 
@@ -2054,5 +2054,17 @@ public sealed class TypedStackValidatorTests
                 ],
             }),
             "evaluation stack is not empty at control transfer");
+    }
+
+    // An array initializer whose field holds the bytes.
+    private static CilOperand.ArrayInitializerData InitializerData(byte[] bytes)
+    {
+        var assembly = new AssemblyIdentity("fixture");
+        var dataType = CliTypeIdentity.Named(assembly, "", "__StaticArrayInitTypeSize1", isValueType: true);
+        var field = new FieldDefinitionModel(new(assembly, 1), new(assembly, 2), "Data", dataType, true)
+        {
+            InitialData = [.. bytes],
+        };
+        return new(new(field, CliTypeIdentity.Named(assembly, "Fixture", "Owner", isValueType: false), dataType));
     }
 }

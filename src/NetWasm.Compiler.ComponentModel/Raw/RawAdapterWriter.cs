@@ -29,7 +29,7 @@ public sealed class RawAdapterWriter(
 {
     // Version 2 emits each callable's canonical-ABI code instead of its plan.
     public const int CurrentAbiVersion = 2;
-    private const string ReactorHostInterface = "netwasm:runtime@1.0.0/reactor-host";
+    private const string ReactorHostInterface = "netwasm:runtime/reactor-host@1.0.0";
     private const string CanonicalCapability = "canonical";
 
     // The helpers the emitted bindings call, without their test-facing exports.

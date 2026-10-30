@@ -1,9 +1,11 @@
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Support;
@@ -16,7 +18,8 @@ internal sealed class StaticFieldInstructionEmitter(
     IStaticFieldLayoutProvider fields,
     IValueLayoutProvider values,
     IAddressInstructionEmitter addresses,
-    IStaticInitializationEmitter initialization) : InstructionCommandProvider
+    IStaticInitializationEmitter initialization,
+    IStaticFieldInitializationClassifier initialized) : InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
     [
@@ -49,8 +52,8 @@ internal sealed class StaticFieldInstructionEmitter(
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             addresses.Emit(code, address);
-            addresses.Emit(code, storage.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, storage.Size,
+                writer => addresses.Emit(writer, storage.Size));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
                 request.Context,
@@ -86,8 +89,8 @@ internal sealed class StaticFieldInstructionEmitter(
                 request.Context,
                 slot,
                 CliValueKind.ValueType)))));
-            addresses.Emit(code, storage.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, storage.Size,
+                writer => addresses.Emit(writer, storage.Size));
             request.Stack.RemoveAt(slot);
             return;
         }
@@ -142,6 +145,11 @@ internal sealed class StaticFieldInstructionEmitter(
         else
         {
             field = fieldRepository.GetField(CilOperandReader.GetEntity(instruction));
+        }
+        if (initialized.IsInitializedFor(request.Header.Method, request.Header.MethodInstance?.DeclaringType,
+                request.Header.Instructions, instruction))
+        {
+            return;
         }
         initialization.Emit(new(field.DeclaringType, declaringType,
             request.Target.ModuleData), code, functionIndices);

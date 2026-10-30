@@ -91,6 +91,8 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeInitializeFinalization,
             RuntimeAbi.RuntimeAllocateFinalizable,
             RuntimeAbi.RuntimeRandomSeed,
+            RuntimeAbi.RuntimeRegisterTypeObjects,
+            RuntimeAbi.RuntimeTypeObjectCache,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));

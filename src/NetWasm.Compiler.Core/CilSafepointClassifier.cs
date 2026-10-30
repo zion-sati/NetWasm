@@ -13,9 +13,9 @@ public static class CilSafepointClassifier
             CilOperation.NewRectangularArray or
             CilOperation.NewBoundedRectangularArray or
             CilOperation.Box or
-            CilOperation.MaterializeType or
-            CilOperation.GetObjectType or
-            CilOperation.CallIndirect;
+            CilOperation.CallIndirect ||
+        instruction.Operation is CilOperation.MaterializeType or CilOperation.GetObjectType &&
+            !CilTypeMaterialization.UsesStaticTypeObject(instruction);
 
 
     public static bool MayTransferControlExceptionally(CilInstruction instruction) =>
@@ -60,13 +60,13 @@ public static class CilSafepointClassifier
             CilOperation.MultiplyCheckedUnsigned or
             CilOperation.CastClass or
             CilOperation.LoadVirtualFunction or
-            CilOperation.MaterializeType or
             CilOperation.GetObjectType or
             CilOperation.Throw or
             CilOperation.Rethrow or
             CilOperation.EndFinally => true,
             CilOperation.ConvertNumeric =>
                 instruction.Operand is CilOperand.NumericConversion { Checked: true },
+            CilOperation.MaterializeType => !CilTypeMaterialization.IsConstant(instruction),
             _ => false,
         };
 

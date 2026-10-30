@@ -120,7 +120,7 @@ internal sealed class ComponentContractResolver(
         {
             var interfaceId = item.InterfaceId!.Value;
             var @interface = document.Interfaces[interfaceId];
-            var interfaceName = $"{@interface.Package}/{@interface.Name}";
+            var interfaceName = item.Name;
             var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             foreach (var resource in @interface.Types
                          .OrderBy(pair => pair.Value)
@@ -257,7 +257,7 @@ internal sealed class ComponentContractResolver(
                 continue;
             }
             var @interface = document.Interfaces[item.InterfaceId!.Value];
-            var interfaceName = $"{@interface.Package}/{@interface.Name}";
+            var interfaceName = item.Name;
             var coreInterfaceName = item.CoreBindingName ?? interfaceName;
             foreach (var function in @interface.Functions)
             {
@@ -289,7 +289,8 @@ internal sealed class ComponentContractResolver(
         if (function.Kind.Name.StartsWith("async", StringComparison.Ordinal))
         {
             throw Invalid(
-                $"user-defined asynchronous WIT function '{function.Name}' is not supported");
+                $"user-defined asynchronous WIT function '{function.Name}' in " +
+                (interfaceName.Length == 0 ? "the world" : $"interface '{interfaceName}'") + " is not supported");
         }
         var matchingMethods = metadata.Methods.Where(method => imported
                 ? method.WitImport?.InterfaceName == interfaceName &&

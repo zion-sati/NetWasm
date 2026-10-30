@@ -86,7 +86,7 @@ public sealed class ControlFlowOwnershipCompilationTests
                 new RequestedExport("observe", "AsyncControlFlowOwnership.Application.EntryPoint", "Observe"),
             ],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             DrainReactor = true,
             ObserveExportName = "observe",
         });

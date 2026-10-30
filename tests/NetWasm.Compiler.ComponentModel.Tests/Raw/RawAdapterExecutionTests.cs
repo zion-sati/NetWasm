@@ -11,7 +11,7 @@ namespace NetWasm.Compiler.ComponentModel.Tests.Raw;
 // Node against real linear memory and the host's resource store.
 public sealed class RawAdapterExecutionTests
 {
-    private const string Interface = "sample:raw@1.0.0/api";
+    private const string Interface = "sample:raw/api@1.0.0";
     private const string DeploymentInterface = "sample:raw/api@1.0.0";
 
     [Theory]

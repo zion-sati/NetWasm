@@ -25,6 +25,23 @@ public sealed class StackSlotProducersTests
         Assert.Equal(2, producers.FindTop(3));
     }
 
+    // ldfld reads the object below it and pushes one value, so the search
+    // stops at it although the stack there is deeper than the slot.
+    [Fact]
+    public void FindsAFieldLoadPastAnUnrelatedStore()
+    {
+        var producers = Producers(
+            [
+                new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.LoadField, new CilOperand.Entity(new(Assembly, 0x04000001))),
+                Constant(2), Store(3, 0), new(4, 5, CilOperation.Pop, new CilOperand.None()),
+            ],
+            [], [CliValueKind.ManagedReference], [CliValueKind.ManagedReference],
+            [CliValueKind.ManagedReference, CliValueKind.I4], [CliValueKind.ManagedReference]);
+
+        Assert.Equal(1, producers.FindTop(4));
+    }
+
     [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 0)]
@@ -56,6 +73,9 @@ public sealed class StackSlotProducersTests
 
         Assert.Equal(1, producers.FindTop(2));
         Assert.Null(producers.Find(2, 0));
+        // Asked for, the dup also answers for the copy it leaves below.
+        Assert.Equal(1, producers.Find(2, 0, duplicates: true));
+        Assert.Equal(0, producers.Find(1, 0, duplicates: true));
     }
 
     [Fact]

@@ -1,10 +1,11 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Helper/Base64EncoderHelper.cs
 
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-#if NETWASM_SIMD
+#if NET
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.Wasm;
@@ -41,7 +42,7 @@ namespace System.Buffers.Text
                 byte* srcEnd = srcBytes + (uint)srcLength;
                 byte* srcMax = srcBytes + (uint)maxSrcLength;
 
-#if NETWASM_SIMD
+#if NET
                 if (maxSrcLength >= 16)
                 {
                     byte* end = srcMax - 64;
@@ -132,7 +133,7 @@ namespace System.Buffers.Text
             }
         }
 
-#if NETWASM_SIMD
+#if NET
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [CompExactlyDependsOn(typeof(Avx512BW))]
         [CompExactlyDependsOn(typeof(Avx512Vbmi))]
@@ -721,7 +722,6 @@ namespace System.Buffers.Text
         {
             public ReadOnlySpan<byte> EncodingMap => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"u8;
 
-#if NETWASM_SIMD
             public sbyte Avx2LutChar62 => -19;  // char '+' diff
 
             public sbyte Avx2LutChar63 => -16;   // char '/' diff
@@ -729,7 +729,6 @@ namespace System.Buffers.Text
             public ReadOnlySpan<byte> AdvSimdLut4 => "wxyz0123456789+/"u8;
 
             public uint Ssse3AdvSimdLutE3 => 0x0000F0ED;
-#endif
 
             public int IncrementPadTwo => 4;
 
@@ -774,7 +773,7 @@ namespace System.Buffers.Text
                 Unsafe.WriteUnaligned(dest, result);
             }
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public unsafe void StoreVector512ToDestination(byte* dest, byte* destStart, int destLength, Vector512<byte> str)
             {
@@ -819,7 +818,6 @@ namespace System.Buffers.Text
         {
             public ReadOnlySpan<byte> EncodingMap => default(Base64EncoderByte).EncodingMap;
 
-#if NETWASM_SIMD
             public sbyte Avx2LutChar62 => default(Base64EncoderByte).Avx2LutChar62;
 
             public sbyte Avx2LutChar63 => default(Base64EncoderByte).Avx2LutChar63;
@@ -827,7 +825,6 @@ namespace System.Buffers.Text
             public ReadOnlySpan<byte> AdvSimdLut4 => default(Base64EncoderByte).AdvSimdLut4;
 
             public uint Ssse3AdvSimdLutE3 => default(Base64EncoderByte).Ssse3AdvSimdLutE3;
-#endif
 
             public int IncrementPadTwo => default(Base64EncoderByte).IncrementPadTwo;
 
@@ -855,7 +852,7 @@ namespace System.Buffers.Text
                 dest[3] = (ushort)EncodingPad;
             }
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public unsafe void StoreVector512ToDestination(ushort* dest, ushort* destStart, int destLength, Vector512<byte> str)
             {

@@ -52,6 +52,7 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Auto"] = ManagedMethodInlining.Auto,
             ["Disabled"] = ManagedMethodInlining.Disabled,
             ["Enabled"] = ManagedMethodInlining.Enabled,
+            ["Loops"] = ManagedMethodInlining.Loops,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     private static readonly FrozenDictionary<string, ManagedBranchPrefixDuplication>
@@ -144,6 +145,78 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedArrayStoreCheckElimination.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedDispatcherElimination>
+        DispatcherEliminationValues =
+        new Dictionary<string, ManagedDispatcherElimination>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedDispatcherElimination.Auto,
+            ["Disabled"] = ManagedDispatcherElimination.Disabled,
+            ["Enabled"] = ManagedDispatcherElimination.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedEmptyFinallyRemoval>
+        EmptyFinallyRemovalValues =
+        new Dictionary<string, ManagedEmptyFinallyRemoval>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedEmptyFinallyRemoval.Auto,
+            ["Disabled"] = ManagedEmptyFinallyRemoval.Disabled,
+            ["Enabled"] = ManagedEmptyFinallyRemoval.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedArrayLoopIdioms>
+        ArrayLoopIdiomValues =
+        new Dictionary<string, ManagedArrayLoopIdioms>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedArrayLoopIdioms.Auto,
+            ["Disabled"] = ManagedArrayLoopIdioms.Disabled,
+            ["Enabled"] = ManagedArrayLoopIdioms.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedLoopVectorization>
+        LoopVectorizationValues =
+        new Dictionary<string, ManagedLoopVectorization>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedLoopVectorization.Auto,
+            ["Disabled"] = ManagedLoopVectorization.Disabled,
+            ["Enabled"] = ManagedLoopVectorization.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedLoopStoreForwarding>
+        LoopStoreForwardingValues =
+        new Dictionary<string, ManagedLoopStoreForwarding>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedLoopStoreForwarding.Auto,
+            ["Disabled"] = ManagedLoopStoreForwarding.Disabled,
+            ["Enabled"] = ManagedLoopStoreForwarding.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedIdempotentLoopCollapse>
+        IdempotentLoopCollapseValues =
+        new Dictionary<string, ManagedIdempotentLoopCollapse>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedIdempotentLoopCollapse.Auto,
+            ["Disabled"] = ManagedIdempotentLoopCollapse.Disabled,
+            ["Enabled"] = ManagedIdempotentLoopCollapse.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedAllocationScalarReplacement>
+        AllocationScalarReplacementValues =
+        new Dictionary<string, ManagedAllocationScalarReplacement>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedAllocationScalarReplacement.Auto,
+            ["Disabled"] = ManagedAllocationScalarReplacement.Disabled,
+            ["Enabled"] = ManagedAllocationScalarReplacement.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedStructScalarReplacement>
+        StructScalarReplacementValues =
+        new Dictionary<string, ManagedStructScalarReplacement>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedStructScalarReplacement.Auto,
+            ["Disabled"] = ManagedStructScalarReplacement.Disabled,
+            ["Enabled"] = ManagedStructScalarReplacement.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     public WasmOptimizationOverrides? Parse(
         string? loopInvariantFieldHoisting,
         string? staticDataViewElimination,
@@ -160,7 +233,15 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? devirtualization = null,
         string? allocationElimination = null,
         string? loopRotation = null,
-        string? arrayStoreCheckElimination = null)
+        string? arrayStoreCheckElimination = null,
+        string? dispatcherElimination = null,
+        string? emptyFinallyRemoval = null,
+        string? structScalarReplacement = null,
+        string? allocationScalarReplacement = null,
+        string? idempotentLoopCollapse = null,
+        string? loopStoreForwarding = null,
+        string? arrayLoopIdioms = null,
+        string? loopVectorization = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -204,6 +285,46 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? arrayStoreChecksParsed
             : throw ComponentException.Invalid(
                 "Managed array store check elimination must be Auto, Disabled or Enabled.");
+        var dispatchersValue = DispatcherEliminationValues.TryGetValue(
+            dispatcherElimination ?? "Auto", out var dispatchersParsed)
+            ? dispatchersParsed
+            : throw ComponentException.Invalid(
+                "Managed dispatcher elimination must be Auto, Disabled or Enabled.");
+        var emptyFinallysValue = EmptyFinallyRemovalValues.TryGetValue(
+            emptyFinallyRemoval ?? "Auto", out var emptyFinallysParsed)
+            ? emptyFinallysParsed
+            : throw ComponentException.Invalid(
+                "Managed empty finally removal must be Auto, Disabled or Enabled.");
+        var structsValue = StructScalarReplacementValues.TryGetValue(
+            structScalarReplacement ?? "Auto", out var structsParsed)
+            ? structsParsed
+            : throw ComponentException.Invalid(
+                "Managed struct scalar replacement must be Auto, Disabled or Enabled.");
+        var allocationsValue = AllocationScalarReplacementValues.TryGetValue(
+            allocationScalarReplacement ?? "Auto", out var allocationsParsed)
+            ? allocationsParsed
+            : throw ComponentException.Invalid(
+                "Managed allocation scalar replacement must be Auto, Disabled or Enabled.");
+        var idempotentLoopsValue = IdempotentLoopCollapseValues.TryGetValue(
+            idempotentLoopCollapse ?? "Auto", out var idempotentLoopsParsed)
+            ? idempotentLoopsParsed
+            : throw ComponentException.Invalid(
+                "Managed idempotent loop collapse must be Auto, Disabled or Enabled.");
+        var loopStoresValue = LoopStoreForwardingValues.TryGetValue(
+            loopStoreForwarding ?? "Auto", out var loopStoresParsed)
+            ? loopStoresParsed
+            : throw ComponentException.Invalid(
+                "Managed loop store forwarding must be Auto, Disabled or Enabled.");
+        var arrayLoopsValue = ArrayLoopIdiomValues.TryGetValue(
+            arrayLoopIdioms ?? "Auto", out var arrayLoopsParsed)
+            ? arrayLoopsParsed
+            : throw ComponentException.Invalid(
+                "Managed array loop idioms must be Auto, Disabled or Enabled.");
+        var vectorizationValue = LoopVectorizationValues.TryGetValue(
+            loopVectorization ?? "Auto", out var vectorizationParsed)
+            ? vectorizationParsed
+            : throw ComponentException.Invalid(
+                "Managed loop vectorization must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -219,7 +340,15 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                devirtualizationValue == ManagedDevirtualization.Auto &&
                allocationEliminationValue == ManagedAllocationElimination.Auto &&
                loopRotationValue == ManagedLoopRotation.Auto &&
-               arrayStoreChecksValue == ManagedArrayStoreCheckElimination.Auto
+               arrayStoreChecksValue == ManagedArrayStoreCheckElimination.Auto &&
+               dispatchersValue == ManagedDispatcherElimination.Auto &&
+               emptyFinallysValue == ManagedEmptyFinallyRemoval.Auto &&
+               structsValue == ManagedStructScalarReplacement.Auto &&
+               allocationsValue == ManagedAllocationScalarReplacement.Auto &&
+               idempotentLoopsValue == ManagedIdempotentLoopCollapse.Auto &&
+               loopStoresValue == ManagedLoopStoreForwarding.Auto &&
+               arrayLoopsValue == ManagedArrayLoopIdioms.Auto &&
+               vectorizationValue == ManagedLoopVectorization.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -237,7 +366,15 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 Devirtualization: devirtualizationValue,
                 AllocationElimination: allocationEliminationValue,
                 LoopRotation: loopRotationValue,
-                ArrayStoreCheckElimination: arrayStoreChecksValue);
+                ArrayStoreCheckElimination: arrayStoreChecksValue,
+                DispatcherElimination: dispatchersValue,
+                EmptyFinallyRemoval: emptyFinallysValue,
+                StructScalarReplacement: structsValue,
+                AllocationScalarReplacement: allocationsValue,
+                IdempotentLoopCollapse: idempotentLoopsValue,
+                LoopStoreForwarding: loopStoresValue,
+                ArrayLoopIdioms: arrayLoopsValue,
+                LoopVectorization: vectorizationValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>
@@ -263,7 +400,7 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         ManagedMethodInliningValues.TryGetValue(value ?? "Auto", out var parsed)
             ? parsed
             : throw ComponentException.Invalid(
-                "Managed method inlining must be Auto, Disabled or Enabled.");
+                "Managed method inlining must be Auto, Disabled, Enabled or Loops.");
 
     private static ManagedBranchPrefixDuplication ParseBranchPrefixDuplication(
         string? value) =>

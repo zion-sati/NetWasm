@@ -22,9 +22,15 @@ internal sealed class ArrayInstructionEmitter(
     IRootPublicationEmitter roots,
     IArrayLengthAdapter lengths,
     IArrayIndexAdapter indexes,
-    IArrayElementAddressEmitter elementAddresses) :
+    IArrayElementAddressEmitter elementAddresses,
+    IStaticFieldLayoutProvider staticFields) :
     InstructionCommandProvider
 {
+    // An initializer up to this size is stored as constants, eight bytes at a time. A larger one is
+    // one memory.copy from its field's static data: Wasmtime runs memory.copy out of line, which a
+    // few stores beat.
+    private const int ConstantStoreLimit = 64;
+
     public override ImmutableArray<InstructionCommand> Commands =>
     [
         Command(CilOperation.NewArray, EmitNewArray),
@@ -79,23 +85,50 @@ internal sealed class ArrayInstructionEmitter(
             request.Context,
             arraySlot,
             CliValueKind.ManagedReference);
-        var data = ((CilOperand.ByteData)request.Instruction.Operand).Value;
-        for (var index = 0; index < data.Length; index++)
+        var initializer = (CilOperand.ArrayInitializerData)request.Instruction.Operand;
+        var data = initializer.Value;
+        if (data.Length > ConstantStoreLimit)
         {
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
-            ManagedMemoryEmitter.EmitReferenceLoad(
-                code,
-                layouts.Target,
-                objects.ArrayDataPointerOffset);
-            if (index != 0)
+            EmitArrayData(code, arrayLocal);
+            addresses.Emit(code, staticFields.GetStaticFieldLayout(initializer.Field).Address);
+            addresses.Emit(code, data.Length);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed,
+                WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+        }
+        else
+        {
+            for (var offset = 0; offset < data.Length;)
             {
-                addresses.Emit(code, index);
-                addresses.Emit(code, AddressOperation.Add);
+                var width = (data.Length - offset) switch { >= 8 => 8, >= 4 => 4, >= 2 => 2, _ => 1 };
+                var value = 0L;
+                for (var index = width - 1; index >= 0; index--)
+                {
+                    value = (value << 8) | data[offset + index];
+                }
+                EmitArrayData(code, arrayLocal);
+                code.Write(width == 8
+                    ? WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(value))
+                    : WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(unchecked((int)value))));
+                code.Write(WasmInstruction.WithOperand(width switch
+                {
+                    8 => WasmOpcodes.I64Store,
+                    4 => WasmOpcodes.I32Store,
+                    2 => WasmOpcodes.I32Store16,
+                    _ => WasmOpcodes.I32Store8,
+                }, WasmInstructionOperand.Memory(0, (uint)offset)));
+                offset += width;
             }
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(data[index])));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Store8, WasmInstructionOperand.Memory(0, (uint)(0))));
         }
         request.Stack.RemoveAt(arraySlot);
+    }
+
+    private void EmitArrayData(IWasmInstructionWriter code, int arrayLocal)
+    {
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
+        ManagedMemoryEmitter.EmitReferenceLoad(
+            code,
+            layouts.Target,
+            objects.ArrayDataPointerOffset);
     }
 
     private void EmitLength(InstructionEmissionRequest request, IWasmInstructionWriter code)
@@ -203,15 +236,38 @@ internal sealed class ArrayInstructionEmitter(
         addresses.Emit(code, AddressOperation.EqualZero);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        // As .NET's store helper does, accept a value of exactly the element
+        // type, or any value into an object[], before the hierarchy check.
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(objects.ArrayElementTypeIdOffset))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));
+        EmitElementTypeId(code, arrayLocal);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32NotEqual));
+        if (typeLayouts.GetObjectLayout(ObjectType, out var objectLayout))
+        {
+            EmitElementTypeId(code, arrayLocal);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(objectLayout.TypeId)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32NotEqual));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
+        }
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
+        EmitElementTypeId(code, arrayLocal);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.IsAssignable)))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
         exceptions.Emit(code, ManagedExceptionKind.ArrayTypeMismatch, request.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    private static readonly CliTypeIdentity ObjectType =
+        CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, isValueType: false);
+
+    private void EmitElementTypeId(IWasmInstructionWriter code, int arrayLocal)
+    {
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, (uint)(objects.ArrayElementTypeIdOffset))));
     }
 
     private void EmitLoadElement(InstructionEmissionRequest request, IWasmInstructionWriter code)
@@ -256,8 +312,8 @@ internal sealed class ArrayInstructionEmitter(
                 arrayLocal,
                 indexLocal,
                 elementSize);
-            addresses.Emit(code, elementSize);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, elementSize,
+                writer => addresses.Emit(writer, elementSize));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
         }
         else
@@ -365,8 +421,8 @@ internal sealed class ArrayInstructionEmitter(
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
         if (elementType.StackKind == CliValueKind.ValueType)
         {
-            addresses.Emit(code, elementSize);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, elementSize,
+                writer => addresses.Emit(writer, elementSize));
         }
         else
         {

@@ -62,12 +62,9 @@ internal sealed class RootPublicationEmitter(
             if (rootsBySlot[rootSlot] is { } authoritative &&
                 context.AuthoritativeRootSlots.ContainsKey(authoritative))
                 continue;
+            // The frame is a live allocation, so the slot offset cannot wrap and
+            // the store carries it instead of an address addition.
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(context.RootFrame))));
-            if (rootSlot != 0)
-            {
-                EmitAddressConstant(code, rootSlot * layouts.Target.ObjectReferenceSize);
-                EmitAddressAdd(code);
-            }
 
             if (rootsBySlot[rootSlot] is { } promoted && TryGetPromotedLane(context, promoted, out var lane))
             {
@@ -111,7 +108,7 @@ internal sealed class RootPublicationEmitter(
             ManagedMemoryEmitter.EmitStoreBySize(
                 code,
                 layouts.Target,
-                0,
+                checked(rootSlot * layouts.Target.ObjectReferenceSize),
                 layouts.Target.ObjectReferenceSize);
         }
     }
@@ -183,12 +180,6 @@ internal sealed class RootPublicationEmitter(
     {
         if (layouts.Target.UsesMemory64) code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(value)));
         else code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(value)));
-    }
-
-    private void EmitAddressAdd(IWasmInstructionWriter code)
-    {
-        if (layouts.Target.UsesMemory64) code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Add));
-        else code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Add));
     }
 
     private int GetStackLocal(

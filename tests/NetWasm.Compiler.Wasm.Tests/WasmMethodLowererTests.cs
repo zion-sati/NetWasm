@@ -87,7 +87,9 @@ public sealed class WasmMethodLowererTests
 
         public IValidatedStructuredMethodBuilder Create(
             BranchPrefixDuplicationPolicy branchPrefixDuplication =
-                BranchPrefixDuplicationPolicy.SizeAware)
+                BranchPrefixDuplicationPolicy.SizeAware,
+            DispatcherEliminationPolicy dispatcherElimination =
+                DispatcherEliminationPolicy.Disabled)
         {
             CreateCount++;
             BranchPrefixDuplication = branchPrefixDuplication;

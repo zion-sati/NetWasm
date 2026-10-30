@@ -165,6 +165,26 @@ internal sealed class MetadataMethodReferenceResolver(
             typeArguments = declaringIdentity.Shape == CliTypeShape.GenericInstantiation
                 ? declaringIdentity.TypeArguments : [];
         }
+        if (matches.Length > 1)
+        {
+            // Overloads such as Vector<T>(ReadOnlySpan<T>) and
+            // Vector<T>(ReadOnlySpan<byte>) coincide once T is byte. A member
+            // reference names the overload by its declared signature, in which
+            // the type's parameters stay parameters (ECMA-335 II.23.2.1).
+            var declared = reference.DecodeMethodSignature(
+                new SignatureTypeProvider(
+                    source.Identity,
+                    source.Reader,
+                    source.AssemblyIdentityAliases),
+                new CliGenericContext([], []));
+            matches = matches
+                .Where(method => signatureTypes.Compare(
+                        method.Signature.ReturnSignatureType,
+                        declared.ReturnType) &&
+                    method.Signature.ParameterSignatureTypes.Zip(declared.ParameterTypes)
+                        .All(pair => signatureTypes.Compare(pair.First, pair.Second)))
+                .ToArray();
+        }
         var definitionMatch = matches.Length == 1
             ? matches[0]
             : throw new CompilerException(

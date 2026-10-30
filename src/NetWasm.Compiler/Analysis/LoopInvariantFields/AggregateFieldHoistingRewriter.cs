@@ -110,7 +110,7 @@ internal sealed class AggregateFieldHoistingRewriter(
                 operand = new CilOperand.None();
             }
 
-            Add(operation, RewriteOperand(operand, starts), instruction.SourceOffset);
+            Add(operation, RenumberedInstructions.Operand(operand, starts), instruction.SourceOffset);
         }
 
         return body with
@@ -120,7 +120,7 @@ internal sealed class AggregateFieldHoistingRewriter(
             Locals = [.. localTypes.Select(type => type.StackKind)],
             MaxStack = Math.Max(body.MaxStack, 1),
             ExceptionRegions = [.. body.ExceptionRegions.Select(region =>
-                RewriteRegion(region, starts))],
+                RenumberedInstructions.Region(region, starts))],
         };
 
         void Add(CilOperation operation, CilOperand operand, int sourceOffset)
@@ -134,35 +134,5 @@ internal sealed class AggregateFieldHoistingRewriter(
                 OriginalOffset = sourceOffset,
             });
         }
-    }
-
-    private static CilOperand RewriteOperand(
-        CilOperand operand,
-        Dictionary<int, int> starts) => operand switch
-        {
-            CilOperand.BranchTarget target => new CilOperand.BranchTarget(starts[target.Offset]),
-            CilOperand.SwitchTargets targets => new CilOperand.SwitchTargets(
-                [.. targets.Offsets.Select(offset => starts[offset])]),
-            _ => operand,
-        };
-
-    private static CilExceptionRegion RewriteRegion(
-        CilExceptionRegion region,
-        Dictionary<int, int> starts)
-    {
-        var tryStart = starts[region.TryOffset];
-        var tryEnd = starts[region.TryOffset + region.TryLength];
-        var handlerStart = starts[region.HandlerOffset];
-        var handlerEnd = starts[region.HandlerOffset + region.HandlerLength];
-        return region with
-        {
-            TryOffset = tryStart,
-            TryLength = tryEnd - tryStart,
-            HandlerOffset = handlerStart,
-            HandlerLength = handlerEnd - handlerStart,
-            FilterOffset = region.FilterOffset is { } filter
-                ? starts[filter]
-                : null,
-        };
     }
 }

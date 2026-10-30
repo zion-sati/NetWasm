@@ -24,9 +24,9 @@ public sealed class ComponentWitWorldSelectorTests
         var selection = CreateSelector().Select(new(
             "async-command.wit",
             "async-command",
-            [new("http.wit", "async-http-command", "wasi:http@0.2.11/")],
+            [new("http.wit", "async-http-command", "wasi:http/")],
             [new HostInteropWitImport(
-                "wasi:http@0.2.11/outgoing-handler",
+                "wasi:http/outgoing-handler@0.2.11",
                 "handle")]));
 
         Assert.Equal("http.wit", selection.Path);
@@ -52,11 +52,11 @@ public sealed class ComponentWitWorldSelectorTests
             "command.wit",
             null,
             [
-                new("first.wit", null, "wasi:http@"),
-                new("second.wit", null, "wasi:http@0.2.11/"),
+                new("first.wit", null, "wasi:http"),
+                new("second.wit", null, "wasi:http/"),
             ],
             [new HostInteropWitImport(
-                "wasi:http@0.2.11/types",
+                "wasi:http/types@0.2.11",
                 "[resource-drop]fields")])));
     }
 

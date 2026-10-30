@@ -1,6 +1,8 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Url/Base64UrlValidator.cs
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace System.Buffers.Text
@@ -55,7 +57,7 @@ namespace System.Buffers.Text
 
         private readonly struct Base64UrlCharValidatable : Base64Helper.IBase64Validatable<char>
         {
-#if NETWASM_SIMD
+#if NET
             private static readonly SearchValues<char> s_validBase64UrlChars = SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_");
 
             public int IndexOfAnyExcept(ReadOnlySpan<char> span) => span.IndexOfAnyExcept(s_validBase64UrlChars);
@@ -81,7 +83,7 @@ namespace System.Buffers.Text
 
         private readonly struct Base64UrlByteValidatable : Base64Helper.IBase64Validatable<byte>
         {
-#if NETWASM_SIMD
+#if NET
             private static readonly SearchValues<byte> s_validBase64UrlChars = SearchValues.Create(default(Base64UrlEncoderByte).EncodingMap);
 
             public int IndexOfAnyExcept(ReadOnlySpan<byte> span) => span.IndexOfAnyExcept(s_validBase64UrlChars);

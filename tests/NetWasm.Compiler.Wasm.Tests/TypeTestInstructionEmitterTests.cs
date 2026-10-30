@@ -145,7 +145,7 @@ public sealed class TypeTestInstructionEmitterTests
             caller,
             [ValueType(), ReferenceType()]);
 
-        AsTypeTest(CreateEmitter()).Test(
+        AsTypeTest(CreateEmitter(new IdentifiedTypes(new() { [ValueType()] = 5, [ReferenceType()] = 7 }))).Test(
             request,
             GetCodeWriter(request),
             returnNullOnFailure: false);
@@ -154,10 +154,71 @@ public sealed class TypeTestInstructionEmitterTests
         Assert.True(ContainsManagedThrow(GetCodeBytes(request)));
     }
 
-    private static TypeTestInstructionEmitter CreateEmitter()
+    // Types with consecutive ids are tested together, by one range check.
+    [Fact]
+    public void ConsecutiveMatchingIdsBecomeOneRangeCheck()
+    {
+        var types = Types(Enumerable.Range(20, 8));
+        var request = WithSite(CreateRequest(CilOperation.CastClass), CreateCaller(), [.. types.Keys]);
+
+        AsTypeTest(CreateEmitter(new IdentifiedTypes(types))).Test(
+            request,
+            GetCodeWriter(request),
+            returnNullOnFailure: false);
+
+        var code = GetCodeBytes(request);
+        Assert.Contains(WasmOpcodes.I32LessThanUnsigned, code);
+        Assert.DoesNotContain(WasmOpcodes.I32Equal, code);
+        Assert.DoesNotContain(WasmOpcodes.I32Or, code);
+    }
+
+    // Scattered ids, as an interface's implementations have, are searched by
+    // halving instead of compared one by one.
+    [Fact]
+    public void ScatteredMatchingIdsAreSearched()
+    {
+        var types = Types(Enumerable.Range(1, 12).Select(index => index * 2));
+        var request = WithSite(CreateRequest(CilOperation.IsInstance), CreateCaller(), [.. types.Keys]);
+
+        AsTypeTest(CreateEmitter(new IdentifiedTypes(types))).Test(
+            request,
+            GetCodeWriter(request),
+            returnNullOnFailure: true);
+
+        var code = GetCodeBytes(request).ToArray();
+        Assert.Contains(Enumerable.Range(0, code.Length - 1),
+            index => code[index] == WasmOpcodes.If && code[index + 1] == 0x7f);
+        Assert.Contains(WasmOpcodes.Else, code);
+    }
+
+    private static Dictionary<CliTypeIdentity, int> Types(IEnumerable<int> ids) =>
+        ids.ToDictionary(id => CliTypeIdentity.Named(Assembly, "Tests", $"Type{id}", false), id => id);
+
+    // Gives each type its own id, as a linked program does.
+    private sealed class IdentifiedTypes(Dictionary<CliTypeIdentity, int> ids) : ITypeLayoutProvider
+    {
+        public ObjectLayout GetObjectLayout(CliTypeIdentity type) => new(ids[type], 16, []);
+
+        public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout)
+        {
+            layout = GetObjectLayout(type);
+            return true;
+        }
+
+        public ObjectLayout GetObjectLayout(EntityKey type) => throw new NotSupportedException();
+
+        public int ReferenceArrayTypeId => 0;
+
+        public int StringTypeId => 0;
+
+        public int TypeTypeId => 0;
+    }
+
+    private static TypeTestInstructionEmitter CreateEmitter(ITypeLayoutProvider? typeLayouts = null)
     {
         var layouts = new RecordingLayoutProvider();
-        return new TypeTestInstructionEmitter(layouts, new AddressInstructionEmitter(layouts), layouts, CreateTypeOperands(new FakeProgram()),
+        return new TypeTestInstructionEmitter(layouts, new AddressInstructionEmitter(layouts), typeLayouts ?? layouts,
+            CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
             new ImplicitExceptionEmitter(layouts, layouts),
             new NullableTypeResolver());

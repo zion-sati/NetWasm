@@ -5,6 +5,7 @@
 //
 // Integer formatting is ported separately in Number.IntegerFormatting.cs.
 // The remaining parsing and floating-point support here uses invariant culture.
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Text;
 
@@ -1036,5 +1037,17 @@ namespace System
             }
             return string.Create(result);
         }
+
+        // Upstream's ThrowOverflowException<TInteger> reads TInteger.OverflowMessage, which the
+        // primitive integers implement with the numeric parsing port; until then Decimal's
+        // narrowing conversions throw upstream's messages here.
+        [DoesNotReturn]
+        internal static void ThrowOverflowException<TInteger>() =>
+            throw new OverflowException(
+                typeof(TInteger) == typeof(byte) ? SR.Overflow_Byte :
+                typeof(TInteger) == typeof(sbyte) ? SR.Overflow_SByte :
+                typeof(TInteger) == typeof(short) ? SR.Overflow_Int16 :
+                typeof(TInteger) == typeof(ushort) ? SR.Overflow_UInt16 :
+                throw new ArgumentException(null, nameof(TInteger)));
     }
 }

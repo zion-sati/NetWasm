@@ -113,8 +113,12 @@ internal sealed class DispatchTargetResolver(
                 .ToArray();
             if (interfaceDispatch)
             {
-                var implicitImplementation = candidates.SingleOrDefault(method =>
-                    SameSignature(method.Signature, declaration.Signature));
+                var matching = candidates
+                    .Where(method => SameSignature(method.Signature, declaration.Signature))
+                    .ToArray();
+                var implicitImplementation = matching.Length > 1
+                    ? DeclaredImplementation(matching, current, definition, declaration)
+                    : matching.SingleOrDefault();
                 if (implicitImplementation is null &&
                     implementedInterfaces.GetInterfaces(current).Any(implemented =>
                         relationships.Classify(
@@ -133,13 +137,16 @@ internal sealed class DispatchTargetResolver(
             }
             else
             {
-                var overrideMethod = candidates
-                    .Where(method => SameSignature(
-                        method.Signature,
-                        declaration.Signature))
-                    .SingleOrDefault(method =>
-                    current.Equals(declaration.DeclaringType) ||
-                    method.Definition.IsVirtual && !method.Definition.IsNewSlot);
+                var matching = candidates
+                    .Where(method => SameSignature(method.Signature, declaration.Signature))
+                    .ToArray();
+                // In the declaring type, the declaration itself, also where another
+                // overload's signature coincides with it once the type's parameters
+                // are substituted.
+                var overrideMethod = current.Equals(declaration.DeclaringType)
+                    ? matching.FirstOrDefault(method => method.Definition.Key == declaration.Definition.Key) ??
+                        matching.SingleOrDefault()
+                    : matching.SingleOrDefault(method => method.Definition.IsVirtual && !method.Definition.IsNewSlot);
                 if (overrideMethod is not null)
                 {
                     return overrideMethod;
@@ -213,6 +220,33 @@ internal sealed class DispatchTargetResolver(
                 ? method.DeclaringType.TypeArguments
                 : [],
             methodArguments);
+
+    // Overloads such as Box<T>.N(T) and N(int) coincide once T is int. The
+    // implementation is the one whose declared signature matches the interface
+    // method's, read through the interface as the type declares it, so N(T)
+    // implements IShape<T>.N (ECMA-335 II.12.2).
+    private MethodInstanceModel? DeclaredImplementation(
+        MethodInstanceModel[] matching,
+        CliTypeIdentity current,
+        TypeDefinitionModel definition,
+        MethodInstanceModel declaration)
+    {
+        if (current.Shape != CliTypeShape.GenericInstantiation)
+        {
+            return null;
+        }
+
+        var open = CliTypeIdentity.GenericInstantiation(
+            current.ElementType!,
+            [.. Enumerable.Range(0, definition.GenericArity)
+                .Select(index => CliTypeIdentity.GenericParameter(method: false, index))]);
+        var declared = implementedInterfaces.GetInterfaces(open)
+            .Where(implemented => implemented.Substitute(current.TypeArguments).Equals(declaration.DeclaringType))
+            .Select(implemented => declaration.Definition.Signature.Substitute(implemented.TypeArguments))
+            .ToArray();
+        return matching.SingleOrDefault(method =>
+            declared.Any(signature => SameSignature(method.Definition.Signature, signature)));
+    }
 
     private static bool SameSignature(
         MethodSignatureModel left,

@@ -29,4 +29,15 @@ public sealed record WasmOptimizationSettings(
     AllocationEliminationPolicy AllocationElimination = AllocationEliminationPolicy.Disabled,
     LoopRotationPolicy LoopRotation = LoopRotationPolicy.Disabled,
     ArrayStoreCheckEliminationPolicy ArrayStoreCheckElimination =
-        ArrayStoreCheckEliminationPolicy.Disabled);
+        ArrayStoreCheckEliminationPolicy.Disabled,
+    StaticInitializationHoistingPolicy StaticInitializationHoisting =
+        StaticInitializationHoistingPolicy.Disabled,
+    SmallBlockOperationPolicy SmallBlockOperations = SmallBlockOperationPolicy.Bulk,
+    DispatcherEliminationPolicy DispatcherElimination = DispatcherEliminationPolicy.Disabled,
+    EmptyFinallyRemovalPolicy EmptyFinallyRemoval = EmptyFinallyRemovalPolicy.Disabled,
+    StructScalarReplacementPolicy StructScalarReplacement = StructScalarReplacementPolicy.Disabled,
+    AllocationScalarReplacementPolicy AllocationScalarReplacement = AllocationScalarReplacementPolicy.Disabled,
+    IdempotentLoopCollapsePolicy IdempotentLoopCollapse = IdempotentLoopCollapsePolicy.Disabled,
+    LoopStoreForwardingPolicy LoopStoreForwarding = LoopStoreForwardingPolicy.Disabled,
+    ArrayLoopIdiomPolicy ArrayLoopIdioms = ArrayLoopIdiomPolicy.Disabled,
+    LoopVectorizationPolicy LoopVectorization = LoopVectorizationPolicy.Disabled);

@@ -1,5 +1,5 @@
 // Portions derived from dotnet/runtime System.Private.CoreLib's
-// ConfiguredCancelableAsyncEnumerable<T> at commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// ConfiguredCancelableAsyncEnumerable<T> at commit 474ed963699fc29809015392738a15231aaae2de.
 // Licensed to the .NET Foundation under one or more agreements; the .NET
 // Foundation licenses this file to you under the MIT license.
 

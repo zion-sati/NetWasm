@@ -83,6 +83,27 @@ public sealed class ArrayLoopInductionAnalyzerTests
         Assert.Empty(fixture.Analyzer.Analyze(flow));
     }
 
+    // A block nothing reaches, such as the code a rewrite leaves behind its last
+    // branch, can fall into the loop body without ever entering the loop.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void OnlyReachableBlocksEnterTheLoopBody(bool reachable, bool proves)
+    {
+        var fixture = Create(0, 1);
+        var graph = fixture.Flow.Graph;
+        var body = Assert.Single(fixture.Analyzer.Analyze(fixture.Flow)).BodyEntryBlock;
+        var outside = reachable ? graph.Entry.Index : graph.Blocks.Length;
+        var flow = fixture.Flow with
+        {
+            Graph = new(graph.MethodBody, graph.Blocks, graph.Successors,
+                graph.Predecessors.SetItem(body, graph.Predecessors[body].Add(outside)),
+                graph.ExceptionalSuccessors, graph.ExceptionalPredecessors, graph.ReachableBlocks)
+        };
+
+        Assert.Equal(proves ? 1 : 0, fixture.Analyzer.Analyze(flow).Length);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

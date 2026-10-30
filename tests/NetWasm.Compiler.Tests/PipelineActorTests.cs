@@ -106,7 +106,7 @@ public sealed class PipelineActorTests
         var method = ValidationTestData.Program().EntryPoint!.Key;
         var postReturn = new EntityKey(ValidationTestData.Assembly, 0x06000002);
         var function = new CanonicalAbiFunction(
-            "example:worker@1.0.0/math-api",
+            "example:worker/math-api@1.0.0",
             "add-value",
             method,
             [],
@@ -146,7 +146,7 @@ public sealed class PipelineActorTests
         var postReturn = new EntityKey(ValidationTestData.Assembly, 0x06000002);
         var conflicting = new EntityKey(ValidationTestData.Assembly, 0x06000003);
         var function = new CanonicalAbiFunction(
-            "example:worker@1.0.0/math-api",
+            "example:worker/math-api@1.0.0",
             "add-value",
             method,
             [],

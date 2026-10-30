@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 // Adapted from dotnet/runtime System.Collections.Immutable FrozenSet implementation at commit
-// 811225a482702af7ecc35d817966bc70b88a3a23.
+// 474ed963699fc29809015392738a15231aaae2de.
 
 using System.Collections.Generic;
 using System.Collections.Immutable;

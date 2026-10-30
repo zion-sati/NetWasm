@@ -26,6 +26,10 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
         new(ManagedExceptionKind.DivideByZero, "System.DivideByZeroException");
     private static readonly ReachabilityExceptionRequirement InvalidOperation =
         new(ManagedExceptionKind.InvalidOperation, "System.InvalidOperationException");
+    private static readonly ReachabilityExceptionRequirement ArgumentOutOfRange =
+        new(ManagedExceptionKind.ArgumentOutOfRange, "System.ArgumentOutOfRangeException");
+    private static readonly ReachabilityExceptionRequirement NotSupported =
+        new(ManagedExceptionKind.NotSupported, "System.NotSupportedException");
 
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
@@ -88,6 +92,15 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.EnumToObject => [ArgumentNull, Argument],
             RuntimeIntrinsic.IntegerDivRem => DivRemRequirements(method),
             RuntimeIntrinsic.EnumConvert => ConvertRequirements(method),
+            // A vector of an element type it does not support, as upstream.
+            RuntimeIntrinsic.SimdGetElement => [NotSupported, ArgumentOutOfRange],
+            // Integer lanes divide one by one, as upstream's Scalar<T>.Divide.
+            RuntimeIntrinsic.SimdDivide => [NotSupported, DivideByZero, Overflow],
+            RuntimeIntrinsic.PackedSimdInstruction when
+                PackedSimdInstructions.TryGet(method, out var instruction) &&
+                instruction.Shape is not (PackedSimdShape.Simple or PackedSimdShape.Memory) =>
+                [ArgumentOutOfRange],
+            _ when RuntimeIntrinsicKinds.IsSimdVector(intrinsic) => [NotSupported],
             _ => [],
         };
     }

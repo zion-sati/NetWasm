@@ -90,7 +90,7 @@ public sealed class EnvironmentCompilationTests
         {
             Exports = [new RequestedExport("run", "EnvironmentFixture.EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
             ExpectedEnvironmentReads = 1,
             ExpectedPreopenReads = 0,
             Environment = ImmutableDictionary<string, string>.Empty
@@ -161,7 +161,7 @@ public sealed class EnvironmentCompilationTests
         {
             Exports = [new RequestedExport("run", "EnvironmentFixture.EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
             ExpectedEnvironmentReads = 0,
             ExpectedPreopenReads = 0,
         });
@@ -243,7 +243,7 @@ public sealed class EnvironmentCompilationTests
         {
             Exports = [new RequestedExport("run", "EnvironmentFixture.EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
             ExpectedEnvironmentReads = 1,
             ExpectedPreopenReads = 0,
             Environment = ImmutableDictionary<string, string>.Empty

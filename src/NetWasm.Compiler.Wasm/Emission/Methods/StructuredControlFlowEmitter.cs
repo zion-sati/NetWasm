@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Arrays;
 using NetWasm.Compiler.Wasm.Encoding;
@@ -49,6 +52,36 @@ internal sealed class StructuredControlFlowEmitter(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(emitBlock);
         ArgumentNullException.ThrowIfNull(emitExceptionRegion);
+        // Labeled branches stay inside labeled regions, conditionals and
+        // loops, so every other construct starts without labels.
+        Emit(
+            code,
+            method,
+            sequence,
+            context,
+            emitBlock,
+            emitExceptionRegion,
+            loopBreakDepth,
+            loopContinueDepth,
+            exceptionLeaveDepth,
+            dispatcherContinueDepth,
+            ImmutableDictionary<StructuredBlockId, int>.Empty);
+    }
+
+    private void Emit(
+        IWasmInstructionWriter code,
+        StructuredMethod method,
+        StructuredSequence sequence,
+        MethodEmissionContext context,
+        Func<StructuredBlockOccurrence, bool, bool, ConditionValue> emitBlock,
+        Action<StructuredExceptionRegion, MethodEmissionContext, int?, int?, int?, int?>
+            emitExceptionRegion,
+        int? loopBreakDepth,
+        int? loopContinueDepth,
+        int? exceptionLeaveDepth,
+        int? dispatcherContinueDepth,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
+    {
 
         LogSequence(
             _diagnosticLogger,
@@ -111,6 +144,24 @@ internal sealed class StructuredControlFlowEmitter(
                             throw new InvalidOperationException(
                                 "structured dispatcher continuation was emitted outside a dispatcher")))));
                     break;
+                case StructuredLabeledBlock labeled:
+                    EmitLabeled(code, WasmOpcodes.Block, labeled.Next, labeled.Body, method, context, emitBlock,
+                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, exceptionLeaveDepth,
+                        dispatcherContinueDepth, labelDepths);
+                    break;
+                case StructuredLabeledLoop labeled:
+                    EmitLabeled(code, WasmOpcodes.Loop, labeled.Header, labeled.Body, method, context, emitBlock,
+                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, exceptionLeaveDepth,
+                        dispatcherContinueDepth, labelDepths);
+                    break;
+                case StructuredLabelBranch branch:
+                    code.Write(WasmInstruction.WithOperand(
+                        WasmOpcodes.Branch,
+                        WasmInstructionOperand.Unsigned((uint)(labelDepths.TryGetValue(branch.Target, out var depth)
+                            ? depth
+                            : throw new InvalidOperationException(
+                                "structured label branch was emitted outside its labeled region")))));
+                    break;
                 case StructuredExceptionRegion exception:
                     emitExceptionRegion(
                         exception,
@@ -169,9 +220,11 @@ internal sealed class StructuredControlFlowEmitter(
                         loopBreakDepth,
                         loopContinueDepth,
                         exceptionLeaveDepth,
-                        dispatcherContinueDepth);
+                        dispatcherContinueDepth,
+                        labelDepths);
                     break;
-                case StructuredLoop { Condition: { } rotatedCondition } loop when context.RotateLoops:
+                case StructuredLoop { Condition: { } rotatedCondition } loop
+                    when Rotates(context.LoopRotation, method, rotatedCondition.Block):
                     arraySnapshots.Emit(code, context, rotatedCondition.Block);
                     EmitRotatedLoop(
                         code,
@@ -184,7 +237,8 @@ internal sealed class StructuredControlFlowEmitter(
                         loopBreakDepth,
                         loopContinueDepth,
                         exceptionLeaveDepth,
-                        dispatcherContinueDepth);
+                        dispatcherContinueDepth,
+                        labelDepths);
                     break;
                 case StructuredLoop loop:
                     if (loop.Condition is { } loopCondition)
@@ -201,7 +255,8 @@ internal sealed class StructuredControlFlowEmitter(
                         loopBreakDepth,
                         loopContinueDepth,
                         exceptionLeaveDepth,
-                        dispatcherContinueDepth);
+                        dispatcherContinueDepth,
+                        labelDepths);
                     break;
                 case StructuredPostTestLoop loop:
                     arraySnapshots.Emit(code, context, loop.Condition.Block);
@@ -215,7 +270,8 @@ internal sealed class StructuredControlFlowEmitter(
                         loopBreakDepth,
                         loopContinueDepth,
                         exceptionLeaveDepth,
-                        dispatcherContinueDepth);
+                        dispatcherContinueDepth,
+                        labelDepths);
                     break;
                 default:
                     throw new InvalidOperationException(
@@ -245,7 +301,8 @@ internal sealed class StructuredControlFlowEmitter(
         int? loopBreakDepth,
         int? loopContinueDepth,
         int? exceptionLeaveDepth,
-        int? dispatcherContinueDepth)
+        int? dispatcherContinueDepth,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
     {
         EmitConditionValue(
             code,
@@ -271,7 +328,8 @@ internal sealed class StructuredControlFlowEmitter(
             exceptionLeaveDepth is int trueLeaveDepth ? trueLeaveDepth + 1 : null,
             dispatcherContinueDepth is int trueDispatcherDepth
                 ? trueDispatcherDepth + 1
-                : null);
+                : null,
+            Nested(labelDepths));
         if (!conditional.WhenFalse.Regions.IsEmpty)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
@@ -289,10 +347,65 @@ internal sealed class StructuredControlFlowEmitter(
                 exceptionLeaveDepth is int falseLeaveDepth ? falseLeaveDepth + 1 : null,
                 dispatcherContinueDepth is int falseDispatcherDepth
                     ? falseDispatcherDepth + 1
-                    : null);
+                    : null,
+                Nested(labelDepths));
         }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
+
+    // CallFree leaves a loop alone when its condition calls: the bottom copy
+    // would be the callee's second call site.
+    private static bool Rotates(LoopRotationPolicy policy, StructuredMethod method, StructuredBlockId condition) =>
+        policy switch
+        {
+            LoopRotationPolicy.Guarded => true,
+            LoopRotationPolicy.CallFree => !method.Blocks[condition].Instructions.Any(instruction =>
+                instruction.Operation is CilOperation.Call or CilOperation.CallVirtual or
+                    CilOperation.CallIndirect or CilOperation.NewObject),
+            _ => false,
+        };
+
+    // A Wasm block or loop whose label is the named block's.
+    private void EmitLabeled(
+        IWasmInstructionWriter code,
+        byte opcode,
+        StructuredBlockId label,
+        StructuredSequence body,
+        StructuredMethod method,
+        MethodEmissionContext context,
+        Func<StructuredBlockOccurrence, bool, bool, ConditionValue> emitBlock,
+        Action<StructuredExceptionRegion, MethodEmissionContext, int?, int?, int?, int?>
+            emitExceptionRegion,
+        int? loopBreakDepth,
+        int? loopContinueDepth,
+        int? exceptionLeaveDepth,
+        int? dispatcherContinueDepth,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
+    {
+        code.Write(WasmInstruction.WithOperand(
+            opcode,
+            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        Emit(
+            code,
+            method,
+            body,
+            context,
+            emitBlock,
+            emitExceptionRegion,
+            loopBreakDepth + 1,
+            loopContinueDepth + 1,
+            exceptionLeaveDepth + 1,
+            dispatcherContinueDepth + 1,
+            Nested(labelDepths).SetItem(label, 0));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    private static ImmutableDictionary<StructuredBlockId, int> Nested(
+        ImmutableDictionary<StructuredBlockId, int> labelDepths,
+        int levels = 1) =>
+        labelDepths.IsEmpty
+            ? labelDepths
+            : labelDepths.ToImmutableDictionary(label => label.Key, label => label.Value + levels);
 
     private void EmitLoop(
         IWasmInstructionWriter code,
@@ -305,7 +418,8 @@ internal sealed class StructuredControlFlowEmitter(
         int? outerLoopBreakDepth,
         int? outerLoopContinueDepth,
         int? exceptionLeaveDepth,
-        int? dispatcherContinueDepth)
+        int? dispatcherContinueDepth,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
     {
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
@@ -350,7 +464,8 @@ internal sealed class StructuredControlFlowEmitter(
             exceptionLeaveDepth is int leaveDepth ? leaveDepth + 4 : null,
             dispatcherContinueDepth is int bodyDispatcherDepth
                 ? bodyDispatcherDepth + 4
-                : null);
+                : null,
+            Nested(labelDepths, 4));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         Emit(
             code,
@@ -366,7 +481,8 @@ internal sealed class StructuredControlFlowEmitter(
                 : null,
             dispatcherContinueDepth is int continueDispatcherDepth
                 ? continueDispatcherDepth + 3
-                : null);
+                : null,
+            Nested(labelDepths, 3));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Branch,
             WasmInstructionOperand.Unsigned(0)));
@@ -390,7 +506,8 @@ internal sealed class StructuredControlFlowEmitter(
                 : null,
             dispatcherContinueDepth: dispatcherContinueDepth is int exitDispatcherDepth
                 ? exitDispatcherDepth + 1
-                : null);
+                : null,
+            labelDepths: Nested(labelDepths, 1));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
@@ -406,7 +523,8 @@ internal sealed class StructuredControlFlowEmitter(
         int? outerLoopBreakDepth,
         int? outerLoopContinueDepth,
         int? exceptionLeaveDepth,
-        int? dispatcherContinueDepth)
+        int? dispatcherContinueDepth,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
     {
         // The condition guards entry and repeats at the bottom, so each
         // iteration falls through its body and takes only the back edge.
@@ -448,7 +566,8 @@ internal sealed class StructuredControlFlowEmitter(
             exceptionLeaveDepth is int leaveDepth ? leaveDepth + 4 : null,
             dispatcherContinueDepth is int bodyDispatcherDepth
                 ? bodyDispatcherDepth + 4
-                : null);
+                : null,
+            Nested(labelDepths, 4));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         // A continue in the continuation still reaches the condition.
         code.Write(WasmInstruction.WithOperand(
@@ -468,7 +587,8 @@ internal sealed class StructuredControlFlowEmitter(
                 : null,
             dispatcherContinueDepth is int continueDispatcherDepth
                 ? continueDispatcherDepth + 4
-                : null);
+                : null,
+            Nested(labelDepths, 4));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         EmitConditionValue(code, context, emitBlock(condition, true, false));
         if (!loop.ContinueWhenConditionTrue)
@@ -498,7 +618,8 @@ internal sealed class StructuredControlFlowEmitter(
                 : null,
             dispatcherContinueDepth: dispatcherContinueDepth is int exitDispatcherDepth
                 ? exitDispatcherDepth + 1
-                : null);
+                : null,
+            labelDepths: Nested(labelDepths, 1));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
@@ -513,7 +634,8 @@ internal sealed class StructuredControlFlowEmitter(
         int? outerLoopBreakDepth,
         int? outerLoopContinueDepth,
         int? exceptionLeaveDepth,
-        int? dispatcherContinueDepth)
+        int? dispatcherContinueDepth,
+        ImmutableDictionary<StructuredBlockId, int> labelDepths)
     {
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
@@ -541,7 +663,8 @@ internal sealed class StructuredControlFlowEmitter(
             exceptionLeaveDepth is int bodyLeaveDepth ? bodyLeaveDepth + 4 : null,
             dispatcherContinueDepth is int bodyDispatcherDepth
                 ? bodyDispatcherDepth + 4
-                : null);
+                : null,
+            Nested(labelDepths, 4));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         EmitConditionValue(
             code,
@@ -571,7 +694,8 @@ internal sealed class StructuredControlFlowEmitter(
                 : null,
             dispatcherContinueDepth: dispatcherContinueDepth is int continueDispatcherDepth
                 ? continueDispatcherDepth + 4
-                : null);
+                : null,
+            labelDepths: Nested(labelDepths, 4));
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Branch,
             WasmInstructionOperand.Unsigned(1)));
@@ -596,7 +720,8 @@ internal sealed class StructuredControlFlowEmitter(
                 : null,
             dispatcherContinueDepth: dispatcherContinueDepth is int exitDispatcherDepth
                 ? exitDispatcherDepth + 1
-                : null);
+                : null,
+            labelDepths: Nested(labelDepths, 1));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 

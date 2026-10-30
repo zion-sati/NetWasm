@@ -17,12 +17,11 @@ public sealed class WasmLocalLayoutPlannerTests
         Assert.Equal(10, layout.I8Base);
         Assert.Equal(13, layout.F4Base);
         Assert.Equal(16, layout.F8Base);
-        Assert.Equal(19, layout.ReferenceBase);
-        Assert.Equal(22, layout.AddressBase);
-        Assert.Equal(25, layout.End);
+        Assert.Equal(19, layout.V128Base);
+        Assert.Equal(22, layout.End);
         Assert.Equal(8, layout.GetLocal(1, CliValueKind.I4));
-        Assert.Equal(20, layout.GetLocal(1, CliValueKind.ManagedReference));
-        Assert.Equal(23, layout.GetLocal(1, CliValueKind.ManagedAddress));
+        Assert.Equal(17, layout.GetLocal(1, CliValueKind.F8));
+        Assert.Equal(20, layout.GetLocal(1, CliValueKind.V128));
     }
 
     [Fact]
@@ -34,11 +33,13 @@ public sealed class WasmLocalLayoutPlannerTests
             layout, 1, CliValueKind.ManagedReference, WasmTargetLayout.Wasm32));
         Assert.Equal(6, WasmLocalLayoutPlanner.GetEvaluationStackLocal(
             layout, 1, CliValueKind.NativeInt, WasmTargetLayout.Wasm32));
-        Assert.Equal(14, WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+        // Every pointer-sized kind shares the slot's i64 local on Wasm64, as it
+        // shares the i32 local on Wasm32.
+        Assert.Equal(8, WasmLocalLayoutPlanner.GetEvaluationStackLocal(
             layout, 1, CliValueKind.ManagedReference, WasmTargetLayout.Wasm64));
         Assert.Equal(8, WasmLocalLayoutPlanner.GetEvaluationStackLocal(
             layout, 1, CliValueKind.NativeInt, WasmTargetLayout.Wasm64));
-        Assert.Equal(16, WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+        Assert.Equal(8, WasmLocalLayoutPlanner.GetEvaluationStackLocal(
             layout, 1, CliValueKind.ValueType, WasmTargetLayout.Wasm64));
     }
 
@@ -62,7 +63,7 @@ public sealed class WasmLocalLayoutPlannerTests
             2,
             ImmutableHashSet.Create(0));
 
-        Assert.Equal(35, locals.Length);
+        Assert.Equal(30, locals.Length);
         Assert.Equal(
             [
                 CliValueKind.ManagedAddress,
@@ -72,10 +73,9 @@ public sealed class WasmLocalLayoutPlannerTests
                 CliValueKind.I8, CliValueKind.I8,
                 CliValueKind.F4, CliValueKind.F4,
                 CliValueKind.F8, CliValueKind.F8,
-                CliValueKind.ManagedReference, CliValueKind.ManagedReference,
-                CliValueKind.ManagedAddress, CliValueKind.ManagedAddress,
+                CliValueKind.V128, CliValueKind.V128,
             ],
-            locals.Take(15));
+            locals.Take(13));
         Assert.Equal(
             [
                 CliValueKind.ManagedReference,
@@ -84,19 +84,9 @@ public sealed class WasmLocalLayoutPlannerTests
                 CliValueKind.I4, CliValueKind.I4, CliValueKind.I4, CliValueKind.I4,
                 CliValueKind.ManagedAddress,
                 CliValueKind.ManagedAddress,
-                CliValueKind.ManagedAddress,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I8,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.I4,
+                .. WasmLocalLayoutPlanner.TemporaryLocals,
             ],
-            locals.Skip(15));
+            locals.Skip(13));
     }
 
     [Fact]
@@ -119,7 +109,8 @@ public sealed class WasmLocalLayoutPlannerTests
         Assert.Equal(CliValueKind.I4, locals[0]);
         Assert.Equal(CliValueKind.ManagedAddress, locals[1]);
         Assert.Equal(CliValueKind.ManagedReference, locals[2]);
-        Assert.Equal(18, locals.Length);
+        Assert.Equal(20, locals.Length);
+        Assert.Equal(WasmLocalLayoutPlanner.TemporaryLocals, locals.TakeLast(8));
     }
 
     [Fact]

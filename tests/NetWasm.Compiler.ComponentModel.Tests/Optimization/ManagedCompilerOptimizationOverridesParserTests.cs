@@ -10,7 +10,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
         get
         {
             var data = new TheoryData<int, string?>();
-            for (var feature = 0; feature < 10; feature++)
+            for (var feature = 0; feature < 18; feature++)
                 foreach (var value in new string?[] { null, "Auto", "Disabled", "Enabled", "enabled", "", "2" })
                     data.Add(feature, value);
             return data;
@@ -32,7 +32,15 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
             devirtualization: feature == 6 ? value : null,
             allocationElimination: feature == 7 ? value : null,
             loopRotation: feature == 8 ? value : null,
-            arrayStoreCheckElimination: feature == 9 ? value : null);
+            arrayStoreCheckElimination: feature == 9 ? value : null,
+            dispatcherElimination: feature == 10 ? value : null,
+            emptyFinallyRemoval: feature == 11 ? value : null,
+            structScalarReplacement: feature == 12 ? value : null,
+            allocationScalarReplacement: feature == 13 ? value : null,
+            idempotentLoopCollapse: feature == 14 ? value : null,
+            loopStoreForwarding: feature == 15 ? value : null,
+            arrayLoopIdioms: feature == 16 ? value : null,
+            loopVectorization: feature == 17 ? value : null);
         if (value is null or "Auto")
         {
             Assert.Null(Parse());
@@ -64,8 +72,24 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
                 ? ManagedAllocationElimination.Enabled : ManagedAllocationElimination.Disabled),
             8 => new WasmOptimizationOverrides(LoopRotation: enabled
                 ? ManagedLoopRotation.Enabled : ManagedLoopRotation.Disabled),
-            _ => new WasmOptimizationOverrides(ArrayStoreCheckElimination: enabled
+            9 => new WasmOptimizationOverrides(ArrayStoreCheckElimination: enabled
                 ? ManagedArrayStoreCheckElimination.Enabled : ManagedArrayStoreCheckElimination.Disabled),
+            10 => new WasmOptimizationOverrides(DispatcherElimination: enabled
+                ? ManagedDispatcherElimination.Enabled : ManagedDispatcherElimination.Disabled),
+            11 => new WasmOptimizationOverrides(EmptyFinallyRemoval: enabled
+                ? ManagedEmptyFinallyRemoval.Enabled : ManagedEmptyFinallyRemoval.Disabled),
+            12 => new WasmOptimizationOverrides(StructScalarReplacement: enabled
+                ? ManagedStructScalarReplacement.Enabled : ManagedStructScalarReplacement.Disabled),
+            13 => new WasmOptimizationOverrides(AllocationScalarReplacement: enabled
+                ? ManagedAllocationScalarReplacement.Enabled : ManagedAllocationScalarReplacement.Disabled),
+            14 => new WasmOptimizationOverrides(IdempotentLoopCollapse: enabled
+                ? ManagedIdempotentLoopCollapse.Enabled : ManagedIdempotentLoopCollapse.Disabled),
+            15 => new WasmOptimizationOverrides(LoopStoreForwarding: enabled
+                ? ManagedLoopStoreForwarding.Enabled : ManagedLoopStoreForwarding.Disabled),
+            16 => new WasmOptimizationOverrides(ArrayLoopIdioms: enabled
+                ? ManagedArrayLoopIdioms.Enabled : ManagedArrayLoopIdioms.Disabled),
+            _ => new WasmOptimizationOverrides(LoopVectorization: enabled
+                ? ManagedLoopVectorization.Enabled : ManagedLoopVectorization.Disabled),
         };
         Assert.Equal(expected, Parse());
     }
@@ -149,6 +173,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
     [InlineData("Auto", ManagedMethodInlining.Auto)]
     [InlineData("Disabled", ManagedMethodInlining.Disabled)]
     [InlineData("Enabled", ManagedMethodInlining.Enabled)]
+    [InlineData("Loops", ManagedMethodInlining.Loops)]
     public void ParsesManagedMethodInlining(
         string value,
         ManagedMethodInlining expected)
@@ -206,7 +231,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
 
         Assert.Contains("method inlining", error.Diagnostic.Message,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Auto, Disabled or Enabled", error.Diagnostic.Message,
+        Assert.Contains("Auto, Disabled, Enabled or Loops", error.Diagnostic.Message,
             StringComparison.Ordinal);
     }
 

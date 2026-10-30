@@ -119,18 +119,18 @@ public sealed class ComponentManifestBuilderTests
             0,
             "app",
             "example:test@1.0.0",
-            [new WitWorldItem("api", 0, null), directImport],
-            [new WitWorldItem("api", 0, null), directExport]);
+            [new WitWorldItem("example:test/api@1.0.0", 0, null), directImport],
+            [new WitWorldItem("example:test/api@1.0.0", 0, null), directExport]);
         var document = new WitDocument([], [@interface], [world], [], "{}");
 
         var manifest = new ComponentManifestBuilder(new StubWasmTools())
             .Build(document, world, ComponentTarget.Wasm32Wasi02,
                 new(ComponentJavaScriptBoundary.Empty, ComponentAdapterVersions.None));
 
-        Assert.Equal(["example:test@1.0.0/api"], manifest.ImportedInterfaces);
-        Assert.Equal(["example:test@1.0.0/api"], manifest.ExportedInterfaces);
-        Assert.Equal(["example:test@1.0.0/api#alpha", "example:test@1.0.0/api#zeta", "notify"], manifest.ImportedFunctions);
-        Assert.Equal(["example:test@1.0.0/api#alpha", "example:test@1.0.0/api#zeta", "run"], manifest.ExportedFunctions);
+        Assert.Equal(["example:test/api@1.0.0"], manifest.ImportedInterfaces);
+        Assert.Equal(["example:test/api@1.0.0"], manifest.ExportedInterfaces);
+        Assert.Equal(["example:test/api@1.0.0#alpha", "example:test/api@1.0.0#zeta", "notify"], manifest.ImportedFunctions);
+        Assert.Equal(["example:test/api@1.0.0#alpha", "example:test/api@1.0.0#zeta", "run"], manifest.ExportedFunctions);
     }
 
     [Fact]

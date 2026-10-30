@@ -11,5 +11,7 @@ internal interface IWasmMethodProgramBuilder
         IReadOnlyDictionary<EntityKey, ManagedMethodBody> methods,
         IReadOnlyDictionary<string, ManagedMethodBody> constructedMethods,
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware);
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled);
 }

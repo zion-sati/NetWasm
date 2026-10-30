@@ -265,12 +265,15 @@
   <!-- C# bindings for each NetWasmWit item. Include is a WIT file or a WIT
        package directory; World selects a world (default: the package's only
        one), Namespace sets the generated namespace and Accessibility is Public
-       (default) or Internal. -->
+       (default) or Internal. The generator reads the WIT the compiler reads:
+       in a WIT worker, a package directory with NetWasm's platform package
+       among its dependencies, as the worker's own WIT has. -->
   <Target Name="_NetWasmResolveWitBindings"
           BeforeTargets="CoreCompile"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(NetWasmWit)' != ''">
     <PropertyGroup>
       <_NetWasmWitBindingDirectory>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'wit-bindings'))))</_NetWasmWitBindingDirectory>
+      <_NetWasmWitBindingGeneratorPath>$([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'netwasm.wit.bindings.tool', '$(NetWasmSdkPackageVersion)', 'tools', 'net10.0', 'any', 'NetWasm.Wit.Bindings.dll'))</_NetWasmWitBindingGeneratorPath>
     </PropertyGroup>
     <ItemGroup>
       <_NetWasmWitBinding Remove="@(_NetWasmWitBinding)" />
@@ -281,6 +284,10 @@
       </_NetWasmWitBinding>
       <_NetWasmWitBinding>
         <BindingPath>$(_NetWasmWitBindingDirectory)/%(_NetWasmWitBinding.Filename)%(_NetWasmWitBinding.Extension).g.cs</BindingPath>
+        <GeneratorInput>%(_NetWasmWitBinding.Identity)</GeneratorInput>
+      </_NetWasmWitBinding>
+      <_NetWasmWitBinding Condition="'$(_NetWasmWorkerKind)' == 'wit' AND Exists('%(_NetWasmWitBinding.Identity)/')">
+        <GeneratorInput>$(_NetWasmWitBindingDirectory)/%(_NetWasmWitBinding.Filename)%(_NetWasmWitBinding.Extension).package</GeneratorInput>
       </_NetWasmWitBinding>
       <_NetWasmWitBinding>
         <Arguments Condition="'%(_NetWasmWitBinding.World)' != ''">--world &quot;%(_NetWasmWitBinding.World)&quot;</Arguments>
@@ -318,10 +325,9 @@
           BeforeTargets="NetWasmWriteCompilationIdentity;CoreCompile"
           DependsOnTargets="NetWasmSdkResolveBuildEnvironment;_NetWasmResolveWitBindings"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(NetWasmWit)' != '' AND '$(DesignTimeBuild)' != 'true'"
-          Inputs="@(_NetWasmWitBindingInput);$(MSBuildProjectFullPath)"
+          Inputs="@(_NetWasmWitBindingInput);$(MSBuildProjectFullPath);$(_NetWasmWitBindingGeneratorPath);$(NetWasmResolvedCompilerWitPackagePath)"
           Outputs="@(_NetWasmWitBindingOutput)">
     <PropertyGroup>
-      <_NetWasmWitBindingGeneratorPath>$([System.IO.Path]::Combine('$(NuGetPackageRoot)', 'netwasm.wit.bindings.tool', '$(NetWasmSdkPackageVersion)', 'tools', 'net10.0', 'any', 'NetWasm.Wit.Bindings.dll'))</_NetWasmWitBindingGeneratorPath>
       <_NetWasmWitBindingDotNetHost Condition="'$(DotNetHostPath)' != ''">$(DotNetHostPath)</_NetWasmWitBindingDotNetHost>
       <_NetWasmWitBindingDotNetHost Condition="'$(_NetWasmWitBindingDotNetHost)' == '' AND '$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</_NetWasmWitBindingDotNetHost>
       <_NetWasmWitBindingDotNetHost Condition="'$(_NetWasmWitBindingDotNetHost)' == ''">dotnet</_NetWasmWitBindingDotNetHost>
@@ -329,9 +335,13 @@
     <Error Condition="!Exists('$(_NetWasmWitBindingGeneratorPath)')"
            Text="The restored NetWasm.Wit.Bindings.Tool generator is missing. Run dotnet restore." />
     <MakeDir Directories="$(_NetWasmWitBindingDirectory)" />
+    <NetWasmMaterializeWitWorkerPackageTask Condition="'%(_NetWasmWitBinding.GeneratorInput)' != '%(_NetWasmWitBinding.Identity)'"
+                                             AuthoredWitPath="%(_NetWasmWitBinding.Identity)"
+                                             PlatformWitPackagePath="$(NetWasmResolvedCompilerWitPackagePath)"
+                                             OutputDirectory="%(_NetWasmWitBinding.GeneratorInput)" />
     <!-- The generator reads WIT through wasm-tools, which runs on the restored Node. -->
     <Exec EnvironmentVariables="DOTNET_ROLL_FORWARD=Major;NETWASM_NODE_PATH=$(NetWasmNodePath)"
-          Command="&quot;$(_NetWasmWitBindingDotNetHost)&quot; &quot;$(_NetWasmWitBindingGeneratorPath)&quot; --wit &quot;%(_NetWasmWitBinding.Identity)&quot; --output &quot;%(_NetWasmWitBinding.BindingPath)&quot; %(_NetWasmWitBinding.Arguments)" />
+          Command="&quot;$(_NetWasmWitBindingDotNetHost)&quot; &quot;$(_NetWasmWitBindingGeneratorPath)&quot; --wit &quot;%(_NetWasmWitBinding.GeneratorInput)&quot; --output &quot;%(_NetWasmWitBinding.BindingPath)&quot; %(_NetWasmWitBinding.Arguments)" />
   </Target>
 
   <!-- What a NetWasmWorker project reference is: a WIT worker, or a JsModule
@@ -442,7 +452,7 @@
     <NetWasmComponentWitVariant Include="$(NetWasmToolchainAsyncCommandWitPackagePath)"
                                 Condition="'$(NetWasmComponentContract)' == 'async-command' AND '$(NetWasmToolchainAsyncCommandWitPackagePath)' != ''">
       <World>netwasm:component@1.0.0/async-http-command</World>
-      <ActivationInterfacePrefix>wasi:http@0.2.11/</ActivationInterfacePrefix>
+      <ActivationInterfacePrefix>wasi:http/</ActivationInterfacePrefix>
     </NetWasmComponentWitVariant>
     <NetWasmComponentInput Include="$(NetWasmCoreModuleOutputPath)"
                             Condition="'$(NetWasmCoreModuleOutputPath)' != ''">

@@ -550,7 +550,9 @@ public sealed class CompilationPipelineCompositionTests
         public StructuredMethod Lower(
             ManagedMethodBody method,
             BranchPrefixDuplicationPolicy branchPrefixDuplication =
-                BranchPrefixDuplicationPolicy.SizeAware)
+                BranchPrefixDuplicationPolicy.SizeAware,
+            DispatcherEliminationPolicy dispatcherElimination =
+                DispatcherEliminationPolicy.Disabled)
         {
             if (!calls.Contains("wasm-lower"))
             {

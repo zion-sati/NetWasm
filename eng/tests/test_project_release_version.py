@@ -57,18 +57,18 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         self.assertEqual(receipt, json.loads(receipt_path.read_text()))
         receipt_path.unlink()
 
-    def test_projects_shared_app_template_sdk_version(self) -> None:
-        template_global_json = (
+    def test_projects_template_project_sdk_version(self) -> None:
+        template_project = (
             self.root
-            / "src/NetWasm.Templates/content/NetWasm.App/base/global.json"
+            / "src/NetWasm.Templates/content/NetWasm.App/console/NetWasmProject.csproj"
         )
-        template_global_json.parent.mkdir(parents=True)
-        template_global_json.write_text(
-            '{"msbuild-sdks":{"NetWasm.Sdk":"0.1.0-rc.1"}}\n',
+        template_project.parent.mkdir(parents=True)
+        template_project.write_text(
+            '<Project Sdk="NetWasm.Sdk/0.1.0-rc.1">\n</Project>\n',
             encoding="utf-8",
         )
         subprocess.run(
-            ["git", "-C", str(self.root), "add", template_global_json], check=True
+            ["git", "-C", str(self.root), "add", template_project], check=True
         )
         subprocess.run(
             ["git", "-C", str(self.root), "commit", "--quiet", "-m", "template"],
@@ -80,9 +80,22 @@ class ProjectReleaseVersionTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            '{"msbuild-sdks":{"NetWasm.Sdk":"0.1.0-alpha.1"}}\n',
-            template_global_json.read_text(encoding="utf-8"),
+            '<Project Sdk="NetWasm.Sdk/0.1.0-alpha.1">\n</Project>\n',
+            template_project.read_text(encoding="utf-8"),
         )
+
+    def test_rejects_a_template_project_at_another_version(self) -> None:
+        template_project = (
+            self.root
+            / "src/NetWasm.Templates/content/NetWasm.Library/NetWasmLibrary.csproj"
+        )
+        template_project.parent.mkdir(parents=True)
+        template_project.write_text('<Project Sdk="NetWasm.Sdk/0.0.9">\n</Project>\n', encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", template_project], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "--quiet", "-m", "template"], check=True)
+
+        with self.assertRaisesRegex(ValueError, "NetWasm.Sdk reference"):
+            MODULE.project_version(self.root, "0.1.0-alpha.1", self.root / "receipt.json")
 
     def test_rejects_invalid_version(self) -> None:
         with self.assertRaisesRegex(ValueError, "Invalid release version"):

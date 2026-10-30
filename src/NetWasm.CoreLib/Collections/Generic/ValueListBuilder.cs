@@ -168,23 +168,12 @@ namespace System.Collections.Generic
 
             if (toReturn != null)
             {
-#if SYSTEM_PRIVATE_CORELIB
-                if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-                {
-                    ArrayPool<T>.Shared.Return(toReturn, pos);
-                }
-                else
-                {
-                    ArrayPool<T>.Shared.Return(toReturn);
-                }
-#else
                 if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
                 {
                     Array.Clear(toReturn, 0, pos);
                 }
 
                 ArrayPool<T>.Shared.Return(toReturn);
-#endif
             }
         }
 
@@ -232,23 +221,12 @@ namespace System.Collections.Generic
             _span = _arrayFromPool = array;
             if (toReturn != null)
             {
-#if SYSTEM_PRIVATE_CORELIB
-                if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-                {
-                    ArrayPool<T>.Shared.Return(toReturn, _pos);
-                }
-                else
-                {
-                    ArrayPool<T>.Shared.Return(toReturn);
-                }
-#else
                 if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
                 {
                     Array.Clear(toReturn, 0, _pos);
                 }
 
                 ArrayPool<T>.Shared.Return(toReturn);
-#endif
             }
         }
     }

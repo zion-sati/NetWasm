@@ -17,10 +17,13 @@ public interface IRootMapAnalyzerFactory
 
 public sealed class RootMapAnalyzerFactory(
     IRootDecisionClassifierFactory rootDecisions,
+    ICalleeArgumentRootingClassifierFactory calleeArguments,
     IRootSlotAllocator rootSlots) : IRootMapAnalyzerFactory
 {
     private readonly IRootDecisionClassifierFactory _rootDecisions =
         rootDecisions ?? throw new ArgumentNullException(nameof(rootDecisions));
+    private readonly ICalleeArgumentRootingClassifierFactory _calleeArguments =
+        calleeArguments ?? throw new ArgumentNullException(nameof(calleeArguments));
     private readonly IRootSlotAllocator _rootSlots =
         rootSlots ?? throw new ArgumentNullException(nameof(rootSlots));
 
@@ -39,6 +42,7 @@ public sealed class RootMapAnalyzerFactory(
             continuations,
             new StackStorageAnchorPlanner(continuations),
             _rootDecisions.Create(types, fields, methods, dispatchCallSites, typeClassifier),
+            _calleeArguments.Create(types, methods, dispatchCallSites, typeClassifier),
             _rootSlots);
     }
 }

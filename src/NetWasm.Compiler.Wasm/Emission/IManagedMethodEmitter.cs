@@ -1,5 +1,6 @@
 using System;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission.Methods;
@@ -34,7 +35,8 @@ internal interface IManagedMethodEmitter
         bool enableArrayMetadataCaching = false,
         bool enableScalarCallPreservation = false,
         bool hoistArrayNullChecks = false,
-        bool rotateLoops = false,
+        LoopRotationPolicy loopRotation = LoopRotationPolicy.Disabled,
         bool eliminateArrayStoreChecks = false,
-        OptionalFunctionIndex managedThrowFunction = default);
+        OptionalFunctionIndex managedThrowFunction = default,
+        bool inlineSmallBlocks = false);
 }

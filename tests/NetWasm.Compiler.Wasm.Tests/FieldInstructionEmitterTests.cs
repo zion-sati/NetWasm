@@ -105,7 +105,8 @@ public sealed class FieldInstructionEmitterTests
             0,
             CliValueKind.ManagedAddress,
             WasmTargetLayout.Wasm64);
-        Assert.NotEqual(managedAddressLocal, nativeLocal);
+        // A native pointer and a managed address share the slot's i64 local.
+        Assert.Equal(managedAddressLocal, nativeLocal);
         Assert.Equal(WasmOpcodes.LocalGet, instructions[0].Opcode);
         Assert.Equal((uint)nativeLocal, instructions[0].Operand.UnsignedValue);
     }

@@ -5,6 +5,64 @@ namespace NetWasm.Compiler.ComponentModel.Tests.Optimization;
 
 public sealed class WasmOptimizationSettingsResolverTests
 {
+    // O3 rotates every conditional loop; Oz only those whose condition makes no call.
+    private static LoopRotationPolicy LoopRotation(FinalWasmOptimization preset) => preset switch
+    {
+        FinalWasmOptimization.O3 => LoopRotationPolicy.Guarded,
+        FinalWasmOptimization.Oz => LoopRotationPolicy.CallFree,
+        _ => LoopRotationPolicy.Disabled,
+    };
+
+    private static StaticInitializationHoistingPolicy StaticInitializationHoisting(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? StaticInitializationHoistingPolicy.Disabled
+            : StaticInitializationHoistingPolicy.MethodEntry;
+
+    private static SmallBlockOperationPolicy SmallBlockOperations(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+            ? SmallBlockOperationPolicy.Inline
+            : SmallBlockOperationPolicy.Bulk;
+
+    private static DispatcherEliminationPolicy DispatcherElimination(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? DispatcherEliminationPolicy.Disabled
+            : DispatcherEliminationPolicy.Reducible;
+
+    private static EmptyFinallyRemovalPolicy EmptyFinallyRemoval(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? EmptyFinallyRemovalPolicy.Disabled
+            : EmptyFinallyRemovalPolicy.EmptyHandlers;
+
+    private static StructScalarReplacementPolicy StructScalarReplacement(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? StructScalarReplacementPolicy.Disabled
+            : StructScalarReplacementPolicy.FieldAccessedLocals;
+
+    private static AllocationScalarReplacementPolicy AllocationScalarReplacement(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? AllocationScalarReplacementPolicy.Disabled
+            : AllocationScalarReplacementPolicy.NonEscapingObjects;
+
+    private static IdempotentLoopCollapsePolicy IdempotentLoopCollapse(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? IdempotentLoopCollapsePolicy.Disabled
+            : IdempotentLoopCollapsePolicy.CountedLoops;
+
+    private static LoopStoreForwardingPolicy LoopStoreForwarding(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? LoopStoreForwardingPolicy.Disabled
+            : LoopStoreForwardingPolicy.Elements;
+
+    private static ArrayLoopIdiomPolicy ArrayLoopIdioms(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+            ? ArrayLoopIdiomPolicy.Bulk
+            : ArrayLoopIdiomPolicy.Disabled;
+
+    private static LoopVectorizationPolicy LoopVectorization(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+            ? LoopVectorizationPolicy.CountedLoops
+            : LoopVectorizationPolicy.Disabled;
+
     private static bool WholeProgramDefault(FinalWasmOptimization preset) => preset switch
     {
         FinalWasmOptimization.None or FinalWasmOptimization.O0 or FinalWasmOptimization.O1 => false,
@@ -37,6 +95,22 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedLoopRotation.Enabled : ManagedLoopRotation.Disabled));
             var storeChecks = resolver.Resolve(preset, new(ArrayStoreCheckElimination: enabled
                 ? ManagedArrayStoreCheckElimination.Enabled : ManagedArrayStoreCheckElimination.Disabled));
+            var dispatchers = resolver.Resolve(preset, new(DispatcherElimination: enabled
+                ? ManagedDispatcherElimination.Enabled : ManagedDispatcherElimination.Disabled));
+            var emptyFinallys = resolver.Resolve(preset, new(EmptyFinallyRemoval: enabled
+                ? ManagedEmptyFinallyRemoval.Enabled : ManagedEmptyFinallyRemoval.Disabled));
+            var structs = resolver.Resolve(preset, new(StructScalarReplacement: enabled
+                ? ManagedStructScalarReplacement.Enabled : ManagedStructScalarReplacement.Disabled));
+            var allocationScalars = resolver.Resolve(preset, new(AllocationScalarReplacement: enabled
+                ? ManagedAllocationScalarReplacement.Enabled : ManagedAllocationScalarReplacement.Disabled));
+            var idempotentLoops = resolver.Resolve(preset, new(IdempotentLoopCollapse: enabled
+                ? ManagedIdempotentLoopCollapse.Enabled : ManagedIdempotentLoopCollapse.Disabled));
+            var loopStores = resolver.Resolve(preset, new(LoopStoreForwarding: enabled
+                ? ManagedLoopStoreForwarding.Enabled : ManagedLoopStoreForwarding.Disabled));
+            var arrayLoops = resolver.Resolve(preset, new(ArrayLoopIdioms: enabled
+                ? ManagedArrayLoopIdioms.Enabled : ManagedArrayLoopIdioms.Disabled));
+            var vectorization = resolver.Resolve(preset, new(LoopVectorization: enabled
+                ? ManagedLoopVectorization.Enabled : ManagedLoopVectorization.Disabled));
             Assert.Equal(baseline with
             {
                 ConstantArgumentPropagation = enabled ? ConstantArgumentPropagationPolicy.Conservative : ConstantArgumentPropagationPolicy.Disabled,
@@ -70,6 +144,46 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ArrayStoreCheckElimination = enabled
                     ? ArrayStoreCheckEliminationPolicy.ExactElementTypes : ArrayStoreCheckEliminationPolicy.Disabled,
             }, storeChecks);
+            Assert.Equal(baseline with
+            {
+                DispatcherElimination = enabled
+                    ? DispatcherEliminationPolicy.Reducible : DispatcherEliminationPolicy.Disabled,
+            }, dispatchers);
+            Assert.Equal(baseline with
+            {
+                EmptyFinallyRemoval = enabled
+                    ? EmptyFinallyRemovalPolicy.EmptyHandlers : EmptyFinallyRemovalPolicy.Disabled,
+            }, emptyFinallys);
+            Assert.Equal(baseline with
+            {
+                StructScalarReplacement = enabled
+                    ? StructScalarReplacementPolicy.FieldAccessedLocals : StructScalarReplacementPolicy.Disabled,
+            }, structs);
+            Assert.Equal(baseline with
+            {
+                AllocationScalarReplacement = enabled
+                    ? AllocationScalarReplacementPolicy.NonEscapingObjects : AllocationScalarReplacementPolicy.Disabled,
+            }, allocationScalars);
+            Assert.Equal(baseline with
+            {
+                IdempotentLoopCollapse = enabled
+                    ? IdempotentLoopCollapsePolicy.CountedLoops : IdempotentLoopCollapsePolicy.Disabled,
+            }, idempotentLoops);
+            Assert.Equal(baseline with
+            {
+                LoopStoreForwarding = enabled
+                    ? LoopStoreForwardingPolicy.Elements : LoopStoreForwardingPolicy.Disabled,
+            }, loopStores);
+            Assert.Equal(baseline with
+            {
+                ArrayLoopIdioms = enabled
+                    ? ArrayLoopIdiomPolicy.Bulk : ArrayLoopIdiomPolicy.Disabled,
+            }, arrayLoops);
+            Assert.Equal(baseline with
+            {
+                LoopVectorization = enabled
+                    ? LoopVectorizationPolicy.CountedLoops : LoopVectorizationPolicy.Disabled,
+            }, vectorization);
         }
     }
 
@@ -93,6 +207,22 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(LoopRotation: (ManagedLoopRotation)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(ArrayStoreCheckElimination: (ManagedArrayStoreCheckElimination)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(DispatcherElimination: (ManagedDispatcherElimination)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(EmptyFinallyRemoval: (ManagedEmptyFinallyRemoval)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(StructScalarReplacement: (ManagedStructScalarReplacement)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(AllocationScalarReplacement: (ManagedAllocationScalarReplacement)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(IdempotentLoopCollapse: (ManagedIdempotentLoopCollapse)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(LoopStoreForwarding: (ManagedLoopStoreForwarding)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(ArrayLoopIdioms: (ManagedArrayLoopIdioms)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(LoopVectorization: (ManagedLoopVectorization)255)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
@@ -110,6 +240,22 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(ArrayStoreCheckElimination: ManagedArrayStoreCheckElimination.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(DispatcherElimination: ManagedDispatcherElimination.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(EmptyFinallyRemoval: ManagedEmptyFinallyRemoval.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(StructScalarReplacement: ManagedStructScalarReplacement.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(AllocationScalarReplacement: ManagedAllocationScalarReplacement.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(IdempotentLoopCollapse: ManagedIdempotentLoopCollapse.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(LoopStoreForwarding: ManagedLoopStoreForwarding.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(ArrayLoopIdioms: ManagedArrayLoopIdioms.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(LoopVectorization: ManagedLoopVectorization.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Disabled,
@@ -119,7 +265,15 @@ public sealed class WasmOptimizationSettingsResolverTests
                 Devirtualization: ManagedDevirtualization.Disabled,
                 AllocationElimination: ManagedAllocationElimination.Disabled,
                 LoopRotation: ManagedLoopRotation.Disabled,
-                ArrayStoreCheckElimination: ManagedArrayStoreCheckElimination.Disabled)));
+                ArrayStoreCheckElimination: ManagedArrayStoreCheckElimination.Disabled,
+                DispatcherElimination: ManagedDispatcherElimination.Disabled,
+                EmptyFinallyRemoval: ManagedEmptyFinallyRemoval.Disabled,
+                StructScalarReplacement: ManagedStructScalarReplacement.Disabled,
+                AllocationScalarReplacement: ManagedAllocationScalarReplacement.Disabled,
+                IdempotentLoopCollapse: ManagedIdempotentLoopCollapse.Disabled,
+                LoopStoreForwarding: ManagedLoopStoreForwarding.Disabled,
+                ArrayLoopIdioms: ManagedArrayLoopIdioms.Disabled,
+                LoopVectorization: ManagedLoopVectorization.Disabled)));
     }
 
     [Theory]
@@ -133,11 +287,11 @@ public sealed class WasmOptimizationSettingsResolverTests
         BranchPrefixDuplicationPolicy.Disabled)]
     [InlineData(FinalWasmOptimization.O1, WasmInlineAnnotationSelection.Preserve,
         LoopInvariantFieldHoistingPolicy.Disabled, StaticDataViewEliminationPolicy.Disabled,
-        AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Disabled,
+        AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Aggressive,
         BranchPrefixDuplicationPolicy.Speed)]
     [InlineData(FinalWasmOptimization.O2, WasmInlineAnnotationSelection.Preserve,
         LoopInvariantFieldHoistingPolicy.Conservative, StaticDataViewEliminationPolicy.Conservative,
-        AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Disabled,
+        AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Loops,
         BranchPrefixDuplicationPolicy.Speed)]
     [InlineData(FinalWasmOptimization.O3, WasmInlineAnnotationSelection.Preserve,
         LoopInvariantFieldHoistingPolicy.NullChecks, StaticDataViewEliminationPolicy.Conservative,
@@ -148,8 +302,8 @@ public sealed class WasmOptimizationSettingsResolverTests
         AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Disabled,
         BranchPrefixDuplicationPolicy.SizeAware)]
     [InlineData(FinalWasmOptimization.Oz, WasmInlineAnnotationSelection.SizeAware,
-        LoopInvariantFieldHoistingPolicy.Disabled, StaticDataViewEliminationPolicy.Disabled,
-        AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Disabled,
+        LoopInvariantFieldHoistingPolicy.NullChecks, StaticDataViewEliminationPolicy.Conservative,
+        AddressTakenValuePromotionPolicy.References, ManagedMethodInliningPolicy.Loops,
         BranchPrefixDuplicationPolicy.SizeAware)]
     public void PreservesPresetDefaults(
         FinalWasmOptimization preset,
@@ -161,9 +315,11 @@ public sealed class WasmOptimizationSettingsResolverTests
         BranchPrefixDuplicationPolicy branchPrefixDuplication)
     {
         var resolver = Create();
+        // Managed AggressiveInlining hints also survive at Oz; the runtime's follow the preset.
+        var managedSelection = preset == FinalWasmOptimization.Oz ? WasmInlineAnnotationSelection.Preserve : selection;
         var expected = new WasmOptimizationSettings(
             preset,
-            selection,
+            managedSelection,
             selection,
             fieldHoisting,
             staticDataViews,
@@ -173,7 +329,7 @@ public sealed class WasmOptimizationSettingsResolverTests
             preset == FinalWasmOptimization.O3
                 ? ScalarCallPreservationPolicy.Conservative
                 : ScalarCallPreservationPolicy.Disabled,
-            preset == FinalWasmOptimization.O3
+            preset is FinalWasmOptimization.O3 or FinalWasmOptimization.Oz
                 ? ArrayBoundsCheckEliminationPolicy.Conservative
                 : ArrayBoundsCheckEliminationPolicy.Disabled,
             preset == FinalWasmOptimization.O3 ? LoopUnrollingPolicy.Bounded : LoopUnrollingPolicy.Disabled,
@@ -183,13 +339,23 @@ public sealed class WasmOptimizationSettingsResolverTests
             preset is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? SwitchBitTestPolicy.Disabled : SwitchBitTestPolicy.Conservative,
             preset is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? DevirtualizationPolicy.Disabled : DevirtualizationPolicy.ExactType,
             preset is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? AllocationEliminationPolicy.Disabled : AllocationEliminationPolicy.Unused,
-            preset == FinalWasmOptimization.O3 ? LoopRotationPolicy.Guarded : LoopRotationPolicy.Disabled,
+            LoopRotation(preset),
             preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
-                ? ArrayStoreCheckEliminationPolicy.Disabled : ArrayStoreCheckEliminationPolicy.ExactElementTypes);
+                ? ArrayStoreCheckEliminationPolicy.Disabled : ArrayStoreCheckEliminationPolicy.ExactElementTypes,
+            StaticInitializationHoisting(preset),
+            SmallBlockOperations(preset),
+            DispatcherElimination(preset),
+            EmptyFinallyRemoval(preset),
+            StructScalarReplacement(preset),
+            AllocationScalarReplacement(preset),
+            IdempotentLoopCollapse(preset),
+            LoopStoreForwarding(preset),
+            ArrayLoopIdioms(preset),
+            LoopVectorization(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
-        Assert.Equal(selection, actual.ManagedInlineAnnotations);
+        Assert.Equal(managedSelection, actual.ManagedInlineAnnotations);
         Assert.Equal(selection, actual.RuntimeInlineAnnotations);
         Assert.Equal(expected, resolver.Resolve(preset, new()));
     }
@@ -210,19 +376,24 @@ public sealed class WasmOptimizationSettingsResolverTests
             var fieldHoisting = preset switch
             {
                 FinalWasmOptimization.O2 => LoopInvariantFieldHoistingPolicy.Conservative,
-                FinalWasmOptimization.O3 => LoopInvariantFieldHoistingPolicy.NullChecks,
+                FinalWasmOptimization.O3 or FinalWasmOptimization.Oz => LoopInvariantFieldHoistingPolicy.NullChecks,
                 _ => LoopInvariantFieldHoistingPolicy.Disabled,
             };
             var staticDataViews = preset is FinalWasmOptimization.O2 or
-                FinalWasmOptimization.O3
+                FinalWasmOptimization.O3 or FinalWasmOptimization.Oz
                 ? StaticDataViewEliminationPolicy.Conservative
                 : StaticDataViewEliminationPolicy.Disabled;
-            var valuePromotion = preset == FinalWasmOptimization.O3
+            var valuePromotion = preset is FinalWasmOptimization.O3 or FinalWasmOptimization.Oz
                 ? AddressTakenValuePromotionPolicy.References
                 : AddressTakenValuePromotionPolicy.Disabled;
-            var methodInlining = preset == FinalWasmOptimization.O3
-                ? ManagedMethodInliningPolicy.Speed
-                : ManagedMethodInliningPolicy.Disabled;
+            var methodInlining = preset switch
+            {
+                FinalWasmOptimization.O3 => ManagedMethodInliningPolicy.Speed,
+                FinalWasmOptimization.O2 or FinalWasmOptimization.Oz =>
+                    ManagedMethodInliningPolicy.Loops,
+                FinalWasmOptimization.O1 => ManagedMethodInliningPolicy.Aggressive,
+                _ => ManagedMethodInliningPolicy.Disabled,
+            };
             var branchPrefixDuplication = preset switch
             {
                 FinalWasmOptimization.O0 =>
@@ -245,7 +416,7 @@ public sealed class WasmOptimizationSettingsResolverTests
                     preset == FinalWasmOptimization.O3
                         ? ScalarCallPreservationPolicy.Conservative
                         : ScalarCallPreservationPolicy.Disabled,
-                    preset == FinalWasmOptimization.O3
+                    preset is FinalWasmOptimization.O3 or FinalWasmOptimization.Oz
                         ? ArrayBoundsCheckEliminationPolicy.Conservative
                         : ArrayBoundsCheckEliminationPolicy.Disabled,
                     preset == FinalWasmOptimization.O3 ? LoopUnrollingPolicy.Bounded : LoopUnrollingPolicy.Disabled,
@@ -255,9 +426,19 @@ public sealed class WasmOptimizationSettingsResolverTests
                     preset is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? SwitchBitTestPolicy.Disabled : SwitchBitTestPolicy.Conservative,
                     preset is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? DevirtualizationPolicy.Disabled : DevirtualizationPolicy.ExactType,
                     preset is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? AllocationEliminationPolicy.Disabled : AllocationEliminationPolicy.Unused,
-                    preset == FinalWasmOptimization.O3 ? LoopRotationPolicy.Guarded : LoopRotationPolicy.Disabled,
+                    LoopRotation(preset),
                     preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
-                        ? ArrayStoreCheckEliminationPolicy.Disabled : ArrayStoreCheckEliminationPolicy.ExactElementTypes),
+                        ? ArrayStoreCheckEliminationPolicy.Disabled : ArrayStoreCheckEliminationPolicy.ExactElementTypes,
+                    StaticInitializationHoisting(preset),
+                    SmallBlockOperations(preset),
+                    DispatcherElimination(preset),
+                    EmptyFinallyRemoval(preset),
+                    StructScalarReplacement(preset),
+                    AllocationScalarReplacement(preset),
+                    IdempotentLoopCollapse(preset),
+                    LoopStoreForwarding(preset),
+                    ArrayLoopIdioms(preset),
+                    LoopVectorization(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }
@@ -464,6 +645,7 @@ public sealed class WasmOptimizationSettingsResolverTests
     [Theory]
     [InlineData(ManagedMethodInlining.Disabled, ManagedMethodInliningPolicy.Disabled)]
     [InlineData(ManagedMethodInlining.Enabled, ManagedMethodInliningPolicy.Speed)]
+    [InlineData(ManagedMethodInlining.Loops, ManagedMethodInliningPolicy.Loops)]
     public void ExplicitManagedMethodInliningOverridesEveryEnabledPreset(
         ManagedMethodInlining option,
         ManagedMethodInliningPolicy expected)
@@ -492,12 +674,14 @@ public sealed class WasmOptimizationSettingsResolverTests
             settings.ManagedMethodInlining);
     }
 
-    [Fact]
-    public void EnabledManagedMethodInliningRequiresFinalOptimization()
+    [Theory]
+    [InlineData(ManagedMethodInlining.Enabled)]
+    [InlineData(ManagedMethodInlining.Loops)]
+    public void EnabledManagedMethodInliningRequiresFinalOptimization(ManagedMethodInlining option)
     {
         var error = Assert.Throws<ArgumentException>(() => Create().Resolve(
             FinalWasmOptimization.None,
-            new(ManagedMethodInlining: ManagedMethodInlining.Enabled)));
+            new(ManagedMethodInlining: option)));
 
         Assert.Equal("options", error.ParamName);
     }

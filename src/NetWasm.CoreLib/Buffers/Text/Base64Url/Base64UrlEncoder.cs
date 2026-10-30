@@ -1,10 +1,12 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Url/Base64UrlEncoder.cs
 
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-#if NETWASM_SIMD
+#if NET
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
@@ -38,7 +40,7 @@ namespace System.Buffers.Text
         /// </exception>
         public static int GetEncodedLength(int bytesLength)
         {
-#if NETWASM_SIMD
+#if NET
             ArgumentOutOfRangeException.ThrowIfGreaterThan<uint>((uint)bytesLength, MaximumEncodeLength);
 
             (uint whole, uint remainder) = uint.DivRem((uint)bytesLength, 3);
@@ -73,7 +75,8 @@ namespace System.Buffers.Text
                 return bytesWritten;
             }
 
-            throw new ArgumentException("Destination is too short.", nameof(destination));
+            Debug.Assert(status == OperationStatus.DestinationTooSmall);
+            throw new ArgumentException(SR.Argument_DestinationTooShort, nameof(destination));
         }
 
         /// <summary>
@@ -86,6 +89,7 @@ namespace System.Buffers.Text
         {
             byte[] destination = new byte[GetEncodedLength(source.Length)];
             EncodeToUtf8(source, destination, out _, out int bytesWritten);
+            Debug.Assert(destination.Length == bytesWritten);
 
             return destination;
         }
@@ -122,7 +126,8 @@ namespace System.Buffers.Text
                 return charsWritten;
             }
 
-            throw new ArgumentException("Destination is too short.", nameof(destination));
+            Debug.Assert(status == OperationStatus.DestinationTooSmall);
+            throw new ArgumentException(SR.Argument_DestinationTooShort, nameof(destination));
         }
 
         /// <summary>
@@ -135,6 +140,7 @@ namespace System.Buffers.Text
         {
             char[] destination = new char[GetEncodedLength(source.Length)];
             EncodeToChars(source, destination, out _, out int charsWritten);
+            Debug.Assert(destination.Length == charsWritten);
 
             return destination;
         }
@@ -147,19 +153,21 @@ namespace System.Buffers.Text
         /// <remarks>This implementation of the base64url encoding omits the optional padding characters.</remarks>
         public static unsafe string EncodeToString(ReadOnlySpan<byte> source)
         {
-#if NETWASM_SIMD
+#if NET
             int encodedLength = GetEncodedLength(source.Length);
 
             return string.Create(encodedLength, (IntPtr)(&source), static (buffer, spanPtr) =>
             {
                 ReadOnlySpan<byte> source = *(ReadOnlySpan<byte>*)spanPtr;
                 EncodeToChars(source, buffer, out _, out int charsWritten);
+                Debug.Assert(buffer.Length == charsWritten, $"The source length: {source.Length}, bytes written: {charsWritten}");
             });
 #else
             char[] destination = new char[GetEncodedLength(source.Length)];
-            EncodeToChars(source, destination, out _, out _);
+            EncodeToChars(source, destination, out _, out int charsWritten);
+            Debug.Assert(destination.Length == charsWritten);
 
-            return string.Create(destination);
+            return new string(destination);
 #endif
         }
 
@@ -277,7 +285,7 @@ namespace System.Buffers.Text
                 dest[2] = i2;
             }
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public unsafe void StoreVector512ToDestination(byte* dest, byte* destStart, int destLength, Vector512<byte> str) =>
                 default(Base64EncoderByte).StoreVector512ToDestination(dest, destStart, destLength, str);
@@ -334,7 +342,7 @@ namespace System.Buffers.Text
             public unsafe void EncodeTwoOptionallyPadOne(byte* twoBytes, ushort* dest, ref byte encodingMap) =>
                 Base64Helper.EncodeTwoOptionallyPadOne(twoBytes, dest, ref encodingMap);
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public unsafe void StoreVector512ToDestination(ushort* dest, ushort* destStart, int destLength, Vector512<byte> str) =>
                 default(Base64EncoderChar).StoreVector512ToDestination(dest, destStart, destLength, str);

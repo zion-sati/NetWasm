@@ -13,6 +13,7 @@ public sealed class RootMapAnalyzer(
     IStackStorageContinuationAnalyzer continuations,
     IStackStorageAnchorPlanner anchors,
     IRootDecisionClassifier rootDecisions,
+    ICalleeArgumentRootingClassifier calleeArguments,
     IRootSlotAllocator rootSlots) :
     IRootMapAnalyzer
 {
@@ -26,6 +27,8 @@ public sealed class RootMapAnalyzer(
         anchors ?? throw new ArgumentNullException(nameof(anchors));
     private readonly IRootDecisionClassifier _rootDecisions =
         rootDecisions ?? throw new ArgumentNullException(nameof(rootDecisions));
+    private readonly ICalleeArgumentRootingClassifier _calleeArguments =
+        calleeArguments ?? throw new ArgumentNullException(nameof(calleeArguments));
     private readonly IRootSlotAllocator _rootSlots =
         rootSlots ?? throw new ArgumentNullException(nameof(rootSlots));
 
@@ -58,7 +61,7 @@ public sealed class RootMapAnalyzer(
         var persistentManagedAddressArguments =
             GetPersistentManagedAddressArgumentRoots(method);
         var safepoints = new List<SafepointRootMap>();
-        var selected = new List<(CilInstruction Instruction, ImmutableArray<CliValueKind> Stack)>();
+        var selected = new List<(CilInstruction Instruction, ImmutableArray<CliValueKind> Stack, int CalleeRooted)>();
         foreach (var instruction in method.Body.Instructions)
         {
             if (!method.ControlFlow.InstructionEntryStacks.TryGetValue(
@@ -74,14 +77,20 @@ public sealed class RootMapAnalyzer(
                 continue;
             }
 
-            selected.Add((instruction, entryStack));
+            var calleeRooted = _calleeArguments.Classify(new(
+                method,
+                block,
+                instruction,
+                allocatingMethods,
+                allocatingConstructedMethods));
+            selected.Add((instruction, entryStack, calleeRooted));
         }
         var storage = selected.Count == 0
             ? StackStorageAnalysis.Empty
             : _stackStorage.Analyze(method);
         var pending = new List<(CilInstruction Instruction, ImmutableHashSet<RootSource> Roots)>();
         var demands = ImmutableDictionary.CreateBuilder<int, ImmutableHashSet<StackStorageAnchor>>();
-        foreach (var (instruction, entryStack) in selected)
+        foreach (var (instruction, entryStack, calleeRooted) in selected)
         {
             var roots = liveAfter[instruction.Offset].ToBuilder();
             var demanded = ImmutableHashSet.CreateBuilder<StackStorageAnchor>();
@@ -97,7 +106,7 @@ public sealed class RootMapAnalyzer(
                         new(StackStorageLocationKind.Local, localIndex), demanded);
                 }
             }
-            AddStackRoots(roots, entryStack);
+            AddStackRoots(roots, entryStack, calleeRooted);
             if (storage.Entries.TryGetValue(instruction.Offset, out var stackTypes))
             {
                 AddEmbeddedStackRoots(method, instruction, entryStack, stackTypes, roots);
@@ -405,11 +414,14 @@ public sealed class RootMapAnalyzer(
 
     private static void AddStackRoots(
         ImmutableHashSet<RootSource>.Builder roots,
-        ImmutableArray<CliValueKind> stack)
+        ImmutableArray<CliValueKind> stack,
+        int calleeRooted)
     {
         for (var index = 0; index < stack.Length; index++)
         {
-            if (stack[index] == CliValueKind.ManagedReference)
+            // The callee roots the object references it takes; addresses keep
+            // their roots for the storage they point into.
+            if (stack[index] == CliValueKind.ManagedReference && index < stack.Length - calleeRooted)
             {
                 roots.Add(new RootSource(RootSourceKind.EvaluationStack, index));
             }

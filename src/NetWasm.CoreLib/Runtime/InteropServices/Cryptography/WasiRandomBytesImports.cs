@@ -4,7 +4,7 @@ namespace System.Runtime.InteropServices.Cryptography
 
     internal static class WasiRandomBytesImports
     {
-        [WitImport("wasi:random@0.2.11/random", "get-random-bytes")]
+        [WitImport("wasi:random/random@0.2.11", "get-random-bytes")]
         internal static extern void GetRandomBytes(long length, nuint result);
     }
 }

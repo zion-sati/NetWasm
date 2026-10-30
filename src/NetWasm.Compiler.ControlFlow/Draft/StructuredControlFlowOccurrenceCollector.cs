@@ -47,6 +47,12 @@ internal sealed class StructuredControlFlowOccurrenceCollector : IStructuredCont
                     Collect(loop.ContinueBody, occurrences, visitedGroups);
                     Collect(loop.ExitBody, occurrences, visitedGroups);
                     break;
+                case StructuredLabeledBlockDraft block:
+                    Collect(block.Body, occurrences, visitedGroups);
+                    break;
+                case StructuredLabeledLoopDraft loop:
+                    Collect(loop.Body, occurrences, visitedGroups);
+                    break;
                 case StructuredDispatcherDraft dispatcher:
                     foreach (var block in dispatcher.Blocks)
                     {

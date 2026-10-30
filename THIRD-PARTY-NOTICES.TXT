@@ -99,15 +99,66 @@ wit/wasi-0.2.11 is copied with its upstream LICENSE.md and provenance files.
 Its upstream terms control those files and the WASI dependencies below the
 NetWasm WIT worlds.
 
+musl libc and Arm optimized routines: managed exponentials
+-----------------------------------------------------------
+Source: https://git.musl-libc.org/cgit/musl
+Tag: v1.2.5 (commit 0784374d561435f7c787a555aeab8ede699ed298)
+Files: src/math/exp.c, exp2.c, exp_data.c, pow.c, pow_data.c, expf.c, logf.c,
+log2f.c, powf.c, exp2f_data.c, logf_data.c, log2f_data.c, powf_data.c.
+Math.Exp, double.Exp2, Math.Pow, MathF.Exp, MathF.Log, MathF.Log2 and MathF.Pow
+port Arm's optimized routines as musl carries them; each derived file
+identifies its upstream files. SPDX-License-Identifier: MIT.
+The complete MIT text is in LICENSES/MIT.txt.
+
+Copyright (c) 2018, Arm Limited.
+Copyright (c) 2017-2018, Arm Limited.
+
+MathF.Sin, MathF.Cos, MathF.Tan and MathF.SinCos port musl's sinf.c, cosf.c,
+sincosf.c, tanf.c, __sindf.c, __cosdf.c, __tandf.c and __rem_pio2f.c from the
+same release: FreeBSD msun's float trigonometry, converted to float by Ian
+Lance Taylor and optimized by Bruce D. Evans. They retain the 1993 Sun
+Microsystems notice below.
+
+Math.FusedMultiplyAdd ports musl's own fma.c from the same release under musl's
+MIT licence (LICENSES/MIT.txt):
+
+Copyright (c) 2005-2020 Rich Felker, et al.
+
+MathF.FusedMultiplyAdd ports musl's fmaf.c, FreeBSD msun's s_fmaf.c, which
+retains this notice:
+
+Copyright (c) 2005-2011 David Schultz <das@FreeBSD.ORG>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
+
 Sun fdlibm: managed transcendental math
 --------------------------------------
 Source: https://github.com/biosbits/fdlibm
 Commit: dfd9eaed985332a1c3af98c2bab4004eea217d3d
 Files: s_sin.c, s_cos.c, s_tan.c, k_sin.c, k_cos.c, k_tan.c,
 e_rem_pio2.c, k_rem_pio2.c, e_sinh.c, s_tanh.c, e_acosh.c,
-s_expm1.c, s_log1p.c, e_exp.c, e_log.c.
-Math.Pow ports FreeBSD msun e_pow.c as carried by Emscripten 6.0.7 in
-system/lib/libc/musl/src/math/pow_small.c; it retains the 2004 notice below.
+e_asin.c, e_acos.c, s_atan.c, e_atan2.c, s_cbrt.c,
+s_expm1.c, s_log1p.c, e_log.c.
 
 Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
 

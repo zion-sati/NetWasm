@@ -11,6 +11,8 @@ internal static class GarbageCollectionServiceCollectionExtensions
         services.AddSingleton<IRootSlotAllocator, RootSlotAllocator>();
         services.AddSingleton<IRootDecisionClassifierFactory,
             RootDecisionClassifierFactory>();
+        services.AddSingleton<ICalleeArgumentRootingClassifierFactory,
+            CalleeArgumentRootingClassifierFactory>();
         services.AddSingleton<IRuntimeAllocationSafepointClassifier,
             RuntimeAllocationSafepointClassifier>();
         return services;

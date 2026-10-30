@@ -36,7 +36,7 @@ public sealed class RawWitImportCatalogBuilderTests
             },
             function =>
             {
-                Assert.Equal("example:files@1.0.0/api", function.InterfaceName);
+                Assert.Equal("example:files/api@1.0.0", function.InterfaceName);
                 Assert.Equal("example:files/api@1.0.0", function.DeploymentInterfaceName);
                 Assert.Same(document.Interfaces[0].Functions[0], function.Definition);
             });
@@ -48,7 +48,7 @@ public sealed class RawWitImportCatalogBuilderTests
         Assert.All(resources, resource =>
         {
             Assert.Same(document.Types[0], resource.Definition);
-            Assert.Equal("example:files@1.0.0/api", resource.InterfaceName);
+            Assert.Equal("example:files/api@1.0.0", resource.InterfaceName);
             Assert.Equal("example:files/api@1.0.0", resource.DeploymentInterfaceName);
         });
         Assert.DoesNotContain(dependencies.Requests, request => request.Function.Kind == CanonicalAbiFunctionKind.ExportedResourceDestructor);
@@ -130,7 +130,7 @@ public sealed class RawWitImportCatalogBuilderTests
         var (document, world) = Fixture();
         var second = document.Interfaces[0] with { Id = 1, Package = "example:files@1.9.0" };
         document = document with { Interfaces = document.Interfaces.Add(second) };
-        world = world with { Imports = world.Imports.Add(new("second", 1, null)), Exports = [] };
+        world = world with { Imports = world.Imports.Add(new("example:files/api@1.9.0", 1, null)), Exports = [] };
         var builder = Assert.IsAssignableFrom<IRawWitImportCatalogBuilder>(new RawWitImportCatalogBuilder(
             new WitWorldValidator(), new RawCanonicalImportIdentityFormatter(),
             new WitWorldSpecifierFormatter(), new WitInterfaceSpecifierFormatter()));
@@ -214,8 +214,8 @@ public sealed class RawWitImportCatalogBuilderTests
         var definition = new WitInterface(0, "api", "example:files@1.0.0",
             ImmutableDictionary<string, int>.Empty.Add("file", 0).Add("alias", 1).Add("other", 2), [member]);
         var world = new WitWorld(0, "main", "example:files@1.0.0",
-            [new("root", null, root), new("api", 0, null)],
-            [new("api", 0, null), new("export-only", null, root with { Name = "export-only" })]);
+            [new("root", null, root), new("example:files/api@1.0.0", 0, null)],
+            [new("example:files/api@1.0.0", 0, null), new("export-only", null, root with { Name = "export-only" })]);
         return (new([], [definition], [world],
             [Type(0, "file", "\"resource\""), Type(1, "alias", """{"type":0}"""), Type(2, "other", "\"unused\"")], "{}"), world);
     }

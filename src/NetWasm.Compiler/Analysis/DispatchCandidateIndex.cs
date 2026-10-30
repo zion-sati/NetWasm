@@ -54,13 +54,16 @@ internal sealed class DispatchCandidateIndex(ITypeRelationshipClassifier relatio
             group.CompatibleReceivers.Count);
         foreach (var receiver in group.CompatibleReceivers)
         {
-            result.Add(new DispatchCandidate(
-                indexed.DispatchKey,
-                indexed.Declaration,
-                receiver));
+            if (Admits(indexed.Declaration, receiver))
+            {
+                result.Add(new DispatchCandidate(
+                    indexed.DispatchKey,
+                    indexed.Declaration,
+                    receiver));
+            }
         }
 
-        return result.MoveToImmutable();
+        return result.ToImmutable();
     }
 
     public ImmutableArray<DispatchCandidate> Index(DispatchReceiverCandidate candidate)
@@ -95,14 +98,23 @@ internal sealed class DispatchCandidateIndex(ITypeRelationshipClassifier relatio
         var result = ImmutableArray.CreateBuilder<DispatchCandidate>(declarations.Count);
         foreach (var declaration in declarations)
         {
-            result.Add(new DispatchCandidate(
-                declaration.DispatchKey,
-                declaration.Declaration,
-                candidate.Receiver));
+            if (Admits(declaration.Declaration, candidate.Receiver))
+            {
+                result.Add(new DispatchCandidate(
+                    declaration.DispatchKey,
+                    declaration.Declaration,
+                    candidate.Receiver));
+            }
         }
 
-        return result.MoveToImmutable();
+        return result.ToImmutable();
     }
+
+    // A call site whose receivers all have a known static type reaches only
+    // the receivers assignable to it, variance included.
+    private bool Admits(DispatchDeclaration declaration, CliTypeIdentity receiver) =>
+        declaration.ReceiverBound is not { } bound ||
+        _relationships.Classify(receiver, bound).IsAssignmentCompatible;
 
     private ContractGroup CreateGroup(CliTypeIdentity contract)
     {

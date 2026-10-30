@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 namespace System.IO
 {
     // Adapted from dotnet/runtime System.Private.CoreLib commit
-    // 811225a482702af7ecc35d817966bc70b88a3a23.
+    // 474ed963699fc29809015392738a15231aaae2de.
     public sealed class BufferedStream : Stream
     {
         private const int DefaultBufferSize = 4096;

@@ -1,6 +1,6 @@
 // Adapted from dotnet/runtime System.Private.CoreLib exception implementations.
 // AggregateException support and dictionary-enumerator wiring are based on
-// dotnet/runtime commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// dotnet/runtime commit 474ed963699fc29809015392738a15231aaae2de.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
 using System.Collections.Generic;

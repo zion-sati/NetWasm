@@ -522,7 +522,9 @@ public sealed class RuntimeTypeCompilationTests
                          .Where(instruction => instruction.Operation is
                              CilOperation.MaterializeType or CilOperation.GetObjectType))
             {
-                Assert.True(roots.Safepoints.ContainsKey(instruction.Offset));
+                // A static Type object needs no allocation, so only the runtime lookups are safepoints.
+                Assert.Equal(!CilTypeMaterialization.UsesStaticTypeObject(instruction),
+                    roots.Safepoints.ContainsKey(instruction.Offset));
             }
         }
         foreach ((var identity, var method) in result.Program.ConstructedMethods)
@@ -532,7 +534,9 @@ public sealed class RuntimeTypeCompilationTests
                          .Where(instruction => instruction.Operation is
                              CilOperation.MaterializeType or CilOperation.GetObjectType))
             {
-                Assert.True(roots.Safepoints.ContainsKey(instruction.Offset));
+                // A static Type object needs no allocation, so only the runtime lookups are safepoints.
+                Assert.Equal(!CilTypeMaterialization.UsesStaticTypeObject(instruction),
+                    roots.Safepoints.ContainsKey(instruction.Offset));
             }
         }
         Assert.True(result.ApplicationModule.AsSpan().IndexOf("get_type_object"u8) >= 0);
@@ -653,7 +657,9 @@ public sealed class RuntimeTypeCompilationTests
                          .Where(instruction => instruction.Operation is
                              CilOperation.MaterializeType or CilOperation.GetObjectType))
             {
-                Assert.True(roots.Safepoints.ContainsKey(instruction.Offset));
+                // A static Type object needs no allocation, so only the runtime lookups are safepoints.
+                Assert.Equal(!CilTypeMaterialization.UsesStaticTypeObject(instruction),
+                    roots.Safepoints.ContainsKey(instruction.Offset));
             }
         }
         foreach ((var identity, var method) in result.Program.ConstructedMethods)
@@ -663,7 +669,9 @@ public sealed class RuntimeTypeCompilationTests
                          .Where(instruction => instruction.Operation is
                              CilOperation.MaterializeType or CilOperation.GetObjectType))
             {
-                Assert.True(roots.Safepoints.ContainsKey(instruction.Offset));
+                // A static Type object needs no allocation, so only the runtime lookups are safepoints.
+                Assert.Equal(!CilTypeMaterialization.UsesStaticTypeObject(instruction),
+                    roots.Safepoints.ContainsKey(instruction.Offset));
             }
         }
         Assert.True(result.ApplicationModule.AsSpan().IndexOf("get_type_object"u8) >= 0);

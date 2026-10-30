@@ -20,7 +20,7 @@ internal interface IStructuredMethodFactory
 
 internal sealed class StructuredMethodValidationException(
     InvalidOperationException innerException) :
-    Exception("The structured method failed validation.", innerException);
+    Exception($"The structured method failed validation: {innerException.Message}", innerException);
 
 internal sealed class StructuredMethodFactory(
     IStructuredMethodValidator validator) : IStructuredMethodFactory

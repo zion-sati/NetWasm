@@ -1,5 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/UInt128.cs
 
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -8,6 +9,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
 
 namespace System
 {
@@ -492,10 +494,7 @@ namespace System
             {
                 ThrowHelper.ThrowOverflowException();
             }
-            var bits = decimal.GetBits(value);
-            return new UInt128(
-                (ulong)(uint)bits[2],
-                ((ulong)(uint)bits[1] << 32) | (uint)bits[0]);
+            return new UInt128(value.High, value.Low64);
         }
 
         /// <summary>Explicitly converts a <see cref="double" /> value to a 128-bit unsigned integer.</summary>
@@ -889,9 +888,16 @@ namespace System
                     (highRes, leftUpper) = Math.DivRem(left._upper, divisor);
                 }
 
+#pragma warning disable SYSLIB5004 // X86Base.DivRem is experimental
+                if (X86Base.X64.IsSupported)
+                {
+                    (ulong lowRes, ulong remainder) = X86Base.X64.DivRem(left._lower, leftUpper, divisor);
+                    return (new UInt128(highRes, lowRes), remainder);
+                }
+#pragma warning restore SYSLIB5004
+                else
                 {
                     ulong leftLower = left._lower;
-                    // TODO(netwasm-simd)
                     int shift = BitOperations.LeadingZeroCount(divisor);
                     if (shift > 0)
                     {
@@ -916,6 +922,13 @@ namespace System
                 {
                     return ulong.DivRem(lo, divisor);
                 }
+
+#pragma warning disable SYSLIB5004 // X86Base.DivRem is experimental
+                if (X86Base.X64.IsSupported)
+                {
+                    return X86Base.X64.DivRem(lo, hi, divisor);
+                }
+#pragma warning restore SYSLIB5004
 
                 // Perform 128-bit/64-bit division by splitting it into 32-bit parts.
                 //

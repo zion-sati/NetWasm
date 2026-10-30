@@ -129,13 +129,13 @@ for configuration in debug release; do
         jq -e --arg v "$wasi_http_version" '
             (.javaScript.imports | length == 0) and
             ([.importedInterfaces[]] | sort == [
-              "netwasm:runtime@1.0.0/reactor-host",
-              "wasi:clocks@\($v)/monotonic-clock",
-              "wasi:http@\($v)/outgoing-handler",
-              "wasi:http@\($v)/types",
-              "wasi:io@\($v)/error",
-              "wasi:io@\($v)/poll",
-              "wasi:io@\($v)/streams"]) and
+              "netwasm:runtime/reactor-host@1.0.0",
+              "wasi:clocks/monotonic-clock@\($v)",
+              "wasi:http/outgoing-handler@\($v)",
+              "wasi:http/types@\($v)",
+              "wasi:io/error@\($v)",
+              "wasi:io/poll@\($v)",
+              "wasi:io/streams@\($v)"]) and
             ([.importedFunctions[]] | all(. | contains("wasi:sockets") | not))
         ' "$manifest" > "$prefix.import-audit.json"
         wasm-tools print "$prefix.component.wasm" > "$prefix.component.print.wat"

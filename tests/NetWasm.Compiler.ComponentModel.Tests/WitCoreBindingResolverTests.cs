@@ -22,12 +22,15 @@ public sealed class WitCoreBindingResolverTests
             null!));
     }
 
+    // The core module names an interface by its world key: its package path
+    // with the compatibility version, an inline interface's name, or the name
+    // of `export math-alias: math-api;`.
     [Theory]
-    [InlineData("interface-0", "example:worker/math-api@1",
+    [InlineData("example:worker/math-api@1.0.0", "example:worker/math-api@1",
         "example:worker/math-api@1")]
+    [InlineData("example:worker/math-api", "example:worker/math-api", "example:worker/math-api")]
     [InlineData("math-api", "math-api", "math-api")]
     [InlineData("math-alias", "math-alias", "math-alias")]
-    [InlineData("interface-0", "interface-0", "interface-0")]
     public void ResolvesQualifiedAndNamedWorldBindingsFromTheCoreInventory(
         string worldItemName,
         string physicalName,
@@ -110,8 +113,8 @@ public sealed class WitCoreBindingResolverTests
             0,
             "application",
             package,
-            [new WitWorldItem("interface-0", 0, null)],
-            [new WitWorldItem("interface-0", 1, null)]);
+            [new WitWorldItem("example:worker/input@1.0.0", 0, null)],
+            [new WitWorldItem("example:worker/output@1.0.0", 1, null)]);
         var document = new WitDocument(
             [new WitPackage(
                 0,
@@ -130,8 +133,8 @@ public sealed class WitCoreBindingResolverTests
                 """
                 (module
                   (import "cm32p2|example:worker/input@1" "run" (func))
-                  (export "cm32p2|interface-0|run" (func 0))
-                  (export "cm32p2|interface-0|run_post" (func 1))
+                  (export "cm32p2|example:worker/output@1|run" (func 0))
+                  (export "cm32p2|example:worker/output@1|run_post" (func 1))
                 )
                 """,
                 string.Empty),
@@ -142,57 +145,14 @@ public sealed class WitCoreBindingResolverTests
 
         Assert.Equal("example:worker/input@1",
             Assert.Single(resolved.Imports).CoreBindingName);
-        Assert.Equal("interface-0",
+        Assert.Equal("example:worker/output@1",
             Assert.Single(resolved.Exports).CoreBindingName);
     }
 
+    // The inventory's namespace for the world key must hold exactly the
+    // interface's members; another namespace with them does not stand in.
     [Fact]
-    public void MatchesMembersWhenASyntheticNameCollidesWithAnotherAlias()
-    {
-        var package = "example:worker@1.0.0";
-        var math = new WitInterface(
-            0,
-            "math-api",
-            package,
-            [],
-            [new("add-value", [], new WitTypeReference.Primitive("s32"), new("freestanding"))]);
-        var logger = new WitInterface(
-            1,
-            "logger",
-            package,
-            [],
-            [new("log", [], null, new("freestanding"))]);
-        var world = new WitWorld(
-            0,
-            "application",
-            package,
-            [],
-            [new("interface-0", 0, null), new("interface-0", 1, null)]);
-        var document = new WitDocument(
-            [],
-            [math, logger],
-            [world],
-            [],
-            "{}");
-
-        var resolved = WitCoreBindingResolver.Resolve(
-            document,
-            world,
-            """
-            (module
-              (export "cm32p2|example:worker/math-api@1|add-value" (func 0))
-              (export "cm32p2|example:worker/math-api@1|add-value_post" (func 1))
-              (export "cm32p2|interface-0|log" (func 2))
-              (export "cm32p2|interface-0|log_post" (func 3))
-            )
-            """).SelectWorld("application");
-
-        Assert.Equal("example:worker/math-api@1", resolved.Exports[0].CoreBindingName);
-        Assert.Equal("interface-0", resolved.Exports[1].CoreBindingName);
-    }
-
-    [Fact]
-    public void RejectsMemberCompatibleNamespaceAmbiguity()
+    public void RejectsMembersUnderAnotherNamespaceThanTheWorldKeys()
     {
         var (document, world) = FunctionDocument("math-alias");
 
@@ -202,14 +162,12 @@ public sealed class WitCoreBindingResolverTests
                 world,
                 """
                 (module
-                  (export "cm32p2|math-alias|add-value" (func 0))
-                  (export "cm32p2|math-alias|add-value_post" (func 1))
                   (export "cm32p2|example:worker/math-api@1|add-value" (func 2))
                   (export "cm32p2|example:worker/math-api@1|add-value_post" (func 3))
                 )
                 """));
 
-        Assert.Contains("ambiguous core binding namespaces", failure.Message,
+        Assert.Contains("'math-alias' has no exact core binding namespace", failure.Message,
             StringComparison.Ordinal);
     }
 
@@ -308,7 +266,7 @@ public sealed class WitCoreBindingResolverTests
     }
 
     [Fact]
-    public void InterfaceWithoutCoreMembersUsesItsQualifiedName()
+    public void InterfaceWithoutCoreMembersUsesItsWorldKey()
     {
         var definition = new WitInterface(
             0,
@@ -327,7 +285,7 @@ public sealed class WitCoreBindingResolverTests
         var resolved = WitCoreBindingResolver.Resolve(document, world, "(module)");
 
         Assert.Equal(
-            "example:worker/empty@1",
+            "empty-alias",
             Assert.Single(resolved.SelectWorld("application").Exports).CoreBindingName);
     }
 
@@ -402,7 +360,7 @@ public sealed class WitCoreBindingResolverTests
             .SelectWorld("application");
 
         Assert.Equal(string.Empty, Assert.Single(resolved.Imports).CoreBindingName);
-        Assert.Equal("example:worker/empty@1",
+        Assert.Equal("empty-alias",
             Assert.Single(resolved.Exports).CoreBindingName);
     }
 

@@ -38,7 +38,7 @@ public sealed class CorpusCompilerRequestFactoryTests
         Assert.Equal("layout", request.RuntimeLayoutPath);
         Assert.Equal("interop", request.InteropManifestPath);
         Assert.Equal(reactor ? Path.Combine("repository", "wit", "netwasm-platform-1.0.0") : null, request.WitPath);
-        Assert.Equal(reactor ? "netwasm:platform@1.0.0/async-platform" : null, request.WitWorld);
+        Assert.Equal(reactor ? "netwasm:platform/async-platform@1.0.0" : null, request.WitWorld);
     }
 
     [Theory]

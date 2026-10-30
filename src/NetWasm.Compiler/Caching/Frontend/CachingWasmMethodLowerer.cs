@@ -22,14 +22,16 @@ internal sealed class CachingWasmMethodLowerer(
     public StructuredMethod Lower(
         ManagedMethodBody method,
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware)
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled)
     {
         ArgumentNullException.ThrowIfNull(method);
         if (_restorer.TryRestore(method.Method, out var structured))
         {
             return structured;
         }
-        structured = _inner.Lower(method, branchPrefixDuplication);
+        structured = _inner.Lower(method, branchPrefixDuplication, dispatcherElimination);
         _stager.Stage(method.Method, structured);
         return structured;
     }

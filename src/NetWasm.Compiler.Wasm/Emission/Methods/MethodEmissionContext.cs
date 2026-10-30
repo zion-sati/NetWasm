@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
@@ -44,8 +45,8 @@ internal sealed record MethodEmissionContext(
 
     public bool RecordOriginalBlockOwnership { get; init; } = true;
 
-    // Loops test their condition before entry and at the bottom of each iteration.
-    public bool RotateLoops { get; init; }
+    // Which loops test their condition before entry and at the bottom of each iteration.
+    public LoopRotationPolicy LoopRotation { get; init; }
 
     public ArrayMetadataCachingLayout ArrayMetadata { get; init; } = ArrayMetadataCachingLayout.Empty;
 
@@ -72,6 +73,12 @@ internal sealed record MethodEmissionContext(
     // The module's shared function that begins and throws a managed exception.
     public OptionalFunctionIndex ManagedThrowFunction { get; init; }
 
+    // Address scratch for known-size copies emitted inline; -1 where the
+    // function has none, and its copies stay memory.copy.
+    public int CopyDestinationTemporary { get; init; } = -1;
+    public bool InlineSmallBlocks { get; init; }
+    public int CopySourceTemporary { get; init; } = -1;
+
     public ImmutableDictionary<int, int> AnchorLocals { get; init; } = [];
     public ImmutableDictionary<RootSource, int> AuthoritativeRootSlots { get; init; } = [];
     public ImmutableDictionary<(int Offset, bool ConstructorCall), ImmutableHashSet<int>> RootClearElisions
@@ -83,11 +90,9 @@ internal sealed record MethodEmissionContext(
     public int? ActiveCatchRootSlot { get; init; }
     public int RootSlotCount => checked(RootMap.SlotCount + ExceptionRootSlots.Count);
 
+    // WasmLocalLayoutPlanner.TemporaryLocals declares these after the dispatcher program counter.
     public int NumericTemporaryI4Second => checked(DispatcherProgramCounter + 1);
-    public int NumericTemporaryI4Third => checked(DispatcherProgramCounter + 2);
-    public int NumericTemporaryI4Fourth => checked(DispatcherProgramCounter + 3);
-    public int NumericTemporaryI4Fifth => checked(DispatcherProgramCounter + 4);
 
     // The exception-frame token of a catch the compiler adds inside a method body.
-    public int InlineCatchFrame => checked(DispatcherProgramCounter + 5);
+    public int InlineCatchFrame => checked(DispatcherProgramCounter + 2);
 }

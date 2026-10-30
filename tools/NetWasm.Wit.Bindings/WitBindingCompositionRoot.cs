@@ -55,6 +55,7 @@ public static class WitBindingCompositionRoot
             methods,
             marshalling,
             syntax,
-            writers);
+            writers,
+            definitions);
     }
 }

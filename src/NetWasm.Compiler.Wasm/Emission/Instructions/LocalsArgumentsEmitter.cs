@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Immutable;
@@ -78,7 +79,8 @@ internal sealed class LocalsArgumentsEmitter(
                     request,
                     writer,
                     index,
-                    selected));
+                    selected),
+                request.Context);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             PushLocal(request, code, CliValueKind.ValueType);
             return;
@@ -165,7 +167,8 @@ internal sealed class LocalsArgumentsEmitter(
                 layout.Size,
                 layout.Alignment,
                 writer => EmitLocalGet(
-                    writer, request.Context.LocalBase + index));
+                    writer, request.Context.LocalBase + index),
+                request.Context);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             PushLocal(request, code, CliValueKind.ValueType);
             return;
@@ -221,7 +224,8 @@ internal sealed class LocalsArgumentsEmitter(
                     GetStackLocal(
                         request.Context,
                         slot,
-                        CliValueKind.ValueType)));
+                        CliValueKind.ValueType)),
+                request.Context);
             if (request.Context.AddressTakenAggregatePromotions.Plan.PromotedLocals
                 .ContainsKey(localIndex))
             {
@@ -277,7 +281,8 @@ internal sealed class LocalsArgumentsEmitter(
                     GetStackLocal(
                         request.Context,
                         slot,
-                        CliValueKind.ValueType)));
+                        CliValueKind.ValueType)),
+                request.Context);
             request.Stack.RemoveAt(slot);
             return;
         }
@@ -414,7 +419,8 @@ internal sealed class LocalsArgumentsEmitter(
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee,
                 WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
             valueCopies.Emit(code, request.Context.ObjectTemporary, layout.Size, layout.Alignment,
-                writer => valueFrameAddresses.Emit(writer, request.Context, capture));
+                writer => valueFrameAddresses.Emit(writer, request.Context, capture),
+                request.Context);
             EmitLocalGet(code, request.Context.ObjectTemporary);
             PushLocal(request, code, CliValueKind.ValueType);
             return;
@@ -455,8 +461,8 @@ internal sealed class LocalsArgumentsEmitter(
             request.Stack[slot])))));
         if (capture.Type.StackKind == CliValueKind.ValueType)
         {
-            EmitAddressConstant(code, values.GetValueLayout(capture.Type).Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, values.GetValueLayout(capture.Type).Size,
+                writer => EmitAddressConstant(writer, values.GetValueLayout(capture.Type).Size));
         }
         else
         {

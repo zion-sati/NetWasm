@@ -1,6 +1,7 @@
 // Managed port of Sun fdlibm s_cos.c. Upstream: biosbits/fdlibm
 // commit dfd9eaed985332a1c3af98c2bab4004eea217d3d.
-// Adaptations: C# bit access, immutable local tables and bounded stack scratch.
+// Adaptations: C# bit access, the reduced argument returned as a value tuple, and
+// huge arguments reduced in a separate method.
 /* @(#)s_cos.c 1.3 95/01/18 */
 /*
  * ====================================================
@@ -44,6 +45,9 @@
  *    TRIG(x) returns trig(x) nearly rounded
  */
 
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+
 namespace System;
 
 public static partial class Math
@@ -51,9 +55,7 @@ public static partial class Math
     public static double Cos(double value)
     {
 
-        Span<double> y = stackalloc double[2];
         var z = 0.0;
-        var n = 0;
         var ix = 0;
 
         /* High word of value. */
@@ -67,17 +69,24 @@ public static partial class Math
         else if (ix >= 0x7ff00000) return value - value;
 
         /* argument reduction needed */
-        else
+        else if (ix > 0x413921fb) return CosLarge(value);
+        else return FdTrigReduced(value, 1).ToScalar();
+    }
+
+    // The huge-argument path, |x| > 2^19*(pi/2), apart so that its reduction
+    // scratch and out parameters stay out of the common path.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static double CosLarge(double value)
+    {
+        var hx = FdHigh(value);
+        var n = FdRemPio2Large(value, hx & 0x7fffffff, hx, out var y0, out var y1);
+        switch (n & 3)
         {
-            n = FdRemPio2(value, y);
-            switch (n & 3)
-            {
-                case 0: return FdKernelCos(y[0], y[1]);
-                case 1: return -FdKernelSin(y[0], y[1], 1);
-                case 2: return -FdKernelCos(y[0], y[1]);
-                default:
-                    return FdKernelSin(y[0], y[1], 1);
-            }
+            case 0: return FdKernelCos(y0, y1);
+            case 1: return -FdKernelSin(y0, y1, 1);
+            case 2: return -FdKernelCos(y0, y1);
+            default:
+                return FdKernelSin(y0, y1, 1);
         }
     }
 }

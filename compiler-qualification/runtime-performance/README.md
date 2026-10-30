@@ -116,11 +116,12 @@ whatever tiering happens inside that region. Desktop runs native code for the
 host CPU, so its rows have no linear memory or component size.
 
 `--mono-aot <dotnet-root> <wasi-sdk>` adds Mono, compiled ahead of time for
-`wasi-wasm` and run under the same Wasmtime, with the same checksum, memory and
-size measurements. The SDK root needs the `wasi-experimental` workload and the
-wasi-sdk release that workload expects (25.0 for .NET 10). wasi-sdk's clang
-runs any `wasm-opt` it finds on `PATH`, so the harness builds Mono with a
-minimal `PATH`. Wasm samples compile serially (`-C parallel-compilation=n`) so
+`wasi-wasm` with Wasm SIMD and run under the same Wasmtime, with the same
+checksum, memory and size measurements. The SDK root needs the
+`wasi-experimental` workload and the wasi-sdk release that workload expects
+(33.0 for .NET 11 RC3, 25.0 for .NET 10); the project targets the SDK's own
+framework. wasi-sdk's clang runs any `wasm-opt` it finds on `PATH`, so the
+harness builds Mono with a minimal `PATH`. Wasm samples compile serially (`-C parallel-compilation=n`) so
 a sample's startup does not load every core, and `summary.json` keeps each
 row's per-sample times.
 

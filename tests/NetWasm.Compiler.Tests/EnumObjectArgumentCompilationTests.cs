@@ -15,7 +15,7 @@ public sealed class EnumObjectArgumentCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "TypeEnumFixture.EntryPoint",
             "Run", [new("run", "TypeEnumFixture.EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, target, result.StaticDataEnd));

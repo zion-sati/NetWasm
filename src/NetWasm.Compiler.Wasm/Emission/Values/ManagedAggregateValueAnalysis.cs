@@ -55,8 +55,8 @@ internal sealed record ManagedAggregateLaneAccess(
     bool Writes)
 {
     // The lanes the access covers, when they are not the 4-byte integer
-    // lanes of its byte range: a reference or byref field's lane, or every
-    // lane of an aggregate that initobj clears (StackKind ValueType).
+    // lanes of its byte range: a reference or byref field's lane, or the
+    // lanes of the aggregate or field that initobj clears (StackKind ValueType).
     public ImmutableArray<int> LaneOffsets { get; init; } = [];
 }
 
@@ -97,4 +97,8 @@ internal sealed record ManagedAggregateValueAnalysisRequest(
 {
     // Whether aggregates with reference and byref fields, and initobj, take part.
     public bool References { get; init; }
+
+    // Locals another promotion owns. They keep no storage for lanes to be
+    // stored to or reloaded from.
+    public ImmutableHashSet<int> ExcludedLocals { get; init; } = [];
 }

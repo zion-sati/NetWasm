@@ -340,6 +340,32 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         Assert.Contains(WasmOpcodes.Prefixed, GetCodeBytes(request));
     }
 
+    // An ldobj that its adjacent consumer copies by value passes on its source
+    // address and copies nothing itself.
+    [Fact]
+    public void DirectLoadObjectPassesItsSourceAddressToTheConsumer()
+    {
+        var context = CreateMethodEmissionContext() with
+        {
+            ValueLayout = new ValueFrameLayout(16, [], [], ImmutableDictionary<int, int>.Empty, [])
+            {
+                DirectValueLoadOffsets = [0],
+            },
+        };
+        var request = CreateRequest(
+            CilOperation.LoadObject,
+            [CliValueKind.ManagedAddress],
+            new CilOperand.TypeIdentity(ValueType()),
+            context);
+
+        Emit((IInstructionCommandProvider)CreateEmitter(WasmTargetLayout.Wasm64), request);
+
+        Assert.Equal([CliValueKind.ValueType], request.Stack);
+        Assert.Equal(
+            [WasmOpcodes.LocalGet, WasmOpcodes.LocalSet],
+            ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions().Select(instruction => instruction.Opcode));
+    }
+
     [Fact]
     public void LoadObjectUsesTypedMemoryLoadForScalarValues()
     {

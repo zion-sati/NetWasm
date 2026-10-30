@@ -45,7 +45,7 @@ public sealed class AsynchronousManagedExecutableComponentAdapterWriter(
                 request.EntryPoint.ReturnShape, "Unsupported managed return shape."),
         };
         string Export(string operation) => CanonicalAbiNames.Export(
-            "netwasm:runtime@1.0.0/process", operation, target);
+            "netwasm:runtime/process@1.0.0", operation, target);
         _modules.Write(
             "(module " +
             "(import \"netwasm.application.v1\" \"run\" (func $process_start (result i32))) " +

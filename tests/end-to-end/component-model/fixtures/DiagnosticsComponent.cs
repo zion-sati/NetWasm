@@ -15,7 +15,7 @@ public static class DiagnosticsComponent
     private const ulong ValidObservation = 0x0123_4567_89ab_cdef;
     private static readonly AsyncLocal<string?> CurrentMarker = new();
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "sample")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "sample")]
     public static ulong Sample()
     {
         var activity = new Activity("component-consumer")
@@ -49,7 +49,7 @@ public static class DiagnosticsComponent
 
     public static int Run(int input) => checked(input + (Sample() == ValidObservation ? 1 : -1));
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "trace-activity")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "trace-activity")]
     public static ulong TraceActivity()
     {
         const string sourceName = "component-activity-probe";
@@ -76,7 +76,7 @@ public static class DiagnosticsComponent
             callbacks[1] == "stop:root" ? 1UL : 0UL;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "trace-diagnostic")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "trace-diagnostic")]
     public static ulong TraceDiagnostic()
     {
         var callbacks = new List<string>();
@@ -96,7 +96,7 @@ public static class DiagnosticsComponent
         return callbacks.Count == 1 && callbacks[0] == "component.event" ? 1UL : 0UL;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "trace-current")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "trace-current")]
     public static ulong TraceCurrent()
     {
         var previous = Activity.Current;
@@ -122,7 +122,7 @@ public static class DiagnosticsComponent
             CurrentMarker.Value == previousMarker;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "trace")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "trace")]
     public static ulong Trace()
     {
         var stage = 0;
@@ -222,7 +222,7 @@ public static class DiagnosticsComponent
         return observation;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "qualification-contract")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "qualification-contract")]
     public static ulong QualificationContract()
     {
         var contract = 0UL;
@@ -259,7 +259,7 @@ public static class DiagnosticsComponent
         return contract;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics")]
     public static ulong Metrics()
     {
         using var meter = new Meter("component-meter");
@@ -292,7 +292,7 @@ public static class DiagnosticsComponent
         return ((ulong)(uint)published << 32) | (uint)measurements;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-synchronous")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-synchronous")]
     public static ulong MetricsSynchronous()
     {
         var stage = 0;
@@ -341,28 +341,28 @@ public static class DiagnosticsComponent
         }
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-listener")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-listener")]
     public static ulong MetricsListener() => MetricsSynchronousProbe(-1);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-counter")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-counter")]
     public static ulong MetricsCounter() => MetricsSynchronousProbe(0);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-gauge")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-gauge")]
     public static ulong MetricsGauge() => MetricsSynchronousProbe(1);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-up-down")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-up-down")]
     public static ulong MetricsUpDown() => MetricsSynchronousProbe(2);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-histogram")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-histogram")]
     public static ulong MetricsHistogram() => MetricsSynchronousProbe(3);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-observable-value")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-observable-value")]
     public static ulong MetricsObservableValue() => MetricsProbe(1);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-observable-measurement")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-observable-measurement")]
     public static ulong MetricsObservableMeasurement() => MetricsProbe(2);
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "metrics-observable-sequence")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "metrics-observable-sequence")]
     public static ulong MetricsObservableSequence() => MetricsProbe(3);
 
     private static ulong MetricsSynchronousProbe(int kind)
@@ -449,7 +449,7 @@ public static class DiagnosticsComponent
         return ((ulong)(uint)published << 32) | (uint)measurements;
     }
 
-    [WitExport("netwasm:diagnostics@1.0.0/acceptance", "boundary")]
+    [WitExport("netwasm:diagnostics/acceptance@1.0.0", "boundary")]
     public static ulong Boundary()
     {
         using var activity = new Activity("exception-boundary").Start();

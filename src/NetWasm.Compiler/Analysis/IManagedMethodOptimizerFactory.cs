@@ -17,5 +17,9 @@ internal interface IManagedMethodOptimizerFactory
         IMethodSpecializer constantCallFolding,
         IDispatchTargetResolver dispatchTargets,
         IFinalizerResolver finalizers,
+        ITypeDefinitionResolver typeDefinitions,
+        Loops.IArrayLoopMethodResolver arrayLoopMethods,
+        Loops.ISpanLengthResolver spanLengths,
+        Loops.IVectorLoopMethodResolver vectorLoopMethods,
         WasmOptimizationSettings settings);
 }

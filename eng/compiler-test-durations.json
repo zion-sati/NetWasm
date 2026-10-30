@@ -4549,7 +4549,7 @@
       "cases": 1,
       "durationSeconds": 54.505724
     },
-    "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerFoldsClosedReferenceContainmentTraitsFromCanonicalLayouts": {
+    "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerFoldsClosedReferenceContainmentTraitsBeforeReachability": {
       "cases": 1,
       "durationSeconds": 93.6443716
     },
@@ -10140,7 +10140,7 @@
     "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerEmitsDeterministicClosedScalarGenericSpecializations": 104.665963,
     "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerExecutesAddressCarriedStructConstructionAndInstanceCalls": 123.8471382,
     "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerExecutesClosedGenericArraysOfReferenceBearingValues": 54.505724,
-    "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerFoldsClosedReferenceContainmentTraitsFromCanonicalLayouts": 93.6443716,
+    "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerFoldsClosedReferenceContainmentTraitsBeforeReachability": 93.6443716,
     "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerPublishesEmbeddedStructReferencesWhenBoxing": 56.9023866,
     "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerSeparatesClosedGenericStaticStorageAndInitializers": 56.3234393,
     "NetWasm.Compiler.Tests.GenericCompilationTests.CompilerSpecializesGenericDefaultAndNewConstraints": 36.0112149,

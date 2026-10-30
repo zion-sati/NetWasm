@@ -350,6 +350,14 @@ var getTypeObject = (semantic, type) => {
   typeObjects.set(semantic, pointer);
   return pointer;
 };
+// The compiler's static Type objects become their types' objects.
+var registerTypeObjects = (first, count, stride) => {
+  var view = createRefreshableDataView(memory);
+  for (var index = 0; index < count; index++) {
+    var object = plus(first, index * stride);
+    typeObjects.set(view.getInt32(asNumber(plus(object, memory64 ? 8 : 4)), true), object);
+  }
+};
 var allocateArray = (
   length,
   type,
@@ -382,7 +390,9 @@ var allocateRectangularArray = (rank, dimensions, type, element, size, reference
         (length !== 0 && total > Math.floor(1073741823 / length))) return zeroAddress();
     total *= length;
   }
-  const shape = raw(rank * (bounded ? 12 : 8));
+  // As in the runtime, every shape has room for its lower bounds, which stay
+  // zero without bounds; compiled code reads them there.
+  const shape = raw(rank * 12);
   const elements = total === 0
     ? zeroAddress()
     : raw(total * (references ? (memory64 ? 8 : 4) : size));
@@ -807,6 +817,9 @@ var runtimeValues = {
   array_clone: cloneArray,
   allocate_string: allocateString,
   get_type_object: getTypeObject,
+  register_type_objects: registerTypeObjects,
+  // No Type object cache in memory: compiled GetType asks get_type_object.
+  type_object_cache_address: zeroAddress,
   suppress_finalize: zero,
   initialize_finalization: zero,
   allocate_finalizable: allocate,

@@ -154,6 +154,12 @@ internal sealed class StructuredExceptionValidator : IStructuredExceptionValidat
                     foreach (var group in FindRootGroups(loop.ContinueBody)) yield return group;
                     foreach (var group in FindRootGroups(loop.ExitBody)) yield return group;
                     break;
+                case StructuredLabeledBlock block:
+                    foreach (var group in FindRootGroups(block.Body)) yield return group;
+                    break;
+                case StructuredLabeledLoop loop:
+                    foreach (var group in FindRootGroups(loop.Body)) yield return group;
+                    break;
                 case StructuredDispatcher dispatcher:
                     foreach (var exit in dispatcher.Exits)
                         foreach (var group in FindRootGroups(exit.Body)) yield return group;

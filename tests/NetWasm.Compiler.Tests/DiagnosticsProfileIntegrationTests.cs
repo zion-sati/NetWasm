@@ -348,7 +348,7 @@ public sealed class DiagnosticsProfileIntegrationTests
             EntryAssemblyPath = entryAssembly,
             ReferencePaths = [assets.CoreLib],
             Target = target,
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
         };
         return NetWasmCompiler.Compile(options);
     }

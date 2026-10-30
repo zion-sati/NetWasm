@@ -310,7 +310,14 @@ internal sealed class ValueFrameLayoutPlanner(
                 var loadedType = _typeOperands.Resolve(instruction, header.MethodInstance);
                 if (loadedType.StackKind == CliValueKind.ValueType)
                 {
-                    ReserveResult(loadedType, instruction, instruction.Operation);
+                    if (directValueCandidates.Contains(instruction.Offset))
+                    {
+                        directValueLoads.Add(instruction.Offset);
+                    }
+                    else
+                    {
+                        ReserveResult(loadedType, instruction, instruction.Operation);
+                    }
                 }
                 continue;
             }

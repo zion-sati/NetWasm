@@ -215,7 +215,7 @@ public sealed class AsyncIoSemanticsCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             DrainReactor = true,
             ObserveExportName = "observe",
         });
@@ -475,7 +475,7 @@ public sealed class AsyncIoSemanticsCompilationTests
                 new RequestedExport("observe", "AsyncStreamIoFixture.EntryPoint", "Observe"),
             ],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             DrainReactor = true,
             ObserveExportName = "observe",
         });
@@ -680,7 +680,7 @@ public sealed class AsyncIoSemanticsCompilationTests
                 new RequestedExport("observe", "StreamWriterFidelityFixture.EntryPoint", "Observe"),
             ],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             DrainReactor = true,
             ObserveExportName = "observe",
         });

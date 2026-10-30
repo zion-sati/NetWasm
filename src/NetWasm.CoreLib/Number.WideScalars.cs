@@ -475,7 +475,7 @@ namespace System
 
         private static bool IsWhiteSpace(char value) => IsAsciiWhiteSpace(value);
 
-        internal static void ThrowDecimalOverflowException() => throw new OverflowException();
+        internal static void ThrowDecimalOverflowException() => throw new OverflowException(SR.Overflow_Decimal);
 
         // ToString() with no format: the shortest round-trip form, without the
         // format string machinery.
@@ -486,6 +486,15 @@ namespace System
         internal static string FormatFloat<TNumber>(TNumber value, string? format, object? provider)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
             => FormatFloating<TNumber>(TNumber.FloatToBits(value), format);
+
+        // TryFormat with no format, as FormatFloat(value) writes it.
+        internal static bool TryFormatShortestFloat<TNumber>(TNumber value, Span<char> destination, out int charsWritten)
+            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
+        {
+            var builder = new ValueStringBuilder(destination);
+            AppendShortestFloating<TNumber>(ref builder, TNumber.FloatToBits(value));
+            return builder.TryCopyTo(destination, out charsWritten);
+        }
 
         internal static bool TryFormatFloat<TNumber>(TNumber value, ReadOnlySpan<char> format, object? provider, Span<char> destination, out int charsWritten)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>

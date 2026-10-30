@@ -135,7 +135,7 @@ public sealed class InteropContractCoverageTests
             2,
             MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4)) with
         {
-            WitImport = new WitImportDeclaration("pkg/iface", "run"),
+            WitImport = new WitImportDeclaration("iface", "run"),
         };
         var referencedAssembly = new AssemblyIdentity("ReferencedBindings");
         var referenced = owned with
@@ -203,7 +203,7 @@ public sealed class InteropContractCoverageTests
         {
             Key = new EntityKey(firstAssembly, 0x06000001),
             DeclaringType = new EntityKey(firstAssembly, 0x02000001),
-            WitImport = new("pkg/iface", "run"),
+            WitImport = new("iface", "run"),
         };
         var second = first with
         {
@@ -327,7 +327,7 @@ public sealed class InteropContractCoverageTests
                 new WitTypeDefinition(2, "record", recordKind.RootElement.Clone(), 0),
             ],
             "{}");
-        var interfaceName = "pkg/iface";
+        var interfaceName = "iface";
         var resourceMethods = new[]
         {
             Method("drop-import", 10, MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4))
@@ -418,7 +418,7 @@ public sealed class InteropContractCoverageTests
             25,
             MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4)) with
         {
-            WitExport = new WitExportDeclaration("pkg/iface", "no-result"),
+            WitExport = new WitExportDeclaration("iface", "no-result"),
         };
         var noisyMethod = Method("noise", 26, MethodSignatureModel.Create(CliValueKind.I4));
         var wrongExport = Method(
@@ -486,14 +486,14 @@ public sealed class InteropContractCoverageTests
             20,
             MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4)) with
         {
-            WitExport = new WitExportDeclaration("pkg/iface", "run"),
+            WitExport = new WitExportDeclaration("iface", "run"),
         };
         var validPostReturn = Method(
             "run-post",
             21,
             MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4)) with
         {
-            WitPostReturn = new WitPostReturnDeclaration("pkg/iface", "run"),
+            WitPostReturn = new WitPostReturnDeclaration("iface", "run"),
         };
         var postReturnResolver = new ComponentContractResolver(
             new FixedDocuments(functionDocument),
@@ -542,7 +542,9 @@ public sealed class InteropContractCoverageTests
     }
 
     [Fact]
-    public void ComponentContractResolverKeepsSemanticIdentityAndWorldAliasSeparate()
+    // `export math-alias: math-api;` places the interface under the world's own
+    // name, which is the key its bindings use and the component's name for it.
+    public void ComponentContractResolverBindsAnAliasedPlacementByItsWorldKey()
     {
         var function = new WitFunction(
             "add-value",
@@ -550,7 +552,6 @@ public sealed class InteropContractCoverageTests
             new WitTypeReference.Primitive("u32"),
             new WitFunctionKind("sync"));
         var package = "example:worker@1.0.0";
-        var semanticInterface = package + "/math-api";
         var item = new WitWorldItem("math-alias", 0, null)
         {
             CoreBindingName = "math-alias",
@@ -570,7 +571,7 @@ public sealed class InteropContractCoverageTests
             31,
             MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4)) with
         {
-            WitExport = new WitExportDeclaration(semanticInterface, "add-value"),
+            WitExport = new WitExportDeclaration("math-alias", "add-value"),
         };
         var resolver = new ComponentContractResolver(
             new FixedDocuments(document),
@@ -584,7 +585,7 @@ public sealed class InteropContractCoverageTests
             Options() with { WitPath = "worker.wit", WitWorld = "application" });
 
         var export = Assert.Single(contract.Exports);
-        Assert.Equal(semanticInterface, export.InterfaceName);
+        Assert.Equal("math-alias", export.InterfaceName);
         Assert.Equal("math-alias", export.CoreInterfaceName);
         Assert.Equal("cm32p2|math-alias|add-value",
             CanonicalAbiNames.Export(export, WasmTarget.Wasm32));
@@ -698,7 +699,7 @@ public sealed class InteropContractCoverageTests
             MethodSignatureModel.Create(CliValueKind.Void)) with
         {
             RelativeVirtualAddress = 0,
-            WitImport = new("wasi:http@0.2.11/outgoing-handler", "handle"),
+            WitImport = new("wasi:http/outgoing-handler@0.2.11", "handle"),
         };
         var equivalentAssembly = new AssemblyIdentity("EquivalentBindings");
         var equivalentWitImport = witImport with
@@ -722,7 +723,7 @@ public sealed class InteropContractCoverageTests
         Assert.Equal("callback-export", callbackManifest.ExportName);
         Assert.Equal("callback", callbackManifest.ImportName);
         var witManifest = Assert.Single(manifest.WitImports);
-        Assert.Equal("wasi:http@0.2.11/outgoing-handler", witManifest.Interface);
+        Assert.Equal("wasi:http/outgoing-handler@0.2.11", witManifest.Interface);
         Assert.Equal("handle", witManifest.Function);
 
         var unsupported = Method(

@@ -1,4 +1,5 @@
 using System;
+using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
 
@@ -112,6 +113,14 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 types.Target,
                 state,
                 _exceptionTypeNames),
+            new TypeObjectDataBuilder(
+                typeFinder,
+                program,
+                types,
+                objectLayouts,
+                new TypeOperandResolver(identities),
+                types.Target,
+                state),
             new EnumMetadataCollector(
                 typeDefinitions, identities, types, program.EnumMetadataRequirements, state),
             new EnumMetadataBuilder(state, types.Target));

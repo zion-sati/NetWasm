@@ -53,6 +53,40 @@ public sealed class RuntimeIntrinsicRegistryTests
         }
     }
 
+    // Math has float and double Max and Min, MathF float ones; integral and
+    // mixed overloads keep their managed bodies.
+    [Theory]
+    [InlineData("System.Math", "Max", CliValueKind.F8, RuntimeIntrinsic.FloatingMaximum)]
+    [InlineData("System.Math", "Max", CliValueKind.F4, RuntimeIntrinsic.FloatingMaximum)]
+    [InlineData("System.MathF", "Max", CliValueKind.F4, RuntimeIntrinsic.FloatingMaximum)]
+    [InlineData("System.Math", "Min", CliValueKind.F8, RuntimeIntrinsic.FloatingMinimum)]
+    [InlineData("System.Math", "Min", CliValueKind.F4, RuntimeIntrinsic.FloatingMinimum)]
+    [InlineData("System.MathF", "Min", CliValueKind.F4, RuntimeIntrinsic.FloatingMinimum)]
+    public void RegistryRecognizesFloatingMaxAndMinOnly(string name, string methodName, CliValueKind kind,
+        RuntimeIntrinsic intrinsic)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var type = new EntityKey(assembly, 1);
+        var method = new MethodDefinitionModel(new(assembly, 2), type, methodName, true,
+            MethodSignatureModel.Create(kind, kind, kind), 0);
+        var registry = new RuntimeIntrinsicRegistry(new DictionarySymbolFormatter((type, name)), [method]);
+
+        AssertIntrinsic(registry, method.Key, intrinsic);
+
+        var other = kind == CliValueKind.F4 ? CliValueKind.F8 : CliValueKind.F4;
+        foreach (var candidate in new[]
+        {
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.I4, CliValueKind.I4, CliValueKind.I4) },
+            method with { Signature = MethodSignatureModel.Create(CliValueKind.I8, CliValueKind.I8, CliValueKind.I8) },
+            method with { Signature = MethodSignatureModel.Create(kind, kind, other) },
+            method with { IsStatic = false },
+        })
+        {
+            var managed = new RuntimeIntrinsicRegistry(new DictionarySymbolFormatter((type, name)), [candidate]);
+            Assert.False(((IRuntimeIntrinsicRegistry)managed).TryGetIntrinsic(candidate.Key, out _));
+        }
+    }
+
     [Theory]
     [InlineData("System.SByte", "i1", CliValueKind.I4)]
     [InlineData("System.Byte", "u1", CliValueKind.I4)]
@@ -466,6 +500,30 @@ public sealed class RuntimeIntrinsicRegistryTests
             new RuntimeIntrinsicRegistry(
                 new DictionarySymbolFormatter((declaringType,
                     "System.Runtime.InteropServices.NativeMemory")),
+                [method]),
+            method.Key,
+            expected);
+    }
+
+    [Theory]
+    [InlineData("Fill", RuntimeIntrinsic.ArrayLoopFill)]
+    [InlineData("Copy", RuntimeIntrinsic.ArrayLoopCopy)]
+    public void RegistryRecognizesArrayLoopContracts(string methodName, RuntimeIntrinsic expected)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var declaringType = new EntityKey(assembly, 9);
+        var method = new MethodDefinitionModel(
+            new EntityKey(assembly, 10),
+            declaringType,
+            methodName,
+            true,
+            MethodSignatureModel.Create(CliValueKind.I4),
+            1);
+
+        AssertIntrinsic(
+            new RuntimeIntrinsicRegistry(
+                new DictionarySymbolFormatter((declaringType,
+                    "System.Runtime.CompilerServices.ArrayLoops")),
                 [method]),
             method.Key,
             expected);

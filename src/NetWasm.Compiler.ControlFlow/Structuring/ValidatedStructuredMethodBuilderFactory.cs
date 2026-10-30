@@ -46,7 +46,9 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
 
     public IValidatedStructuredMethodBuilder Create(
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware)
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled)
     {
         var controlFlowProjector = new Final.StructuredControlFlowProjector();
         var distances = new ControlFlowDistanceFinder();
@@ -150,6 +152,9 @@ public sealed class ValidatedStructuredMethodBuilderFactory : IValidatedStructur
                         new global::NetWasm.Compiler.ControlFlow.Structuring.ExceptionScopeFinder()),
                             controlFlowProjector,
                 new Final.StructuredExceptionGroupProjector(controlFlowProjector)),
-                new Final.StructuredMethodFactory(finalValidator)));
+                new Final.StructuredMethodFactory(finalValidator)),
+            dispatcherElimination == DispatcherEliminationPolicy.Reducible
+                ? new ReducibleControlFlowStructurer()
+                : null);
     }
 }

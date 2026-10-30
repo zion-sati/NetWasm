@@ -74,19 +74,58 @@ public sealed class ArrayInstructionEmitterTests
     }
 
     [Fact]
-    public void InitializeArrayDataWritesEachByteAndAdvancesAfterFirst()
+    public void InitializeArrayDataStoresSmallDataAsConstants()
     {
-        var emitter = CreateEmitter(new RecordingLayoutProvider(), out _);
+        var layouts = new RecordingLayoutProvider();
+        var emitter = CreateEmitter(layouts, out _);
         var request = CreateRequest(
             CilOperation.InitializeArrayData,
             [CliValueKind.ManagedReference],
-            new CilOperand.ByteData([0x01, 0x02]));
+            Initializer([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]));
 
         Emit((IInstructionCommandProvider)emitter, request);
 
         Assert.Empty(request.Stack);
-        Assert.Equal(2, GetCodeBytes(request).Count(byteValue =>
-            byteValue == WasmOpcodes.I32Store8));
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.Equal(
+            [WasmOpcodes.I64Store, WasmOpcodes.I32Store16, WasmOpcodes.I32Store8],
+            instructions.Select(instruction => instruction.Opcode)
+                .Where(opcode => opcode is WasmOpcodes.I64Store or WasmOpcodes.I32Store or WasmOpcodes.I32Store16 or
+                    WasmOpcodes.I32Store8));
+        Assert.Contains(WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0x0807060504030201)),
+            instructions);
+        Assert.Null(layouts.StaticFieldRequest);
+    }
+
+    [Fact]
+    public void InitializeArrayDataCopiesLargeDataFromItsField()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var emitter = CreateEmitter(layouts, out _);
+        var request = CreateRequest(
+            CilOperation.InitializeArrayData,
+            [CliValueKind.ManagedReference],
+            Initializer([.. Enumerable.Range(0, 65).Select(static value => (byte)value)]));
+
+        Emit((IInstructionCommandProvider)emitter, request);
+
+        Assert.Empty(request.Stack);
+        Assert.Equal(new EntityKey(Assembly, 0x04000009), layouts.StaticFieldRequest);
+        Assert.DoesNotContain(WasmOpcodes.I32Store8, GetCodeBytes(request));
+        Assert.Contains(WasmInstruction.WithOperand(WasmOpcodes.Prefixed,
+                WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)),
+            ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions());
+    }
+
+    private static CilOperand.ArrayInitializerData Initializer(ImmutableArray<byte> data)
+    {
+        var owner = new EntityKey(Assembly, 0x02000009);
+        var field = new FieldDefinitionModel(new(Assembly, 0x04000009), owner, "Data", CliValueKind.ValueType, true)
+        {
+            InitialData = data,
+        };
+        return new(new FieldInstanceModel(field, CliTypeIdentity.Named(Assembly, "Test", "Owner", isValueType: false),
+            field.SignatureType));
     }
 
     [Fact]
@@ -145,6 +184,35 @@ public sealed class ArrayInstructionEmitterTests
 
         Assert.Empty(request.Stack);
         Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
+    }
+
+    // A value of exactly the array's element type, or any value stored into an
+    // object[], skips the runtime's hierarchy check, as .NET's store helper does.
+    [Fact]
+    public void ReferenceStoreAcceptsTheElementTypeOrObjectBeforeTheHierarchyCheck()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var emitter = CreateEmitter(layouts, out _);
+        var request = CreateRequest(
+            CilOperation.StoreArrayElementReference,
+            [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.ManagedReference]);
+
+        Emit((IInstructionCommandProvider)emitter, request);
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var isAssignable = WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned(
+            (uint)WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.IsAssignable)));
+        var call = Array.IndexOf(instructions.ToArray(), isAssignable);
+        var fastPath = instructions[..call].ToArray();
+        var headerLoad = Array.IndexOf(fastPath, WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, 0)));
+        Assert.True(headerLoad >= 0);
+        var objectTypeId = layouts.GetObjectLayout(
+            CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, isValueType: false)).TypeId;
+        Assert.Equal(
+            [WasmOpcodes.I32NotEqual, WasmOpcodes.I32Constant, WasmOpcodes.I32NotEqual, WasmOpcodes.I32And, WasmOpcodes.If],
+            fastPath[(headerLoad + 1)..].Select(static instruction => instruction.Opcode)
+                .Where(static opcode => opcode is not (WasmOpcodes.LocalGet or WasmOpcodes.I32Load)));
+        Assert.Contains(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(objectTypeId)), fastPath);
     }
 
     [Fact]
@@ -470,7 +538,8 @@ public sealed class ArrayInstructionEmitterTests
             roots,
             lengths,
             indexes,
-            new ArrayElementAddressEmitter(layouts, addresses));
+            new ArrayElementAddressEmitter(layouts, addresses),
+            layouts);
     }
 
     private sealed class RecordingArrayExceptions : IImplicitExceptionEmitter

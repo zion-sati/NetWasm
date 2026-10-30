@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
 // The upstream implementation is licensed under MIT.
 // Copyright (c) .NET Foundation and Contributors.
 
@@ -29,8 +29,6 @@ namespace System
             NumberStyles.AllowExponent |
             NumberStyles.AllowCurrencySymbol;
 
-        private sbyte Exponent => (sbyte)(95 - Scale);
-
         static decimal IAdditiveIdentity<decimal, decimal>.AdditiveIdentity => Zero;
 
         static decimal IMultiplicativeIdentity<decimal, decimal>.MultiplicativeIdentity => One;
@@ -52,8 +50,6 @@ namespace System
         static decimal IFloatingPointConstants<decimal>.Pi => 3.1415926535897932384626433833m;
 
         static decimal IFloatingPointConstants<decimal>.Tau => 6.2831853071795864769252867666m;
-
-        public static decimal NegativeOne => MinusOne;
 
         public static decimal E => 2.7182818284590452353602874714m;
 
@@ -366,37 +362,6 @@ namespace System
         public string ToString(string? format) => FormatCore(this, format);
 
         public string ToString(IFormatProvider? provider) => FormatCore(this, format: null);
-
-        bool IConvertible.ToBoolean(IFormatProvider? provider) => Convert.ToBoolean(this);
-
-        char IConvertible.ToChar(IFormatProvider? provider) => throw new InvalidCastException();
-
-        sbyte IConvertible.ToSByte(IFormatProvider? provider) => Convert.ToSByte(this);
-
-        byte IConvertible.ToByte(IFormatProvider? provider) => Convert.ToByte(this);
-
-        short IConvertible.ToInt16(IFormatProvider? provider) => Convert.ToInt16(this);
-
-        ushort IConvertible.ToUInt16(IFormatProvider? provider) => Convert.ToUInt16(this);
-
-        int IConvertible.ToInt32(IFormatProvider? provider) => Convert.ToInt32(this);
-
-        uint IConvertible.ToUInt32(IFormatProvider? provider) => Convert.ToUInt32(this);
-
-        long IConvertible.ToInt64(IFormatProvider? provider) => Convert.ToInt64(this);
-
-        ulong IConvertible.ToUInt64(IFormatProvider? provider) => Convert.ToUInt64(this);
-
-        float IConvertible.ToSingle(IFormatProvider? provider) => (float)this;
-
-        double IConvertible.ToDouble(IFormatProvider? provider) => (double)this;
-
-        decimal IConvertible.ToDecimal(IFormatProvider? provider) => this;
-
-        DateTime IConvertible.ToDateTime(IFormatProvider? provider) => throw new InvalidCastException();
-
-        object IConvertible.ToType(Type conversionType, IFormatProvider? provider) =>
-            PrimitiveIntegralConversions.ToType(this, conversionType, provider);
 
         public bool TryFormat(
             Span<char> destination,

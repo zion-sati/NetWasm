@@ -55,6 +55,12 @@ internal sealed class StructuredBlockOwnershipValidator : IStructuredBlockOwners
                     Visit(loop.ContinueBody, method, owners, visitedGroups);
                     Visit(loop.ExitBody, method, owners, visitedGroups);
                     break;
+                case StructuredLabeledBlock block:
+                    Visit(block.Body, method, owners, visitedGroups);
+                    break;
+                case StructuredLabeledLoop loop:
+                    Visit(loop.Body, method, owners, visitedGroups);
+                    break;
                 case StructuredDispatcher dispatcher:
                     foreach (var block in dispatcher.Blocks) Record(block.Occurrence, owners);
                     foreach (var exit in dispatcher.Exits) Visit(exit.Body, method, owners, visitedGroups);

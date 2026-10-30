@@ -3,7 +3,7 @@
 //
 // This implementation is adapted from dotnet/runtime System.Runtime.Numerics
 // BigInteger and BigIntegerCalculator at commit
-// 811225a482702af7ecc35d817966bc70b88a3a23. The NetWasm profile retains the
+// 474ed963699fc29809015392738a15231aaae2de. The NetWasm profile retains the
 // invariant, managed scalar algorithms and omits culture, serialization,
 // reflection, dynamic, threading, and SIMD-only branches.
 
@@ -626,17 +626,48 @@ namespace System.Numerics
         public static implicit operator BigInteger(Int128 value) => Parse(value.ToString(), NumberStyles.Integer, null);
         public static implicit operator BigInteger(UInt128 value) => Parse(value.ToString(), NumberStyles.Integer, null);
 
-        public static explicit operator int(BigInteger value) => unchecked((int)value.ToUInt64());
-        public static explicit operator uint(BigInteger value) => unchecked((uint)value.ToUInt64());
-        public static explicit operator long(BigInteger value) => unchecked((long)value.ToUInt64());
-        public static explicit operator ulong(BigInteger value) => value.ToUInt64();
-        public static explicit operator short(BigInteger value) => unchecked((short)value.ToUInt64());
-        public static explicit operator ushort(BigInteger value) => unchecked((ushort)value.ToUInt64());
-        public static explicit operator byte(BigInteger value) => unchecked((byte)value.ToUInt64());
-        public static explicit operator char(BigInteger value) => unchecked((char)value.ToUInt64());
-        public static explicit operator sbyte(BigInteger value) => unchecked((sbyte)value.ToUInt64());
-        public static explicit operator nint(BigInteger value) => (nint)(long)value;
-        public static explicit operator nuint(BigInteger value) => (nuint)value.ToUInt64();
+        public static explicit operator int(BigInteger value)
+        {
+            if (value._bits is null) return 0;
+            if (value._bits.Length > 1) throw new OverflowException();
+            if (value._sign > 0) return checked((int)value._bits[0]);
+            // int.MinValue's magnitude is one more than int.MaxValue.
+            if (value._bits[0] > 0x80000000) throw new OverflowException();
+            return unchecked(-(int)value._bits[0]);
+        }
+
+        public static explicit operator uint(BigInteger value)
+        {
+            if (value._bits is null) return 0;
+            if (value._bits.Length > 1 || value._sign < 0) throw new OverflowException();
+            return value._bits[0];
+        }
+
+        public static explicit operator long(BigInteger value)
+        {
+            if (value._bits is null) return 0;
+            if (value._bits.Length > 2) throw new OverflowException();
+            var magnitude = value.ToUInt64();
+            var result = value._sign > 0 ? unchecked((long)magnitude) : unchecked(-(long)magnitude);
+            // The signs differ only when the magnitude is out of range.
+            if (result > 0 && value._sign > 0 || result < 0 && value._sign < 0) return result;
+            throw new OverflowException();
+        }
+
+        public static explicit operator ulong(BigInteger value)
+        {
+            if (value._bits is null) return 0;
+            if (value._bits.Length > 2 || value._sign < 0) throw new OverflowException();
+            return value.ToUInt64();
+        }
+
+        public static explicit operator short(BigInteger value) => checked((short)(int)value);
+        public static explicit operator ushort(BigInteger value) => checked((ushort)(int)value);
+        public static explicit operator byte(BigInteger value) => checked((byte)(int)value);
+        public static explicit operator char(BigInteger value) => checked((char)(int)value);
+        public static explicit operator sbyte(BigInteger value) => checked((sbyte)(int)value);
+        public static explicit operator nint(BigInteger value) => nint.Size == 8 ? (nint)(long)value : (int)value;
+        public static explicit operator nuint(BigInteger value) => nuint.Size == 8 ? (nuint)(ulong)value : (uint)value;
         public static explicit operator double(BigInteger value) => value.ToDouble();
         public static explicit operator float(BigInteger value) => (float)value.ToDouble();
         public static explicit operator Half(BigInteger value) => (Half)value.ToDouble();
@@ -775,9 +806,9 @@ namespace System.Numerics
         static bool INumberBase<BigInteger>.TryConvertFromChecked<TOther>(TOther value, out BigInteger result) => TryConvertFrom(value, out result);
         static bool INumberBase<BigInteger>.TryConvertFromSaturating<TOther>(TOther value, out BigInteger result) => TryConvertFrom(value, out result);
         static bool INumberBase<BigInteger>.TryConvertFromTruncating<TOther>(TOther value, out BigInteger result) => TryConvertFrom(value, out result);
-        static bool INumberBase<BigInteger>.TryConvertToChecked<TOther>(BigInteger value, [MaybeNullWhen(false)] out TOther result) => TryConvertTo(value, out result);
-        static bool INumberBase<BigInteger>.TryConvertToSaturating<TOther>(BigInteger value, [MaybeNullWhen(false)] out TOther result) => TryConvertTo(value, out result);
-        static bool INumberBase<BigInteger>.TryConvertToTruncating<TOther>(BigInteger value, [MaybeNullWhen(false)] out TOther result) => TryConvertTo(value, out result);
+        static bool INumberBase<BigInteger>.TryConvertToChecked<TOther>(BigInteger value, [MaybeNullWhen(false)] out TOther result) => TryConvertTo(value, Conversion.Checked, out result);
+        static bool INumberBase<BigInteger>.TryConvertToSaturating<TOther>(BigInteger value, [MaybeNullWhen(false)] out TOther result) => TryConvertTo(value, Conversion.Saturating, out result);
+        static bool INumberBase<BigInteger>.TryConvertToTruncating<TOther>(BigInteger value, [MaybeNullWhen(false)] out TOther result) => TryConvertTo(value, Conversion.Truncating, out result);
 
         static bool IBinaryInteger<BigInteger>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out BigInteger value)
         {
@@ -991,23 +1022,20 @@ namespace System.Numerics
             return result;
         }
 
+        // The dividend is larger than the divisor.
         private static void DivideMagnitude(uint[] dividend, uint[] divisor, out uint[] quotient, out uint[] remainder)
         {
-            var quotientWords = new uint[(BitLength(dividend) + 31) / 32];
-            var rem = default(BigInteger);
-            for (var bit = BitLength(dividend) - 1; bit >= 0; bit--)
+            if (divisor.Length == 1)
             {
-                var shifted = ShiftLeftMagnitude(rem._bits ?? Array.Empty<uint>(), 1);
-                rem = new BigInteger(1, shifted);
-                if (GetMagnitudeBit(dividend, bit)) rem += One;
-                if (!rem.IsZero && CompareMagnitude(rem._bits!, divisor) >= 0)
-                {
-                    rem = new BigInteger(1, SubtractMagnitude(rem._bits!, divisor));
-                    quotientWords[bit / 32] |= 1u << (bit & 31);
-                }
+                quotient = (uint[])dividend.Clone();
+                var scalar = DivideByUInt32(quotient, divisor[0]);
+                remainder = scalar == 0 ? Array.Empty<uint>() : new uint[] { scalar };
+                return;
             }
-            quotient = quotientWords;
-            remainder = rem._bits ?? Array.Empty<uint>();
+
+            remainder = (uint[])dividend.Clone();
+            quotient = new uint[dividend.Length - divisor.Length + 1];
+            BigIntegerCalculator.DivideGrammarSchool(remainder, divisor, quotient);
         }
 
         private static uint DivideByUInt32(uint[] value, uint divisor)
@@ -1144,12 +1172,44 @@ namespace System.Numerics
             return false;
         }
 
-        private static bool TryConvertTo<TOther>(BigInteger value, out TOther result) where TOther : INumberBase<TOther>
+        private enum Conversion { Checked, Saturating, Truncating }
+
+        private static bool TryConvertTo<TOther>(BigInteger value, Conversion conversion, out TOther result) where TOther : INumberBase<TOther>
         {
-            object? converted = typeof(TOther) == typeof(BigInteger) ? value : typeof(TOther) == typeof(int) ? (int)value : typeof(TOther) == typeof(uint) ? (uint)value : typeof(TOther) == typeof(long) ? (long)value : typeof(TOther) == typeof(ulong) ? (ulong)value : typeof(TOther) == typeof(double) ? (double)value : typeof(TOther) == typeof(float) ? (float)value : null;
+            // Truncation keeps the low bits of the two's complement value.
+            var low = value._sign < 0 ? unchecked(0UL - value.ToUInt64()) : value.ToUInt64();
+            object? converted = typeof(TOther) == typeof(BigInteger) ? value
+                : typeof(TOther) == typeof(int) ? conversion switch
+                {
+                    Conversion.Saturating => (int)Saturate(value, int.MinValue, int.MaxValue),
+                    Conversion.Truncating => unchecked((int)low),
+                    _ => (int)value,
+                }
+                : typeof(TOther) == typeof(uint) ? conversion switch
+                {
+                    Conversion.Saturating => (uint)Saturate(value, uint.MinValue, uint.MaxValue),
+                    Conversion.Truncating => unchecked((uint)low),
+                    _ => (uint)value,
+                }
+                : typeof(TOther) == typeof(long) ? conversion switch
+                {
+                    Conversion.Saturating => (long)Saturate(value, long.MinValue, long.MaxValue),
+                    Conversion.Truncating => unchecked((long)low),
+                    _ => (long)value,
+                }
+                : typeof(TOther) == typeof(ulong) ? conversion switch
+                {
+                    Conversion.Saturating => (ulong)Saturate(value, ulong.MinValue, ulong.MaxValue),
+                    Conversion.Truncating => low,
+                    _ => (ulong)value,
+                }
+                : typeof(TOther) == typeof(double) ? (double)value : typeof(TOther) == typeof(float) ? (float)value : null;
             if (converted is TOther typed) { result = typed; return true; }
             result = default!;
             return false;
         }
+
+        private static BigInteger Saturate(BigInteger value, BigInteger minimum, BigInteger maximum) =>
+            value < minimum ? minimum : value > maximum ? maximum : value;
     }
 }

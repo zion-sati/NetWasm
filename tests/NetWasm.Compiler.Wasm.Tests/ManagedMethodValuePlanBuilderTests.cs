@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Values;
 
 namespace NetWasm.Compiler.Wasm.Tests;
@@ -137,7 +138,7 @@ public sealed class ManagedMethodValuePlanBuilderTests
         var analyzer = new RecordingAnalyzer();
         var planner = new RecordingPlanner(Plan());
         var projector = new RecordingProjector(true, projected);
-        var builder = new ManagedMethodValuePlanBuilder(analyzer, planner, projector);
+        var builder = new ManagedMethodValuePlanBuilder(analyzer, planner, projector, EmptyTransientAggregatePromotionPlanner.Instance);
 
         var result = builder.Build(Request(original, enabled: true) with { References = references });
 
@@ -190,7 +191,7 @@ public sealed class ManagedMethodValuePlanBuilderTests
         var analyzer = new RecordingAnalyzer();
         var planner = new RecordingPlanner(Plan());
         var projector = new RecordingProjector(true, RootMap(2));
-        var builder = new ManagedMethodValuePlanBuilder(analyzer, planner, projector);
+        var builder = new ManagedMethodValuePlanBuilder(analyzer, planner, projector, EmptyTransientAggregatePromotionPlanner.Instance);
 
         var result = builder.Build(Request(rootMap, enabled: false));
 
@@ -202,20 +203,34 @@ public sealed class ManagedMethodValuePlanBuilderTests
     }
 
     [Fact]
+    public void LeavesTransientLocalsOutOfTheAnalysis()
+    {
+        var analyzer = new RecordingAnalyzer();
+        var builder = new ManagedMethodValuePlanBuilder(analyzer, new RecordingPlanner(Plan()),
+            new RecordingProjector(true, RootMap()), new FixedTransientPlanner([3]));
+
+        builder.Build(Request(RootMap(), enabled: true));
+
+        Assert.Equal([3], analyzer.Request!.ExcludedLocals);
+    }
+
+    [Fact]
     public void RejectsNullDependenciesAndRequestMembers()
     {
         var analyzer = new RecordingAnalyzer();
         var planner = new RecordingPlanner(ManagedAggregateSsaPlan.Empty);
         var projector = new RecordingProjector(true, RootMap());
-        var builder = new ManagedMethodValuePlanBuilder(analyzer, planner, projector);
+        var builder = new ManagedMethodValuePlanBuilder(analyzer, planner, projector, EmptyTransientAggregatePromotionPlanner.Instance);
         var request = Request(RootMap(), enabled: false);
 
         Assert.Throws<ArgumentNullException>(() =>
-            new ManagedMethodValuePlanBuilder(null!, planner, projector));
+            new ManagedMethodValuePlanBuilder(null!, planner, projector, EmptyTransientAggregatePromotionPlanner.Instance));
         Assert.Throws<ArgumentNullException>(() =>
-            new ManagedMethodValuePlanBuilder(analyzer, null!, projector));
+            new ManagedMethodValuePlanBuilder(analyzer, null!, projector, EmptyTransientAggregatePromotionPlanner.Instance));
         Assert.Throws<ArgumentNullException>(() =>
-            new ManagedMethodValuePlanBuilder(analyzer, planner, null!));
+            new ManagedMethodValuePlanBuilder(analyzer, planner, null!, EmptyTransientAggregatePromotionPlanner.Instance));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ManagedMethodValuePlanBuilder(analyzer, planner, projector, null!));
         Assert.Throws<ArgumentNullException>(() => builder.Build(null!));
         Assert.Throws<ArgumentNullException>(() =>
             builder.Build(request with { Method = null! }));
@@ -239,7 +254,8 @@ public sealed class ManagedMethodValuePlanBuilderTests
         var builder = new ManagedMethodValuePlanBuilder(
             new RecordingAnalyzer(),
             new RecordingPlanner(plan),
-            projector);
+            projector,
+            EmptyTransientAggregatePromotionPlanner.Instance);
         return (builder.Build(Request(rootMap, reserved, enabled: true)), projector);
     }
 
@@ -306,6 +322,12 @@ public sealed class ManagedMethodValuePlanBuilderTests
             [new(new(Storage.Id, 0), new(2)),
                 new(new(Storage.Id, sizeof(int)), new(1))])],
         []);
+
+    private sealed class FixedTransientPlanner(ImmutableHashSet<int> locals) : ITransientAggregatePromotionPlanner
+    {
+        public TransientAggregatePromotionPlan Create(StructuredMethod method) =>
+            TransientAggregatePromotionPlan.Empty with { PromotedLocalIndices = locals };
+    }
 
     private sealed class RecordingAnalyzer : IManagedAggregateValueAnalyzer
     {

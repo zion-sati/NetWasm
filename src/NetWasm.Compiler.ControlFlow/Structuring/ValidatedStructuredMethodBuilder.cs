@@ -13,7 +13,8 @@ internal sealed class ValidatedStructuredMethodBuilder(
     Draft.IExceptionRegionOwnershipProjectorDraft exceptionRegionOwnership,
     Draft.IStructuredControlFlowOwnershipResolverDraft ownership,
     Draft.IStructuredControlFlowValidatorDraft validator,
-    Final.IStructuredMethodCompleter completer) : IValidatedStructuredMethodBuilder
+    Final.IStructuredMethodCompleter completer,
+    IReducibleControlFlowStructurer? reducibleControlFlow = null) : IValidatedStructuredMethodBuilder
 {
     private readonly IControlFlowStructuringStateBuilder _stateBuilder =
         stateBuilder ?? throw new ArgumentNullException(nameof(stateBuilder));
@@ -45,6 +46,14 @@ internal sealed class ValidatedStructuredMethodBuilder(
             stop: null,
             allowed: validated.Graph.ReachableBlocks,
             new HashSet<int>());
+        // A dispatcher routes every transition through a program counter;
+        // reducible control flow needs none.
+        if (reducibleControlFlow is not null &&
+            ContainsDispatcher(body) &&
+            reducibleControlFlow.Structure(validated) is { } labeled)
+        {
+            body = labeled;
+        }
         var draft = _ownership.Resolve(_exceptionRegionOwnership.Project(new Draft.StructuredMethodDraft(
             validated,
             body,
@@ -53,4 +62,18 @@ internal sealed class ValidatedStructuredMethodBuilder(
         _validator.Validate(draft);
         return _completer.Complete(draft);
     }
+
+    private static bool ContainsDispatcher(Draft.StructuredSequenceDraft sequence) =>
+        sequence.Regions.Any(region => region switch
+        {
+            Draft.StructuredDispatcherDraft => true,
+            Draft.StructuredIfDraft conditional =>
+                ContainsDispatcher(conditional.WhenTrue) || ContainsDispatcher(conditional.WhenFalse),
+            Draft.StructuredLoopDraft loop =>
+                ContainsDispatcher(loop.Body) || ContainsDispatcher(loop.ContinueBody) || ContainsDispatcher(loop.ExitBody),
+            Draft.StructuredPostTestLoopDraft loop =>
+                ContainsDispatcher(loop.Body) || ContainsDispatcher(loop.ContinueBody) || ContainsDispatcher(loop.ExitBody),
+            Draft.StructuredSequenceDraft nested => ContainsDispatcher(nested),
+            _ => false,
+        });
 }

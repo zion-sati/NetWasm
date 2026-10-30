@@ -49,13 +49,14 @@ public sealed class ConstantCallEvaluatorTests
     public void RejectsMissingDependencies()
     {
         var facts = new MethodFacts();
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(null!, facts, facts, facts, facts, Operands(facts), Comparisons(facts)));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, null!, facts, facts, facts, Operands(facts), Comparisons(facts)));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, null!, facts, facts, Operands(facts), Comparisons(facts)));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, null!, facts, Operands(facts), Comparisons(facts)));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, null!, Operands(facts), Comparisons(facts)));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, facts, null!, Comparisons(facts)));
-        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, facts, Operands(facts), null!));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(null!, facts, facts, facts, facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, null!, facts, facts, facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, null!, facts, facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, null!, facts, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, null!, Operands(facts), Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, facts, null!, Comparisons(facts), new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, facts, Operands(facts), null!, new NetWasm.Compiler.Analysis.MethodSpecializer([])));
+        Assert.Throws<ArgumentNullException>(() => new ConstantCallEvaluator(facts, facts, facts, facts, facts, Operands(facts), Comparisons(facts), null!));
     }
 
     [Theory]

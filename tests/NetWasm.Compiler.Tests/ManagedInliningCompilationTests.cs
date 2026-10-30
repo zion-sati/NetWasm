@@ -36,6 +36,75 @@ public sealed class ManagedInliningCompilationTests
         Assert.Equal(expected, result);
     }
 
+    // The guard is inlined where AggressiveInlining is honored, and the try
+    // that follows the call starts at its continuation.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.Oz)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    public void InlinedReturnsStayOutsideAFollowingTry(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+
+        // As desktop .NET computes them.
+        foreach (var (input, expected) in new[] { (-5, 2344), (0, -51556), (2, -666) })
+        {
+            Assert.Equal(expected, executor.Execute(new CompilationScenario(
+                $"GuardBeforeTry_{target}_{preset}_{input}",
+                GuardBeforeTrySource,
+                "EntryPoint",
+                Optimize: true,
+                target,
+                input,
+                [])
+            {
+                Optimization = preset,
+            }));
+        }
+    }
+
+    private const string GuardBeforeTrySource = """
+        using System.Runtime.CompilerServices;
+
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                var total = 0;
+                for (var i = -2; i < 3; i++)
+                {
+                    try
+                    {
+                        Require(i == input ? null : i);
+                        try
+                        {
+                            total = total * 7 + 12 / i;
+                        }
+                        catch (System.DivideByZeroException)
+                        {
+                            total += 100;
+                        }
+                    }
+                    catch (System.ArgumentNullException)
+                    {
+                        total -= 1000;
+                    }
+                }
+                return total;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private static void Require(object? value)
+            {
+                if (value == null)
+                {
+                    throw new System.ArgumentNullException(nameof(value));
+                }
+            }
+        }
+        """;
+
     private const string Source = """
         using System;
         using System.Runtime.CompilerServices;

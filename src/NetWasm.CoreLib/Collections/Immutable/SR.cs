@@ -3,7 +3,7 @@
 //
 // Immutable collection resource strings are adapted from the pinned
 // System.Collections.Immutable resource set at commit
-// 811225a482702af7ecc35d817966bc70b88a3a23. NetWasm keeps deterministic
+// 474ed963699fc29809015392738a15231aaae2de. NetWasm keeps deterministic
 // invariant messages and does not deploy satellite resource assemblies.
 
 namespace System.Collections.Immutable

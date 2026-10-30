@@ -1,9 +1,14 @@
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
 
-public sealed class MathPowAccuracyCompilationTests
+using static CompilerTestSupport;
+
+public sealed partial class MathPowAccuracyCompilationTests
 {
     // Each row is (x, y, expected result) as IEEE bits. The rows are exact powers and special
     // values, where Emscripten's size-optimized pow (the fdlibm e_pow.c that Math.Pow ports), musl's
@@ -25,6 +30,94 @@ public sealed class MathPowAccuracyCompilationTests
         // -1001 - row for MathF.Pow.
         Assert.Equal(42, observed);
     }
+
+    // Math.Pow is small enough to inline at O3: its callers test the exponent
+    // for 2 themselves and call the general routine otherwise, so the final
+    // Binaryen pass folds a constant square to a multiply. The squares of exact
+    // and special values keep their bits through both paths.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void PowInlinesItsSquareTestAtO3(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource($"MathPowSquare_{target}", SquareSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: FinalWasmOptimization.O3));
+
+        var module = Path.Combine(assets.Directory, $"application-{Guid.NewGuid():N}.wasm");
+        File.WriteAllBytes(module, result.ApplicationModule);
+        using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+        var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
+        Assert.True(printed.ExitCode == 0, printed.StandardError);
+        var calls = FunctionHeader().Split(printed.StandardOutput).Skip(1)
+            .Select(static function => (Name: function[..function.IndexOf(' ', StringComparison.Ordinal)], Body: function))
+            .Where(static function => function.Name is "$EntryPoint::Square" or "$EntryPoint::General")
+            .ToDictionary(static function => function.Name, static function => PowCall().IsMatch(function.Body));
+        Assert.Equal(new Dictionary<string, bool> { ["$EntryPoint::General"] = false, ["$EntryPoint::Square"] = false }, calls);
+        Assert.Equal(42, ExecuteWithStandardWasiNode(
+            result.ApplicationModule, assets.Directory, 41, target, result.StaticDataEnd));
+    }
+
+    // Oz keeps the call outside loops; the results are the same.
+    [Fact]
+    public void SquaresKeepTheirBitsAtOz()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("MathPowSquareOz", SquareSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: WasmTarget.Wasm32, Optimization: FinalWasmOptimization.Oz));
+
+        Assert.Equal(42, ExecuteWithStandardWasiNode(
+            result.ApplicationModule, assets.Directory, 41, WasmTarget.Wasm32, result.StaticDataEnd));
+    }
+
+    [GeneratedRegex(@"\n\s*\(func ")]
+    private static partial Regex FunctionHeader();
+
+    [GeneratedRegex(@"call \$System\.Math::Pow\s")]
+    private static partial Regex PowCall();
+
+    private const string SquareSource = """
+        using System;
+        using System.Runtime.CompilerServices;
+
+        public static class EntryPoint
+        {
+            // (x, x squared) as IEEE bits: exact squares, both zeros, both
+            // infinities, NaN, an overflow and an underflow to zero.
+            private static readonly ulong[] Rows =
+            [
+                0x4008000000000000UL, 0x4022000000000000UL,
+                0xbff8000000000000UL, 0x4002000000000000UL,
+                0x0000000000000000UL, 0x0000000000000000UL,
+                0x8000000000000000UL, 0x0000000000000000UL,
+                0x7ff0000000000000UL, 0x7ff0000000000000UL,
+                0xfff0000000000000UL, 0x7ff0000000000000UL,
+                0x7ff8000000000000UL, 0x7ff8000000000000UL,
+                0x7e37e43c8800759cUL, 0x7ff0000000000000UL,
+                0x0000000000000001UL, 0x0000000000000000UL,
+            ];
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static double Square(double x) => Math.Pow(x, 2.0);
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static double General(double x, double y) => Math.Pow(x, y);
+
+            public static int Run(int input)
+            {
+                for (var row = 0; row < Rows.Length / 2; row++)
+                {
+                    var x = BitConverter.UInt64BitsToDouble(Rows[2 * row]);
+                    var expected = Rows[2 * row + 1];
+                    if (BitConverter.DoubleToUInt64Bits(Square(x)) != expected) return -1 - row;
+                    if (BitConverter.DoubleToUInt64Bits(General(x, 2.0)) != expected) return -101 - row;
+                }
+                return General(2, 10) == 1024 ? input + 1 : -200;
+            }
+        }
+        """;
 
     private const string Source = """
         using System;

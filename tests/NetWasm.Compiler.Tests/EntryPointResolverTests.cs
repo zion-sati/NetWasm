@@ -22,14 +22,14 @@ public sealed class EntryPointResolverTests
             with
         {
             WitExport = new WitExportDeclaration(
-                    "test:pkg@1.0.0/interface",
+                    "test:pkg/interface@1.0.0",
                     "run"),
         };
         var postReturn = Method(declaringType, 5, "PostReturn", isStatic: true)
             with
         {
             WitPostReturn = new WitPostReturnDeclaration(
-                    "test:pkg@1.0.0/interface",
+                    "test:pkg/interface@1.0.0",
                     "run"),
         };
         var methods = ImmutableArray.Create(entryPoint, javaScript, wit, postReturn);

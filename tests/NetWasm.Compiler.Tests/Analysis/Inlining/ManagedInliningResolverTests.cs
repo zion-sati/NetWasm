@@ -129,7 +129,7 @@ public sealed class ManagedInliningResolverTests
             new UnusedMethodSpecializer(),
             new UnusedCalledMethodResolver(),
             new UnusedManagedInliningBodyValidator(),
-            ManagedMethodInliningPolicy.Disabled, new Fixture(), new Fixture(), 0, 0);
+            ManagedMethodInliningPolicy.Disabled, new Fixture(), new Fixture(), 0, 0, 0);
 
         Assert.Null(resolver.Resolve(new(
             ValidationTestData.Instance(),
@@ -441,23 +441,25 @@ public sealed class ManagedInliningResolverTests
         var fixture = new Fixture();
 
         Assert.Throws<ArgumentNullException>(() => new ManagedInliningResolver(
-            null!, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0));
+            null!, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, 0));
         Assert.Throws<ArgumentNullException>(() => new ManagedInliningResolver(
-            fixture, null!, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0));
+            fixture, null!, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, 0));
         Assert.Throws<ArgumentNullException>(() => new ManagedInliningResolver(
-            fixture, fixture, null!, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0));
+            fixture, fixture, null!, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, 0));
         Assert.Throws<ArgumentNullException>(() => new ManagedInliningResolver(
-            fixture, fixture, fixture, null!, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0));
+            fixture, fixture, fixture, null!, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, 0));
         Assert.Throws<ArgumentNullException>(() => new ManagedInliningResolver(
-            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, null!, fixture, 0, 0));
+            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, null!, fixture, 0, 0, 0));
         Assert.Throws<ArgumentNullException>(() => new ManagedInliningResolver(
-            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, null!, 0, 0));
+            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, null!, 0, 0, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ManagedInliningResolver(
-            fixture, fixture, fixture, fixture, (ManagedMethodInliningPolicy)255, fixture, fixture, 0, 0));
+            fixture, fixture, fixture, fixture, (ManagedMethodInliningPolicy)255, fixture, fixture, 0, 0, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ManagedInliningResolver(
-            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, -1, 0));
+            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, -1, 0, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ManagedInliningResolver(
-            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, -1));
+            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, -1, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ManagedInliningResolver(
+            fixture, fixture, fixture, fixture, ManagedMethodInliningPolicy.Speed, fixture, fixture, 0, 0, -1));
         Assert.Throws<ArgumentNullException>(() => fixture.Resolver().Resolve(null!));
     }
 
@@ -495,6 +497,179 @@ public sealed class ManagedInliningResolverTests
         Assert.Null(withoutLeafTier.Resolver().Resolve(withoutLeafTier.Request() with { InLoop = true }));
     }
 
+    // An operator returning new Complex(...) constructs its result in place;
+    // with a constructor the next round inlines, it is still a leaf.
+    [Theory]
+    [InlineData(ManagedInliningResolver.SmallBodyInstructionLimit, true)]
+    [InlineData(ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
+    public void ALeafMayConstructAValueWhoseConstructorTheNextRoundInlines(int constructorInstructions, bool resolves)
+    {
+        var leaf = new Fixture(byReferenceParameter: false, instructions: LeafBody(LeafShape.ValueConstruction, 17))
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            CalleeShape = (false, constructorInstructions, 1),
+        };
+
+        Assert.Equal(resolves, leaf.Resolver().Resolve(leaf.Request() with { InLoop = true }) is not null);
+    }
+
+    [Theory]
+    // Inside a loop, a callee larger than a leaf may branch forward.
+    [InlineData(LeafShape.ForwardBranch, 33, true)]
+    [InlineData(LeafShape.ForwardBranch, ManagedInliningResolver.LoopBodyInstructionLimit, true)]
+    [InlineData(LeafShape.ForwardBranch, ManagedInliningResolver.LoopBodyInstructionLimit + 1, false)]
+    [InlineData(LeafShape.Straight, 40, true)]
+    [InlineData(LeafShape.Switch, 40, true)]
+    // A branching callee no larger than a leaf is left to Binaryen's inliner.
+    [InlineData(LeafShape.ForwardBranch, ManagedInliningResolver.LeafBodyInstructionLimit, false)]
+    [InlineData(LeafShape.ManyBranches, 40, false)]
+    [InlineData(LeafShape.BackwardBranch, 40, false)]
+    [InlineData(LeafShape.ArrayAllocation, 40, false)]
+    [InlineData(LeafShape.ObjectAllocation, 40, false)]
+    [InlineData(LeafShape.ThrownException, 40, false)]
+    public void InlinesBranchingCalleesWithinTheLoopBodySize(LeafShape shape, int instructions, bool resolves)
+    {
+        var callee = new Fixture(byReferenceParameter: false, instructions: LeafBody(shape, instructions))
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+        var inLoop = callee.Request() with { InLoop = true };
+        Assert.Equal(resolves, callee.Resolver().Resolve(inLoop) is not null);
+        // Called once, the callee would only add code to the rest of its caller.
+        Assert.Null(callee.Resolver().Resolve(callee.Request()));
+        var withoutLoopBodyTier = new Fixture(byReferenceParameter: false, instructions: LeafBody(shape, instructions))
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+        };
+        Assert.Null(withoutLoopBodyTier.Resolver().Resolve(withoutLoopBodyTier.Request() with { InLoop = true }));
+    }
+
+    [Theory]
+    // A call the next round inlines leaves the loop without a call of its own.
+    [InlineData(true, 40, true)]
+    [InlineData(false, ManagedInliningResolver.SmallBodyInstructionLimit, true)]
+    [InlineData(false, ManagedInliningResolver.SmallBodyInstructionLimit + 1, false)]
+    public void ALoopBodyCallsOnlyWhatTheNextRoundInlines(bool aggressive, int calleeInstructions, bool resolves)
+    {
+        var caller = new Fixture(byReferenceParameter: false, instructions: LeafBody(LeafShape.Call, 40))
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+            CalleeShape = (aggressive, calleeInstructions, 1),
+        };
+
+        Assert.Equal(resolves, caller.Resolver().Resolve(caller.Request() with { InLoop = true }) is not null);
+    }
+
+    [Theory]
+    // Inside a loop the loops policy takes what the speed policy takes there: a small
+    // body, a leaf or a loop body, but not the unbounded priority shapes. Outside a loop
+    // it takes a callee marked AggressiveInlining, as the aggressive policy does, and a
+    // field accessor, which inlining only shrinks.
+    [InlineData(CalleeShape.Small, false, true, true)]
+    [InlineData(CalleeShape.Small, false, false, false)]
+    [InlineData(CalleeShape.Leaf, false, true, true)]
+    [InlineData(CalleeShape.Leaf, false, false, false)]
+    [InlineData(CalleeShape.LoopBody, false, true, true)]
+    [InlineData(CalleeShape.LoopBody, false, false, false)]
+    [InlineData(CalleeShape.ByReferencePriority, false, true, false)]
+    [InlineData(CalleeShape.ByReferencePriority, false, false, false)]
+    [InlineData(CalleeShape.Small, true, true, true)]
+    [InlineData(CalleeShape.Small, true, false, true)]
+    [InlineData(CalleeShape.ByReferencePriority, true, false, true)]
+    [InlineData(CalleeShape.FieldAccessor, false, true, true)]
+    [InlineData(CalleeShape.FieldAccessor, false, false, true)]
+    public void TheLoopsPolicyInlinesInsideLoopsAndWhatTheCalleeAsksFor(CalleeShape shape, bool aggressive, bool inLoop, bool resolves)
+    {
+        var callee = new Fixture(byReferenceParameter: shape == CalleeShape.ByReferencePriority, aggressive: aggressive,
+            callOperation: shape == CalleeShape.FieldAccessor ? CilOperation.CallVirtual : CilOperation.Call,
+            instanceFieldAccessor: shape == CalleeShape.FieldAccessor,
+            instructions: shape switch
+            {
+                CalleeShape.FieldAccessor => null,
+                CalleeShape.Leaf => LeafBody(LeafShape.Straight, 24),
+                CalleeShape.LoopBody => LeafBody(LeafShape.ForwardBranch, 40),
+                // Larger than every size tier: only its byref parameter makes it a candidate.
+                CalleeShape.ByReferencePriority => LeafBody(LeafShape.Straight, 60),
+                _ => LeafBody(LeafShape.Straight, 8),
+            })
+        {
+            Policy = ManagedMethodInliningPolicy.Loops,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+        var request = callee.Request() with { InLoop = inLoop };
+        Assert.Equal(resolves, callee.Resolver().Resolve(request) is not null);
+        Assert.Equal(resolves, callee.Resolver().Resolve(request with { Nested = true }) is not null);
+    }
+
+    public enum CalleeShape { Small, Leaf, LoopBody, ByReferencePriority, FieldAccessor }
+
+    // An inlined callvirt target must fault on a null receiver before any other
+    // effect, as the callvirt would. Reading a property of the receiver first
+    // does: a callvirt checks it, and the accessor a call reaches loads from it.
+    [Theory]
+    [InlineData(CilOperation.Call, true, true)]
+    [InlineData(CilOperation.CallVirtual, true, true)]
+    [InlineData(CilOperation.Call, false, false)]
+    [InlineData(CilOperation.CallVirtual, false, false)]
+    public void ACallvirtTargetMayReadAReceiverPropertyFirst(CilOperation read, bool onReceiver, bool resolves)
+    {
+        var callee = new Fixture(byReferenceParameter: false, callOperation: CilOperation.CallVirtual, instance: true,
+            instructions:
+            [
+                onReceiver
+                    ? new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0))
+                    : new(0, 1, CilOperation.LoadNull, new CilOperand.None()),
+                new(1, 2, read, new CilOperand.Entity(Fixture.AccessorKey)),
+                new(2, 3, CilOperation.Return, new CilOperand.None()),
+            ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+        };
+
+        Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
+    }
+
+    [Theory]
+    // Only a callee marked AggressiveInlining asks to be inlined; a byref
+    // parameter, a small body or a loop body asks for nothing.
+    [InlineData(true, false, false, true)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, false, false, false)]
+    public void TheAggressivePolicyInlinesOnlyWhatTheCalleeAsksFor(bool aggressive, bool byReference, bool loopBody, bool resolves)
+    {
+        var callee = new Fixture(byReferenceParameter: byReference, aggressive: aggressive,
+            instructions: loopBody ? LeafBody(LeafShape.ForwardBranch, 40) : LeafBody(LeafShape.Straight, 8))
+        {
+            Policy = ManagedMethodInliningPolicy.Aggressive,
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        };
+
+        var inLoop = callee.Request() with { InLoop = true };
+        Assert.Equal(resolves, callee.Resolver().Resolve(inLoop) is not null);
+        Assert.Equal(resolves, callee.Resolver().Resolve(inLoop with { Nested = true }) is not null);
+        // The speed policy takes every one of these.
+        Assert.NotNull(new Fixture(byReferenceParameter: byReference, aggressive: aggressive,
+            instructions: loopBody ? LeafBody(LeafShape.ForwardBranch, 40) : LeafBody(LeafShape.Straight, 8))
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            LeafBodyLimit = ManagedInliningResolver.LeafBodyInstructionLimit,
+            LoopBodyLimit = ManagedInliningResolver.LoopBodyInstructionLimit,
+        }.Resolver().Resolve(inLoop));
+    }
+
     public enum LeafShape
     {
         Straight,
@@ -504,7 +679,9 @@ public sealed class ManagedInliningResolverTests
         Call,
         ArrayAllocation,
         ObjectAllocation,
+        ValueConstruction,
         ThrownException,
+        ManyBranches,
     }
 
     // Counts every instruction, including the final return.
@@ -521,10 +698,17 @@ public sealed class ManagedInliningResolverTests
             LeafShape.ForwardBranch => [new(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(count - 1))],
             LeafShape.BackwardBranch => [new(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(0))],
             LeafShape.Switch => [new(0, 1, CilOperation.Switch, new CilOperand.SwitchTargets([count - 1]))],
+            LeafShape.ManyBranches => [.. Enumerable.Range(0, ManagedInliningResolver.LoopBodyBranchLimit + 1).Select(index =>
+                new CilInstruction(index, index + 1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(count - 1)))],
             LeafShape.Call => [new(0, 1, CilOperation.Call, new CilOperand.None())],
             LeafShape.ArrayAllocation => [new(0, 1, CilOperation.NewArray,
                 new CilOperand.TypeIdentity(CliTypeIdentity.Primitive("i4", CliValueKind.I4)))],
             LeafShape.ObjectAllocation => [new(0, 1, CilOperation.NewObject, constructor)],
+            LeafShape.ValueConstruction => [new(0, 1, CilOperation.NewObject, new CilOperand.MethodInstance(
+                ((CilOperand.MethodInstance)constructor).Value with
+                {
+                    DeclaringType = CliTypeIdentity.Named(assembly, "", "Value", true),
+                }))],
             LeafShape.ThrownException =>
             [
                 new(0, 1, CilOperation.NewObject, constructor),
@@ -696,6 +880,10 @@ public sealed class ManagedInliningResolverTests
         // The size tier is off by default so each proof tier is tested on its own.
         public int SmallBodyLimit { get; init; }
         public int LeafBodyLimit { get; init; }
+
+        public int LoopBodyLimit { get; init; }
+
+        public ManagedMethodInliningPolicy Policy { get; init; } = ManagedMethodInliningPolicy.Speed;
         public bool Classify(MethodDefinitionModel method) => RequiresInitialization;
         public bool IsIntrinsic { get; init; }
 
@@ -711,7 +899,7 @@ public sealed class ManagedInliningResolverTests
             this,
             this,
             this,
-            ManagedMethodInliningPolicy.Speed, this, this, SmallBodyLimit, LeafBodyLimit);
+            Policy, this, this, SmallBodyLimit, LeafBodyLimit, LoopBodyLimit);
 
         public ManagedInliningRequest Request() => new(
             Caller,
@@ -726,7 +914,18 @@ public sealed class ManagedInliningResolverTests
         public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => Body;
 
         public CilMethodBody ReadMethodBody(MethodInstanceModel method) =>
-            method.Definition.Key == CalleeKey && CalleeShape is { } shape
+            method.Definition.Key == AccessorKey
+            ? Body with
+            {
+                Method = method.Definition,
+                Instructions =
+                [
+                    new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    new(1, 2, CilOperation.LoadField, new CilOperand.Entity(new(Assembly, 0x04000001))),
+                    new(2, 3, CilOperation.Return, new CilOperand.None()),
+                ],
+            }
+            : method.Definition.Key == CalleeKey && CalleeShape is { } shape
                 ? Body with
                 {
                     Method = method.Definition,
@@ -743,6 +942,16 @@ public sealed class ManagedInliningResolverTests
         public (bool Aggressive, int Instructions, int RelativeVirtualAddress)? CalleeShape { get; init; }
 
         private static readonly EntityKey CalleeKey = new(Assembly, 0x06000009);
+
+        // An instance field accessor that a call with its key as the operand reaches.
+        public static readonly EntityKey AccessorKey = new(Assembly, 0x0600000a);
+
+        private MethodInstanceModel Accessor => Target with
+        {
+            Definition = new MethodDefinitionModel(AccessorKey, Target.Definition.DeclaringType, "get_Value", false,
+                MethodSignatureModel.Create(Int32), 1),
+            Signature = MethodSignatureModel.Create(Int32),
+        };
 
         private MethodInstanceModel Callee(bool aggressive, int relativeVirtualAddress) => Target with
         {
@@ -761,6 +970,7 @@ public sealed class ManagedInliningResolverTests
 
         public MethodInstanceModel? Resolve(CilInstruction instruction) =>
             _rejection == RejectedCandidate.Unresolved ? null
+            : instruction.Operand is CilOperand.Entity { Key: var key } && key == AccessorKey ? Accessor
             : instruction is { Operation: CilOperation.NewObject, Operand: CilOperand.MethodInstance constructor } ? constructor.Value
             : instruction.Operand is CilOperand.None && CalleeShape is { } shape ? Callee(shape.Aggressive, shape.RelativeVirtualAddress)
             : Target;

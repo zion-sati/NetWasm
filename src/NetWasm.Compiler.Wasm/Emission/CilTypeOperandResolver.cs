@@ -11,6 +11,7 @@ internal sealed class CilTypeOperandResolver(
         var type = instruction.Operand switch
         {
             CilOperand.TypeIdentity identity => identity.Value,
+            CilOperand.ExactType exact => exact.Value,
             CilOperand.Entity entity => identities.Resolve(entity.Key),
             _ => throw new InvalidOperationException(
                 $"instruction {instruction.Operation} has no type operand"),

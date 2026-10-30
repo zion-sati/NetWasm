@@ -86,6 +86,8 @@ internal enum RuntimeImportSymbol
     InitializeFinalization,
     AllocateFinalizable,
     RandomSeed,
+    RegisterTypeObjects,
+    TypeObjectCache,
 }
 
 internal readonly record struct RuntimeImportBinding(

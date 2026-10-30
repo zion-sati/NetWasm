@@ -311,13 +311,18 @@ selects its host and capabilities.
 
 ## 6. Generate C# bindings from WIT when needed
 
-WIT binding generation is an optional, separate .NET tool rather than a
-compiler command:
+A `NetWasmWit` item generates C# bindings for a WIT world during the build,
+with the project's own NetWasm; the [WIT bindings guide](wit-bindings.md)
+describes it. The same generator is also a standalone .NET tool:
 
 ```bash
-dotnet tool install --global NetWasm.Wit.Bindings.Tool
-netwasm-wit-bindgen --wit service.wit --world example:service@1.0.0/service --output Bindings.g.cs
+dotnet new tool-manifest
+dotnet tool install NetWasm.Wit.Bindings.Tool --version <version>
+dotnet netwasm-wit-bindgen --wit service.wit --world example:service@1.0.0/service --output Bindings.g.cs
 ```
+
+Install the tool at the NetWasm version the project builds with; the local
+tool manifest keeps the two together.
 
 Omit `--world` when the WIT document contains exactly one world. The tool
 carries the pinned platform-neutral wasm-tools module and does not require a
@@ -330,3 +335,54 @@ default is `public`). The [WIT bindings guide](wit-bindings.md) covers a
 complete example, dependency layout, generated types, and regeneration.
 See also the [JavaScript interop guide](javascript-interop.md) and the
 [two-way static C interop tutorial](static-native-interop.md).
+
+## 7. Upgrade NetWasm
+
+A project names the NetWasm SDK version it builds with on the first line of its
+project file:
+
+```xml
+<Project Sdk="NetWasm.Sdk/<version>">
+```
+
+To upgrade, change that version to the release you want, then restore and
+build:
+
+```bash
+dotnet restore
+dotnet build
+```
+
+The SDK version selects the matching runtime, toolchain and host-tools
+packages, so a project references none of them itself. Libraries and test
+projects upgrade the same way.
+
+Update the templates, so that new projects start on the latest release:
+
+```bash
+dotnet new install NetWasm.Templates
+```
+
+If you generate WIT bindings with the standalone tool, update it to the same
+version and regenerate; bindings from `NetWasmWit` items regenerate with the
+build:
+
+```bash
+dotnet tool update NetWasm.Wit.Bindings.Tool --version <version>
+```
+
+To keep every project in a repository on one version, leave the version off
+each `Sdk` attribute (`<Project Sdk="NetWasm.Sdk">`) and set it once in the
+repository's `global.json`:
+
+```json
+{
+  "msbuild-sdks": {
+    "NetWasm.Sdk": "<version>"
+  }
+}
+```
+
+A version on the `Sdk` attribute takes precedence over `global.json`, which
+applies only to projects that leave it off. Projects created by earlier
+templates use this form; change the version in `global.json` to upgrade them.

@@ -82,8 +82,8 @@ public sealed class AllocationEliminationCompilationTests
         Assert.Contains("Counted", allocated);
         Assert.Contains("Tracked", allocated);
         Assert.Equal(preset == FinalWasmOptimization.None, allocated.Contains("Point"));
-        // At O3, Sides<Square> inlines, so its Square goes as well.
-        Assert.Equal(preset == FinalWasmOptimization.O3, !allocated.Contains("Square") &&
+        // At O3, and at Oz because the call is inside the loop, Sides<Square> inlines, so its Square goes as well.
+        Assert.Equal(preset != FinalWasmOptimization.None, !allocated.Contains("Square") &&
             !result.Program.ConstructedMethods.Values.Any(static body => body.Method.Definition.Name == "Sides"));
         foreach (var input in new[] { 0, 3 })
         {

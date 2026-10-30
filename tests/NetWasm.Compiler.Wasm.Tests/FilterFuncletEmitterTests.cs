@@ -122,6 +122,46 @@ layouts,
     }
 
     [Fact]
+    public void FuncletDeclaresEveryTemporaryItsContextNames()
+    {
+        var program = new FakeProgram();
+        var method = CreateFilterMethod(program);
+        MethodEmissionContext? context = null;
+        var sequence = new FilterSequenceEmitterAdapter(
+            (_, _, _, emittedContext) =>
+            {
+                context = emittedContext;
+                return new ManagedMethodSequenceEmission(
+                    ImmutableDictionary<int, int>.Empty.Add(0, 1));
+            });
+
+        CreateEmitter(WasmTarget.Wasm32).Emit(
+            new FilterFunclet(
+                1,
+                new ManagedMethodIdentity("test-filter"),
+                method,
+                CreateFilterClause(StructuredSequence.Empty)),
+            CreateEnvironment(rootFrameOffset: 0),
+            EmptyRootMap(),
+            sequence);
+
+        // The funclet's two parameters precede its declared locals.
+        var locals = WasmLocalLayoutPlanner.CreateFilterLocals(method.Header);
+        CliValueKind Declared(int index) => locals[index - 2];
+        Assert.NotNull(context);
+        Assert.Equal(CliValueKind.ManagedAddress, Declared(context.InteropDescriptor));
+        Assert.Equal(CliValueKind.I4, Declared(context.InteropResult));
+        Assert.Equal(CliValueKind.I4, Declared(context.InteropHandle));
+        Assert.Equal(CliValueKind.I4, Declared(context.NumericTemporaryI4));
+        Assert.Equal(CliValueKind.I8, Declared(context.NumericTemporaryI8));
+        Assert.Equal(CliValueKind.I4, Declared(context.DispatcherProgramCounter));
+        Assert.Equal(CliValueKind.I4, Declared(context.NumericTemporaryI4Second));
+        Assert.Equal(CliValueKind.I4, Declared(context.InlineCatchFrame));
+        Assert.Equal(locals.Length + 1, context.InlineCatchFrame);
+        Assert.NotEqual(context.NumericTemporaryI4, context.DispatcherProgramCounter);
+    }
+
+    [Fact]
     public void Memory32AtRootFrameBaseUses32BitAddressInstructions()
     {
         var program = new FakeProgram();

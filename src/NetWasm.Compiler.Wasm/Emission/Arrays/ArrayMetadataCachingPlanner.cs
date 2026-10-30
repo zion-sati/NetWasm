@@ -314,6 +314,13 @@ internal sealed class ArrayMetadataCachingPlanner(
                     // condition to snapshot metadata before; its body repeats.
                     CollectLoopOffsets(loop.Body, method, true, enclosed, offsets, loopEntries, preTested, nestedLoops);
                     break;
+                case StructuredLabeledBlock labeled:
+                    CollectLoopOffsets(labeled.Body, method, repeating, enclosed, offsets, loopEntries, preTested, nestedLoops);
+                    break;
+                case StructuredLabeledLoop labeled:
+                    // Like an unconditional loop, its body repeats.
+                    CollectLoopOffsets(labeled.Body, method, true, enclosed, offsets, loopEntries, preTested, nestedLoops);
+                    break;
                 case StructuredSequence nested:
                     CollectLoopOffsets(nested, method, repeating, enclosed, offsets, loopEntries, preTested, nestedLoops);
                     break;

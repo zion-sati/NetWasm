@@ -443,7 +443,7 @@ public sealed class FrontendArtifactCodecTests
 
         Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
         Assert.Equal(16, decoded.Analysis.Body.Instructions.Length);
-        Assert.Equal(9, decoded.StructuredMethod.Body.Regions.Length);
+        Assert.Equal(11, decoded.StructuredMethod.Body.Regions.Length);
         Assert.Equal(5, decoded.StructuredMethod.Blocks.Count);
         Assert.Equal(2, decoded.StructuredMethod.ExceptionGroups[Group(1)].ProtectedParts.Length);
         Assert.True(decoded.Analysis.Method.Definition.JSImport!.IsPromise);
@@ -461,6 +461,10 @@ public sealed class FrontendArtifactCodecTests
         Assert.Contains("\ud800x\udfff", decoded.Analysis.Instructions.Strings);
         Assert.Single(decoded.Analysis.Instructions.MethodDescriptors);
         Assert.Single(decoded.Analysis.Instructions.FieldDescriptors);
+        Assert.Equal(
+            [null, snapshot.Analysis.Instructions.Dispatches[1].Declaration.ReceiverBound!.CanonicalName],
+            decoded.Analysis.Instructions.Dispatches.Select(static dispatch =>
+                dispatch.Declaration.ReceiverBound?.CanonicalName));
         Assert.True(decoded.Analysis.Instructions.RequiresTypeFacts);
         Assert.True(decoded.Analysis.Instructions.RequiresDelegateInvoke);
         Assert.True(decoded.Analysis.Instructions.RequiresGenericArguments);
@@ -578,10 +582,7 @@ public sealed class FrontendArtifactCodecTests
             LocalSignatureTypes = default,
             ExceptionRegions = default,
         };
-        var defaultBytes = analysis.Body.Instructions.SetItem(
-            analysis.Body.Instructions.Length - 1,
-            analysis.Body.Instructions[^1] with { Operand = new CilOperand.ByteData(default) });
-        var defaultTableArrays = defaultBytes
+        var defaultTableArrays = analysis.Body.Instructions
             .Select(instruction => instruction.Operand is CilOperand.SwitchTargets
                 ? instruction with { Operand = new CilOperand.SwitchTargets(default) }
                 : instruction)
@@ -617,8 +618,6 @@ public sealed class FrontendArtifactCodecTests
         Assert.True(decoded.Analysis.CatchTypes.IsDefault);
         Assert.True(decoded.Analysis.Exceptions.IsDefault);
         Assert.True(decoded.Analysis.Instructions.RuntimeTypes.IsDefault);
-        Assert.True(Assert.IsType<CilOperand.ByteData>(
-            decoded.Analysis.Body.Instructions[^1].Operand).Value.IsDefault);
         Assert.Equal(encoder.Encode(sparse).ToArray(), encoder.Encode(decoded).ToArray());
     }
 
@@ -799,9 +798,14 @@ public sealed class FrontendArtifactCodecTests
             [new ReachabilityMethodReference(CilOperation.Call, method)],
             [new ReachabilityEntityReference(CilOperation.LoadTypeToken, Key(0x02000002))],
             [field],
-            [new ReachabilityDispatch(
-                "dispatch",
-                new DispatchDeclaration("caller", 7, method, CilOperation.CallVirtual))],
+            [
+                new ReachabilityDispatch(
+                    "dispatch",
+                    new DispatchDeclaration("caller", 7, method, CilOperation.CallVirtual)),
+                new ReachabilityDispatch(
+                    "bounded",
+                    new DispatchDeclaration("caller", 9, method, CilOperation.CallVirtual, array)),
+            ],
             [method],
             [new ManagedCallSite(
                 new ManagedCallSiteKey(new ManagedMethodIdentity("caller"), 7),
@@ -903,7 +907,7 @@ public sealed class FrontendArtifactCodecTests
             new CilOperand.CallSite(method.Signature),
             new CilOperand.NumericConversion(32, true, true, true, true),
             new CilOperand.UserString("operand"),
-            new CilOperand.ByteData([9, 10]),
+            new CilOperand.ArrayInitializerData(field),
         ];
         return
         [
@@ -972,6 +976,8 @@ public sealed class FrontendArtifactCodecTests
                 false,
                 StructuredSequence.Empty,
                 StructuredSequence.Empty),
+            new StructuredLabeledBlock(ids[4], new StructuredSequence([new StructuredLabelBranch(ids[4])])),
+            new StructuredLabeledLoop(ids[2], new StructuredSequence([new StructuredLabelBranch(ids[2])])),
         ]);
         var clause = new StructuredExceptionClause(
             CilExceptionRegionKind.Filter,

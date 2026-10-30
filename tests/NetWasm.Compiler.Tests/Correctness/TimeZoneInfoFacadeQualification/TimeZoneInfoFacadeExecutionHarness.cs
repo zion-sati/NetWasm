@@ -83,7 +83,7 @@ internal sealed class TimeZoneInfoFacadeExecutionHarness(
             modulePath,
             compilation.Fixture.CaptureCompilerDiagnostics,
             Path.Combine(_environment.RepositoryRoot, "wit", "netwasm-platform-1.0.0"),
-            "netwasm:platform@1.0.0/platform",
+            "netwasm:platform/platform@1.0.0",
             compilation.Fixture.EmitStackTrace,
             null);
         File.WriteAllText(requestPath, JsonSerializer.Serialize(request));

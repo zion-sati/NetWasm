@@ -3,7 +3,7 @@
 //
 // Ported from dotnet/runtime System.Collections.Immutable
 // ImmutableExtensions.Minimal.cs at commit
-// 811225a482702af7ecc35d817966bc70b88a3a23. LINQ's ToList fallback is kept
+// 474ed963699fc29809015392738a15231aaae2de. LINQ's ToList fallback is kept
 // as an explicit enumeration so this CoreLib helper has no LINQ dependency.
 
 using System.Collections;

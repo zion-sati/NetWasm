@@ -213,7 +213,7 @@ public sealed class RawCanonicalFunctionLayoutPlannerTests
         new(kind, CliTypeIdentity.FromStackKind(CliValueKind.Unknown));
 
     private static CanonicalAbiFunction Function(ImmutableArray<CanonicalAbiParameter> parameters, CanonicalAbiType? result) =>
-        new("sample:raw@1.2.3/io", "read", default, parameters, result);
+        new("sample:raw/io@1.2.3", "read", default, parameters, result);
 
     private sealed class RecordingPlanners : IRawCanonicalImportIdentityFormatter,
         ICanonicalAbiSignaturePlanner, ICanonicalAbiMemoryLayoutPlanner

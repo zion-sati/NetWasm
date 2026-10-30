@@ -15,7 +15,7 @@ public sealed class WasmCoreModuleValidator(
 
     private const string SupportedFeatures =
         "mvp,mutable-global,saturating-float-to-int,sign-extension,reference-types," +
-        "multi-value,bulk-memory,exceptions,multi-memory";
+        "multi-value,bulk-memory,exceptions,multi-memory,simd";
 
     public void Validate(string path, ComponentTarget target)
     {

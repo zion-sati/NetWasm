@@ -69,7 +69,7 @@ public sealed class DiagnosticsMetricsGenericCompilationTests
                 [new RequestedExport("run", "DiagnosticsMetricsGenericFixture.EntryPoint", "Run")],
                 target,
                 WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-                WitWorld: "netwasm:platform@1.0.0/platform",
+                WitWorld: "netwasm:platform/platform@1.0.0",
                 UseJavaScriptExportBoundary: true));
 
         var observed = CompilerTestSupport.ExecuteWithStandardWasiNode(

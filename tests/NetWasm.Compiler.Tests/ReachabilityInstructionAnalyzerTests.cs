@@ -58,7 +58,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new(
             Instance(caller, declaringType),
@@ -100,7 +101,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         Assert.Throws<InvalidOperationException>(() => analyzer.Analyze(new(
             Instance(caller, declaringType),
@@ -134,7 +136,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         Assert.Throws<InvalidOperationException>(() => analyzer.Analyze(new(
             Instance(caller, declaringType),
@@ -179,7 +182,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new(
             Instance(caller, declaringType),
@@ -217,7 +221,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var exception = Assert.Throws<CompilerException>(() => analyzer.Analyze(new(
             Instance(caller, declaringType),
@@ -261,7 +266,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(callerInstance, body));
 
@@ -307,7 +313,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             new MethodInstanceModel(method, CliTypeIdentity.Primitive(
@@ -339,7 +346,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, nullable),
@@ -372,7 +380,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, CliTypeIdentity.Named(
@@ -411,7 +420,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, CliTypeIdentity.Named(
@@ -444,7 +454,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, CliTypeIdentity.Named(
@@ -476,7 +487,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, CliTypeIdentity.Named(
@@ -511,7 +523,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, CliTypeIdentity.Named(
@@ -549,7 +562,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, CliTypeIdentity.Named(
@@ -586,7 +600,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var constrained = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, declaringType),
@@ -636,7 +651,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, ordinary),
@@ -716,7 +732,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new RecordingDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, declaringType), body));
@@ -757,7 +774,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, declaringType),
@@ -801,7 +819,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = ((IReachabilityInstructionAnalyzer)analyzer).Analyze(
             new ReachabilityInstructionRequest(caller,
@@ -848,7 +867,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(method, declaringType),
@@ -875,7 +895,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 #pragma warning restore CA1859
         var request = new ReachabilityInstructionRequest(
             Instance(method, declaringType),
@@ -936,7 +957,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(caller, declaringType),
@@ -969,7 +991,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(caller, declaringType),
@@ -1030,7 +1053,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(caller, callerType),
@@ -1084,7 +1108,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(caller, callerType),
@@ -1143,7 +1168,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(caller, callerType),
@@ -1205,7 +1231,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var result = analyzer.Analyze(new ReachabilityInstructionRequest(
             Instance(caller, callerType),
@@ -1250,7 +1277,8 @@ public sealed class ReachabilityInstructionAnalyzerTests
             new UnusedDelegateMethodClassifier(),
             new NullableTypeResolver(),
             new ManagedCallSiteFactory(new ManagedMethodIdentityFactory()),
-            new NativeCallbackDeclarationValidator());
+            new NativeCallbackDeclarationValidator(),
+            new DispatchReceiverBoundResolver(new UnusedTypeOperandResolver()));
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             analyzer.Analyze(new ReachabilityInstructionRequest(

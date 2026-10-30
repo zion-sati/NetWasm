@@ -115,6 +115,12 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
         Assert.IsType<NativeMemoryFillIntrinsicEmitter>(
             provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
                 .Get(RuntimeIntrinsic.NativeMemoryFill));
+        Assert.IsType<ArrayLoopFillIntrinsicEmitter>(
+            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
+                .Get(RuntimeIntrinsic.ArrayLoopFill));
+        Assert.IsType<ArrayLoopCopyIntrinsicEmitter>(
+            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
+                .Get(RuntimeIntrinsic.ArrayLoopCopy));
         Assert.IsType<HostCallbackFunctionEmitter>(
             provider.GetRequiredService<IHostCallbackFunctionEmitter>());
         Assert.IsType<AsyncJSImportResolveEmitter>(

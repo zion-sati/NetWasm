@@ -72,7 +72,7 @@ internal sealed class CorpusCompilerRequestFactory(
                 ? Path.Combine(environment.RepositoryRoot, "wit", "netwasm-platform-1.0.0")
                 : null,
             compilation.Fixture.RequiresReactor
-                ? "netwasm:platform@1.0.0/async-platform"
+                ? "netwasm:platform/async-platform@1.0.0"
                 : null,
             modulePath, compilation.Fixture.EmitStackTrace, stackTraceSymbolsPath,
             runtimeLayoutPath, interopManifestPath,

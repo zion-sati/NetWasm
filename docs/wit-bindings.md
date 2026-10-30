@@ -18,12 +18,14 @@ Add a `NetWasmWit` item for each WIT input:
 </ItemGroup>
 ```
 
-`Include` is a WIT file or a WIT package directory with its `deps`. `World`
-selects a world and may be omitted when the input contains exactly one.
-`Namespace` replaces the namespace the WIT package name gives, and
-`Accessibility` is `Public` (the default) or `Internal`. Each item's bindings
-compile with the project and are generated again when its WIT changes; two
-items need distinct file or directory names.
+`Include` is a WIT file or a WIT package directory with its `deps`. In a
+`WitWebWorker` project a package directory also sees NetWasm's platform
+package, as the worker's own WIT does. `World` selects a world and may be
+omitted when the input contains exactly one. `Namespace` replaces the namespace
+the WIT package name gives, and `Accessibility` is `Public` (the default) or
+`Internal`. Each item's bindings compile with the project and are generated
+again when its WIT or the NetWasm version changes; two items need distinct file
+or directory names.
 
 The build runs the generator on the restored host tools, so it needs no Node.js
 installation, in an application or a class library. With
@@ -36,11 +38,18 @@ built against the world that `NetWasmWitPath` and `NetWasmWorld` select; see
 
 ## Run the standalone tool
 
-Install the released tool:
+Install the tool at the NetWasm version the project builds with, in a local
+tool manifest, so the bindings match the SDK that compiles them:
 
 ```sh
-dotnet tool install --global NetWasm.Wit.Bindings.Tool
+dotnet new tool-manifest
+dotnet tool install NetWasm.Wit.Bindings.Tool --version <version>
 ```
+
+Run it as `dotnet tool run netwasm-wit-bindgen`, or `dotnet netwasm-wit-bindgen`
+for short. When you upgrade NetWasm, update the tool to the same version and
+regenerate. The second line of every generated file names the generator version
+that produced it.
 
 The package includes NetWasm's pinned platform-neutral `wasm-tools` module.
 It requires Node.js 24 or newer on `PATH`, through `NETWASM_NODE_PATH`, or
@@ -75,7 +84,7 @@ world service {
 run:
 
 ```sh
-netwasm-wit-bindgen \
+dotnet netwasm-wit-bindgen \
   --wit service.wit \
   --world docs:bindings@1.0.0/service \
   --output Bindings.g.cs \
@@ -253,12 +262,28 @@ names the unresolved package.
 | variant | Tag enum plus generated value struct |
 | enum and flags | Generated enum; wide flags use the generated multiword representation |
 | resource, `own`, and `borrow` | Generated resource handle classes with explicit ownership/disposal |
-| imports | Static wrapper methods, in partial classes, that lower managed values to the canonical ABI |
+| an imported interface | Static wrapper methods of `<Interface>Imports`, that lower managed values to the canonical ABI, bound with `[WitImport("key", "function")]` |
+| an exported interface's functions | Partial methods of `<World>Exports`, bound with `[WitExport("key", "function")]` |
 | a world's own functions, types and resources | Members of `<World>Imports` and `<World>Exports`, bound with the one-argument `[WitImport("name")]` and `[WitExport("name")]` |
 | exports | Partial managed methods plus generated canonical ABI entry points and post-return cleanup |
 
 The generated marshalling is explicit C# and remains visible to closed-world
 reachability. It does not require reflection or a runtime metadata registry.
+
+The key in `[WitImport]` and `[WitExport]` is the name the world gives the
+interface, which is also the name the component uses:
+`namespace:package/interface@version` for an interface it names from a package
+(without `@version` for an unversioned package), or its own name for an
+interface it declares inline (`import api: interface { ... }`) or names itself
+(`import calc: math;`). Classes take the same name: `ApiImports`, `CalcImports`.
+Bindings from releases before this change used `namespace:package@version/interface`;
+regenerate them.
+
+Every generated name is unique. When two declarations would share one, for
+example two interfaces called `types` from different packages, or two exported
+interfaces with a `get` function, the colliding ones are qualified by their
+resource, interface and package in turn (`WasiHttpTypesImports`, `RunGet`), and the others
+keep their plain names.
 
 The bindings, and the methods that implement a world's exports, can live in a
 library the application references. The selected world binds each of its
@@ -266,8 +291,10 @@ exports to exactly one `[WitExport]` method, and its post-return cleanup to at
 most one `[WitPostReturn]` method, in any assembly of the application. When the
 application selects no world, a library's WIT exports are unused.
 
-Asynchronous WIT functions and `future`/`stream` types are currently
-unsupported by the standalone binding generator. WIT Web Worker application
+Asynchronous WIT functions, `future`/`stream` types and `map` types are
+currently unsupported by the binding generator, as is one world placing an
+interface twice. WIT feature gates use their defaults: items behind
+`@unstable(feature = ...)` are excluded. WIT Web Worker application
 exports additionally reject resource-bearing contracts even though the general
 binding generator supports resources. These are explicit generation failures,
 not silently reduced contracts.

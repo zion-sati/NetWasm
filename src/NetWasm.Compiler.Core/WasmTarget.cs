@@ -84,6 +84,7 @@ public sealed record WasmTargetLayout
         CliValueKind.I8 or CliValueKind.F8 => sizeof(long),
         CliValueKind.F4 => sizeof(float),
         CliValueKind.NativeInt => AddressSize,
+        CliValueKind.V128 => 16,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type.StackKind,
             "The type has no scalar target storage size."),
     };
@@ -95,6 +96,8 @@ public sealed record WasmTargetLayout
         CliValueKind.I8 or CliValueKind.F8 => sizeof(long),
         CliValueKind.F4 => sizeof(float),
         CliValueKind.NativeInt => AddressSize,
+        // The alignment of the vector struct's two 8-byte halves.
+        CliValueKind.V128 => sizeof(long),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type.StackKind,
             "The type has no scalar target storage alignment."),
     };

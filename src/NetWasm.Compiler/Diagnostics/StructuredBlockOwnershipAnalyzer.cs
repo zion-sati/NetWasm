@@ -42,6 +42,14 @@ internal sealed class StructuredBlockOwnershipAnalyzer : IStructuredBlockOwnersh
                     case Structured.StructuredLoopContinue:
                     case Structured.StructuredDispatcherContinue:
                         break;
+                    case Structured.StructuredLabelBranch:
+                        break;
+                    case Structured.StructuredLabeledBlock labeled:
+                        VisitSequence(labeled.Body, regionPath + ".Body");
+                        break;
+                    case Structured.StructuredLabeledLoop labeled:
+                        VisitSequence(labeled.Body, regionPath + ".Body");
+                        break;
                     case Structured.StructuredIf branch:
                         Record(branch.Condition, regionPath + ".Condition");
                         VisitSequence(branch.WhenTrue, regionPath + ".WhenTrue");

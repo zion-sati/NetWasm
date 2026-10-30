@@ -75,6 +75,10 @@ public sealed class BrowserManagedInliningTests
         var expected = IsSpeedProfile(optimization)
             ? WasmInlineAnnotationSelection.Preserve
             : WasmInlineAnnotationSelection.SizeAware;
+        // Managed AggressiveInlining hints also survive at Oz.
+        var managedExpected = IsSpeedProfile(optimization) || optimization == FinalWasmOptimization.Oz
+            ? WasmInlineAnnotationSelection.Preserve
+            : WasmInlineAnnotationSelection.SizeAware;
 
         foreach (var (managedEdit, runtimeEdit, merge) in new[]
         {
@@ -83,7 +87,7 @@ public sealed class BrowserManagedInliningTests
         })
         {
             Assert.Equal("application", managedEdit.InputPath);
-            Assert.Equal(expected, managedEdit.Selection);
+            Assert.Equal(managedExpected, managedEdit.Selection);
             Assert.Equal("runtime", runtimeEdit.InputPath);
             Assert.Equal(expected, runtimeEdit.Selection);
             Assert.Equal(runtimeEdit.OutputPath, merge.Arguments[0]);

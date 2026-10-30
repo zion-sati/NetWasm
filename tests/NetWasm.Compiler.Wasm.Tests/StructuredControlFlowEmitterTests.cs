@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission;
@@ -317,7 +318,7 @@ public sealed class StructuredControlFlowEmitterTests
         CreateEmitter().Emit(
             code,
             new StructuredSequence([loop]),
-            CreateContext() with { RotateLoops = true },
+            CreateContext() with { LoopRotation = LoopRotationPolicy.Guarded },
             (block, _, owner) =>
             {
                 emitted.Add((block.Block.Value, owner));
@@ -346,6 +347,47 @@ public sealed class StructuredControlFlowEmitterTests
             opcodes);
     }
 
+    [Theory]
+    [InlineData(CilOperation.Call, false)]
+    [InlineData(CilOperation.CallVirtual, false)]
+    [InlineData(CilOperation.CallIndirect, false)]
+    [InlineData(CilOperation.NewObject, false)]
+    [InlineData(CilOperation.CompareLessThanSigned, true)]
+    public void CallFreeRotationLeavesALoopWhoseConditionCalls(CilOperation operation, bool rotated)
+    {
+        var emitted = new List<int>();
+        var loop = new StructuredLoop(
+            Block(0),
+            true,
+            new StructuredSequence([new StructuredCode(Block(1))]),
+            StructuredSequence.Empty,
+            StructuredSequence.Empty);
+        var sequence = new StructuredSequence([loop]);
+        var method = StructuredControlFlowEmitterTestExtensions.CreateMethod(sequence);
+        var condition = method.Blocks[loop.Condition!.Block];
+        method = method with
+        {
+            Blocks = method.Blocks.SetItem(
+                condition.Id,
+                condition with { Instructions = [I(0, CilOperation.LoadArgument), I(1, operation)] }),
+        };
+
+        CreateEmitter().Emit(
+            new RecordingInstructionWriter(),
+            method,
+            sequence,
+            CreateContext() with { LoopRotation = LoopRotationPolicy.CallFree },
+            (block, _, _) =>
+            {
+                emitted.Add(block.Block.Value);
+                return new ConditionValue(0, CliValueKind.I4);
+            },
+            (_, _, _, _, _, _) => { });
+
+        // A rotated loop repeats its condition at the bottom; a calling one tests it once.
+        Assert.Equal(rotated ? [0, 1, 0] : [0, 1], emitted);
+    }
+
     [Fact]
     public void RotatedLoopKeepsBreakContinueAndSurroundingDepths()
     {
@@ -359,7 +401,7 @@ public sealed class StructuredControlFlowEmitterTests
         CreateEmitter().Emit(
             code,
             new StructuredSequence([loop]),
-            CreateContext() with { RotateLoops = true },
+            CreateContext() with { LoopRotation = LoopRotationPolicy.Guarded },
             (_, _, _) => new ConditionValue(0, CliValueKind.I4),
             (_, _, _, _, _, _) => { },
             exceptionLeaveDepth: 2,
@@ -374,6 +416,57 @@ public sealed class StructuredControlFlowEmitterTests
             code.ToInstructions().Where(instruction => instruction.Opcode == WasmOpcodes.Branch)
                 .Select(instruction => instruction.Operand.UnsignedValue));
     }
+
+    [Fact]
+    public void LabelBranchesCountTheConstructsBetweenThemAndTheirRegions()
+    {
+        var code = new RecordingInstructionWriter();
+        var next = new StructuredBlockId(5);
+        var header = new StructuredBlockId(6);
+        var inner = new StructuredLoop(
+            Block(2),
+            true,
+            new StructuredSequence([new StructuredLabelBranch(next), new StructuredLabelBranch(header)]),
+            StructuredSequence.Empty,
+            new StructuredSequence([new StructuredLabelBranch(next)]));
+        var sequence = new StructuredSequence([
+            new StructuredLabeledBlock(next, new StructuredSequence([
+                new StructuredLabeledLoop(header, new StructuredSequence([
+                    new StructuredIf(
+                        Block(0),
+                        new StructuredSequence([new StructuredLabelBranch(next)]),
+                        StructuredSequence.Empty),
+                    inner,
+                    new StructuredLabelBranch(header)]))]))]);
+
+        CreateEmitter().Emit(
+            code,
+            sequence,
+            CreateContext() with { LoopRotation = LoopRotationPolicy.Guarded },
+            (_, _, _) => new ConditionValue(0, CliValueKind.I4),
+            (_, _, _, _, _, _) => { });
+
+        // The if adds one level; a rotated loop's body sits four levels in and
+        // its exit body one, so the block lies two, five and two out and the
+        // loop four and none.
+        Assert.Equal(
+            [2u, 5u, 4u, 2u, 0u],
+            code.ToInstructions().Where(instruction => instruction.Opcode == WasmOpcodes.Branch)
+                .Select(instruction => instruction.Operand.UnsignedValue));
+        Assert.Equal(
+            [WasmOpcodes.Block, WasmOpcodes.Loop],
+            code.ToInstructions().Where(instruction => instruction.Opcode is WasmOpcodes.Block or WasmOpcodes.Loop)
+                .Take(2).Select(instruction => instruction.Opcode));
+    }
+
+    [Fact]
+    public void LabelBranchOutsideItsRegionIsRejected() =>
+        Assert.Throws<InvalidOperationException>(() => CreateEmitter().Emit(
+            new RecordingInstructionWriter(),
+            new StructuredSequence([new StructuredLabelBranch(new StructuredBlockId(5))]),
+            CreateContext(),
+            (_, _, _) => new ConditionValue(0, CliValueKind.I4),
+            (_, _, _, _, _, _) => { }));
 
     [Theory]
     [InlineData(true, 0)]
@@ -1143,7 +1236,7 @@ internal static class StructuredControlFlowEmitterTestExtensions
             dispatcherContinueDepth);
     }
 
-    private static StructuredMethod CreateMethod(StructuredSequence sequence)
+    internal static StructuredMethod CreateMethod(StructuredSequence sequence)
     {
         var occurrences = EnumerateOccurrences(sequence)
             .DistinctBy(occurrence => occurrence.Block)

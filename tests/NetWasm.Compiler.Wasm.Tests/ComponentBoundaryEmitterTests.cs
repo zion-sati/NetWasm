@@ -122,14 +122,14 @@ public sealed class ComponentBoundaryEmitterTests
         var methods = new Repository();
         var target = WasmTarget.Wasm32;
         var (emitter, _) = CreateEmitter(target);
-        var alpha = CreateExport(methods, "example:component@1.0.0/api", "alpha");
+        var alpha = CreateExport(methods, "example:component/api@1.0.0", "alpha");
         var drop = CreateExport(
             methods,
-            "example:component@1.0.0/api",
+            "example:component/api@1.0.0",
             "drop",
             CanonicalAbiFunctionKind.ExportedResourceDestructor);
-        var zeta = CreateExport(methods, "example:component@1.0.0/api", "zeta");
-        var last = CreateExport(methods, "example:component@1.0.0/zapi", "zeta");
+        var zeta = CreateExport(methods, "example:component/api@1.0.0", "zeta");
+        var last = CreateExport(methods, "example:component/zapi@1.0.0", "zeta");
         var contract = new ComponentBoundaryContract(
             "example:component@1",
             "component",
@@ -379,7 +379,7 @@ public sealed class ComponentBoundaryEmitterTests
             MethodSignatureModel.Create(CliValueKind.I8),
             0)
         {
-            WitImport = new("wasi:clocks@0.2.0/monotonic-clock", "now"),
+            WitImport = new("wasi:clocks/monotonic-clock@0.2.0", "now"),
         };
 
         public MethodDefinitionModel Export { get; } = new(
@@ -390,7 +390,7 @@ public sealed class ComponentBoundaryEmitterTests
             MethodSignatureModel.Create(CliValueKind.I4),
             1)
         {
-            WitExport = new("example:component@1.0.0/api", "read"),
+            WitExport = new("example:component/api@1.0.0", "read"),
         };
 
         public MethodDefinitionModel GetMethod(EntityKey key) => key == EntryKey

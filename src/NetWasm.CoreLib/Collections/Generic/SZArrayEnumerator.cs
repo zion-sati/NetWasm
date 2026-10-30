@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Ported in part from dotnet/runtime Array.Enumerators.cs at commit
-// 811225a482702af7ecc35d817966bc70b88a3a23.
+// 474ed963699fc29809015392738a15231aaae2de.
 
 using System.Collections;
 using System.Collections.Generic;
@@ -73,6 +73,11 @@ namespace System.Collections.Generic
 {
     internal static class SZArrayHelper
     {
+        // A foreach over an array seen as IEnumerable<T> reaches this directly
+        // once the receiver is known to be an array, and allocates its
+        // enumerator either way, so the allocation is not a cold path to keep
+        // out of callers; .NET's JIT treats this method as an intrinsic.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static IEnumerator<T> GetEnumerator<T>(T[] array) =>
             new SZGenericArrayEnumerator<T>(array, array.Length);
 

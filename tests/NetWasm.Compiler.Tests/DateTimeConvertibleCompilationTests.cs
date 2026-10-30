@@ -65,7 +65,7 @@ public sealed class DateTimeConvertibleCompilationTests
         {
             Target = target,
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform"
+            WitWorld = "netwasm:platform/platform@1.0.0"
         });
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 0, target, result.StaticDataEnd));

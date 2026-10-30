@@ -9,6 +9,7 @@ public enum WasmValueType : byte
     I64 = 0x7e,
     F32 = 0x7d,
     F64 = 0x7c,
+    V128 = 0x7b,
     ExnRef = 0x69,
 }
 
@@ -22,6 +23,7 @@ internal static class WasmValueTypes
             CliValueKind.I8 => WasmValueType.I64,
             CliValueKind.F4 => WasmValueType.F32,
             CliValueKind.F8 => WasmValueType.F64,
+            CliValueKind.V128 => WasmValueType.V128,
             CliValueKind.NativeInt => target.UsesMemory64 ? WasmValueType.I64 : WasmValueType.I32,
             CliValueKind.ManagedReference or CliValueKind.ManagedAddress =>
                 target.UsesMemory64 ? WasmValueType.I64 : WasmValueType.I32,

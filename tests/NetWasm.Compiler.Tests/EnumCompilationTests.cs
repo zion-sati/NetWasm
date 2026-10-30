@@ -34,7 +34,7 @@ public sealed class EnumCompilationTests
         {
             Exports = [new("run", "EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             Optimization = FinalWasmOptimization.None,
         });
 
@@ -77,7 +77,7 @@ public sealed class EnumCompilationTests
         {
             Exports = [new("run", "EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             Optimization = FinalWasmOptimization.None,
         });
 
@@ -128,7 +128,7 @@ public sealed class EnumCompilationTests
             "Run",
             [new("run", "EntryPoint", "Run")],
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         Assert.Equal(0, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
             assets.Directory,
@@ -203,7 +203,7 @@ public sealed class EnumCompilationTests
             "Run",
             [new("run", "EntryPoint", "Run")],
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
 
         Assert.Equal(0, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
@@ -256,7 +256,7 @@ public sealed class EnumCompilationTests
         {
             Exports = [new("run", "EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/async-platform",
+            WitWorld = "netwasm:platform/async-platform@1.0.0",
             Optimization = FinalWasmOptimization.None,
         });
 
@@ -275,7 +275,7 @@ public sealed class EnumCompilationTests
             "Run",
             [new("run", "EnumBehaviorFixture.EntryPoint", "Run")],
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         Assert.Equal(0, ExecuteWithStandardWasiNode(
             compilation.ApplicationModule,
             assets.Directory,
