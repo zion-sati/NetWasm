@@ -338,12 +338,15 @@ public sealed class IntegerDivRemCompilationTests
         var assembly = assets.CompileOptimizedSource(
             "DecimalDivRemPromotionFixture",
             DecimalDivisionSource);
+        // Div96By32 is aggressively inlined; the plan is for its own body.
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
             "EntryPoint",
             "Run",
-            []));
+            [],
+            OptimizationOverrides: new(
+                ManagedMethodInlining: NetWasm.Compiler.ComponentModel.Optimization.ManagedMethodInlining.Disabled)));
         using var metadata = MetadataCompilationTestFactory.Load(
             assembly,
             [assets.CoreLib]);
@@ -421,20 +424,26 @@ public sealed class IntegerDivRemCompilationTests
             "EntryPoint",
             "Run",
             []));
-        var getter = compilation.Program.Methods.Values.Single(body =>
-            body.Method.Definition.Name == "get_UInt32Powers10");
-        var creation = Assert.Single(getter.Body.Instructions.Where(instruction =>
-            instruction.Operation == CilOperation.CreateReadOnlySpanFromRva));
-        var span = Assert.IsType<CilOperand.ReadOnlySpanData>(creation.Operand);
+        var instructions = compilation.Program.Methods.Values
+            .SelectMany(body => body.Body.Instructions)
+            .ToArray();
+        // Division reads the table from its RVA data, through the span getter or,
+        // once static data-view elimination folds the getter away, element by element.
+        var span = Assert.Single(instructions
+            .Where(instruction => instruction.Operation is
+                CilOperation.CreateReadOnlySpanFromRva or CilOperation.LoadStaticDataElement)
+            .Select(instruction => instruction.Operand)
+            .OfType<CilOperand.ReadOnlySpanData>()
+            .Where(data => data.ElementType.CanonicalName == "primitive:u4" && data.ElementCount == 10)
+            .DistinctBy(data => data.Field.Definition.Key));
 
-        Assert.Equal("primitive:u4", span.ElementType.CanonicalName);
-        Assert.Equal(10, span.ElementCount);
         Assert.Equal(40, span.Field.Definition.InitialData.Length);
         Assert.Contains(span.Field.Definition.Key, compilation.Program.Fields);
-        Assert.DoesNotContain(getter.Body.Instructions, instruction =>
-            instruction.Operation is CilOperation.NewArray or
-                CilOperation.InitializeArrayData);
-        Assert.DoesNotContain(getter.Body.Instructions, instruction =>
+        Assert.DoesNotContain(instructions, instruction =>
+            instruction.Operation == CilOperation.InitializeArrayData ||
+            instruction.Operation == CilOperation.NewArray &&
+            instruction.Operand is CilOperand.TypeIdentity { Value.CanonicalName: "primitive:u4" });
+        Assert.DoesNotContain(instructions, instruction =>
             instruction.Operation == CilOperation.Call &&
             instruction.Operand is CilOperand.MethodInstance method &&
             method.Value.Definition.Name is "CreateSpan" or "InitializeArray");

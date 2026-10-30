@@ -38,6 +38,7 @@ public sealed class NetWasmCompileTaskTests
         task.ManagedMethodInlining = "Disabled";
         task.ManagedLoopRotation = "Enabled";
         task.ManagedAllocationElimination = string.Empty;
+        task.ManagedLoopVectorization = "Disabled";
 
         Assert.Equal(
             [
@@ -50,7 +51,7 @@ public sealed class NetWasmCompileTaskTests
                 "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
                 "-projectdirectory:/project", "-pathmap:/project=/_/", "-intermediatedirectory:obj/netwasm/",
                 "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
-                "-managedmethodinlining:Disabled", "-managedlooprotation:Enabled",
+                "-managedmethodinlining:Disabled", "-managedlooprotation:Enabled", "-managedloopvectorization:Disabled",
             ],
             Lines(task.ResponseFileCommands));
     }

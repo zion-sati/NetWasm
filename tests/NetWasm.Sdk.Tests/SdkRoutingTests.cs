@@ -247,6 +247,38 @@ public sealed class SdkRoutingTests
         Assert.Contains(inputs, input => input.EndsWith("wit packages/main.wit", StringComparison.Ordinal));
         Assert.Contains(inputs, input => input.EndsWith("wit packages/deps/dep.wit", StringComparison.Ordinal));
         Assert.Contains(inputs, input => input.EndsWith("host api/world.wit", StringComparison.Ordinal));
+        Assert.All(bindings, binding => Assert.Equal(binding[0], binding[3]));
+    }
+
+    // A WIT worker's WIT includes NetWasm's platform package, which the build
+    // adds to its dependencies before compiling. The bindings generator reads
+    // a package directory the same way, so the worker template's own WIT
+    // generates bindings; a single WIT file has no dependencies to add.
+    [Fact]
+    public void WitWorkerBindingsReadPackageDirectoriesWithThePlatformPackage()
+    {
+        using var project = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>WitWebWorker</OutputType>
+            <NetWasmWitPath>$(MSBuildProjectDirectory)/wit</NetWasmWitPath>
+            <NetWasmWorld>example:worker@1.0.0/worker</NetWasmWorld>
+            <NetWasmApplicationWorld>example:worker@1.0.0/application</NetWasmApplicationWorld>
+            """,
+            projectItems: """
+            <NetWasmWit Include="wit" World="example:worker@1.0.0/application" />
+            <NetWasmWit Include="host.wit" />
+            """,
+            files: new Dictionary<string, string>
+            {
+                ["wit/worker.wit"] = "package example:worker@1.0.0;\nworld application {}\n",
+                ["host.wit"] = "package example:host;\nworld host {}\n",
+            });
+
+        var bindings = project.Items("NetWasmWitBinding").Select(binding => binding.Split('|')).ToArray();
+        var package = Assert.Single(bindings, binding => binding[0].Replace('\\', '/').EndsWith("/wit", StringComparison.Ordinal));
+        Assert.EndsWith("netwasm/wit-bindings/wit.package", package[3].Replace('\\', '/'), StringComparison.Ordinal);
+        var file = Assert.Single(bindings, binding => binding[0].EndsWith("host.wit", StringComparison.Ordinal));
+        Assert.Equal(file[0], file[3]);
     }
 
     // The compilation identity lists the declared import modules, so changing
@@ -495,7 +527,7 @@ public sealed class SdkRoutingTests
             toolchainTargets,
             StringComparison.Ordinal);
         Assert.Contains(
-            "<ActivationInterfacePrefix>wasi:http@0.2.11/</ActivationInterfacePrefix>",
+            "<ActivationInterfacePrefix>wasi:http/</ActivationInterfacePrefix>",
             toolchainTargets,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -710,6 +742,14 @@ public sealed class SdkRoutingTests
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedAllocationElimination"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopRotation"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedArrayStoreCheckElimination"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedDispatcherElimination"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedEmptyFinallyRemoval"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedStructScalarReplacement"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedAllocationScalarReplacement"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedIdempotentLoopCollapse"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopStoreForwarding"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedArrayLoopIdioms"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopVectorization"));
     }
 
     [Theory]
@@ -734,6 +774,14 @@ public sealed class SdkRoutingTests
     [InlineData("NetWasmManagedAllocationElimination")]
     [InlineData("NetWasmManagedLoopRotation")]
     [InlineData("NetWasmManagedArrayStoreCheckElimination")]
+    [InlineData("NetWasmManagedDispatcherElimination")]
+    [InlineData("NetWasmManagedEmptyFinallyRemoval")]
+    [InlineData("NetWasmManagedStructScalarReplacement")]
+    [InlineData("NetWasmManagedAllocationScalarReplacement")]
+    [InlineData("NetWasmManagedIdempotentLoopCollapse")]
+    [InlineData("NetWasmManagedLoopStoreForwarding")]
+    [InlineData("NetWasmManagedArrayLoopIdioms")]
+    [InlineData("NetWasmManagedLoopVectorization")]
     public void PreservesExplicitCompilerReductionSelections(string property)
     {
         using var project = EvaluationProject.Create(
@@ -781,6 +829,14 @@ public sealed class SdkRoutingTests
                      "$(NetWasmManagedAllocationElimination)",
                      "$(NetWasmManagedLoopRotation)",
                      "$(NetWasmManagedArrayStoreCheckElimination)",
+                     "$(NetWasmManagedDispatcherElimination)",
+                     "$(NetWasmManagedEmptyFinallyRemoval)",
+                     "$(NetWasmManagedStructScalarReplacement)",
+                     "$(NetWasmManagedAllocationScalarReplacement)",
+                     "$(NetWasmManagedIdempotentLoopCollapse)",
+                     "$(NetWasmManagedLoopStoreForwarding)",
+                     "$(NetWasmManagedArrayLoopIdioms)",
+                     "$(NetWasmManagedLoopVectorization)",
                  })
         {
             Assert.Contains(value, frontendIdentityContract, StringComparison.Ordinal);
@@ -809,6 +865,14 @@ public sealed class SdkRoutingTests
         Assert.Equal("$(NetWasmManagedAllocationElimination)", (string?)compilation.Attribute("ManagedAllocationElimination"));
         Assert.Equal("$(NetWasmManagedLoopRotation)", (string?)compilation.Attribute("ManagedLoopRotation"));
         Assert.Equal("$(NetWasmManagedArrayStoreCheckElimination)", (string?)compilation.Attribute("ManagedArrayStoreCheckElimination"));
+        Assert.Equal("$(NetWasmManagedDispatcherElimination)", (string?)compilation.Attribute("ManagedDispatcherElimination"));
+        Assert.Equal("$(NetWasmManagedEmptyFinallyRemoval)", (string?)compilation.Attribute("ManagedEmptyFinallyRemoval"));
+        Assert.Equal("$(NetWasmManagedStructScalarReplacement)", (string?)compilation.Attribute("ManagedStructScalarReplacement"));
+        Assert.Equal("$(NetWasmManagedAllocationScalarReplacement)", (string?)compilation.Attribute("ManagedAllocationScalarReplacement"));
+        Assert.Equal("$(NetWasmManagedIdempotentLoopCollapse)", (string?)compilation.Attribute("ManagedIdempotentLoopCollapse"));
+        Assert.Equal("$(NetWasmManagedLoopStoreForwarding)", (string?)compilation.Attribute("ManagedLoopStoreForwarding"));
+        Assert.Equal("$(NetWasmManagedArrayLoopIdioms)", (string?)compilation.Attribute("ManagedArrayLoopIdioms"));
+        Assert.Equal("$(NetWasmManagedLoopVectorization)", (string?)compilation.Attribute("ManagedLoopVectorization"));
         foreach (var value in new[]
                  {
                      "$(_NetWasmCanonicalOptimization)",
@@ -1076,7 +1140,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmBrowserPublishDir=$(NetWasmBrowserPublishDir)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__PackageReference=@(PackageReference, '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__PackageDownload=@(PackageDownload, '{ItemSeparator}')" />
-                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmWitBinding=@(_NetWasmWitBinding->'%(Identity)|%(BindingPath)|%(Arguments)', '{ItemSeparator}')" />
+                    <Message Importance="High" Text="__NETWASM_ITEM__NetWasmWitBinding=@(_NetWasmWitBinding->'%(Identity)|%(BindingPath)|%(Arguments)|%(GeneratorInput)', '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmWitBindingInput=@(_NetWasmWitBindingInput, '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmCompilationIdentityLine=@(_NetWasmCompilationIdentityLine, '{ItemSeparator}')" />
                     <Message Importance="High" Text="__NETWASM_PROP__TargetFrameworkIdentifier=$(TargetFrameworkIdentifier)" />
@@ -1114,6 +1178,14 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedAllocationElimination=$(NetWasmManagedAllocationElimination)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopRotation=$(NetWasmManagedLoopRotation)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedArrayStoreCheckElimination=$(NetWasmManagedArrayStoreCheckElimination)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedDispatcherElimination=$(NetWasmManagedDispatcherElimination)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedEmptyFinallyRemoval=$(NetWasmManagedEmptyFinallyRemoval)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedStructScalarReplacement=$(NetWasmManagedStructScalarReplacement)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedAllocationScalarReplacement=$(NetWasmManagedAllocationScalarReplacement)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedIdempotentLoopCollapse=$(NetWasmManagedIdempotentLoopCollapse)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopStoreForwarding=$(NetWasmManagedLoopStoreForwarding)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedArrayLoopIdioms=$(NetWasmManagedArrayLoopIdioms)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopVectorization=$(NetWasmManagedLoopVectorization)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />

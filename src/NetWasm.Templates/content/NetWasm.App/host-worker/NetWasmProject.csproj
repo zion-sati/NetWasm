@@ -1,4 +1,4 @@
-<Project Sdk="NetWasm.Sdk">
+<Project Sdk="NetWasm.Sdk/0.4.2">
   <PropertyGroup>
     <OutputType>JsModule</OutputType>
     <NetWasmJavaScriptHosts>worker</NetWasmJavaScriptHosts>

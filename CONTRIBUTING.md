@@ -50,6 +50,12 @@ change. Compiler changes should include a focused regression that demonstrates
 the input and expected behaviour. CoreLib ports must retain upstream headers
 and licence notices.
 
+A test that asserts how long something takes is marked
+`[Trait("Category", "Performance")]`. Its result depends on the load on the
+machine, so `eng/test.sh` and the pull request checks exclude that category.
+Run those tests on an otherwise idle machine with
+`dotnet test <project> --filter Category=Performance`.
+
 ## Pull request checks
 
 The aggregate `CI` check is the authoritative pull request result. Markdown and

@@ -14,7 +14,7 @@ public sealed class JSImportForwarderFunctionEmitterTests
 {
     [Theory]
     [InlineData(WasmTarget.Wasm32, 2, 3, 2)]
-    [InlineData(WasmTarget.Wasm64, 10, 3, 2)]
+    [InlineData(WasmTarget.Wasm64, 4, 3, 2)]
     public void CopiesParametersIntoStackSlotsInvokesTheImportAndReturnsItsResult(
         WasmTarget target,
         int referenceSlot,

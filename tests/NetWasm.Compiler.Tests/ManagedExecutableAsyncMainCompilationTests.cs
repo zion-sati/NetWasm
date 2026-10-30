@@ -45,7 +45,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform",
+            WitWorld: "netwasm:platform/async-platform@1.0.0",
             EntryMethodToken: entryPoint.Token,
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
 
@@ -115,7 +115,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly, [assets.CoreLib], entry.TypeName, entry.MethodName, [], WasmTarget.Wasm32,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform",
+            WitWorld: "netwasm:platform/async-platform@1.0.0",
             EntryMethodToken: entry.Token,
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable,
             StructuredDiagnostics: true));
@@ -147,7 +147,7 @@ public sealed class ManagedExecutableAsyncMainCompilationTests
         using var services = new ServiceCollection().AddNetWasmCompiler()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         var world = services.GetRequiredService<IWitDocumentReader>().Read(wit)
-            .SelectWorld("netwasm:component@1.0.0/async-command");
+            .SelectWorld("netwasm:component/async-command@1.0.0");
         var worldSpecifier = services.GetRequiredService<IWitWorldSpecifierFormatter>().Format(world);
         services.GetRequiredService<IComponentPackager>().Package(new(
             application, wit, worldSpecifier, component,

@@ -46,7 +46,7 @@ public sealed class ArrayCopyClearIntrinsicEmitterTests
             ],
             instructions.Select(instruction => instruction.Opcode));
         var sourceLocal = (uint)((memory64
-            ? request.Instruction.Context.StackLocals.ReferenceBase
+            ? request.Instruction.Context.StackLocals.I8Base
             : request.Instruction.Context.StackLocals.I4Base) + argumentBase);
         Assert.Equal(sourceLocal, instructions[0].Operand.UnsignedValue);
         Assert.Equal(0, instructions[1].Operand.SignedValue);
@@ -98,7 +98,7 @@ public sealed class ArrayCopyClearIntrinsicEmitterTests
             ],
             instructions.Select(instruction => instruction.Opcode));
         var locals = request.Instruction.Context.StackLocals;
-        var sourceLocal = (uint)((memory64 ? locals.ReferenceBase : locals.I4Base) + argumentBase);
+        var sourceLocal = (uint)((memory64 ? locals.I8Base : locals.I4Base) + argumentBase);
         Assert.Equal(sourceLocal, instructions[0].Operand.UnsignedValue);
         Assert.Equal((uint)(locals.I4Base + argumentBase + 1), instructions[1].Operand.UnsignedValue);
         Assert.Equal((uint)(locals.I4Base + argumentBase + 2), instructions[2].Operand.UnsignedValue);

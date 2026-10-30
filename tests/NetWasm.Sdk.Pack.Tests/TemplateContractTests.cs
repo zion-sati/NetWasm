@@ -75,18 +75,28 @@ public sealed class TemplateContractTests
         Assert.Equal("10.0.303", sdk.GetProperty("version").GetString());
         Assert.Equal("latestFeature", sdk.GetProperty("rollForward").GetString());
         Assert.False(sdk.GetProperty("allowPrerelease").GetBoolean());
+        // The project file names NetWasm.Sdk's version, where upgrading changes it.
+        Assert.False(document.RootElement.TryGetProperty("msbuild-sdks", out _));
+    }
 
+    [Theory]
+    [InlineData("NetWasm.App/console/NetWasmProject.csproj")]
+    [InlineData("NetWasm.App/host-page/NetWasmProject.csproj")]
+    [InlineData("NetWasm.App/host-worker/NetWasmProject.csproj")]
+    [InlineData("NetWasm.App/wit/NetWasmProject.csproj")]
+    [InlineData("NetWasm.Library/NetWasmLibrary.csproj")]
+    public void GeneratedProjectNamesTheSdkVersionItWasCreatedWith(string projectPath)
+    {
+        var repositoryRoot = FindRepositoryRoot();
         var declaredSdkVersion = XDocument
             .Load(Path.Combine(repositoryRoot, "src", "NetWasm.Sdk", "NetWasm.Sdk.csproj"))
             .Descendants("Version")
             .Single()
             .Value;
-        var generatedSdkVersion = document.RootElement
-            .GetProperty("msbuild-sdks")
-            .GetProperty("NetWasm.Sdk")
-            .GetString();
 
-        Assert.Equal(declaredSdkVersion, generatedSdkVersion);
+        var project = XDocument.Load(Path.Combine(repositoryRoot, "src", "NetWasm.Templates", "content", projectPath));
+
+        Assert.Equal($"NetWasm.Sdk/{declaredSdkVersion}", (string?)project.Root!.Attribute("Sdk"));
     }
 
     [Fact]

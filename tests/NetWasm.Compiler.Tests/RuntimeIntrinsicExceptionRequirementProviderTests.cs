@@ -159,6 +159,12 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.EnumFormat or
             RuntimeIntrinsic.EnumToObject =>
                 [ManagedExceptionKind.ArgumentNull, ManagedExceptionKind.Argument],
+            RuntimeIntrinsic.SimdGetElement =>
+                [ManagedExceptionKind.NotSupported, ManagedExceptionKind.ArgumentOutOfRange],
+            RuntimeIntrinsic.SimdDivide =>
+                [ManagedExceptionKind.NotSupported, ManagedExceptionKind.DivideByZero, ManagedExceptionKind.Overflow],
+            _ when RuntimeIntrinsicKinds.IsSimdVector(intrinsic) =>
+                [ManagedExceptionKind.NotSupported],
             _ => [],
         };
 
@@ -173,6 +179,8 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
         ManagedExceptionKind.Overflow => "System.OverflowException",
         ManagedExceptionKind.DivideByZero => "System.DivideByZeroException",
         ManagedExceptionKind.InvalidOperation => "System.InvalidOperationException",
+        ManagedExceptionKind.NotSupported => "System.NotSupportedException",
+        ManagedExceptionKind.ArgumentOutOfRange => "System.ArgumentOutOfRangeException",
         _ => throw new InvalidOperationException($"Unexpected requirement '{kind}'."),
     };
 

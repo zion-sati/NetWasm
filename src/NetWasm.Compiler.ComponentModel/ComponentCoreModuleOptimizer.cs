@@ -78,6 +78,7 @@ public sealed class ComponentCoreModuleOptimizer(
             "--enable-reference-types",
             "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int",
+            "--enable-simd",
         };
         if (target.Width == "wasm64")
         {

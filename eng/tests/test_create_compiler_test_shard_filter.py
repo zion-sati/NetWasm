@@ -79,8 +79,9 @@ class CompilerTestShardFilterTests(unittest.TestCase):
             ]
         )
         self.assertEqual(
-            "FullyQualifiedName=NetWasm.Compiler.Tests.AlphaTests"
-            "|FullyQualifiedName=NetWasm.Compiler.Tests.BetaTests",
+            "(FullyQualifiedName=NetWasm.Compiler.Tests.AlphaTests"
+            "|FullyQualifiedName=NetWasm.Compiler.Tests.BetaTests)"
+            "&Category!=Performance",
             value,
         )
 

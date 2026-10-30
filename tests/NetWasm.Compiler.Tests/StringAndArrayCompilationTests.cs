@@ -204,6 +204,77 @@ public sealed class StringAndArrayCompilationTests
         Assert.Equal(0, result);
     }
 
+    // Invariant casing skips unchanged ASCII four characters at a time. Each kind
+    // of change, at every position after the letter-range bounds, must still map.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void InvariantCasingMapsChangesAtEveryBlockPosition(bool optimize, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        var result = executor.Execute(new CompilationScenario(
+            $"InvariantCaseBlocks_{optimize}_{target}",
+            """
+            using System;
+            using System.Text;
+
+            namespace InvariantCaseBlocks;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    string[] upperChanges = ["a", "z", "é", "\U00010428", ""];
+                    string[] lowerChanges = ["A", "Z", "É", "\U00010400", ""];
+                    var checksum = input;
+                    for (var length = 0; length < 12; length++)
+                    {
+                        for (var change = 0; change < upperChanges.Length; change++)
+                        {
+                            for (var position = 0; position <= length; position++)
+                            {
+                                checksum = checksum * 31 + Mix(Build("@AZ[`{0\u007f", length, position, upperChanges[change]), upper: true);
+                                checksum = checksum * 31 + Mix(Build("@az[`{0\u007f", length, position, lowerChanges[change]), upper: false);
+                            }
+                        }
+                    }
+                    return checksum;
+                }
+
+                private static string Build(string filler, int length, int position, string change)
+                {
+                    var builder = new StringBuilder();
+                    for (var index = 0; index < length; index++)
+                    {
+                        if (index == position) builder.Append(change);
+                        builder.Append(filler[(index * 3 + length) % filler.Length]);
+                    }
+                    if (position == length) builder.Append(change);
+                    return builder.ToString();
+                }
+
+                private static int Mix(string source, bool upper)
+                {
+                    var mapped = upper ? source.ToUpperInvariant() : source.ToLowerInvariant();
+                    var hash = ReferenceEquals(source, mapped) ? 1 : 2;
+                    foreach (var character in mapped) hash = hash * 33 + character;
+                    return hash;
+                }
+            }
+            """,
+            "InvariantCaseBlocks.EntryPoint",
+            optimize,
+            target,
+            41,
+            []));
+
+        // As desktop .NET computes it, with ICU or invariant globalization.
+        Assert.Equal(214012633, result);
+    }
+
     [Fact]
     public void CompilerExecutesStringBuilderGrowthInterpolationAndCompositeFormatting()
     {

@@ -201,5 +201,29 @@ namespace System.Runtime.CompilerServices
 
         public static ref T Unbox<T>(object box) where T : struct =>
             throw new System.PlatformNotSupportedException();
+
+        // Determines if the address is aligned at least to `alignment` bytes.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsOpportunisticallyAligned<T>(ref readonly T address, nuint alignment)
+        {
+            // `alignment` is expected to be a power of 2 in bytes.
+            // We use Unsafe.AsPointer to convert to a pointer,
+            // GC will keep alignment when moving objects (up to sizeof(void*)),
+            // otherwise alignment should be considered a hint if not pinned.
+            System.Diagnostics.Debug.Assert(nuint.IsPow2(alignment));
+            return ((nuint)AsPointer(in address) & (alignment - 1)) == 0;
+        }
+
+        // Determines the misalignment of the address with respect to the specified `alignment`.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static nuint OpportunisticMisalignment<T>(ref readonly T address, nuint alignment)
+        {
+            // `alignment` is expected to be a power of 2 in bytes.
+            // We use Unsafe.AsPointer to convert to a pointer,
+            // GC will keep alignment when moving objects (up to sizeof(void*)),
+            // otherwise alignment should be considered a hint if not pinned.
+            System.Diagnostics.Debug.Assert(nuint.IsPow2(alignment));
+            return (nuint)AsPointer(in address) & (alignment - 1);
+        }
     }
 }

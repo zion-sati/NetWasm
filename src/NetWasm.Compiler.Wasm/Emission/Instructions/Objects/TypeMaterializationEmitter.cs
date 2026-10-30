@@ -1,3 +1,4 @@
+using System.Numerics;
 using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Immutable;
@@ -17,7 +18,8 @@ internal sealed class TypeMaterializationEmitter(
     IStaticDataLayout staticData,
     IRuntimeImportResolver runtimeImports,
     IImplicitExceptionEmitter exceptions,
-    IRootPublicationEmitter roots) :
+    IRootPublicationEmitter roots,
+    ICilTypeOperandResolver types) :
     InstructionCommandProvider
 {
     public override ImmutableArray<InstructionCommand> Commands =>
@@ -36,14 +38,53 @@ internal sealed class TypeMaterializationEmitter(
             EmitTypeFacts),
     ];
 
-    private void EmitTypeFromHandle(InstructionEmissionRequest request, IWasmInstructionWriter code) =>
-        EmitCommand(request, code, false);
+    private void EmitTypeFromHandle(InstructionEmissionRequest request, IWasmInstructionWriter code)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!CilTypeMaterialization.IsConstant(request.Instruction))
+        {
+            EmitCommand(request, code, false);
+            return;
+        }
+        EmitStaticTypeObject(request, code);
+    }
+
+    // A static Type object's materialization is not a safepoint, so there is no
+    // runtime call to fall back to.
+    private void EmitStaticTypeObject(InstructionEmissionRequest request, IWasmInstructionWriter code)
+    {
+        var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
+        if (!staticData.TypeObjectAddresses.TryGetValue(type.CanonicalName, out var address))
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.RuntimeContract,
+                $"typeof({type.CanonicalName}) has no static Type object"));
+        }
+        var slot = request.Stack.Count - 1;
+        addresses.Emit(code, address);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)GetStackLocal(request.Context, slot, CliValueKind.ManagedReference))));
+        request.Stack[slot] = CliValueKind.ManagedReference;
+    }
 
     private void EmitObjectType(
         InstructionEmissionRequest request,
         IWasmInstructionWriter code)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (CilTypeMaterialization.IsExactObjectType(request.Instruction))
+        {
+            // The receiver can have one type only: check it for null, then use
+            // that type's static Type object.
+            var slot = request.Stack.Count - 1;
+            EmitNullCheck(
+                code,
+                GetStackLocal(request.Context, slot, CliValueKind.ManagedReference),
+                request.Context.ManagedThrowFunction);
+            EmitStaticTypeObject(request, code);
+            return;
+        }
         EmitCommand(
             request,
             code,
@@ -170,13 +211,64 @@ internal sealed class TypeMaterializationEmitter(
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(typeIdLocal))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        // The type id and the Type object can share the slot's local, so the
+        // cached object stays in the object temporary until the id is no longer needed.
+        var cached = readObjectHeader && staticData.TypeObjectCacheAddress != 0;
+        var cachedLocal = context.ObjectTemporary;
+        if (cached)
+        {
+            EmitCachedTypeObject(code, typeIdLocal, cachedLocal);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)cachedLocal)));
+            EmitReferenceEqualZero(code);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(typeIdLocal))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(typeLayouts.TypeTypeId)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(runtimeImports.Resolve(RuntimeImportSymbol.GetTypeObject)))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(typeLocal))));
         EmitAllocationFailureCheck(code, typeLocal, context.ManagedThrowFunction);
+        if (cached)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)cachedLocal)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)typeLocal)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         stack[slot] = CliValueKind.ManagedReference;
+    }
+
+    // A type's Type object, once the runtime has made it, is in the runtime's
+    // cache at the type id, as desktop .NET reads it from the method table;
+    // cachedLocal is left zero when the cache or its entry is empty. The runtime
+    // initializer stores the cache's address, which a host without one leaves zero.
+    private void EmitCachedTypeObject(IWasmInstructionWriter code, int typeIdLocal, int cachedLocal)
+    {
+        var target = layouts.Target;
+        addresses.Emit(code, staticData.TypeObjectCacheAddress);
+        ManagedMemoryEmitter.EmitLoadBySize(code, target, 0, target.ObjectReferenceSize);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)cachedLocal)));
+        EmitReferenceEqualZero(code);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)cachedLocal)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)typeIdLocal)));
+        var shift = BitOperations.Log2((uint)target.ObjectReferenceSize);
+        if (target.UsesMemory64)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(shift)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ShiftLeft));
+        }
+        else
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(shift)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32ShiftLeft));
+        }
+        addresses.Emit(code, AddressOperation.Add);
+        ManagedMemoryEmitter.EmitLoadBySize(code, target, 0, target.ObjectReferenceSize);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)cachedLocal)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private void EmitNullCheck(

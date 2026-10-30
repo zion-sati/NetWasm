@@ -1,5 +1,5 @@
 // Compatibility cases adapted from dotnet/runtime System.Runtime.Tests GuidTests.cs.
-// Upstream commit: 811225a482702af7ecc35d817966bc70b88a3a23.
+// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
 
 using NetWasm.TestInfrastructure;
 using NetWasm.Compiler.Core;
@@ -192,17 +192,17 @@ public sealed class GuidCompilationTests
                 "Run")],
             target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Contains(result.Program.WitImportMethods, method =>
             method.WitImport is
             {
-                InterfaceName: "wasi:random@0.2.11/random",
+                InterfaceName: "wasi:random/random@0.2.11",
                 FunctionName: "get-random-bytes",
             });
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport?.InterfaceName == "wasi:random@0.2.11/random" &&
+            method.WitImport?.InterfaceName == "wasi:random/random@0.2.11" &&
             method.WitImport.FunctionName == "get-random-u64");
         Assert.Equal(255, ExecuteWithStandardWasiNode(
             result.ApplicationModule,
@@ -233,9 +233,9 @@ public sealed class GuidCompilationTests
             "Run",
             [],
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.DoesNotContain(result.Program.WitImportMethods, method =>
-            method.WitImport?.InterfaceName == "wasi:random@0.2.11/random");
+            method.WitImport?.InterfaceName == "wasi:random/random@0.2.11");
     }
 }

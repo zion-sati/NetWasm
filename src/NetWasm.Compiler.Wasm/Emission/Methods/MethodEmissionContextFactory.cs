@@ -68,6 +68,10 @@ internal static class MethodEmissionContextFactory
             header,
             exceptionGroups.Count,
             valueLayout.SpilledScalarLocals);
+        var copyDestination = checked(parameterCount + localTypes.Length);
+        localTypes = localTypes.Add(CliValueKind.ManagedAddress);
+        var copySource = checked(parameterCount + localTypes.Length);
+        localTypes = localTypes.Add(CliValueKind.ManagedAddress);
         var anchorLocals = ImmutableDictionary.CreateBuilder<int, int>();
         for (var index = 0; index < rootMap.AnchorPlan.Anchors.Length; index++)
         {
@@ -174,6 +178,8 @@ internal static class MethodEmissionContextFactory
             CallerIdentity: callerIdentity)
         {
             ArrayMetadata = new(arrayPlan, arrayLocals.ToImmutable()),
+            CopyDestinationTemporary = copyDestination,
+            CopySourceTemporary = copySource,
             ExceptionRootSlots = exceptionRootSlots.ToImmutableDictionary(),
             AnchorLocals = anchorLocals.ToImmutable(),
             TransientAggregatePromotions = new(

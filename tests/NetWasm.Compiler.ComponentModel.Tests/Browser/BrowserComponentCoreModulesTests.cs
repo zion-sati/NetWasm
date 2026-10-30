@@ -33,12 +33,13 @@ public sealed class BrowserComponentCoreModulesTests
             "v/runtime-sanitized.wasm", "netwasm.runtime.v1", "v/sanitized.wasm", "netwasm.application.v1",
             "v/env.wasm", "env", "--output", "v/merged.wasm", "--enable-multimemory",
             "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory", "--enable-nontrapping-float-to-int",
+            "--enable-simd",
         };
         var expectedOptimization = new List<string>
         {
             "v/sanitized.wasm", "-Oz", "--converge", "--remove-unused-module-elements", "--strip-debug",
             "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory",
-            "--enable-nontrapping-float-to-int",
+            "--enable-nontrapping-float-to-int", "--enable-simd",
         };
         if (memory64)
         {
@@ -49,7 +50,7 @@ public sealed class BrowserComponentCoreModulesTests
         Assert.Equal(BinaryenToolIds.WasmMerge, plan.Operations.OfType<BrowserLinkToolOperation>().First().ToolId);
         Assert.Equal(expectedMerge, plan.Operations.OfType<BrowserLinkToolOperation>().First().Arguments);
         Assert.Equal(new BrowserLinkInlineOperation("v/Application.wasm", "v/sanitized.wasm",
-            WasmInlineAnnotationSelection.SizeAware), plan.Operations.OfType<BrowserLinkInlineOperation>().First());
+            WasmInlineAnnotationSelection.Preserve), plan.Operations.OfType<BrowserLinkInlineOperation>().First());
         Assert.Equal(new BrowserLinkInlineOperation("v/runtime.wasm", "v/runtime-sanitized.wasm",
             WasmInlineAnnotationSelection.SizeAware), plan.Operations.OfType<BrowserLinkInlineOperation>().Skip(1).First());
         Assert.Equal(BinaryenToolIds.WasmOpt, plan.Operations.OfType<BrowserLinkToolOperation>().Skip(1).SingleOrDefault()!.ToolId);
@@ -196,7 +197,7 @@ public sealed class BrowserComponentCoreModulesTests
     private static string[] ExpectedValidation(string path, bool memory64) =>
         ["validate", path, "--features",
             "mvp,mutable-global,saturating-float-to-int,sign-extension,reference-types," +
-            "multi-value,bulk-memory,exceptions,multi-memory" + (memory64 ? ",memory64" : "")];
+            "multi-value,bulk-memory,exceptions,multi-memory,simd" + (memory64 ? ",memory64" : "")];
 
     private static ComponentCoreModuleLinkRequest CreateRequest(ComponentTarget target) =>
         new("v/Application.wasm", "v/runtime.wasm", "v/output.wasm", target);

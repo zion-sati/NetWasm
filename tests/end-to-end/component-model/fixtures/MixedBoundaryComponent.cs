@@ -9,7 +9,7 @@ namespace NetWasm.Fixtures.ComponentModel;
 
 public static class PortableService
 {
-    [WitImport("netwasm:mixed@1.0.0/arithmetic", "add")]
+    [WitImport("netwasm:mixed/arithmetic@1.0.0", "add")]
     public static extern int Add(int left, int right);
 }
 
@@ -33,7 +33,7 @@ public static class JavaScriptService
 
 public static class MixedBoundaryComponent
 {
-    [WitExport("netwasm:mixed@1.0.0/acceptance", "run")]
+    [WitExport("netwasm:mixed/acceptance@1.0.0", "run")]
     public static int Run(int value)
     {
         var timeContribution = DateTime.UtcNow.Ticks == 0 ? 0 : 1;

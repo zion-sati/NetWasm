@@ -26,16 +26,6 @@ internal sealed class JSImportForwarderFunctionEmitter(
     IJSImportInvocationEmitter invocations,
     IGeneratedFunctionWriterFactory writers) : IJSImportForwarderFunctionEmitter
 {
-    private static readonly CliValueKind[] StackGroups =
-    [
-        CliValueKind.I4,
-        CliValueKind.I8,
-        CliValueKind.F4,
-        CliValueKind.F8,
-        CliValueKind.ManagedReference,
-        CliValueKind.ManagedAddress,
-    ];
-
     public byte[] Emit(
         MethodInstanceModel import,
         InstructionModuleTarget target,
@@ -60,20 +50,12 @@ internal sealed class JSImportForwarderFunctionEmitter(
         var dispatcherProgramCounter = checked(numericTemporaryI8 + 1);
         ImmutableArray<CliValueKind> localTypes =
         [
-            .. StackGroups.SelectMany(group => Enumerable.Repeat(group, slotCount)),
+            .. WasmLocalLayoutPlanner.EvaluationStackLocalTypes(slotCount),
             CliValueKind.ManagedReference,
             CliValueKind.ManagedAddress,
             CliValueKind.ManagedReference,
             CliValueKind.ManagedAddress,
-            CliValueKind.ManagedAddress,
-            CliValueKind.I4,
-            CliValueKind.I4,
-            CliValueKind.I4,
-            CliValueKind.I8,
-            CliValueKind.I4,
-            CliValueKind.I4,
-            CliValueKind.I4,
-            CliValueKind.I4,
+            .. WasmLocalLayoutPlanner.TemporaryLocals,
         ];
         var context = new MethodEmissionContext(
             new MethodRootMap(import.Definition.Key, [], []),

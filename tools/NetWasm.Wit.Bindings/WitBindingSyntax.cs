@@ -193,7 +193,7 @@ public sealed class WitBindingSyntaxFormatter(
         if (definition.Name is not null
             && _definitions.Classify(definition) != WitTypeDefinitionCategory.TransparentAlias)
         {
-            return FormatIdentifier(definition.Name);
+            return definition.BindingName ?? FormatIdentifier(definition.Name);
         }
         var kind = definition.Kind.EnumerateObject().Single();
         return kind.Name switch

@@ -77,8 +77,8 @@ internal sealed class BoxingInstructionEmitter(
                 request.Context,
                 slot,
                 CliValueKind.ValueType)))));
-            addresses.Emit(code, value.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, value.Size,
+                writer => addresses.Emit(writer, value.Size));
         }
         else
         {

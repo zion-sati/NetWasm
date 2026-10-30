@@ -1,5 +1,6 @@
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Tests;
@@ -23,8 +24,8 @@ public sealed class ValueCopyEmitterTests
         if (size == 16)
         {
             Assert.Empty(fallback.Requests);
-            Assert.Equal(2, sourceCalls);
-            Assert.Equal(2, code.ToInstructions().Count(IsStore));
+            Assert.Equal(1, sourceCalls);
+            Assert.Equal(1, code.ToInstructions().Count(instruction => IsVector(instruction, WasmSimdOpcodes.V128Store)));
         }
         else
         {
@@ -39,13 +40,51 @@ public sealed class ValueCopyEmitterTests
         }
     }
 
+    // Where the method inlines small blocks, other sizes of up to 64 bytes copy
+    // in exact chunks rather than through memory.copy, every chunk loaded
+    // before any is stored.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void InlineCopiesOfOtherSizesUseExactChunks(bool inline)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var emitter = CreateSmall(layouts);
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+        var context = EmitterTestSupport.CreateMethodEmissionContext() with
+        {
+            InlineSmallBlocks = inline,
+            CopyDestinationTemporary = 30,
+            CopySourceTemporary = 31,
+        };
+        WriteLocalGet(code, 7);
+
+        emitter.Emit(code, 7, 29, 1, writer => WriteLocalGet(writer, 8), context);
+
+        var instructions = code.ToInstructions();
+        if (!inline)
+        {
+            Assert.Contains(instructions, IsMemoryCopy);
+            return;
+        }
+        Assert.DoesNotContain(instructions, IsMemoryCopy);
+        var stores = instructions.Where(instruction => IsStore(instruction) ||
+            instruction.Opcode == WasmOpcodes.SimdPrefixed && instruction.Operand.Alignment == WasmSimdOpcodes.V128Store).ToList();
+        Assert.Equal([28U, 24U, 16U, 0U],
+            stores.Select(store => store.Opcode == WasmOpcodes.SimdPrefixed ? store.Operand.Third : store.Operand.Offset));
+        Assert.Equal([WasmOpcodes.I32Store8, WasmOpcodes.I32Store, WasmOpcodes.I64Store, WasmOpcodes.SimdPrefixed],
+            stores.Select(store => store.Opcode));
+    }
+
+    // One 16-byte load and store, so a vector value that SIMD code stored
+    // whole forwards whole to the copy, and a copy forwards whole to SIMD code.
     [Theory]
     [InlineData(1, 0U)]
     [InlineData(2, 1U)]
     [InlineData(4, 2U)]
     [InlineData(8, 3U)]
-    [InlineData(16, 3U)]
-    public void SixteenByteCopiesUseTwoScalarChunks(
+    [InlineData(16, 4U)]
+    public void SixteenByteCopiesUseOneVectorLoadAndStore(
         int alignment,
         uint encodedAlignment)
     {
@@ -61,27 +100,18 @@ public sealed class ValueCopyEmitterTests
             WriteLocalGet(writer, 8);
         });
 
-        var instructions = code.ToInstructions();
-        Assert.Equal(2, sourceCalls);
-        Assert.Equal(2, instructions.Count(IsLoad));
-        Assert.Equal(2, instructions.Count(IsStore));
-        Assert.DoesNotContain(instructions, IsMemoryCopy);
-        Assert.Equal(2,
-            instructions.Count(instruction =>
-                instruction.Opcode == WasmOpcodes.LocalGet &&
-                instruction.Operand.UnsignedValue == 7));
+        Assert.Equal(1, sourceCalls);
         Assert.Equal(
-            [0U, 0U, 8U, 8U],
-            instructions
-            .Where(instruction => IsLoad(instruction) || IsStore(instruction))
-            .Select(instruction => instruction.Operand.Offset));
-        Assert.Equal(
-            [encodedAlignment, encodedAlignment, encodedAlignment,
-                encodedAlignment],
-            instructions
-                .Where(instruction => IsLoad(instruction) ||
-                    IsStore(instruction))
-                .Select(instruction => instruction.Operand.Alignment));
+            new[]
+            {
+                WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(7)),
+                WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(8)),
+                WasmInstruction.WithOperand(WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Load, encodedAlignment, 0)),
+                WasmInstruction.WithOperand(WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Store, encodedAlignment, 0)),
+            },
+            code.ToInstructions());
     }
 
     [Theory]
@@ -169,6 +199,10 @@ public sealed class ValueCopyEmitterTests
         instruction.Opcode is WasmOpcodes.I64Store or WasmOpcodes.I32Store or
             WasmOpcodes.I32Store16 or WasmOpcodes.I32Store8;
 
+    private static bool IsVector(WasmInstruction instruction, uint opcode) =>
+        instruction.Opcode == WasmOpcodes.SimdPrefixed &&
+        instruction.Operand.Alignment == opcode;
+
     private static bool IsMemoryCopy(WasmInstruction instruction) =>
         instruction.Opcode == WasmOpcodes.Prefixed &&
         instruction.Operand.Alignment == WasmOpcodes.MemoryCopy;
@@ -184,7 +218,8 @@ public sealed class ValueCopyEmitterTests
             int destinationLocal,
             int size,
             int alignment,
-            Action<IWasmInstructionWriter> emitSource) =>
+            Action<IWasmInstructionWriter> emitSource,
+            MethodEmissionContext? inlineContext = null) =>
             Requests.Add((code, destinationLocal, size, alignment, emitSource));
     }
 }

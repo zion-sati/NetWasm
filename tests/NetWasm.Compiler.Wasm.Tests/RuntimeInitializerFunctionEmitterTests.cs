@@ -66,6 +66,46 @@ public sealed class RuntimeInitializerFunctionEmitterTests
                     selection with { IncludeFinalization = true })));
     }
 
+    // The static Type objects become their types' objects once those types are registered.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public void RegistersTheStaticTypeObjectsWhenThereAreAny(int count)
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+        var code = new GeneratedFunctionWriterFactory().Create();
+        var lease = new GeneratedFunctionWriterLease(code.Bytes, code.Snapshots, writer);
+        var selection = new RuntimeImportSelection(
+            WasmModuleProfile.CoreApplication,
+            IncludeTerminalExceptionReporter: true);
+
+        new InitializerHarness(
+            new FixedTypeDescriptorSource([], [], []),
+            new FixedStaticDataLayout([]) { TypeObjectTableAddress = 640, TypeObjectCount = count, TypeObjectSize = 8 },
+            imports,
+            new RecordingAddressEmitter(),
+            new RecordingRuntimeCoreInitializer()).Initialize(
+                lease,
+                TestRuntimeInitialization.Create(512, selection));
+
+        var instructions = writer.ToInstructions().ToArray();
+        var register = WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned(
+            (uint)imports.Resolve(RuntimeImportSymbol.RegisterTypeObjects, selection)));
+        var call = Array.IndexOf(instructions, register);
+        if (count == 0)
+        {
+            Assert.Equal(-1, call);
+            return;
+        }
+        Assert.Equal(
+            [
+                WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(count)),
+                WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(8)),
+            ],
+            instructions[(call - 2)..call]);
+    }
+
     [Fact]
     public void InitializesEveryDescriptorFamilyAndStaticRootThroughFocusedActions()
     {
@@ -480,6 +520,9 @@ public sealed class RuntimeInitializerFunctionEmitterTests
         public int StaticDataEnd => 0;
         public ImmutableArray<int> StaticRootAddresses => roots;
         public ImmutableArray<DataSegment> DataSegments => [];
+        public int TypeObjectTableAddress { get; init; }
+        public int TypeObjectCount { get; init; }
+        public int TypeObjectSize { get; init; }
 
         public StringLayout GetStringLayout(string value) =>
             throw new NotSupportedException();

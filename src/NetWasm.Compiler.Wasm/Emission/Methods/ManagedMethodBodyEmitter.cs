@@ -128,9 +128,10 @@ internal sealed class ManagedMethodBodyEmitter(
             target.EnableArrayMetadataCaching,
             target.EnableScalarCallPreservation,
             target.HoistArrayNullChecks,
-            target.EnableLoopRotation,
+            target.LoopRotation,
             target.EliminateArrayStoreChecks,
-            target.FunctionIndices.ManagedThrowFunctionIndex);
+            target.FunctionIndices.ManagedThrowFunctionIndex,
+            target.InlineSmallBlockOperations);
         return new ManagedMethodBodyEmission(
             emission.Body,
             emission.WasmInstructionCount,

@@ -38,5 +38,6 @@ internal sealed class ReachabilityInstructionAnalyzerFactory(
             delegateMethods,
             nullableTypes,
             managedCallSites,
-            nativeCallbacks), typeFinder);
+            nativeCallbacks,
+            new DispatchReceiverBoundResolver(typeOperands)), typeFinder);
 }

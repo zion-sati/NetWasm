@@ -31,7 +31,7 @@ internal static class CompilerTestSupport
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform");
+            WitWorld: "netwasm:platform/async-platform@1.0.0");
 
     internal static IManagedLayoutCompiler CreateManagedLayoutCompiler(
         IManagedTypeLayoutCompilerFactory types,
@@ -176,6 +176,7 @@ internal static class CompilerTestSupport
         var memoryDescriptorText = target == WasmTarget.Wasm64
             ? "{initial:1n,address:'i64'}"
             : "{initial:1}";
+        var zeroAddressText = target == WasmTarget.Wasm64 ? "0n" : "0";
         var script =
             "const fs=require('node:fs');" +
             $"const memory=new WebAssembly.Memory({memoryDescriptorText});" +
@@ -260,7 +261,9 @@ internal static class CompilerTestSupport
             "const v=new DataView(memory.buffer),lengths=[];let total=1,stride=1;" +
             "for(let d=rank-1;d>=0;d--){const n=v.getInt32(dims+d*4,true);lengths[d]=n;" +
             "if(n<0||n>1073741823||n&&total>1073741823/n)return 0;total*=n;}" +
-            "const shape=raw(rank*(bounded?12:8)),data=total?raw(total*(refs?4:size)):0;" +
+            // As in the runtime, every shape has room for its lower bounds,
+            // which stay zero without bounds; compiled code reads them there.
+            "const shape=raw(rank*12),data=total?raw(total*(refs?4:size)):0;" +
             "const result=allocate(24,type),out=new DataView(memory.buffer);" +
             "for(let d=rank-1;d>=0;d--){const n=lengths[d];out.setInt32(shape+d*8,n,true);" +
             "out.setInt32(shape+d*8+4,stride,true);stride*=n;" +
@@ -356,6 +359,9 @@ internal static class CompilerTestSupport
             "array_get_value:arrayGetValue," +
             "array_copy:arrayCopy,array_clear:arrayClear,array_clone:arrayClone," +
             "allocate_string:allocateString,get_type_object:getTypeObject," +
+            "register_type_objects:(first,count,stride)=>{const v=new DataView(memory.buffer);" +
+            "for(let i=0;i<count;i++){const p=first+i*stride;typeObjects.set(v.getInt32(p+4,true),p);}}," +
+            $"type_object_cache_address:()=>{zeroAddressText}," +
             "suppress_finalize:z,weak_handle_new:(target,trackResurrection)=>{weakHandles.push(target);return weakHandles.length-1;},weak_handle_get:handle=>weakHandles[handle]??0,weak_handle_set:(handle,target)=>{weakHandles[handle]=target;},weak_handle_release:handle=>{weakHandles[handle]=0;},gc_handle_new:(target,kind)=>{gcHandles.push({target,kind});return((gcHandles.length-1)<<2)|kind;},gc_handle_get:handle=>gcHandles[handle>>2]?.target??0,gc_handle_set:(handle,target)=>{const entry=gcHandles[handle>>2];if(entry)entry.target=target;},gc_handle_release:handle=>{gcHandles[handle>>2]=null;},gc_handle_address:handle=>gcHandles[handle>>2]?.target??0,reregister_for_finalize:z," +
             "gc_get_metric:metric=>metric===0?BigInt(collectionCount):metric===3?1n:0n," +
             "gc_metric_is_supported:metric=>metric!==4," +

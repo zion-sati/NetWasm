@@ -17,17 +17,19 @@ internal sealed class WasmMethodProgramBuilder(
         IReadOnlyDictionary<EntityKey, ManagedMethodBody> methods,
         IReadOnlyDictionary<string, ManagedMethodBody> constructedMethods,
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware)
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled)
     {
         ArgumentNullException.ThrowIfNull(methods);
         ArgumentNullException.ThrowIfNull(constructedMethods);
         return new(
             methods.ToImmutableDictionary(
                 pair => pair.Key,
-                pair => _methods.Lower(pair.Value, branchPrefixDuplication)),
+                pair => _methods.Lower(pair.Value, branchPrefixDuplication, dispatcherElimination)),
             constructedMethods.ToImmutableDictionary(
                 pair => pair.Key,
-                pair => _methods.Lower(pair.Value, branchPrefixDuplication),
+                pair => _methods.Lower(pair.Value, branchPrefixDuplication, dispatcherElimination),
                 StringComparer.Ordinal));
     }
 }

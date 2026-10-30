@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Constants;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
@@ -10,6 +11,7 @@ public sealed class BoxedTypeTestRewriterTests
 {
     private static readonly CliTypeIdentity Integer = CliTypeIdentity.FromStackKind(CliValueKind.I4);
     private static readonly CliTypeIdentity Long = CliTypeIdentity.FromStackKind(CliValueKind.I8);
+    private static readonly CliTypeIdentity Formattable = CliTypeIdentity.Named(Assembly, "System", "IFormattable", false);
 
     [Theory]
     [InlineData(CilOperation.BranchIfTrue, CilOperation.Branch)]
@@ -54,6 +56,55 @@ public sealed class BoxedTypeTestRewriterTests
     }
 
     [Theory]
+    [InlineData(CilOperation.BranchIfTrue, true, CilOperation.Branch)]
+    [InlineData(CilOperation.BranchIfTrue, false, CilOperation.Nop)]
+    [InlineData(CilOperation.BranchIfFalse, true, CilOperation.Nop)]
+    [InlineData(CilOperation.BranchIfFalse, false, CilOperation.Branch)]
+    public void ATestForAnotherTypeHasTheRuntimeTestsAnswer(CilOperation branch, bool assignable, CilOperation expected)
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(1, CilOperation.Box, new CilOperand.TypeIdentity(Integer)),
+            Instruction(2, CilOperation.IsInstance, new CilOperand.TypeIdentity(Formattable)),
+            Instruction(3, branch, new CilOperand.BranchTarget(5)),
+            Instruction(4, CilOperation.Return),
+            Instruction(5, CilOperation.Return));
+        var relationships = new TestTypeRelationshipClassifier(assignable);
+
+        var result = Rule(body, relationships).Rewrite(body);
+
+        Assert.Equal(
+            [CilOperation.LoadArgument, CilOperation.Pop, CilOperation.Nop, expected],
+            result.Instructions.Take(4).Select(static instruction => instruction.Operation));
+        Assert.Equal([(Integer, Formattable)], relationships.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AnIsExpressionForAnotherTypeIsTheRuntimeTestsAnswer(bool assignable)
+    {
+        var nullable = CliTypeIdentity.GenericInstantiation(CliTypeIdentity.Named(Assembly, "System", "Nullable`1", true), [Long]);
+        var body = Body(
+            Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(1, CilOperation.Box, new CilOperand.TypeIdentity(Integer)),
+            Instruction(2, CilOperation.IsInstance, new CilOperand.TypeIdentity(nullable)),
+            Instruction(3, CilOperation.LoadNull),
+            Instruction(4, CilOperation.CompareGreaterThanUnsigned),
+            Instruction(5, CilOperation.Return));
+        var relationships = new TestTypeRelationshipClassifier(assignable);
+
+        var result = Rule(body, relationships).Rewrite(body);
+
+        Assert.Equal(
+            [CilOperation.LoadArgument, CilOperation.Pop, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.Nop, CilOperation.Return],
+            result.Instructions.Select(static instruction => instruction.Operation));
+        Assert.Equal(new CilOperand.ConstantI4(assignable ? 1 : 0), result.Instructions[3].Operand);
+        // A nullable target admits its underlying type.
+        Assert.Equal([(Integer, Long)], relationships.Calls);
+    }
+
+    [Theory]
     // unbox.any straight after the box, or after a test for the same type.
     [InlineData(false)]
     [InlineData(true)]
@@ -84,8 +135,7 @@ public sealed class BoxedTypeTestRewriterTests
     }
 
     [Theory]
-    // Another type, a reference, an open or a nullable type, a test that is not the box's.
-    [InlineData(0)]
+    // A reference, an open or a nullable type, a test that is not the box's.
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
@@ -107,7 +157,6 @@ public sealed class BoxedTypeTestRewriterTests
         };
         CilOperand test = shape switch
         {
-            0 => new CilOperand.TypeIdentity(Long),
             4 => new CilOperand.None(),
             _ => new CilOperand.TypeIdentity(boxed),
         };
@@ -144,10 +193,12 @@ public sealed class BoxedTypeTestRewriterTests
     public void RejectsMissingDependenciesAndBody()
     {
         var body = Body(Instruction(0, CilOperation.Return));
-        Assert.Throws<ArgumentNullException>(() => new BoxedTypeTestRewriter(null!, new NullableTypeResolver()));
-        Assert.Throws<ArgumentNullException>(() => new BoxedTypeTestRewriter(Graph(body), null!));
+        Assert.Throws<ArgumentNullException>(() => new BoxedTypeTestRewriter(null!, new NullableTypeResolver(), new TestTypeRelationshipClassifier()));
+        Assert.Throws<ArgumentNullException>(() => new BoxedTypeTestRewriter(Graph(body), null!, new TestTypeRelationshipClassifier()));
+        Assert.Throws<ArgumentNullException>(() => new BoxedTypeTestRewriter(Graph(body), new NullableTypeResolver(), null!));
         Assert.Throws<ArgumentNullException>(() => Rule(body).Rewrite(null!));
     }
 
-    private static BoxedTypeTestRewriter Rule(CilMethodBody body) => new(Graph(body), new NullableTypeResolver());
+    private static BoxedTypeTestRewriter Rule(CilMethodBody body, ITypeRelationshipClassifier? relationships = null) =>
+        new(Graph(body), new NullableTypeResolver(), relationships ?? new TestTypeRelationshipClassifier(isAssignable: false));
 }

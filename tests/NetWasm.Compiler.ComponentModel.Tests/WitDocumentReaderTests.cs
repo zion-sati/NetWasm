@@ -35,7 +35,7 @@ public sealed class WitDocumentReaderTests
             "contract.wit", 0, NormalizedDocument, string.Empty));
 
         var document = reader.Read("contract.wit");
-        var world = document.SelectWorld("example:smoke@1.0.0/smoke");
+        var world = document.SelectWorld("example:smoke/smoke@1.0.0");
 
         Assert.Equal("example:smoke@1.0.0", world.Package);
         Assert.Equal("smoke", world.Name);
@@ -123,7 +123,7 @@ public sealed class WitDocumentReaderTests
         Assert.Equal(selected, document.SelectWorld("main"));
         Assert.Equal(selected, document.SelectWorld(null));
         Assert.Equal(selected, document.SelectWorld("example:test/main@1.0.0"));
-        Assert.Equal(selected, document.SelectWorld("example:test@1.0.0/main"));
+        Assert.Equal(selected, document.SelectWorld("example:test/main@1.0.0"));
 
         var missing = Assert.Throws<CompilerException>(() =>
             document.SelectWorld("missing"));

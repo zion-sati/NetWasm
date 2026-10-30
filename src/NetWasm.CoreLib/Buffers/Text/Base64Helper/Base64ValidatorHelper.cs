@@ -1,5 +1,6 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Helper/Base64ValidatorHelper.cs
 
 using System.Runtime.CompilerServices;
 
@@ -16,7 +17,7 @@ namespace System.Buffers.Text
 
             if (!base64Text.IsEmpty)
             {
-#if NETWASM_SIMD
+#if NET
                 while (!base64Text.IsEmpty)
                 {
                     int index = validatable.IndexOfAnyExcept(base64Text);
@@ -130,7 +131,7 @@ namespace System.Buffers.Text
 
         internal interface IBase64Validatable<T>
         {
-#if NETWASM_SIMD
+#if NET
             int IndexOfAnyExcept(ReadOnlySpan<T> span);
 #else
             int DecodeValue(T value);
@@ -142,7 +143,7 @@ namespace System.Buffers.Text
 
         internal readonly struct Base64CharValidatable : IBase64Validatable<char>
         {
-#if NETWASM_SIMD
+#if NET
             private static readonly SearchValues<char> s_validBase64Chars = SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
             public int IndexOfAnyExcept(ReadOnlySpan<char> span) => span.IndexOfAnyExcept(s_validBase64Chars);
@@ -167,7 +168,7 @@ namespace System.Buffers.Text
 
         internal readonly struct Base64ByteValidatable : IBase64Validatable<byte>
         {
-#if NETWASM_SIMD
+#if NET
             private static readonly SearchValues<byte> s_validBase64Chars = SearchValues.Create(default(Base64EncoderByte).EncodingMap);
 
             public int IndexOfAnyExcept(ReadOnlySpan<byte> span) => span.IndexOfAnyExcept(s_validBase64Chars);

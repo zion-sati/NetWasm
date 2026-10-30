@@ -73,6 +73,7 @@ internal sealed class FrontendArtifactEligibilityClassifier :
             CilOperand.MethodInstance method => References(method.Value, entry),
             CilOperand.FieldInstance field => References(field.Value, entry),
             CilOperand.TypeIdentity type => References(type.Value, entry),
+            CilOperand.ExactType type => References(type.Value, entry),
             CilOperand.CallSite callSite => References(callSite.Signature, entry),
             CilOperand.ReadOnlySpanData span =>
                 References(span.Field, entry) ||

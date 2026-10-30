@@ -15,7 +15,7 @@ public sealed class EnumToTypeCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "EnumConversionFixture.EntryPoint",
             "Run", [new("run", "EnumConversionFixture.EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, target, result.StaticDataEnd));

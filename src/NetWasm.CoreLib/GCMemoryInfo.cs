@@ -1,5 +1,5 @@
 // Portions adapted from dotnet/runtime System.Private.CoreLib GCMemoryInfo.cs
-// at commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// at commit 474ed963699fc29809015392738a15231aaae2de.
 // The upstream implementation is licensed under the MIT license.
 
 namespace System;

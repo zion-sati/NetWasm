@@ -162,7 +162,7 @@ public sealed class MethodFrameEntryEmitterTests
         public List<(int Destination, int Size, int Alignment, int Source)> Requests { get; } = [];
 
         public void Emit(IWasmInstructionWriter code, int destinationLocal, int size,
-            int alignment, Action<IWasmInstructionWriter> emitSource)
+            int alignment, Action<IWasmInstructionWriter> emitSource, MethodEmissionContext? inlineContext = null)
         {
             var source = new RecordingInstructionWriter();
             emitSource(source);

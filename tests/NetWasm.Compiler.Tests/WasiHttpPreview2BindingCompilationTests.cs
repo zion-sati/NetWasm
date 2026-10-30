@@ -26,7 +26,7 @@ public sealed class WasiHttpPreview2BindingCompilationTests
         var document = documentReader.Read(witPath);
         var bindings = bindingGenerator.Generate(
             document,
-            document.SelectWorld("netwasm:http-spike@1.0.0/outgoing-http-spike"));
+            document.SelectWorld("netwasm:http-spike/outgoing-http-spike@1.0.0"));
 
         var assembly = assets.CompileSource(
             "WasiHttpBindingFixture",
@@ -47,7 +47,7 @@ public sealed class WasiHttpPreview2BindingCompilationTests
             [],
             target,
             WitPath: witPath,
-            WitWorld: "netwasm:http-spike@1.0.0/outgoing-http-spike"));
+            WitWorld: "netwasm:http-spike/outgoing-http-spike@1.0.0"));
     }
 
     private static ServiceProvider CreateComponentModelServices() =>

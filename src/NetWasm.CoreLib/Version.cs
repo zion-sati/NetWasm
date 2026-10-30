@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Deterministic port of dotnet/runtime System.Private.CoreLib Version.cs.
-// Upstream commit: 811225a482702af7ecc35d817966bc70b88a3a23.
+// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
 // Culture, reflection metadata, and host dependencies are intentionally absent.
 
 using System.Diagnostics.CodeAnalysis;

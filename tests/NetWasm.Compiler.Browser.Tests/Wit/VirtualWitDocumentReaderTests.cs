@@ -39,7 +39,7 @@ public sealed class VirtualWitDocumentReaderTests
              "worlds":[{"name":"main","package":0,"imports":{},"exports":{}}]}
             """), new WitDocumentJsonReader());
 
-        var world = reader.Read("contract.wit.wasm").SelectWorld("example:test@1.0.0/main");
+        var world = reader.Read("contract.wit.wasm").SelectWorld("example:test/main@1.0.0");
 
         Assert.Equal("main", world.Name);
         Assert.Equal("example:test@1.0.0", world.Package);
@@ -57,8 +57,8 @@ public sealed class VirtualWitDocumentReaderTests
             """);
         var inventories = ImmutableDictionary<string, string>.Empty.Add(path, """
             (module
-              (export "cm32p2|interface-0|run" (func 0))
-              (export "cm32p2|interface-0|run_post" (func 1))
+              (export "cm32p2|example:test/api@1|run" (func 0))
+              (export "cm32p2|example:test/api@1|run_post" (func 1))
             )
             """);
         var reader = new VirtualWitDocumentReader(
@@ -68,7 +68,7 @@ public sealed class VirtualWitDocumentReaderTests
 
         var resolved = reader.Read(path, "main");
 
-        Assert.Equal("interface-0",
+        Assert.Equal("example:test/api@1",
             Assert.Single(resolved.SelectWorld("main").Exports).CoreBindingName);
     }
 

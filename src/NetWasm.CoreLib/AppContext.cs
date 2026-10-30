@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Deterministic managed port of dotnet/runtime System.Private.CoreLib AppContext.cs.
-// Upstream commit: 811225a482702af7ecc35d817966bc70b88a3a23.
+// Upstream commit: 474ed963699fc29809015392738a15231aaae2de.
 // Host-property probing, reflection-based target-framework discovery, and process
 // exit/event hooks are intentionally excluded from the NetWasm profile.
 

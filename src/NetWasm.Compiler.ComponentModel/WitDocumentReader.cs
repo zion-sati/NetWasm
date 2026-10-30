@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
@@ -97,11 +98,25 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
                 ReadNameMap(package.GetProperty("interfaces")),
                 ReadNameMap(package.GetProperty("worlds"))))
             .ToImmutableArray();
-        var interfaces = root.GetProperty("interfaces").EnumerateArray()
-            .Select((item, id) => ReadInterface(item, id, packages))
+        // A package's interface is a world item by its key, whatever world names it.
+        var keys = root.GetProperty("interfaces").EnumerateArray()
+            .Select(item => item.GetProperty("name").ValueKind == JsonValueKind.String
+                ? WitInterface.FormatKey(packages[item.GetProperty("package").GetInt32()].Name,
+                    item.GetProperty("name").GetString()!)
+                : null)
             .ToImmutableArray();
         var worlds = root.GetProperty("worlds").EnumerateArray()
-            .Select((item, id) => ReadWorld(item, id, packages))
+            .Select((item, id) => ReadWorld(item, id, packages, keys))
+            .ToImmutableArray();
+        // An interface a world declares inline has no name of its own: the
+        // world's name for it is its name and its key.
+        var inline = worlds
+            .SelectMany(static world => world.Imports.Concat(world.Exports))
+            .Where(static item => item.InterfaceId is not null)
+            .GroupBy(static item => item.InterfaceId!.Value)
+            .ToDictionary(static group => group.Key, static group => group.First().Name);
+        var interfaces = root.GetProperty("interfaces").EnumerateArray()
+            .Select((item, id) => ReadInterface(item, id, packages, inline))
             .ToImmutableArray();
         var types = root.GetProperty("types").EnumerateArray()
             .Select((item, id) => new WitTypeDefinition(
@@ -121,23 +136,32 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
     private static WitInterface ReadInterface(
         JsonElement item,
         int id,
-        ImmutableArray<WitPackage> packages)
+        ImmutableArray<WitPackage> packages,
+        Dictionary<int, string> worldNames)
     {
         var packageId = item.GetProperty("package").GetInt32();
-        return new WitInterface(
+        var name = item.GetProperty("name");
+        var definition = new WitInterface(
             id,
-            item.GetProperty("name").GetString()!,
+            name.ValueKind == JsonValueKind.String
+                ? name.GetString()!
+                : worldNames.TryGetValue(id, out var worldName)
+                    ? worldName
+                    : throw ComponentException.Invalid(
+                        $"WIT interface {id} has no name and no world places it"),
             packages[packageId].Name,
             ReadNameMap(item.GetProperty("types")),
             item.GetProperty("functions").EnumerateObject()
                 .Select(function => ReadFunction(function.Value))
                 .ToImmutableArray());
+        return name.ValueKind == JsonValueKind.String ? definition : definition with { Key = definition.Name };
     }
 
     private static WitWorld ReadWorld(
         JsonElement item,
         int id,
-        ImmutableArray<WitPackage> packages)
+        ImmutableArray<WitPackage> packages,
+        ImmutableArray<string?> keys)
     {
         var packageId = item.GetProperty("package").GetInt32();
         var imports = item.GetProperty("imports");
@@ -145,8 +169,8 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
             id,
             item.GetProperty("name").GetString()!,
             packages[packageId].Name,
-            ReadWorldItems(imports),
-            ReadWorldItems(item.GetProperty("exports")))
+            ReadWorldItems(imports, keys),
+            ReadWorldItems(item.GetProperty("exports"), keys))
         {
             // A type the world declares is listed among its imports.
             Types = imports.EnumerateObject()
@@ -158,14 +182,19 @@ public sealed class WitDocumentJsonReader : IWitDocumentJsonReader
         };
     }
 
-    private static ImmutableArray<WitWorldItem> ReadWorldItems(JsonElement items) =>
+    // Each item by its world key; an interface the world names from a package is
+    // keyed `interface-<id>` in the JSON, and gets its key from the interface.
+    private static ImmutableArray<WitWorldItem> ReadWorldItems(JsonElement items, ImmutableArray<string?> keys) =>
         items.EnumerateObject().Where(static item => !item.Value.TryGetProperty("type", out _)).Select(item =>
         {
             if (item.Value.TryGetProperty("interface", out var interfaceValue))
             {
+                var interfaceId = interfaceValue.GetProperty("id").GetInt32();
                 return new WitWorldItem(
-                    item.Name,
-                    interfaceValue.GetProperty("id").GetInt32(),
+                    item.Name.StartsWith("interface-", StringComparison.Ordinal) && keys[interfaceId] is { } key
+                        ? key
+                        : item.Name,
+                    interfaceId,
                     null);
             }
             if (item.Value.TryGetProperty("function", out var functionValue))

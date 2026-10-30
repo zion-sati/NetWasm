@@ -85,6 +85,12 @@ internal sealed class ExceptionGroupCollector : IExceptionGroupCollector
                         AddSequence(loop.ContinueBody);
                         AddSequence(loop.ExitBody);
                         break;
+                    case StructuredLabeledBlockDraft block:
+                        AddSequence(block.Body);
+                        break;
+                    case StructuredLabeledLoopDraft loop:
+                        AddSequence(loop.Body);
+                        break;
                     case StructuredDispatcherDraft dispatcher:
                         foreach (var exit in dispatcher.Exits)
                         {

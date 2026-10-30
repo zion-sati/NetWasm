@@ -2,6 +2,7 @@ using System;
 using NetWasm.Compiler.ControlFlow.Structured;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Values;
@@ -163,10 +164,8 @@ internal sealed class MethodFrameEntryEmitter(
                 WasmInstructionOperand.Unsigned((uint)(capture.Slot.Index + context.ParameterOffset))));
             if (capture.Type.StackKind == CliValueKind.ValueType)
             {
-                EmitAddressConstant(code, values.GetValueLayout(capture.Type).Size);
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.Prefixed,
-                    WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+                SmallBlockEmitter.EmitKnownSizeCopy(code, context, values.GetValueLayout(capture.Type).Size,
+                    writer => EmitAddressConstant(writer, values.GetValueLayout(capture.Type).Size));
             }
             else
             {

@@ -25,5 +25,6 @@ internal sealed class AllocationCapabilityAnalyzerFactory(
             _runtimeSafepoints,
             intrinsics,
             typeClassifier,
-            new MethodInitializationTriggerClassifier(types));
+            new MethodInitializationTriggerClassifier(types),
+            new StaticFieldInitializationClassifier(types, fields));
 }

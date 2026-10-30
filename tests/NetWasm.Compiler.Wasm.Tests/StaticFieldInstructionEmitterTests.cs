@@ -210,7 +210,18 @@ public sealed class StaticFieldInstructionEmitterTests
         var actualProgram = program ?? StaticProgram.For(CliValueKind.I4);
         return new(actualProgram, layouts, layouts, layouts,
             new AddressInstructionEmitter(layouts),
-            new StaticInitializationEmitter(actualProgram, actualProgram, new AddressInstructionEmitter(layouts)));
+            new StaticInitializationEmitter(actualProgram, actualProgram, new AddressInstructionEmitter(layouts)),
+            new NoInitializedFields());
+    }
+
+    // Every access checks its type's initialization.
+    private sealed class NoInitializedFields : NetWasm.Compiler.Core.Types.IStaticFieldInitializationClassifier
+    {
+        public bool IsInitializedFor(
+            MethodDefinitionModel accessor,
+            CliTypeIdentity? accessorDeclaringType,
+            ImmutableArray<CilInstruction> body,
+            CilInstruction access) => false;
     }
 
     private static InstructionEmissionRequest CreateRequest(

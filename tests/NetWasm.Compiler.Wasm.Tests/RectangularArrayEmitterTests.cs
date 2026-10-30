@@ -56,6 +56,40 @@ public sealed class RectangularArrayEmitterTests
             GetCodeBytes(request).Contains(WasmOpcodes.I64ExtendI32Unsigned));
     }
 
+    // An element access of rank two or more reads its lower bounds from the
+    // shape; a call per dimension took 89% of a matrix addition's time. A
+    // rank-one ARRAY still asks the runtime, which tells it from an SZARRAY.
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    public void OnlyRankOneAddressAsksTheRuntimeForALowerBound(int rank, bool asksRuntime)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var imports = new RecordingRuntimeImports();
+        var emitter = new RectangularArrayElementAddressEmitter(
+            layouts,
+            layouts,
+            layouts,
+            CreateAddressInstructions(layouts),
+            layouts,
+            layouts,
+            new RecordingExceptionEmitter(),
+            imports);
+        var arrayType = CliTypeIdentity.Array(
+            CliTypeIdentity.Primitive("i4", CliValueKind.I4),
+            rank);
+        var request = CreateInstructionRequest(
+            CilOperation.LoadRectangularArrayElement,
+            [CliValueKind.ManagedReference, .. Enumerable.Repeat(CliValueKind.I4, rank)],
+            new CilOperand.TypeIdentity(arrayType),
+            maxStack: rank + 1);
+
+        emitter.Emit(new(request, 0), GetCodeWriter(request));
+
+        Assert.Equal(asksRuntime, imports.Symbols.Contains(RuntimeImportSymbol.ArrayGetLowerBound));
+    }
+
     [Fact]
     public void AddressCapabilityRejectsMissingArrayTypeOperand()
     {
@@ -425,6 +459,27 @@ public sealed class RectangularArrayEmitterTests
                 memory64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant,
                 WasmInstructionOperand.Signed(0)));
         }
+    }
+
+    private sealed class RecordingRuntimeImports : IRuntimeImportResolver
+    {
+        private readonly RuntimeImportCatalog _catalog = WasmRuntimeImports.CreateCatalog();
+
+        public List<RuntimeImportSymbol> Symbols { get; } = [];
+
+        public int Resolve(RuntimeImportSymbol symbol)
+        {
+            Symbols.Add(symbol);
+            return _catalog.Resolve(symbol);
+        }
+
+        public int Resolve(RuntimeImportSymbol symbol, WasmModuleProfile profile)
+        {
+            Symbols.Add(symbol);
+            return _catalog.Resolve(symbol, profile);
+        }
+
+        public ImmutableArray<WasmFunctionImport> Resolve(WasmModuleProfile profile) => _catalog.Resolve(profile);
     }
 
     private sealed class RecordingExceptionEmitter : IImplicitExceptionEmitter

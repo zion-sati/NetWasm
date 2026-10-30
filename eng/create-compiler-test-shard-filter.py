@@ -281,6 +281,11 @@ def create_execution_shards(
     return shards
 
 
+# Performance tests assert how long work takes, which depends on the load on
+# the host, so shards leave them to an explicit Category=Performance run.
+NORMAL_RUN_EXCLUSION = "Category!=Performance"
+
+
 def create_vstest_filter(items: list[str | ShardItem]) -> str:
     if not items:
         raise ValueError("The selected shard contains no test methods.")
@@ -298,7 +303,7 @@ def create_vstest_filter(items: list[str | ShardItem]) -> str:
             f"(FullyQualifiedName={item.method_name}"
             f"&DisplayName~{quote(arguments, safe='.-_')})"
         )
-    return "|".join(sorted(clauses))
+    return f"({'|'.join(sorted(clauses))})&{NORMAL_RUN_EXCLUSION}"
 
 
 def main() -> int:

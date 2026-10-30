@@ -43,7 +43,8 @@ internal sealed class ManagedMethodInliner(
         var changed = false;
         var loops = LoopSpans(body);
         var exposed = body.Instructions
-            .Where(static instruction => instruction.Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress)
+            .Where((instruction, index) => instruction.Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress &&
+                !ReadsFieldOnly(body, index))
             .Select(static instruction => (instruction.Operation == CilOperation.LoadArgumentAddress,
                 ((CilOperand.Index)instruction.Operand).Value))
             .ToHashSet();
@@ -150,6 +151,7 @@ internal sealed class ManagedMethodInliner(
                     forwarded,
                     instance,
                     pushesInstance,
+                    body.ExceptionRegions.Any(region => region.TryOffset == instruction.NextOffset),
                     locals,
                     localTypes,
                     expanded);
@@ -274,6 +276,7 @@ internal sealed class ManagedMethodInliner(
         IReadOnlyDictionary<int, CilInstruction> forwarded,
         int? instance,
         bool pushesInstance,
+        bool tryFollows,
         ImmutableArray<CliValueKind>.Builder locals,
         ImmutableArray<CliTypeIdentity>.Builder localTypes,
         List<PendingInstruction> expanded)
@@ -318,6 +321,12 @@ internal sealed class ManagedMethodInliner(
                     Operand = Remap(rewritten.Operand, calleeOffsets),
                 },
                 RemapCallerBranch: false));
+        }
+        // A branch may not enter a try region from outside it, so the callee's
+        // returns branch to a nop before a try that starts after the call.
+        if (tryFollows)
+        {
+            expanded.Add(new(CreateSynthetic(call, CilOperation.Nop, new CilOperand.None()), RemapCallerBranch: false));
         }
         if (instance is { } value && pushesInstance)
         {
@@ -378,6 +387,18 @@ internal sealed class ManagedMethodInliner(
     { Operation: CilOperation.StoreArgument or CilOperation.LoadArgumentAddress, Operand: CilOperand.Index index } &&
         index.Value == argument);
 
+    // A forwarded value argument may also have its address taken for a field
+    // read: the read sees the caller's slot, which holds the same value.
+    private static bool ReplacesArgument(CilMethodBody body, int argument) => body.Instructions.Where((instruction, index) =>
+        instruction.Operation == CilOperation.StoreArgument ||
+        instruction.Operation == CilOperation.LoadArgumentAddress && !ReadsFieldOnly(body, index)).Any(instruction =>
+        ((CilOperand.Index)instruction.Operand).Value == argument);
+
+    // The field load consumes the address at once, so the slot neither changes
+    // nor stays reachable through it.
+    private static bool ReadsFieldOnly(CilMethodBody body, int index) =>
+        index + 1 < body.Instructions.Length && body.Instructions[index + 1].Operation == CilOperation.LoadField;
+
     // Arguments the body reads from the caller's local or argument instead of
     // a spilled copy, as it reads a receiver address. The body cannot name a
     // caller slot, so the slot keeps its value while the body runs when no
@@ -409,8 +430,27 @@ internal sealed class ManagedMethodInliner(
         var forwarded = ImmutableDictionary.CreateBuilder<int, CilInstruction>();
         for (var parameter = receiverBound ? Math.Max(first, 1) : first; parameter < parameters.Length; parameter++)
         {
-            if (WritesArgument(plan.Body, parameter) ||
-                producers.Find(callerIndex, bottom + parameter - first) is not { } producer ||
+            var source = producers.Find(callerIndex, bottom + parameter - first);
+            // A local's or argument's address never changes, so a byref
+            // parameter the body neither replaces nor takes the address of is
+            // the caller's address, as a receiver is.
+            if (source is { } addressProducer &&
+                body.Instructions[addressProducer] is
+                {
+                    Operation: CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress,
+                    Operand: CilOperand.Index addressed,
+                } address &&
+                !WritesArgument(plan.Body, parameter) &&
+                Unmodified(parameters[parameter]) is { Shape: CliTypeShape.ManagedByReference, ElementType: { } element } &&
+                element.Equals(address.Operation == CilOperation.LoadArgumentAddress
+                    ? callerArguments[addressed.Value]
+                    : body.LocalSignatureTypes.ElementAtOrDefault(addressed.Value)))
+            {
+                forwarded.Add(parameter, address);
+                continue;
+            }
+            if (ReplacesArgument(plan.Body, parameter) ||
+                source is not { } producer ||
                 body.Instructions[producer] is not
                 { Operation: CilOperation.LoadLocal or CilOperation.LoadArgument, Operand: CilOperand.Index slot } load)
             {
@@ -430,6 +470,10 @@ internal sealed class ManagedMethodInliner(
         }
         return forwarded.ToImmutable();
     }
+
+    // An in parameter's byref carries a required modifier.
+    private static CliTypeIdentity Unmodified(CliTypeIdentity type) =>
+        type is { Shape: CliTypeShape.Modified, ElementType: { } inner } ? Unmodified(inner) : type;
 
     private static (int ArgumentStart, int CalleeLocalStart) AppendInlineLocals(
         ManagedInliningPlan plan,
@@ -535,6 +579,14 @@ internal sealed class ManagedMethodInliner(
                 instruction,
                 CilOperation.LoadLocal,
                 argumentStart),
+            // A forwarded value is read in place: its field reads use the caller slot's address.
+            CilOperation.LoadArgumentAddress when instruction.Operand is CilOperand.Index argument &&
+                forwarded.TryGetValue(argument.Value, out var source) => source with
+                {
+                    Operation = source.Operation == CilOperation.LoadArgument
+                        ? CilOperation.LoadArgumentAddress
+                        : CilOperation.LoadLocalAddress,
+                },
             CilOperation.LoadArgumentAddress => Rewrite(
                 instruction,
                 CilOperation.LoadLocalAddress,

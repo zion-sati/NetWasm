@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
@@ -44,9 +45,10 @@ internal sealed record WasmModuleTarget(
         EnableAggregateReferenceLanes = Request.EnableAggregateReferenceLanes,
         EnableArrayMetadataCaching = Request.EnableArrayMetadataCaching,
         HoistArrayNullChecks = Request.HoistArrayNullChecks,
-        EnableLoopRotation = Request.EnableLoopRotation,
+        LoopRotation = Request.LoopRotation,
         EliminateArrayStoreChecks = Request.EliminateArrayStoreChecks,
         EnableScalarCallPreservation = Request.EnableScalarCallPreservation,
+        InlineSmallBlockOperations = Request.InlineSmallBlockOperations,
         RootMaps = Request.Methods.Values.Select(method =>
                 (ManagedMethodBodyKey.Resolve(method), Request.RootMaps[method.Header.Method.Key]))
             .Concat(Request.ConstructedMethods.Select(pair =>
@@ -80,9 +82,10 @@ internal sealed record InstructionModuleTarget(
     public bool EnableAggregateReferenceLanes { get; init; }
     public bool EnableArrayMetadataCaching { get; init; }
     public bool HoistArrayNullChecks { get; init; }
-    public bool EnableLoopRotation { get; init; }
+    public LoopRotationPolicy LoopRotation { get; init; }
     public bool EliminateArrayStoreChecks { get; init; }
     public bool EnableScalarCallPreservation { get; init; }
+    public bool InlineSmallBlockOperations { get; init; }
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
     public IReadOnlyDictionary<string, MethodRootMap> RootMaps { get; init; } =

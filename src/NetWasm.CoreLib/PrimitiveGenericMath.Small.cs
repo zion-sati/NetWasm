@@ -3,7 +3,7 @@
 //
 // Small scalar generic-math contracts are adapted from the pinned
 // dotnet/runtime System.Private.CoreLib sources (commit
-// 811225a482702af7ecc35d817966bc70b88a3a23).
+// 474ed963699fc29809015392738a15231aaae2de).
 
 using System.Globalization;
 using System.Numerics;

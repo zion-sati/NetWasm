@@ -152,7 +152,7 @@ public sealed class NativeCallbackDceIntegrationTests
             [],
             wasmTarget,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/platform",
+            WitWorld: "netwasm:platform/platform@1.0.0",
             EntryMethodToken: entryPoint.MetadataToken,
             EntryPointKind: CompilerEntryPointKind.ManagedExecutable));
         Assert.Null(compilation.NativeCallbackSupport);

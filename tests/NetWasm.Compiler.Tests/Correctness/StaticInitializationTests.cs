@@ -91,6 +91,60 @@ public sealed class StaticInitializationTests(CorrectnessTestRunner runner) : CS
         Matrix = new(CorpusMatrixProfile.Extended, Backend: CorpusExecutionBackend.Linked),
     });
 
+    // A precise type initializes before its constructors run, so its instance
+    // methods read its statics without initialization checks; a subclass's
+    // constructor initializes the base type through the base constructor call.
+    [Fact]
+    public void PreciseInstanceMethodsReadTheirOwnStaticsAfterInitialization() => Run(new(
+        "PreciseInstanceStatics", "NetWasm.Correctness.PreciseInstanceStatics",
+        """
+        using System.Runtime.CompilerServices;
+        namespace NetWasm.Correctness.PreciseInstanceStatics;
+
+        public sealed class Payload { public int Value; }
+        public static class Probe { public static int Order; }
+        public class Counter
+        {
+            private static int s_total;
+            private static readonly Payload[] s_weights;
+            static Counter()
+            {
+                Probe.Order = Probe.Order * 10 + 2;
+                s_weights = [new() { Value = 1 }, new() { Value = 2 }, new() { Value = 3 }];
+                System.GC.Collect();
+            }
+            public Counter() { Probe.Order = Probe.Order * 10 + 3; }
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            public int Sum(Payload extra, int rounds)
+            {
+                s_total = 0;
+                for (var i = 0; i < rounds; i++) s_total += s_weights[i % s_weights.Length].Value + extra.Value;
+                return s_total;
+            }
+        }
+        public sealed class Derived : Counter
+        {
+            static Derived() { Probe.Order = Probe.Order * 10 + 1; }
+        }
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                Probe.Order = 0;
+                var extra = new Payload { Value = 1 };
+                Counter counter = input == 0 ? new Counter() : new Derived();
+                var order = input == 0 ? 23 : 123;
+                return Probe.Order == order && counter.Sum(extra, 10) == 29 ? 42 : -1;
+            }
+            public static int Trace() => 0;
+        }
+        """, [0, 1])
+    {
+        ExpectedReturnValue = 42,
+        RequiredRuntimeCapabilities = OracleRuntimeCapabilities.GarbageCollection,
+        Matrix = new(CorpusMatrixProfile.Extended, Backend: CorpusExecutionBackend.Linked),
+    });
+
     [Fact]
     public void AllocatingStaticInitializersPreserveLiveLocalsAndCallArguments() => Run(new(
         "StaticCallInitializationRoots", "NetWasm.Correctness.StaticCallInitializationRoots",

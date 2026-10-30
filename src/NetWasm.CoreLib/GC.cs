@@ -1,5 +1,5 @@
 // Portions adapted from dotnet/runtime System.Private.CoreLib GC contracts at
-// commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// commit 474ed963699fc29809015392738a15231aaae2de.
 // The upstream implementation is licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
@@ -110,28 +110,15 @@ public static partial class GC
         GCMetricRuntime.Read(TotalAllocatedBytesMetric);
 
     /// <summary>Allocates an array.</summary>
-    public static T[] AllocateArray<T>(int length, bool pinned = false)
-    {
-        if (pinned)
-        {
-            throw new PlatformNotSupportedException(
-                "Pinned array allocation is not supported in the NetWasm collector.");
-        }
-
-        return new T[length];
-    }
+    // No collector moves objects, so every array is already pinned.
+    public static T[] AllocateArray<T>(int length, bool pinned = false) => new T[length];
 
     /// <summary>Allocates an array while skipping zero-initialization when possible.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe T[] AllocateUninitializedArray<T>(int length, bool pinned = false)
     {
-        if (pinned)
-        {
-            throw new PlatformNotSupportedException(
-                "Pinned array allocation is not supported in the NetWasm collector.");
-        }
-
-        // The compiler/runtime currently provide ordinary zero-initialized newarr storage.
+        // No collector moves objects, so every array is already pinned. The
+        // compiler/runtime currently provide ordinary zero-initialized newarr storage.
         // That is a permitted implementation of the uninitialized-array contract.
         return new T[length];
     }

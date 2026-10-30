@@ -83,7 +83,7 @@ public sealed class WitCoreBindingResolver(
         {
             var definition = document.Interfaces[duplicate.Key];
             throw ComponentException.Invalid(
-                $"WIT {direction} interface '{definition.Package}/{definition.Name}' " +
+                $"WIT {direction} interface '{definition.Key}' " +
                 "has multiple world placements; managed instance selection is ambiguous");
         }
 
@@ -93,6 +93,8 @@ public sealed class WitCoreBindingResolver(
         ];
     }
 
+    // The core module names an interface by its world key, its version as its
+    // compatibility version; the inventory must hold exactly its members there.
     private static WitWorldItem ResolveItem(
         WitDocument document,
         WitWorldItem item,
@@ -104,31 +106,15 @@ public sealed class WitCoreBindingResolver(
             return item with { CoreBindingName = string.Empty };
         }
 
-        var definition = document.Interfaces[interfaceId];
-        var semanticName = $"{definition.Package}/{definition.Name}";
-        var qualifiedName = CanonicalAbiNames.CoreInterfaceName(semanticName);
-        var expectedMembers = ExpectedMembers(document, definition, direction);
-        if (expectedMembers.Count == 0)
-        {
-            return item with { CoreBindingName = qualifiedName };
-        }
-
-        var matches = new[] { item.Name, qualifiedName }
-            .Distinct(StringComparer.Ordinal)
-            .Where(candidate => namespaces.TryGetValue(candidate, out var members) &&
-                members.SetEquals(expectedMembers))
-            .ToArray();
-        if (matches.Length == 0)
+        var coreName = CanonicalAbiNames.CoreInterfaceName(item.Name);
+        var expectedMembers = ExpectedMembers(document, document.Interfaces[interfaceId], direction);
+        if (expectedMembers.Count != 0 &&
+            (!namespaces.TryGetValue(coreName, out var members) || !members.SetEquals(expectedMembers)))
         {
             throw ComponentException.Invalid(
-                $"WIT {direction} interface '{semanticName}' has no exact core binding namespace and member inventory");
+                $"WIT {direction} interface '{item.Name}' has no exact core binding namespace and member inventory");
         }
-        if (matches.Length != 1)
-        {
-            throw ComponentException.Invalid(
-                $"WIT {direction} interface '{semanticName}' has ambiguous core binding namespaces");
-        }
-        return item with { CoreBindingName = matches[0] };
+        return item with { CoreBindingName = coreName };
     }
 
     private static ImmutableHashSet<string> ExpectedMembers(

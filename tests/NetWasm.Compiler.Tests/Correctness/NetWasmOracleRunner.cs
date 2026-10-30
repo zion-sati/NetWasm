@@ -140,6 +140,7 @@ internal sealed class NetWasmOracleRunner(
                 "--enable-memory64",
                 "--enable-bulk-memory",
                 "--enable-nontrapping-float-to-int",
+                "--enable-simd",
                 "-o",
                 optimizedPath,
             ],

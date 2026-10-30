@@ -40,6 +40,7 @@ internal static class WasmOpcodes
     internal const byte F64Constant = 0x44;
     internal const byte I32EqualZero = 0x45;
     internal const byte I32Equal = 0x46;
+    internal const byte I32NotEqual = 0x47;
     internal const byte I32LessThanSigned = 0x48;
     internal const byte I32LessThanUnsigned = 0x49;
     internal const byte I32GreaterThanSigned = 0x4a;
@@ -146,6 +147,7 @@ internal static class WasmOpcodes
     internal const byte I32Extend8Signed = 0xc0;
     internal const byte I32Extend16Signed = 0xc1;
     internal const byte Prefixed = 0xfc;
+    internal const byte SimdPrefixed = 0xfd;
 
     internal const byte EmptyBlockType = 0x40;
     internal const byte MemoryCopy = 10;

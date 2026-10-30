@@ -1652,6 +1652,42 @@ void test_fail_next_component_allocation(void)
 }
 #endif
 
+/* The compiler's static Type objects, count of them stride bytes apart from
+   first, each a facade header and the semantic type id it names. Each becomes
+   its type's object for the instance and is never collected, so GetType returns
+   the same object typeof does. */
+NETWASM_EXPORT("register_type_objects")
+void register_type_objects(netwasm_address_t first, u32 count, u32 stride)
+{
+    for (u32 index = 0; index < count; index++) {
+        netwasm_reference_t object = first + (netwasm_address_t)index * stride;
+        u32 facade_type_id = *(const u32 *)(uintptr_t)object;
+        u32 semantic_type_id =
+            *(const u32 *)(uintptr_t)(object + NETWASM_OBJECT_HEADER_SIZE);
+        if (semantic_type_id == 0 || semantic_type_id >= type_capacity ||
+            !type_descriptors[semantic_type_id].registered ||
+            facade_type_id == 0 || facade_type_id >= type_capacity ||
+            !type_descriptors[facade_type_id].registered ||
+            type_descriptors[facade_type_id].size != netwasm_align_address(
+                NETWASM_OBJECT_HEADER_SIZE + sizeof(u32),
+                NETWASM_OBJECT_REFERENCE_SIZE) ||
+            stride < type_descriptors[facade_type_id].size ||
+            (type_object_cache[semantic_type_id] != 0 &&
+             type_object_cache[semantic_type_id] != object)) {
+            __builtin_trap();
+        }
+        type_object_cache[semantic_type_id] = object;
+    }
+}
+
+/* Compiled GetType reads a type's cached Type object here before it calls
+   get_type_object. The cache is allocated once, at initialization. */
+NETWASM_EXPORT("type_object_cache_address")
+netwasm_address_t type_object_cache_address(void)
+{
+    return (netwasm_address_t)(uintptr_t)type_object_cache;
+}
+
 NETWASM_EXPORT("get_type_object")
 netwasm_reference_t get_type_object(u32 semantic_type_id, u32 facade_type_id)
 {
@@ -2187,11 +2223,16 @@ u32 array_copy(
             (netwasm_reference_t *)(uintptr_t)source_data + source_index;
         netwasm_reference_t *destination_values =
             (netwasm_reference_t *)(uintptr_t)destination_data + destination_index;
+        /* Elements of a type the destination's element type accepts need no
+           check each: only a narrowing copy, such as object[] to string[],
+           tests every element. */
+        bool check_elements =
+            !is_type_assignable(source_element_type_id, destination_element_type_id);
         if (source == destination && destination_index > source_index &&
             destination_index < source_index + length) {
             for (u32 offset = length; offset != 0; offset--) {
                 netwasm_reference_t value = source_values[offset - 1];
-                if (value != 0 &&
+                if (check_elements && value != 0 &&
                     !is_assignable(value, destination_element_type_id)) {
                     return ARRAY_COPY_ELEMENT_CAST_FAILURE;
                 }
@@ -2203,7 +2244,7 @@ u32 array_copy(
         } else {
             for (u32 offset = 0; offset < length; offset++) {
                 netwasm_reference_t value = source_values[offset];
-                if (value != 0 &&
+                if (check_elements && value != 0 &&
                     !is_assignable(value, destination_element_type_id)) {
                     return ARRAY_COPY_ELEMENT_CAST_FAILURE;
                 }

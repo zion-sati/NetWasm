@@ -13,7 +13,11 @@ namespace System
     {
         // Destination dispatch follows upstream Convert.DefaultToType. The internal
         // Empty marker is absent; unknown destinations retain InvalidCastException.
-        internal static object DefaultToType(IConvertible value, Type targetType, IFormatProvider? provider)
+        // It is generic over the source so a value type's conversions bind to its own
+        // IConvertible members; through the interface, each call would reach every
+        // IConvertible implementation, string's DateTime parsing included.
+        internal static object DefaultToType<TConvertible>(TConvertible value, Type targetType, IFormatProvider? provider)
+            where TConvertible : IConvertible
         {
             ArgumentNullException.ThrowIfNull(targetType);
 
@@ -56,7 +60,7 @@ namespace System
                 return (object)value;
             // Need to special case Enum because typecode will be underlying type, e.g. Int32
             if (ReferenceEquals(targetType, typeof(Enum)))
-                return (Enum)value;
+                return (Enum)(object)value;
             if (ReferenceEquals(targetType, typeof(DBNull)))
                 throw new InvalidCastException("Cannot convert to DBNull.");
 

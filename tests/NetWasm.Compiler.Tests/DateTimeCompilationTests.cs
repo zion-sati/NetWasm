@@ -378,7 +378,7 @@ public sealed class DateTimeCompilationTests
                         "DateOnlyTimeOnlyParsingFixture.EntryPoint",
                         "Run")],
                     WitPath = PlatformWitPath(assets),
-                    WitWorld = "netwasm:platform@1.0.0/platform",
+                    WitWorld = "netwasm:platform/platform@1.0.0",
                 });
 
                 Assert.Equal(42, result);
@@ -628,7 +628,7 @@ public sealed class DateTimeCompilationTests
                         "DateOnlyTimeOnlyFormattingFixture.EntryPoint",
                         "Run")],
                     WitPath = PlatformWitPath(assets),
-                    WitWorld = "netwasm:platform@1.0.0/platform",
+                    WitWorld = "netwasm:platform/platform@1.0.0",
                 });
 
                 Assert.Equal(42, result);
@@ -766,7 +766,7 @@ public sealed class DateTimeCompilationTests
                         "DateOnlyTimeOnlyContractFixture.EntryPoint",
                         "Run")],
                     WitPath = PlatformWitPath(assets),
-                    WitWorld = "netwasm:platform@1.0.0/platform",
+                    WitWorld = "netwasm:platform/platform@1.0.0",
                 });
 
                 Assert.Equal(0, result);
@@ -907,7 +907,7 @@ public sealed class DateTimeCompilationTests
                         "DateTimeRoundTripFixture.EntryPoint",
                         "Run")],
                     WitPath = PlatformWitPath(assets),
-                    WitWorld = "netwasm:platform@1.0.0/platform",
+                    WitWorld = "netwasm:platform/platform@1.0.0",
                 });
 
                 Assert.Equal(42, result);
@@ -1231,11 +1231,11 @@ public sealed class DateTimeCompilationTests
             "Run",
             [],
             WitPath: PlatformWitPath(assets),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         var import = Assert.Single(result.Program.WitImportMethods);
         Assert.Equal(
-            "wasi:clocks@0.2.11/wall-clock",
+            "wasi:clocks/wall-clock@0.2.11",
             import.WitImport!.InterfaceName);
         Assert.Equal("now", import.WitImport.FunctionName);
     }
@@ -1275,11 +1275,11 @@ public sealed class DateTimeCompilationTests
             "Run",
             [new RequestedExport("run", "ClockFixture.EntryPoint", "Run")],
             WitPath: PlatformWitPath(assets),
-            WitWorld: "netwasm:platform@1.0.0/platform"));
+            WitWorld: "netwasm:platform/platform@1.0.0"));
 
         Assert.Contains(result.Program.WitImportMethods,
             method => method.WitImport!.InterfaceName ==
-                "wasi:clocks@0.2.11/wall-clock" &&
+                "wasi:clocks/wall-clock@0.2.11" &&
                 method.WitImport.FunctionName == "now");
         Assert.DoesNotContain(result.Program.WitImportMethods,
             method => method.WitImport!.InterfaceName.StartsWith(
@@ -1343,7 +1343,7 @@ public sealed class DateTimeCompilationTests
                     Environment = environment,
                     TimeZoneAssetPath = assetPath,
                     WitPath = PlatformWitPath(assets),
-                    WitWorld = "netwasm:platform@1.0.0/platform",
+                    WitWorld = "netwasm:platform/platform@1.0.0",
                 });
 
                 Assert.Equal(31, result);
@@ -1469,7 +1469,7 @@ public sealed class DateTimeCompilationTests
                 "DateTimeTextFixture.EntryPoint",
                 "Run")],
             WitPath = PlatformWitPath(assets),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
 
         Assert.Equal(42, result);

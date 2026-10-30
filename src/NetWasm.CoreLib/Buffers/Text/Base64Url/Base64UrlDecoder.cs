@@ -1,10 +1,12 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Url/Base64UrlDecoder.cs
 
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-#if NETWASM_SIMD
+#if NET
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
@@ -27,11 +29,8 @@ namespace System.Buffers.Text
         /// </exception>
         public static int GetMaxDecodedLength(int base64Length)
         {
-#if NETWASM_SIMD
-            if (base64Length < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(base64Length));
-            }
+#if NET
+            ArgumentOutOfRangeException.ThrowIfNegative(base64Length);
 
             (uint whole, uint remainder) = uint.DivRem((uint)base64Length, 4);
 
@@ -91,9 +90,10 @@ namespace System.Buffers.Text
             // For Base64Url, this is not an OperationStatus API and thus throws.
             if (status == OperationStatus.InvalidData)
             {
-                throw new FormatException("The input is not a valid Base-64 string.");
+                throw new FormatException(SR.Format_BadBase64Char);
             }
 
+            Debug.Assert(status is OperationStatus.Done);
             return bytesWritten;
         }
 
@@ -124,10 +124,11 @@ namespace System.Buffers.Text
 
             if (status == OperationStatus.DestinationTooSmall)
             {
-                throw new ArgumentException("Destination is too short.", nameof(destination));
+                throw new ArgumentException(SR.Argument_DestinationTooShort, nameof(destination));
             }
 
-            throw new FormatException("The input is not a valid Base-64 string.");
+            Debug.Assert(status is OperationStatus.InvalidData);
+            throw new FormatException(SR.Format_BadBase64Char);
         }
 
         /// <summary>
@@ -145,9 +146,10 @@ namespace System.Buffers.Text
 
             if (status == OperationStatus.InvalidData)
             {
-                throw new FormatException("The input is not a valid Base-64 string.");
+                throw new FormatException(SR.Format_BadBase64Char);
             }
 
+            Debug.Assert(status is OperationStatus.Done or OperationStatus.DestinationTooSmall);
             return status == OperationStatus.Done;
         }
 
@@ -168,6 +170,7 @@ namespace System.Buffers.Text
                 : (rented = ArrayPool<byte>.Shared.Rent(upperBound));
 
             OperationStatus status = DecodeFromUtf8(source, destination, out _, out int bytesWritten);
+            Debug.Assert(status is OperationStatus.Done or OperationStatus.InvalidData);
             byte[] ret = destination.Slice(0, bytesWritten).ToArray();
 
             if (rented is not null)
@@ -175,7 +178,7 @@ namespace System.Buffers.Text
                 ArrayPool<byte>.Shared.Return(rented);
             }
 
-            return status == OperationStatus.Done ? ret : throw new FormatException("The input is not a valid Base-64 string.");
+            return status == OperationStatus.Done ? ret : throw new FormatException(SR.Format_BadBase64Char);
         }
 
         /// <summary>
@@ -220,10 +223,11 @@ namespace System.Buffers.Text
 
             if (status == OperationStatus.DestinationTooSmall)
             {
-                throw new ArgumentException("Destination is too short.", nameof(destination));
+                throw new ArgumentException(SR.Argument_DestinationTooShort, nameof(destination));
             }
 
-            throw new FormatException("The input is not a valid Base-64 string.");
+            Debug.Assert(status == OperationStatus.InvalidData);
+            throw new FormatException(SR.Format_BadBase64Char);
         }
 
         /// <summary>
@@ -241,7 +245,7 @@ namespace System.Buffers.Text
 
             if (status == OperationStatus.InvalidData)
             {
-                throw new FormatException("The input is not a valid Base-64 string.");
+                throw new FormatException(SR.Format_BadBase64Char);
             }
 
             return status == OperationStatus.Done;
@@ -271,7 +275,7 @@ namespace System.Buffers.Text
                 ArrayPool<byte>.Shared.Return(rented);
             }
 
-            return status == OperationStatus.Done ? ret : throw new FormatException("The input is not a valid Base-64 string.");
+            return status == OperationStatus.Done ? ret : throw new FormatException(SR.Format_BadBase64Char);
         }
 
         private readonly struct Base64UrlDecoderByte : IBase64Decoder<byte>
@@ -368,7 +372,7 @@ namespace System.Buffers.Text
 
             public int SrcLength(bool isFinalBlock, int sourceLength) => isFinalBlock ? sourceLength : sourceLength & ~0x3;
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             [CompExactlyDependsOn(typeof(AdvSimd.Arm64))]
             [CompExactlyDependsOn(typeof(Ssse3))]
@@ -512,7 +516,7 @@ namespace System.Buffers.Text
 
             public int SrcLength(bool isFinalBlock, int sourceLength) => default(Base64UrlDecoderByte).SrcLength(isFinalBlock, sourceLength);
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             [CompExactlyDependsOn(typeof(AdvSimd.Arm64))]
             [CompExactlyDependsOn(typeof(Ssse3))]

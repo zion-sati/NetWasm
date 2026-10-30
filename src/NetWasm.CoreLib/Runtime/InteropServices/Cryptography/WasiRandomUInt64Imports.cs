@@ -6,7 +6,7 @@ namespace System.Runtime.InteropServices.Cryptography
     {
         // The standard interface declares both random functions, so selecting its
         // world requires a managed binding even though CoreLib consumes bytes only.
-        [WitImport("wasi:random@0.2.11/random", "get-random-u64")]
+        [WitImport("wasi:random/random@0.2.11", "get-random-u64")]
         internal static extern long GetRandomUInt64();
     }
 }

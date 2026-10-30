@@ -67,7 +67,7 @@ public sealed class DefaultComparerCallRewriterTests
     }
 
     private sealed class Fixture : ITypeDefinitionResolver, IMethodRepository, IMethodInstanceResolver,
-        ITypeFinder, ICalledMethodResolver, ISymbolFormatter, ITypeRelationshipClassifier
+        ITypeFinder, ICalledMethodResolver, ISymbolFormatter, ITypeRelationshipClassifier, IConstrainedCallTargetResolver
     {
         private static readonly AssemblyIdentity Assembly = new("comparer-tests");
         private static readonly EntityKey Owner = new(Assembly, 0x02000001);
@@ -102,7 +102,9 @@ public sealed class DefaultComparerCallRewriterTests
                 [Compared]), [], signature);
         }
 
-        public DefaultComparerCallRewriter Rewriter() => new(this, this, this, this, this, this, this);
+        public DefaultComparerCallRewriter Rewriter() => new(
+            this, this, this, this, this, this, this, this, new StackValueConsumerFinder(new StackEffectResolver(this)),
+            devirtualize: true);
         public static CilMethodBody Body(CilOperation operation = CilOperation.Call) => new(
             new(new(Assembly, 0x06000002), Owner, "Caller", true, MethodSignatureModel.Create(CliValueKind.Void), 1),
             1, [], [new(12, 17, operation, new CilOperand.None())]);
@@ -111,6 +113,9 @@ public sealed class DefaultComparerCallRewriterTests
         public string Format(MethodDefinitionModel method) => method.Name;
         public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity) =>
             new(Owner, "Fixture", "Value", true, [], []) { IsEnum = _enum };
+        // These bodies make no call on a default comparer.
+        public MethodDefinitionModel Resolve(ConstrainedCallTargetRequest request) =>
+            throw new InvalidOperationException();
         public TypeRelationship Classify(CliTypeIdentity candidate, CliTypeIdentity target)
         {
             Assert.Equal(Compared, candidate);

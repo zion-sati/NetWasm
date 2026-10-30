@@ -19,6 +19,26 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             [FinalWasmOptimization.Oz] = WasmInlineAnnotationSelection.SizeAware,
         }.ToFrozenDictionary();
 
+    // AggressiveInlining in managed code is honored wherever speed counts, Oz
+    // included, and Os ignores it (owner, 2026-10-23). The runtime's own hints
+    // keep the preset's choice above.
+    private static readonly FrozenDictionary<FinalWasmOptimization, WasmInlineAnnotationSelection> ManagedHintPresets =
+        new Dictionary<FinalWasmOptimization, WasmInlineAnnotationSelection>
+        {
+            [FinalWasmOptimization.None] = WasmInlineAnnotationSelection.SizeAware,
+            [FinalWasmOptimization.O0] = WasmInlineAnnotationSelection.SizeAware,
+            [FinalWasmOptimization.O1] = WasmInlineAnnotationSelection.Preserve,
+            [FinalWasmOptimization.O2] = WasmInlineAnnotationSelection.Preserve,
+            [FinalWasmOptimization.O3] = WasmInlineAnnotationSelection.Preserve,
+            [FinalWasmOptimization.Os] = WasmInlineAnnotationSelection.SizeAware,
+            [FinalWasmOptimization.Oz] = WasmInlineAnnotationSelection.Preserve,
+        }.ToFrozenDictionary();
+
+    // Oz takes O3's field hoisting, static data-view elimination, address-taken
+    // promotion and bounds-check elimination: each shrinks the module, and with
+    // Oz's inlining inside loops they make DoomSharp 0.71 of Loops alone (owner,
+    // 2026-10-28). Os has no managed inlining for them to work on: no faster,
+    // and its Brotli size grows, so it keeps them off.
     private static readonly FrozenDictionary<FinalWasmOptimization, LoopInvariantFieldHoistingPolicy>
         FieldHoistingPresets =
         new Dictionary<FinalWasmOptimization, LoopInvariantFieldHoistingPolicy>
@@ -29,7 +49,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             [FinalWasmOptimization.O2] = LoopInvariantFieldHoistingPolicy.Conservative,
             [FinalWasmOptimization.O3] = LoopInvariantFieldHoistingPolicy.NullChecks,
             [FinalWasmOptimization.Os] = LoopInvariantFieldHoistingPolicy.Disabled,
-            [FinalWasmOptimization.Oz] = LoopInvariantFieldHoistingPolicy.Disabled,
+            [FinalWasmOptimization.Oz] = LoopInvariantFieldHoistingPolicy.NullChecks,
         }.ToFrozenDictionary();
 
     private static readonly FrozenDictionary<ManagedInliningHints, WasmInlineAnnotationSelection> Hints =
@@ -49,7 +69,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             [FinalWasmOptimization.O2] = StaticDataViewEliminationPolicy.Conservative,
             [FinalWasmOptimization.O3] = StaticDataViewEliminationPolicy.Conservative,
             [FinalWasmOptimization.Os] = StaticDataViewEliminationPolicy.Disabled,
-            [FinalWasmOptimization.Oz] = StaticDataViewEliminationPolicy.Disabled,
+            [FinalWasmOptimization.Oz] = StaticDataViewEliminationPolicy.Conservative,
         }.ToFrozenDictionary();
 
     private static readonly FrozenDictionary<FinalWasmOptimization,
@@ -62,7 +82,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             [FinalWasmOptimization.O2] = AddressTakenValuePromotionPolicy.Disabled,
             [FinalWasmOptimization.O3] = AddressTakenValuePromotionPolicy.References,
             [FinalWasmOptimization.Os] = AddressTakenValuePromotionPolicy.Disabled,
-            [FinalWasmOptimization.Oz] = AddressTakenValuePromotionPolicy.Disabled,
+            [FinalWasmOptimization.Oz] = AddressTakenValuePromotionPolicy.References,
         }.ToFrozenDictionary();
 
     private static readonly FrozenDictionary<FinalWasmOptimization,
@@ -71,11 +91,16 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
         {
             [FinalWasmOptimization.None] = ManagedMethodInliningPolicy.Disabled,
             [FinalWasmOptimization.O0] = ManagedMethodInliningPolicy.Disabled,
-            [FinalWasmOptimization.O1] = ManagedMethodInliningPolicy.Disabled,
-            [FinalWasmOptimization.O2] = ManagedMethodInliningPolicy.Disabled,
+            // As the managed hints above: AggressiveInlining callees inline at
+            // O1, O2 and Oz; O2 and Oz also inline inside loops (micro table
+            // geomean 0.904 at O2 for +2.3% size; DoomSharp at Oz 0.88 alone,
+            // 0.62 with Oz's shrinking flags above), and O3 inlines what pays
+            // for speed anywhere.
+            [FinalWasmOptimization.O1] = ManagedMethodInliningPolicy.Aggressive,
+            [FinalWasmOptimization.O2] = ManagedMethodInliningPolicy.Loops,
             [FinalWasmOptimization.O3] = ManagedMethodInliningPolicy.Speed,
             [FinalWasmOptimization.Os] = ManagedMethodInliningPolicy.Disabled,
-            [FinalWasmOptimization.Oz] = ManagedMethodInliningPolicy.Disabled,
+            [FinalWasmOptimization.Oz] = ManagedMethodInliningPolicy.Loops,
         }.ToFrozenDictionary();
 
     private static readonly FrozenDictionary<FinalWasmOptimization,
@@ -111,7 +136,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             throw new ArgumentOutOfRangeException(nameof(preset));
         }
         var hint = options?.ManagedInliningHints ?? ManagedInliningHints.Auto;
-        var managedSelection = presetSelection;
+        var managedSelection = ManagedHintPresets[preset];
         if (hint != ManagedInliningHints.Auto &&
             !Hints.TryGetValue(hint, out managedSelection))
         {
@@ -165,6 +190,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedMethodInlining.Auto => managedMethodInlining,
             ManagedMethodInlining.Disabled => ManagedMethodInliningPolicy.Disabled,
             ManagedMethodInlining.Enabled => ManagedMethodInliningPolicy.Speed,
+            ManagedMethodInlining.Loops => ManagedMethodInliningPolicy.Loops,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
 
@@ -194,7 +220,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
         var arrayBoundsOverride = options?.ArrayBoundsCheckElimination ?? ManagedArrayBoundsCheckElimination.Auto;
         var arrayBounds = arrayBoundsOverride switch
         {
-            ManagedArrayBoundsCheckElimination.Auto => preset == FinalWasmOptimization.O3
+            ManagedArrayBoundsCheckElimination.Auto => preset is FinalWasmOptimization.O3 or FinalWasmOptimization.Oz
                 ? ArrayBoundsCheckEliminationPolicy.Conservative : ArrayBoundsCheckEliminationPolicy.Disabled,
             ManagedArrayBoundsCheckElimination.Disabled => ArrayBoundsCheckEliminationPolicy.Disabled,
             ManagedArrayBoundsCheckElimination.Enabled => ArrayBoundsCheckEliminationPolicy.Conservative,
@@ -271,12 +297,18 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedAllocationElimination.Enabled => AllocationEliminationPolicy.Unused,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
-        // The condition is repeated per loop, so the size presets keep one copy.
+        // Rotation repeats the loop condition, so Os keeps one copy. Oz rotates
+        // conditions without calls: once field hoisting drops the null check, an
+        // unrotated loop takes two branches per iteration (owner, 2026-10-29).
         var rotationOverride = options?.LoopRotation ?? ManagedLoopRotation.Auto;
         var rotation = rotationOverride switch
         {
-            ManagedLoopRotation.Auto => preset == FinalWasmOptimization.O3
-                ? LoopRotationPolicy.Guarded : LoopRotationPolicy.Disabled,
+            ManagedLoopRotation.Auto => preset switch
+            {
+                FinalWasmOptimization.O3 => LoopRotationPolicy.Guarded,
+                FinalWasmOptimization.Oz => LoopRotationPolicy.CallFree,
+                _ => LoopRotationPolicy.Disabled,
+            },
             ManagedLoopRotation.Disabled => LoopRotationPolicy.Disabled,
             ManagedLoopRotation.Enabled => LoopRotationPolicy.Guarded,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
@@ -291,13 +323,101 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedArrayStoreCheckElimination.Enabled => ArrayStoreCheckEliminationPolicy.ExactElementTypes,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // Labeled structure is smaller and faster than a dispatcher, so every
+        // optimizing preset takes it.
+        var dispatcherOverride = options?.DispatcherElimination ?? ManagedDispatcherElimination.Auto;
+        var dispatchers = dispatcherOverride switch
+        {
+            ManagedDispatcherElimination.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? DispatcherEliminationPolicy.Disabled : DispatcherEliminationPolicy.Reducible,
+            ManagedDispatcherElimination.Disabled => DispatcherEliminationPolicy.Disabled,
+            ManagedDispatcherElimination.Enabled => DispatcherEliminationPolicy.Reducible,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A removed handler is less code and frees the try's body from root
+        // publication, so every optimizing preset takes it.
+        var emptyFinallyOverride = options?.EmptyFinallyRemoval ?? ManagedEmptyFinallyRemoval.Auto;
+        var emptyFinallys = emptyFinallyOverride switch
+        {
+            ManagedEmptyFinallyRemoval.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? EmptyFinallyRemovalPolicy.Disabled : EmptyFinallyRemovalPolicy.EmptyHandlers,
+            ManagedEmptyFinallyRemoval.Disabled => EmptyFinallyRemovalPolicy.Disabled,
+            ManagedEmptyFinallyRemoval.Enabled => EmptyFinallyRemovalPolicy.EmptyHandlers,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // Field locals are less code than a value-frame struct and stay in
+        // registers, so every optimizing preset takes them.
+        var structOverride = options?.StructScalarReplacement ?? ManagedStructScalarReplacement.Auto;
+        var structs = structOverride switch
+        {
+            ManagedStructScalarReplacement.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? StructScalarReplacementPolicy.Disabled : StructScalarReplacementPolicy.FieldAccessedLocals,
+            ManagedStructScalarReplacement.Disabled => StructScalarReplacementPolicy.Disabled,
+            ManagedStructScalarReplacement.Enabled => StructScalarReplacementPolicy.FieldAccessedLocals,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // Field locals replace an allocation and its memory accesses with
+        // fewer instructions, so every optimizing preset takes them.
+        var allocationScalarOverride = options?.AllocationScalarReplacement ?? ManagedAllocationScalarReplacement.Auto;
+        var allocationScalars = allocationScalarOverride switch
+        {
+            ManagedAllocationScalarReplacement.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? AllocationScalarReplacementPolicy.Disabled : AllocationScalarReplacementPolicy.NonEscapingObjects,
+            ManagedAllocationScalarReplacement.Disabled => AllocationScalarReplacementPolicy.Disabled,
+            ManagedAllocationScalarReplacement.Enabled => AllocationScalarReplacementPolicy.NonEscapingObjects,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A collapsed loop is less code and runs its body once, so every
+        // optimizing preset takes it.
+        var idempotentLoopOverride = options?.IdempotentLoopCollapse ?? ManagedIdempotentLoopCollapse.Auto;
+        var idempotentLoops = idempotentLoopOverride switch
+        {
+            ManagedIdempotentLoopCollapse.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? IdempotentLoopCollapsePolicy.Disabled : IdempotentLoopCollapsePolicy.CountedLoops,
+            ManagedIdempotentLoopCollapse.Disabled => IdempotentLoopCollapsePolicy.Disabled,
+            ManagedIdempotentLoopCollapse.Enabled => IdempotentLoopCollapsePolicy.CountedLoops,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A forwarded element leaves a loop's dependency chain without adding
+        // code, so every optimizing preset forwards.
+        var loopStoreOverride = options?.LoopStoreForwarding ?? ManagedLoopStoreForwarding.Auto;
+        var loopStores = loopStoreOverride switch
+        {
+            ManagedLoopStoreForwarding.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? LoopStoreForwardingPolicy.Disabled : LoopStoreForwardingPolicy.Elements,
+            ManagedLoopStoreForwarding.Disabled => LoopStoreForwardingPolicy.Disabled,
+            ManagedLoopStoreForwarding.Enabled => LoopStoreForwardingPolicy.Elements,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A bulk fill, copy or fold is more code than the loop it runs ahead of, so
+        // only the speed presets take it.
+        var arrayLoopOverride = options?.ArrayLoopIdioms ?? ManagedArrayLoopIdioms.Auto;
+        var arrayLoops = arrayLoopOverride switch
+        {
+            ManagedArrayLoopIdioms.Auto => preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+                ? ArrayLoopIdiomPolicy.Bulk : ArrayLoopIdiomPolicy.Disabled,
+            ManagedArrayLoopIdioms.Disabled => ArrayLoopIdiomPolicy.Disabled,
+            ManagedArrayLoopIdioms.Enabled => ArrayLoopIdiomPolicy.Bulk,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        // A vectorized loop runs ahead of a copy of the scalar loop, so only the
+        // O2 and O3 presets take it.
+        var vectorizationOverride = options?.LoopVectorization ?? ManagedLoopVectorization.Auto;
+        var vectorization = vectorizationOverride switch
+        {
+            ManagedLoopVectorization.Auto => preset is FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+                ? LoopVectorizationPolicy.CountedLoops : LoopVectorizationPolicy.Disabled,
+            ManagedLoopVectorization.Disabled => LoopVectorizationPolicy.Disabled,
+            ManagedLoopVectorization.Enabled => LoopVectorizationPolicy.CountedLoops,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
              fieldOverride is ManagedLoopInvariantFieldHoisting.Enabled or ManagedLoopInvariantFieldHoisting.NullChecks ||
              staticDataOverride == ManagedStaticDataViewElimination.Enabled ||
              valuePromotionOverride is ManagedAddressTakenValuePromotion.Enabled or ManagedAddressTakenValuePromotion.References ||
-             methodInliningOverride == ManagedMethodInlining.Enabled ||
+             methodInliningOverride is ManagedMethodInlining.Enabled or ManagedMethodInlining.Loops ||
              scalarOverride == ManagedScalarCallPreservation.Enabled ||
              arrayBoundsOverride == ManagedArrayBoundsCheckElimination.Enabled ||
              unrollingOverride == ManagedLoopUnrolling.Enabled ||
@@ -309,6 +429,14 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              allocationOverride == ManagedAllocationElimination.Enabled ||
              rotationOverride == ManagedLoopRotation.Enabled ||
              storeCheckOverride == ManagedArrayStoreCheckElimination.Enabled ||
+             dispatcherOverride == ManagedDispatcherElimination.Enabled ||
+             emptyFinallyOverride == ManagedEmptyFinallyRemoval.Enabled ||
+             structOverride == ManagedStructScalarReplacement.Enabled ||
+             allocationScalarOverride == ManagedAllocationScalarReplacement.Enabled ||
+             idempotentLoopOverride == ManagedIdempotentLoopCollapse.Enabled ||
+             loopStoreOverride == ManagedLoopStoreForwarding.Enabled ||
+             arrayLoopOverride == ManagedArrayLoopIdioms.Enabled ||
+             vectorizationOverride == ManagedLoopVectorization.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -335,6 +463,23 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             devirtualization,
             allocations,
             rotation,
-            storeChecks);
+            storeChecks,
+            // Fewer checks run and fewer are emitted, so every optimizing preset hoists.
+            preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? StaticInitializationHoistingPolicy.Disabled
+                : StaticInitializationHoistingPolicy.MethodEntry,
+            // Inline blocks cost code at every call site with a variable size,
+            // so only the speed presets take them.
+            preset is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3
+                ? SmallBlockOperationPolicy.Inline
+                : SmallBlockOperationPolicy.Bulk,
+            dispatchers,
+            emptyFinallys,
+            structs,
+            allocationScalars,
+            idempotentLoops,
+            loopStores,
+            arrayLoops,
+            vectorization);
     }
 }

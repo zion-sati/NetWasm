@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 
 namespace NetWasm.Compiler.Core;
 
@@ -112,28 +113,46 @@ public static class CanonicalAbiNames
             : functionName;
     }
 
+    // The core name of an interface from its world key: `namespace:package/name`
+    // with the version, if any, as its compatibility version (1 for 1.2.3, 0.2
+    // for 0.2.3), or the plain name of an interface the world declares inline.
     private static string VersionedInterface(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        var separator = value.LastIndexOf('/');
-        if (separator <= 0 || separator == value.Length - 1)
+        var separator = value.IndexOf('/');
+        if (separator < 0)
         {
-            throw new ArgumentException(
-                "WIT interface name must use 'namespace:package@version/interface' syntax",
-                nameof(value));
+            return IsWitName(value)
+                ? value
+                : throw new ArgumentException(
+                    $"WIT interface key '{value}' is not a WIT name or 'namespace:package/interface@version'",
+                    nameof(value));
         }
         var package = value[..separator];
-        var interfaceName = value[(separator + 1)..];
-        var versionSeparator = package.LastIndexOf('@');
-        if (versionSeparator <= 0 || versionSeparator == package.Length - 1)
+        var rest = value[(separator + 1)..];
+        var versionSeparator = rest.IndexOf('@');
+        var interfaceName = versionSeparator < 0 ? rest : rest[..versionSeparator];
+        var colon = package.IndexOf(':');
+        if (colon <= 0 || package.Contains('@', StringComparison.Ordinal) || !IsWitName(interfaceName) ||
+            versionSeparator == rest.Length - 1)
         {
             throw new ArgumentException(
-                "WIT interface package must contain a semantic version",
+                $"WIT interface key '{value}' must use 'namespace:package/interface@version' syntax, " +
+                "as the WIT world names it; regenerate bindings made with an older netwasm-wit-bindgen",
                 nameof(value));
         }
-        var version = package[(versionSeparator + 1)..];
-        var compatibilityVersion = CompatibilityVersion(version);
-        return $"{package[..versionSeparator]}/{interfaceName}@{compatibilityVersion}";
+        return versionSeparator < 0
+            ? value
+            : $"{package}/{interfaceName}@{CompatibilityVersion(rest[(versionSeparator + 1)..])}";
+    }
+
+    // A WIT identifier: lowercase kebab-case words, optionally %-escaped.
+    private static bool IsWitName(string value)
+    {
+        var name = value.StartsWith('%') ? value[1..] : value;
+        return name.Length > 0 && name[0] != '-' && name[^1] != '-' &&
+            !name.Contains("--", StringComparison.Ordinal) &&
+            name.All(static character => character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '-');
     }
 
     private static string CompatibilityVersion(string version)

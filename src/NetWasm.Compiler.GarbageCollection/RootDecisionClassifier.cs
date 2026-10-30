@@ -15,7 +15,8 @@ public sealed class RootDecisionClassifier(
     IReadOnlyDictionary<string, DispatchCallSiteModel>? dispatchCallSites,
     IRuntimeAllocationSafepointClassifier runtimeSafepoints,
     ITypeClassifier typeClassifier,
-    IMethodInitializationTriggerClassifier initializationTriggers) :
+    IMethodInitializationTriggerClassifier initializationTriggers,
+    IStaticFieldInitializationClassifier initializedFields) :
     IRootDecisionClassifier
 {
     private readonly ITypeRepository _types =
@@ -33,6 +34,8 @@ public sealed class RootDecisionClassifier(
         throw new ArgumentNullException(nameof(typeClassifier));
     private readonly IMethodInitializationTriggerClassifier _initializationTriggers = initializationTriggers ??
         throw new ArgumentNullException(nameof(initializationTriggers));
+    private readonly IStaticFieldInitializationClassifier _initializedFields = initializedFields ??
+        throw new ArgumentNullException(nameof(initializedFields));
 
     public bool Decide(RootDecisionRequest request)
     {
@@ -52,6 +55,7 @@ public sealed class RootDecisionClassifier(
             CilOperation.LoadStaticFieldAddress or CilOperation.StoreStaticField)
         {
             return IsAllocatingStaticInitialization(
+                request.Method,
                 instruction,
                 request.AllocatingMethods,
                 request.AllocatingConstructedMethods);
@@ -114,6 +118,7 @@ public sealed class RootDecisionClassifier(
     }
 
     private bool IsAllocatingStaticInitialization(
+        ManagedMethodBody accessor,
         CilInstruction instruction,
         ISet<EntityKey> allocatingMethods,
         ISet<string> allocatingConstructedMethods)
@@ -126,9 +131,12 @@ public sealed class RootDecisionClassifier(
         };
         if (field is null)
             return false;
-        return IsAllocatingInitializer(field.DeclaringType,
-            (instruction.Operand as CilOperand.FieldInstance)?.Value.DeclaringType,
-            allocatingMethods, allocatingConstructedMethods);
+        var declaringType = (instruction.Operand as CilOperand.FieldInstance)?.Value.DeclaringType;
+        // An access with no initialization check cannot run the initializer.
+        return !_initializedFields.IsInitializedFor(accessor.Method.Definition, accessor.Method.DeclaringType,
+                accessor.Body.Instructions, instruction) &&
+            TypeInitializerAllocation.IsAllocating(_types, _methods, field.DeclaringType, declaringType,
+                allocatingMethods, allocatingConstructedMethods);
     }
 
     private bool IsAllocatingMethodInitialization(
@@ -136,29 +144,6 @@ public sealed class RootDecisionClassifier(
         CliTypeIdentity? declaringType,
         RootDecisionRequest request) =>
         _initializationTriggers.Classify(method) &&
-        IsAllocatingInitializer(method.DeclaringType, declaringType,
+        TypeInitializerAllocation.IsAllocating(_types, _methods, method.DeclaringType, declaringType,
             request.AllocatingMethods, request.AllocatingConstructedMethods);
-
-    private bool IsAllocatingInitializer(
-        EntityKey typeDefinition,
-        CliTypeIdentity? declaringType,
-        ISet<EntityKey> allocatingMethods,
-        ISet<string> allocatingConstructedMethods)
-    {
-        var initializer = _types.GetTypeDefinition(typeDefinition)
-            .Methods.Select(_methods.GetMethod)
-            .SingleOrDefault(method => method.Name == ".cctor");
-        if (initializer is null)
-            return false;
-        // Allocation capabilities include the failure boundary of every
-        // reachable initializer, even if its managed body does not allocate.
-        if (declaringType is { Shape: CliTypeShape.GenericInstantiation })
-        {
-            var canonicalName =
-                $"{declaringType.CanonicalName}::" +
-                $"0x{initializer.Key.MetadataToken:x8}";
-            return allocatingConstructedMethods.Contains(canonicalName);
-        }
-        return allocatingMethods.Contains(initializer.Key);
-    }
 }

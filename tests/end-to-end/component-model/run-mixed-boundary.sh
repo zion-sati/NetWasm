@@ -45,7 +45,7 @@ for target in wasm32 wasm64; do
         --output "$artifact_root/runtime.$target.wasm"
     merge_features=(
         --enable-exception-handling --enable-bulk-memory --enable-multimemory
-        --enable-nontrapping-float-to-int -g)
+        --enable-nontrapping-float-to-int --enable-simd -g)
     [[ "$target" = wasm64 ]] && merge_features+=(--enable-memory64)
     wasm-merge \
         "$artifact_root/application.$target.first.wasm" netwasm.application.v1 \

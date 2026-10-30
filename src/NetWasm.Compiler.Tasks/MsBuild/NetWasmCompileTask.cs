@@ -81,6 +81,14 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedAllocationElimination { get; set; } = "Auto";
     public string ManagedLoopRotation { get; set; } = "Auto";
     public string ManagedArrayStoreCheckElimination { get; set; } = "Auto";
+    public string ManagedDispatcherElimination { get; set; } = "Auto";
+    public string ManagedEmptyFinallyRemoval { get; set; } = "Auto";
+    public string ManagedStructScalarReplacement { get; set; } = "Auto";
+    public string ManagedAllocationScalarReplacement { get; set; } = "Auto";
+    public string ManagedIdempotentLoopCollapse { get; set; } = "Auto";
+    public string ManagedLoopStoreForwarding { get; set; } = "Auto";
+    public string ManagedArrayLoopIdioms { get; set; } = "Auto";
+    public string ManagedLoopVectorization { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -191,6 +199,14 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("allocationelimination", ManagedAllocationElimination),
                      ("looprotation", ManagedLoopRotation),
                      ("arraystorecheckelimination", ManagedArrayStoreCheckElimination),
+                     ("dispatcherelimination", ManagedDispatcherElimination),
+                     ("emptyfinallyremoval", ManagedEmptyFinallyRemoval),
+                     ("structscalarreplacement", ManagedStructScalarReplacement),
+                     ("allocationscalarreplacement", ManagedAllocationScalarReplacement),
+                     ("idempotentloopcollapse", ManagedIdempotentLoopCollapse),
+                     ("loopstoreforwarding", ManagedLoopStoreForwarding),
+                     ("arrayloopidioms", ManagedArrayLoopIdioms),
+                     ("loopvectorization", ManagedLoopVectorization),
                  })
         {
             if (value is not ("" or "Auto"))

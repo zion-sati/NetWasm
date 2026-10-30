@@ -3,7 +3,7 @@
 //
 // This internal formatting contract is retained from the pinned Microsoft
 // CoreLib source so scalar formatting can share char and UTF-8 paths.
-// Pinned upstream runtime commit: 811225a482702af7ecc35d817966bc70b88a3a23.
+// Pinned upstream runtime commit: 474ed963699fc29809015392738a15231aaae2de.
 
 using System.Buffers;
 using System.Diagnostics;

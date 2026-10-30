@@ -19,7 +19,7 @@ public static class WasiHttpQualificationComponent
     private static int _headerRejectionCount;
     private static int _disposeCount;
 
-    [WitExport("netwasm:http-spike@1.0.0/acceptance", "qualification-start")]
+    [WitExport("netwasm:http-spike/acceptance@1.0.0", "qualification-start")]
     public static bool QualificationStart(nuint endpointAddress, nuint endpointLength)
     {
         if (_pending is { IsCompleted: false })
@@ -36,10 +36,10 @@ public static class WasiHttpQualificationComponent
         return !_pending.IsCompleted;
     }
 
-    [WitExport("netwasm:http-spike@1.0.0/acceptance", "qualification-is-completed")]
+    [WitExport("netwasm:http-spike/acceptance@1.0.0", "qualification-is-completed")]
     public static bool QualificationIsCompleted() => _pending?.IsCompleted ?? false;
 
-    [WitExport("netwasm:http-spike@1.0.0/acceptance", "qualification-result")]
+    [WitExport("netwasm:http-spike/acceptance@1.0.0", "qualification-result")]
     public static ulong QualificationResult()
     {
         if (_pending is not { IsCompleted: true })
@@ -50,14 +50,14 @@ public static class WasiHttpQualificationComponent
         return _pending.Result;
     }
 
-    [WitExport("netwasm:http-spike@1.0.0/acceptance", "qualification-cancel")]
+    [WitExport("netwasm:http-spike/acceptance@1.0.0", "qualification-cancel")]
     public static bool QualificationCancel()
     {
         _cancellation?.Cancel();
         return true;
     }
 
-    [WitExport("netwasm:http-spike@1.0.0/acceptance", "qualification-dispose")]
+    [WitExport("netwasm:http-spike/acceptance@1.0.0", "qualification-dispose")]
     public static bool QualificationDispose()
     {
         try
@@ -74,7 +74,7 @@ public static class WasiHttpQualificationComponent
         }
     }
 
-    [WitExport("netwasm:http-spike@1.0.0/acceptance", "qualification-counters")]
+    [WitExport("netwasm:http-spike/acceptance@1.0.0", "qualification-counters")]
     public static ulong QualificationCounters() =>
         unchecked((ulong)(uint)_headerDelayCount) |
         (unchecked((ulong)(uint)_chunkCount) << 8) |

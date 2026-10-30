@@ -3,6 +3,7 @@ using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Devirtualization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Tests.Analysis.Devirtualization;
 
@@ -18,6 +19,9 @@ public sealed class ExactReceiverDevirtualizerTests
     private static readonly MethodInstanceModel Constructor = Method(4, Derived, ".ctor");
     private static readonly MethodInstanceModel ValueConstructor = Method(5, Value, ".ctor");
     private static readonly MethodInstanceModel Abstract = Method(6, Derived, "M", isVirtual: true, body: false);
+    private static readonly CliTypeIdentity Integers = CliTypeIdentity.SzArray(CliTypeIdentity.FromStackKind(CliValueKind.I4));
+    private static readonly MethodInstanceModel ArrayHelper = Method(7, Base, "GetEnumerator", isStatic: true,
+        parameters: [CliValueKind.ManagedReference]);
 
     [Fact]
     public void CallsTheAllocatedClassImplementationDirectly()
@@ -111,6 +115,32 @@ public sealed class ExactReceiverDevirtualizerTests
         };
 
         Assert.Same(fixture.Body, fixture.Rewrite());
+    }
+
+    // Roslyn reuses one local for the enumerators of successive foreach loops:
+    // each store is an allocation of the same class, and each call follows one.
+    [Fact]
+    public void ALocalReusedForAllocationsOfOneClassStaysExact()
+    {
+        var fixture = new Fixture(
+        [
+            new(0, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor), []),
+            new(1, CilOperation.StoreLocal, new CilOperand.Index(0), [CliValueKind.ManagedReference]),
+            new(2, CilOperation.LoadLocal, new CilOperand.Index(0), []),
+            new(3, CilOperation.CallVirtual, new CilOperand.MethodInstance(Virtual), [CliValueKind.ManagedReference]),
+            new(4, CilOperation.Pop, new CilOperand.None(), [CliValueKind.I4]),
+            new(5, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor), []),
+            new(6, CilOperation.StoreLocal, new CilOperand.Index(0), [CliValueKind.ManagedReference]),
+            new(7, CilOperation.LoadLocal, new CilOperand.Index(0), []),
+            new(8, CilOperation.CallVirtual, new CilOperand.MethodInstance(Virtual), [CliValueKind.ManagedReference]),
+            new(9, CilOperation.Pop, new CilOperand.None(), [CliValueKind.I4]),
+            new(10, CilOperation.Return, new CilOperand.None(), []),
+        ]);
+
+        var rewritten = fixture.Rewrite();
+
+        Assert.Equal(CilOperation.Call, rewritten.Instructions[3].Operation);
+        Assert.Equal(CilOperation.Call, rewritten.Instructions[8].Operation);
     }
 
     [Theory]
@@ -250,6 +280,39 @@ public sealed class ExactReceiverDevirtualizerTests
         Assert.Equal(CilOperation.Call, dominated.Rewrite().Instructions[7].Operation);
     }
 
+    // foreach over an int[] seen as IEnumerable<int>: the array's helper for
+    // the interface reads the array's length first, so the call goes to it
+    // directly and still throws for a null array.
+    [Fact]
+    public void ArrayReceiverCallsTheArrayHelperDirectly()
+    {
+        var fixture = new Fixture(ArrayReceiver()) { LocalTypes = [Integers], Target = ArrayHelper };
+
+        var rewritten = fixture.Rewrite();
+
+        Assert.Equal(CilOperation.Call, rewritten.Instructions[1].Operation);
+        Assert.Same(ArrayHelper, Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[1].Operand).Value);
+    }
+
+    // A helper that might return before touching the array would not throw
+    // for null as the interface call does.
+    [Fact]
+    public void ArrayReceiverKeepsTheInterfaceCallWhenTheHelperMightNotReadTheArray()
+    {
+        var fixture = new Fixture(ArrayReceiver()) { LocalTypes = [Integers], Target = ArrayHelper, HelperReadsLength = false };
+
+        Assert.Same(fixture.Body, fixture.Rewrite());
+    }
+
+    // A local of an interface type may hold anything implementing it.
+    [Fact]
+    public void InterfaceTypedLocalIsNotAnArrayReceiver()
+    {
+        var fixture = new Fixture(ArrayReceiver()) { Target = ArrayHelper };
+
+        Assert.Same(fixture.Body, fixture.Rewrite());
+    }
+
     [Fact]
     public void RejectsMissingDependenciesAndInputs()
     {
@@ -257,12 +320,14 @@ public sealed class ExactReceiverDevirtualizerTests
         var graphs = new ControlFlowGraphBuilderFactory().Create();
         var dominance = new ControlFlowDominanceAnalyzer();
 
-        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(null!, fixture, graphs, fixture, dominance, true));
-        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, null!, graphs, fixture, dominance, true));
-        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, null!, fixture, dominance, true));
-        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, graphs, null!, dominance, true));
-        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, graphs, fixture, null!, true));
-        var devirtualizer = new ExactReceiverDevirtualizer(fixture, fixture, graphs, fixture, dominance, true);
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(null!, fixture, fixture, fixture, graphs, fixture, dominance, true));
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, null!, fixture, fixture, graphs, fixture, dominance, true));
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, null!, fixture, graphs, fixture, dominance, true));
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, fixture, fixture, null!, fixture, dominance, true));
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, fixture, fixture, graphs, null!, dominance, true));
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, fixture, fixture, graphs, fixture, null!, true));
+        Assert.Throws<ArgumentNullException>(() => new ExactReceiverDevirtualizer(fixture, fixture, fixture, null!, graphs, fixture, dominance, true));
+        var devirtualizer = new ExactReceiverDevirtualizer(fixture, fixture, fixture, fixture, graphs, fixture, dominance, true);
         Assert.Throws<ArgumentNullException>(() => devirtualizer.Rewrite(null!, ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty));
         Assert.Throws<ArgumentNullException>(() => devirtualizer.Rewrite(fixture.Body, null!));
     }
@@ -278,6 +343,15 @@ public sealed class ExactReceiverDevirtualizerTests
         new(5, CilOperation.Return, new CilOperand.None(), []),
     ];
 
+    // An array local's interface call.
+    private static ImmutableArray<Step> ArrayReceiver() =>
+    [
+        new(0, CilOperation.LoadLocal, new CilOperand.Index(0), []),
+        new(1, CilOperation.CallVirtual, new CilOperand.MethodInstance(Virtual), [CliValueKind.ManagedReference]),
+        new(2, CilOperation.Pop, new CilOperand.None(), [CliValueKind.I4]),
+        new(3, CilOperation.Return, new CilOperand.None(), []),
+    ];
+
     private static MethodInstanceModel Method(int token, CliTypeIdentity owner, string name,
         bool isVirtual = false, bool isStatic = false, bool body = true, CliValueKind[]? parameters = null)
     {
@@ -291,13 +365,17 @@ public sealed class ExactReceiverDevirtualizerTests
     private sealed record Step(int Offset, CilOperation Operation, CilOperand Operand, ImmutableArray<CliValueKind> Stack);
 
     private sealed class Fixture(ImmutableArray<Step> steps) :
-        ICalledMethodResolver, IDispatchTargetResolver, ITypedStackValidator
+        ICalledMethodResolver, IDispatchTargetResolver, IMethodBodyReader, IFieldRepository, ITypedStackValidator
     {
-        public CilMethodBody Body { get; } = new(Method(9, Base, "Run", isStatic: true).Definition, 4, [CliValueKind.ManagedReference],
+        private CilMethodBody? _body;
+
+        public CilMethodBody Body => _body ??= new(Method(9, Base, "Run", isStatic: true).Definition, 4, [CliValueKind.ManagedReference],
             [.. steps.Select(step => new CilInstruction(step.Offset, step.Offset + 1, step.Operation, step.Operand))])
         {
-            LocalSignatureTypes = [Base],
+            LocalSignatureTypes = LocalTypes,
         };
+        public ImmutableArray<CliTypeIdentity> LocalTypes { get; init; } = [Base];
+        public bool HelperReadsLength { get; init; } = true;
         public bool Enabled { get; init; } = true;
         public bool KnownStacks { get; init; } = true;
         public int? MissingStackAt { get; init; }
@@ -308,7 +386,7 @@ public sealed class ExactReceiverDevirtualizerTests
             .Where(step => step.Offset != MissingStackAt)
             .ToImmutableDictionary(step => step.Offset, step => step.Stack);
 
-        public CilMethodBody Rewrite() => new ExactReceiverDevirtualizer(this, this,
+        public CilMethodBody Rewrite() => new ExactReceiverDevirtualizer(this, this, this, this,
             new ControlFlowGraphBuilderFactory().Create(), this, new ControlFlowDominanceAnalyzer(), Enabled)
             .Rewrite(Body, KnownStacks ? Stacks : ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty);
 
@@ -316,7 +394,29 @@ public sealed class ExactReceiverDevirtualizerTests
             instruction.Operand is CilOperand.MethodInstance method ? method.Value : null;
 
         public DispatchTargetModel? Resolve(MethodInstanceModel declaration, CliTypeIdentity receiver) =>
-            Target is null || !receiver.Equals(Derived) ? null : new(receiver, Target);
+            Target is null || !receiver.Equals(Derived) && receiver.Shape != CliTypeShape.SzArray ? null : new(receiver, Target);
+
+        // The array helper: array.Length first, or a constant first.
+        public CilMethodBody ReadMethodBody(MethodInstanceModel method) => new(method.Definition, 2, [],
+            HelperReadsLength
+                ?
+                [
+                    new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    new(1, 2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    new(2, 3, CilOperation.LoadArrayLength, new CilOperand.None()),
+                    new(3, 4, CilOperation.Pop, new CilOperand.None()),
+                    new(4, 5, CilOperation.Return, new CilOperand.None()),
+                ]
+                :
+                [
+                    new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+                    new(1, 2, CilOperation.Return, new CilOperand.None()),
+                ]);
+
+        public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => throw new NotSupportedException();
+
+        // These bodies load no fields.
+        public FieldDefinitionModel GetField(EntityKey key) => throw new NotSupportedException();
 
         public ValidatedControlFlowGraph Validate(ControlFlowGraph graph)
         {

@@ -48,7 +48,7 @@ public sealed class WitWorldFunctionProjectorTests
             "command",
             "example:app@4.5.6",
             [
-                new("api", 0, null),
+                new("example:contracts/api@1.2.3", 0, null),
                 new("configure", null, Function(
                     "ignored-item-name",
                     [new("enabled", new WitTypeReference.Primitive("bool"))],
@@ -219,10 +219,10 @@ public sealed class WitWorldFunctionProjectorTests
             1,
             "worker",
             "example:worker@1.0.0",
-            [new("interface-0", 0, null)],
+            [new("netwasm:runtime/reactor-host@1.0.0", 0, null)],
             [
                 new("value", null, Function("value", [], null)),
-                new("interface-1", 1, null),
+                new("netwasm:runtime/reactor-guest@1.0.0", 1, null),
             ]);
         var document = new WitDocument(
             [], [reactorHost, reactorGuest], [application, worker], [], "{}");
@@ -232,7 +232,7 @@ public sealed class WitWorldFunctionProjectorTests
         var reactor = Assert.IsType<WitWorkerReactor>(
             projected.WorkerContract.Reactor);
         Assert.Equal("netwasm:runtime/reactor-guest@1.0.0", reactor.Interface);
-        Assert.Equal("interface1", reactor.JavaScriptRoot);
+        Assert.Equal("reactorGuest", reactor.JavaScriptRoot);
         Assert.Equal("wake", reactor.JavaScriptMember);
     }
 
@@ -255,7 +255,7 @@ public sealed class WitWorldFunctionProjectorTests
             [],
             [
                 new("value", null, Function("value", [], null)),
-                new("interface-0", 0, null),
+                new("netwasm:runtime/reactor-guest@1.0.0", 0, null),
             ]);
         var document = new WitDocument([], [reactorGuest], [world], [], "{}");
 
@@ -264,7 +264,7 @@ public sealed class WitWorldFunctionProjectorTests
         Assert.Equal(
             new WitWorkerReactor(
                 "netwasm:runtime/reactor-guest@1.0.0",
-                "interface0",
+                "reactorGuest",
                 "wake"),
             projected.WorkerContract.Reactor);
     }
@@ -290,7 +290,7 @@ public sealed class WitWorldFunctionProjectorTests
             "example:worker@1.0.0",
             [],
             [
-                new("interface-0", 0, null),
+                new("example:worker/math-api@1.0.0", 0, null),
                 new("root-value", null, Function(
                     "root-value",
                     [],
@@ -311,7 +311,7 @@ public sealed class WitWorldFunctionProjectorTests
             "example:packaged@1.0.0",
             [],
             [
-                new("interface-1", 1, null),
+                new("example:worker/math-api@1.0.0", 1, null),
                 new("root-value", null, Function(
                     "root-value",
                     [],
@@ -336,7 +336,7 @@ public sealed class WitWorldFunctionProjectorTests
             projected.WorkerContract.Exports,
             export => export.Operation == "example:worker/math-api@1.0.0/add");
         Assert.Equal("example:worker/math-api@1.0.0/add", export.Operation);
-        Assert.Equal("interface0", export.JavaScriptRoot);
+        Assert.Equal("mathApi", export.JavaScriptRoot);
         Assert.Collection(
             projected.Exports,
             export => Assert.Equal(
@@ -567,7 +567,7 @@ public sealed class WitWorldFunctionProjectorTests
             0,
             "worker",
             "example:worker@1.0.0",
-            [new("interface-0", 0, null)],
+            [new("netwasm:runtime/reactor-host@1.0.0", 0, null)],
             [new("value", null, Function("value", [], null))]);
 
         AssertInvalid(
@@ -598,13 +598,13 @@ public sealed class WitWorldFunctionProjectorTests
             "worker",
             "example:worker@1.0.0",
             [new("first", 0, null), new("second", 0, null)],
-            [new("interface-1", 1, null)]);
+            [new("netwasm:runtime/reactor-guest@1.0.0", 1, null)]);
 
         AssertInvalid(
             () => Create().Project(
                 new([], [reactorHost, reactorGuest], [world], [], "{}"),
                 world),
-            "duplicate identity");
+            "is placed more than once");
     }
 
     [Fact]
@@ -642,7 +642,7 @@ public sealed class WitWorldFunctionProjectorTests
                 source,
                 application,
                 application),
-            "duplicated");
+            "is placed more than once");
     }
 
     [Fact]
@@ -665,7 +665,9 @@ public sealed class WitWorldFunctionProjectorTests
             Create().Project(new([], [api], [world], [], "{}"), world));
 
         Assert.Equal("NW1009", exception.Diagnostic.Id);
-        Assert.Contains("duplicate identity", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "WIT interface 'example:contracts/api@1.2.3' is placed more than once in world 'command' ('first', 'second')",
+            exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

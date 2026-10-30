@@ -628,6 +628,46 @@ public sealed class ManagedMethodInlinerTests
     }
 
     [Theory]
+    [InlineData(CilOperation.LoadLocal)]
+    [InlineData(CilOperation.LoadArgument)]
+    public void InlinedBodiesReadValueFieldsThroughTheCallerSlot(CilOperation load)
+    {
+        var fromLocal = load == CilOperation.LoadLocal;
+        var caller = Method("Caller", fromLocal ? MethodSignatureModel.Create(Void) : MethodSignatureModel.Create(Void, Value), 1);
+        var callee = Method("Leaf", MethodSignatureModel.Create(Void, Value), 2);
+        var field = new CilOperand.Entity(new(Assembly, 0x04000001));
+        var address = fromLocal ? CilOperation.LoadLocalAddress : CilOperation.LoadArgumentAddress;
+        var call = new CilInstruction(4, 5, CilOperation.Call, new CilOperand.MethodInstance(callee));
+        var callerBody = Body(caller.Definition,
+        [
+            // A field read through the slot's address leaves no address behind.
+            new(0, 1, address, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.LoadField, field),
+            new(2, 3, CilOperation.Pop, new CilOperand.None()),
+            new(3, 4, load, new CilOperand.Index(0)),
+            call,
+            new(5, 6, CilOperation.Return, new CilOperand.None()),
+        ], fromLocal ? [Value] : []);
+        var calleeBody = Body(callee.Definition,
+        [
+            new(0, 1, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.LoadField, field),
+            new(2, 3, CilOperation.Pop, new CilOperand.None()),
+            new(3, 4, CilOperation.Return, new CilOperand.None()),
+        ]);
+
+        var result = Create(call, callee, calleeBody).Inline(caller, callerBody,
+            Stacks([], [CliValueKind.ManagedAddress], [CliValueKind.I4], [], [CliValueKind.ValueType], []));
+
+        // The value is not copied: the body reads its field from the caller's slot.
+        Assert.DoesNotContain(result.Instructions, static instruction => instruction.Operation == CilOperation.StoreLocal);
+        Assert.Equal(CilOperation.Nop, result.Instructions[3].Operation);
+        Assert.Equal(new CilInstruction(-1, -1, address, new CilOperand.Index(0)),
+            result.Instructions[4] with { Offset = -1, NextOffset = -1, OriginalOffset = null });
+        Assert.Equal(CilOperation.LoadField, result.Instructions[5].Operation);
+    }
+
+    [Theory]
     [InlineData("stored")]
     [InlineData("exposed")]
     [InlineData("other-type")]
@@ -1073,6 +1113,53 @@ public sealed class ManagedMethodInlinerTests
                 new(CilExceptionRegionKind.Finally, 0, 8, 8, 1, null, null),
                 new(CilExceptionRegionKind.Filter, 1, 6, 8, 1, null, 7),
             },
+            result.ExceptionRegions.ToArray());
+    }
+
+    [Fact]
+    public void ReturnsBranchToANopBeforeATryThatFollowsTheCall()
+    {
+        var caller = Method("Caller", MethodSignatureModel.Create(CliValueKind.Void), 1);
+        var callee = Method("Guard", MethodSignatureModel.Create(Void, Int32), 2);
+        var calleeBody = Body(
+            callee.Definition,
+            [
+                new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(3)),
+                new(2, 3, CilOperation.Return, new CilOperand.None()),
+                new(3, 4, CilOperation.Return, new CilOperand.None()),
+            ]);
+        var call = new CilInstruction(1, 2, CilOperation.Call, new CilOperand.MethodInstance(callee));
+        var callerBody = Body(
+            caller.Definition,
+            [
+                new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(7)),
+                call,
+                new(2, 3, CilOperation.Nop, new CilOperand.None()),
+                new(3, 4, CilOperation.Leave, new CilOperand.BranchTarget(5)),
+                new(4, 5, CilOperation.EndFinally, new CilOperand.None()),
+                new(5, 6, CilOperation.Return, new CilOperand.None()),
+            ]) with
+        {
+            ExceptionRegions = [new(CilExceptionRegionKind.Finally, 2, 2, 4, 1, null, null)],
+        };
+        var inliner = new ManagedMethodInliner(
+            new RecordingResolver(Plan(callee, calleeBody), call.Offset),
+            new UnusedTerminalContinuations());
+
+        var result = Inline(inliner, caller, callerBody);
+
+        Assert.Equal(
+            [
+                CilOperation.LoadInt32, CilOperation.StoreLocal, CilOperation.LoadLocal, CilOperation.BranchIfTrue,
+                CilOperation.Branch, CilOperation.Nop, CilOperation.Nop, CilOperation.Leave,
+                CilOperation.EndFinally, CilOperation.Return,
+            ],
+            result.Instructions.Select(static instruction => instruction.Operation));
+        Assert.Equal(new CilOperand.BranchTarget(5), result.Instructions[3].Operand);
+        Assert.Equal(new CilOperand.BranchTarget(5), result.Instructions[4].Operand);
+        Assert.Equal(
+            [new CilExceptionRegion(CilExceptionRegionKind.Finally, 6, 2, 8, 1, null, null)],
             result.ExceptionRegions.ToArray());
     }
 

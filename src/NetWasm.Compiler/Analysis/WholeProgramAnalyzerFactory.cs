@@ -138,13 +138,13 @@ internal sealed class WholeProgramAnalyzerFactory(
         var operands = new ConstantOperandReader(calls, fieldRepository, typeRepository, methodRepository);
         IMethodRewriteRule ConstantCalls() => new ConstantCallRewriter(graphBuilders.Create(), calls,
             new ConstantCallEvaluator(methodBodies, calls, typeDefinitions, methodRepository, intrinsics, operands,
-                new ConstantComparisonEvaluator(typeDefinitions)),
+                new ConstantComparisonEvaluator(typeDefinitions), specializer),
             operands);
         IMethodRewriteRule? constantCallFolding = optimizationSettings.ConstantCallFolding == ConstantCallFoldingPolicy.Conservative
             ? new ConstantCallFoldingRule(ConstantCalls(), new MethodSpecializer(
             [
-                new ConstantBranchRewriter(graphBuilders.Create()),
-                new UnreachableInstructionRewriter(graphBuilders.Create()),
+                new KnownSizeRewriter(calls),
+                new ConstantBranchFolding(graphBuilders.Create()),
             ]))
             : null;
         var optimizer = optimizers.Create(
@@ -168,6 +168,9 @@ internal sealed class WholeProgramAnalyzerFactory(
                 relationships,
                 baseTypes),
             new FinalizerResolver(typeDefinitions, methodRepository, baseTypes),
+            typeDefinitions,
+            new Loops.ArrayLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
+            new Loops.VectorLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
             optimizationSettings);
         var concurrency = SelectConcurrency(
             OperatingSystem.IsBrowser(), Environment.ProcessorCount);
@@ -279,8 +282,8 @@ internal sealed class WholeProgramAnalyzerFactory(
                 new MethodSpecializer(
                 [
                     ConstantCalls(),
-                    new ConstantBranchRewriter(graphBuilders.Create()),
-                    new UnreachableInstructionRewriter(graphBuilders.Create()),
+                    new KnownSizeRewriter(calls),
+                    new ConstantBranchFolding(graphBuilders.Create()),
                 ])));
         }
         if (constantCallFolding is not null)

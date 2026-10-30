@@ -66,6 +66,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
         var accesses = new Dictionary<int, ManagedAggregateLaneAccess>();
         var rootDependencies = new List<ManagedAggregateRootDependency>();
         var materializations = new List<ManagedAggregateMaterialization>();
+        var wholeValueStores = new List<(StructuredBlockId Block, ManagedAggregateStorageId Storage)>();
         var entries = new Dictionary<StructuredBlockId, FlowState>();
         var pending = new Queue<StructuredBlockId>();
         Merge(request.Method.EntryBlock, new(
@@ -164,11 +165,14 @@ internal sealed class ManagedAggregateValueAnalyzer(
                                 request.Method.Header.LocalSignatureTypes[local].StackKind !=
                                     CliValueKind.ManagedAddress,
                                 rejected);
-                            RejectWholeValueStore(
+                            RecordWholeValueStore(
+                                instruction.Offset,
+                                blockId,
                                 ManagedAggregateStorageKind.Local,
                                 local,
                                 storages,
-                                rejected);
+                                materializations,
+                                wholeValueStores);
                             break;
                         }
                     case CilOperation.Duplicate:
@@ -250,11 +254,14 @@ internal sealed class ManagedAggregateValueAnalyzer(
                         break;
                     case CilOperation.StoreArgument:
                         RejectConsumed(stack, consumed, rejected);
-                        RejectWholeValueStore(
+                        RecordWholeValueStore(
+                            instruction.Offset,
+                            blockId,
                             ManagedAggregateStorageKind.Argument,
                             CilOperandReader.GetIndex(instruction),
                             storages,
-                            rejected);
+                            materializations,
+                            wholeValueStores);
                         break;
                     case CilOperation.Call:
                         producedOrigins = ApplyCall(
@@ -315,6 +322,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
             }
         }
 
+        RejectUnamortizedStores(request.Method, wholeValueStores, accesses, rejected);
         var selected = storages
             .Where(pair => !rejected.Contains(pair.Key))
             .ToImmutableDictionary();
@@ -501,16 +509,117 @@ internal sealed class ManagedAggregateValueAnalyzer(
         }
     }
 
-    private static void RejectWholeValueStore(
+    // A store of the whole value writes the backing storage, as a call given
+    // its address may; the lanes reload from it afterwards.
+    private static void RecordWholeValueStore(
+        int instructionOffset,
+        StructuredBlockId block,
         ManagedAggregateStorageKind kind,
         int index,
         Dictionary<ManagedAggregateStorageId, ManagedAggregateStorage> storages,
-        HashSet<ManagedAggregateStorageId> rejected)
+        List<ManagedAggregateMaterialization> materializations,
+        List<(StructuredBlockId Block, ManagedAggregateStorageId Storage)> wholeValueStores)
     {
         var id = new ManagedAggregateStorageId(kind, index);
         if (storages.ContainsKey(id))
         {
-            Reject(id, rejected);
+            materializations.Add(new(instructionOffset, id, ReloadAfter: true));
+            wholeValueStores.Add((block, id));
+        }
+    }
+
+    // Each whole-value store flushes and reloads every lane, so lanes pay off
+    // only where they are accessed in a loop the stores sit outside of, as an
+    // enumerator is assigned before the loop that moves it. A value copied
+    // into the storage on every iteration stays in memory.
+    private static void RejectUnamortizedStores(
+        StructuredMethod method,
+        List<(StructuredBlockId Block, ManagedAggregateStorageId Storage)> wholeValueStores,
+        Dictionary<int, ManagedAggregateLaneAccess> accesses,
+        HashSet<ManagedAggregateStorageId> rejected)
+    {
+        if (wholeValueStores.Count == 0)
+        {
+            return;
+        }
+        var depths = LoopDepths(method.Body);
+        foreach (var stores in wholeValueStores.GroupBy(store => store.Storage))
+        {
+            var deepestAccess = accesses.Values
+                .Where(access => access.Address.Storage == stores.Key)
+                .Select(access => depths.GetValueOrDefault(access.Block))
+                .DefaultIfEmpty(-1)
+                .Max();
+            if (stores.Any(store => depths.GetValueOrDefault(store.Block) >= deepestAccess))
+            {
+                Reject(stores.Key, rejected);
+            }
+        }
+    }
+
+    // How many loops enclose each block; a replicated block takes its deepest
+    // occurrence.
+    private static Dictionary<StructuredBlockId, int> LoopDepths(StructuredSequence body)
+    {
+        var depths = new Dictionary<StructuredBlockId, int>();
+        Visit(body, 0);
+        return depths;
+
+        void Add(StructuredBlockOccurrence? occurrence, int depth)
+        {
+            if (occurrence is not null)
+            {
+                depths[occurrence.Block] = Math.Max(depths.GetValueOrDefault(occurrence.Block), depth);
+            }
+        }
+
+        void Visit(StructuredSequence sequence, int depth)
+        {
+            foreach (var region in sequence.Regions)
+            {
+                switch (region)
+                {
+                    case StructuredCode code:
+                        Add(code.Occurrence, depth);
+                        break;
+                    case StructuredSequence nested:
+                        Visit(nested, depth);
+                        break;
+                    case StructuredIf conditional:
+                        Add(conditional.Condition, depth);
+                        Visit(conditional.WhenTrue, depth);
+                        Visit(conditional.WhenFalse, depth);
+                        break;
+                    case StructuredLoop loop:
+                        Add(loop.Condition, depth + 1);
+                        Visit(loop.Body, depth + 1);
+                        Visit(loop.ContinueBody, depth + 1);
+                        Visit(loop.ExitBody, depth);
+                        break;
+                    case StructuredPostTestLoop loop:
+                        Add(loop.Condition, depth + 1);
+                        Visit(loop.Body, depth + 1);
+                        Visit(loop.ContinueBody, depth + 1);
+                        Visit(loop.ExitBody, depth);
+                        break;
+                    case StructuredLabeledBlock labeled:
+                        Visit(labeled.Body, depth);
+                        break;
+                    case StructuredLabeledLoop labeled:
+                        Visit(labeled.Body, depth + 1);
+                        break;
+                    case StructuredDispatcher dispatcher:
+                        foreach (var block in dispatcher.Blocks)
+                        {
+                            Add(block.Occurrence, depth + 1);
+                        }
+                        foreach (var exit in dispatcher.Exits)
+                        {
+                            Visit(exit.Body, depth);
+                        }
+                        break;
+                }
+            }
         }
     }
 
@@ -638,7 +747,8 @@ internal sealed class ManagedAggregateValueAnalyzer(
                      .Where(instruction =>
                          instruction.Operation == CilOperation.LoadLocalAddress)
                      .Select(CilOperandReader.GetIndex)
-                     .Distinct())
+                     .Distinct()
+                     .Where(index => !request.ExcludedLocals.Contains(index)))
         {
             AddStorage(
                 result,
@@ -722,15 +832,33 @@ internal sealed class ManagedAggregateValueAnalyzer(
             return;
         }
         var storage = storages[recipe.Storage];
-        if (recipe.ByteOffset != 0 || !recipe.Type.Equals(storage.Type) ||
-            !_typeOperands.Resolve(instruction, methodInstance).Equals(storage.Type))
+        var type = _typeOperands.Resolve(instruction, methodInstance);
+        if (!recipe.Type.Equals(type))
         {
             Reject(recipe.Storage, rejected);
             return;
         }
-        accesses[instruction.Offset] = new(instruction.Offset, block, recipe, storage.Size, CliValueKind.ValueType, Writes: true)
+        // initobj of the whole value, or of a field such as an enumerator's
+        // current element, zeroes the lanes its bytes cover; a field narrower
+        // than a lane would need a partial lane write.
+        var size = recipe.ByteOffset == 0 && type.Equals(storage.Type)
+            ? storage.Size
+            : type.StackKind == CliValueKind.ValueType
+                ? _values.GetValueLayout(type).Size
+                : _layouts.Target.GetStorageSize(type);
+        var end = recipe.ByteOffset + size;
+        var lanes = storage.Lanes
+            .Where(lane => lane.ByteOffset < end && lane.ByteOffset + lane.Size > recipe.ByteOffset)
+            .ToArray();
+        if (lanes.Length == 0 || lanes[0].ByteOffset != recipe.ByteOffset ||
+            lanes[^1].ByteOffset + lanes[^1].Size != end)
         {
-            LaneOffsets = [.. storage.Lanes.Select(static lane => lane.ByteOffset)],
+            Reject(recipe.Storage, rejected);
+            return;
+        }
+        accesses[instruction.Offset] = new(instruction.Offset, block, recipe, size, CliValueKind.ValueType, Writes: true)
+        {
+            LaneOffsets = [.. lanes.Select(static lane => lane.ByteOffset)],
         };
     }
 

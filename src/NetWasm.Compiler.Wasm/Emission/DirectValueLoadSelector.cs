@@ -28,7 +28,7 @@ internal sealed class DirectValueLoadSelector : IDirectValueLoadSelector
             var next = instructions[index + 1];
             if (load.Operation is (CilOperation.LoadArgument or
                     CilOperation.LoadLocal or CilOperation.LoadArrayElement or
-                    CilOperation.LoadRectangularArrayElement) &&
+                    CilOperation.LoadRectangularArrayElement or CilOperation.LoadObject) &&
                 load.NextOffset == next.Offset &&
                 next.Operation is (CilOperation.Return or
                     CilOperation.StoreLocal or CilOperation.StoreArgument))

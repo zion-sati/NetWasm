@@ -64,6 +64,12 @@ internal sealed class StructuredControlFlowValidatorDraft : IStructuredControlFl
                     Visit(loop.ContinueBody, occurrences, owners, visitedGroups);
                     Visit(loop.ExitBody, occurrences, owners, visitedGroups);
                     break;
+                case StructuredLabeledBlockDraft block:
+                    Visit(block.Body, occurrences, owners, visitedGroups);
+                    break;
+                case StructuredLabeledLoopDraft loop:
+                    Visit(loop.Body, occurrences, owners, visitedGroups);
+                    break;
                 case StructuredDispatcherDraft dispatcher:
                     foreach (var block in dispatcher.Blocks)
                     {

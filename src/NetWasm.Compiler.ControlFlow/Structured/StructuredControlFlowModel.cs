@@ -90,6 +90,17 @@ public sealed record StructuredLoopContinue : StructuredRegion;
 
 public sealed record StructuredDispatcherContinue(StructuredBlockId Target) : StructuredRegion;
 
+// A branch to Next inside Body leaves the block (a Wasm block), and Next's
+// code follows it.
+public sealed record StructuredLabeledBlock(StructuredBlockId Next, StructuredSequence Body) : StructuredRegion;
+
+// A branch to Header inside Body starts Body again (a Wasm loop); Body begins
+// with Header's code and never reaches its end.
+public sealed record StructuredLabeledLoop(StructuredBlockId Header, StructuredSequence Body) : StructuredRegion;
+
+// A branch to the enclosing labeled block or loop that names Target.
+public sealed record StructuredLabelBranch(StructuredBlockId Target) : StructuredRegion;
+
 public sealed record StructuredExceptionRegion(
     StructuredExceptionGroupId Group,
     StructuredContinuationId? FallthroughContinuation) : StructuredRegion

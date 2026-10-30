@@ -47,7 +47,7 @@ public sealed class ComponentCoreModuleOptimizerTests
         {
             "input", flag, "--converge", "--remove-unused-module-elements", "--strip-debug",
             "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory",
-            "--enable-nontrapping-float-to-int",
+            "--enable-nontrapping-float-to-int", "--enable-simd",
         };
         if (width == "wasm64") expected.Add("--enable-memory64");
         expected.AddRange(["--output", "output"]);

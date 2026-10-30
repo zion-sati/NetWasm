@@ -97,7 +97,9 @@ public sealed class WasmMethodProgramBuilderTests
         public StructuredMethod Lower(
             ManagedMethodBody method,
             BranchPrefixDuplicationPolicy branchPrefixDuplication =
-                BranchPrefixDuplicationPolicy.SizeAware)
+                BranchPrefixDuplicationPolicy.SizeAware,
+            DispatcherEliminationPolicy dispatcherElimination =
+                DispatcherEliminationPolicy.Disabled)
         {
             Inputs.Add(method);
             Policies.Add(branchPrefixDuplication);

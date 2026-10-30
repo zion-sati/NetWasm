@@ -890,7 +890,7 @@ public sealed class WasmModulePlannerTests
                 MethodSignatureModel.Create(CliValueKind.I4),
                 1)
             {
-                WitImport = new("example:host@1.0.0/api", "read"),
+                WitImport = new("example:host/api@1.0.0", "read"),
             };
             DelegateType = CliTypeIdentity.Named(
                 Assembly,

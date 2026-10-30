@@ -299,7 +299,7 @@ namespace System.Runtime.CompilerServices
     }
 
     // RuntimeHelpers compatibility members are adapted from dotnet/runtime
-    // System.Private.CoreLib at commit 811225a482702af7ecc35d817966bc70b88a3a23.
+    // System.Private.CoreLib at commit 474ed963699fc29809015392738a15231aaae2de.
     // The upstream implementation is licensed under the MIT license.
     public static class RuntimeHelpers
     {
@@ -308,6 +308,22 @@ namespace System.Runtime.CompilerServices
 
         public static bool IsReferenceOrContainsReferences<T>()
             where T : allows ref struct => false;
+
+        // NetWasm: upstream's runtime supplies this body. Comparing bits is
+        // comparing values for the integer primitives, char and bool, and each
+        // specialization folds the type tests to a constant. Other types, enums
+        // included, take the paths that call Equals, which agree.
+        internal static bool IsBitwiseEquatable<T>() =>
+            typeof(T) == typeof(byte) || typeof(T) == typeof(sbyte) ||
+            typeof(T) == typeof(short) || typeof(T) == typeof(ushort) ||
+            typeof(T) == typeof(int) || typeof(T) == typeof(uint) ||
+            typeof(T) == typeof(long) || typeof(T) == typeof(ulong) ||
+            typeof(T) == typeof(nint) || typeof(T) == typeof(nuint) ||
+            typeof(T) == typeof(char) || typeof(T) == typeof(bool);
+
+        internal static bool IsPrimitiveType(this System.Reflection.CorElementType et)
+            // COR_ELEMENT_TYPE_I1,I2,I4,I8,U1,U2,U4,U8,R4,R8,I,U,CHAR,BOOLEAN
+            => ((1 << (int)et) & 0b_0011_0000_0000_0011_1111_1111_1100) != 0;
 
         public static int GetHashCode(object? value) => ObjectIdentityRuntime.GetHashCode(value);
 

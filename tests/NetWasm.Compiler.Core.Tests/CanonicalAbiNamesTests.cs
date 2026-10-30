@@ -8,11 +8,11 @@ public sealed class CanonicalAbiNamesTests
         new AssemblyIdentity("Fixture"), 0x06000001);
 
     [Theory]
-    [InlineData("example:service@1.2.3/api", "cm32p2|example:service/api@1")]
-    [InlineData("example:service@2.0.0-preview.1/api", "cm32p2|example:service/api@2")]
-    [InlineData("wasi:clocks@0.2.11/monotonic-clock",
+    [InlineData("example:service/api@1.2.3", "cm32p2|example:service/api@1")]
+    [InlineData("example:service/api@2.0.0-preview.1", "cm32p2|example:service/api@2")]
+    [InlineData("wasi:clocks/monotonic-clock@0.2.11",
         "cm32p2|wasi:clocks/monotonic-clock@0.2")]
-    [InlineData("example:service@0.3.0+build/api", "cm32p2|example:service/api@0.3")]
+    [InlineData("example:service/api@0.3.0+build", "cm32p2|example:service/api@0.3")]
     public void UsesTheWitSemanticCompatibilityTrack(
         string interfaceName,
         string expected)
@@ -22,9 +22,33 @@ public sealed class CanonicalAbiNamesTests
         Assert.Equal(expected, actual);
     }
 
+    // An interface of an unversioned package keeps its world key as it is, and
+    // so does one the world declares inline, whose key is the world's name for it.
     [Theory]
-    [InlineData("example:service@invalid/api")]
-    [InlineData("example:service@0/api")]
+    [InlineData("example:service/api", "cm32p2|example:service/api")]
+    [InlineData("api", "cm32p2|api")]
+    [InlineData("%type", "cm32p2|%type")]
+    public void NamesUnversionedAndInlineInterfacesByTheirWorldKey(string interfaceName, string expected)
+    {
+        Assert.Equal(expected, CanonicalAbiNames.ImportModule(interfaceName, WasmTarget.Wasm32));
+        Assert.Equal(expected + "|run", CanonicalAbiNames.Export(interfaceName, "run", WasmTarget.Wasm32));
+    }
+
+    // NetWasm's earlier package-first form, which bindings made by an older
+    // generator carry, is rejected with a pointer to regenerating them.
+    [Fact]
+    public void RejectsThePackageFirstFormWithARegenerationHint()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            CanonicalAbiNames.ImportModule("example:service@1.2.3/api", WasmTarget.Wasm32));
+
+        Assert.Contains("example:service@1.2.3/api", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("regenerate bindings", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("example:service/api@invalid")]
+    [InlineData("example:service/api@0")]
     public void RejectsInvalidCompatibilityVersions(string interfaceName)
     {
         Assert.Throws<ArgumentException>(() =>
@@ -34,7 +58,7 @@ public sealed class CanonicalAbiNamesTests
     [Fact]
     public void NamesEveryCanonicalAbiBoundaryKindAndTarget()
     {
-        const string interfaceName = "example:service@1.2.3/api";
+        const string interfaceName = "example:service/api@1.2.3";
         Assert.Equal("cm32p2", CanonicalAbiNames.ImportModule("", WasmTarget.Wasm32));
         Assert.Equal("cm64p2", CanonicalAbiNames.ModulePrefix(WasmTarget.Wasm64));
         Assert.Equal("cm32p2_memory", CanonicalAbiNames.Memory(WasmTarget.Wasm32));
@@ -87,11 +111,12 @@ public sealed class CanonicalAbiNamesTests
     [Theory]
     [InlineData(" ")]
     [InlineData("/api")]
-    [InlineData("example:service@1.0/")]
-    [InlineData("example:service/api")]
-    [InlineData("@1.0/api")]
-    [InlineData("example:service@/api")]
-    [InlineData("example:service@0.x/api")]
+    [InlineData("example:service/")]
+    [InlineData("example:service/api@")]
+    [InlineData("service/api@1.0.0")]
+    [InlineData("example:service/api name")]
+    [InlineData("api name")]
+    [InlineData("example:service/api@0.x")]
     public void RejectsEveryMalformedInterfaceBoundary(string interfaceName)
     {
         Assert.Throws<ArgumentException>(() =>

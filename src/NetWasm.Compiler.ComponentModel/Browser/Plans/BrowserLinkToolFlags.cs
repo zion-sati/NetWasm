@@ -9,6 +9,7 @@ internal static class BrowserLinkToolFlags
     {
         "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types",
         "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-memory64",
+        "--enable-simd",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     internal static readonly FrozenSet<string> Optimization = new[]

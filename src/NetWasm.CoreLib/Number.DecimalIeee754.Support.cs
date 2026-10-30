@@ -107,15 +107,33 @@ namespace System.Globalization
 
 namespace System
 {
-    internal static class SR
+    internal static partial class SR
     {
         internal const string Arg_InvalidBase = "Invalid Base.";
+        internal const string Arg_MustBeNullTerminatedString = "The string must be null-terminated.";
+        internal const string Arg_TypeNotSupported = "Specified type is not supported";
+        internal const string Argument_DestinationTooShort = "Destination is too short.";
+        internal const string ArgumentOutOfRange_IndexMustBeLess = "Index was out of range. Must be non-negative and less than the size of the collection.";
+        internal const string NotSupported_Type = "Type is not supported.";
         internal const string Argument_BadFormatSpecifier = "Format specifier was invalid.";
         internal const string Argument_CannotParsePrecision = "Characters following the format symbol must be a number of {0} or less.";
         internal const string Argument_GWithPrecisionNotSupported = "The 'G' format combined with a precision is not supported.";
         internal const string Argument_PrecisionTooLarge = "Precision cannot be larger than {0}.";
         internal const string Arithmetic_NaN = "Function does not accept floating point Not-a-Number values.";
         internal const string Overflow_Decimal = "Value was either too large or too small for a Decimal.";
+        internal const string Arg_DecBitCtor = "Decimal constructor requires an array or span of four valid decimal bytes.";
+        internal const string Arg_MustBeDecimal = "Object must be of type Decimal.";
+        internal const string ArgumentOutOfRange_DecimalRound = "Decimal can only round to between 0 and 28 digits of precision.";
+        internal const string Overflow_Char = "Value was either too large or too small for a character.";
+        internal const string Overflow_Currency = "Value was either too large or too small for a Currency.";
+        internal const string Overflow_Int32 = "Value was either too large or too small for an Int32.";
+        internal const string Overflow_Int64 = "Value was either too large or too small for an Int64.";
+        internal const string Overflow_UInt32 = "Value was either too large or too small for a UInt32.";
+        internal const string Overflow_UInt64 = "Value was either too large or too small for a UInt64.";
+        internal const string Overflow_Byte = "Value was either too large or too small for an unsigned byte.";
+        internal const string Overflow_SByte = "Value was either too large or too small for a signed byte.";
+        internal const string Overflow_Int16 = "Value was either too large or too small for an Int16.";
+        internal const string Overflow_UInt16 = "Value was either too large or too small for a UInt16.";
         internal const string Arg_MustBeDecimal32 = "Object must be of type Decimal32.";
         internal const string Arg_MustBeDecimal64 = "Object must be of type Decimal64.";
         internal const string Arg_MustBeDecimal128 = "Object must be of type Decimal128.";

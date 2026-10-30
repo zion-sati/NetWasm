@@ -160,16 +160,22 @@ internal sealed class ObjectConstructionEmitter(
         EmitArguments(request, code, signature, argumentBase);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(GetConstructorIndex(request, constructor, functionIndices)))));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
+        // A vector is a v128 value, read back from the storage its constructor filled.
+        var kind = declaringType.StackKind == CliValueKind.V128 ? CliValueKind.V128 : CliValueKind.ValueType;
+        if (kind == CliValueKind.V128)
+        {
+            ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, 0, value.Size);
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,
             argumentBase,
-            CliValueKind.ValueType)))));
+            kind)))));
         ReplaceArgumentsWithResult(
             request,
             code,
             argumentBase,
             signature.ParameterTypes.Length,
-            CliValueKind.ValueType);
+            kind);
     }
 
     private void EmitReferenceType(

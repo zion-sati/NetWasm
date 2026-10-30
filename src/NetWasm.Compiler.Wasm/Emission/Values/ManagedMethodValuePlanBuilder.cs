@@ -7,7 +7,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Values;
 internal sealed class ManagedMethodValuePlanBuilder(
     IManagedAggregateValueAnalyzer analyzer,
     IManagedAggregateSsaPlanner aggregates,
-    IManagedAggregateRootMapProjector roots) : IManagedMethodValuePlanBuilder
+    IManagedAggregateRootMapProjector roots,
+    ITransientAggregatePromotionPlanner transients) : IManagedMethodValuePlanBuilder
 {
     private readonly IManagedAggregateValueAnalyzer _analyzer = analyzer ??
         throw new ArgumentNullException(nameof(analyzer));
@@ -15,6 +16,8 @@ internal sealed class ManagedMethodValuePlanBuilder(
         throw new ArgumentNullException(nameof(aggregates));
     private readonly IManagedAggregateRootMapProjector _roots = roots ??
         throw new ArgumentNullException(nameof(roots));
+    private readonly ITransientAggregatePromotionPlanner _transients = transients ??
+        throw new ArgumentNullException(nameof(transients));
 
     public ManagedMethodValuePlan Build(ManagedMethodValuePlanRequest request)
     {
@@ -35,6 +38,8 @@ internal sealed class ManagedMethodValuePlanBuilder(
             request.Enabled)
         {
             References = request.References,
+            // A transient tuple local becomes values without storage.
+            ExcludedLocals = _transients.Create(request.Method).PromotedLocalIndices,
         });
         var plan = _aggregates.Plan(new(request.Method, analysis) { References = request.References });
         if (!IsEmissionSupported(plan) ||

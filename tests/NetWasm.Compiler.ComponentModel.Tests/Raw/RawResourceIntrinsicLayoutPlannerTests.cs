@@ -136,7 +136,7 @@ public sealed class RawResourceIntrinsicLayoutPlannerTests
     private static RawWitImportDeclaration.Resource Declaration(CanonicalAbiFunctionKind kind)
     {
         using var parsed = JsonDocument.Parse("\"resource\"");
-        return new("example:files@1.0.0/api", new(0, "file", parsed.RootElement.Clone(), 0), kind);
+        return new("example:files/api@1.0.0", new(0, "file", parsed.RootElement.Clone(), 0), kind);
     }
 
     private sealed class RecordingDependencies : IWitCanonicalTypeResolver, IRawCanonicalImportIdentityFormatter, ICanonicalAbiSignaturePlanner

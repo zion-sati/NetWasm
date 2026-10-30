@@ -1147,7 +1147,7 @@ namespace System
             return value > 0 && bits != 0 && (bits & (bits - 1)) == 0;
         }
         // Scalar bit operations follow dotnet/runtime Int16.cs at
-        // 811225a482702af7ecc35d817966bc70b88a3a23.
+        // 474ed963699fc29809015392738a15231aaae2de.
         public static short LeadingZeroCount(short value) => (short)(Numerics.BitOperations.LeadingZeroCount((ushort)value) - 16);
         public static short PopCount(short value) => (short)Numerics.BitOperations.PopCount((ushort)value);
         public static short RotateLeft(short value, int rotateAmount) => (short)((value << (rotateAmount & 15)) | ((ushort)value >> ((16 - rotateAmount) & 15)));
@@ -1271,24 +1271,6 @@ namespace System
         static short Numerics.IShiftOperators<short, int, short>.operator <<(short value, int shiftAmount) => (short)(value << (shiftAmount & 15));
         static short Numerics.IShiftOperators<short, int, short>.operator >>(short value, int shiftAmount) => (short)(value >> (shiftAmount & 15));
         static short Numerics.IShiftOperators<short, int, short>.operator >>>(short value, int shiftAmount) => (short)((ulong)value >> (shiftAmount & 15));
-        private static bool TryConvert<TOther>(TOther value, out short result)
-            where TOther : Numerics.INumberBase<TOther>
-        {
-            try { result = Convert.ToInt16((object?)value); return true; }
-            catch { result = 0; return false; }
-        }
-        private static bool TryConvertTo<TOther>(short value, out TOther result)
-            where TOther : Numerics.INumberBase<TOther>
-        {
-            try { result = TOther.CreateTruncating(value); return true; }
-            catch { result = default!; return false; }
-        }
-        static bool Numerics.INumberBase<short>.TryConvertFromChecked<TOther>(TOther value, out short result) => TryConvert(value, out result);
-        static bool Numerics.INumberBase<short>.TryConvertFromSaturating<TOther>(TOther value, out short result) => TryConvert(value, out result);
-        static bool Numerics.INumberBase<short>.TryConvertFromTruncating<TOther>(TOther value, out short result) => TryConvert(value, out result);
-        static bool Numerics.INumberBase<short>.TryConvertToChecked<TOther>(short value, out TOther result) => TryConvertTo(value, out result);
-        static bool Numerics.INumberBase<short>.TryConvertToSaturating<TOther>(short value, out TOther result) => TryConvertTo(value, out result);
-        static bool Numerics.INumberBase<short>.TryConvertToTruncating<TOther>(short value, out TOther result) => TryConvertTo(value, out result);
         public static short Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out short result) => TryParse(value, style, out result);
         public static short Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -1468,14 +1450,6 @@ namespace System
         static ushort Numerics.IShiftOperators<ushort, int, ushort>.operator <<(ushort v, int n) => (ushort)(v << (n & 15));
         static ushort Numerics.IShiftOperators<ushort, int, ushort>.operator >>(ushort v, int n) => (ushort)(v >> (n & 15));
         static ushort Numerics.IShiftOperators<ushort, int, ushort>.operator >>>(ushort v, int n) => (ushort)(v >> (n & 15));
-        private static bool TryConvert<TOther>(TOther value, out ushort result) where TOther : Numerics.INumberBase<TOther> { try { result = Convert.ToUInt16((object?)value); return true; } catch { result = 0; return false; } }
-        private static bool TryConvertTo<TOther>(ushort value, out TOther result) where TOther : Numerics.INumberBase<TOther> { try { result = TOther.CreateTruncating(value); return true; } catch { result = default!; return false; } }
-        static bool Numerics.INumberBase<ushort>.TryConvertFromChecked<TOther>(TOther v, out ushort r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<ushort>.TryConvertFromSaturating<TOther>(TOther v, out ushort r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<ushort>.TryConvertFromTruncating<TOther>(TOther v, out ushort r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<ushort>.TryConvertToChecked<TOther>(ushort v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<ushort>.TryConvertToSaturating<TOther>(ushort v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<ushort>.TryConvertToTruncating<TOther>(ushort v, out TOther r) => TryConvertTo(v, out r);
         public static ushort Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out ushort result) => TryParse(value, style, out result);
         public static ushort Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -1670,14 +1644,6 @@ namespace System
         static int Numerics.IShiftOperators<int, int, int>.operator <<(int v, int n) => v << (n & 31);
         static int Numerics.IShiftOperators<int, int, int>.operator >>(int v, int n) => v >> (n & 31);
         static int Numerics.IShiftOperators<int, int, int>.operator >>>(int v, int n) => (int)((uint)v >> (n & 31));
-        private static bool TryConvert<TOther>(TOther value, out int result) where TOther : Numerics.INumberBase<TOther> { try { result = Convert.ToInt32((object?)value); return true; } catch { result = 0; return false; } }
-        private static bool TryConvertTo<TOther>(int value, out TOther result) where TOther : Numerics.INumberBase<TOther> { try { result = TOther.CreateTruncating(value); return true; } catch { result = default!; return false; } }
-        static bool Numerics.INumberBase<int>.TryConvertFromChecked<TOther>(TOther v, out int r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<int>.TryConvertFromSaturating<TOther>(TOther v, out int r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<int>.TryConvertFromTruncating<TOther>(TOther v, out int r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<int>.TryConvertToChecked<TOther>(int v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<int>.TryConvertToSaturating<TOther>(int v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<int>.TryConvertToTruncating<TOther>(int v, out TOther r) => TryConvertTo(v, out r);
         public static int Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out int result) => TryParse(value, style, out result);
         public static int Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -1857,14 +1823,6 @@ namespace System
         static uint Numerics.IShiftOperators<uint, int, uint>.operator <<(uint v, int n) => (uint)(v << (n & 31));
         static uint Numerics.IShiftOperators<uint, int, uint>.operator >>(uint v, int n) => (uint)(v >> (n & 31));
         static uint Numerics.IShiftOperators<uint, int, uint>.operator >>>(uint v, int n) => (uint)((ulong)v >> (n & 31));
-        private static bool TryConvert<TOther>(TOther value, out uint result) where TOther : Numerics.INumberBase<TOther> { try { result = Convert.ToUInt32((object?)value); return true; } catch { result = 0; return false; } }
-        private static bool TryConvertTo<TOther>(uint value, out TOther result) where TOther : Numerics.INumberBase<TOther> { try { result = TOther.CreateTruncating(value); return true; } catch { result = default!; return false; } }
-        static bool Numerics.INumberBase<uint>.TryConvertFromChecked<TOther>(TOther v, out uint r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<uint>.TryConvertFromSaturating<TOther>(TOther v, out uint r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<uint>.TryConvertFromTruncating<TOther>(TOther v, out uint r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<uint>.TryConvertToChecked<TOther>(uint v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<uint>.TryConvertToSaturating<TOther>(uint v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<uint>.TryConvertToTruncating<TOther>(uint v, out TOther r) => TryConvertTo(v, out r);
         public static uint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out uint result) => TryParse(value, style, out result);
         public static uint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -2039,211 +1997,7 @@ namespace System
         static long Numerics.IShiftOperators<long, int, long>.operator <<(long v, int n) => (long)(v << (n & 63));
         static long Numerics.IShiftOperators<long, int, long>.operator >>(long v, int n) => (long)(v >> (n & 63));
         static long Numerics.IShiftOperators<long, int, long>.operator >>>(long v, int n) => (long)((ulong)v >> (n & 63));
-        private static bool TryConvert<TOther>(TOther value, out long result) where TOther : Numerics.INumberBase<TOther> { try { result = Convert.ToInt64((object?)value); return true; } catch { result = 0; return false; } }
-        static bool Numerics.INumberBase<long>.TryConvertFromChecked<TOther>(TOther v, out long r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<long>.TryConvertFromSaturating<TOther>(TOther v, out long r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<long>.TryConvertFromTruncating<TOther>(TOther v, out long r) => TryConvert(v, out r);
-        // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23.
-        static bool Numerics.INumberBase<long>.TryConvertToChecked<TOther>(long value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `long` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = checked((byte)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = checked((char)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = (decimal)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = checked((ushort)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = checked((uint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = checked((ulong)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = checked((UInt128)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = checked((nuint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<long>.TryConvertToSaturating<TOther>(long value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `long` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = (value >= byte.MaxValue) ? byte.MaxValue :
-                                    (value <= byte.MinValue) ? byte.MinValue : (byte)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = (value >= char.MaxValue) ? char.MaxValue :
-                                    (value <= char.MinValue) ? char.MinValue : (char)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = (decimal)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = (value >= ushort.MaxValue) ? ushort.MaxValue :
-                                      (value <= ushort.MinValue) ? ushort.MinValue : (ushort)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = (value >= uint.MaxValue) ? uint.MaxValue :
-                                    (value <= uint.MinValue) ? uint.MinValue : (uint)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = (value <= 0) ? ulong.MinValue : (ulong)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = (value <= 0) ? UInt128.MinValue : (UInt128)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = (value <= 0) ? (nuint)0 :
-                    ((ulong)value >= (ulong)nuint.MaxValue) ? nuint.MaxValue : (nuint)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<long>.TryConvertToTruncating<TOther>(long value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `long` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = (byte)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = (char)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = (decimal)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = (ushort)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = (uint)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = (ulong)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = (UInt128)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = (nuint)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
+        // Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
         public static long Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out long result) => TryParse(value, style, out result);
         public static long Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -2404,286 +2158,8 @@ namespace System
         static ulong Numerics.IShiftOperators<ulong, int, ulong>.operator <<(ulong v, int n) => (ulong)(v << (n & 63));
         static ulong Numerics.IShiftOperators<ulong, int, ulong>.operator >>(ulong v, int n) => (ulong)(v >> (n & 63));
         static ulong Numerics.IShiftOperators<ulong, int, ulong>.operator >>>(ulong v, int n) => (ulong)((ulong)v >> (n & 63));
-        private static bool TryConvert<TOther>(TOther value, out ulong result) where TOther : Numerics.INumberBase<TOther> { try { result = Convert.ToUInt64((object?)value); return true; } catch { result = 0; return false; } }
-        static bool Numerics.INumberBase<ulong>.TryConvertFromChecked<TOther>(TOther v, out ulong r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<ulong>.TryConvertFromSaturating<TOther>(TOther v, out ulong r) => TryConvert(v, out r);
-        private static bool TryConvertFromTruncating<TOther>(TOther value, out ulong result)
-            where TOther : Numerics.INumberBase<TOther>
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `ulong` will handle the other unsigned types and
-            // `ConvertTo` will handle the signed types
 
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualValue = (byte)(object)value;
-                result = actualValue;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualValue = (char)(object)value;
-                result = actualValue;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualValue = (decimal)(object)value;
-                result = (actualValue >= MaxValue) ? MaxValue :
-                         (actualValue <= MinValue) ? MinValue : (ulong)actualValue;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualValue = (ushort)(object)value;
-                result = actualValue;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualValue = (uint)(object)value;
-                result = actualValue;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualValue = (UInt128)(object)value;
-                result = (ulong)actualValue;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualValue = (nuint)(object)value;
-                result = actualValue;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-
-        static bool Numerics.INumberBase<ulong>.TryConvertFromTruncating<TOther>(TOther value, out ulong result) => TryConvertFromTruncating(value, out result);
-        // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23.
-        static bool Numerics.INumberBase<ulong>.TryConvertToChecked<TOther>(ulong value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `ulong` will handle the other unsigned types and
-            // `ConvertTo` will handle the signed types
-
-            if (typeof(TOther) == typeof(double))
-            {
-                var actualResult = (double)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(Half))
-            {
-                var actualResult = (Half)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(short))
-            {
-                var actualResult = checked((short)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(int))
-            {
-                var actualResult = checked((int)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(long))
-            {
-                var actualResult = checked((long)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(Int128))
-            {
-                var actualResult = checked((Int128)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nint))
-            {
-                var actualResult = checked((nint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(sbyte))
-            {
-                var actualResult = checked((sbyte)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(float))
-            {
-                var actualResult = (float)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<ulong>.TryConvertToSaturating<TOther>(ulong value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `ulong` will handle the other unsigned types and
-            // `ConvertTo` will handle the signed types
-
-            if (typeof(TOther) == typeof(double))
-            {
-                var actualResult = (double)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(Half))
-            {
-                var actualResult = (Half)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(short))
-            {
-                var actualResult = (value >= (ulong)short.MaxValue) ? short.MaxValue : (short)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(int))
-            {
-                var actualResult = (value >= int.MaxValue) ? int.MaxValue : (int)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(long))
-            {
-                var actualResult = (value >= long.MaxValue) ? long.MaxValue : (long)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(Int128))
-            {
-                var actualResult = (Int128)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nint))
-            {
-                var actualResult = (value >= (ulong)nint.MaxValue) ? nint.MaxValue : (nint)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(sbyte))
-            {
-                var actualResult = (value >= (ulong)sbyte.MaxValue) ? sbyte.MaxValue : (sbyte)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(float))
-            {
-                var actualResult = (float)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<ulong>.TryConvertToTruncating<TOther>(ulong value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `ulong` will handle the other unsigned types and
-            // `ConvertTo` will handle the signed types
-
-            if (typeof(TOther) == typeof(double))
-            {
-                var actualResult = (double)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(Half))
-            {
-                var actualResult = (Half)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(short))
-            {
-                var actualResult = (short)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(int))
-            {
-                var actualResult = (int)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(long))
-            {
-                var actualResult = (long)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(Int128))
-            {
-                var actualResult = (Int128)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nint))
-            {
-                var actualResult = (nint)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(sbyte))
-            {
-                var actualResult = (sbyte)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(float))
-            {
-                var actualResult = (float)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
+        // Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
         public static ulong Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out ulong result) => TryParse(value, style, out result);
         public static ulong Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -2721,7 +2197,7 @@ namespace System
             throw new ArgumentException();
         }
         public override bool Equals(object? value) => value is char other && Equals(other);
-        public override int GetHashCode() => this;
+        public override int GetHashCode() => (int)this | ((int)this << 16);
         public override string ToString() => new(this, 1);
         public static char Parse(string value)
         {
@@ -2871,14 +2347,6 @@ namespace System
         static char Numerics.IShiftOperators<char, int, char>.operator <<(char v, int n) => (char)(v << (n & 15));
         static char Numerics.IShiftOperators<char, int, char>.operator >>(char v, int n) => (char)(v >> (n & 15));
         static char Numerics.IShiftOperators<char, int, char>.operator >>>(char v, int n) => (char)((ulong)v >> (n & 15));
-        private static bool TryConvert<TOther>(TOther value, out char result) where TOther : Numerics.INumberBase<TOther> { try { result = (char)Convert.ToUInt16((object?)value); return true; } catch { result = (char)0; return false; } }
-        private static bool TryConvertTo<TOther>(char value, out TOther result) where TOther : Numerics.INumberBase<TOther> { try { result = TOther.CreateTruncating(value); return true; } catch { result = default!; return false; } }
-        static bool Numerics.INumberBase<char>.TryConvertFromChecked<TOther>(TOther v, out char r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<char>.TryConvertFromSaturating<TOther>(TOther v, out char r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<char>.TryConvertFromTruncating<TOther>(TOther v, out char r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<char>.TryConvertToChecked<TOther>(char v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<char>.TryConvertToSaturating<TOther>(char v, out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<char>.TryConvertToTruncating<TOther>(char v, out TOther r) => TryConvertTo(v, out r);
         public static char Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value);
         public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out char result) => TryParse(value, out result);
         public static char Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
@@ -2983,10 +2451,12 @@ namespace System
         public static float Zero => 0;
         public static int Radix => 2;
         public static float Abs(float v) => (float)Math.Abs(v);
-        public static float Clamp(float v, float min, float max) => min > max ? throw new ArgumentException() : v < min ? min : v > max ? max : v;
+        // As upstream: IEEE 754:2019 maximum and minimum, which propagate NaN and
+        // order -0 below +0; Clamp composes them.
+        public static float Clamp(float v, float min, float max) => min > max ? throw new ArgumentException() : Min(Max(v, min), max);
         public static float CopySign(float v, float s) => IsNegative(v) == IsNegative(s) ? v : -v;
-        public static float Max(float l, float r) => l >= r ? l : r;
-        public static float Min(float l, float r) => l <= r ? l : r;
+        public static float Max(float l, float r) => Math.Max(l, r);
+        public static float Min(float l, float r) => Math.Min(l, r);
         public static int Sign(float v) => IsNaN(v) ? throw new ArithmeticException() : v < 0 ? -1 : v > 0 ? 1 : 0;
         public static bool IsCanonical(float v) => true;
         public static bool IsComplexNumber(float v) => false;
@@ -3013,28 +2483,27 @@ namespace System
         public static float AtanPi(float v) => Atan(v) / Pi;
         public static float Atan2(float y, float x) => (float)Math.Atan2(y, x);
         public static float Atan2Pi(float y, float x) => Atan2(y, x) / Pi;
-        public static float Cos(float v) => (float)Math.Cos(v);
-        public static float CosPi(float v) => Cos(Pi * v);
-        public static float Sin(float v) => (float)Math.Sin(v);
-        public static (float Sin, float Cos) SinCos(float v) => (Sin(v), Cos(v));
-        public static (float SinPi, float CosPi) SinCosPi(float v) => (SinPi(v), CosPi(v));
-        public static float SinPi(float v) => Sin(Pi * v);
-        public static float Tan(float v) => (float)Math.Tan(v);
-        public static float TanPi(float v) => Tan(Pi * v);
+        public static float Cos(float v) => MathF.Cos(v);
+        public static float Sin(float v) => MathF.Sin(v);
+        public static (float Sin, float Cos) SinCos(float v) => MathF.SinCos(v);
+        public static float Tan(float v) => MathF.Tan(v);
         public static float Acosh(float v) => (float)Math.Acosh(v);
         public static float Asinh(float v) => (float)Math.Asinh(v);
         public static float Atanh(float v) => (float)Math.Atanh(v);
         public static float Cosh(float v) => (float)Math.Cosh(v);
         public static float Sinh(float v) => (float)Math.Sinh(v);
         public static float Tanh(float v) => (float)Math.Tanh(v);
-        public static float Exp(float v) => (float)Math.Exp(v);
-        public static float Exp2(float v) => (float)Math.Pow(2.0, v);
-        public static float Exp10(float v) => (float)Math.Pow(10.0, v);
-        public static float Log(float v) => (float)Math.Log(v);
+        public static float Exp(float v) => MathF.Exp(v);
+        // Upstream computes MathF.Pow(2, x) and MathF.Pow(10, x), and desktop answers
+        // vary with the platform's powf. The double exp2, rounded once, is faster here and
+        // within half an ulp.
+        public static float Exp2(float v) => (float)double.Exp2(v);
+        public static float Exp10(float v) => (float)double.Exp2(3.321928094887362 * v);
+        public static float Log(float v) => MathF.Log(v);
         public static float Log(float v, float b) => (float)Math.Log(v, b);
-        public static float Log2(float v) => (float)Math.Log2(v);
+        public static float Log2(float v) => MathF.Log2(v);
         public static float Log10(float v) => (float)Math.Log10(v);
-        public static float Pow(float x, float y) => (float)Math.Pow(x, y);
+        public static float Pow(float x, float y) => MathF.Pow(x, y);
         public static float Cbrt(float v) => (float)Math.Cbrt(v);
         public static float Hypot(float x, float y) => (float)Math.Sqrt((double)x * x + (double)y * y);
         public static float RootN(float x, int n) => (float)Math.Pow(x, 1.0 / n);
@@ -3113,152 +2582,7 @@ namespace System
         static float Numerics.IFloatingPointIeee754<float>.NegativeZero => NegativeZero;
         static float Numerics.IFloatingPointIeee754<float>.PositiveInfinity => PositiveInfinity;
         static float Numerics.ISignedNumber<float>.NegativeOne => (float)(-1);
-        private static bool TryConvert<TOther>(TOther v, out float r) where TOther : Numerics.INumberBase<TOther> { try { r = (float)Convert.ToDouble((object?)v); return true; } catch { r = 0; return false; } }
-        // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23.
-        private static bool TryConvertTo<TOther>(float value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-            where TOther : Numerics.INumberBase<TOther>
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `float` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types.
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = (byte)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = (char)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = (value >= +79228162514264337593543950336.0f) ? decimal.MaxValue :
-                                       (value <= -79228162514264337593543950336.0f) ? decimal.MinValue :
-                                       IsNaN(value) ? 0.0m : (decimal)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = (ushort)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = (uint)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = (ulong)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = (UInt128)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = (nuint)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<float>.TryConvertFromChecked<TOther>(TOther v, out float r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<float>.TryConvertFromSaturating<TOther>(TOther v, out float r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<float>.TryConvertFromTruncating<TOther>(TOther v, out float r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<float>.TryConvertToChecked<TOther>(float value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `float` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types.
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = checked((byte)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = checked((char)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = checked((decimal)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = checked((ushort)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = checked((uint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = checked((ulong)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = checked((UInt128)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = checked((nuint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<float>.TryConvertToSaturating<TOther>(float v, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<float>.TryConvertToTruncating<TOther>(float v, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther r) => TryConvertTo(v, out r);
+        // Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
         static float Numerics.IAdditionOperators<float, float, float>.operator +(float l, float r) => l + r;
         static float Numerics.IAdditionOperators<float, float, float>.operator checked +(float l, float r) => checked(l + r);
         static float Numerics.IAdditiveIdentity<float, float>.AdditiveIdentity => Zero;
@@ -3353,10 +2677,12 @@ namespace System
         public static double Zero => 0;
         public static int Radix => 2;
         public static double Abs(double v) => (double)Math.Abs(v);
-        public static double Clamp(double v, double min, double max) => min > max ? throw new ArgumentException() : v < min ? min : v > max ? max : v;
+        // As upstream: IEEE 754:2019 maximum and minimum, which propagate NaN and
+        // order -0 below +0; Clamp composes them.
+        public static double Clamp(double v, double min, double max) => min > max ? throw new ArgumentException() : Min(Max(v, min), max);
         public static double CopySign(double v, double s) => IsNegative(v) == IsNegative(s) ? v : -v;
-        public static double Max(double l, double r) => l >= r ? l : r;
-        public static double Min(double l, double r) => l <= r ? l : r;
+        public static double Max(double l, double r) => Math.Max(l, r);
+        public static double Min(double l, double r) => Math.Min(l, r);
         public static int Sign(double v) => IsNaN(v) ? throw new ArithmeticException() : v < 0 ? -1 : v > 0 ? 1 : 0;
         public static bool IsCanonical(double v) => true;
         public static bool IsComplexNumber(double v) => false;
@@ -3384,13 +2710,9 @@ namespace System
         public static double Atan2(double y, double x) => (double)Math.Atan2(y, x);
         public static double Atan2Pi(double y, double x) => Atan2(y, x) / Pi;
         public static double Cos(double v) => (double)Math.Cos(v);
-        public static double CosPi(double v) => Cos(Pi * v);
         public static double Sin(double v) => (double)Math.Sin(v);
         public static (double Sin, double Cos) SinCos(double v) => (Sin(v), Cos(v));
-        public static (double SinPi, double CosPi) SinCosPi(double v) => (SinPi(v), CosPi(v));
-        public static double SinPi(double v) => Sin(Pi * v);
         public static double Tan(double v) => (double)Math.Tan(v);
-        public static double TanPi(double v) => Tan(Pi * v);
         public static double Acosh(double v) => (double)Math.Acosh(v);
         public static double Asinh(double v) => (double)Math.Asinh(v);
         public static double Atanh(double v) => (double)Math.Atanh(v);
@@ -3398,7 +2720,7 @@ namespace System
         public static double Sinh(double v) => (double)Math.Sinh(v);
         public static double Tanh(double v) => (double)Math.Tanh(v);
         public static double Exp(double v) => (double)Math.Exp(v);
-        public static double Exp2(double v) => (double)Math.Pow(2.0, v);
+        public static double Exp2(double v) => Math.Exp2(v);
         public static double Exp10(double v) => (double)Math.Pow(10.0, v);
         public static double Log(double v) => (double)Math.Log(v);
         public static double Log(double v, double b) => (double)Math.Log(v, b);
@@ -3483,152 +2805,7 @@ namespace System
         static double Numerics.IFloatingPointIeee754<double>.NegativeZero => NegativeZero;
         static double Numerics.IFloatingPointIeee754<double>.PositiveInfinity => PositiveInfinity;
         static double Numerics.ISignedNumber<double>.NegativeOne => (double)(-1);
-        private static bool TryConvert<TOther>(TOther v, out double r) where TOther : Numerics.INumberBase<TOther> { try { r = Convert.ToDouble((object?)v); return true; } catch { r = 0; return false; } }
-        // Ported from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23.
-        private static bool TryConvertTo<TOther>(double value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-            where TOther : Numerics.INumberBase<TOther>
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `double` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = (byte)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = (char)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = (value >= +79228162514264337593543950336.0) ? decimal.MaxValue :
-                                       (value <= -79228162514264337593543950336.0) ? decimal.MinValue :
-                                       IsNaN(value) ? 0.0m : (decimal)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = (ushort)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = (uint)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = (ulong)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = (UInt128)value;
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = (nuint)value;
-
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<double>.TryConvertFromChecked<TOther>(TOther v, out double r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<double>.TryConvertFromSaturating<TOther>(TOther v, out double r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<double>.TryConvertFromTruncating<TOther>(TOther v, out double r) => TryConvert(v, out r);
-        static bool Numerics.INumberBase<double>.TryConvertToChecked<TOther>(double value, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther result)
-        {
-            // In order to reduce overall code duplication and improve the inlinabilty of these
-            // methods for the corelib types we have `ConvertFrom` handle the same sign and
-            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
-            // between signed and unsigned types, the one that handles unsigned will also
-            // handle `Decimal`.
-            //
-            // That is, `ConvertFrom` for `double` will handle the other signed types and
-            // `ConvertTo` will handle the unsigned types
-
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actualResult = checked((byte)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(char))
-            {
-                var actualResult = checked((char)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(decimal))
-            {
-                var actualResult = checked((decimal)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ushort))
-            {
-                var actualResult = checked((ushort)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(uint))
-            {
-                var actualResult = checked((uint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(ulong))
-            {
-                var actualResult = checked((ulong)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(UInt128))
-            {
-                var actualResult = checked((UInt128)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else if (typeof(TOther) == typeof(nuint))
-            {
-                var actualResult = checked((nuint)value);
-                result = (TOther)(object)actualResult;
-                return true;
-            }
-            else
-            {
-                result = default;
-                return false;
-            }
-        }
-        static bool Numerics.INumberBase<double>.TryConvertToSaturating<TOther>(double v, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther r) => TryConvertTo(v, out r);
-        static bool Numerics.INumberBase<double>.TryConvertToTruncating<TOther>(double v, [Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TOther r) => TryConvertTo(v, out r);
+        // Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
         static double Numerics.IAdditionOperators<double, double, double>.operator +(double l, double r) => l + r;
         static double Numerics.IAdditionOperators<double, double, double>.operator checked +(double l, double r) => checked(l + r);
         static double Numerics.IAdditiveIdentity<double, double>.AdditiveIdentity => Zero;

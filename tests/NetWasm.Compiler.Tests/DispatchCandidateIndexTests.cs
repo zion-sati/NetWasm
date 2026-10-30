@@ -208,6 +208,52 @@ public sealed class DispatchCandidateIndexTests
         Assert.Empty(factory.Create().Index(candidate));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReceiverBoundAdmitsOnlyReceiversAssignableToIt(bool receiversFirst)
+    {
+        var contract = Type("IEnumerator");
+        var bound = Type("IEnumeratorOfA");
+        var ofA = Type("EnumeratorOfA");
+        // Assignable to the bound only through generic variance.
+        var ofDerived = Type("EnumeratorOfDerived");
+        var ofB = Type("EnumeratorOfB");
+        var relationships = new TableRelationshipClassifier(new()
+        {
+            [(ofA, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(ofDerived, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(ofB, contract)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(ofA, bound)] = TypeRelationshipCharacteristics.Hierarchy,
+            [(ofDerived, bound)] = TypeRelationshipCharacteristics.GenericVariance,
+        });
+        var index = new DispatchCandidateIndex(relationships);
+        var bounded = Declaration("MoveNext", 1, contract) with { ReceiverBound = bound };
+        var unbounded = Declaration("Reset", 2, contract);
+        CliTypeIdentity[] receivers = [ofA, ofDerived, ofB];
+
+        DispatchCandidate[] candidates = receiversFirst
+            ? [.. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver))),
+                .. index.Index(new DispatchDeclarationCandidate("bounded", bounded)),
+                .. index.Index(new DispatchDeclarationCandidate("unbounded", unbounded))]
+            : [.. index.Index(new DispatchDeclarationCandidate("bounded", bounded)),
+                .. index.Index(new DispatchDeclarationCandidate("unbounded", unbounded)),
+                .. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver)))];
+
+        Assert.Equal([ofA, ofDerived],
+            candidates.Where(static candidate => candidate.DispatchKey == "bounded").Select(static candidate => candidate.Receiver));
+        Assert.Equal(receivers,
+            candidates.Where(static candidate => candidate.DispatchKey == "unbounded").Select(static candidate => candidate.Receiver));
+    }
+
+    private sealed class TableRelationshipClassifier(
+        Dictionary<(CliTypeIdentity Candidate, CliTypeIdentity Target), TypeRelationshipCharacteristics> relationships) :
+        ITypeRelationshipClassifier
+    {
+        public TypeRelationship Classify(CliTypeIdentity candidate, CliTypeIdentity target) =>
+            new(relationships.GetValueOrDefault((candidate, target)));
+    }
+
     private static DispatchDeclaration Declaration(
         string name,
         int token,

@@ -25,5 +25,6 @@ public sealed class RootDecisionClassifierFactory(
             dispatchCallSites,
             _runtimeSafepoints,
             typeClassifier,
-            new MethodInitializationTriggerClassifier(types));
+            new MethodInitializationTriggerClassifier(types),
+            new StaticFieldInitializationClassifier(types, fields));
 }

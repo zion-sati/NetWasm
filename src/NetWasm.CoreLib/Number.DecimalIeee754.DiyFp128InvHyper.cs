@@ -1,4 +1,4 @@
-// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
@@ -18,8 +18,8 @@ internal static partial class Number
     // acosh(x) = log(x + sqrt(x^2 - 1)), atanh(x) = (1/2) * log((1 + x) / (1 - x)). Near the point where
     // the reduced argument is 1 the naive ratio loses significance, so a small-argument path forms the
     // reduced ratio directly and evaluates it with `DiyFp128LogPoly`; otherwise the big path forms the
-    // full argument and calls `DiyFp128Ln`. The evaluation runs entirely in the software binary128
-    // engine, so Decimal64/Decimal128 obtain the full ~34-digit accuracy Intel's reference does.
+    // full argument and calls `DiyFp128Ln`. The decimal dispatch supplies the small endpoint residuals
+    // for acosh and atanh before conversion to the software binary128 engine.
 
     // Loss-of-significance thresholds (dpml_inv_hyper_x.h): the MSD boundaries selecting the small path.
     private const ulong InvHyperSqrt2Over4 = 0xB504F333F9DE6484;         // sqrt(2) / 4
@@ -65,13 +65,18 @@ internal static partial class Number
     }
 
     /// <summary>Computes <c>acosh(x)</c> for a finite <paramref name="x"/> &gt;= 1 (Intel's <c>F_ACOSH</c>).</summary>
-    private static DiyFp128 DiyFp128Acosh(DiyFp128 x)
+    private static DiyFp128 DiyFp128Acosh(DiyFp128 x, DiyFp128 magnitudeMinusOne)
     {
         int exponent = x._exponent;
         ulong fHi = x._hi;
 
         Span<DiyFp128> parts = [default, default];
-        DiyFp128AddSub(x, DiyFp128One, UxAddSub, parts); // parts[0] = x + 1, parts[1] = x - 1
+        bool hasResidual = !DiyFp128IsZero(magnitudeMinusOne);
+        DiyFp128AddSub(x, DiyFp128One, hasResidual ? UxAdd : UxAddSub, parts);
+        if (hasResidual)
+        {
+            parts[1] = magnitudeMinusOne;
+        }
 
         if ((exponent == 1) && (fHi <= InvHyperThreeSqrt2Over4))
         {
@@ -89,7 +94,7 @@ internal static partial class Number
     }
 
     /// <summary>Computes <c>atanh(x)</c> for a finite <paramref name="x"/> with <c>|x| &lt; 1</c> (Intel's <c>F_ATANH</c>).</summary>
-    private static DiyFp128 DiyFp128Atanh(DiyFp128 x)
+    private static DiyFp128 DiyFp128Atanh(DiyFp128 x, DiyFp128 magnitudeMinusOne)
     {
         uint sign = x._sign;
         x._sign = 0; // |x|
@@ -106,7 +111,12 @@ internal static partial class Number
         else
         {
             Span<DiyFp128> parts = [default, default];
-            DiyFp128AddSub(x, DiyFp128One, UxAddSub, parts); // parts[0] = |x| + 1, parts[1] = |x| - 1
+            bool hasResidual = !DiyFp128IsZero(magnitudeMinusOne);
+            DiyFp128AddSub(x, DiyFp128One, hasResidual ? UxAdd : UxAddSub, parts);
+            if (hasResidual)
+            {
+                parts[1] = magnitudeMinusOne;
+            }
             DiyFp128Divide(parts[1], parts[0], DiyFp128FullPrecision, out DiyFp128 ratio); // (|x| - 1) / (|x| + 1)
             DiyFp128Normalize(ref ratio);
             result = DiyFp128Ln(ratio); // magnitude only: log((1 - |x|) / (1 + |x|))

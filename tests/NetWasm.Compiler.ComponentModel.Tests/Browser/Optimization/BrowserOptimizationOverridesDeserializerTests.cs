@@ -27,7 +27,15 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
               "devirtualization":"Enabled",
               "allocationElimination":"Disabled",
               "loopRotation":"Enabled",
-              "arrayStoreCheckElimination":"Disabled"
+              "arrayStoreCheckElimination":"Disabled",
+              "dispatcherElimination":"Enabled",
+              "emptyFinallyRemoval":"Disabled",
+              "structScalarReplacement":"Enabled",
+              "allocationScalarReplacement":"Disabled",
+              "idempotentLoopCollapse":"Enabled",
+              "loopStoreForwarding":"Disabled",
+              "arrayLoopIdioms":"Enabled",
+              "loopVectorization":"Disabled"
             }
             """);
         Assert.Equal(new WasmOptimizationOverrides(
@@ -47,7 +55,15 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
             ManagedDevirtualization.Enabled,
             ManagedAllocationElimination.Disabled,
             ManagedLoopRotation.Enabled,
-            ManagedArrayStoreCheckElimination.Disabled), result);
+            ManagedArrayStoreCheckElimination.Disabled,
+            ManagedDispatcherElimination.Enabled,
+            ManagedEmptyFinallyRemoval.Disabled,
+            ManagedStructScalarReplacement.Enabled,
+            ManagedAllocationScalarReplacement.Disabled,
+            ManagedIdempotentLoopCollapse.Enabled,
+            ManagedLoopStoreForwarding.Disabled,
+            ManagedArrayLoopIdioms.Enabled,
+            ManagedLoopVectorization.Disabled), result);
     }
 
     [Fact]

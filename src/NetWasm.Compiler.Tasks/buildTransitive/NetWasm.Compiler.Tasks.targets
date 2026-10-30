@@ -83,6 +83,14 @@
     <NetWasmManagedAllocationElimination Condition="'$(NetWasmManagedAllocationElimination)' == ''">Auto</NetWasmManagedAllocationElimination>
     <NetWasmManagedLoopRotation Condition="'$(NetWasmManagedLoopRotation)' == ''">Auto</NetWasmManagedLoopRotation>
     <NetWasmManagedArrayStoreCheckElimination Condition="'$(NetWasmManagedArrayStoreCheckElimination)' == ''">Auto</NetWasmManagedArrayStoreCheckElimination>
+    <NetWasmManagedDispatcherElimination Condition="'$(NetWasmManagedDispatcherElimination)' == ''">Auto</NetWasmManagedDispatcherElimination>
+    <NetWasmManagedEmptyFinallyRemoval Condition="'$(NetWasmManagedEmptyFinallyRemoval)' == ''">Auto</NetWasmManagedEmptyFinallyRemoval>
+    <NetWasmManagedStructScalarReplacement Condition="'$(NetWasmManagedStructScalarReplacement)' == ''">Auto</NetWasmManagedStructScalarReplacement>
+    <NetWasmManagedAllocationScalarReplacement Condition="'$(NetWasmManagedAllocationScalarReplacement)' == ''">Auto</NetWasmManagedAllocationScalarReplacement>
+    <NetWasmManagedIdempotentLoopCollapse Condition="'$(NetWasmManagedIdempotentLoopCollapse)' == ''">Auto</NetWasmManagedIdempotentLoopCollapse>
+    <NetWasmManagedLoopStoreForwarding Condition="'$(NetWasmManagedLoopStoreForwarding)' == ''">Auto</NetWasmManagedLoopStoreForwarding>
+    <NetWasmManagedArrayLoopIdioms Condition="'$(NetWasmManagedArrayLoopIdioms)' == ''">Auto</NetWasmManagedArrayLoopIdioms>
+    <NetWasmManagedLoopVectorization Condition="'$(NetWasmManagedLoopVectorization)' == ''">Auto</NetWasmManagedLoopVectorization>
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
@@ -202,6 +210,14 @@
       <_NetWasmCompilationIdentityLine Include="managedAllocationElimination=$(NetWasmManagedAllocationElimination)" />
       <_NetWasmCompilationIdentityLine Include="managedLoopRotation=$(NetWasmManagedLoopRotation)" />
       <_NetWasmCompilationIdentityLine Include="managedArrayStoreCheckElimination=$(NetWasmManagedArrayStoreCheckElimination)" />
+      <_NetWasmCompilationIdentityLine Include="managedDispatcherElimination=$(NetWasmManagedDispatcherElimination)" />
+      <_NetWasmCompilationIdentityLine Include="managedEmptyFinallyRemoval=$(NetWasmManagedEmptyFinallyRemoval)" />
+      <_NetWasmCompilationIdentityLine Include="managedStructScalarReplacement=$(NetWasmManagedStructScalarReplacement)" />
+      <_NetWasmCompilationIdentityLine Include="managedAllocationScalarReplacement=$(NetWasmManagedAllocationScalarReplacement)" />
+      <_NetWasmCompilationIdentityLine Include="managedIdempotentLoopCollapse=$(NetWasmManagedIdempotentLoopCollapse)" />
+      <_NetWasmCompilationIdentityLine Include="managedLoopStoreForwarding=$(NetWasmManagedLoopStoreForwarding)" />
+      <_NetWasmCompilationIdentityLine Include="managedArrayLoopIdioms=$(NetWasmManagedArrayLoopIdioms)" />
+      <_NetWasmCompilationIdentityLine Include="managedLoopVectorization=$(NetWasmManagedLoopVectorization)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
       <!-- Modules the project's native archives may import from: each declared
            NetWasmImportModule and each registered JavaScript module. -->
@@ -305,6 +321,14 @@
                         ManagedAllocationElimination="$(NetWasmManagedAllocationElimination)"
                         ManagedLoopRotation="$(NetWasmManagedLoopRotation)"
                         ManagedArrayStoreCheckElimination="$(NetWasmManagedArrayStoreCheckElimination)"
+                        ManagedDispatcherElimination="$(NetWasmManagedDispatcherElimination)"
+                        ManagedEmptyFinallyRemoval="$(NetWasmManagedEmptyFinallyRemoval)"
+                        ManagedStructScalarReplacement="$(NetWasmManagedStructScalarReplacement)"
+                        ManagedAllocationScalarReplacement="$(NetWasmManagedAllocationScalarReplacement)"
+                        ManagedIdempotentLoopCollapse="$(NetWasmManagedIdempotentLoopCollapse)"
+                        ManagedLoopStoreForwarding="$(NetWasmManagedLoopStoreForwarding)"
+                        ManagedArrayLoopIdioms="$(NetWasmManagedArrayLoopIdioms)"
+                        ManagedLoopVectorization="$(NetWasmManagedLoopVectorization)"
                         NoLogo="$(NoLogo)"
                         ExceptionTypeMapPath="$(NetWasmExceptionTypeMapPath)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)" />

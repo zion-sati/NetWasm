@@ -143,9 +143,13 @@ public sealed class StackStorageTypeAnalyzer(
                     method.Body.Locals[((CilOperand.Index)instruction.Operand).Value] == CliValueKind.ManagedAddress)
                 {
                     var local = ((CilOperand.Index)instruction.Operand).Value;
-                    locals[local] = stack[^1];
+                    // An unmanaged pointer stored into a byref local, as `ref *pointer` stores one,
+                    // addresses memory the collector does not manage: no backing to keep alive.
+                    locals[local] = controlFlow.InstructionEntryStacks[instruction.Offset][^1] == CliValueKind.NativeInt
+                        ? new StorageIdentity(initialLocals[local].Type, false, true, [], [], true)
+                        : stack[^1];
                     transfers[instruction.Offset] = new(new(StackStorageLocationKind.Local, local),
-                        stack[^1].Captures.ToImmutableDictionary(type => type,
+                        locals[local].Captures.ToImmutableDictionary(type => type,
                             _ => new StackStorageLocation(StackStorageLocationKind.EvaluationStack, stack.Count - 1)), []);
                 }
 

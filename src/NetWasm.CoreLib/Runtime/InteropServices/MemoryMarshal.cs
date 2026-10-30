@@ -80,10 +80,10 @@ namespace System.Runtime.InteropServices
                 : new ReadOnlyMemoryEnumerable<T>(memory);
 
         public static ref T GetReference<T>(System.Span<T> span) =>
-            ref span.DangerousReference;
+            ref span._reference;
 
         public static ref T GetReference<T>(System.ReadOnlySpan<T> span) =>
-            ref span.DangerousReference;
+            ref span._reference;
 
         public static ref T GetArrayDataReference<T>(T[] array)
         {

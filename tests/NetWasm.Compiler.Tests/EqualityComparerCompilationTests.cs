@@ -221,7 +221,9 @@ public sealed class EqualityComparerCompilationTests
             "Run",
             []));
 
-        Assert.Contains(compilation.Program.DispatchCallSites.Values, site =>
+        // EnumEqualityComparer<State> compares a State with a State, so the
+        // underlying values are compared without boxing for Enum.Equals.
+        Assert.DoesNotContain(compilation.Program.DispatchCallSites.Values, site =>
             site.Declaration.Definition.Name == "Equals" &&
             site.Targets.Any(target =>
                 target.ReceiverType.FullName == "EqualityComparerFixture.State" &&

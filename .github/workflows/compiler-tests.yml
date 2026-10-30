@@ -202,7 +202,7 @@ jobs:
             # The other compiler test projects complete the coverage baseline, as in eng/test.sh.
             units="$RUNNER_TEMP/compiler-test-results/units/coverage.json"
             for unit in Core Metadata Browser ControlFlow GarbageCollection Wasm ComponentModel Cli Tasks; do
-              arguments=(-c Release --disable-build-servers --nologo /p:CollectCoverage=true
+              arguments=(-c Release --disable-build-servers --nologo --filter Category!=Performance /p:CollectCoverage=true
                 /p:CoverletOutput="$units" /p:CoverletOutputFormat=json)
               if [[ -f "$units" ]]; then
                 arguments+=(/p:MergeWith="$units")

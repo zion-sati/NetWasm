@@ -321,12 +321,9 @@ public sealed class RootPublicationEmitterTests
     }
 
     [Theory]
-    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32Constant, WasmOpcodes.I32Add)]
-    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64Constant, WasmOpcodes.I64Add)]
-    public void PublishesEveryRootSourceKindForEachAddressWidth(
-        WasmTarget target,
-        byte expectedConstant,
-        byte expectedAdd)
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void PublishesEveryRootSourceKindAtItsSlotOffset(WasmTarget target)
     {
         var argument = new RootSource(RootSourceKind.Argument, 0);
         var local = new RootSource(RootSourceKind.Local, 0);
@@ -371,15 +368,19 @@ public sealed class RootPublicationEmitterTests
         var request = CreateInstructionRequest(
             CilOperation.Call,
             context: context);
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var layout = WasmTargetLayout.For(target);
+        var code = new RecordingInstructionWriter();
 
-        CreateEmitter(layouts, filterRoots).Emit(
-            request,
-            GetCodeWriter(request));
+        CreateEmitter(new RecordingLayoutProvider(layout), filterRoots).Emit(request, code);
 
-        var code = GetCodeBytes(request);
-        Assert.Contains(expectedConstant, code);
-        Assert.Contains(expectedAdd, code);
+        var instructions = code.ToInstructions();
+        var store = target == WasmTarget.Wasm32 ? WasmOpcodes.I32Store : WasmOpcodes.I64Store;
+        Assert.Equal(
+            Enumerable.Range(0, sources.Length).Select(slot => (uint)(slot * layout.ObjectReferenceSize)),
+            instructions.Where(instruction => instruction.Opcode == store)
+                .Select(instruction => instruction.Operand.Offset));
+        Assert.DoesNotContain(instructions, instruction =>
+            instruction.Opcode is WasmOpcodes.I32Add or WasmOpcodes.I64Add);
         Assert.Equal(1, filterRoots.Calls);
     }
 

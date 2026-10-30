@@ -153,6 +153,8 @@ public abstract record CilOperand
     public sealed record MethodInstance(MethodInstanceModel Value) : CilOperand;
     public sealed record FieldInstance(FieldInstanceModel Value) : CilOperand;
     public sealed record TypeIdentity(CliTypeIdentity Value) : CilOperand;
+    // The one type a GetObjectType's receiver can have, when it is not null.
+    public sealed record ExactType(CliTypeIdentity Value) : CilOperand;
     public sealed record CallSite(MethodSignatureModel Signature) : CilOperand;
     public sealed record NumericConversion(
         int BitWidth,
@@ -161,7 +163,12 @@ public abstract record CilOperand
         bool SourceUnsigned,
         bool Native) : CilOperand;
     public sealed record UserString(string Value) : CilOperand;
-    public sealed record ByteData(ImmutableArray<byte> Value) : CilOperand;
+    // An array initializer's field RVA data, kept with its field so the bytes are placed in static
+    // data and copied from there.
+    public sealed record ArrayInitializerData(FieldInstanceModel Field) : CilOperand
+    {
+        public ImmutableArray<byte> Value => Field.Definition.InitialData;
+    }
     public sealed record ReadOnlySpanData(
         FieldInstanceModel Field,
         CliTypeIdentity SpanType,

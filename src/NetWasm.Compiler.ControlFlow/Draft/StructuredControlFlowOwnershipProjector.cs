@@ -81,6 +81,8 @@ internal sealed class StructuredControlFlowOwnershipProjector : IStructuredContr
                 ContinueBody = Project(loop.ContinueBody),
                 ExitBody = Project(loop.ExitBody),
             },
+            StructuredLabeledBlockDraft block => block with { Body = Project(block.Body) },
+            StructuredLabeledLoopDraft loop => loop with { Body = Project(loop.Body) },
             StructuredPostTestLoopDraft loop => Project(loop),
             StructuredDispatcherDraft dispatcher => dispatcher with
             {

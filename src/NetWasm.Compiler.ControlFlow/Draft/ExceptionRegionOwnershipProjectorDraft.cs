@@ -120,6 +120,14 @@ internal sealed class ExceptionRegionOwnershipProjectorDraft(
                     ContinueBody = ProjectSequence(loop.ContinueBody, activeGroup),
                     ExitBody = ProjectSequence(loop.ExitBody, activeGroup)
                 },
+                StructuredLabeledBlockDraft block => block with
+                {
+                    Body = ProjectSequence(block.Body, activeGroup)
+                },
+                StructuredLabeledLoopDraft loop => loop with
+                {
+                    Body = ProjectSequence(loop.Body, activeGroup)
+                },
                 StructuredDispatcherDraft dispatcher => ProjectDispatcher(dispatcher, activeGroup)!,
                 _ => region
             };

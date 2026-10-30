@@ -1,6 +1,6 @@
 // Portions derived from dotnet/runtime System.Private.CoreLib StringComparer.
 // Alternate ordinal-comparer members are from dotnet/runtime commit
-// 811225a482702af7ecc35d817966bc70b88a3a23.
+// 474ed963699fc29809015392738a15231aaae2de.
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 

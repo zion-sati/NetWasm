@@ -1,4 +1,4 @@
-<Project Sdk="NetWasm.Sdk">
+<Project Sdk="NetWasm.Sdk/0.4.2">
   <PropertyGroup>
     <OutputType>WitWebWorker</OutputType>
     <TargetFramework>netwasm0.1</TargetFramework>
@@ -9,6 +9,7 @@
     <NetWasmApplicationWorld>netwasm:worker-template@1.0.0/application</NetWasmApplicationWorld>
   </PropertyGroup>
   <ItemGroup>
+    <NetWasmWit Include="wit" World="netwasm:worker-template@1.0.0/application" />
     <NetWasmApplicationImport Include="notifications.mjs"
                               Module="netwasm:worker-template/notifications@1.0.0"
                               ArtifactPath="notifications.mjs" />

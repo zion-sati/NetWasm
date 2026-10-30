@@ -4,13 +4,13 @@ namespace System.Runtime.InteropServices.TimeZones
 
     internal static class WasiTimeZoneImports
     {
-        [WitImport("wasi:cli@0.2.11/environment", "get-environment")]
+        [WitImport("wasi:cli/environment@0.2.11", "get-environment")]
         internal static extern void GetEnvironment(nuint result);
 
-        [WitImport("wasi:filesystem@0.2.11/preopens", "get-directories")]
+        [WitImport("wasi:filesystem/preopens@0.2.11", "get-directories")]
         internal static extern void GetDirectories(nuint result);
 
-        [WitImport("wasi:filesystem@0.2.11/types", "[method]descriptor.open-at")]
+        [WitImport("wasi:filesystem/types@0.2.11", "[method]descriptor.open-at")]
         internal static extern void OpenAt(
             int directoryHandle,
             int pathFlags,
@@ -20,7 +20,7 @@ namespace System.Runtime.InteropServices.TimeZones
             int descriptorFlags,
             nuint result);
 
-        [WitImport("wasi:filesystem@0.2.11/types", "[method]descriptor.read")]
+        [WitImport("wasi:filesystem/types@0.2.11", "[method]descriptor.read")]
         internal static extern void Read(
             int handle,
             long length,

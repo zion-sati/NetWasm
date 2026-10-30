@@ -35,32 +35,33 @@ public abstract class WitBindingMethodSectionBase(
         WitDocument document,
         WitWorld world)
     {
+        // Each interface's class is named for the world's name for it, then by
+        // its package as well when that collides; the world's own functions
+        // share one class, as its exports do.
+        var functions = world.Imports.Where(static item => item.Function is not null).Select(static item => item.Function!).ToArray();
+        var worldClass = Identifier(world.Name) + "Imports";
+        var declarations = world.Imports.Where(static item => item.InterfaceId is not null).Select(item =>
+        {
+            var definition = document.Interfaces[item.InterfaceId!.Value];
+            var name = Identifier(WitBindingNames.Short(item, definition));
+            return (item.Name, new[] { name + "Imports", Identifier(WitBindingNames.Qualifier(item, definition, world)) + name + "Imports" });
+        }).ToList();
+        if (functions.Length != 0) declarations.Add((string.Empty, [worldClass]));
+        var classes = WitBindingNames.Assign(declarations, "imported interfaces");
         foreach (var item in world.Imports)
         {
             if (item.InterfaceId is int interfaceId)
             {
-                var @interface = document.Interfaces[interfaceId];
-                WriteImportClass(
-                    writer,
-                    document,
-                    _syntax.Format(new WitBindingSyntaxRequest.Identifier(@interface.Name)) + "Imports",
-                    $"{@interface.Package}/{@interface.Name}",
-                    @interface.Functions);
+                WriteImportClass(writer, document, classes[item.Name], item.Name, document.Interfaces[interfaceId].Functions);
             }
         }
-
-        // The world's own functions share one class, as its exports do.
-        var functions = world.Imports.Where(static item => item.Function is not null).Select(static item => item.Function!).ToArray();
         if (functions.Length != 0)
         {
-            WriteImportClass(
-                writer,
-                document,
-                _syntax.Format(new WitBindingSyntaxRequest.Identifier(world.Name)) + "Imports",
-                string.Empty,
-                functions);
+            WriteImportClass(writer, document, worldClass, string.Empty, functions);
         }
     }
+
+    private string Identifier(string value) => _syntax.Format(new WitBindingSyntaxRequest.Identifier(value));
 
     private void WriteImportClass(
         CodeWriter writer,
@@ -248,37 +249,61 @@ public abstract class WitBindingMethodSectionBase(
         WitDocument document,
         WitWorld world)
     {
-        writer.Line($"public static partial class {_syntax.Format(new WitBindingSyntaxRequest.Identifier(world.Name))}Exports");
+        // Every export is a method of one class: one whose name collides with
+        // another's is qualified by its resource, then its interface, then the
+        // interface's package.
+        var exports = world.Exports.SelectMany(item => item.Function is { } function
+                ? [(Interface: string.Empty, Function: function, Owners: Array.Empty<string>())]
+                : document.Interfaces[item.InterfaceId!.Value] is var definition
+                    ? definition.Functions.Select(function => (Interface: item.Name, Function: function, Owners: new[]
+                    {
+                        Identifier(WitBindingNames.Short(item, definition)),
+                        Identifier(WitBindingNames.Qualifier(item, definition, world)),
+                    }))
+                    : [])
+            .ToArray();
+        var methods = WitBindingNames.Assign(
+            [.. exports.Select(export => (Key: $"{export.Interface}#{export.Function.Name}", Candidates: Candidates(export.Function, export.Owners)))],
+            "exported functions");
+        writer.Line($"public static partial class {Identifier(world.Name)}Exports");
         writer.Line("{");
         writer.Indent();
-        foreach (var item in world.Exports)
+        foreach (var export in exports)
         {
-            if (item.Function is not null)
-            {
-                WriteExport(writer, document, string.Empty, item.Function);
-                writer.Line();
-                continue;
-            }
-            var @interface = document.Interfaces[item.InterfaceId!.Value];
-            foreach (var function in @interface.Functions)
-            {
-                WriteExport(
-                    writer,
-                    document,
-                    $"{@interface.Package}/{@interface.Name}",
-                    function);
-                writer.Line();
-            }
+            WriteExport(writer, document, export.Interface, export.Function, methods[$"{export.Interface}#{export.Function.Name}"]);
+            writer.Line();
         }
         writer.Unindent();
         writer.Line("}");
+    }
+
+    // A method's name, then qualified by its resource, if any, and by each
+    // owner in turn.
+    private string[] Candidates(WitFunction function, string[] owners)
+    {
+        var name = _syntax.Format(new WitBindingSyntaxRequest.FunctionName(function.Name));
+        var candidates = new List<string> { name };
+        var close = function.Name.IndexOf(']', StringComparison.Ordinal);
+        var dot = function.Name.IndexOf('.', StringComparison.Ordinal);
+        if (close >= 0 && dot > close)
+        {
+            name = Identifier(function.Name[(close + 1)..dot]) + name;
+            candidates.Add(name);
+        }
+        foreach (var owner in owners)
+        {
+            name = owner + name;
+            candidates.Add(name);
+        }
+        return [.. candidates];
     }
 
     private void WriteExport(
         CodeWriter writer,
         WitDocument document,
         string interfaceName,
-        WitFunction function)
+        WitFunction function,
+        string methodName)
     {
         function = TransparentAliases.Resolve(document, function);
         var model = Model(
@@ -287,7 +312,6 @@ public abstract class WitBindingMethodSectionBase(
             function,
             CanonicalAbiDirection.LiftedExport);
         var helperMethodName = _syntax.Format(new WitBindingSyntaxRequest.QualifiedFunctionName(interfaceName, function.Name));
-        var methodName = _syntax.Format(new WitBindingSyntaxRequest.FunctionName(function.Name));
         writer.Line($"public static partial {_syntax.Format(new WitBindingSyntaxRequest.ReturnType(document, function))} {methodName}({_syntax.Format(new WitBindingSyntaxRequest.Parameters(document, function))});");
         writer.Line();
         writer.Line(WitAttributeSyntax.Format("WitExport", interfaceName, function.Name));

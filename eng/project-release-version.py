@@ -35,10 +35,11 @@ XML_FIELDS = {
 }
 JSON_FIELDS = {
     Path("global.json"): ("NetWasm.Sdk",),
-    Path("src/NetWasm.Templates/content/NetWasm.App/base/global.json"): ("NetWasm.Sdk",),
-    Path("src/NetWasm.Templates/content/NetWasm.Library/global.json"): ("NetWasm.Sdk",),
     Path("src/NetWasm.Toolchain/toolchain-manifest.json"): ("packageVersion",),
 }
+# The projects the templates generate name the SDK with its version, as
+# Sdk="NetWasm.Sdk/<version>".
+TEMPLATE_CONTENT = Path("src/NetWasm.Templates/content")
 
 
 def run_git(source_root: Path, *arguments: str) -> bytes:
@@ -71,6 +72,11 @@ def replace_json_field(
         + re.escape(source)
         + rb'(\")'
     )
+    return pattern.subn(rb"\g<1>" + target + rb"\g<2>", contents)
+
+
+def replace_sdk_reference(contents: bytes, source: bytes, target: bytes) -> tuple[bytes, int]:
+    pattern = re.compile(rb'(Sdk="NetWasm\.Sdk/)' + re.escape(source) + rb'(")')
     return pattern.subn(rb"\g<1>" + target + rb"\g<2>", contents)
 
 
@@ -125,6 +131,17 @@ def project_release_fields(
             total += count
         path.write_bytes(contents)
         changed_files.append({"path": relative.as_posix(), "replacements": total})
+
+    for relative, path in sorted(tracked.items()):
+        if relative.suffix != ".csproj" or not relative.is_relative_to(TEMPLATE_CONTENT):
+            continue
+        contents, count = replace_sdk_reference(path.read_bytes(), source_bytes, target_bytes)
+        if count != 1:
+            raise ValueError(
+                f"The NetWasm.Sdk reference in {relative} does not match {source_version}."
+            )
+        path.write_bytes(contents)
+        changed_files.append({"path": relative.as_posix(), "replacements": count})
 
     for relative, path in sorted(tracked.items()):
         if (

@@ -11,7 +11,7 @@ public sealed class RawResourceImportLayoutBuilderTests
     public void ProjectsTheResourceAndWrapsTheExactIntrinsicLayout(WasmTarget target)
     {
         var resources = new RecordingResources();
-        var declaration = new RawWitImportDeclaration.Resource("example:test@1.0.0/api", new(0, "file", default, 0), CanonicalAbiFunctionKind.ExportedResourceNew);
+        var declaration = new RawWitImportDeclaration.Resource("example:test/api@1.0.0", new(0, "file", default, 0), CanonicalAbiFunctionKind.ExportedResourceNew);
         var document = new WitDocument([], [], [], [], "{}");
 
         var result = Assert.IsType<RawWitImportLayout.Resource>(Create(resources).Build(new(document, declaration, target)));

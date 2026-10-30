@@ -1,8 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Helper/Base64Helper.cs
 
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-#if NETWASM_SIMD
+#if NET
 using System.Runtime.Intrinsics;
 #endif
 
@@ -10,7 +13,6 @@ namespace System.Buffers.Text
 {
     internal static partial class Base64Helper
     {
-#if NETWASM_SIMD
         [Conditional("DEBUG")]
         internal static unsafe void AssertRead<TVector>(byte* src, byte* srcStart, int srcLength)
         {
@@ -21,6 +23,7 @@ namespace System.Buffers.Text
             if (readEnd > srcEnd)
             {
                 int srcIndex = (int)(src - srcStart);
+                Debug.Fail($"Read for {typeof(TVector)} is not within safe bounds. srcIndex: {srcIndex}, srcLength: {srcLength}");
             }
         }
 
@@ -34,6 +37,7 @@ namespace System.Buffers.Text
             if (writeEnd > destEnd)
             {
                 int destIndex = (int)(dest - destStart);
+                Debug.Fail($"Write for {typeof(TVector)} is not within safe bounds. destIndex: {destIndex}, destLength: {destLength}");
             }
         }
 
@@ -47,6 +51,7 @@ namespace System.Buffers.Text
             if (readEnd > srcEnd)
             {
                 int srcIndex = (int)(src - srcStart);
+                Debug.Fail($"Read for {typeof(TVector)} is not within safe bounds. srcIndex: {srcIndex}, srcLength: {srcLength}");
             }
         }
 
@@ -60,12 +65,11 @@ namespace System.Buffers.Text
             if (writeEnd > destEnd)
             {
                 int destIndex = (int)(dest - destStart);
+                Debug.Fail($"Write for {typeof(TVector)} is not within safe bounds. destIndex: {destIndex}, destLength: {destLength}");
             }
         }
 
-#endif
-
-#if NETWASM_SIMD // NET8_0
+#if NET8_0
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool VectorContainsNonAsciiChar(Vector128<ushort> utf16Vector)
         {
@@ -155,23 +159,23 @@ namespace System.Buffers.Text
         }
 #endif
 
-#if NETWASM_SIMD
         [DoesNotReturn]
         internal static void ThrowUnreachableException()
         {
+#if NET
             throw new UnreachableException();
-        }
+#else
+            throw new Exception("Unreachable");
 #endif
+        }
 
         internal interface IBase64Encoder<T> where T : unmanaged
         {
             ReadOnlySpan<byte> EncodingMap { get; }
-#if NETWASM_SIMD
             sbyte Avx2LutChar62 { get; }
             sbyte Avx2LutChar63 { get; }
             ReadOnlySpan<byte> AdvSimdLut4 { get; }
             uint Ssse3AdvSimdLutE3 { get; }
-#endif
             int GetMaxSrcLength(int srcLength, int destLength);
             int GetMaxEncodedLength(int srcLength);
             uint GetInPlaceDestinationLength(int encodedLength, int leftOver);
@@ -180,7 +184,7 @@ namespace System.Buffers.Text
             unsafe void EncodeThreeAndWrite(byte* threeBytes, T* destination, ref byte encodingMap);
             int IncrementPadTwo { get; }
             int IncrementPadOne { get; }
-#if NETWASM_SIMD
+#if NET
             unsafe void StoreVector512ToDestination(T* dest, T* destStart, int destLength, Vector512<byte> str);
             unsafe void StoreVector256ToDestination(T* dest, T* destStart, int destLength, Vector256<byte> str);
             unsafe void StoreVector128ToDestination(T* dest, T* destStart, int destLength, Vector128<byte> str);
@@ -192,7 +196,6 @@ namespace System.Buffers.Text
         internal interface IBase64Decoder<T> where T : unmanaged
         {
             ReadOnlySpan<sbyte> DecodingMap { get; }
-#if NETWASM_SIMD
             ReadOnlySpan<uint> VbmiLookup0 { get; }
             ReadOnlySpan<uint> VbmiLookup1 { get; }
             ReadOnlySpan<sbyte> Avx2LutHigh { get; }
@@ -204,12 +207,11 @@ namespace System.Buffers.Text
             ReadOnlySpan<uint> Vector128LutShift { get; }
             ReadOnlySpan<uint> AdvSimdLutOne3 { get; }
             uint AdvSimdLutTwo3Uint1 { get; }
-#endif
             int SrcLength(bool isFinalBlock, int sourceLength);
             int GetMaxDecodedLength(int sourceLength);
             bool IsInvalidLength(int bufferLength);
             bool IsValidPadding(uint padChar);
-#if NETWASM_SIMD
+#if NET
             bool TryDecode128Core(
                 Vector128<byte> str,
                 Vector128<byte> hiNibbles,

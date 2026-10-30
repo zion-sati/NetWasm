@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -62,6 +63,11 @@ internal sealed class FieldInstructionEmitter(
             request.Stack[slot] = fieldType.StackKind;
             return;
         }
+        if (request.Stack[slot] == CliValueKind.V128)
+        {
+            EmitVectorFieldLoad(request, code, slot, layout, fieldType);
+            return;
+        }
         var objectLocal = GetStackLocal(request.Context, slot, request.Stack[slot]);
         EmitNullCheckIfRequired(code, objectLocal, receiverType, request.Context.ManagedThrowFunction);
         if (fieldType.StackKind == CliValueKind.ValueType)
@@ -81,8 +87,8 @@ internal sealed class FieldInstructionEmitter(
                 addresses.Emit(code, layout.Offset);
                 addresses.Emit(code, AddressOperation.Add);
             }
-            addresses.Emit(code, layout.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+                writer => addresses.Emit(writer, layout.Size));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
                 request.Context,
@@ -100,6 +106,65 @@ internal sealed class FieldInstructionEmitter(
             layout.Size);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(request.Context, slot, fieldType.StackKind)))));
         request.Stack[slot] = fieldType.StackKind;
+    }
+
+    // A field of a vector value, such as Vector128<T>'s Vector64 halves or
+    // Vector<T>'s ulongs, is a lane of the v128 value. A value-type field goes to
+    // the load's temporary, whose address the stack then holds.
+    private void EmitVectorFieldLoad(
+        InstructionEmissionRequest request,
+        IWasmInstructionWriter code,
+        int slot,
+        FieldLayout layout,
+        CliTypeIdentity fieldType)
+    {
+        var vector = GetStackLocal(request.Context, slot, CliValueKind.V128);
+        var storage = fieldType.StackStorageType ?? fieldType;
+        var floating = storage.StackKind is CliValueKind.F4 or CliValueKind.F8;
+        var signed = storage.CanonicalName is "primitive:i1" or "primitive:i2";
+        void Extract()
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)vector)));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.PrefixedPair((layout.Size, floating, signed) switch
+                {
+                    (16, _, _) => throw new CompilerException(new CompilerDiagnostic(
+                        DiagnosticCode.UnsupportedCil, "a vector's field spans the whole vector")),
+                    (8, true, _) => WasmSimdOpcodes.F64x2ExtractLane,
+                    (8, false, _) => WasmSimdOpcodes.I64x2ExtractLane,
+                    (4, true, _) => WasmSimdOpcodes.F32x4ExtractLane,
+                    (4, false, _) => WasmSimdOpcodes.I32x4ExtractLane,
+                    (2, _, true) => WasmSimdOpcodes.I16x8ExtractLaneSigned,
+                    (2, _, false) => WasmSimdOpcodes.I16x8ExtractLaneUnsigned,
+                    (_, _, true) => WasmSimdOpcodes.I8x16ExtractLaneSigned,
+                    _ => WasmSimdOpcodes.I8x16ExtractLaneUnsigned,
+                }, (uint)(layout.Offset / layout.Size))));
+        }
+
+        if (fieldType.StackKind != CliValueKind.ValueType)
+        {
+            Extract();
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)GetStackLocal(
+                request.Context, slot, fieldType.StackKind))));
+            request.Stack[slot] = fieldType.StackKind;
+            return;
+        }
+
+        var targetOffset = request.Context.ValueLayout.TemporaryOffsets[request.Instruction.Offset];
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)request.Context.ValueFrame)));
+        if (targetOffset != 0)
+        {
+            addresses.Emit(code, targetOffset);
+            addresses.Emit(code, AddressOperation.Add);
+        }
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+        Extract();
+        ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, 0, layout.Size);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)GetStackLocal(
+            request.Context, slot, CliValueKind.ValueType))));
+        request.Stack[slot] = CliValueKind.ValueType;
     }
 
     private void EmitLoadAddress(InstructionEmissionRequest request, IWasmInstructionWriter code)
@@ -147,8 +212,8 @@ internal sealed class FieldInstructionEmitter(
                 addresses.Emit(code, AddressOperation.Add);
             }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(valueLocal))));
-            addresses.Emit(code, layout.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+                writer => addresses.Emit(writer, layout.Size));
             request.Stack.RemoveRange(objectSlot, 2);
             return;
         }

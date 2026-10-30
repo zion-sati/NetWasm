@@ -1,7 +1,7 @@
 namespace System.Collections.Generic
 {
     // Portions derived from dotnet/runtime System.Private.CoreLib's
-    // KeyValuePair helpers at commit 811225a482702af7ecc35d817966bc70b88a3a23.
+    // KeyValuePair helpers at commit 474ed963699fc29809015392738a15231aaae2de.
     public static class KeyValuePair
     {
         public static KeyValuePair<TKey, TValue> Create<TKey, TValue>(TKey key, TValue value) =>

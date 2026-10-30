@@ -903,8 +903,8 @@ wasm_consumer_root="$consumer_root/transitive-wasm"
 desktop_consumer_root="$consumer_root/transitive-desktop"
 mkdir -p "$wasm_consumer_root" "$desktop_consumer_root"
 cp "$app_root/global.json" "$wasm_consumer_root/global.json"
-cat > "$wasm_consumer_root/TransitiveWasm.csproj" <<'EOF'
-<Project Sdk="NetWasm.Sdk">
+cat > "$wasm_consumer_root/TransitiveWasm.csproj" <<EOF
+<Project Sdk="NetWasm.Sdk/${version}">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netwasm0.1</TargetFramework>

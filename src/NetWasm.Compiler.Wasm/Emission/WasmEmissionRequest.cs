@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
@@ -93,9 +94,10 @@ public sealed record WasmEmissionRequest(
 
     public bool EnableArrayMetadataCaching { get; init; }
     public bool HoistArrayNullChecks { get; init; }
-    public bool EnableLoopRotation { get; init; }
+    public LoopRotationPolicy LoopRotation { get; init; }
     public bool EliminateArrayStoreChecks { get; init; }
     public bool EnableScalarCallPreservation { get; init; }
+    public bool InlineSmallBlockOperations { get; init; }
 
     public ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>
         SourceLocations

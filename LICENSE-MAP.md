@@ -17,6 +17,7 @@ where they are more specific than a path default.
 | tools/** | LicenseRef-NetWasm-Community-1.0 |
 | eng/** | LicenseRef-NetWasm-Community-1.0 |
 | tests/end-to-end/expression-fluentvalidation-consumer/** | Apache-2.0 |
+| tests/NetWasm.Wit.Bindings.Tests/Conformance/wit-parser/** | MIT (upstream wit-parser test inputs) |
 | tests/** | LicenseRef-NetWasm-Community-1.0 |
 | build and repository tooling metadata | LicenseRef-NetWasm-Community-1.0 |
 | src/NetWasm.Ref/** | MIT |

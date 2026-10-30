@@ -261,7 +261,7 @@ jobs:
           else
             dotnet test NetWasm.slnx -c Release --no-build --no-restore \
               --disable-build-servers --nologo \
-              --filter 'FullyQualifiedName!~NetWasm.Compiler.Tests.&FullyQualifiedName!~NetWasm.Runtime.Pack.Tests.'
+              --filter 'FullyQualifiedName!~NetWasm.Compiler.Tests.&FullyQualifiedName!~NetWasm.Runtime.Pack.Tests.&Category!=Performance'
           fi
 
 

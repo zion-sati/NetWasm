@@ -1,6 +1,6 @@
 // Managed port of Sun fdlibm s_sin.c. Upstream: biosbits/fdlibm
 // commit dfd9eaed985332a1c3af98c2bab4004eea217d3d.
-// Adaptations: C# bit access, immutable local tables and bounded stack scratch.
+// Adaptations: C# bit access, and huge arguments reduced in a separate method.
 /* @(#)s_sin.c 1.3 95/01/18 */
 /*
  * ====================================================
@@ -44,6 +44,9 @@
  *    TRIG(x) returns trig(x) nearly rounded
  */
 
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+
 namespace System;
 
 public static partial class Math
@@ -51,9 +54,7 @@ public static partial class Math
     public static double Sin(double value)
     {
 
-        Span<double> y = stackalloc double[2];
         var z = 0.0;
-        var n = 0;
         var ix = 0;
 
         /* High word of value. */
@@ -67,17 +68,56 @@ public static partial class Math
         else if (ix >= 0x7ff00000) return value - value;
 
         /* argument reduction needed */
-        else
+        else if (ix > 0x413921fb) return SinLarge(value);
+        else return FdTrigReduced(value, 0).ToScalar();
+    }
+
+    // musl's sincos: one argument reduction for both results, each exactly what
+    // Sin and Cos return. NetWasm: the pair comes back as one v128 value, so
+    // neither the call nor the tuple needs a value frame.
+    public static (double Sin, double Cos) SinCos(double value)
+    {
+        var both = SinCosPair(value);
+        return (both.ToScalar(), both.GetElement(1));
+    }
+
+    private static Vector128<double> SinCosPair(double value)
+    {
+        var ix = FdHigh(value) & 0x7fffffff;
+
+        /* |x| ~< pi/4 */
+        if (ix <= 0x3fe921fb) return Vector128.Create(FdKernelSin(value, 0.0, 0), FdKernelCos(value, 0.0));
+
+        /* sincos(Inf or NaN) is NaN */
+        if (ix >= 0x7ff00000) return Vector128.Create(value - value);
+
+        /* argument reduction needed */
+        if (ix > 0x413921fb) return SinCosLarge(value);
+        return FdTrigReduced(value, 3);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Vector128<double> SinCosLarge(double value)
+    {
+        var hx = FdHigh(value);
+        var n = FdRemPio2Large(value, hx & 0x7fffffff, hx, out var y0, out var y1);
+        return FdSinCosQuadrant(n, y0, y1);
+    }
+
+    // The huge-argument paths, |x| > 2^19*(pi/2), apart so that their reduction
+    // scratch and out parameters stay out of the common paths.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static double SinLarge(double value)
+    {
+        var hx = FdHigh(value);
+        var n = FdRemPio2Large(value, hx & 0x7fffffff, hx, out var y0, out var y1);
+        switch (n & 3)
         {
-            n = FdRemPio2(value, y);
-            switch (n & 3)
-            {
-                case 0: return FdKernelSin(y[0], y[1], 1);
-                case 1: return FdKernelCos(y[0], y[1]);
-                case 2: return -FdKernelSin(y[0], y[1], 1);
-                default:
-                    return -FdKernelCos(y[0], y[1]);
-            }
+            case 0: return FdKernelSin(y0, y1, 1);
+            case 1: return FdKernelCos(y0, y1);
+            case 2: return -FdKernelSin(y0, y1, 1);
+            default:
+                return -FdKernelCos(y0, y1);
         }
     }
 }

@@ -98,12 +98,21 @@ public sealed class RootMapInvariantValidatorTests
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapInvariantValidator(null!, null!));
         Assert.Throws<ArgumentNullException>(() =>
-            new RootMapAnalyzerFactory(null!, new RootSlotAllocator()));
+            new RootMapAnalyzerFactory(null!,
+                new CalleeArgumentRootingClassifierFactory(new RuntimeAllocationSafepointClassifier()),
+                new RootSlotAllocator()));
         Assert.Throws<ArgumentNullException>(() =>
             new RootMapAnalyzerFactory(
-                new RootDecisionClassifierFactory(
-                    new RuntimeAllocationSafepointClassifier()),
+                new RootDecisionClassifierFactory(new RuntimeAllocationSafepointClassifier()),
+                null!,
+                new RootSlotAllocator()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new RootMapAnalyzerFactory(
+                new RootDecisionClassifierFactory(new RuntimeAllocationSafepointClassifier()),
+                new CalleeArgumentRootingClassifierFactory(new RuntimeAllocationSafepointClassifier()),
                 null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CalleeArgumentRootingClassifierFactory(null!));
     }
 
     [Fact]

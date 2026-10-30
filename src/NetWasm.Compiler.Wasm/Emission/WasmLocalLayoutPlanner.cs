@@ -7,16 +7,17 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
+// One local per evaluation-stack slot for each Wasm value type. Pointer-sized
+// kinds use the i32 bank on Wasm32 and the i64 bank on Wasm64.
 internal sealed record EvaluationStackLocalLayout(
     int I4Base,
     int I8Base,
     int F4Base,
     int F8Base,
-    int ReferenceBase,
-    int AddressBase,
+    int V128Base,
     int SlotCount)
 {
-    public int End => checked(AddressBase + SlotCount);
+    public int End => checked(V128Base + SlotCount);
 
     public int GetLocal(int slot, CliValueKind type)
     {
@@ -27,12 +28,11 @@ internal sealed record EvaluationStackLocalLayout(
 
         return type switch
         {
-            CliValueKind.I4 or CliValueKind.ValueType => checked(I4Base + slot),
+            CliValueKind.I4 => checked(I4Base + slot),
             CliValueKind.I8 => checked(I8Base + slot),
             CliValueKind.F4 => checked(F4Base + slot),
             CliValueKind.F8 => checked(F8Base + slot),
-            CliValueKind.ManagedReference => checked(ReferenceBase + slot),
-            CliValueKind.ManagedAddress => checked(AddressBase + slot),
+            CliValueKind.V128 => checked(V128Base + slot),
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
         };
     }
@@ -40,6 +40,24 @@ internal sealed record EvaluationStackLocalLayout(
 
 internal static class WasmLocalLayoutPlanner
 {
+    // The scratch locals every emitted body declares after its frame locals, in
+    // the order MethodEmissionContext numbers them from InteropDescriptor: the
+    // interop descriptor, result and handle, the I4 and I8 numeric temporaries,
+    // the dispatcher program counter, the second I4 temporary and the inline
+    // catch frame. Methods, filter funclets and generated bodies all declare
+    // this list, so no derived temporary is left undeclared or mistyped.
+    public static ImmutableArray<CliValueKind> TemporaryLocals { get; } =
+    [
+        CliValueKind.ManagedAddress,
+        CliValueKind.I4,
+        CliValueKind.I4,
+        CliValueKind.I4,
+        CliValueKind.I8,
+        CliValueKind.I4,
+        CliValueKind.I4,
+        CliValueKind.I4,
+    ];
+
     public static EvaluationStackLocalLayout CreateEvaluationStack(
         int stackBase,
         int slotCount)
@@ -53,9 +71,14 @@ internal static class WasmLocalLayoutPlanner
             checked(stackBase + slotCount * 2),
             checked(stackBase + slotCount * 3),
             checked(stackBase + slotCount * 4),
-            checked(stackBase + slotCount * 5),
             slotCount);
     }
+
+    // The locals CreateEvaluationStack numbers, in its order: one bank of
+    // slotCount locals per Wasm value type.
+    public static IEnumerable<CliValueKind> EvaluationStackLocalTypes(int slotCount) =>
+        new[] { CliValueKind.I4, CliValueKind.I8, CliValueKind.F4, CliValueKind.F8, CliValueKind.V128 }
+            .SelectMany(type => Enumerable.Repeat(type, slotCount));
 
     public static int GetEvaluationStackLocal(
         EvaluationStackLocalLayout layout,
@@ -66,18 +89,17 @@ internal static class WasmLocalLayoutPlanner
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(target);
 
-        var storageType = type == CliValueKind.ValueType
-            ? CliValueKind.ManagedAddress
-            : type;
-        if (storageType == CliValueKind.NativeInt)
+        // A slot keeps one local per Wasm value type. Native ints, object references, managed
+        // addresses and value-type addresses are pointer-sized, so they share the slot's i32 local on
+        // Wasm32 and its i64 local, with longs, on Wasm64. IL may read a slot as another kind of the
+        // same width, an unmanaged pointer passed where a byref is declared for instance, and the
+        // local it reads is then the one the value was stored in.
+        var storageType = type switch
         {
-            storageType = target.UsesMemory64 ? CliValueKind.I8 : CliValueKind.I4;
-        }
-
-        return !target.UsesMemory64 && storageType is not (
-            CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8)
-            ? layout.GetLocal(slot, CliValueKind.I4)
-            : layout.GetLocal(slot, storageType);
+            CliValueKind.F4 or CliValueKind.F8 or CliValueKind.I4 or CliValueKind.I8 or CliValueKind.V128 => type,
+            _ => target.UsesMemory64 ? CliValueKind.I8 : CliValueKind.I4,
+        };
+        return layout.GetLocal(slot, storageType);
     }
 
     public static ImmutableArray<CliValueKind> CreateMethodLocals(
@@ -99,17 +121,7 @@ internal static class WasmLocalLayoutPlanner
         }
         types.Add(CliValueKind.ManagedAddress);
         types.Add(CliValueKind.ManagedAddress);
-        types.Add(CliValueKind.ManagedAddress);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I8);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
+        types.AddRange(TemporaryLocals);
         return types.ToImmutable();
     }
 
@@ -123,11 +135,7 @@ internal static class WasmLocalLayoutPlanner
         types.Add(CliValueKind.ManagedAddress);
         types.Add(CliValueKind.ManagedReference);
         types.Add(CliValueKind.ManagedAddress);
-        types.Add(CliValueKind.ManagedAddress);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I4);
-        types.Add(CliValueKind.I8);
+        types.AddRange(TemporaryLocals);
         return types.ToImmutable();
     }
 
@@ -136,7 +144,7 @@ internal static class WasmLocalLayoutPlanner
         IReadOnlySet<int> spilledScalarLocals)
     {
         var types = ImmutableArray.CreateBuilder<CliValueKind>(
-            checked(header.Locals.Length + header.MaxStack * 6 + 16));
+            checked(header.Locals.Length + header.MaxStack * 5 + 16));
         foreach ((var local, var index) in header.LocalSignatureTypes
                      .Select((local, index) => (local, index)))
         {
@@ -146,21 +154,7 @@ internal static class WasmLocalLayoutPlanner
                 : local.StackKind);
         }
 
-        foreach (var type in new[]
-                 {
-                     CliValueKind.I4,
-                     CliValueKind.I8,
-                     CliValueKind.F4,
-                     CliValueKind.F8,
-                     CliValueKind.ManagedReference,
-                     CliValueKind.ManagedAddress,
-                 })
-        {
-            for (var slot = 0; slot < header.MaxStack; slot++)
-            {
-                types.Add(type);
-            }
-        }
+        types.AddRange(EvaluationStackLocalTypes(header.MaxStack));
 
         return types;
     }

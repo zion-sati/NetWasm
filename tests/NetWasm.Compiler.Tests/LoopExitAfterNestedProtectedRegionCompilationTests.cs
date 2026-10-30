@@ -41,7 +41,7 @@ public sealed class LoopExitAfterNestedProtectedRegionCompilationTests
             ],
             Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
 
         var mismatches = new List<string>();
         for (var block = 0; block * BlockSize < shapes.Length; block++)

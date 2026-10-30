@@ -1,12 +1,14 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Helper/Base64DecoderHelper.cs
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Diagnostics.CodeAnalysis;
 
-#if NETWASM_SIMD
+#if NET
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.Wasm;
 using System.Runtime.Intrinsics.X86;
@@ -51,7 +53,7 @@ namespace System.Buffers.Text
                 T* srcEnd = srcBytes + (uint)srcLength;
                 T* srcMax = srcBytes + (uint)maxSrcLength;
 
-#if NETWASM_SIMD
+#if NET
                 if (maxSrcLength >= 24)
                 {
                     T* end = srcMax - 88;
@@ -112,7 +114,8 @@ namespace System.Buffers.Text
                 {
                     // This should never overflow since destLength here is less than int.MaxValue / 4 * 3 (i.e. 1610612733)
                     // Therefore, (destLength / 3) * 4 will always be less than 2147483641
-#if NETWASM_SIMD
+                    Debug.Assert(destLength < (int.MaxValue / 4 * 3));
+#if NET
                     (maxSrcLength, int remainder) = int.DivRem(destLength, 3);
                     maxSrcLength *= 4;
 #else
@@ -166,6 +169,7 @@ namespace System.Buffers.Text
                 // Handle remaining bytes, for Base64 its always 4 bytes, for Base64Url up to 8 bytes left.
                 // If more than 4 bytes remained it will end up in DestinationTooSmallExit or InvalidDataExit (might succeed after whitespace removed)
                 long remaining = srcEnd - src;
+                Debug.Assert(typeof(TBase64Decoder) == typeof(Base64DecoderByte) ? remaining == 4 : remaining < 8);
                 int i0 = decoder.DecodeRemaining(srcEnd, ref decodingMap, remaining, out uint t2, out uint t3);
 
                 if (i0 < 0)
@@ -353,7 +357,7 @@ namespace System.Buffers.Text
 
                 ref sbyte decodingMap = ref MemoryMarshal.GetReference(decoder.DecodingMap);
 
-#if NETWASM_SIMD
+#if NET
                 // Decode in place using the same vectorized helpers as DecodeFrom. This is safe because the
                 // write cursor (dest) always trails the read cursor (src) by 25%, so each vector store -- including
                 // its zero-padded overshoot -- ends at or before the next vector load and never clobbers source
@@ -539,6 +543,7 @@ namespace System.Buffers.Text
                 }
 
                 source = source.Slice(encodedIdx);
+                Debug.Assert(bufferIdx > 0);
 
                 bool hasAnotherBlock;
 
@@ -573,6 +578,7 @@ namespace System.Buffers.Text
 
                 if (status != OperationStatus.Done)
                 {
+                    Debug.Assert(localConsumed == 0 && localWritten == 0, "On failure, should not have consumed or written any bytes");
                     return status;
                 }
 
@@ -601,6 +607,7 @@ namespace System.Buffers.Text
                 }
 
                 bytes = bytes.Slice(localWritten);
+                Debug.Assert(!source.IsEmpty);
             }
 
             return status;
@@ -641,6 +648,7 @@ namespace System.Buffers.Text
                 }
 
                 source = source.Slice(encodedIdx);
+                Debug.Assert(bufferIdx > 0);
 
                 bool hasAnotherBlock;
 
@@ -675,6 +683,7 @@ namespace System.Buffers.Text
 
                 if (status != OperationStatus.Done)
                 {
+                    Debug.Assert(localConsumed == 0 && localWritten == 0, "On failure, should not have consumed or written any bytes");
                     return status;
                 }
 
@@ -702,6 +711,7 @@ namespace System.Buffers.Text
                 }
 
                 bytes = bytes.Slice(localWritten);
+                Debug.Assert(!source.IsEmpty);
             }
 
             return status;
@@ -788,6 +798,7 @@ namespace System.Buffers.Text
                     {
                         while (bufferIdx < BlockSize)  // Can happen only for last block
                         {
+                            Debug.Assert(source.Length == sourceIndex);
                             buffer[bufferIdx++] = (byte)EncodingPad;
                         }
                     }
@@ -822,7 +833,7 @@ namespace System.Buffers.Text
             return status;
         }
 
-#if NETWASM_SIMD
+#if NET
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [CompExactlyDependsOn(typeof(Avx512BW))]
         [CompExactlyDependsOn(typeof(Avx512Vbmi))]
@@ -1001,6 +1012,7 @@ namespace System.Buffers.Text
         [CompExactlyDependsOn(typeof(PackedSimd))]
         internal static Vector128<byte> SimdShuffle(Vector128<byte> left, Vector128<byte> right, Vector128<byte> mask8F)
         {
+            Debug.Assert((Ssse3.IsSupported || AdvSimd.Arm64.IsSupported || PackedSimd.IsSupported) && BitConverter.IsLittleEndian);
 
             if (Ssse3.IsSupported)
             {
@@ -1164,6 +1176,7 @@ namespace System.Buffers.Text
             where TBase64Decoder : IBase64Decoder<T>
             where T : unmanaged
         {
+            Debug.Assert((Ssse3.IsSupported || AdvSimd.Arm64.IsSupported || PackedSimd.IsSupported) && BitConverter.IsLittleEndian);
 
             // If we have Vector128 support, pick off 16 bytes at a time for as long as we can,
             // but make sure that we quit before seeing any == markers at the end of the
@@ -1364,6 +1377,7 @@ namespace System.Buffers.Text
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsWhiteSpace(int value)
         {
+            Debug.Assert(value >= 0 && value <= ushort.MaxValue);
             uint charMinusLowUInt32;
             return (int)((0xC8000100U << (short)(charMinusLowUInt32 = (ushort)(value - '\t'))) & (charMinusLowUInt32 - 32)) < 0;
         }
@@ -1391,7 +1405,6 @@ namespace System.Buffers.Text
                     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                 ];
 
-#if NETWASM_SIMD
             public ReadOnlySpan<uint> VbmiLookup0 =>
                 [
                     0x80808080, 0x80808080, 0x80808080, 0x80808080,
@@ -1455,7 +1468,6 @@ namespace System.Buffers.Text
             public ReadOnlySpan<uint> AdvSimdLutOne3 => [0xFFFFFFFF, 0xFFFFFFFF, 0x3EFFFFFF, 0x3FFFFFFF];
 
             public uint AdvSimdLutTwo3Uint1 => 0x1B1AFFFF;
-#endif
 
             public int GetMaxDecodedLength(int utf8Length) => Base64.GetMaxDecodedFromUtf8Length(utf8Length);
 
@@ -1465,7 +1477,7 @@ namespace System.Buffers.Text
 
             public int SrcLength(bool _, int utf8Length) => utf8Length & ~0x3;  // only decode input up to the closest multiple of 4.
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             [CompExactlyDependsOn(typeof(AdvSimd.Arm64))]
             [CompExactlyDependsOn(typeof(Ssse3))]
@@ -1657,7 +1669,6 @@ namespace System.Buffers.Text
         {
             public ReadOnlySpan<sbyte> DecodingMap => default(Base64DecoderByte).DecodingMap;
 
-#if NETWASM_SIMD
             public ReadOnlySpan<uint> VbmiLookup0 => default(Base64DecoderByte).VbmiLookup0;
 
             public ReadOnlySpan<uint> VbmiLookup1 => default(Base64DecoderByte).VbmiLookup1;
@@ -1679,7 +1690,6 @@ namespace System.Buffers.Text
             public ReadOnlySpan<uint> AdvSimdLutOne3 => default(Base64DecoderByte).AdvSimdLutOne3;
 
             public uint AdvSimdLutTwo3Uint1 => default(Base64DecoderByte).AdvSimdLutTwo3Uint1;
-#endif
 
             public int GetMaxDecodedLength(int sourceLength) => Base64.GetMaxDecodedFromUtf8Length(sourceLength);
 
@@ -1689,7 +1699,7 @@ namespace System.Buffers.Text
 
             public int SrcLength(bool _, int sourceLength) => sourceLength & ~0x3;
 
-#if NETWASM_SIMD
+#if NET
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             [CompExactlyDependsOn(typeof(AdvSimd.Arm64))]
             [CompExactlyDependsOn(typeof(Ssse3))]

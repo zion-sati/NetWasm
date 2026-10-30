@@ -67,11 +67,14 @@ not DWARF or source-level debug information. See the [support status and
 roadmap](support-status.md#managed-stack-traces).
 
 The separate `NetWasm.Wit.Bindings.Tool` package writes reflection-free C#
-bindings; the compiler CLI does not generate C# source. Install and invoke it:
+bindings; the compiler CLI does not generate C# source, and a `NetWasmWit` item
+runs the same generator during an SDK build. Install the tool at the project's
+NetWasm version, in a local tool manifest, and invoke it:
 
 ```sh
-dotnet tool install --global NetWasm.Wit.Bindings.Tool
-netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
+dotnet new tool-manifest
+dotnet tool install NetWasm.Wit.Bindings.Tool --version <version>
+dotnet netwasm-wit-bindgen --wit service.wit --world service --output Bindings.g.cs
 ```
 
 Omit `--world` when the document contains exactly one world. `--wit` also

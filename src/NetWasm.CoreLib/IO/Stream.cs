@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace System.IO
 {
     // This synchronous surface is adapted from dotnet/runtime
-    // System.Private.CoreLib (commit 811225a482702af7ecc35d817966bc70b88a3a23).
+    // System.Private.CoreLib (commit 474ed963699fc29809015392738a15231aaae2de).
     // MarshalByRefObject and legacy APM members are intentionally outside the
     // NetWasm stream profile. Task/ValueTask I/O uses the platform scheduler.
     public abstract partial class Stream : IDisposable, IAsyncDisposable

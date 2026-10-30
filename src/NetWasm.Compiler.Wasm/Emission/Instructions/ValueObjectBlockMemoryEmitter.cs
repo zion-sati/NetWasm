@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 using NetWasm.Compiler.Wasm.Encoding;
 using System;
 using System.Collections.Immutable;
@@ -137,6 +138,21 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         var slot = request.Stack.Count - 1;
         var type = types.Resolve(request.Instruction, request.Header.MethodInstance);
         var layout = values.GetValueLayout(type);
+        if (type.StackKind == CliValueKind.ValueType &&
+            request.Context.ValueLayout.DirectValueLoadOffsets.Contains(request.Instruction.Offset))
+        {
+            // The adjacent consumer copies the value from its source address.
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)GetStackLocal(
+                request.Context,
+                slot,
+                request.Stack[slot]))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)GetStackLocal(
+                request.Context,
+                slot,
+                CliValueKind.ValueType))));
+            request.Stack[slot] = CliValueKind.ValueType;
+            return;
+        }
         if (type.StackKind == CliValueKind.ValueType)
         {
             var offset = request.Context.ValueLayout.TemporaryOffsets[
@@ -147,8 +163,8 @@ internal sealed class ValueObjectBlockMemoryEmitter(
                 request.Context,
                 slot,
                 request.Stack[slot])))));
-            EmitAddressConstant(code, layout.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+                writer => EmitAddressConstant(writer, layout.Size));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
                 request.Context,
@@ -190,8 +206,8 @@ internal sealed class ValueObjectBlockMemoryEmitter(
             type.StackKind)))));
         if (type.StackKind == CliValueKind.ValueType)
         {
-            EmitAddressConstant(code, layout.Size);
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+            SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+                writer => EmitAddressConstant(writer, layout.Size));
         }
         else
         {
@@ -217,8 +233,8 @@ internal sealed class ValueObjectBlockMemoryEmitter(
             request.Context,
             destination + 1,
             request.Stack[destination + 1])))));
-        EmitAddressConstant(code, layout.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+        SmallBlockEmitter.EmitKnownSizeCopy(code, request.Context, layout.Size,
+            writer => EmitAddressConstant(writer, layout.Size));
         request.Stack.RemoveRange(destination, 2);
     }
 
@@ -227,7 +243,13 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         int value,
         CliValueKind type)
     {
-        if (layouts.Target.UsesMemory64 &&
+        if (type == CliValueKind.V128)
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])));
+        }
+        else if (layouts.Target.UsesMemory64 &&
             type is CliValueKind.ManagedReference or CliValueKind.ManagedAddress)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(value)));

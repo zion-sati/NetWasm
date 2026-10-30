@@ -1,6 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Derived from dotnet/runtime 811225a482702af7ecc35d817966bc70b88a3a23.
+// Derived from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de.
 // Internal async-only stream dependency. The single reactor needs no blocking
 // waits, monitor coordination, wait handles, timeout surface or public semaphore.
 

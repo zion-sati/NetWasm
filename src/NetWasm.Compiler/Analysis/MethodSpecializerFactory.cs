@@ -4,6 +4,7 @@ using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Analysis.LoopInvariantFields;
+using NetWasm.Compiler.Analysis.Allocations;
 using NetWasm.Compiler.Analysis.Constants;
 using NetWasm.Compiler.Core.Types;
 
@@ -31,8 +32,15 @@ internal sealed class MethodSpecializerFactory(
         IMethodBodyReader methodBodies,
         WasmOptimizationSettings optimizationSettings,
         IRuntimeIntrinsicRegistry intrinsics,
-        PlatformWorldCapabilities world) =>
-        new MethodSpecializer(
+        PlatformWorldCapabilities world)
+    {
+        var constrainedTargets = new ConstrainedCallTargetResolver(
+            types,
+            methods,
+            methodImplementations);
+        var stackEffects = new StackEffectResolver(calledMethods);
+        var stackConsumers = new StackValueConsumerFinder(stackEffects);
+        return new MethodSpecializer(
         [
             .. optimizationSettings.SwitchBitTests == SwitchBitTestPolicy.Conservative
                 ? [new SwitchBitTestRewriter()]
@@ -54,6 +62,7 @@ internal sealed class MethodSpecializerFactory(
             new IntrinsicCallRewriter(calledMethods, symbols),
             new PlatformWorldCallRewriter(calledMethods, symbols, world),
             new ClosedTypeIsValueTypeCallRewriter(calledMethods, symbols),
+            new ClosedTypeContainsReferencesCallRewriter(calledMethods, symbols, typeDefinitions, fields),
             new InterlockedCallRewriter(calledMethods, symbols),
             new ActivatorCallRewriter(
                 typeDefinitions,
@@ -64,7 +73,6 @@ internal sealed class MethodSpecializerFactory(
                 calledMethods,
                 new ReadOnlySpanDataResolver()),
             new InitializeArrayCallRewriter(
-                fields,
                 calledMethods,
                 symbols),
             new DefaultComparerCallRewriter(
@@ -74,25 +82,40 @@ internal sealed class MethodSpecializerFactory(
                 types,
                 calledMethods,
                 symbols,
-                relationships),
+                relationships,
+                constrainedTargets,
+                stackConsumers,
+                optimizationSettings.Devirtualization == DevirtualizationPolicy.ExactType),
+            new EnumEqualsCallRewriter(typeDefinitions, calledMethods, symbols,
+                optimizationSettings.AllocationElimination != AllocationEliminationPolicy.Disabled),
+            new BoxedReceiverCallRewriter(
+                typeDefinitions,
+                methods,
+                calledMethods,
+                new NullableTypeResolver(),
+                relationships,
+                constrainedTargets,
+                stackEffects),
             new ConstrainedCallRewriter(
                 types,
                 typeDefinitions,
                 methods,
                 methodInstances,
                 symbols,
-                new ConstrainedCallTargetResolver(
-                    types,
-                    methods,
-                    methodImplementations)),
+                constrainedTargets),
             new ClosedTypeComparisonRewriter(
                 _graphBuilders.Create(),
                 calledMethods,
                 new PureReferenceComparisonClassifier(methodBodies, calledMethods, typeDefinitions, methods, new SharedReturnEpilogueRewriter(), intrinsics),
                 new ClosedTypeIdentityComparer(typeDefinitions)),
+            new ExactObjectTypeRewriter(_graphBuilders.Create(), calledMethods, fields, typeDefinitions,
+                new NullableTypeResolver()),
+            new ConstantTypeMaterializationRewriter(_graphBuilders.Create()),
             new BoxedNullComparisonRewriter(_graphBuilders.Create(), new NullableTypeResolver()),
-            new BoxedTypeTestRewriter(_graphBuilders.Create(), new NullableTypeResolver()),
-            new ConstantBranchRewriter(_graphBuilders.Create()),
-            new UnreachableInstructionRewriter(_graphBuilders.Create()),
+            new BoxedTypeTestRewriter(_graphBuilders.Create(), new NullableTypeResolver(), relationships),
+            new NonReturningCallRewriter(calledMethods, methodBodies, intrinsics),
+            new KnownSizeRewriter(calledMethods),
+            new ConstantBranchFolding(_graphBuilders.Create()),
         ]);
+    }
 }

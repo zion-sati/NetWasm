@@ -326,9 +326,9 @@ public sealed class EntryPointContractCoverageTests
         first = first with { JSExport = new InteropExportDeclaration("z") };
         second = second with
         {
-            WitExport = new WitExportDeclaration("test:pkg@1.0.0/interface", "z"),
+            WitExport = new WitExportDeclaration("test:pkg/interface@1.0.0", "z"),
             WitPostReturn = new WitPostReturnDeclaration(
-                "test:pkg@1.0.0/interface",
+                "test:pkg/interface@1.0.0",
                 "z"),
         };
         third = third with { JSExport = new InteropExportDeclaration(null) };

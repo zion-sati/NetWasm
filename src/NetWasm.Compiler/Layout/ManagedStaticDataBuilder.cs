@@ -19,6 +19,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
     private readonly IMemberDescriptorDataBuilder _memberDescriptors;
     private readonly IStringDataBuilder _strings;
     private readonly IExceptionObjectBuilder _exceptionObjects;
+    private readonly ITypeObjectDataBuilder _typeObjects;
     private readonly IEnumMetadataCollector _enumMetadataCollector;
     private readonly IEnumMetadataBuilder _enumMetadata;
     private readonly WasmTargetLayout _target;
@@ -63,6 +64,37 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         IStringDataBuilder strings,
         IExceptionObjectBuilder exceptionObjects,
         IEnumMetadataCollector enumMetadataCollector,
+        IEnumMetadataBuilder enumMetadata) :
+        this(
+            types,
+            state,
+            staticFields,
+            typeDescriptors,
+            constructedTypeDescriptors,
+            valueTypeDescriptors,
+            genericArguments,
+            memberDescriptors,
+            strings,
+            exceptionObjects,
+            EmptyTypeObjectDataBuilder.Instance,
+            enumMetadataCollector,
+            enumMetadata)
+    {
+    }
+
+    internal ManagedStaticDataBuilder(
+        ManagedTypeLayouts types,
+        ManagedStaticDataBuildState state,
+        IStaticFieldStorageBuilder staticFields,
+        ITypeDescriptorBuilder typeDescriptors,
+        IConstructedTypeDescriptorBuilder constructedTypeDescriptors,
+        IValueTypeDescriptorBuilder valueTypeDescriptors,
+        IRuntimeGenericArgumentMetadataBuilder genericArguments,
+        IMemberDescriptorDataBuilder memberDescriptors,
+        IStringDataBuilder strings,
+        IExceptionObjectBuilder exceptionObjects,
+        ITypeObjectDataBuilder typeObjects,
+        IEnumMetadataCollector enumMetadataCollector,
         IEnumMetadataBuilder enumMetadata)
     {
         _types = types ?? throw new ArgumentNullException(nameof(types));
@@ -82,6 +114,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         _strings = strings ?? throw new ArgumentNullException(nameof(strings));
         _exceptionObjects = exceptionObjects ??
             throw new ArgumentNullException(nameof(exceptionObjects));
+        _typeObjects = typeObjects ?? throw new ArgumentNullException(nameof(typeObjects));
         _enumMetadataCollector = enumMetadataCollector ??
             throw new ArgumentNullException(nameof(enumMetadataCollector));
         _enumMetadata = enumMetadata ?? throw new ArgumentNullException(nameof(enumMetadata));
@@ -100,6 +133,7 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         BuildTypeFacts();
         _enumMetadata.Build();
         _exceptionObjects.Build();
+        _typeObjects.Build();
 
         return new ManagedStaticData(
             ManagedTypeLayoutCompiler.Align(
@@ -129,6 +163,11 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
                 _state.MemberDescriptorRequiresDeclaringTypeOffset ?? 0,
             TypeFactsTableAddress = _state.TypeFactsTableAddress,
             TypeFactsTableCount = _state.TypeFactsTableCount,
+            TypeObjects = _state.TypeObjects.ToImmutableDictionary(StringComparer.Ordinal),
+            TypeObjectTableAddress = _state.TypeObjectTableAddress,
+            TypeObjectCacheAddress = _state.TypeObjectCacheAddress,
+            TypeObjectCount = _state.TypeObjectCount,
+            TypeObjectSize = _state.TypeObjectSize,
         };
     }
 

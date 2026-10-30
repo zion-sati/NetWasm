@@ -106,7 +106,7 @@ public sealed class StaticRootRegistrationCompilationTests
         {
             Exports = [new RequestedExport("run", "StaticRootCollectionFixture.EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
             EntryInvocationCount = 3,
         });
 

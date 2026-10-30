@@ -15,10 +15,12 @@ internal sealed class WasmMethodLowerer(
     public StructuredMethod Lower(
         ManagedMethodBody method,
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
-            BranchPrefixDuplicationPolicy.SizeAware)
+            BranchPrefixDuplicationPolicy.SizeAware,
+        DispatcherEliminationPolicy dispatcherElimination =
+            DispatcherEliminationPolicy.Disabled)
     {
         ArgumentNullException.ThrowIfNull(method);
-        return _structuredMethods.Create(branchPrefixDuplication)
+        return _structuredMethods.Create(branchPrefixDuplication, dispatcherElimination)
             .Build(method.ControlFlow);
     }
 }

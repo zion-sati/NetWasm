@@ -15,7 +15,8 @@ public sealed class AllocationCapabilityAnalyzer(
     IRuntimeAllocationSafepointClassifier runtimeSafepoints,
     IRuntimeIntrinsicRegistry intrinsics,
     ITypeClassifier typeClassifier,
-    IMethodInitializationTriggerClassifier initializationTriggers) : IAllocationCapabilityAnalyzer
+    IMethodInitializationTriggerClassifier initializationTriggers,
+    IStaticFieldInitializationClassifier initializedFields) : IAllocationCapabilityAnalyzer
 {
     private readonly ITypeRepository _types =
         types ?? throw new ArgumentNullException(nameof(types));
@@ -32,6 +33,8 @@ public sealed class AllocationCapabilityAnalyzer(
         throw new ArgumentNullException(nameof(typeClassifier));
     private readonly IMethodInitializationTriggerClassifier _initializationTriggers = initializationTriggers ??
         throw new ArgumentNullException(nameof(initializationTriggers));
+    private readonly IStaticFieldInitializationClassifier _initializedFields = initializedFields ??
+        throw new ArgumentNullException(nameof(initializedFields));
 
     public AllocationCapabilities Analyze(AllocationCapabilityAnalysisRequest request)
     {
@@ -91,6 +94,7 @@ public sealed class AllocationCapabilityAnalyzer(
                 var callsAllocator = Instructions(body).Any(instruction =>
                     CallsAllocatingMethod(
                         identity,
+                        body,
                         instruction,
                         allocating,
                         directIdentities,
@@ -120,6 +124,7 @@ public sealed class AllocationCapabilityAnalyzer(
 
     private bool CallsAllocatingMethod(
         string caller,
+        ManagedMethodBody callerMethod,
         CilInstruction instruction,
         HashSet<string> allocating,
         Dictionary<EntityKey, string> directIdentities,
@@ -130,6 +135,15 @@ public sealed class AllocationCapabilityAnalyzer(
         if (instruction.Operation is CilOperation.LoadStaticField or
             CilOperation.LoadStaticFieldAddress or CilOperation.StoreStaticField)
         {
+            // An access with no initialization check cannot run the initializer.
+            if (_initializedFields.IsInitializedFor(
+                    callerMethod.Method.Definition,
+                    callerMethod.Method.DeclaringType,
+                    callerMethod.Body.Instructions,
+                    instruction))
+            {
+                return false;
+            }
             string? initializer;
             if (instruction.Operand is CilOperand.FieldInstance field)
             {

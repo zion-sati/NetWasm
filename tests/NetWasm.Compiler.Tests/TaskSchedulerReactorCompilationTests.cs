@@ -23,7 +23,7 @@ public sealed class TaskSchedulerReactorCompilationTests
         var result = NetWasmCompiler.Compile(new(assembly, [assets.CoreLib], "TaskSchedulerContracts.EntryPoint",
             "RunReactor", [new("run", "TaskSchedulerContracts.EntryPoint", "RunReactor")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 42, target, result.StaticDataEnd));

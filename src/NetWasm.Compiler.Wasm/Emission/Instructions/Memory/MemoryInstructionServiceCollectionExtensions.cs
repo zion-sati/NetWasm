@@ -11,6 +11,7 @@ internal static class MemoryInstructionServiceCollectionExtensions
     {
         services.AddSingleton<IStaticInitializationEmitter, StaticInitializationEmitter>();
         services.AddSingleton<IMethodInitializationTriggerClassifier, MethodInitializationTriggerClassifier>();
+        services.AddSingleton<IStaticFieldInitializationClassifier, StaticFieldInitializationClassifier>();
         services.AddInstructionCommandProvider<ValueObjectBlockMemoryEmitter>();
         services.AddInstructionCommandProvider<FieldInstructionEmitter>();
         services.AddInstructionCommandProvider<StaticFieldInstructionEmitter>();

@@ -97,6 +97,20 @@ internal sealed class CompilerStructuredMethodFormatter : ICompilerStructuredMet
                         WriteSequence(text, method, exit.Body, indent + "    ", writtenGroups);
                     }
                     break;
+                case Structured.StructuredLabeledBlock labeled:
+                    text.Append(indent).Append("labeled-block next=")
+                        .Append(labeled.Next.Value).AppendLine();
+                    WriteSequence(text, method, labeled.Body, indent + "  ", writtenGroups);
+                    break;
+                case Structured.StructuredLabeledLoop labeled:
+                    text.Append(indent).Append("labeled-loop header=")
+                        .Append(labeled.Header.Value).AppendLine();
+                    WriteSequence(text, method, labeled.Body, indent + "  ", writtenGroups);
+                    break;
+                case Structured.StructuredLabelBranch branch:
+                    text.Append(indent).Append("label-branch block=")
+                        .Append(branch.Target.Value).AppendLine();
+                    break;
                 case Structured.StructuredLoopBreak:
                     text.Append(indent).AppendLine("break");
                     break;

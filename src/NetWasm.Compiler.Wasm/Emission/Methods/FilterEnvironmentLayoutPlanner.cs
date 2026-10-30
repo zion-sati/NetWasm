@@ -232,10 +232,23 @@ internal sealed class FilterEnvironmentLayoutPlanner(
                         }
                     }
                     break;
+                case StructuredLabeledBlock labeled:
+                    foreach (var block in EnumerateBlocks(labeled.Body))
+                    {
+                        yield return block;
+                    }
+                    break;
+                case StructuredLabeledLoop labeled:
+                    foreach (var block in EnumerateBlocks(labeled.Body))
+                    {
+                        yield return block;
+                    }
+                    break;
                 case StructuredExceptionRegion:
                 case StructuredLoopBreak:
                 case StructuredLoopContinue:
                 case StructuredDispatcherContinue:
+                case StructuredLabelBranch:
                     break;
             }
         }

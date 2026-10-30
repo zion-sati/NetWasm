@@ -97,7 +97,13 @@ internal sealed class ConstrainedCallRewriter(
                 CilOperation.Call or CilOperation.CallVirtual => CilOperation.Call,
                 _ => CilOperation.LoadFunction,
             };
-            if (call.Operation == CilOperation.Call)
+            // A value type's own instance method takes the managed pointer the
+            // prefix receives, as a call through the address does, so only an
+            // inherited or default implementation still needs the prefix. An
+            // enum declares no methods, so its calls keep it.
+            if (call.Operation == CilOperation.Call ||
+                directOperation == CilOperation.Call && concreteType.IsValueType &&
+                !implementation.IsStatic && implementation.DeclaringType == concreteType.Key)
             {
                 instructions[index - 1] = instructions[index - 1] with
                 {

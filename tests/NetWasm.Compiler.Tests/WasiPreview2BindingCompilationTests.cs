@@ -27,7 +27,7 @@ public sealed class WasiPreview2BindingCompilationTests
         var document = documentReader.Read(witPath);
         var bindings = bindingGenerator.Generate(
             document,
-            document.SelectWorld("wasi:clocks@0.2.11/imports"));
+            document.SelectWorld("wasi:clocks/imports@0.2.11"));
         var assembly = assets.CompileSource(
             "WasiClockBindingFixture",
             bindings +
@@ -56,20 +56,20 @@ public sealed class WasiPreview2BindingCompilationTests
             [],
             target,
             WitPath: witPath,
-            WitWorld: "wasi:clocks@0.2.11/imports"));
+            WitWorld: "wasi:clocks/imports@0.2.11"));
         var module = Encoding.UTF8.GetString(result.ApplicationModule);
         var imports = result.Program.WitImportMethods
             .Select(method => method.WitImport!)
             .ToArray();
 
         Assert.Contains(imports, import =>
-            import.InterfaceName == "wasi:clocks@0.2.11/wall-clock" &&
+            import.InterfaceName == "wasi:clocks/wall-clock@0.2.11" &&
             import.FunctionName == "now");
         Assert.Contains(imports, import =>
-            import.InterfaceName == "wasi:clocks@0.2.11/monotonic-clock" &&
+            import.InterfaceName == "wasi:clocks/monotonic-clock@0.2.11" &&
             import.FunctionName == "subscribe-duration");
         Assert.Contains(imports, import =>
-            import.InterfaceName == "wasi:io@0.2.11/poll" &&
+            import.InterfaceName == "wasi:io/poll@0.2.11" &&
             import.FunctionName == "[method]pollable.ready");
         Assert.Contains(canonicalPrefix, module, StringComparison.Ordinal);
     }

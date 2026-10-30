@@ -150,7 +150,7 @@ public sealed class CoreModelTests
         var @case = new CanonicalAbiCase("some", type);
         var parameter = new CanonicalAbiParameter("input", type);
         var function = new CanonicalAbiFunction(
-            "example:contract@1.0.0/api",
+            "example:contract/api@1.0.0",
             "run",
             new EntityKey(Assembly, 0x06000001),
             [parameter],
@@ -381,8 +381,11 @@ public sealed class CoreModelTests
         Assert.Equal(64, conversion.BitWidth);
         Assert.True(conversion.DestinationUnsigned);
         Assert.False(conversion.SourceUnsigned);
-        Assert.True(new CilOperand.ByteData([1, 2, 3]).Value
-            .SequenceEqual([(byte)1, (byte)2, (byte)3]));
+        var initializer = new CilOperand.ArrayInitializerData(field with
+        {
+            Definition = fieldDefinition with { InitialData = [1, 2, 3] },
+        });
+        Assert.True(initializer.Value.SequenceEqual([(byte)1, (byte)2, (byte)3]));
         Assert.Equal(localTypes, body.LocalSignatureTypes);
         Assert.Equal(CilExceptionRegionKind.Catch, region.Kind);
         Assert.Equal(4, region.HandlerOffset);

@@ -78,11 +78,11 @@ internal sealed class RuntimeInitializerFunctionEmitter(
         }
         if (plan.StateRegistrationGuardAddress is int registrationGuard)
         {
-            EmitOnce(code, registrationGuard, () => RegisterState(code));
+            EmitOnce(code, registrationGuard, () => RegisterState(code, plan));
         }
         else
         {
-            RegisterState(code);
+            RegisterState(code, plan);
         }
         if (plan.NativeCallbackReadinessAddress is int readinessAddress)
         {
@@ -124,7 +124,7 @@ internal sealed class RuntimeInitializerFunctionEmitter(
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
-    private void RegisterState(GeneratedFunctionWriterLease code)
+    private void RegisterState(GeneratedFunctionWriterLease code, RuntimeInitializationPlan plan)
     {
         foreach (var descriptor in descriptors.TypeDescriptors)
         {
@@ -194,6 +194,39 @@ internal sealed class RuntimeInitializerFunctionEmitter(
                 WasmOpcodes.Call,
                 WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                     RuntimeImportSymbol.RegisterStaticRoot))));
+        }
+        // The static Type objects become the objects of the types they name,
+        // which are registered above.
+        if (staticData.TypeObjectCount != 0)
+        {
+            addresses.Emit(code.Instructions, staticData.TypeObjectTableAddress);
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(staticData.TypeObjectCount)));
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(staticData.TypeObjectSize)));
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+                    RuntimeImportSymbol.RegisterTypeObjects,
+                    plan.RuntimeImportSelection))));
+        }
+        // GetType on a receiver of unknown type reads the runtime's cache of
+        // Type objects through this word.
+        if (staticData.TypeObjectCacheAddress != 0)
+        {
+            addresses.Emit(code.Instructions, staticData.TypeObjectCacheAddress);
+            code.Instructions.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
+                    RuntimeImportSymbol.TypeObjectCache,
+                    plan.RuntimeImportSelection))));
+            ManagedMemoryEmitter.EmitStoreBySize(
+                code.Instructions,
+                layouts.Target,
+                0,
+                layouts.Target.ObjectReferenceSize);
         }
     }
 

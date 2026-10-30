@@ -732,8 +732,8 @@ public sealed class RawAdapterWriterTests
         private static string DeploymentInterface(string interfaceName) =>
             interfaceName switch
             {
-                "sample:raw@1.0.0/api" => "sample:raw/api@1.0.0",
-                "netwasm:runtime@1.0.0/reactor-host" =>
+                "sample:raw/api@1.0.0" => "sample:raw/api@1.0.0",
+                "netwasm:runtime/reactor-host@1.0.0" =>
                     "netwasm:runtime/reactor-host@1.0.0",
                 _ => interfaceName,
             };
@@ -752,7 +752,7 @@ public sealed class RawAdapterWriterTests
             var resultReference = new WitTypeReference.Defined(4);
             var result = resolver.Resolve(document, resultReference);
             var canonical = new CanonicalAbiFunction(
-                "sample:raw@1.0.0/api",
+                "sample:raw/api@1.0.0",
                 functionName,
                 default,
                 parameters,
@@ -776,7 +776,7 @@ public sealed class RawAdapterWriterTests
             int resourceType = 9)
         {
             var declaration = new RawWitImportDeclaration.Resource(
-                "sample:raw@1.0.0/api",
+                "sample:raw/api@1.0.0",
                 "sample:raw/api@1.0.0",
                 document.Types[resourceType],
                 kind);
@@ -803,7 +803,7 @@ public sealed class RawAdapterWriterTests
                 operation == "watch" && index == 0 ? "ready" : "token",
                 resolver.Resolve(document, reference))).ToImmutableArray();
             var canonical = new CanonicalAbiFunction(
-                "netwasm:runtime@1.0.0/reactor-host",
+                "netwasm:runtime/reactor-host@1.0.0",
                 operation,
                 default,
                 parameters,

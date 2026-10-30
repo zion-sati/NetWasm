@@ -32,6 +32,14 @@ public sealed class FrontendArtifactCacheActorTests
     [InlineData(7)]
     [InlineData(8)]
     [InlineData(9)]
+    [InlineData(10)]
+    [InlineData(11)]
+    [InlineData(12)]
+    [InlineData(13)]
+    [InlineData(14)]
+    [InlineData(15)]
+    [InlineData(16)]
+    [InlineData(17)]
     public void BodyAffectingOverridesGetIndependentCacheNamespaces(int feature)
     {
         var builder = new FrontendArtifactCacheIdentityBuilder(
@@ -52,7 +60,15 @@ public sealed class FrontendArtifactCacheActorTests
             6 => new WasmOptimizationOverrides(Devirtualization: ManagedDevirtualization.Disabled),
             7 => new WasmOptimizationOverrides(AllocationElimination: ManagedAllocationElimination.Disabled),
             8 => new WasmOptimizationOverrides(LoopRotation: ManagedLoopRotation.Disabled),
-            _ => new WasmOptimizationOverrides(ArrayStoreCheckElimination: ManagedArrayStoreCheckElimination.Disabled),
+            9 => new WasmOptimizationOverrides(ArrayStoreCheckElimination: ManagedArrayStoreCheckElimination.Disabled),
+            10 => new WasmOptimizationOverrides(DispatcherElimination: ManagedDispatcherElimination.Disabled),
+            11 => new WasmOptimizationOverrides(EmptyFinallyRemoval: ManagedEmptyFinallyRemoval.Disabled),
+            12 => new WasmOptimizationOverrides(StructScalarReplacement: ManagedStructScalarReplacement.Disabled),
+            13 => new WasmOptimizationOverrides(AllocationScalarReplacement: ManagedAllocationScalarReplacement.Disabled),
+            14 => new WasmOptimizationOverrides(IdempotentLoopCollapse: ManagedIdempotentLoopCollapse.Disabled),
+            15 => new WasmOptimizationOverrides(LoopStoreForwarding: ManagedLoopStoreForwarding.Disabled),
+            16 => new WasmOptimizationOverrides(ArrayLoopIdioms: ManagedArrayLoopIdioms.Disabled),
+            _ => new WasmOptimizationOverrides(LoopVectorization: ManagedLoopVectorization.Disabled),
         };
 
         var enabledContext = builder.Build(options);
@@ -797,7 +813,9 @@ public sealed class FrontendArtifactCacheActorTests
                 LoopUnrolling: ManagedLoopUnrolling.Disabled,
                 BranchPrefixDuplication:
                     ManagedBranchPrefixDuplication.Disabled,
-                LoopRotation: ManagedLoopRotation.Disabled),
+                LoopRotation: ManagedLoopRotation.Disabled,
+                ArrayLoopIdioms: ManagedArrayLoopIdioms.Disabled,
+                LoopVectorization: ManagedLoopVectorization.Disabled),
         });
         Assert.NotNull(o3);
         Assert.NotNull(o2);
@@ -810,7 +828,16 @@ public sealed class FrontendArtifactCacheActorTests
             ReferenceAssemblyAliases = null,
             WitPath = null,
             OptimizationOverrides = new(
-                BranchPrefixDuplication: ManagedBranchPrefixDuplication.Disabled),
+                LoopInvariantFieldHoisting:
+                    ManagedLoopInvariantFieldHoisting.Disabled,
+                StaticDataViewElimination:
+                    ManagedStaticDataViewElimination.Disabled,
+                AddressTakenValuePromotion:
+                    ManagedAddressTakenValuePromotion.Disabled,
+                ManagedMethodInlining: ManagedMethodInlining.Disabled,
+                ArrayBoundsCheckElimination: ManagedArrayBoundsCheckElimination.Disabled,
+                BranchPrefixDuplication: ManagedBranchPrefixDuplication.Disabled,
+                LoopRotation: ManagedLoopRotation.Disabled),
         });
         Assert.NotNull(ozDisabled);
         Assert.NotEqual(memoryOnly.Namespace, ozDisabled.Namespace);
@@ -1733,7 +1760,9 @@ public sealed class FrontendArtifactCacheActorTests
         public StructuredMethod Lower(
             ManagedMethodBody method,
             BranchPrefixDuplicationPolicy branchPrefixDuplication =
-                BranchPrefixDuplicationPolicy.SizeAware)
+                BranchPrefixDuplicationPolicy.SizeAware,
+            DispatcherEliminationPolicy dispatcherElimination =
+                DispatcherEliminationPolicy.Disabled)
         {
             CallCount++;
             BranchPrefixDuplication = branchPrefixDuplication;

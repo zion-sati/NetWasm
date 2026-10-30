@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Ported from dotnet/runtime System.Collections.Immutable Validation/Requires.cs
-// at commit 811225a482702af7ecc35d817966bc70b88a3a23. The reflection-dependent
+// at commit 474ed963699fc29809015392738a15231aaae2de. The reflection-dependent
 // object-name lookup is intentionally reduced to Type.ToString(), because the
 // NetWasm CoreLib profile does not deploy reflection metadata.
 

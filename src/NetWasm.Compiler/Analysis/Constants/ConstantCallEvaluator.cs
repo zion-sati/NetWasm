@@ -13,7 +13,8 @@ internal sealed class ConstantCallEvaluator(
     IMethodRepository methods,
     IRuntimeIntrinsicRegistry intrinsics,
     IConstantOperandReader operands,
-    IConstantComparisonEvaluator comparisons) : IConstantCallEvaluator
+    IConstantComparisonEvaluator comparisons,
+    IMethodSpecializer specializer) : IConstantCallEvaluator
 {
     private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
@@ -22,6 +23,8 @@ internal sealed class ConstantCallEvaluator(
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ?? throw new ArgumentNullException(nameof(intrinsics));
     private readonly IConstantOperandReader _operands = operands ?? throw new ArgumentNullException(nameof(operands));
     private readonly IConstantComparisonEvaluator _comparisons = comparisons ?? throw new ArgumentNullException(nameof(comparisons));
+    private readonly IMethodSpecializer _specializer = specializer ?? throw new ArgumentNullException(nameof(specializer));
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CilMethodBody> _bodies = new(StringComparer.Ordinal);
 
     public ScalarConstant? Evaluate(ConstantCallEvaluation request)
     {
@@ -166,7 +169,9 @@ internal sealed class ConstantCallEvaluator(
         {
             if (request.Arguments[index] is { } argument && !Matches(argument, method.Signature.ParameterSignatureTypes[index])) return null;
         }
-        var body = _methodBodies.ReadMethodBody(method);
+        // The callee as its closed instantiation specializes it, so its typeof
+        // comparisons and sizes are already constants, as when it is inlined.
+        var body = _bodies.GetOrAdd(method.CanonicalName, _ => _specializer.Rewrite(_methodBodies.ReadMethodBody(method)));
         if (!body.ExceptionRegions.IsEmpty || body.Instructions.IsEmpty) return null;
         active.Add(method.CanonicalName);
         return new(request, body);

@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
@@ -93,6 +94,9 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<NativeMemoryClearIntrinsicEmitter>();
         services.AddSingleton<NativeMemoryCopyIntrinsicEmitter>();
         services.AddSingleton<NativeMemoryFillIntrinsicEmitter>();
+        services.AddSingleton<ArrayLoopFillIntrinsicEmitter>();
+        services.AddSingleton<ArrayLoopCopyIntrinsicEmitter>();
+        services.AddSingleton<ArrayLoopReductionIntrinsicEmitter>();
         services.AddSingleton<SingleToInt32BitsIntrinsicEmitter>();
         services.AddSingleton<Int32BitsToSingleIntrinsicEmitter>();
         services.AddSingleton<DoubleToInt64BitsIntrinsicEmitter>();
@@ -103,9 +107,11 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<FloatingTruncateIntrinsicEmitter>();
         services.AddSingleton<FloatingRoundIntrinsicEmitter>();
         services.AddSingleton<FloatingSquareRootIntrinsicEmitter>();
-        services.AddSingleton<FloatingCopySignIntrinsicEmitter>();
+        services.AddSingleton<FloatingBinaryIntrinsicEmitter>();
         services.AddSingleton<IntegerBitOperationIntrinsicEmitter>();
         services.AddSingleton<IntegerDivRemIntrinsicEmitter>();
+        services.AddSingleton<SimdVectorIntrinsicEmitter>();
+        services.AddSingleton<PackedSimdIntrinsicEmitter>();
         services.AddSingleton<ObjectArrayDelegateAdapterIntrinsicEmitter>();
         services.AddSingleton<MemberExecutionIntrinsicEmitter>();
         services.AddSingleton<DelegateDynamicInvokeIntrinsicEmitter>();
@@ -290,6 +296,16 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.NativeMemoryCopy);
         AddRegistration<NativeMemoryFillIntrinsicEmitter>(
             services, RuntimeIntrinsic.NativeMemoryFill);
+        AddRegistration<ArrayLoopFillIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopFill);
+        AddRegistration<ArrayLoopCopyIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopCopy);
+        AddRegistration<ArrayLoopReductionIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopXor);
+        AddRegistration<ArrayLoopReductionIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopOr);
+        AddRegistration<ArrayLoopReductionIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopAnd);
         AddRegistration<SingleToInt32BitsIntrinsicEmitter>(
             services, RuntimeIntrinsic.SingleToInt32Bits);
         AddRegistration<Int32BitsToSingleIntrinsicEmitter>(
@@ -310,8 +326,12 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.FloatingRound);
         AddRegistration<FloatingSquareRootIntrinsicEmitter>(
             services, RuntimeIntrinsic.FloatingSquareRoot);
-        AddRegistration<FloatingCopySignIntrinsicEmitter>(
+        AddRegistration<FloatingBinaryIntrinsicEmitter>(
             services, RuntimeIntrinsic.FloatingCopySign);
+        AddRegistration<FloatingBinaryIntrinsicEmitter>(
+            services, RuntimeIntrinsic.FloatingMaximum);
+        AddRegistration<FloatingBinaryIntrinsicEmitter>(
+            services, RuntimeIntrinsic.FloatingMinimum);
         AddRegistration<IntegerBitOperationIntrinsicEmitter>(
             services, RuntimeIntrinsic.IntegerLeadingZeroCount);
         AddRegistration<IntegerBitOperationIntrinsicEmitter>(
@@ -326,6 +346,13 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.IntegerRotateRight);
         AddRegistration<IntegerDivRemIntrinsicEmitter>(
             services, RuntimeIntrinsic.IntegerDivRem);
+        foreach (var intrinsic in Enum.GetValues<RuntimeIntrinsic>())
+        {
+            if (RuntimeIntrinsicKinds.IsSimdVector(intrinsic))
+                AddRegistration<SimdVectorIntrinsicEmitter>(services, intrinsic);
+        }
+        AddRegistration<PackedSimdIntrinsicEmitter>(services, RuntimeIntrinsic.PackedSimdIsSupported);
+        AddRegistration<PackedSimdIntrinsicEmitter>(services, RuntimeIntrinsic.PackedSimdInstruction);
         AddRegistration<ObjectArrayDelegateAdapterIntrinsicEmitter>(
             services, RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate);
         AddRegistration<MemberExecutionIntrinsicEmitter>(

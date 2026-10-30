@@ -70,6 +70,7 @@ public sealed class ComponentOperationRunnerTests
             "--enable-multimemory", "--enable-exception-handling",
             "--enable-reference-types",
             "--enable-bulk-memory", "--enable-nontrapping-float-to-int",
+            "--enable-simd",
         };
         if (memory64) expected.Add("--enable-memory64");
         Assert.Equal(expected, tools.Arguments);

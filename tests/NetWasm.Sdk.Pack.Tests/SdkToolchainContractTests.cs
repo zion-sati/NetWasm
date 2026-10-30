@@ -270,7 +270,7 @@ public sealed partial class SdkToolchainContractTests
     [InlineData("10.0.300-preview.7.25380.1", "win-x64", "win-x64", "dotnet.microsoft.com/download")]
     [InlineData("10.0.303", "linux-x64", "linux-x64", null)]
     [InlineData("10.0.401", "rhel.9-x64", "linux-x64", null)]
-    [InlineData("11.0.100-rc.2.26504.105", "osx-arm64", "osx-arm64", null)]
+    [InlineData("11.0.100-rc.3.26522.148", "osx-arm64", "osx-arm64", null)]
     public void SdkVersionValidationStopsSdksThatCannotRestoreTheFramework(
         string sdkVersion, string sdkRid, string portableRid, string? advice)
     {
@@ -520,7 +520,7 @@ public sealed partial class SdkToolchainContractTests
         Assert.Contains("netwasm:component@1.0.0/async-command", source, StringComparison.Ordinal);
         Assert.Contains("netwasm:component@1.0.0/async-http-command", source,
             StringComparison.Ordinal);
-        Assert.Contains("wasi:http@0.2.11/", source, StringComparison.Ordinal);
+        Assert.Contains("<ActivationInterfacePrefix>wasi:http/</ActivationInterfacePrefix>", source, StringComparison.Ordinal);
         var compilerWorlds = document.Descendants(XName.Get("NetWasmCompilerWitWorld",
             "http://schemas.microsoft.com/developer/msbuild/2003")).ToArray();
         var asyncCommandCompilerWorld = Assert.Single(compilerWorlds, world =>

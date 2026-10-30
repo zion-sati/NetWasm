@@ -18,7 +18,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
     IDelegateMethodClassifier delegateMethods,
     INullableTypeResolver nullableTypes,
     IManagedCallSiteFactory managedCallSites,
-    INativeCallbackDeclarationValidator nativeCallbacks) : IReachabilityInstructionAnalyzer
+    INativeCallbackDeclarationValidator nativeCallbacks,
+    IDispatchReceiverBoundResolver receiverBounds) : IReachabilityInstructionAnalyzer
 {
     public ReachabilityInstructionAnalysis Analyze(ReachabilityInstructionRequest request)
     {
@@ -135,6 +136,12 @@ internal sealed class ReachabilityInstructionAnalyzer(
                 {
                     runtimeTypes.Add(constrainedType.Value);
                 }
+                if (CilTypeMaterialization.IsExactObjectType(instruction))
+                {
+                    var exactType = typeOperands.Resolve(instruction, request.Method);
+                    runtimeTypes.Add(exactType);
+                    constructedTypes.Add(exactType);
+                }
             }
             if (instruction.Operation == CilOperation.GetTypeFacts)
             {
@@ -165,6 +172,12 @@ internal sealed class ReachabilityInstructionAnalyzer(
                         "A field-token instruction requires a field operand."),
                 };
                 fieldDescriptors.Add(descriptor);
+                continue;
+            }
+            if (instruction.Operation == CilOperation.InitializeArrayData)
+            {
+                // The initializer's bytes are copied from the field's static data.
+                fields.Add(((CilOperand.ArrayInitializerData)instruction.Operand).Field);
                 continue;
             }
             if (instruction.Operation == CilOperation.CreateReadOnlySpanFromRva)
@@ -228,7 +241,8 @@ internal sealed class ReachabilityInstructionAnalyzer(
                     request.Method.CanonicalName,
                     instruction.Offset,
                     calledMethod,
-                    instruction.Operation);
+                    instruction.Operation,
+                    receiverBounds.Resolve(request, instructionIndex, calledMethod));
                 dispatches.Add(new(
                     dispatchSiteKeys.Build(request.Method.CanonicalName, instruction.Offset),
                     declaration));

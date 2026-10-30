@@ -15,9 +15,9 @@ public sealed class WitCanonicalFunctionBuilderTests
         var declaration = new WitFunction("[method]file.read", [new("self", first), new("text", second)], result, new("method", 0));
         var resolver = new RecordingResolver();
 
-        var canonical = Create(resolver).Build(document, "example:files@1.0.0/api", declaration);
+        var canonical = Create(resolver).Build(document, "example:files/api@1.0.0", declaration);
 
-        Assert.Equal("example:files@1.0.0/api", canonical.InterfaceName);
+        Assert.Equal("example:files/api@1.0.0", canonical.InterfaceName);
         Assert.Equal(declaration.Name, canonical.FunctionName);
         Assert.Equal(new EntityKey(new AssemblyIdentity("generated"), 0), canonical.ManagedMethod);
         Assert.Equal(CanonicalAbiFunctionKind.Function, canonical.Kind);

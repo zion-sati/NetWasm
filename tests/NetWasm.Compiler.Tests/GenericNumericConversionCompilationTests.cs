@@ -7,6 +7,57 @@ using static CompilerTestSupport;
 
 public sealed class GenericNumericConversionCompilationTests
 {
+    // Upstream's Ascii builds its vector constants with TRight.CreateTruncating('a'), so byte and
+    // sbyte must convert from char in each mode, as desktop does.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void SmallIntegersConvertFromChar(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("CharGenericConversions", """
+            using System;
+            using System.Numerics;
+
+            namespace CharGenericConversions;
+
+            public static class EntryPoint
+            {
+                private static int Convert<T>(char value, int mode) where T : INumberBase<T>
+                {
+                    try
+                    {
+                        return mode switch
+                        {
+                            0 => int.CreateTruncating(T.CreateTruncating(value)),
+                            1 => int.CreateTruncating(T.CreateSaturating(value)),
+                            _ => int.CreateTruncating(T.CreateChecked(value)),
+                        };
+                    }
+                    catch (OverflowException)
+                    {
+                        return -1;
+                    }
+                }
+
+                public static int Run(int input)
+                {
+                    var hash = 0;
+                    foreach (var value in new[] { 'a', (char)0x161, (char)0xFFFF })
+                        for (var mode = 0; mode < 3; mode++)
+                            hash = hash * 31 + Convert<byte>(value, mode) * 7 + Convert<sbyte>(value, mode);
+                    return hash;
+                }
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib],
+            "CharGenericConversions.EntryPoint", "Run", [], target));
+
+        // As desktop .NET computes it.
+        Assert.Equal(1097578232, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target,
+            result.StaticDataEnd));
+    }
+
     [Theory]
     [InlineData(false, WasmTarget.Wasm32)]
     [InlineData(false, WasmTarget.Wasm64)]

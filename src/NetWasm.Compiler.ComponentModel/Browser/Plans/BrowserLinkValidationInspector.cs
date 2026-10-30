@@ -9,7 +9,7 @@ public sealed class BrowserLinkValidationInspector : IBrowserLinkOperationInspec
     private static readonly FrozenSet<string> Features = new[]
     {
         "mvp", "mutable-global", "saturating-float-to-int", "sign-extension", "reference-types",
-        "multi-value", "bulk-memory", "exceptions", "multi-memory", "memory64",
+        "multi-value", "bulk-memory", "exceptions", "multi-memory", "memory64", "simd",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public BrowserLinkOperationContract Inspect(BrowserLinkOperation operation)

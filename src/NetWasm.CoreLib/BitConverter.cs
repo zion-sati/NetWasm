@@ -1,1071 +1,1093 @@
-// Adapted from dotnet/runtime System.Private.CoreLib BitConverter.cs and the
-// System.Buffers binary primitive contracts. The upstream implementation is
-// licensed under MIT.
-// Copyright (c) .NET Foundation and Contributors.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/BitConverter.cs
 
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace System
 {
+    /// <summary>
+    /// Converts base data types to an array of bytes, and an array of bytes to base data types.
+    /// </summary>
     public static class BitConverter
     {
-        // NetWasm targets little-endian Wasm32 and Wasm64 memories.
+        // This field indicates the "endianness" of the architecture.
+        // The value is set to true if the architecture is
+        // little endian; false if it is big endian.
+#if BIGENDIAN
+        [Intrinsic]
+        public static readonly bool IsLittleEndian /* = false */;
+#else
+        [Intrinsic]
         public static readonly bool IsLittleEndian = true;
+#endif
 
-        public static byte[] GetBytes(bool value) => [value ? (byte)1 : (byte)0];
+        /// <summary>
+        /// Returns the specified Boolean value as a byte array.
+        /// </summary>
+        /// <param name="value">A Boolean value.</param>
+        /// <returns>A byte array with length 1.</returns>
+        public static byte[] GetBytes(bool value) => [(value ? (byte)1 : (byte)0)];
 
+        /// <summary>
+        /// Converts a Boolean into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted Boolean.</param>
+        /// <param name="value">The Boolean to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
         public static bool TryWriteBytes(Span<byte> destination, bool value)
         {
-            if (destination.Length < 1)
-            {
+            if (destination.Length < sizeof(byte))
                 return false;
-            }
-            destination[0] = value ? (byte)1 : (byte)0;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value ? (byte)1 : (byte)0);
             return true;
         }
 
+        /// <summary>
+        /// Returns the specified Unicode character value as a byte array.
+        /// </summary>
+        /// <param name="value">A Char value.</param>
+        /// <returns>An array of bytes with length 2.</returns>
         public static byte[] GetBytes(char value)
         {
-            var bytes = new byte[2];
-            TryWriteBytes(bytes, value);
+            byte[] bytes = new byte[sizeof(char)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
             return bytes;
         }
 
+        /// <summary>
+        /// Converts a character into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted character.</param>
+        /// <param name="value">The character to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
         public static bool TryWriteBytes(Span<byte> destination, char value)
         {
-            if (destination.Length < 2)
-            {
+            if (destination.Length < sizeof(char))
                 return false;
-            }
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
             return true;
         }
 
+        /// <summary>
+        /// Returns the specified 16-bit signed integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 2.</returns>
         public static byte[] GetBytes(short value)
         {
-            var bytes = new byte[2];
-            TryWriteBytes(bytes, value);
+            byte[] bytes = new byte[sizeof(short)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
             return bytes;
         }
 
-        public static bool TryWriteBytes(Span<byte> destination, short value) =>
-            TryWriteBytes(destination, unchecked((ushort)value));
-
-        public static byte[] GetBytes(ushort value)
+        /// <summary>
+        /// Converts a 16-bit signed integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 16-bit signed integer.</param>
+        /// <param name="value">The 16-bit signed integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static bool TryWriteBytes(Span<byte> destination, short value)
         {
-            var bytes = new byte[2];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, ushort value)
-        {
-            if (destination.Length < 2)
-            {
+            if (destination.Length < sizeof(short))
                 return false;
-            }
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
             return true;
         }
 
+        /// <summary>
+        /// Returns the specified 32-bit signed integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 4.</returns>
         public static byte[] GetBytes(int value)
         {
-            var bytes = new byte[4];
-            TryWriteBytes(bytes, value);
+            byte[] bytes = new byte[sizeof(int)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
             return bytes;
         }
 
-        public static bool TryWriteBytes(Span<byte> destination, int value) =>
-            TryWriteBytes(destination, unchecked((uint)value));
-
-        public static byte[] GetBytes(uint value)
+        /// <summary>
+        /// Converts a 32-bit signed integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 32-bit signed integer.</param>
+        /// <param name="value">The 32-bit signed integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static bool TryWriteBytes(Span<byte> destination, int value)
         {
-            var bytes = new byte[4];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, uint value)
-        {
-            if (destination.Length < 4)
-            {
+            if (destination.Length < sizeof(int))
                 return false;
-            }
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
-            destination[2] = (byte)(value >> 16);
-            destination[3] = (byte)(value >> 24);
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
             return true;
         }
 
+        /// <summary>
+        /// Returns the specified 64-bit signed integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 8.</returns>
         public static byte[] GetBytes(long value)
         {
-            var bytes = new byte[8];
-            TryWriteBytes(bytes, value);
+            byte[] bytes = new byte[sizeof(long)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
             return bytes;
         }
 
-        public static bool TryWriteBytes(Span<byte> destination, long value) =>
-            TryWriteBytes(destination, unchecked((ulong)value));
-
-        public static byte[] GetBytes(ulong value)
+        /// <summary>
+        /// Converts a 64-bit signed integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 64-bit signed integer.</param>
+        /// <param name="value">The 64-bit signed integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static bool TryWriteBytes(Span<byte> destination, long value)
         {
-            var bytes = new byte[8];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, ulong value)
-        {
-            if (destination.Length < 8)
-            {
+            if (destination.Length < sizeof(long))
                 return false;
-            }
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
-            destination[2] = (byte)(value >> 16);
-            destination[3] = (byte)(value >> 24);
-            destination[4] = (byte)(value >> 32);
-            destination[5] = (byte)(value >> 40);
-            destination[6] = (byte)(value >> 48);
-            destination[7] = (byte)(value >> 56);
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
             return true;
         }
 
-        public static byte[] GetBytes(float value)
-        {
-            var bytes = new byte[4];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, float value) =>
-            TryWriteBytes(destination, SingleToUInt32Bits(value));
-
-        public static byte[] GetBytes(double value)
-        {
-            var bytes = new byte[8];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, double value) =>
-            TryWriteBytes(destination, DoubleToUInt64Bits(value));
-
-        public static byte[] GetBytes(Half value)
-        {
-            var bytes = new byte[2];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, Half value) =>
-            TryWriteBytes(destination, HalfToUInt16Bits(value));
-
-        public static byte[] GetBytes(System.Numerics.BFloat16 value)
-        {
-            var bytes = new byte[2];
-            TryWriteBytes(bytes, value);
-            return bytes;
-        }
-
-        public static bool TryWriteBytes(Span<byte> destination, System.Numerics.BFloat16 value) =>
-            TryWriteBytes(destination, BFloat16ToUInt16Bits(value));
-
+        /// <summary>
+        /// Returns the specified 128-bit signed integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 16.</returns>
         public static byte[] GetBytes(Int128 value)
         {
-            var bytes = new byte[Int128.Size];
-            TryWriteBytes(bytes, value);
+            byte[] bytes = new byte[Int128.Size];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
             return bytes;
         }
 
+        /// <summary>
+        /// Converts a 128-bit signed integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 128-bit signed integer.</param>
+        /// <param name="value">The 128-bit signed integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
         public static bool TryWriteBytes(Span<byte> destination, Int128 value)
         {
             if (destination.Length < Int128.Size)
-            {
                 return false;
-            }
-            TryWriteBytes(destination, value.Lower);
-            TryWriteBytes(destination[8..], value.Upper);
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
             return true;
         }
 
-        public static byte[] GetBytes(UInt128 value)
+        /// <summary>
+        /// Returns the specified 16-bit unsigned integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 2.</returns>
+        [CLSCompliant(false)]
+        public static byte[] GetBytes(ushort value)
         {
-            var bytes = new byte[UInt128.Size];
-            TryWriteBytes(bytes, value);
+            byte[] bytes = new byte[sizeof(ushort)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
             return bytes;
         }
 
-        public static bool TryWriteBytes(Span<byte> destination, UInt128 value)
+        /// <summary>
+        /// Converts a 16-bit unsigned integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 16-bit unsigned integer.</param>
+        /// <param name="value">The 16-bit unsigned integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        [CLSCompliant(false)]
+        public static bool TryWriteBytes(Span<byte> destination, ushort value)
         {
-            if (destination.Length < UInt128.Size)
-            {
+            if (destination.Length < sizeof(ushort))
                 return false;
-            }
-            TryWriteBytes(destination, value.Lower);
-            TryWriteBytes(destination[8..], value.Upper);
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
             return true;
         }
 
-        public static char ToChar(byte[] value, int startIndex) =>
-            unchecked((char)ToUInt16(value, startIndex));
-
-        public static char ToChar(ReadOnlySpan<byte> value) => unchecked((char)ToUInt16(value));
-
-        public static short ToInt16(byte[] value, int startIndex) =>
-            unchecked((short)ToUInt16(value, startIndex));
-
-        public static short ToInt16(ReadOnlySpan<byte> value) =>
-            unchecked((short)ToUInt16(value));
-
-        public static ushort ToUInt16(byte[] value, int startIndex)
+        /// <summary>
+        /// Returns the specified 32-bit unsigned integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 4.</returns>
+        [CLSCompliant(false)]
+        public static byte[] GetBytes(uint value)
         {
-            ValidateArray(value, startIndex, 2);
-            return unchecked((ushort)(value[startIndex] | value[startIndex + 1] << 8));
+            byte[] bytes = new byte[sizeof(uint)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
         }
 
-        public static ushort ToUInt16(ReadOnlySpan<byte> value)
+        /// <summary>
+        /// Converts a 32-bit unsigned integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 32-bit unsigned integer.</param>
+        /// <param name="value">The 32-bit unsigned integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        [CLSCompliant(false)]
+        public static bool TryWriteBytes(Span<byte> destination, uint value)
         {
-            RequireSpan(value, 2);
-            return unchecked((ushort)(value[0] | value[1] << 8));
+            if (destination.Length < sizeof(uint))
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
         }
 
-        public static int ToInt32(byte[] value, int startIndex) =>
-            unchecked((int)ToUInt32(value, startIndex));
-
-        public static int ToInt32(ReadOnlySpan<byte> value) =>
-            unchecked((int)ToUInt32(value));
-
-        public static uint ToUInt32(byte[] value, int startIndex)
+        /// <summary>
+        /// Returns the specified 64-bit unsigned integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 8.</returns>
+        [CLSCompliant(false)]
+        public static byte[] GetBytes(ulong value)
         {
-            ValidateArray(value, startIndex, 4);
-            return unchecked((uint)(value[startIndex] |
-                value[startIndex + 1] << 8 |
-                value[startIndex + 2] << 16 |
-                value[startIndex + 3] << 24));
+            byte[] bytes = new byte[sizeof(ulong)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
         }
 
-        public static uint ToUInt32(ReadOnlySpan<byte> value)
+        /// <summary>
+        /// Converts a 64-bit unsigned integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 64-bit unsigned integer.</param>
+        /// <param name="value">The 64-bit unsigned integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        [CLSCompliant(false)]
+        public static bool TryWriteBytes(Span<byte> destination, ulong value)
         {
-            RequireSpan(value, 4);
-            return unchecked((uint)(value[0] |
-                value[1] << 8 |
-                value[2] << 16 |
-                value[3] << 24));
+            if (destination.Length < sizeof(ulong))
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
         }
 
-        public static long ToInt64(byte[] value, int startIndex) =>
-            unchecked((long)ToUInt64(value, startIndex));
-
-        public static long ToInt64(ReadOnlySpan<byte> value) =>
-            unchecked((long)ToUInt64(value));
-
-        public static ulong ToUInt64(byte[] value, int startIndex)
+        /// <summary>
+        /// Returns the specified 128-bit unsigned integer value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 16.</returns>
+        [CLSCompliant(false)]
+        public static byte[] GetBytes(UInt128 value)
         {
-            ValidateArray(value, startIndex, 8);
-            return (ulong)value[startIndex] |
-                (ulong)value[startIndex + 1] << 8 |
-                (ulong)value[startIndex + 2] << 16 |
-                (ulong)value[startIndex + 3] << 24 |
-                (ulong)value[startIndex + 4] << 32 |
-                (ulong)value[startIndex + 5] << 40 |
-                (ulong)value[startIndex + 6] << 48 |
-                (ulong)value[startIndex + 7] << 56;
+            byte[] bytes = new byte[UInt128.Size];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
         }
 
-        public static ulong ToUInt64(ReadOnlySpan<byte> value)
+        /// <summary>
+        /// Converts a 128-bit unsigned integer into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted 128-bit unsigned integer.</param>
+        /// <param name="value">The 128-bit unsigned integer to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        [CLSCompliant(false)]
+        public static bool TryWriteBytes(Span<byte> destination, UInt128 value)
         {
-            RequireSpan(value, 8);
-            return (ulong)value[0] |
-                (ulong)value[1] << 8 |
-                (ulong)value[2] << 16 |
-                (ulong)value[3] << 24 |
-                (ulong)value[4] << 32 |
-                (ulong)value[5] << 40 |
-                (ulong)value[6] << 48 |
-                (ulong)value[7] << 56;
+            if (destination.Length < UInt128.Size)
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
         }
 
-        public static float ToSingle(byte[] value, int startIndex) =>
-            UInt32BitsToSingle(ToUInt32(value, startIndex));
-
-        public static float ToSingle(ReadOnlySpan<byte> value) =>
-            UInt32BitsToSingle(ToUInt32(value));
-
-        public static double ToDouble(byte[] value, int startIndex) =>
-            UInt64BitsToDouble(ToUInt64(value, startIndex));
-
-        public static double ToDouble(ReadOnlySpan<byte> value) =>
-            UInt64BitsToDouble(ToUInt64(value));
-
-        public static Half ToHalf(byte[] value, int startIndex) =>
-            Int16BitsToHalf(ToInt16(value, startIndex));
-
-        public static Half ToHalf(ReadOnlySpan<byte> value) =>
-            Int16BitsToHalf(ToInt16(value));
-
-        public static System.Numerics.BFloat16 ToBFloat16(byte[] value, int startIndex) =>
-            Int16BitsToBFloat16(ToInt16(value, startIndex));
-
-        public static System.Numerics.BFloat16 ToBFloat16(ReadOnlySpan<byte> value) =>
-            Int16BitsToBFloat16(ToInt16(value));
-
-        public static Int128 ToInt128(byte[] value, int startIndex)
+        /// <summary>
+        /// Returns the specified <see cref="BFloat16"/> value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 2.</returns>
+        public static unsafe byte[] GetBytes(BFloat16 value)
         {
-            ValidateArray(value, startIndex, Int128.Size);
-            return new Int128(ToUInt64(value, startIndex + 8), ToUInt64(value, startIndex));
+            byte[] bytes = new byte[sizeof(BFloat16)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
         }
 
-        public static Int128 ToInt128(ReadOnlySpan<byte> value)
+        /// <summary>
+        /// Converts a <see cref="BFloat16"/> value into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted <see cref="BFloat16"/> value.</param>
+        /// <param name="value">The <see cref="BFloat16"/> value to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static unsafe bool TryWriteBytes(Span<byte> destination, BFloat16 value)
         {
-            RequireSpan(value, Int128.Size);
-            return new Int128(ToUInt64(value[8..]), ToUInt64(value));
+            if (destination.Length < sizeof(BFloat16))
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
         }
 
-        public static UInt128 ToUInt128(byte[] value, int startIndex)
+        /// <summary>
+        /// Returns the specified half-precision floating point value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 2.</returns>
+        public static unsafe byte[] GetBytes(Half value)
         {
-            ValidateArray(value, startIndex, UInt128.Size);
-            return new UInt128(ToUInt64(value, startIndex + 8), ToUInt64(value, startIndex));
+            byte[] bytes = new byte[sizeof(Half)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
         }
 
-        public static UInt128 ToUInt128(ReadOnlySpan<byte> value)
+        /// <summary>
+        /// Converts a half-precision floating-point value into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted half-precision floating-point value.</param>
+        /// <param name="value">The half-precision floating-point value to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static unsafe bool TryWriteBytes(Span<byte> destination, Half value)
         {
-            RequireSpan(value, UInt128.Size);
-            return new UInt128(ToUInt64(value[8..]), ToUInt64(value));
+            if (destination.Length < sizeof(Half))
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
         }
 
-        public static bool ToBoolean(byte[] value, int startIndex)
+        /// <summary>
+        /// Returns the specified single-precision floating point value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 4.</returns>
+        public static byte[] GetBytes(float value)
+        {
+            byte[] bytes = new byte[sizeof(float)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
+        }
+
+        /// <summary>
+        /// Converts a single-precision floating-point value into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted single-precision floating-point value.</param>
+        /// <param name="value">The single-precision floating-point value to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static bool TryWriteBytes(Span<byte> destination, float value)
+        {
+            if (destination.Length < sizeof(float))
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the specified double-precision floating point value as an array of bytes.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>An array of bytes with length 8.</returns>
+        public static byte[] GetBytes(double value)
+        {
+            byte[] bytes = new byte[sizeof(double)];
+            bool success = TryWriteBytes(bytes, value);
+            Debug.Assert(success);
+            return bytes;
+        }
+
+        /// <summary>
+        /// Converts a double-precision floating-point value into a span of bytes.
+        /// </summary>
+        /// <param name="destination">When this method returns, the bytes representing the converted double-precision floating-point value.</param>
+        /// <param name="value">The double-precision floating-point value to convert.</param>
+        /// <returns><see langword="true"/> if the conversion was successful; <see langword="false"/> otherwise.</returns>
+        public static bool TryWriteBytes(Span<byte> destination, double value)
+        {
+            if (destination.Length < sizeof(double))
+                return false;
+
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(destination), value);
+            return true;
+        }
+
+        /// <summary>
+        /// Returns a Unicode character converted from two bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A character formed by two bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException"><paramref name="startIndex"/> equals the length of <paramref name="value"/> minus 1.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static char ToChar(byte[] value, int startIndex) => unchecked((char)ToInt16(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a character.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A character representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than the length of a <see cref="char"/>.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static char ToChar(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(char))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<char>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 16-bit signed integer converted from two bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 16-bit signed integer formed by two bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException"><paramref name="startIndex"/> equals the length of <paramref name="value"/> minus 1.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static short ToInt16(byte[] value, int startIndex)
         {
             if (value == null)
-            {
-                throw new ArgumentNullException();
-            }
-            if ((uint)startIndex >= (uint)value.Length)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-            return value[startIndex] != 0;
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (unchecked((uint)startIndex) >= unchecked((uint)value.Length))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            if (startIndex > value.Length - sizeof(short))
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_ByteArrayTooSmallForValue, ExceptionArgument.value);
+
+            return Unsafe.ReadUnaligned<short>(ref value[startIndex]);
         }
 
-        public static bool ToBoolean(ReadOnlySpan<byte> value)
+        /// <summary>
+        /// Converts a read-only byte span into a 16-bit signed integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 16-bit signed integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 2.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static short ToInt16(ReadOnlySpan<byte> value)
         {
-            RequireSpan(value, 1);
-            return value[0] != 0;
+            if (value.Length < sizeof(short))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<short>(ref MemoryMarshal.GetReference(value));
         }
 
-        public static string ToString(byte[] value) =>
-            value == null ? throw new ArgumentNullException() : ToString(value, 0, value.Length);
+        /// <summary>
+        /// Returns a 32-bit signed integer converted from four bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 32-bit signed integer formed by four bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 3,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static int ToInt32(byte[] value, int startIndex)
+        {
+            if (value == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (unchecked((uint)startIndex) >= unchecked((uint)value.Length))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            if (startIndex > value.Length - sizeof(int))
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_ByteArrayTooSmallForValue, ExceptionArgument.value);
 
-        public static string ToString(byte[] value, int startIndex) =>
-            value == null ? throw new ArgumentNullException() :
-            ToString(value, startIndex, value.Length - startIndex);
+            return Unsafe.ReadUnaligned<int>(ref value[startIndex]);
+        }
 
+        /// <summary>
+        /// Converts a read-only byte span into a 32-bit signed integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 32-bit signed integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 4.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int ToInt32(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(int))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<int>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 64-bit signed integer converted from eight bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 64-bit signed integer formed by eight bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 7,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static long ToInt64(byte[] value, int startIndex)
+        {
+            if (value == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (unchecked((uint)startIndex) >= unchecked((uint)value.Length))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            if (startIndex > value.Length - sizeof(long))
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_ByteArrayTooSmallForValue, ExceptionArgument.value);
+
+            return Unsafe.ReadUnaligned<long>(ref value[startIndex]);
+        }
+
+        /// <summary>
+        /// Converts a read-only byte span into a 64-bit signed integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 64-bit signed integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 8.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long ToInt64(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(long))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<long>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 128-bit signed integer converted from sixteen bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 128-bit signed integer formed by sixteen bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 15,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static Int128 ToInt128(byte[] value, int startIndex)
+        {
+            if (value == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (unchecked((uint)startIndex) >= unchecked((uint)value.Length))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            if (startIndex > value.Length - Int128.Size)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_ByteArrayTooSmallForValue, ExceptionArgument.value);
+
+            return Unsafe.ReadUnaligned<Int128>(ref value[startIndex]);
+        }
+
+        /// <summary>
+        /// Converts a read-only byte span into a 128-bit signed integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 128-bit signed integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 16.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Int128 ToInt128(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < Int128.Size)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<Int128>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 16-bit unsigned integer converted from two bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 16-bit unsigned integer formed by two bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException"><paramref name="startIndex"/> equals the length of <paramref name="value"/> minus 1.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        [CLSCompliant(false)]
+        public static ushort ToUInt16(byte[] value, int startIndex) => unchecked((ushort)ToInt16(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a 16-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 16-bit unsigned integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 2.</exception>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ushort ToUInt16(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(ushort))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<ushort>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 32-bit unsigned integer converted from four bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 32-bit unsigned integer formed by four bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 3,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        [CLSCompliant(false)]
+        public static uint ToUInt32(byte[] value, int startIndex) => unchecked((uint)ToInt32(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a 32-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 32-bit unsigned integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 4.</exception>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint ToUInt32(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(uint))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<uint>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 64-bit unsigned integer converted from eight bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 64-bit unsigned integer formed by eight bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 7,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        [CLSCompliant(false)]
+        public static ulong ToUInt64(byte[] value, int startIndex) => unchecked((ulong)ToInt64(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a 64-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 64-bit unsigned integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 8.</exception>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong ToUInt64(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(ulong))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<ulong>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a 128-bit unsigned integer converted from sixteen bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A 128-bit unsigned integer formed by sixteen bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 15,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        [CLSCompliant(false)]
+        public static UInt128 ToUInt128(byte[] value, int startIndex)
+        {
+            if (value == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (unchecked((uint)startIndex) >= unchecked((uint)value.Length))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            if (startIndex > value.Length - UInt128.Size)
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_ByteArrayTooSmallForValue, ExceptionArgument.value);
+
+            return Unsafe.ReadUnaligned<UInt128>(ref value[startIndex]);
+        }
+
+        /// <summary>
+        /// Converts a read-only byte span into a 128-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A 128-bit unsigned integer representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 16.</exception>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static UInt128 ToUInt128(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < UInt128.Size)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<UInt128>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a <see cref="BFloat16"/> number converted from two bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A <see cref="BFloat16"/> number signed integer formed by two bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException"><paramref name="startIndex"/> equals the length of <paramref name="value"/> minus 1.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static BFloat16 ToBFloat16(byte[] value, int startIndex) => Int16BitsToBFloat16(ToInt16(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a <see cref="BFloat16"/> value.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A <see cref="BFloat16"/> value representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 2.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe BFloat16 ToBFloat16(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(BFloat16))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<BFloat16>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a half-precision floating point number converted from two bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A half-precision floating point number signed integer formed by two bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException"><paramref name="startIndex"/> equals the length of <paramref name="value"/> minus 1.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static Half ToHalf(byte[] value, int startIndex) => Int16BitsToHalf(ToInt16(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a half-precision floating-point value.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A half-precision floating-point value representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 2.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe Half ToHalf(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(Half))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<Half>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a single-precision floating point number converted from four bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A single-precision floating point number formed by four bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 3,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static float ToSingle(byte[] value, int startIndex) => Int32BitsToSingle(ToInt32(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a single-precision floating-point value.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A single-precision floating-point value representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 4.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float ToSingle(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(float))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<float>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Returns a double-precision floating point number converted from eight bytes at a specified position in a byte array.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A double-precision floating point number formed by eight bytes beginning at <paramref name="startIndex"/>.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="startIndex"/> is greater than or equal to the length of <paramref name="value"/> minus 7,
+        /// and is less than or equal to the length of <paramref name="value"/> minus 1.
+        /// </exception>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static double ToDouble(byte[] value, int startIndex) => Int64BitsToDouble(ToInt64(value, startIndex));
+
+        /// <summary>
+        /// Converts a read-only byte span into a double-precision floating-point value.
+        /// </summary>
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A double-precision floating-point value representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 8.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double ToDouble(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(double))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<double>(ref MemoryMarshal.GetReference(value));
+        }
+
+        /// <summary>
+        /// Converts the numeric value of each element of a specified array of bytes
+        /// to its equivalent hexadecimal string representation.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <param name="length">The number of array elements in <paramref name="value"/> to convert.</param>
+        /// <returns>A string of hexadecimal pairs separated by hyphens,
+        /// where each pair represents the corresponding element in a subarray of <paramref name="value"/>;
+        /// for example, "7F-2C-4A-00".</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="startIndex"/> or <paramref name="length"/> is less than zero.
+        /// <para>-or-</para>
+        /// <paramref name="startIndex"/> is greater than zero and is greater than or equal to the length of <paramref name="value"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// The combination of <paramref name="startIndex"/> and <paramref name="length"/> does not specify a position within <paramref name="value"/>;
+        /// that is, the <paramref name="startIndex"/> parameter is greater than the length of <paramref name="value"/> minus the <paramref name="length"/> parameter.
+        /// </exception>
         public static string ToString(byte[] value, int startIndex, int length)
         {
             if (value == null)
-            {
-                throw new ArgumentNullException();
-            }
-            if (startIndex < 0 || (startIndex >= value.Length && startIndex > 0))
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-            if (length < 0)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (startIndex < 0 || startIndex >= value.Length && startIndex > 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            ArgumentOutOfRangeException.ThrowIfNegative(length);
             if (startIndex > value.Length - length)
-            {
-                throw new ArgumentException();
-            }
+                ThrowHelper.ThrowArgumentException(ExceptionResource.Arg_ByteArrayTooSmallForValue, ExceptionArgument.value);
+
             if (length == 0)
             {
                 return string.Empty;
             }
-            if (length > int.MaxValue / 3)
+
+            // (int.MaxValue / 3) == 715,827,882 Bytes == 699 MB
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(length, int.MaxValue / 3);
+
+            string result = string.FastAllocateString(length * 3 - 1);
+
+            var dst = new Span<char>(ref result.GetRawStringData(), result.Length);
+            var src = new ReadOnlySpan<byte>(value, startIndex, length);
+            int i = 0;
+            int j = 0;
+            byte b = src[i++];
+            dst[j++] = HexConverter.ToCharUpper(b >> 4);
+            dst[j++] = HexConverter.ToCharUpper(b);
+            while (i < src.Length)
             {
-                throw new ArgumentOutOfRangeException();
+                b = src[i++];
+                dst[j++] = '-';
+                dst[j++] = HexConverter.ToCharUpper(b >> 4);
+                dst[j++] = HexConverter.ToCharUpper(b);
             }
 
-            var result = new char[length * 3 - 1];
-            var destination = 0;
-            for (var index = 0; index < length; index++)
-            {
-                if (index != 0)
-                {
-                    result[destination++] = '-';
-                }
-                var valueByte = value[startIndex + index];
-                result[destination++] = Hex((byte)(valueByte >> 4));
-                result[destination++] = Hex((byte)(valueByte & 0xf));
-            }
-            return string.Create(result);
+            return result;
         }
 
-        public static long DoubleToInt64Bits(double value) => 0;
-        public static double Int64BitsToDouble(long value) => 0;
-        public static int SingleToInt32Bits(float value) => 0;
-        public static float Int32BitsToSingle(int value) => 0;
-
-        public static short HalfToInt16Bits(Half value) => unchecked((short)value._value);
-        public static Half Int16BitsToHalf(short value) => new(unchecked((ushort)value));
-        public static short BFloat16ToInt16Bits(System.Numerics.BFloat16 value) => unchecked((short)value._value);
-        public static System.Numerics.BFloat16 Int16BitsToBFloat16(short value) => new(unchecked((ushort)value));
-
-        public static ulong DoubleToUInt64Bits(double value) =>
-            unchecked((ulong)DoubleToInt64Bits(value));
-
-        public static double UInt64BitsToDouble(ulong value) =>
-            Int64BitsToDouble(unchecked((long)value));
-
-        public static uint SingleToUInt32Bits(float value) =>
-            unchecked((uint)SingleToInt32Bits(value));
-
-        public static float UInt32BitsToSingle(uint value) =>
-            Int32BitsToSingle(unchecked((int)value));
-
-        public static ushort HalfToUInt16Bits(Half value) => value._value;
-        public static Half UInt16BitsToHalf(ushort value) => new(value);
-        public static ushort BFloat16ToUInt16Bits(System.Numerics.BFloat16 value) => value._value;
-        public static System.Numerics.BFloat16 UInt16BitsToBFloat16(ushort value) => new(value);
-
-        private static void ValidateArray(byte[] value, int startIndex, int size)
+        /// <summary>
+        /// Converts the numeric value of each element of a specified array of bytes
+        /// to its equivalent hexadecimal string representation.
+        /// </summary>
+        /// <param name="value">An array of bytes.</param>
+        /// <returns>A string of hexadecimal pairs separated by hyphens,
+        /// where each pair represents the corresponding element in <paramref name="value"/>;
+        /// for example, "7F-2C-4A-00".</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+        public static string ToString(byte[] value)
         {
             if (value == null)
-            {
-                throw new ArgumentNullException();
-            }
-            if ((uint)startIndex >= (uint)value.Length)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-            if (startIndex > value.Length - size)
-            {
-                throw new ArgumentException();
-            }
-        }
-
-        private static void RequireSpan(ReadOnlySpan<byte> value, int size)
-        {
-            if (value.Length < size)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-        }
-
-        private static char Hex(byte value) => value < 10 ? (char)('0' + value) : (char)('A' + value - 10);
-    }
-}
-
-namespace System.Buffers
-{
-    public enum OperationStatus
-    {
-        Done,
-        DestinationTooSmall,
-        NeedMoreData,
-        InvalidData,
-    }
-
-    /// <summary>
-    /// Represents a standard formatting string without using an actual String. A StandardFormat consists of a character (such as 'G', 'D' or 'X')
-    /// and an optional precision ranging from 0..99, or the special value NoPrecision.
-    /// </summary>
-    public readonly struct StandardFormat : IEquatable<StandardFormat>
-    {
-        /// <summary>
-        /// Precision values for format that don't use a precision, or for when the precision is to be unspecified.
-        /// </summary>
-        public const byte NoPrecision = byte.MaxValue;
-
-        /// <summary>
-        /// The maximum valid precision value.
-        /// </summary>
-        public const byte MaxPrecision = 99;
-
-        private readonly byte _format;
-        private readonly byte _precision;
-
-        /// <summary>
-        /// The character component of the format.
-        /// </summary>
-        public char Symbol => (char)_format;
-
-        /// <summary>
-        /// The precision component of the format. Ranges from 0..9 or the special value NoPrecision.
-        /// </summary>
-        public byte Precision => _precision;
-
-        /// <summary>
-        /// true if Precision is a value other than NoPrecision
-        /// </summary>
-        public bool HasPrecision => _precision != NoPrecision;
-
-        /// <summary>Gets the precision if one was specified; otherwise, 0.</summary>
-        internal byte PrecisionOrZero => _precision != NoPrecision ? _precision : (byte)0;
-
-        /// <summary>
-        /// true if the StandardFormat == default(StandardFormat)
-        /// </summary>
-        public bool IsDefault => (_format | _precision) == 0;
-
-        /// <summary>
-        /// Create a StandardFormat.
-        /// </summary>
-        /// <param name="symbol">A type-specific formatting character such as 'G', 'D' or 'X'</param>
-        /// <param name="precision">An optional precision ranging from 0..9 or the special value NoPrecision (the default)</param>
-        public StandardFormat(char symbol, byte precision = NoPrecision)
-        {
-            if (precision != NoPrecision && precision > MaxPrecision)
-                ThrowHelper.ThrowArgumentOutOfRangeException_PrecisionTooLarge();
-            if (symbol != (byte)symbol)
-                ThrowHelper.ThrowArgumentOutOfRangeException_SymbolDoesNotFit();
-
-            _format = (byte)symbol;
-            _precision = precision;
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            return ToString(value, 0, value.Length);
         }
 
         /// <summary>
-        /// Converts a character to a StandardFormat using the NoPrecision precision.
+        /// Converts the numeric value of each element of a specified array of bytes
+        /// to its equivalent hexadecimal string representation.
         /// </summary>
-        public static implicit operator StandardFormat(char symbol) => new StandardFormat(symbol);
-
-        /// <summary>
-        /// Converts a <see cref="ReadOnlySpan{Char}"/> into a StandardFormat
-        /// </summary>
-        public static StandardFormat Parse([StringSyntax(StringSyntaxAttribute.NumericFormat)] ReadOnlySpan<char> format)
+        /// <param name="value">An array of bytes.</param>
+        /// <param name="startIndex">The starting position within <paramref name="value"/>.</param>
+        /// <returns>A string of hexadecimal pairs separated by hyphens,
+        /// where each pair represents the corresponding element in a subarray of <paramref name="value"/>;
+        /// for example, "7F-2C-4A-00".</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static string ToString(byte[] value, int startIndex)
         {
-            ParseHelper(format, out StandardFormat standardFormat, throws: true);
-
-            return standardFormat;
-        }
-
-        /// <summary>
-        /// Converts a classic .NET format string into a StandardFormat
-        /// </summary>
-        public static StandardFormat Parse([StringSyntax(StringSyntaxAttribute.NumericFormat)] string? format) => format == null ? default : Parse(format.AsSpan());
-
-        /// <summary>
-        /// Tries to convert a <see cref="ReadOnlySpan{Char}"/> into a StandardFormat. A return value indicates whether the conversion succeeded or failed.
-        /// </summary>
-        public static bool TryParse([StringSyntax(StringSyntaxAttribute.NumericFormat)] ReadOnlySpan<char> format, out StandardFormat result)
-        {
-            return ParseHelper(format, out result);
-        }
-
-        private static bool ParseHelper(ReadOnlySpan<char> format, out StandardFormat standardFormat, bool throws = false)
-        {
-            standardFormat = default;
-
-            if (format.Length == 0)
-                return true;
-
-            char symbol = format[0];
-            byte precision;
-            if (format.Length == 1)
-            {
-                precision = NoPrecision;
-            }
-            else
-            {
-                uint parsedPrecision = 0;
-                for (int srcIndex = 1; srcIndex < format.Length; srcIndex++)
-                {
-                    uint digit = format[srcIndex] - 48u; // '0'
-                    if (digit > 9)
-                    {
-                        return throws ? throw new FormatException(SR.Format(SR.Argument_CannotParsePrecision, MaxPrecision)) : false;
-                    }
-                    parsedPrecision = parsedPrecision * 10 + digit;
-                    if (parsedPrecision > MaxPrecision)
-                    {
-                        return throws ? throw new FormatException(SR.Format(SR.Argument_PrecisionTooLarge, MaxPrecision)) : false;
-                    }
-                }
-
-                precision = (byte)parsedPrecision;
-            }
-
-            standardFormat = new StandardFormat(symbol, precision);
-            return true;
+            if (value == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            return ToString(value, startIndex, value.Length - startIndex);
         }
 
         /// <summary>
-        /// Returns true if both the Symbol and Precision are equal.
+        /// Returns a Boolean value converted from two bytes at a specified position in a byte array.
         /// </summary>
-        public override bool Equals([NotNullWhen(true)] object? obj) => obj is StandardFormat other && Equals(other);
-
-        /// <summary>
-        /// Compute a hash code.
-        /// </summary>
-        public override int GetHashCode() => _format.GetHashCode() ^ _precision.GetHashCode();
-
-        /// <summary>
-        /// Returns true if both the Symbol and Precision are equal.
-        /// </summary>
-        public bool Equals(StandardFormat other) => _format == other._format && _precision == other._precision;
-
-        /// <summary>
-        /// Returns the format in classic .NET format.
-        /// </summary>
-        public override string ToString() => new string(Format(stackalloc char[FormatStringLength]));
-
-        /// <summary>The exact buffer length required by <see cref="Format"/>.</summary>
-        internal const int FormatStringLength = 3;
-
-        /// <summary>
-        /// Formats the format in classic .NET format.
-        /// </summary>
-        internal Span<char> Format(Span<char> destination)
+        /// <param name="value">A byte array.</param>
+        /// <param name="startIndex">The index of the byte within <paramref name="value"/>.</param>
+        /// <returns><see langword="true"/> if the byte at <paramref name="startIndex"/> is nonzero; otherwise <see langword="false"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startIndex"/> is less than zero or greater than the length of <paramref name="value"/> minus 1.</exception>
+        public static bool ToBoolean(byte[] value, int startIndex)
         {
-            Debug.Assert(destination.Length == FormatStringLength);
+            if (value == null)
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.value);
+            if (startIndex < 0)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess);
+            if (startIndex >= value.Length)
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.startIndex, ExceptionResource.ArgumentOutOfRange_IndexMustBeLess); // differs from other overloads, which throw base ArgumentException
 
-            char symbol = Symbol;
-
-            if (symbol != default && destination.Length == FormatStringLength)
-            {
-                destination[0] = symbol;
-
-                uint precision = Precision;
-                if (precision != NoPrecision)
-                {
-                    // Note that Precision is stored as a byte, so in theory it could contain
-                    // values > MaxPrecision (99).  But all supported mechanisms for creating a
-                    // StandardFormat limit values to being <= MaxPrecision, so the only way a value
-                    // could be larger than that is if unsafe code or the equivalent were used
-                    // to force a larger invalid value in, in which case we don't need to
-                    // guarantee such an invalid value is properly roundtripped through here;
-                    // we just need to make sure things aren't corrupted further.
-
-                    if (precision >= 10)
-                    {
-                        uint div;
-                        (div, precision) = Math.DivRem(precision, 10);
-                        destination[1] = (char)('0' + div % 10);
-                        destination[2] = (char)('0' + precision);
-                        return destination;
-                    }
-
-                    destination[1] = (char)('0' + precision);
-                    return destination.Slice(0, 2);
-                }
-
-                return destination.Slice(0, 1);
-            }
-
-            return default;
+            return value[startIndex] != 0;
         }
 
         /// <summary>
-        /// Returns true if both the Symbol and Precision are equal.
+        /// Converts a read-only byte span into a Boolean value.
         /// </summary>
-        public static bool operator ==(StandardFormat left, StandardFormat right) => left.Equals(right);
+        /// <param name="value">A read-only span containing the bytes to convert.</param>
+        /// <returns>A Boolean representing the converted bytes.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="value"/> is less than 1.</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ToBoolean(ReadOnlySpan<byte> value)
+        {
+            if (value.Length < sizeof(byte))
+                ThrowHelper.ThrowArgumentOutOfRangeException(ExceptionArgument.value);
+            return Unsafe.ReadUnaligned<byte>(ref MemoryMarshal.GetReference(value)) != 0;
+        }
 
         /// <summary>
-        /// Returns false if both the Symbol and Precision are equal.
+        /// Converts the specified double-precision floating point number to a 64-bit signed integer.
         /// </summary>
-        public static bool operator !=(StandardFormat left, StandardFormat right) => !left.Equals(right);
-    }
-}
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 64-bit signed integer whose bits are identical to <paramref name="value"/>.</returns>
+        [Intrinsic]
+        public static long DoubleToInt64Bits(double value) => Unsafe.BitCast<double, long>(value);
 
-namespace System.Buffers.Binary
-{
-    public static class BinaryPrimitives
-    {
-        public static short ReadInt16LittleEndian(ReadOnlySpan<byte> source) =>
-            unchecked((short)ReadUInt16LittleEndian(source));
+        /// <summary>
+        /// Converts the specified 64-bit signed integer to a double-precision floating point number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A double-precision floating point number whose bits are identical to <paramref name="value"/>.</returns>
+        [Intrinsic]
+        public static double Int64BitsToDouble(long value) => Unsafe.BitCast<long, double>(value);
 
-        public static short ReadInt16BigEndian(ReadOnlySpan<byte> source) =>
-            unchecked((short)ReadUInt16BigEndian(source));
+        /// <summary>
+        /// Converts the specified single-precision floating point number to a 32-bit signed integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 32-bit signed integer whose bits are identical to <paramref name="value"/>.</returns>
+        [Intrinsic]
+        public static int SingleToInt32Bits(float value) => Unsafe.BitCast<float, int>(value);
 
-        public static ushort ReadUInt16LittleEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, 2);
-            return unchecked((ushort)(source[0] | source[1] << 8));
-        }
+        /// <summary>
+        /// Converts the specified 32-bit signed integer to a single-precision floating point number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A single-precision floating point number whose bits are identical to <paramref name="value"/>.</returns>
+        [Intrinsic]
+        public static float Int32BitsToSingle(int value) => Unsafe.BitCast<int, float>(value);
 
-        public static ushort ReadUInt16BigEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, 2);
-            return unchecked((ushort)(source[1] | source[0] << 8));
-        }
+        /// <summary>
+        /// Converts the specified half-precision floating point number to a 16-bit signed integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 16-bit signed integer whose bits are identical to <paramref name="value"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static short HalfToInt16Bits(Half value) => (short)value._value;
 
-        public static int ReadInt32LittleEndian(ReadOnlySpan<byte> source) =>
-            unchecked((int)ReadUInt32LittleEndian(source));
+        /// <summary>
+        /// Converts the specified 16-bit signed integer to a half-precision floating point number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A half-precision floating point number whose bits are identical to <paramref name="value"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Half Int16BitsToHalf(short value) => new Half((ushort)(value));
 
-        public static int ReadInt32BigEndian(ReadOnlySpan<byte> source) =>
-            unchecked((int)ReadUInt32BigEndian(source));
+        /// <summary>
+        /// Converts the specified <see cref="BFloat16"/> number to a 16-bit signed integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 16-bit signed integer whose bits are identical to <paramref name="value"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static short BFloat16ToInt16Bits(BFloat16 value) => (short)value._value;
 
-        public static uint ReadUInt32LittleEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, 4);
-            return (uint)source[0] | (uint)source[1] << 8 |
-                (uint)source[2] << 16 | (uint)source[3] << 24;
-        }
+        /// <summary>
+        /// Converts the specified 16-bit signed integer to a <see cref="BFloat16"/> number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A <see cref="BFloat16"/> number whose bits are identical to <paramref name="value"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static BFloat16 Int16BitsToBFloat16(short value) => new BFloat16((ushort)(value));
 
-        public static uint ReadUInt32BigEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, 4);
-            return (uint)source[3] | (uint)source[2] << 8 |
-                (uint)source[1] << 16 | (uint)source[0] << 24;
-        }
+        /// <summary>
+        /// Converts the specified double-precision floating point number to a 64-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 64-bit unsigned integer whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [Intrinsic]
+        public static ulong DoubleToUInt64Bits(double value) => Unsafe.BitCast<double, ulong>(value);
 
-        public static long ReadInt64LittleEndian(ReadOnlySpan<byte> source) =>
-            unchecked((long)ReadUInt64LittleEndian(source));
+        /// <summary>
+        /// Converts the specified 64-bit unsigned integer to a double-precision floating point number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A double-precision floating point number whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [Intrinsic]
+        public static double UInt64BitsToDouble(ulong value) => Unsafe.BitCast<ulong, double>(value);
 
-        public static long ReadInt64BigEndian(ReadOnlySpan<byte> source) =>
-            unchecked((long)ReadUInt64BigEndian(source));
+        /// <summary>
+        /// Converts the specified single-precision floating point number to a 32-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 32-bit unsigned integer whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [Intrinsic]
+        public static uint SingleToUInt32Bits(float value) => Unsafe.BitCast<float, uint>(value);
 
-        public static ulong ReadUInt64LittleEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, 8);
-            return (ulong)source[0] | (ulong)source[1] << 8 |
-                (ulong)source[2] << 16 | (ulong)source[3] << 24 |
-                (ulong)source[4] << 32 | (ulong)source[5] << 40 |
-                (ulong)source[6] << 48 | (ulong)source[7] << 56;
-        }
+        /// <summary>
+        /// Converts the specified 32-bit unsigned integer to a single-precision floating point number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A single-precision floating point number whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [Intrinsic]
+        public static float UInt32BitsToSingle(uint value) => Unsafe.BitCast<uint, float>(value);
 
-        public static ulong ReadUInt64BigEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, 8);
-            return (ulong)source[7] | (ulong)source[6] << 8 |
-                (ulong)source[5] << 16 | (ulong)source[4] << 24 |
-                (ulong)source[3] << 32 | (ulong)source[2] << 40 |
-                (ulong)source[1] << 48 | (ulong)source[0] << 56;
-        }
+        /// <summary>
+        /// Converts the specified half-precision floating point number to a 16-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 16-bit unsigned integer whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ushort HalfToUInt16Bits(Half value) => value._value;
 
-        public static float ReadSingleLittleEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.UInt32BitsToSingle(ReadUInt32LittleEndian(source));
-        public static float ReadSingleBigEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.UInt32BitsToSingle(ReadUInt32BigEndian(source));
-        public static double ReadDoubleLittleEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.UInt64BitsToDouble(ReadUInt64LittleEndian(source));
-        public static double ReadDoubleBigEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.UInt64BitsToDouble(ReadUInt64BigEndian(source));
+        /// <summary>
+        /// Converts the specified 16-bit unsigned integer to a half-precision floating point number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A half-precision floating point number whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Half UInt16BitsToHalf(ushort value) => new Half(value);
 
-        public static nint ReadIntPtrLittleEndian(ReadOnlySpan<byte> source) =>
-            IntPtr.Size == 4 ? (nint)ReadInt32LittleEndian(source) : (nint)ReadInt64LittleEndian(source);
-        public static nint ReadIntPtrBigEndian(ReadOnlySpan<byte> source) =>
-            IntPtr.Size == 4 ? (nint)ReadInt32BigEndian(source) : (nint)ReadInt64BigEndian(source);
-        public static nuint ReadUIntPtrLittleEndian(ReadOnlySpan<byte> source) =>
-            UIntPtr.Size == 4 ? (nuint)ReadUInt32LittleEndian(source) : (nuint)ReadUInt64LittleEndian(source);
-        public static nuint ReadUIntPtrBigEndian(ReadOnlySpan<byte> source) =>
-            UIntPtr.Size == 4 ? (nuint)ReadUInt32BigEndian(source) : (nuint)ReadUInt64BigEndian(source);
+        /// <summary>
+        /// Converts the specified <see cref="BFloat16"/> number to a 16-bit unsigned integer.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A 16-bit unsigned integer whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ushort BFloat16ToUInt16Bits(BFloat16 value) => value._value;
 
-        public static bool TryReadInt16LittleEndian(ReadOnlySpan<byte> source, out short value) { if (source.Length < 2) { value = default; return false; } value = ReadInt16LittleEndian(source); return true; }
-        public static bool TryReadInt16BigEndian(ReadOnlySpan<byte> source, out short value) { if (source.Length < 2) { value = default; return false; } value = ReadInt16BigEndian(source); return true; }
-        public static bool TryReadUInt16LittleEndian(ReadOnlySpan<byte> source, out ushort value) { if (source.Length < 2) { value = default; return false; } value = ReadUInt16LittleEndian(source); return true; }
-        public static bool TryReadUInt16BigEndian(ReadOnlySpan<byte> source, out ushort value) { if (source.Length < 2) { value = default; return false; } value = ReadUInt16BigEndian(source); return true; }
-        public static bool TryReadInt32LittleEndian(ReadOnlySpan<byte> source, out int value) { if (source.Length < 4) { value = default; return false; } value = ReadInt32LittleEndian(source); return true; }
-        public static bool TryReadInt32BigEndian(ReadOnlySpan<byte> source, out int value) { if (source.Length < 4) { value = default; return false; } value = ReadInt32BigEndian(source); return true; }
-        public static bool TryReadUInt32LittleEndian(ReadOnlySpan<byte> source, out uint value) { if (source.Length < 4) { value = default; return false; } value = ReadUInt32LittleEndian(source); return true; }
-        public static bool TryReadUInt32BigEndian(ReadOnlySpan<byte> source, out uint value) { if (source.Length < 4) { value = default; return false; } value = ReadUInt32BigEndian(source); return true; }
-        public static bool TryReadInt64LittleEndian(ReadOnlySpan<byte> source, out long value) { if (source.Length < 8) { value = default; return false; } value = ReadInt64LittleEndian(source); return true; }
-        public static bool TryReadInt64BigEndian(ReadOnlySpan<byte> source, out long value) { if (source.Length < 8) { value = default; return false; } value = ReadInt64BigEndian(source); return true; }
-        public static bool TryReadUInt64LittleEndian(ReadOnlySpan<byte> source, out ulong value) { if (source.Length < 8) { value = default; return false; } value = ReadUInt64LittleEndian(source); return true; }
-        public static bool TryReadUInt64BigEndian(ReadOnlySpan<byte> source, out ulong value) { if (source.Length < 8) { value = default; return false; } value = ReadUInt64BigEndian(source); return true; }
-        public static bool TryReadSingleLittleEndian(ReadOnlySpan<byte> source, out float value) { if (source.Length < 4) { value = default; return false; } value = ReadSingleLittleEndian(source); return true; }
-        public static bool TryReadSingleBigEndian(ReadOnlySpan<byte> source, out float value) { if (source.Length < 4) { value = default; return false; } value = ReadSingleBigEndian(source); return true; }
-        public static bool TryReadDoubleLittleEndian(ReadOnlySpan<byte> source, out double value) { if (source.Length < 8) { value = default; return false; } value = ReadDoubleLittleEndian(source); return true; }
-        public static bool TryReadDoubleBigEndian(ReadOnlySpan<byte> source, out double value) { if (source.Length < 8) { value = default; return false; } value = ReadDoubleBigEndian(source); return true; }
-        public static bool TryReadHalfLittleEndian(ReadOnlySpan<byte> source, out Half value) { if (source.Length < 2) { value = default; return false; } value = ReadHalfLittleEndian(source); return true; }
-        public static bool TryReadHalfBigEndian(ReadOnlySpan<byte> source, out Half value) { if (source.Length < 2) { value = default; return false; } value = ReadHalfBigEndian(source); return true; }
-        public static bool TryReadBFloat16LittleEndian(ReadOnlySpan<byte> source, out System.Numerics.BFloat16 value) { if (source.Length < 2) { value = default; return false; } value = ReadBFloat16LittleEndian(source); return true; }
-        public static bool TryReadBFloat16BigEndian(ReadOnlySpan<byte> source, out System.Numerics.BFloat16 value) { if (source.Length < 2) { value = default; return false; } value = ReadBFloat16BigEndian(source); return true; }
-        public static bool TryReadInt128LittleEndian(ReadOnlySpan<byte> source, out Int128 value) { if (source.Length < Int128.Size) { value = default; return false; } value = ReadInt128LittleEndian(source); return true; }
-        public static bool TryReadInt128BigEndian(ReadOnlySpan<byte> source, out Int128 value) { if (source.Length < Int128.Size) { value = default; return false; } value = ReadInt128BigEndian(source); return true; }
-        public static bool TryReadUInt128LittleEndian(ReadOnlySpan<byte> source, out UInt128 value) { if (source.Length < UInt128.Size) { value = default; return false; } value = ReadUInt128LittleEndian(source); return true; }
-        public static bool TryReadUInt128BigEndian(ReadOnlySpan<byte> source, out UInt128 value) { if (source.Length < UInt128.Size) { value = default; return false; } value = ReadUInt128BigEndian(source); return true; }
-        public static bool TryReadIntPtrLittleEndian(ReadOnlySpan<byte> source, out nint value) { if (source.Length < IntPtr.Size) { value = default; return false; } value = ReadIntPtrLittleEndian(source); return true; }
-        public static bool TryReadIntPtrBigEndian(ReadOnlySpan<byte> source, out nint value) { if (source.Length < IntPtr.Size) { value = default; return false; } value = ReadIntPtrBigEndian(source); return true; }
-        public static bool TryReadUIntPtrLittleEndian(ReadOnlySpan<byte> source, out nuint value) { if (source.Length < UIntPtr.Size) { value = default; return false; } value = ReadUIntPtrLittleEndian(source); return true; }
-        public static bool TryReadUIntPtrBigEndian(ReadOnlySpan<byte> source, out nuint value) { if (source.Length < UIntPtr.Size) { value = default; return false; } value = ReadUIntPtrBigEndian(source); return true; }
-
-        public static void WriteInt16LittleEndian(Span<byte> destination, short value) => WriteUInt16LittleEndian(destination, unchecked((ushort)value));
-        public static void WriteInt16BigEndian(Span<byte> destination, short value) => WriteUInt16BigEndian(destination, unchecked((ushort)value));
-        public static void WriteUInt16LittleEndian(Span<byte> destination, ushort value)
-        {
-            Require(destination, 2);
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
-        }
-        public static void WriteUInt16BigEndian(Span<byte> destination, ushort value)
-        {
-            Require(destination, 2);
-            destination[0] = (byte)(value >> 8);
-            destination[1] = (byte)value;
-        }
-
-        public static void WriteInt32LittleEndian(Span<byte> destination, int value) => WriteUInt32LittleEndian(destination, unchecked((uint)value));
-        public static void WriteInt32BigEndian(Span<byte> destination, int value) => WriteUInt32BigEndian(destination, unchecked((uint)value));
-        public static void WriteUInt32LittleEndian(Span<byte> destination, uint value)
-        {
-            Require(destination, 4);
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
-            destination[2] = (byte)(value >> 16);
-            destination[3] = (byte)(value >> 24);
-        }
-        public static void WriteUInt32BigEndian(Span<byte> destination, uint value)
-        {
-            Require(destination, 4);
-            destination[0] = (byte)(value >> 24);
-            destination[1] = (byte)(value >> 16);
-            destination[2] = (byte)(value >> 8);
-            destination[3] = (byte)value;
-        }
-
-        public static void WriteInt64LittleEndian(Span<byte> destination, long value) => WriteUInt64LittleEndian(destination, unchecked((ulong)value));
-        public static void WriteInt64BigEndian(Span<byte> destination, long value) => WriteUInt64BigEndian(destination, unchecked((ulong)value));
-        public static void WriteUInt64LittleEndian(Span<byte> destination, ulong value)
-        {
-            Require(destination, 8);
-            destination[0] = (byte)value;
-            destination[1] = (byte)(value >> 8);
-            destination[2] = (byte)(value >> 16);
-            destination[3] = (byte)(value >> 24);
-            destination[4] = (byte)(value >> 32);
-            destination[5] = (byte)(value >> 40);
-            destination[6] = (byte)(value >> 48);
-            destination[7] = (byte)(value >> 56);
-        }
-        public static void WriteUInt64BigEndian(Span<byte> destination, ulong value)
-        {
-            Require(destination, 8);
-            destination[0] = (byte)(value >> 56);
-            destination[1] = (byte)(value >> 48);
-            destination[2] = (byte)(value >> 40);
-            destination[3] = (byte)(value >> 32);
-            destination[4] = (byte)(value >> 24);
-            destination[5] = (byte)(value >> 16);
-            destination[6] = (byte)(value >> 8);
-            destination[7] = (byte)value;
-        }
-
-        public static void WriteSingleLittleEndian(Span<byte> destination, float value) => WriteUInt32LittleEndian(destination, BitConverter.SingleToUInt32Bits(value));
-        public static void WriteHalfLittleEndian(Span<byte> destination, Half value) => WriteUInt16LittleEndian(destination, BitConverter.HalfToUInt16Bits(value));
-        public static void WriteHalfBigEndian(Span<byte> destination, Half value) => WriteUInt16BigEndian(destination, BitConverter.HalfToUInt16Bits(value));
-        public static void WriteBFloat16LittleEndian(Span<byte> destination, System.Numerics.BFloat16 value) => WriteUInt16LittleEndian(destination, BitConverter.BFloat16ToUInt16Bits(value));
-        public static void WriteBFloat16BigEndian(Span<byte> destination, System.Numerics.BFloat16 value) => WriteUInt16BigEndian(destination, BitConverter.BFloat16ToUInt16Bits(value));
-        public static void WriteInt128LittleEndian(Span<byte> destination, Int128 value)
-        {
-            Require(destination, Int128.Size);
-            WriteUInt64LittleEndian(destination, value.Lower);
-            WriteUInt64LittleEndian(destination[8..], value.Upper);
-        }
-        public static void WriteInt128BigEndian(Span<byte> destination, Int128 value)
-        {
-            Require(destination, Int128.Size);
-            WriteUInt64BigEndian(destination, value.Upper);
-            WriteUInt64BigEndian(destination[8..], value.Lower);
-        }
-        public static void WriteUInt128LittleEndian(Span<byte> destination, UInt128 value)
-        {
-            Require(destination, UInt128.Size);
-            WriteUInt64LittleEndian(destination, value.Lower);
-            WriteUInt64LittleEndian(destination[8..], value.Upper);
-        }
-        public static void WriteUInt128BigEndian(Span<byte> destination, UInt128 value)
-        {
-            Require(destination, UInt128.Size);
-            WriteUInt64BigEndian(destination, value.Upper);
-            WriteUInt64BigEndian(destination[8..], value.Lower);
-        }
-        public static void WriteSingleBigEndian(Span<byte> destination, float value) => WriteUInt32BigEndian(destination, BitConverter.SingleToUInt32Bits(value));
-        public static void WriteDoubleLittleEndian(Span<byte> destination, double value) => WriteUInt64LittleEndian(destination, BitConverter.DoubleToUInt64Bits(value));
-        public static void WriteDoubleBigEndian(Span<byte> destination, double value) => WriteUInt64BigEndian(destination, BitConverter.DoubleToUInt64Bits(value));
-        public static void WriteIntPtrLittleEndian(Span<byte> destination, nint value) { if (IntPtr.Size == 4) WriteInt32LittleEndian(destination, (int)value); else WriteInt64LittleEndian(destination, (long)value); }
-        public static void WriteIntPtrBigEndian(Span<byte> destination, nint value) { if (IntPtr.Size == 4) WriteInt32BigEndian(destination, (int)value); else WriteInt64BigEndian(destination, (long)value); }
-        public static void WriteUIntPtrLittleEndian(Span<byte> destination, nuint value) { if (UIntPtr.Size == 4) WriteUInt32LittleEndian(destination, (uint)value); else WriteUInt64LittleEndian(destination, (ulong)value); }
-        public static void WriteUIntPtrBigEndian(Span<byte> destination, nuint value) { if (UIntPtr.Size == 4) WriteUInt32BigEndian(destination, (uint)value); else WriteUInt64BigEndian(destination, (ulong)value); }
-
-        public static Half ReadHalfLittleEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.Int16BitsToHalf(ReadInt16LittleEndian(source));
-        public static Half ReadHalfBigEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.Int16BitsToHalf(ReadInt16BigEndian(source));
-        public static System.Numerics.BFloat16 ReadBFloat16LittleEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.Int16BitsToBFloat16(ReadInt16LittleEndian(source));
-        public static System.Numerics.BFloat16 ReadBFloat16BigEndian(ReadOnlySpan<byte> source) =>
-            BitConverter.Int16BitsToBFloat16(ReadInt16BigEndian(source));
-
-        public static Int128 ReadInt128LittleEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, Int128.Size);
-            return new Int128(ReadUInt64LittleEndian(source[8..]), ReadUInt64LittleEndian(source));
-        }
-
-        public static Int128 ReadInt128BigEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, Int128.Size);
-            return new Int128(ReadUInt64BigEndian(source), ReadUInt64BigEndian(source[8..]));
-        }
-
-        public static UInt128 ReadUInt128LittleEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, UInt128.Size);
-            return new UInt128(ReadUInt64LittleEndian(source[8..]), ReadUInt64LittleEndian(source));
-        }
-
-        public static UInt128 ReadUInt128BigEndian(ReadOnlySpan<byte> source)
-        {
-            Require(source, UInt128.Size);
-            return new UInt128(ReadUInt64BigEndian(source), ReadUInt64BigEndian(source[8..]));
-        }
-
-        public static bool TryWriteInt16LittleEndian(Span<byte> destination, short value) { if (destination.Length < 2) return false; WriteInt16LittleEndian(destination, value); return true; }
-        public static bool TryWriteInt16BigEndian(Span<byte> destination, short value) { if (destination.Length < 2) return false; WriteInt16BigEndian(destination, value); return true; }
-        public static bool TryWriteUInt16LittleEndian(Span<byte> destination, ushort value) { if (destination.Length < 2) return false; WriteUInt16LittleEndian(destination, value); return true; }
-        public static bool TryWriteUInt16BigEndian(Span<byte> destination, ushort value) { if (destination.Length < 2) return false; WriteUInt16BigEndian(destination, value); return true; }
-        public static bool TryWriteInt32LittleEndian(Span<byte> destination, int value) { if (destination.Length < 4) return false; WriteInt32LittleEndian(destination, value); return true; }
-        public static bool TryWriteInt32BigEndian(Span<byte> destination, int value) { if (destination.Length < 4) return false; WriteInt32BigEndian(destination, value); return true; }
-        public static bool TryWriteUInt32LittleEndian(Span<byte> destination, uint value) { if (destination.Length < 4) return false; WriteUInt32LittleEndian(destination, value); return true; }
-        public static bool TryWriteUInt32BigEndian(Span<byte> destination, uint value) { if (destination.Length < 4) return false; WriteUInt32BigEndian(destination, value); return true; }
-        public static bool TryWriteInt64LittleEndian(Span<byte> destination, long value) { if (destination.Length < 8) return false; WriteInt64LittleEndian(destination, value); return true; }
-        public static bool TryWriteInt64BigEndian(Span<byte> destination, long value) { if (destination.Length < 8) return false; WriteInt64BigEndian(destination, value); return true; }
-        public static bool TryWriteUInt64LittleEndian(Span<byte> destination, ulong value) { if (destination.Length < 8) return false; WriteUInt64LittleEndian(destination, value); return true; }
-        public static bool TryWriteUInt64BigEndian(Span<byte> destination, ulong value) { if (destination.Length < 8) return false; WriteUInt64BigEndian(destination, value); return true; }
-        public static bool TryWriteSingleLittleEndian(Span<byte> destination, float value) { if (destination.Length < 4) return false; WriteSingleLittleEndian(destination, value); return true; }
-        public static bool TryWriteSingleBigEndian(Span<byte> destination, float value) { if (destination.Length < 4) return false; WriteSingleBigEndian(destination, value); return true; }
-        public static bool TryWriteDoubleLittleEndian(Span<byte> destination, double value) { if (destination.Length < 8) return false; WriteDoubleLittleEndian(destination, value); return true; }
-        public static bool TryWriteDoubleBigEndian(Span<byte> destination, double value) { if (destination.Length < 8) return false; WriteDoubleBigEndian(destination, value); return true; }
-        public static bool TryWriteHalfLittleEndian(Span<byte> destination, Half value) { if (destination.Length < 2) return false; WriteHalfLittleEndian(destination, value); return true; }
-        public static bool TryWriteHalfBigEndian(Span<byte> destination, Half value) { if (destination.Length < 2) return false; WriteHalfBigEndian(destination, value); return true; }
-        public static bool TryWriteBFloat16LittleEndian(Span<byte> destination, System.Numerics.BFloat16 value) { if (destination.Length < 2) return false; WriteBFloat16LittleEndian(destination, value); return true; }
-        public static bool TryWriteBFloat16BigEndian(Span<byte> destination, System.Numerics.BFloat16 value) { if (destination.Length < 2) return false; WriteBFloat16BigEndian(destination, value); return true; }
-        public static bool TryWriteInt128LittleEndian(Span<byte> destination, Int128 value) { if (destination.Length < Int128.Size) return false; WriteInt128LittleEndian(destination, value); return true; }
-        public static bool TryWriteInt128BigEndian(Span<byte> destination, Int128 value) { if (destination.Length < Int128.Size) return false; WriteInt128BigEndian(destination, value); return true; }
-        public static bool TryWriteUInt128LittleEndian(Span<byte> destination, UInt128 value) { if (destination.Length < UInt128.Size) return false; WriteUInt128LittleEndian(destination, value); return true; }
-        public static bool TryWriteUInt128BigEndian(Span<byte> destination, UInt128 value) { if (destination.Length < UInt128.Size) return false; WriteUInt128BigEndian(destination, value); return true; }
-        public static bool TryWriteIntPtrLittleEndian(Span<byte> destination, nint value) { if (destination.Length < IntPtr.Size) return false; WriteIntPtrLittleEndian(destination, value); return true; }
-        public static bool TryWriteIntPtrBigEndian(Span<byte> destination, nint value) { if (destination.Length < IntPtr.Size) return false; WriteIntPtrBigEndian(destination, value); return true; }
-        public static bool TryWriteUIntPtrLittleEndian(Span<byte> destination, nuint value) { if (destination.Length < UIntPtr.Size) return false; WriteUIntPtrLittleEndian(destination, value); return true; }
-        public static bool TryWriteUIntPtrBigEndian(Span<byte> destination, nuint value) { if (destination.Length < UIntPtr.Size) return false; WriteUIntPtrBigEndian(destination, value); return true; }
-
-        public static byte ReverseEndianness(byte value) => value;
-        public static sbyte ReverseEndianness(sbyte value) => value;
-        public static ushort ReverseEndianness(ushort value) => unchecked((ushort)(value >> 8 | value << 8));
-        internal static char ReverseEndianness(char value) => (char)ReverseEndianness((ushort)value);
-        public static short ReverseEndianness(short value) => unchecked((short)ReverseEndianness((ushort)value));
-        public static uint ReverseEndianness(uint value) => value >> 24 | (value >> 8 & 0xff00) | (value << 8 & 0xff0000) | value << 24;
-        public static int ReverseEndianness(int value) => unchecked((int)ReverseEndianness((uint)value));
-        public static ulong ReverseEndianness(ulong value) => (ulong)ReverseEndianness((uint)value) << 32 | ReverseEndianness((uint)(value >> 32));
-        public static long ReverseEndianness(long value) => unchecked((long)ReverseEndianness((ulong)value));
-        public static nint ReverseEndianness(nint value) => IntPtr.Size == 4 ? (nint)ReverseEndianness((int)value) : (nint)ReverseEndianness((long)value);
-        public static nuint ReverseEndianness(nuint value) => UIntPtr.Size == 4 ? (nuint)ReverseEndianness((uint)value) : (nuint)ReverseEndianness((ulong)value);
-        public static Int128 ReverseEndianness(Int128 value) =>
-            new(ReverseEndianness(value.Lower), ReverseEndianness(value.Upper));
-        public static UInt128 ReverseEndianness(UInt128 value) =>
-            new(ReverseEndianness(value.Lower), ReverseEndianness(value.Upper));
-
-        public static void ReverseEndianness(ReadOnlySpan<short> source, Span<short> destination) =>
-            ReverseEndianness<short, Int16EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<ushort> source, Span<ushort> destination) =>
-            ReverseEndianness<ushort, UInt16EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<int> source, Span<int> destination) =>
-            ReverseEndianness<int, Int32EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<uint> source, Span<uint> destination) =>
-            ReverseEndianness<uint, UInt32EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<long> source, Span<long> destination) =>
-            ReverseEndianness<long, Int64EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<ulong> source, Span<ulong> destination) =>
-            ReverseEndianness<ulong, UInt64EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<nint> source, Span<nint> destination) =>
-            ReverseEndianness<nint, IntPtrEndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<nuint> source, Span<nuint> destination) =>
-            ReverseEndianness<nuint, UIntPtrEndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<Int128> source, Span<Int128> destination) =>
-            ReverseEndianness<Int128, Int128EndiannessReverser>(source, destination);
-        public static void ReverseEndianness(ReadOnlySpan<UInt128> source, Span<UInt128> destination) =>
-            ReverseEndianness<UInt128, UInt128EndiannessReverser>(source, destination);
-
-        // TODO(netwasm-simd)
-        private static void ReverseEndianness<T, TReverser>(ReadOnlySpan<T> source, Span<T> destination)
-            where T : struct
-            where TReverser : IEndiannessReverser<T>
-        {
-            if (destination.Length < source.Length)
-            {
-                ThrowDestinationTooSmall();
-            }
-
-            if (!source.Overlaps(destination, out var elementOffset) || elementOffset <= 0)
-            {
-                for (var index = 0; index < source.Length; index++)
-                {
-                    destination[index] = TReverser.Reverse(source[index]);
-                }
-            }
-            else
-            {
-                for (var index = source.Length - 1; index >= 0; index--)
-                {
-                    destination[index] = TReverser.Reverse(source[index]);
-                }
-            }
-        }
-
-        private interface IEndiannessReverser<T> where T : struct
-        {
-            static abstract T Reverse(T value);
-        }
-
-        private readonly struct Int16EndiannessReverser : IEndiannessReverser<short>
-        {
-            public static short Reverse(short value) => ReverseEndianness(value);
-        }
-
-        private readonly struct UInt16EndiannessReverser : IEndiannessReverser<ushort>
-        {
-            public static ushort Reverse(ushort value) => ReverseEndianness(value);
-        }
-
-        private readonly struct Int32EndiannessReverser : IEndiannessReverser<int>
-        {
-            public static int Reverse(int value) => ReverseEndianness(value);
-        }
-
-        private readonly struct UInt32EndiannessReverser : IEndiannessReverser<uint>
-        {
-            public static uint Reverse(uint value) => ReverseEndianness(value);
-        }
-
-        private readonly struct Int64EndiannessReverser : IEndiannessReverser<long>
-        {
-            public static long Reverse(long value) => ReverseEndianness(value);
-        }
-
-        private readonly struct UInt64EndiannessReverser : IEndiannessReverser<ulong>
-        {
-            public static ulong Reverse(ulong value) => ReverseEndianness(value);
-        }
-
-        private readonly struct IntPtrEndiannessReverser : IEndiannessReverser<nint>
-        {
-            public static nint Reverse(nint value) => ReverseEndianness(value);
-        }
-
-        private readonly struct UIntPtrEndiannessReverser : IEndiannessReverser<nuint>
-        {
-            public static nuint Reverse(nuint value) => ReverseEndianness(value);
-        }
-
-        private readonly struct Int128EndiannessReverser : IEndiannessReverser<Int128>
-        {
-            public static Int128 Reverse(Int128 value) => ReverseEndianness(value);
-        }
-
-        private readonly struct UInt128EndiannessReverser : IEndiannessReverser<UInt128>
-        {
-            public static UInt128 Reverse(UInt128 value) => ReverseEndianness(value);
-        }
-
-        private static void Require(ReadOnlySpan<byte> span, int size) { if (span.Length < size) throw new ArgumentOutOfRangeException(); }
-        private static void Require(Span<byte> span, int size) { if (span.Length < size) throw new ArgumentOutOfRangeException(); }
-        private static void ThrowDestinationTooSmall() => throw new ArgumentException("Destination is too short.", "destination");
-
+        /// <summary>
+        /// Converts the specified 16-bit unsigned integer to a <see cref="BFloat16"/> number.
+        /// </summary>
+        /// <param name="value">The number to convert.</param>
+        /// <returns>A <see cref="BFloat16"/> number whose bits are identical to <paramref name="value"/>.</returns>
+        [CLSCompliant(false)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static BFloat16 UInt16BitsToBFloat16(ushort value) => new BFloat16(value);
     }
 }

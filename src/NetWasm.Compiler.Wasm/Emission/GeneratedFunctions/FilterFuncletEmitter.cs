@@ -44,6 +44,7 @@ ITargetLayout layouts,
         var interopHandle = checked(interopResult + 1);
         var numericTemporaryI4 = checked(interopHandle + 1);
         var numericTemporaryI8 = checked(numericTemporaryI4 + 1);
+        var dispatcherProgramCounter = checked(numericTemporaryI8 + 1);
         var valueLayout = valueFrames.Create(filter.Method, memberExecution: memberExecution) with
         {
             Size = environment.Size,
@@ -76,7 +77,7 @@ ITargetLayout layouts,
             interopHandle,
             numericTemporaryI4,
             numericTemporaryI8,
-            numericTemporaryI4,
+            dispatcherProgramCounter,
             IsFilterFunclet: true,
             CallerIdentity: filter.CallerIdentity)
         {

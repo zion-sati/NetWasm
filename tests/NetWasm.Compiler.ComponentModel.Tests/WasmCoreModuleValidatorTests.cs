@@ -10,7 +10,7 @@ public sealed class WasmCoreModuleValidatorTests
         var operations = new RecordingOperations();
         var target = memory64 ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02;
         var features = "mvp,mutable-global,saturating-float-to-int,sign-extension,reference-types," +
-            "multi-value,bulk-memory,exceptions,multi-memory" + (memory64 ? ",memory64" : "");
+            "multi-value,bulk-memory,exceptions,multi-memory,simd" + (memory64 ? ",memory64" : "");
 
         new WasmCoreModuleValidator(operations).Validate("linked.wasm", target);
 

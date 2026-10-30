@@ -91,7 +91,7 @@ public sealed class ExtendedLoopOwnershipTests
             I(22, CilOperation.LoadLocal, new CilOperand.Index(0)),
             I(23, CilOperation.Return));
 
-    private static CilMethodBody BranchOverlapWithContainedLoopBody() =>
+    internal static CilMethodBody BranchOverlapWithContainedLoopBody() =>
         Body(
             CliValueKind.I4,
             2,

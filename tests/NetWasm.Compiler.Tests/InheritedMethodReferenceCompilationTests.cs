@@ -47,7 +47,7 @@ public sealed class InheritedMethodReferenceCompilationTests
         var result = NetWasmCompiler.Compile(new(application, [assets.CoreLib, library],
             "EntryPoint", "Run", [new("run", "EntryPoint", "Run")], Target: target,
             WitPath: Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
         CompilerTestSupport.ValidateWithNode(result.ApplicationModule, assets.Directory);
         Assert.Equal(42, CompilerTestSupport.ExecuteWithStandardWasiNode(result.ApplicationModule,
             assets.Directory, 41, target, result.StaticDataEnd));

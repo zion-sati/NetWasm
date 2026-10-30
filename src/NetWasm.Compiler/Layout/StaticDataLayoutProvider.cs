@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler;
 using NetWasm.Compiler.Core;
@@ -16,6 +17,12 @@ internal sealed class StaticDataLayoutProvider(
     public ImmutableArray<DataSegment> DataSegments => _snapshot.DataSegments;
     public int TypeFactsTableAddress => _snapshot.StaticData.TypeFactsTableAddress;
     public int TypeFactsTableCount => _snapshot.StaticData.TypeFactsTableCount;
+    public int TypeObjectTableAddress => _snapshot.StaticData.TypeObjectTableAddress;
+    public int TypeObjectCacheAddress => _snapshot.StaticData.TypeObjectCacheAddress;
+    public int TypeObjectCount => _snapshot.StaticData.TypeObjectCount;
+    public int TypeObjectSize => _snapshot.StaticData.TypeObjectSize;
+
+    public IReadOnlyDictionary<string, int> TypeObjectAddresses => _snapshot.StaticData.TypeObjects;
 
     public StringLayout GetStringLayout(string value) =>
         _snapshot.StaticData.Strings.TryGetValue(value, out var layout)

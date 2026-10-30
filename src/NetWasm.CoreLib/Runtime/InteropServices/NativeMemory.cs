@@ -1,142 +1,94 @@
-// Portions adapted from dotnet/runtime System.Private.CoreLib NativeMemory.cs.
-// The upstream implementation is licensed under the MIT license.
-// Source reference: dotnet/runtime commit 811225a482702af7ecc35d817966bc70b88a3a23.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Runtime/InteropServices/NativeMemory.cs
 
+using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace System.Runtime.InteropServices
 {
-    /// <summary>Provides access to unmanaged memory allocation primitives.</summary>
     public static unsafe partial class NativeMemory
     {
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        public static extern void* Alloc(nuint byteCount);
-
         /// <summary>Allocates a block of memory of the specified size, in elements.</summary>
-        public static void* Alloc(nuint elementCount, nuint elementSize) =>
-            Alloc(GetByteCount(elementCount, elementSize));
-
-        /// <summary>Allocates and clears a block of memory of the specified size, in bytes.</summary>
-        public static void* AllocZeroed(nuint byteCount) =>
-            AllocZeroed(byteCount, elementSize: 1);
-
-        /// <summary>Allocates and clears a block of memory of the specified size, in elements.</summary>
-        public static void* AllocZeroed(nuint elementCount, nuint elementSize)
+        /// <param name="elementCount">The count, in elements, of the block to allocate.</param>
+        /// <param name="elementSize">The size, in bytes, of each element in the allocation.</param>
+        /// <returns>A pointer to the allocated block of memory.</returns>
+        /// <exception cref="OutOfMemoryException">Allocating <paramref name="elementCount" /> * <paramref name="elementSize" /> bytes of memory failed.</exception>
+        /// <remarks>
+        ///     <para>This method allows <paramref name="elementCount" /> and/or <paramref name="elementSize" /> to be <c>0</c> and will return a valid pointer that should not be dereferenced and that should be passed to free to avoid memory leaks.</para>
+        ///     <para>This method is a thin wrapper over the C <c>malloc</c> API.</para>
+        /// </remarks>
+        [CLSCompliant(false)]
+        public static void* Alloc(nuint elementCount, nuint elementSize)
         {
-            var byteCount = GetByteCount(elementCount, elementSize);
-            var result = Alloc(byteCount);
-            Clear(result, byteCount);
-            return result;
+            nuint byteCount = GetByteCount(elementCount, elementSize);
+            return Alloc(byteCount);
         }
 
-        /// <summary>Clears a block of unmanaged memory.</summary>
+        /// <summary>Allocates and zeroes a block of memory of the specified size, in bytes.</summary>
+        /// <param name="byteCount">The size, in bytes, of the block to allocate.</param>
+        /// <returns>A pointer to the allocated and zeroed block of memory.</returns>
+        /// <exception cref="OutOfMemoryException">Allocating <paramref name="byteCount" /> of memory failed.</exception>
+        /// <remarks>
+        ///     <para>This method allows <paramref name="byteCount" /> to be <c>0</c> and will return a valid pointer that should not be dereferenced and that should be passed to free to avoid memory leaks.</para>
+        ///     <para>This method is a thin wrapper over the C <c>calloc</c> API.</para>
+        /// </remarks>
+        [CLSCompliant(false)]
+        public static void* AllocZeroed(nuint byteCount)
+        {
+            return AllocZeroed(byteCount, elementSize: 1);
+        }
+
+        /// <summary>Clears a block of memory.</summary>
+        /// <param name="ptr">A pointer to the block of memory that should be cleared.</param>
+        /// <param name="byteCount">The size, in bytes, of the block to clear.</param>
+        /// <remarks>
+        ///     <para>If this method is called with <paramref name="ptr" /> being <see langword="null"/> and <paramref name="byteCount" /> being <c>0</c>, it will be equivalent to a no-op.</para>
+        ///     <para>The behavior when <paramref name="ptr" /> is <see langword="null"/> and <paramref name="byteCount" /> is greater than <c>0</c> is undefined.</para>
+        /// </remarks>
+        [CLSCompliant(false)]
         public static void Clear(void* ptr, nuint byteCount)
         {
-            var bytes = (byte*)ptr;
-            for (nuint index = 0; index < byteCount; index++)
-            {
-                bytes[index] = 0;
-            }
+            SpanHelpers.ClearWithoutReferences(ref *(byte*)ptr, byteCount);
         }
 
-        /// <summary>Copies a block of unmanaged memory, preserving overlap semantics.</summary>
+        /// <summary>
+        /// Copies a block of memory from memory location <paramref name="source"/>
+        /// to memory location <paramref name="destination"/>.
+        /// </summary>
+        /// <param name="source">A pointer to the source of data to be copied.</param>
+        /// <param name="destination">A pointer to the destination memory block where the data is to be copied.</param>
+        /// <param name="byteCount">The size, in bytes, to be copied from the source location to the destination.</param>
+        [CLSCompliant(false)]
         public static void Copy(void* source, void* destination, nuint byteCount)
         {
-            if (byteCount == 0 || source == destination)
-            {
-                return;
-            }
-
-            var sourceAddress = (nuint)source;
-            var destinationAddress = (nuint)destination;
-            var sourceBytes = (byte*)source;
-            var destinationBytes = (byte*)destination;
-
-            if (destinationAddress < sourceAddress ||
-                destinationAddress - sourceAddress >= byteCount)
-            {
-                for (nuint index = 0; index < byteCount; index++)
-                {
-                    destinationBytes[index] = sourceBytes[index];
-                }
-                return;
-            }
-
-            for (var index = byteCount; index != 0;)
-            {
-                index--;
-                destinationBytes[index] = sourceBytes[index];
-            }
+            SpanHelpers.Memmove(ref *(byte*)destination, ref *(byte*)source, byteCount);
         }
 
-        /// <summary>Fills a block of unmanaged memory with a byte value.</summary>
+        /// <summary>
+        /// Copies the byte <paramref name="value"/> to the first <paramref name="byteCount"/> bytes
+        /// of the memory located at <paramref name="ptr"/>.
+        /// </summary>
+        /// <param name="ptr">A pointer to the block of memory to fill.</param>
+        /// <param name="byteCount">The number of bytes to be set to <paramref name="value"/>.</param>
+        /// <param name="value">The value to be set.</param>
+        [CLSCompliant(false)]
         public static void Fill(void* ptr, nuint byteCount, byte value)
         {
-            var bytes = (byte*)ptr;
-            for (nuint index = 0; index < byteCount; index++)
-            {
-                bytes[index] = value;
-            }
+            SpanHelpers.Fill(ref *(byte*)ptr, byteCount, value);
         }
 
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        public static extern void Free(void* ptr);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        public static extern void* Realloc(void* ptr, nuint byteCount);
-
-        public static void* AlignedAlloc(nuint byteCount, nuint alignment)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static nuint GetByteCount(nuint elementCount, nuint elementSize)
         {
-            ValidateAlignment(alignment);
-            var adjustedAlignment = alignment < (nuint)sizeof(void*)
-                ? (nuint)sizeof(void*)
-                : alignment;
-            var adjustedByteCount = byteCount != 0
-                ? (byteCount + adjustedAlignment - 1) & ~(adjustedAlignment - 1)
-                : adjustedAlignment;
-            return AlignedAllocCore(
-                adjustedByteCount < byteCount ? nuint.MaxValue : adjustedByteCount,
-                adjustedAlignment);
+            // This is based on the `mi_count_size_overflow` and `mi_mul_overflow` methods from microsoft/mimalloc.
+            // Original source is Copyright (c) 2019 Microsoft Corporation, Daan Leijen. Licensed under the MIT license
+
+            // sqrt(nuint.MaxValue)
+            nuint multiplyNoOverflow = (nuint)1 << (4 * sizeof(nuint));
+
+            return ((elementSize >= multiplyNoOverflow) || (elementCount >= multiplyNoOverflow)) && (elementSize > 0) && ((nuint.MaxValue / elementSize) < elementCount) ? nuint.MaxValue : (elementCount * elementSize);
         }
-
-        public static void* AlignedRealloc(void* ptr, nuint byteCount, nuint alignment)
-        {
-            ValidateAlignment(alignment);
-            var adjustedAlignment = alignment < (nuint)sizeof(void*)
-                ? (nuint)sizeof(void*)
-                : alignment;
-            var adjustedByteCount = byteCount != 0
-                ? (byteCount + adjustedAlignment - 1) & ~(adjustedAlignment - 1)
-                : adjustedAlignment;
-            return AlignedReallocCore(
-                ptr,
-                adjustedByteCount < byteCount ? nuint.MaxValue : adjustedByteCount,
-                adjustedAlignment);
-        }
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        public static extern void AlignedFree(void* ptr);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void* AlignedAllocCore(nuint byteCount, nuint alignment);
-
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern void* AlignedReallocCore(
-            void* ptr,
-            nuint byteCount,
-            nuint alignment);
-
-        private static void ValidateAlignment(nuint alignment)
-        {
-            if (alignment == 0 || (alignment & (alignment - 1)) != 0)
-            {
-                throw new ArgumentException("Alignment must be a power of two.");
-            }
-        }
-
-        private static nuint GetByteCount(nuint elementCount, nuint elementSize) =>
-            elementSize != 0 && elementCount > nuint.MaxValue / elementSize
-                ? nuint.MaxValue
-                : elementCount * elementSize;
     }
 }

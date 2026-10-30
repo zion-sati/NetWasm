@@ -2,7 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 //
 // Adapted from dotnet/runtime System.Private.CoreLib (commit
-// 811225a482702af7ecc35d817966bc70b88a3a23). File/path members are
+// 474ed963699fc29809015392738a15231aaae2de). File/path members are
 // intentionally omitted for the managed NetWasm profile; async members use
 // TextWriter's scheduler-backed surface.
 

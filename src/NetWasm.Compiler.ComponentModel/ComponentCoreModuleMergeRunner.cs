@@ -55,6 +55,7 @@ public sealed class ComponentCoreModuleMergeRunner(
         arguments.Add("--enable-reference-types");
         arguments.Add("--enable-bulk-memory");
         arguments.Add("--enable-nontrapping-float-to-int");
+        arguments.Add("--enable-simd");
         if (request.Target.Width == "wasm64")
         {
             arguments.Add("--enable-memory64");

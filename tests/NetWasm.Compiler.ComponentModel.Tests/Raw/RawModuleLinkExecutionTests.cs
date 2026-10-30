@@ -79,7 +79,7 @@ public sealed class RawModuleLinkExecutionTests
         Assert.Equal("temporary", stages.DeletedDirectory);
         Assert.Equal(
             [
-                ("application", Path.Combine("temporary", "sanitized.wasm"), WasmInlineAnnotationSelection.SizeAware),
+                ("application", Path.Combine("temporary", "sanitized.wasm"), WasmInlineAnnotationSelection.Preserve),
                 ("runtime", Path.Combine("temporary", "runtime-sanitized.wasm"), WasmInlineAnnotationSelection.SizeAware),
             ],
             stages.Inlinings);

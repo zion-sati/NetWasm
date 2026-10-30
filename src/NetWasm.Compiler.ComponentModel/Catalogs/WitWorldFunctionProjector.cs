@@ -137,9 +137,11 @@ public sealed class WitWorldFunctionProjector(
             }
 
             var id = item.InterfaceId!.Value;
+            // The contract names the operation by the interface, and keeps the
+            // world's name for it as WorldItem.
             var definition = document.Interfaces[id]!;
             var specifier = _interfaceSpecifiers.Format(definition);
-            var javaScriptRoot = ProjectInterfaceJavaScriptRoot(item);
+            var javaScriptRoot = ProjectInterfaceJavaScriptRoot(item, definition);
             foreach (var function in definition.Functions)
             {
                 ArgumentNullException.ThrowIfNull(function);
@@ -215,8 +217,11 @@ public sealed class WitWorldFunctionProjector(
         return new("defined", null, defined.Id);
     }
 
-    private string ProjectInterfaceJavaScriptRoot(WitWorldItem item) =>
-        _javaScriptNames.FormatMember(item.Name);
+    // Jco's export of the interface: the world's own name for it, from
+    // `export name: ...`, or the interface's name when the world names it by
+    // its package.
+    private string ProjectInterfaceJavaScriptRoot(WitWorldItem item, WitInterface definition) =>
+        _javaScriptNames.FormatMember(item.Name.Contains(':', StringComparison.Ordinal) ? definition.Name : item.Name);
 
     private WitWorkerReactor? ProjectReactor(
         WitDocument document,
@@ -230,6 +235,8 @@ public sealed class WitWorldFunctionProjector(
             {
                 continue;
             }
+            // The reactor interfaces by their own identity, whatever the world
+            // names them.
             var definition = document.Interfaces[id]!;
             if (_interfaceSpecifiers.Format(definition) == ReactorHostInterface)
             {
@@ -243,8 +250,7 @@ public sealed class WitWorldFunctionProjector(
                 continue;
             }
             var definition = document.Interfaces[id]!;
-            var specifier = _interfaceSpecifiers.Format(definition);
-            if (specifier != ReactorGuestInterface)
+            if (_interfaceSpecifiers.Format(definition) != ReactorGuestInterface)
             {
                 continue;
             }
@@ -262,8 +268,8 @@ public sealed class WitWorldFunctionProjector(
                     "WIT worker reactor-guest export is duplicated");
             }
             reactor = new(
-                specifier,
-                ProjectInterfaceJavaScriptRoot(item),
+                item.Name,
+                ProjectInterfaceJavaScriptRoot(item, definition),
                 _javaScriptNames.FormatMember(wakes[0].Name));
         }
         if (reactor is null && hostCount == 0)
@@ -442,7 +448,7 @@ public sealed class WitWorldFunctionProjector(
                 {
                     return _worldSpecifiers.Format(world);
                 }
-                return _interfaceSpecifiers.Format(document.Interfaces[item.InterfaceId!.Value]);
+                return item.Name;
             })
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)];
@@ -486,7 +492,7 @@ public sealed class WitWorldFunctionProjector(
                 throw ComponentException.Invalid(
                     "WIT deployment interface functions must be explicit");
             }
-            var specifier = _interfaceSpecifiers.Format(definition);
+            var specifier = item.Name;
             functions.AddRange(definition.Functions.Select(function =>
             {
                 ArgumentNullException.ThrowIfNull(function);

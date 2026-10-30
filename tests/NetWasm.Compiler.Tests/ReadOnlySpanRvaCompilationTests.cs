@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.TestInfrastructure;
@@ -71,12 +72,15 @@ public sealed class ReadOnlySpanRvaCompilationTests
         var assembly = assets.CompileOptimizedSource(
             "ReadOnlySpanRvaStructure",
             Source);
+        // Oz's static data-view elimination folds these constant reads away, so it stays off here;
+        // StaticDataViewEliminatorTests covers it.
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
             "EntryPoint",
             "Run",
-            []));
+            [],
+            OptimizationOverrides: new(StaticDataViewElimination: ManagedStaticDataViewElimination.Disabled)));
         var creations = compilation.Program.Methods.Values
             .SelectMany(method => method.Body.Instructions)
             .Where(instruction =>
@@ -147,6 +151,86 @@ public sealed class ReadOnlySpanRvaCompilationTests
                 compilation.ApplicationModule,
                 assets.Directory,
                 1));
+    }
+
+    private const string LocalTableSource = """
+        using System;
+        using System.Runtime.CompilerServices;
+
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                ReadOnlySpan<double> table = [0.5, -0.5, 2.0];
+                var picked = table[input & 1] + table[2] * table.Length;
+                var total = (int)(picked * 4) + Sum(table);
+                try
+                {
+                    return total + (int)table[input];
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return -total;
+                }
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Sum(ReadOnlySpan<double> values)
+            {
+                var sum = 0.0;
+                foreach (var value in values) sum += value;
+                return (int)(sum * 10);
+            }
+        }
+        """;
+
+    // A span local held a byref, so it lived in the value frame; one assigned
+    // once from RVA data is read as that data's address and length instead.
+    [Fact]
+    public void O3ReadsAnRvaSpanLocalAsItsAddressAndLength()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("ReadOnlySpanRvaLocal", LocalTableSource);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "EntryPoint",
+            "Run",
+            [],
+            Optimization: FinalWasmOptimization.O3));
+        var entry = compilation.Program.Methods.Values.Single(method =>
+            method.Method.Definition.Name == "Run");
+
+        Assert.DoesNotContain(entry.Body.Instructions, instruction =>
+            instruction.Operation is CilOperation.LoadLocalAddress or CilOperation.StoreLocal &&
+            instruction.Operand is CilOperand.Index local &&
+            entry.Body.LocalSignatureTypes[local.Value].CanonicalName.Contains("System.ReadOnlySpan`1", StringComparison.Ordinal));
+        Assert.Contains(entry.Body.Instructions, instruction =>
+            instruction.Operation == CilOperation.LoadStaticFieldAddress);
+        // The copy passed to Sum is the same RVA span, created where it is read.
+        Assert.Single(entry.Body.Instructions, instruction =>
+            instruction.Operation == CilOperation.CreateReadOnlySpanFromRva);
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, true, 0, 46)]
+    [InlineData(WasmTarget.Wasm32, true, 1, 42)]
+    [InlineData(WasmTarget.Wasm32, true, 5, -42)]
+    [InlineData(WasmTarget.Wasm64, true, 1, 42)]
+    [InlineData(WasmTarget.Wasm32, false, 5, -42)]
+    public void RvaSpanLocalsReadAsDesktopDoes(WasmTarget target, bool optimize, int input, int expected)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+
+        Assert.Equal(expected, executor.Execute(new CompilationScenario(
+            $"ReadOnlySpanRvaLocal_{target}_{optimize}",
+            LocalTableSource,
+            "EntryPoint",
+            Optimize: optimize,
+            target,
+            input,
+            [])));
     }
 
     [Fact]

@@ -107,7 +107,8 @@ internal sealed class ExceptionAndReturnEmitter(
                 returnLayout.Alignment,
                 writer => writer.Write(WasmInstruction.WithOperand(
                     WasmOpcodes.LocalGet,
-                    WasmInstructionOperand.Unsigned((uint)source))));
+                    WasmInstructionOperand.Unsigned((uint)source))),
+                request.Context);
         }
         methodFrameExits.Emit(code, request.Context);
         if (returnSignature.ReturnType != CliValueKind.Void &&

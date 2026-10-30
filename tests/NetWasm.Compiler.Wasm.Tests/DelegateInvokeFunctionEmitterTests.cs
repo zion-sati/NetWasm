@@ -45,15 +45,42 @@ public sealed class DelegateInvokeFunctionEmitterTests
             Assert.Same(targetProgram.ModuleData, request.ModuleData);
             Assert.True(request.IsMethodInvocation);
             Assert.Same(resolver, initialization.FunctionIndices);
-            Assert.Equal(WasmOpcodes.If, initialization.Preceding[^1].Opcode);
-            Assert.Contains(initialization.Preceding, instruction =>
+            // The target's branch publishes the delegate and arguments before initializing.
+            var preceding = initialization.Preceding.ToList();
+            var branch = preceding.FindLastIndex(instruction => instruction.Opcode == WasmOpcodes.If);
+            var enter = preceding.FindLastIndex(instruction =>
                 instruction.Opcode == WasmOpcodes.Call && instruction.Operand.UnsignedValue ==
                 (uint)WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.RootFrameEnter));
+            Assert.True(branch >= 0 && enter > branch);
             Assert.Contains(initialization.Preceding, instruction =>
                 instruction.Opcode == (target == WasmTarget.Wasm32 ? WasmOpcodes.I32Store : WasmOpcodes.I64Store));
         }
         else
             Assert.Empty(initialization.Requests);
+    }
+
+    // A single-cast delegate reads nothing after its target runs, so only the
+    // multicast branch, or a target's initialization, roots the delegate and arguments.
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public void RootsOnlyForMulticastOrTargetInitialization(bool initializes, int frames)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var callbackType = CallbackType();
+        var signature = MethodSignatureModel.Create(CliValueKind.I4);
+        var invoke = CreateInvoke(callbackType, signature);
+        var method = CreateTarget(signature, "Target", true, Key(0x06000025), false);
+        var writers = new RecordingWriterFactory();
+        var initialization = new RecordingInitialization(initializes);
+
+        ((IDelegateInvokeFunctionEmitter)CreateEmitter(layouts, writers: writers,
+            initialization: initialization, triggers: initialization)).Emit(
+                invoke, CreateTargetProgram(invoke, method), CreateResolver(callbackType, method));
+
+        var enter = (uint)WasmRuntimeImports.CreateCatalog().Resolve(RuntimeImportSymbol.RootFrameEnter);
+        Assert.Equal(frames, writers.Instructions.ToInstructions().Count(instruction =>
+            instruction.Opcode == WasmOpcodes.Call && instruction.Operand.UnsignedValue == enter));
     }
 
     [Theory]
@@ -89,7 +116,12 @@ public sealed class DelegateInvokeFunctionEmitterTests
             index => instructions[index] == targetCall);
         if (isStatic)
         {
-            Assert.Equal(WasmOpcodes.If, instructions[callIndex - 1].Opcode);
+            // A static target takes no receiver from the delegate.
+            var branch = Array.FindLastIndex(instructions[..callIndex].ToArray(),
+                instruction => instruction.Opcode == WasmOpcodes.If);
+            Assert.DoesNotContain(instructions[branch..callIndex], instruction =>
+                instruction.Operand.Shape == WasmInstructionOperandShape.MemoryArgument &&
+                instruction.Operand.Offset == (uint)layouts.DelegateTargetOffset);
             Assert.Null(values.RequestedType);
             return;
         }
@@ -121,6 +153,61 @@ public sealed class DelegateInvokeFunctionEmitterTests
             Assert.Null(values.RequestedType);
         }
         Assert.Equal(expected, instructions.Skip(callIndex - expected.Count).Take(expected.Count));
+    }
+
+    // Past four targets the stub reads the method id once, then jumps through a
+    // branch table when the targets' function indices are dense and otherwise
+    // finds the target by binary search, instead of testing each in turn.
+    [Theory]
+    [InlineData(4, 1, 0, false)]
+    [InlineData(9, 1, 0, true)]
+    [InlineData(17, 2, 0, true)]
+    [InlineData(9, 25, 2, false)]
+    [InlineData(17, 13, 4, false)]
+    public void FindsManyTargetsByFunctionIndex(int count, int spacing, int searchSteps, bool table)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var callbackType = CallbackType();
+        var signature = MethodSignatureModel.Create(CliValueKind.I4);
+        var invoke = CreateInvoke(callbackType, signature);
+        var methods = Enumerable.Range(0, count)
+            .Select(index => CreateTarget(signature, $"Target{index}", true, Key(0x06000030 + index * spacing)))
+            .ToArray();
+        var writers = new RecordingWriterFactory();
+        var resolver = CreateResolver(callbackType, methods);
+
+        ((IDelegateInvokeFunctionEmitter)CreateEmitter(layouts, writers: writers)).Emit(
+            invoke, CreateTargetProgram(invoke, methods), resolver);
+
+        var instructions = writers.Instructions.ToInstructions();
+        var currentDelegate = WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned(
+            (uint)(new ManagedMethodFunctionTypeResolver().Resolve(invoke).Parameters.Length + 5)));
+        var methodId = WasmInstruction.WithOperand(WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(2, (uint)layouts.DelegateMethodIdOffset));
+        Assert.Equal(count > 4 ? 1 : count, Enumerable.Range(1, instructions.Length - 1).Count(index =>
+            instructions[index] == methodId && instructions[index - 1] == currentDelegate));
+        Assert.Equal(searchSteps, instructions.Count(instruction =>
+            instruction.Opcode == WasmOpcodes.I32LessThanUnsigned));
+        var indices = methods.Select(method => resolver.Resolve(method)).Order().ToArray();
+        if (table)
+        {
+            var branchTable = Assert.Single(instructions, instruction => instruction.Opcode == WasmOpcodes.BranchTable);
+            // Each index in the table's range names its target's block; gaps leave by the default.
+            Assert.Equal(0, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Equal));
+            Assert.Equal(
+                string.Join(",", Enumerable.Range(indices[0], indices[^1] - indices[0] + 1).Select(index =>
+                    Array.IndexOf(indices, index) is var position and >= 0 ? (uint)position : (uint)count)),
+                string.Join(",", branchTable.Operand.BranchTableTargets));
+            Assert.Equal((uint)count, branchTable.Operand.BranchTableDefault);
+        }
+        else
+        {
+            Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.BranchTable);
+            Assert.Equal(count, instructions.Count(instruction => instruction.Opcode == WasmOpcodes.I32Equal));
+        }
+        Assert.All(methods, method => Assert.Single(instructions, instruction =>
+            instruction == WasmInstruction.WithOperand(WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)resolver.Resolve(method)))));
     }
 
     [Fact]

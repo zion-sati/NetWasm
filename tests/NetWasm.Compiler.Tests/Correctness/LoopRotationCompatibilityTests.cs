@@ -7,14 +7,16 @@ public sealed class LoopRotationCompatibilityTests(CorrectnessTestRunner runner)
 {
     // O3 tests a loop's condition before entry and at the bottom of each
     // iteration, and moves the condition's first array null check to the
-    // loop entry; every loop shape and exception must match desktop .NET.
+    // loop entry; Oz rotates only conditions without calls. Every loop shape
+    // and exception must match desktop .NET.
     [Theory]
-    [InlineData("Release-Wasm32-Direct-Linked")]
-    [InlineData("Release-Wasm64-Direct-Linked")]
-    public void RotatedLoopsAndEntryNullChecksMatchDesktop(string cell) =>
+    [InlineData("Release-Wasm32-Direct-Linked", FinalWasmOptimization.O3)]
+    [InlineData("Release-Wasm64-Direct-Linked", FinalWasmOptimization.O3)]
+    [InlineData("Release-Wasm32-Direct-Linked", FinalWasmOptimization.Oz)]
+    public void RotatedLoopsAndEntryNullChecksMatchDesktop(string cell, FinalWasmOptimization optimization) =>
         runner.Run(new("RotatedLoops", "RotatedLoops", Source, [0, 3, 17])
         {
-            Optimization = FinalWasmOptimization.O3,
+            Optimization = optimization,
             Matrix = new(CorpusMatrixProfile.Extended, cell, CorpusExecutionBackend.Linked),
         });
 
@@ -32,7 +34,8 @@ public sealed class LoopRotationCompatibilityTests(CorrectnessTestRunner runner)
             {
                 var values = new int[count];
                 for (var index = 0; index < values.Length; index++) values[index] = index * 3 + 1;
-                var total = Sum(values) + Skips(values) + Nested(values, count) + DoWhile(count) + Countdown(values);
+                var total = Sum(values) + Skips(values) + Nested(values, count) + DoWhile(count) + Countdown(values) +
+                    Calls(values);
                 total += Lengths(values, null) + Lengths(values, new int[count / 2]) + ZeroTrip(null, 0);
                 try { total += Sum(null!); } catch (NullReferenceException) { total += 1000; }
                 try { total += Effects(null!); } catch (NullReferenceException) { total += 2000 + s_effects; }
@@ -119,6 +122,19 @@ public sealed class LoopRotationCompatibilityTests(CorrectnessTestRunner runner)
                 for (var index = 0; index < limit; index++) sum += values[index];
                 return sum;
             }
+
+            // A condition that calls, which Oz leaves unrotated.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Calls(int[] values)
+            {
+                var index = 0;
+                var sum = 0;
+                while (Advance(values, ref index)) sum += values[index - 1];
+                return sum;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static bool Advance(int[] values, ref int index) => index++ < values.Length;
 
             // The condition never touches the array, so a null one is fine until read.
             [MethodImpl(MethodImplOptions.NoInlining)]

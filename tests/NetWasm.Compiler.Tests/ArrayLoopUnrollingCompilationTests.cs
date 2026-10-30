@@ -28,6 +28,11 @@ public sealed class ArrayLoopUnrollingCompilationTests
         Assert.Equal(enabled ? 5 : 1, floating.Body.ArrayBoundsProof!.AccessOffsets.Count);
         var integer = compilation.Program.Methods.Values.Single(method => method.Method.Definition.Name == "Sum");
         Assert.Equal(enabled ? 5 : 1, integer.Body.ArrayBoundsProof!.AccessOffsets.Count);
+        // The struct sum reads each element's fields through its address.
+        var pairs = compilation.Program.Methods.Values.Single(method => method.Method.Definition.Name == "PairSum");
+        Assert.Equal(enabled ? 5 : 1, pairs.Body.Instructions.Count(instruction =>
+            instruction is { Operation: CilOperation.LoadArrayElementAddress } &&
+            pairs.Body.Instructions.SkipWhile(candidate => candidate != instruction).Skip(1).First().Operation == CilOperation.Duplicate));
         Assert.Equal(42, ExecuteWithStandardWasiNode(compilation.ApplicationModule,
             assets.Directory, 0, target, compilation.StaticDataEnd));
     }
@@ -43,6 +48,8 @@ public sealed class ArrayLoopUnrollingCompilationTests
                     if (Sum(count) != unchecked(count * long.MaxValue - count * (count - 1L) / 2)) return 1;
                 if (FloatSum() != 1f || DoubleSum() != 1d) return 2;
                 if (PartialWrite() != 17) return 3;
+                for (var count = 0; count < 13; count++)
+                    if (PairSum(count) != unchecked(count * long.MaxValue + count * (count - 1L))) return 5;
                 try { NullSum(); return 4; }
                 catch (NullReferenceException) { }
                 return 42;
@@ -61,6 +68,26 @@ public sealed class ArrayLoopUnrollingCompilationTests
                 var values = new long[count];
                 for (var i = 0; i < values.Length; i++) values[i] = long.MaxValue - i;
                 return values;
+            }
+            private struct Pair
+            {
+                public int A;
+                public long B;
+                public byte C;
+            }
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static Pair[] Pairs(int count)
+            {
+                var pairs = new Pair[count];
+                for (var i = 0; i < pairs.Length; i++) pairs[i] = new Pair { A = i * 3, B = long.MaxValue - i, C = (byte)i };
+                return pairs;
+            }
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static long PairSum(int count)
+            {
+                var sum = 0L;
+                foreach (var pair in Pairs(count)) sum = unchecked(sum + pair.A + pair.B);
+                return sum;
             }
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static long[] NullArray() => null;

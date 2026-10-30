@@ -109,7 +109,15 @@ public sealed class CompileCliCommandTests
             "-managedconstantargumentpropagation:Enabled", "-managedstaticarraypopulationelimination:Disabled",
             "-managedconstantcallfolding:Disabled", "-managedswitchbittests:Enabled",
             "-manageddevirtualization:Disabled", "-managedallocationelimination:Enabled",
-            "-managedlooprotation:Enabled", "-managedarraystorecheckelimination:Disabled");
+            "-managedlooprotation:Enabled", "-managedarraystorecheckelimination:Disabled",
+            "-manageddispatcherelimination:Disabled",
+            "-managedemptyfinallyremoval:Enabled",
+            "-managedstructscalarreplacement:Disabled",
+            "-managedallocationscalarreplacement:Enabled",
+            "-managedidempotentloopcollapse:Disabled",
+            "-managedloopstoreforwarding:Enabled",
+            "-managedarrayloopidioms:Disabled",
+            "-managedloopvectorization:Disabled");
 
         Assert.Equal("node", harness.Sessions.WasmTools!.Executable);
         var options = harness.Sessions.Options!;
@@ -145,6 +153,14 @@ public sealed class CompileCliCommandTests
         Assert.Equal(ManagedAllocationElimination.Enabled, overrides.AllocationElimination);
         Assert.Equal(ManagedLoopRotation.Enabled, overrides.LoopRotation);
         Assert.Equal(ManagedArrayStoreCheckElimination.Disabled, overrides.ArrayStoreCheckElimination);
+        Assert.Equal(ManagedDispatcherElimination.Disabled, overrides.DispatcherElimination);
+        Assert.Equal(ManagedEmptyFinallyRemoval.Enabled, overrides.EmptyFinallyRemoval);
+        Assert.Equal(ManagedStructScalarReplacement.Disabled, overrides.StructScalarReplacement);
+        Assert.Equal(ManagedAllocationScalarReplacement.Enabled, overrides.AllocationScalarReplacement);
+        Assert.Equal(ManagedIdempotentLoopCollapse.Disabled, overrides.IdempotentLoopCollapse);
+        Assert.Equal(ManagedLoopStoreForwarding.Enabled, overrides.LoopStoreForwarding);
+        Assert.Equal(ManagedArrayLoopIdioms.Disabled, overrides.ArrayLoopIdioms);
+        Assert.Equal(ManagedLoopVectorization.Disabled, overrides.LoopVectorization);
         var request = harness.Artifacts.Request!;
         Assert.Equal("native/callbacks.o", request.CallbackObjectPath);
         Assert.Equal("layout.json", request.RuntimeLayoutPath);

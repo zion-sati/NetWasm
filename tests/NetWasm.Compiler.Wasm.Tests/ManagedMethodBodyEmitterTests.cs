@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission;
@@ -44,7 +45,7 @@ public sealed class ManagedMethodBodyEmitterTests
             MemberExecution = MemberExecutionPlan.Empty with { MethodInvokers = [EntryKey] },
             EnableAddressTakenAggregatePromotion = true,
             HoistArrayNullChecks = true,
-            EnableLoopRotation = true,
+            LoopRotation = LoopRotationPolicy.Guarded,
             EliminateArrayStoreChecks = true,
             ManagedByRefEffects = new(
                 ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty.Add(
@@ -131,7 +132,7 @@ public sealed class ManagedMethodBodyEmitterTests
         Assert.Same(target.MemberExecution, methods.MemberExecution);
         Assert.Same(byRefEffects, methods.ByRefEffects);
         Assert.True(methods.HoistArrayNullChecks);
-        Assert.True(methods.RotateLoops);
+        Assert.Equal(LoopRotationPolicy.Guarded, methods.LoopRotation);
         Assert.True(methods.EliminateArrayStoreChecks);
         Assert.Same(promotionPlan, methods.AddressTakenScalarPromotions);
         Assert.Same(
@@ -476,7 +477,7 @@ public sealed class ManagedMethodBodyEmitterTests
 
         public bool HoistArrayNullChecks { get; private set; }
 
-        public bool RotateLoops { get; private set; }
+        public LoopRotationPolicy LoopRotation { get; private set; }
 
         public bool EliminateArrayStoreChecks { get; private set; }
 
@@ -501,13 +502,14 @@ StructuredMethod structured,
             bool enableArrayMetadataCaching = false,
             bool enableScalarCallPreservation = false,
             bool hoistArrayNullChecks = false,
-            bool rotateLoops = false,
+            LoopRotationPolicy loopRotation = LoopRotationPolicy.Disabled,
             bool eliminateArrayStoreChecks = false,
-OptionalFunctionIndex managedThrowFunction = default)
+OptionalFunctionIndex managedThrowFunction = default,
+            bool inlineSmallBlocks = false)
         {
             Method = method;
             HoistArrayNullChecks = hoistArrayNullChecks;
-            RotateLoops = rotateLoops;
+            LoopRotation = loopRotation;
             EliminateArrayStoreChecks = eliminateArrayStoreChecks;
             Structured = structured;
             NativeImports = nativeImports;

@@ -189,7 +189,7 @@ namespace System.Runtime.InteropServices
             }
         }
 
-        [WitExport("netwasm:runtime@1.0.0/reactor-guest", "wake")]
+        [WitExport("netwasm:runtime/reactor-guest@1.0.0", "wake")]
         internal static void Wake(uint token)
         {
             _hostReactor?.Wake(token);
@@ -228,10 +228,10 @@ namespace System.Runtime.InteropServices
 
     internal static class ReactorHostImports
     {
-        [WitImport("netwasm:runtime@1.0.0/reactor-host", "watch")]
+        [WitImport("netwasm:runtime/reactor-host@1.0.0", "watch")]
         internal static extern void Watch(int pollable, uint token);
 
-        [WitImport("netwasm:runtime@1.0.0/reactor-host", "cancel")]
+        [WitImport("netwasm:runtime/reactor-host@1.0.0", "cancel")]
         internal static extern void Cancel(uint token);
     }
 }

@@ -32,7 +32,7 @@ public sealed class DateRangeBoundaryTests
         {
             Exports = [new RequestedExport("run", "NetWasm.Correctness.DateRangeBoundaries.EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
         Assert.Equal(42, observed);
     }
@@ -73,7 +73,7 @@ public sealed class DateRangeBoundaryTests
         {
             Exports = [new RequestedExport("run", "DateTextBoundary.EntryPoint", "Run")],
             WitPath = Path.Combine(assets.Root, "wit", "netwasm-platform-1.0.0"),
-            WitWorld = "netwasm:platform@1.0.0/platform",
+            WitWorld = "netwasm:platform/platform@1.0.0",
         });
         Assert.Equal(42, observed);
     }

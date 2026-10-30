@@ -9,9 +9,9 @@ namespace NetWasm.Compiler.Analysis;
 // monotonic-clock imports a program needs to run its own event loop.
 public sealed record PlatformWorldCapabilities(bool ReactorHost, bool EventLoop)
 {
-    internal const string ReactorHostInterface = "netwasm:runtime@1.0.0/reactor-host";
-    internal const string PollInterface = "wasi:io@0.2.11/poll";
-    internal const string MonotonicClockInterface = "wasi:clocks@0.2.11/monotonic-clock";
+    internal const string ReactorHostInterface = "netwasm:runtime/reactor-host@1.0.0";
+    internal const string PollInterface = "wasi:io/poll@0.2.11";
+    internal const string MonotonicClockInterface = "wasi:clocks/monotonic-clock@0.2.11";
 
     public static PlatformWorldCapabilities None { get; } = new(ReactorHost: false, EventLoop: false);
 

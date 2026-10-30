@@ -67,7 +67,7 @@ internal sealed class RectangularArrayElementAddressEmitter(
                 instruction.Context,
                 request.ArraySlot + dimension + 1,
                 CliValueKind.I4);
-            NormalizeIndex(code, arrayLocal, indexLocal, dimension);
+            SubtractLowerBound(code, arrayLocal, indexLocal, shape, arrayType.ArrayRank, dimension);
 
             Get(code, indexLocal);
             EmitShapeFieldAddress(code, arrayLocal, shape, dimension);
@@ -156,6 +156,32 @@ internal sealed class RectangularArrayElementAddressEmitter(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(
                 RuntimeImportSymbol.ArrayGetLowerBound))));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
+        Set(code, index);
+    }
+
+    // An array of rank two or more has the rank of its static type, so its
+    // lower bounds are read from its shape without asking the runtime which
+    // kind of array it is.
+    private void SubtractLowerBound(
+        IWasmInstructionWriter code,
+        int array,
+        int index,
+        RectangularArrayLayout shape,
+        int rank,
+        int dimension)
+    {
+        Get(code, index);
+        Get(code, array);
+        ManagedMemoryEmitter.EmitReferenceLoad(
+            code,
+            layouts.Target,
+            shape.ShapePointerOffset);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(
+                2,
+                (uint)shape.LowerBoundOffset(rank, dimension))));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
         Set(code, index);
     }

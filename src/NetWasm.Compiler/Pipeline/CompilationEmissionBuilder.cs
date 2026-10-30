@@ -113,7 +113,8 @@ internal sealed class CompilationEmissionBuilder(
         var lowering = _methodProgram.Build(
             analysis.Program.Methods,
             analysis.Program.ConstructedMethods,
-            preparation.OptimizationSettings.BranchPrefixDuplication);
+            preparation.OptimizationSettings.BranchPrefixDuplication,
+            preparation.OptimizationSettings.DispatcherElimination);
         _structuredInvariants.Validate(symbols, lowering);
 
         var emitter = _emitters.Create(
@@ -205,14 +206,16 @@ internal sealed class CompilationEmissionBuilder(
             HoistArrayNullChecks =
                 preparation.OptimizationSettings.LoopInvariantFieldHoisting ==
                 LoopInvariantFieldHoistingPolicy.NullChecks,
-            EnableLoopRotation =
-                preparation.OptimizationSettings.LoopRotation == LoopRotationPolicy.Guarded,
+            LoopRotation = preparation.OptimizationSettings.LoopRotation,
             EliminateArrayStoreChecks =
                 preparation.OptimizationSettings.ArrayStoreCheckElimination ==
                 ArrayStoreCheckEliminationPolicy.ExactElementTypes,
             EnableScalarCallPreservation =
                 preparation.OptimizationSettings.ScalarCallPreservation ==
                 ScalarCallPreservationPolicy.Conservative,
+            InlineSmallBlockOperations =
+                preparation.OptimizationSettings.SmallBlockOperations ==
+                SmallBlockOperationPolicy.Inline,
             SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
         var emission = emitter.Emit(request);

@@ -212,7 +212,7 @@ namespace System
 namespace System.Buffers
 {
     // Portions derived from dotnet/runtime System.Private.CoreLib MemoryHandle.cs
-    // at commit 811225a482702af7ecc35d817966bc70b88a3a23 (MIT).
+    // at commit 474ed963699fc29809015392738a15231aaae2de (MIT).
     public unsafe struct MemoryHandle : IDisposable
     {
         private void* _pointer;
@@ -916,11 +916,6 @@ namespace System
         public static bool ContainsAnyWhiteSpace(this ReadOnlySpan<char> span) => span.IndexOfAnyWhiteSpace() >= 0;
         public static bool IsWhiteSpace(this ReadOnlySpan<char> span) => span.IndexOfAnyExceptWhiteSpace() < 0;
 
-        public static int BinarySearch<T>(this Span<T> span, T value) where T : IComparable<T> => BinarySearch((ReadOnlySpan<T>)span, value, null);
-        public static int BinarySearch<T>(this ReadOnlySpan<T> span, T value) where T : IComparable<T> => BinarySearch(span, value, null);
-        public static int BinarySearch<T>(this Span<T> span, T value, IComparer<T>? comparer = null) => BinarySearch((ReadOnlySpan<T>)span, value, comparer);
-        public static int BinarySearch<T>(this ReadOnlySpan<T> span, T value, IComparer<T>? comparer = null)
-        { var low = 0; var high = span.Length - 1; while (low <= high) { var mid = low + ((high - low) >> 1); var result = Compare(span[mid], value, comparer); if (result == 0) return mid; if (result < 0) low = mid + 1; else high = mid - 1; } return ~low; }
         public static int BinarySearch<T>(this Span<T> span, IComparable<T> value) => BinarySearch((ReadOnlySpan<T>)span, value);
         public static int BinarySearch<T>(this ReadOnlySpan<T> span, IComparable<T> value)
         {

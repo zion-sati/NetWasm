@@ -275,7 +275,10 @@ public sealed class ComponentWorkflowContractTests
     {
         public void Rewrite(string inputPath, string outputPath, WasmInlineAnnotationSelection selection)
         {
-            Assert.Equal(WasmInlineAnnotationSelection.SizeAware, selection);
+            // At the default Oz, the application keeps its AggressiveInlining hints and the runtime does not.
+            Assert.Equal(Path.GetFileName(inputPath) == "runtime.wasm"
+                ? WasmInlineAnnotationSelection.SizeAware
+                : WasmInlineAnnotationSelection.Preserve, selection);
         }
     }
 

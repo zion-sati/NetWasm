@@ -17,12 +17,12 @@ public sealed class RawWitFunctionLayoutBuilderTests
         var declaration = new WitFunction("[method]file.read", [], null, new("method", 3));
 
         var product = Create(dependencies).Build(
-            document, "example:files@1.0.0/api", "file-alias", declaration, target);
+            document, "example:files/api@1.0.0", "file-alias", declaration, target);
 
         Assert.Same(declaration, product.Declaration);
         Assert.Same(dependencies.Layout, product.Layout);
         Assert.Equal(["function", "layout"], dependencies.Calls);
-        Assert.Equal((document, "example:files@1.0.0/api", declaration), dependencies.FunctionRequest);
+        Assert.Equal((document, "example:files/api@1.0.0", declaration), dependencies.FunctionRequest);
         Assert.Equal((dependencies.Function with { CoreInterfaceName = "file-alias" }, target),
             dependencies.LayoutRequest);
     }
@@ -46,7 +46,7 @@ public sealed class RawWitFunctionLayoutBuilderTests
 
         var product = builder.Build(
             document,
-            "example:files@1.0.0/api",
+            "example:files/api@1.0.0",
             "example:files/api@1",
             declaration,
             target);

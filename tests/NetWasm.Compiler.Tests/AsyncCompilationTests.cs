@@ -387,18 +387,18 @@ public sealed class AsyncCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform"));
+            WitWorld: "netwasm:platform/async-platform@1.0.0"));
 
         Assert.NotEmpty(result.ApplicationModule);
         Assert.Contains(result.Program.MethodInstances.Values,
             method => method.Definition.Name == "AwaitUnsafeOnCompleted");
         Assert.Contains(result.Program.WitImportMethods,
             method => method.WitImport?.InterfaceName ==
-                    "wasi:clocks@0.2.11/monotonic-clock" &&
+                    "wasi:clocks/monotonic-clock@0.2.11" &&
                 method.WitImport.FunctionName == "subscribe-duration");
         Assert.Contains(result.Program.WitImportMethods,
             method => method.WitImport?.InterfaceName ==
-                    "netwasm:runtime@1.0.0/reactor-host" &&
+                    "netwasm:runtime/reactor-host@1.0.0" &&
                 method.WitImport.FunctionName == "watch");
         Assert.Contains(
             "cm32p2|netwasm:runtime/reactor-guest@1|wake",
@@ -931,6 +931,6 @@ public sealed class AsyncCompilationTests
                 assets.Root,
                 "wit",
                 "netwasm-platform-1.0.0"),
-            WitWorld: "netwasm:platform@1.0.0/async-platform",
+            WitWorld: "netwasm:platform/async-platform@1.0.0",
             Target: target);
 }

@@ -324,6 +324,133 @@ public sealed class ComponentCompilationTests
         Assert.True(validation.ExitCode == 0, validation.StandardError + validation.StandardOutput);
     }
 
+    // An interface the world declares inline (api, run), one it names from an
+    // unversioned package (my:ns/host, my:ns/math) and one it places under a
+    // name of its own (calc) are each bound by their world key, the name the
+    // component gives them, in the bindings and in the core module.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void InterfacesBindByTheirWorldKeys(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var witPath = Path.Combine(assets.Root, "tests", "NetWasm.Compiler.Tests", "Fixtures", "world-keys.wit");
+        using var services = CreateComponentModelServices();
+        var document = services.GetRequiredService<IWitDocumentReader>().Read(witPath);
+        var bindings = WitBindingCompositionRoot.Create().Generate(document, document.SelectWorld(null));
+        foreach (var attribute in (string[])
+                 [
+                     "[WitImport(\"api\", \"some-func\")]", "[WitImport(\"my:ns/host\", \"hello\")]",
+                     "[WitImport(\"calc\", \"add\")]", "[WitExport(\"run\", \"go\")]",
+                     "[WitExport(\"my:ns/math\", \"add\")]",
+                 ])
+        {
+            Assert.Contains(attribute, bindings, StringComparison.Ordinal);
+        }
+
+        var assembly = assets.CompileSource(
+            "WorldKeysFixture",
+            bindings +
+            """
+
+            public static partial class KeysExports
+            {
+                public static partial uint Go(uint x)
+                {
+                    ApiImports.SomeFunc(x);
+                    return HostImports.Hello() + CalcImports.Add(x, 1);
+                }
+
+                public static partial uint Add(uint a, uint b) => a + b;
+            }
+
+            public static class EntryPoint
+            {
+                public static int Main(int input) => input;
+            }
+            """);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "NetWasm.Wit.My.Ns.EntryPoint",
+            "Main",
+            [],
+            target,
+            WitPath: witPath));
+
+        var prefix = target == WasmTarget.Wasm64 ? "cm64p2" : "cm32p2";
+        Assert.Equal(
+            [$"{prefix}|api some-func", $"{prefix}|calc add", $"{prefix}|my:ns/host hello"],
+            result.FunctionImports.Where(import => import.Module.StartsWith(prefix + "|", StringComparison.Ordinal))
+                .Select(import => $"{import.Module} {import.Name}").Order(StringComparer.Ordinal));
+        var modulePath = Path.Combine(assets.Directory, $"world-keys-{target}.wasm");
+        File.WriteAllBytes(modulePath, result.ApplicationModule);
+        var tools = services.GetRequiredService<IWasmTools>();
+        var validation = tools.Run("validate", modulePath, "--features", "all");
+        Assert.True(validation.ExitCode == 0, validation.StandardError + validation.StandardOutput);
+        var text = tools.Run("print", modulePath).StandardOutput;
+        Assert.Contains($"(export \"{prefix}|run|go\"", text, StringComparison.Ordinal);
+        Assert.Contains($"(export \"{prefix}|my:ns/math|add\"", text, StringComparison.Ordinal);
+    }
+
+    // Bindings generated before world keys name an interface package first;
+    // the compiler says so instead of only that the binding is not in the world.
+    [Fact]
+    public void PackageFirstBindingKeysPointToRegeneratingTheBindings()
+    {
+        using var assets = TestAssets.Create();
+        var witPath = Path.Combine(assets.Directory, "old-keys.wit");
+        File.WriteAllText(witPath, """
+            package docs:old@1.0.0;
+
+            interface host {
+              alpha: func() -> u32;
+            }
+
+            interface aux {
+              zeta: func() -> u32;
+            }
+
+            world app {
+              import host;
+              import aux;
+              export run: func() -> u32;
+            }
+            """);
+        // The diagnostic reports the first binding by name, Alpha, with Alpha's
+        // own interface, though Zeta's interface sorts first.
+        var assembly = assets.CompileSource(
+            "OldKeysFixture",
+            """
+            using System.Runtime.InteropServices.WebAssembly;
+
+            public static class Bindings
+            {
+                [WitImport("docs:old@1.0.0/host", "alpha")]
+                private static extern int Alpha();
+
+                [WitImport("docs:old@1.0.0/aux", "zeta")]
+                private static extern int Zeta();
+
+                [WitExport("run")]
+                public static int Run() => Alpha() + Zeta();
+            }
+
+            public static class EntryPoint
+            {
+                public static int Main(int input) => input;
+            }
+            """);
+
+        var failure = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Main", [], WasmTarget.Wasm32, WitPath: witPath)));
+
+        Assert.Contains("'docs:old@1.0.0/host' by the package-first key", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("Alpha", failure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Zeta", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("regenerate the bindings", failure.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32)]
     [InlineData(WasmTarget.Wasm64)]

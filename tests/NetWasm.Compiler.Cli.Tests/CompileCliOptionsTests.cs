@@ -52,7 +52,15 @@ public sealed class CompileCliOptionsTests
             "-managedconstantargumentpropagation:Enabled", "-managedstaticarraypopulationelimination:Disabled",
             "-managedconstantcallfolding:Enabled", "-managedswitchbittests:Disabled",
             "-manageddevirtualization:Enabled", "-managedallocationelimination:Disabled",
-            "-managedlooprotation:Disabled", "-managedarraystorecheckelimination:Enabled");
+            "-managedlooprotation:Disabled", "-managedarraystorecheckelimination:Enabled",
+            "-manageddispatcherelimination:Disabled",
+            "-managedemptyfinallyremoval:Enabled",
+            "-managedstructscalarreplacement:Disabled",
+            "-managedallocationscalarreplacement:Enabled",
+            "-managedidempotentloopcollapse:Disabled",
+            "-managedloopstoreforwarding:Enabled",
+            "-managedarrayloopidioms:Disabled",
+            "-managedloopvectorization:Disabled");
 
         Assert.Equal(NwcTarget.Function, options.Target);
         Assert.Equal("Example.Entry", options.EntryType);
@@ -100,6 +108,14 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("Disabled", options.ManagedAllocationElimination);
         Assert.Equal("Disabled", options.ManagedLoopRotation);
         Assert.Equal("Enabled", options.ManagedArrayStoreCheckElimination);
+        Assert.Equal("Disabled", options.ManagedDispatcherElimination);
+        Assert.Equal("Enabled", options.ManagedEmptyFinallyRemoval);
+        Assert.Equal("Disabled", options.ManagedStructScalarReplacement);
+        Assert.Equal("Enabled", options.ManagedAllocationScalarReplacement);
+        Assert.Equal("Disabled", options.ManagedIdempotentLoopCollapse);
+        Assert.Equal("Enabled", options.ManagedLoopStoreForwarding);
+        Assert.Equal("Disabled", options.ManagedArrayLoopIdioms);
+        Assert.Equal("Disabled", options.ManagedLoopVectorization);
     }
 
     [Theory]

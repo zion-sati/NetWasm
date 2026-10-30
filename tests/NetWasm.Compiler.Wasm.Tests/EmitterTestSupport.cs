@@ -852,6 +852,11 @@ internal sealed class RecordingLayoutProvider(
     public int RequiresDeclaringTypeOffset => 28;
     public int TypeFactsTableAddress { get; init; } = 160;
     public int TypeFactsTableCount { get; init; } = 16;
+    public IReadOnlyDictionary<string, int> TypeObjectAddresses { get; init; } = ImmutableDictionary<string, int>.Empty;
+    public int TypeObjectTableAddress { get; init; }
+    public int TypeObjectCacheAddress { get; init; }
+    public int TypeObjectCount { get; init; }
+    public int TypeObjectSize { get; init; }
 
     public ObjectLayout GetObjectLayout(EntityKey type)
     {

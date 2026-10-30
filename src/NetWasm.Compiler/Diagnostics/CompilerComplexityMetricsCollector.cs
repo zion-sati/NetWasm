@@ -213,6 +213,17 @@ internal sealed class CompilerComplexityMetricsCollector(
                                 VisitSequence(exit.Body);
                             }
                             break;
+                        case Structured.StructuredLabeledBlock labeled:
+                            synthetic++;
+                            VisitSequence(labeled.Body);
+                            break;
+                        case Structured.StructuredLabeledLoop labeled:
+                            synthetic++;
+                            VisitSequence(labeled.Body);
+                            break;
+                        case Structured.StructuredLabelBranch:
+                            synthetic++;
+                            break;
                         case Structured.StructuredLoopBreak or Structured.StructuredLoopContinue:
                             synthetic++;
                             break;

@@ -260,7 +260,7 @@ public sealed class NetWasmComponentizeTaskTests
                 WitImports =
                 [
                     new HostInteropWitImport(
-                        "wasi:http@0.2.11/outgoing-handler",
+                        "wasi:http/outgoing-handler@0.2.11",
                         "handle"),
                 ],
             },
@@ -272,7 +272,7 @@ public sealed class NetWasmComponentizeTaskTests
             new RecordingEntryPointReader());
         var variant = new TaskItem("http-command.wit");
         variant.SetMetadata("World", "http-command");
-        variant.SetMetadata("ActivationInterfacePrefix", "wasi:http@0.2.11/");
+        variant.SetMetadata("ActivationInterfacePrefix", "wasi:http/");
         task.WitWorldVariants = [variant];
 
         Assert.True(task.Execute());
