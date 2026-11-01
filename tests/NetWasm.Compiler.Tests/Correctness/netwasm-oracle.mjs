@@ -66,6 +66,11 @@ var typeAssignable = new Map();
 var typeInterfaces = new Set();
 var valueTypeSizes = new Map();
 var valueTypePayloadOffsets = new Map();
+// Whether a type's fields, a value type's fields or an array type's elements
+// hold references, which Marshal.IsPinnable asks of the runtime.
+var typeReferences = new Map();
+var valueTypeReferences = new Map();
+var arrayElementReferences = new Map();
 var typeObjects = new Map();
 var exceptionFrames = [];
 var stackTraceFrames = [];
@@ -358,11 +363,21 @@ var registerTypeObjects = (first, count, stride) => {
     typeObjects.set(view.getInt32(asNumber(plus(object, memory64 ? 8 : 4)), true), object);
   }
 };
+// A reference bitmap's bit i is bit i % 8 of its byte i / 8, whatever its word size.
+var bitmapHasReferences = (bitmap, bits) => {
+  var view = createRefreshableDataView(memory);
+  for (var bit = 0; bit < bits; bit++) {
+    if ((view.getUint8(asNumber(plus(bitmap, bit >> 3))) >> (bit & 7)) & 1) return true;
+  }
+  return false;
+};
 var allocateArray = (
   length,
   type,
   elementType,
   size = memory64 ? 8 : 4) => {
+  arrayElementReferences.set(type,
+    !valueTypeSizes.has(elementType) || valueTypeReferences.get(elementType) === true);
   var data = raw(Math.max(4, length * size));
   var pointer = allocate(memory64 ? 32 : 16, type);
   var view = createRefreshableDataView(memory);
@@ -378,6 +393,7 @@ var allocateArray = (
 };
 var allocateRectangularArray = (rank, dimensions, type, element, size, references, bounded = false) => {
   if (rank <= 0 || rank > 32) return zeroAddress();
+  arrayElementReferences.set(type, Boolean(references) || valueTypeReferences.get(element) === true);
   const view = createRefreshableDataView(memory);
   const dimensionAddress = asNumber(dimensions);
   const lengths = [];
@@ -688,16 +704,23 @@ var runtimeValues = {
     }
     typeAssignable.set(type, ids);
     if (isInterface) typeInterfaces.add(type);
+    typeReferences.set(type, bitmapHasReferences(bitmap, bitmapBits));
   },
-  register_value_type(type, size, boxedPayloadOffset) {
+  register_value_type(type, size, boxedPayloadOffset, bitmap, bitmapBits) {
     valueTypeSizes.set(type, Number(size));
     valueTypePayloadOffsets.set(type, Number(boxedPayloadOffset));
+    valueTypeReferences.set(type, bitmapHasReferences(bitmap, bitmapBits));
   },
   register_static_root: zero,
   root_frame_enter: rootEnter,
   root_frame_leave: zero,
   value_frame_enter: valueEnter,
+  // Room for the map words the caller stores after the rounded frame; this
+  // runtime never collects, so it has no other use for them.
+  value_frame_enter_mapped: (byteCount, words) =>
+    valueEnter(((Number(byteCount) + 15) & ~15) + 8 * Number(words)),
   value_frame_leave: zero,
+  value_frame_leave_mapped: zero,
   handle_new(target) {
     strongHandles.push(target);
     return strongHandles.length - 1;
@@ -865,6 +888,10 @@ var runtimeValues = {
   gc_handle_release(handle) { gcHandles[handle >> 2] = null; },
   gc_handle_address(handle) {
     return gcHandles[handle >> 2]?.target ?? zeroAddress();
+  },
+  object_contains_references(object) {
+    var type = createRefreshableDataView(memory).getInt32(asNumber(object), true);
+    return (arrayElementReferences.get(type) ?? typeReferences.get(type) === true) ? 1 : 0;
   },
   reregister_for_finalize: zero,
   gc_get_metric() { return 0n; },
@@ -1095,6 +1122,9 @@ function resetRuntimeState() {
   typeInterfaces = new Set();
   valueTypeSizes = new Map();
   valueTypePayloadOffsets = new Map();
+  typeReferences = new Map();
+  valueTypeReferences = new Map();
+  arrayElementReferences = new Map();
   typeObjects = new Map();
   exceptionFrames = [];
   stackTraceFrames = [];

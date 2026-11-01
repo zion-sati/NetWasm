@@ -22,6 +22,11 @@ public sealed class ExactReceiverDevirtualizerTests
     private static readonly CliTypeIdentity Integers = CliTypeIdentity.SzArray(CliTypeIdentity.FromStackKind(CliValueKind.I4));
     private static readonly MethodInstanceModel ArrayHelper = Method(7, Base, "GetEnumerator", isStatic: true,
         parameters: [CliValueKind.ManagedReference]);
+    // A static property declared to return an interface.
+    private static readonly MethodInstanceModel Values = Method(8, Base, "get_Values", isStatic: true) with
+    {
+        Signature = MethodSignatureModel.Create(Base),
+    };
 
     [Fact]
     public void CallsTheAllocatedClassImplementationDirectly()
@@ -280,6 +285,49 @@ public sealed class ExactReceiverDevirtualizerTests
         Assert.Equal(CilOperation.Call, dominated.Rewrite().Instructions[7].Operation);
     }
 
+    // A handler or filter runs only after its protected region starts, so a
+    // store before the region reaches a load in its filter; a store inside the
+    // region may not have run when the handler does.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AStoreBeforeAProtectedRegionReachesItsHandlers(bool beforeRegion)
+    {
+        var ref0 = new CilOperand.Index(0);
+        var steps = beforeRegion
+            ? ImmutableArray.Create<Step>(
+                new(0, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor), []),
+                new(1, CilOperation.StoreLocal, ref0, [CliValueKind.ManagedReference]),
+                new(2, CilOperation.Nop, new CilOperand.None(), []),
+                new(3, CilOperation.Leave, new CilOperand.BranchTarget(10), []),
+                new(4, CilOperation.Pop, new CilOperand.None(), [CliValueKind.ManagedReference]),
+                new(5, CilOperation.LoadLocal, ref0, []),
+                new(6, CilOperation.CallVirtual, new CilOperand.MethodInstance(Virtual), [CliValueKind.ManagedReference]),
+                new(7, CilOperation.EndFilter, new CilOperand.None(), [CliValueKind.I4]),
+                new(8, CilOperation.Pop, new CilOperand.None(), [CliValueKind.ManagedReference]),
+                new(9, CilOperation.Leave, new CilOperand.BranchTarget(10), []),
+                new(10, CilOperation.Return, new CilOperand.None(), []))
+            : ImmutableArray.Create<Step>(
+                new(0, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor), []),
+                new(1, CilOperation.StoreLocal, ref0, [CliValueKind.ManagedReference]),
+                new(2, CilOperation.Leave, new CilOperand.BranchTarget(8), []),
+                new(3, CilOperation.Pop, new CilOperand.None(), [CliValueKind.ManagedReference]),
+                new(4, CilOperation.LoadLocal, ref0, []),
+                new(5, CilOperation.CallVirtual, new CilOperand.MethodInstance(Virtual), [CliValueKind.ManagedReference]),
+                new(6, CilOperation.Pop, new CilOperand.None(), [CliValueKind.I4]),
+                new(7, CilOperation.Leave, new CilOperand.BranchTarget(8), []),
+                new(8, CilOperation.Return, new CilOperand.None(), []));
+        var fixture = new Fixture(steps)
+        {
+            Regions = beforeRegion
+                ? [new(CilExceptionRegionKind.Filter, 2, 2, 8, 2, null, 4)]
+                : [new(CilExceptionRegionKind.Catch, 0, 3, 3, 5, new EntityKey(Assembly, 0x02000009), null)],
+        };
+
+        var call = beforeRegion ? 6 : 5;
+        Assert.Equal(beforeRegion ? CilOperation.Call : CilOperation.CallVirtual, fixture.Rewrite().Instructions[call].Operation);
+    }
+
     // foreach over an int[] seen as IEnumerable<int>: the array's helper for
     // the interface reads the array's length first, so the call goes to it
     // directly and still throws for a null array.
@@ -302,6 +350,71 @@ public sealed class ExactReceiverDevirtualizerTests
         var fixture = new Fixture(ArrayReceiver()) { LocalTypes = [Integers], Target = ArrayHelper, HelperReadsLength = false };
 
         Assert.Same(fixture.Body, fixture.Rewrite());
+    }
+
+    // The helper must read the length of the array it is passed, its first
+    // argument, before anything else it does.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-1)]
+    public void ArrayReceiverKeepsTheInterfaceCallWhenTheHelperReadsAnotherLength(int argument)
+    {
+        var fixture = new Fixture(ArrayReceiver())
+        {
+            LocalTypes = [Integers],
+            Target = ArrayHelper,
+            HelperBody =
+            [
+                argument < 0
+                    ? new(0, 1, CilOperation.LoadNull, new CilOperand.None())
+                    : new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(argument)),
+                new(1, 2, CilOperation.LoadArrayLength, new CilOperand.None()),
+                new(2, 3, CilOperation.Pop, new CilOperand.None()),
+                new(3, 4, CilOperation.Return, new CilOperand.None()),
+            ],
+        };
+
+        Assert.Same(fixture.Body, fixture.Rewrite());
+    }
+
+    // A property over an array field returns that array, with nops before its
+    // return; one whose returns read arrays of two types, or that returns
+    // nothing it pushes, fixes no array type.
+    [Theory]
+    [InlineData("padded", true)]
+    [InlineData("two types", false)]
+    [InlineData("bare", false)]
+    public void APropertyOverAnArrayFieldReturnsItsArray(string getter, bool devirtualized)
+    {
+        var longs = CliTypeIdentity.SzArray(CliTypeIdentity.FromStackKind(CliValueKind.I8));
+        CilInstruction Read(int offset, CliTypeIdentity type) => new(offset, offset + 1, CilOperation.LoadStaticField,
+            new CilOperand.FieldInstance(new(new(new(Assembly, 0x04000001), new(Assembly, 0x02000001), "s_values",
+                CliValueKind.ManagedReference, true)
+            { SignatureType = type }, Base, type)));
+        CilInstruction Return(int offset) => new(offset, offset + 1, CilOperation.Return, new CilOperand.None());
+        var fixture = new Fixture(
+        [
+            new(0, CilOperation.Call, new CilOperand.MethodInstance(Values), []),
+            new(1, CilOperation.CallVirtual, new CilOperand.MethodInstance(Virtual), [CliValueKind.ManagedReference]),
+            new(2, CilOperation.Pop, new CilOperand.None(), [CliValueKind.I4]),
+            new(3, CilOperation.Return, new CilOperand.None(), []),
+        ])
+        {
+            Target = ArrayHelper,
+            GetterBody = getter switch
+            {
+                "padded" => [Read(0, Integers), new(1, 2, CilOperation.Nop, new CilOperand.None()), Return(2)],
+                "two types" =>
+                [
+                    new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                    new(1, 2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(4)),
+                    Read(2, Integers), Return(3), Read(4, longs), Return(5),
+                ],
+                _ => [Return(0)],
+            },
+        };
+
+        Assert.Equal(devirtualized ? CilOperation.Call : CilOperation.CallVirtual, fixture.Rewrite().Instructions[1].Operation);
     }
 
     // A local of an interface type may hold anything implementing it.
@@ -373,9 +486,13 @@ public sealed class ExactReceiverDevirtualizerTests
             [.. steps.Select(step => new CilInstruction(step.Offset, step.Offset + 1, step.Operation, step.Operand))])
         {
             LocalSignatureTypes = LocalTypes,
+            ExceptionRegions = Regions,
         };
+        public ImmutableArray<CilExceptionRegion> Regions { get; init; } = [];
         public ImmutableArray<CliTypeIdentity> LocalTypes { get; init; } = [Base];
         public bool HelperReadsLength { get; init; } = true;
+        public ImmutableArray<CilInstruction>? HelperBody { get; init; }
+        public ImmutableArray<CilInstruction> GetterBody { get; init; } = [];
         public bool Enabled { get; init; } = true;
         public bool KnownStacks { get; init; } = true;
         public int? MissingStackAt { get; init; }
@@ -396,9 +513,13 @@ public sealed class ExactReceiverDevirtualizerTests
         public DispatchTargetModel? Resolve(MethodInstanceModel declaration, CliTypeIdentity receiver) =>
             Target is null || !receiver.Equals(Derived) && receiver.Shape != CliTypeShape.SzArray ? null : new(receiver, Target);
 
-        // The array helper: array.Length first, or a constant first.
+        // The property's body, or the array helper: array.Length first, or a constant first.
         public CilMethodBody ReadMethodBody(MethodInstanceModel method) => new(method.Definition, 2, [],
-            HelperReadsLength
+            method.Definition.Key == Values.Definition.Key
+                ? GetterBody
+                : HelperBody is { } helper
+                ? helper
+                : HelperReadsLength
                 ?
                 [
                     new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),

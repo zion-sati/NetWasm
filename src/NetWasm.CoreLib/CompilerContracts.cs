@@ -327,6 +327,16 @@ namespace System.Runtime.CompilerServices
 
         public static int GetHashCode(object? value) => ObjectIdentityRuntime.GetHashCode(value);
 
+        // CoreCLR and Mono read a component-size flag from the object's type. NetWasm's
+        // variable-length objects are strings and arrays, and whole-program type tests check
+        // both inline.
+        internal static bool ObjectHasComponentSize(object obj) => obj is string || obj is Array;
+
+        // Whether the object's fields or elements hold references; CoreCLR reads its
+        // MethodTable's ContainsGCPointers, NetWasm's runtime the collector's layout.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        internal static extern bool ObjectContainsReferences(object obj);
+
         public static int OffsetToStringData => IntPtr.Size + sizeof(int);
 
         [Intrinsic]

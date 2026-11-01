@@ -39,19 +39,19 @@ public sealed partial class CompilerArchitectureTests
                 {
                     private class Projection { }
                 }
-                """).GetRoot());
+                """, cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken));
         var downstream = (Path: "/src/NetWasm.Compiler.Wasm/Input.cs",
             Root: (CompilationUnitSyntax)CSharpSyntaxTree.ParseText("""
                 namespace NetWasm.Compiler.Wasm;
                 internal class Projection { }
                 internal class Consumer { private Projection _value; }
-                """).GetRoot());
+                """, cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken));
 
         Assert.Empty(FindDraftControlFlowReferences([draft, downstream]));
         downstream.Root = (CompilationUnitSyntax)CSharpSyntaxTree.ParseText("""
             namespace NetWasm.Compiler.Wasm;
             internal class Consumer { private DraftRegion _value; }
-            """).GetRoot();
+            """, cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken);
         Assert.Equal(["DraftRegion"], FindDraftControlFlowReferences([draft, downstream]));
     }
 

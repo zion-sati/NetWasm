@@ -63,7 +63,8 @@ public sealed class BoxedReceiverCallRewriterTests
     // fail, a box read twice or stored, a branch before the call, a call that is
     // a branch target, a non-virtual call, a reference, open or nullable box, an
     // instruction the rule does not follow, an enum, whose methods System.Enum
-    // implements on the box.
+    // implements on the box, a callvirt of a non-virtual method and a method
+    // that ends with the box live.
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -76,6 +77,8 @@ public sealed class BoxedReceiverCallRewriterTests
     [InlineData(9)]
     [InlineData(10)]
     [InlineData(11)]
+    [InlineData(12)]
+    [InlineData(13)]
     public void LeavesOtherShapesAlone(int shape)
     {
         var nullable = CliTypeIdentity.GenericInstantiation(CliTypeIdentity.Named(Assembly, "System", "Nullable`1", true), [Value]);
@@ -94,22 +97,49 @@ public sealed class BoxedReceiverCallRewriterTests
             10 => [I(3, CilOperation.LoadFunction, Area), I(4, CilOperation.Pop)],
             _ => [I(3, CilOperation.Nop), I(4, CilOperation.Nop)],
         };
-        var body = Body(
-        [
-            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
-            I(1, CilOperation.Box, new CilOperand.TypeIdentity(boxed)),
-            I(2, CilOperation.CastClass, new CilOperand.TypeIdentity(Shape)),
-            .. between,
-            shape == 4 ? I(5, CilOperation.Pop) : I(5, CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
-            I(6, shape == 6 ? CilOperation.Call : CilOperation.CallVirtual, Area),
-            shape == 5 ? I(7, CilOperation.Branch, new CilOperand.BranchTarget(6)) : I(7, CilOperation.Return),
-        ]);
+        var nonVirtual = new CilOperand.MethodInstance(new(Declaration with { IsVirtual = false, IsAbstract = false }, Shape, [], AreaSignature));
+        var body = shape == 13
+            ? Body(
+                I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                I(1, CilOperation.Box, new CilOperand.TypeIdentity(boxed)),
+                I(2, CilOperation.Branch, new CilOperand.BranchTarget(0)))
+            : Body(
+            [
+                I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                I(1, CilOperation.Box, new CilOperand.TypeIdentity(boxed)),
+                I(2, CilOperation.CastClass, new CilOperand.TypeIdentity(Shape)),
+                .. between,
+                shape == 4 ? I(5, CilOperation.Pop) : I(5, CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
+                I(6, shape == 6 ? CilOperation.Call : CilOperation.CallVirtual, shape == 12 ? nonVirtual : Area),
+                shape == 5 ? I(7, CilOperation.Branch, new CilOperand.BranchTarget(6)) : I(7, CilOperation.Return),
+            ]);
         var fixture = new Fixture(
             implementation: shape == 0 ? Implementation with { DeclaringType = ShapeKey } : Implementation,
             assignable: shape != 1,
             isEnum: shape == 11);
 
         Assert.Same(body, fixture.Rule().Rewrite(body));
+    }
+
+    // A callvirt may name its method by definition as well as by instantiation.
+    [Fact]
+    public void ACallNamingItsMethodByDefinitionIsRewrittenToo()
+    {
+        var body = Body(
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.Box, new CilOperand.TypeIdentity(Value)),
+            I(2, CilOperation.LoadInt32, new CilOperand.ConstantI4(2)),
+            I(3, CilOperation.CallVirtual, new CilOperand.Entity(Declaration.Key)),
+            I(4, CilOperation.Return));
+
+        var result = new Fixture().Rule().Rewrite(body);
+
+        Assert.Equal(
+            [
+                CilOperation.LoadArgument, CilOperation.StoreLocal, CilOperation.LoadLocalAddress, CilOperation.LoadInt32,
+                CilOperation.Constrained, CilOperation.CallVirtual, CilOperation.Return,
+            ],
+            result.Instructions.Select(static instruction => instruction.Operation));
     }
 
     [Fact]
@@ -147,7 +177,12 @@ public sealed class BoxedReceiverCallRewriterTests
 
         public MethodDefinitionModel GetMethod(EntityKey key) => Declaration;
 
-        public MethodInstanceModel? Resolve(CilInstruction instruction) => (instruction.Operand as CilOperand.MethodInstance)?.Value;
+        public MethodInstanceModel? Resolve(CilInstruction instruction) => instruction.Operand switch
+        {
+            CilOperand.MethodInstance call => call.Value,
+            CilOperand.Entity => new(Declaration, Shape, [], AreaSignature),
+            _ => null,
+        };
 
         public MethodDefinitionModel Resolve(ConstrainedCallTargetRequest request)
         {

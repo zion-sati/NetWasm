@@ -188,7 +188,7 @@ public sealed class UnusedAllocationEliminatorTests
             I(CilOperation.Pop),
             I(CilOperation.Return),
             I(CilOperation.LoadInt32, new CilOperand.ConstantI4(3)),
-            I(CilOperation.Switch, new CilOperand.SwitchTargets([3])));
+            I(CilOperation.BranchIfTrue, new CilOperand.BranchTarget(3)));
 
         Assert.Equal(CilOperation.StoreLocal, fixture.Rule().Rewrite(read).Instructions[1].Operation);
         var result = fixture.Rule().Rewrite(reached);

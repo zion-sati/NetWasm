@@ -2,8 +2,8 @@ import { isFailureDetail } from "./execution-result.mjs";
 import { consoleLine, createLineOutput, readEnvironmentOverride } from "./session-options.mjs";
 import { readManagedExceptionDetails } from "./managed-exception-details.mjs";
 
-const optionKeys = ["generation", "operations", "startup", "worker"];
-const optionalOptionKeys = ["environment", "onNotification", "stderr", "stdout"];
+const optionKeys = ["operations", "startup", "worker"];
+const optionalOptionKeys = ["environment", "generation", "onNotification", "stderr", "stdout"];
 const outputStreams = new Set(["stderr", "stdout"]);
 const protocolVersion = 2;
 
@@ -42,7 +42,8 @@ export function createWorkerSessionClient(options) {
     stdout: createLineOutput(options.stdout ?? consoleLine("log")),
   });
   let outputFlushed = false;
-  validateGeneration(options.generation);
+  const generation = options.generation ?? createGeneration();
+  validateGeneration(generation);
   const operations = snapshotOperations(options.operations);
   const startup = snapshotStartup(options.startup);
   const worker = readWorker(options.worker);
@@ -84,7 +85,7 @@ export function createWorkerSessionClient(options) {
   }
 
   return Object.freeze({
-    generation: options.generation,
+    generation,
     ready,
     invoke(operation, arguments_ = [], callOptions = undefined) {
       if (!operations.has(operation)) {
@@ -145,7 +146,7 @@ export function createWorkerSessionClient(options) {
 
   function receive(message) {
     if (state === "terminated") return;
-    const response = validateResponse(message, options.generation);
+    const response = validateResponse(message, generation);
     if (response === null) return;
     if (response.kind === "output") {
       output[response.stream].sink.write(response.bytes);
@@ -287,7 +288,7 @@ export function createWorkerSessionClient(options) {
   }
 
   function baseMessage(kind) {
-    return { protocolVersion, generation: options.generation, kind };
+    return { protocolVersion, generation, kind };
   }
 }
 
@@ -442,6 +443,12 @@ function sameOperations(value, operations) {
   return Array.isArray(value) && value.length === operations.size
     && new Set(value).size === value.length
     && value.every(operation => operations.has(operation));
+}
+
+// Tells this session's messages from those of an earlier worker. Unlike
+// crypto.randomUUID, crypto.getRandomValues works outside a secure context.
+function createGeneration() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function validateGeneration(value) {

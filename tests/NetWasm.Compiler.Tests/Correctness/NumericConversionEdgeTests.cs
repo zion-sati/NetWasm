@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class NumericConversionEdgeTests(CorrectnessTestRunner runner) : CSharpSemanticTestBase(runner)
 {
     public static TheoryData<string, string> PrecisionCells => CorpusCaseTestData.Cells(CorpusCaseTestData.NumericPrecision);

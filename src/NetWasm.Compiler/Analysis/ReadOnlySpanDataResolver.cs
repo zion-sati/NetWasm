@@ -114,7 +114,7 @@ internal sealed class ReadOnlySpanDataResolver : IReadOnlySpanDataResolver
         return false;
     }
 
-    private static bool TryGetPrimitiveSize(CliTypeIdentity type, out int size)
+    internal static bool TryGetPrimitiveSize(CliTypeIdentity type, out int size)
     {
         size = type.CanonicalName switch
         {

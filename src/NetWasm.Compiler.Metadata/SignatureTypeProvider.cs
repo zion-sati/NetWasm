@@ -226,20 +226,18 @@ internal sealed class SignatureTypeProvider : ISignatureTypeProvider<CliTypeIden
             return (reader.GetString(reference.Namespace), reader.GetString(reference.Name));
         }
 
+        // A type without a base type, such as an interface, has a nil
+        // definition handle as its base. System.Enum is a top-level type: a
+        // nested type has no namespace.
         static bool IsSystemEnumDefinition(
             MetadataReader reader,
             EntityHandle baseType)
         {
-            foreach (var candidate in reader.TypeDefinitions)
-            {
-                var definition = reader.GetTypeDefinition(candidate);
-                if (reader.GetString(definition.Namespace) == "System" &&
-                    reader.GetString(definition.Name) == "Enum")
-                {
-                    return (EntityHandle)candidate == baseType;
-                }
-            }
-            return false;
+            if (baseType.IsNil)
+                return false;
+            var definition = reader.GetTypeDefinition((TypeDefinitionHandle)baseType);
+            return reader.StringComparer.Equals(definition.Namespace, "System") &&
+                reader.StringComparer.Equals(definition.Name, "Enum");
         }
     }
 

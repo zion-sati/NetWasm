@@ -150,6 +150,12 @@ A page or worker includes only the declared modules its reachable imports use.
 A module for an optional feature costs nothing in a build that leaves the
 feature out.
 
+The build bundles each module with the files it imports. A module whose file
+does not exist stops the build with `NWSDK093`, which names the module and the
+path, and a missing file that a module imports stops the bundle with the path
+it could not resolve. A file written by an earlier build step, such as a
+JavaScript bundler, must exist by then.
+
 For an ordinary browser application rather than a worker, reachable
 `[JSImport]` declarations require `<NetWasmRawWasm>true</NetWasmRawWasm>`.
 The same `NetWasmJavaScriptModule` item supplies page-owned modules; in
@@ -236,8 +242,10 @@ The deployment's `requiredImportModules` lists every platform capability it
 can use; a request that leaves one of them ungranted fails with a `detail` that
 names it. Enable only the capabilities your application requires. JavaScript
 modules supplied through `NetWasmJavaScriptModule` are already bundled by the
-SDK; they do not need entries in `applicationImports`. Run the page over
-localhost or HTTPS so `crypto.subtle` is available.
+SDK; they do not need entries in `applicationImports`. The example hashes the
+manifest with `crypto.subtle`, which browsers provide only in a secure context
+(HTTPS or `localhost`); a host page served over plain HTTP needs its own
+SHA-256.
 
 ## Supported signatures
 
@@ -460,12 +468,16 @@ boundary, as in .NET's own browser interop.
 
 ## Serve the published files
 
+During development, `dotnet run` publishes the project and serves it on
+localhost; see [Run a browser project](sdk-quickstart.md#run-a-browser-project).
 The publish directory is a static site: copy it to any static host. It needs
 no server code and no `Cross-Origin-Opener-Policy` or
-`Cross-Origin-Embedder-Policy` headers. Serve it over HTTPS or from
-`localhost`, because startup verifies files with `crypto.subtle`, which
-browsers provide only in secure contexts. Opening `index.html` from a
-`file://` URL does not work: browsers block module scripts and `fetch` there.
+`Cross-Origin-Embedder-Policy` headers, and it works over plain HTTP as well
+as HTTPS, for example a development build opened from a phone on the local
+network. Startup checks each file it loads against its SHA-256 digest, with
+`crypto.subtle` in a secure context and in JavaScript elsewhere. Opening
+`index.html` from a `file://` URL does not work: browsers block module scripts
+and `fetch` there.
 
 The server must send `.mjs` files with a JavaScript MIME type such as
 `text/javascript`, because browsers refuse to run a module script served as

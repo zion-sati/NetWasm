@@ -43,12 +43,4 @@ public sealed class JavaScriptValueArrayTests
         }
         Assert.Throws<ArgumentNullException>(() => JavaScriptValueArray.IsSupported(null!));
     }
-
-    [Fact]
-    public void ListsBytesFirstThenTheOtherArrayNames()
-    {
-        Assert.Equal(
-            ["bytes", "f32[]", "f64[]", "i16[]", "i32[]", "i64[]", "i8[]", "u16[]", "u32[]", "u64[]"],
-            JavaScriptValueArray.AbiTypes.ToArray());
-    }
 }

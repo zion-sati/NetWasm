@@ -37,8 +37,8 @@ public sealed class GenericVSTestIntegrationTests
 
         using var process = new Process { StartInfo = startInfo };
         Assert.True(process.Start());
-        var output = process.StandardOutput.ReadToEndAsync();
-        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         try
         {
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -50,7 +50,7 @@ public sealed class GenericVSTestIntegrationTests
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync(TestContext.Current.CancellationToken);
             }
         }
 
@@ -63,12 +63,7 @@ public sealed class GenericVSTestIntegrationTests
         Assert.Equal(failCanary ? "1" : "0", counters.Attribute("failed")!.Value);
     }
 
-    private static string DotnetPath()
-    {
-        var path = Environment.ProcessPath;
-        Assert.False(string.IsNullOrWhiteSpace(path));
-        return path;
-    }
+    private static string DotnetPath() => NetWasm.TestInfrastructure.DotNetHost.Executable;
 }
 
 internal sealed class GenericVSTestFixture : IDisposable

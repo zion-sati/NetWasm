@@ -1232,7 +1232,7 @@ public sealed class CSharp15CompilationTests
             {
                 foreach (var target in new[] { WasmTarget.Wasm32, WasmTarget.Wasm64 })
                 {
-                    yield return [.. row, optimize, target];
+                    yield return [row.Data.Item1, row.Data.Item2, row.Data.Item3, row.Data.Item4, optimize, target];
                 }
             }
         }

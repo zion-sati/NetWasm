@@ -90,8 +90,8 @@ public sealed class VSTestPackageContractTests
 
         using var process = new Process { StartInfo = startInfo };
         Assert.True(process.Start());
-        var output = process.StandardOutput.ReadToEndAsync();
-        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         try
         {
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -103,7 +103,7 @@ public sealed class VSTestPackageContractTests
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync(TestContext.Current.CancellationToken);
             }
         }
 
@@ -222,14 +222,7 @@ public sealed class VSTestPackageContractTests
         return reader.ReadToEnd();
     }
 
-    private static string DotnetPath()
-    {
-        var path = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")
-            ?? Environment.ProcessPath;
-        Assert.False(string.IsNullOrWhiteSpace(path));
-        Assert.True(File.Exists(path));
-        return path;
-    }
+    private static string DotnetPath() => NetWasm.TestInfrastructure.DotNetHost.Executable;
 
     private static string FindRepositoryRoot()
     {

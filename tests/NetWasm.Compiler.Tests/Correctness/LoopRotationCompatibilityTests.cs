@@ -2,7 +2,6 @@ using NetWasm.Compiler.ComponentModel;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class LoopRotationCompatibilityTests(CorrectnessTestRunner runner)
 {
     // O3 tests a loop's condition before entry and at the bottom of each

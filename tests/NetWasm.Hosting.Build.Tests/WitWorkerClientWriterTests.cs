@@ -30,6 +30,7 @@ public sealed class WitWorkerClientWriterTests
             js.IndexOf("worker notification handler must be a function", StringComparison.Ordinal) <
             js.IndexOf("new Worker", StringComparison.Ordinal));
         Assert.Contains("worker, onNotification,", js, StringComparison.Ordinal);
+        BrowserApiBindings.AssertNoneAtImport(js);
         Assert.Contains("environment: options.environment, stderr: options.stderr, stdout: options.stdout,", js,
             StringComparison.Ordinal);
     }

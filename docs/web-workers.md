@@ -14,12 +14,14 @@ dotnet new install NetWasm.Templates
 dotnet new netwasm-app -n ReportWorker --worker wit
 # or: dotnet new netwasm-app -n ReportWorker --host worker
 cd ReportWorker
-dotnet publish -c Release
+dotnet run
 ```
 
-Serve `bin/Release/netwasm0.1/publish` with a static HTTP server and open
-`index.html`. Both templates include a working page, progress notifications,
-a generated worker client, and orderly disposal.
+`dotnet run` publishes the worker and its page and serves them on
+`http://localhost:5080/`; open the address it prints. `dotnet publish -c
+Release` writes the same site to `bin/Release/netwasm0.1/publish` for any
+static HTTP server. Both templates include a working page, progress
+notifications, a generated worker client, and orderly disposal.
 
 | Worker kind | Select it when | Output boundary |
 | --- | --- | --- |

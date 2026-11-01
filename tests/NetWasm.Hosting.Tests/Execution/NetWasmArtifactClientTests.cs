@@ -95,7 +95,7 @@ public sealed class NetWasmArtifactClientTests
         await Assert.ThrowsAsync<InvalidDataException>(async () => await subject.ExecuteAsync(
             Request(),
             new MemoryStream(),
-            new MemoryStream()));
+            new MemoryStream(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -132,11 +132,11 @@ public sealed class NetWasmArtifactClientTests
         await Assert.ThrowsAsync<ArgumentException>(async () => await subject.ExecuteAsync(
             new NetWasmArtifactExecutionRequest(Path.GetFullPath("source.dll"), default),
             new MemoryStream(),
-            new MemoryStream()));
+            new MemoryStream(), TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(async () => await subject.ExecuteAsync(
             new NetWasmArtifactExecutionRequest(Path.GetFullPath("source.dll"), ["bad\0argument"]),
             new MemoryStream(),
-            new MemoryStream()));
+            new MemoryStream(), TestContext.Current.CancellationToken));
     }
 
     [Theory]

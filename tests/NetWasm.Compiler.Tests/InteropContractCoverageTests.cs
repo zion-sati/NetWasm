@@ -272,6 +272,26 @@ public sealed class InteropContractCoverageTests
             Options() with { WitPath = "fixture.wit" }));
         Assert.Contains("asynchronous", unsupported.Message);
 
+        var interfaceResolver = new ComponentContractResolver(
+            new FixedDocuments(new WitDocument(
+                [new WitPackage(
+                    0,
+                    "pkg",
+                    ImmutableDictionary<string, int>.Empty.Add("iface", 0),
+                    ImmutableDictionary<string, int>.Empty.Add("world", 0))],
+                [new WitInterface(0, "iface", "pkg", [], [function with { Kind = new WitFunctionKind("async") }])],
+                [new WitWorld(0, "world", "pkg", [new WitWorldItem("iface", 0, null)], [])],
+                [],
+                "{}")),
+            new FixedSignatures(),
+            new FixedCanonicalTypes(),
+            new FixedBindings());
+        var unsupportedInInterface = Assert.Throws<CompilerException>(() => interfaceResolver.Resolve(
+            metadata,
+            symbols,
+            Options() with { WitPath = "fixture.wit" }));
+        Assert.Contains("asynchronous WIT function 'run' in interface 'iface'", unsupportedInInterface.Message);
+
         var exportDocument = Document(new WitWorld(
             0,
             "world",

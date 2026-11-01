@@ -27,10 +27,37 @@ internal sealed class ValueFrameEntryEmitter(
         }
 
         ManagedMemoryEmitter.EmitAddressConstant(code, layouts.Target, context.ValueLayout.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
-            WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
-            WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+        var references = context.ValueFrameReferences.Words;
+        if (references.IsEmpty)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnter))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+        }
+        else
+        {
+            // The runtime stores the map's first word; the rest follow the
+            // frame's bytes, which it rounds up to sixteen.
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(references.Length)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant,
+                WasmInstructionOperand.Signed64(unchecked((long)references[0]))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameEnterMapped))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+                WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+            var mapOffset = (context.ValueLayout.Size + 15) & ~15;
+            for (var word = 1; word < references.Length; word++)
+            {
+                if (references[word] == 0) continue;
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                    WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I64Constant,
+                    WasmInstructionOperand.Signed64(unchecked((long)references[word]))));
+                ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, checked(mapOffset + word * sizeof(ulong)), sizeof(ulong));
+            }
+        }
         initialization.Initialize(code, header, context);
         foreach ((var localIndex, var offset) in context.ValueLayout.LocalOffsets)
         {

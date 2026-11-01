@@ -366,11 +366,11 @@ internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStru
         private static bool Supported(ControlFlowGraph graph, int block)
         {
             var terminator = graph.GetBlock(block).Terminator.Operation;
-            var successors = graph.Successors[block].Length;
+            // Only a method without exception regions gets here, so no block
+            // leaves one, and decoding lowers a switch to branches, so only a
+            // conditional branch has two successors.
             return terminator switch
             {
-                CilOperation.Leave or CilOperation.EndFinally or CilOperation.EndFilter or
-                    CilOperation.Switch => false,
                 CilOperation.BranchIfTrue or CilOperation.BranchIfFalse or
                     CilOperation.BranchIfEqual or CilOperation.BranchIfNotEqual or
                     CilOperation.BranchIfGreaterThanSigned or CilOperation.BranchIfGreaterThanUnsigned or
@@ -378,8 +378,8 @@ internal sealed class ReducibleControlFlowStructurer : IReducibleControlFlowStru
                     CilOperation.BranchIfGreaterThanOrEqualUnsigned or
                     CilOperation.BranchIfLessThanSigned or CilOperation.BranchIfLessThanUnsigned or
                     CilOperation.BranchIfLessThanOrEqualSigned or
-                    CilOperation.BranchIfLessThanOrEqualUnsigned => successors == 2,
-                _ => successors <= 1,
+                    CilOperation.BranchIfLessThanOrEqualUnsigned => graph.Successors[block].Length == 2,
+                _ => true,
             };
         }
 

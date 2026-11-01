@@ -177,6 +177,8 @@ public sealed class ManagedInliningResolverTests
     [InlineData(5, false)]
     [InlineData(6, false)]
     [InlineData(7, false)]
+    [InlineData(8, true)]
+    [InlineData(9, false)]
     public void ConstructedBodiesMoveOnlyWhenClosed(int shape, bool open)
     {
         var assembly = new AssemblyIdentity("InliningTests");
@@ -195,6 +197,8 @@ public sealed class ManagedInliningResolverTests
             4 => (CilOperation.LoadStaticField, new CilOperand.FieldInstance(new(field, owner, parameter))),
             5 => (CilOperation.Call, new CilOperand.MethodInstance(new(callee, owner, [closed], callee.Signature))),
             6 => (CilOperation.LoadStaticField, new CilOperand.FieldInstance(new(field, owner, closed))),
+            8 => (CilOperation.GetObjectType, new CilOperand.ExactType(parameter)),
+            9 => (CilOperation.GetObjectType, new CilOperand.ExactType(owner)),
             _ => (CilOperation.LoadObject, new CilOperand.TypeIdentity(closed)),
         };
         var fixture = new Fixture(constructed: true, instructions:
@@ -220,7 +224,6 @@ public sealed class ManagedInliningResolverTests
     [InlineData(CilOperation.BranchIfLessThanUnsigned)]
     [InlineData(CilOperation.BranchIfLessThanOrEqualSigned)]
     [InlineData(CilOperation.BranchIfLessThanOrEqualUnsigned)]
-    [InlineData(CilOperation.Switch)]
     public void ResolvesSupportedControlFlow(CilOperation operation)
     {
         var fixture = new Fixture(operation: operation);
@@ -271,12 +274,10 @@ public sealed class ManagedInliningResolverTests
         Assert.Null(fixture.Resolver().Resolve(fixture.Request()));
     }
 
-    [Theory]
-    [InlineData(CilOperation.Branch)]
-    [InlineData(CilOperation.Switch)]
-    public void RejectsInvalidControlFlowTargets(CilOperation operation)
+    [Fact]
+    public void RejectsInvalidControlFlowTargets()
     {
-        var fixture = new Fixture(operation: operation, invalidTarget: true);
+        var fixture = new Fixture(operation: CilOperation.Branch, invalidTarget: true);
 
         Assert.Null(fixture.Resolver().Resolve(fixture.Request()));
     }
@@ -470,7 +471,6 @@ public sealed class ManagedInliningResolverTests
     // A branch inside the caller's loop can hide that loop from bounds-check elimination.
     [InlineData(LeafShape.ForwardBranch, 17, false)]
     [InlineData(LeafShape.BackwardBranch, 17, false)]
-    [InlineData(LeafShape.Switch, 17, false)]
     [InlineData(LeafShape.Call, 17, false)]
     [InlineData(LeafShape.ArrayAllocation, 17, false)]
     [InlineData(LeafShape.ObjectAllocation, 17, false)]
@@ -520,7 +520,6 @@ public sealed class ManagedInliningResolverTests
     [InlineData(LeafShape.ForwardBranch, ManagedInliningResolver.LoopBodyInstructionLimit, true)]
     [InlineData(LeafShape.ForwardBranch, ManagedInliningResolver.LoopBodyInstructionLimit + 1, false)]
     [InlineData(LeafShape.Straight, 40, true)]
-    [InlineData(LeafShape.Switch, 40, true)]
     // A branching callee no larger than a leaf is left to Binaryen's inliner.
     [InlineData(LeafShape.ForwardBranch, ManagedInliningResolver.LeafBodyInstructionLimit, false)]
     [InlineData(LeafShape.ManyBranches, 40, false)]
@@ -639,6 +638,28 @@ public sealed class ManagedInliningResolverTests
         Assert.Equal(resolves, callee.Resolver().Resolve(callee.Request()) is not null);
     }
 
+    // A call the accessor makes on the receiver is followed two calls deep, and
+    // one to a method without a body proves nothing.
+    [Theory]
+    [InlineData("recursive")]
+    [InlineData("bodiless")]
+    public void AReceiverPropertyMustReachItsFieldSoonAndThroughABody(string accessor)
+    {
+        var callee = new Fixture(byReferenceParameter: false, callOperation: CilOperation.CallVirtual, instance: true,
+            instructions:
+            [
+                new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.Call, new CilOperand.Entity(Fixture.AccessorKey)),
+                new(2, 3, CilOperation.Return, new CilOperand.None()),
+            ])
+        {
+            SmallBodyLimit = ManagedInliningResolver.SmallBodyInstructionLimit,
+            AccessorShape = accessor,
+        };
+
+        Assert.Null(callee.Resolver().Resolve(callee.Request()));
+    }
+
     [Theory]
     // Only a callee marked AggressiveInlining asks to be inlined; a byref
     // parameter, a small body or a loop body asks for nothing.
@@ -675,7 +696,6 @@ public sealed class ManagedInliningResolverTests
         Straight,
         ForwardBranch,
         BackwardBranch,
-        Switch,
         Call,
         ArrayAllocation,
         ObjectAllocation,
@@ -697,7 +717,6 @@ public sealed class ManagedInliningResolverTests
         {
             LeafShape.ForwardBranch => [new(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(count - 1))],
             LeafShape.BackwardBranch => [new(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(0))],
-            LeafShape.Switch => [new(0, 1, CilOperation.Switch, new CilOperand.SwitchTargets([count - 1]))],
             LeafShape.ManyBranches => [.. Enumerable.Range(0, ManagedInliningResolver.LoopBodyBranchLimit + 1).Select(index =>
                 new CilInstruction(index, index + 1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(count - 1)))],
             LeafShape.Call => [new(0, 1, CilOperation.Call, new CilOperand.None())],
@@ -921,7 +940,9 @@ public sealed class ManagedInliningResolverTests
                 Instructions =
                 [
                     new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
-                    new(1, 2, CilOperation.LoadField, new CilOperand.Entity(new(Assembly, 0x04000001))),
+                    AccessorShape == "recursive"
+                        ? new(1, 2, CilOperation.Call, new CilOperand.Entity(AccessorKey))
+                        : new(1, 2, CilOperation.LoadField, new CilOperand.Entity(new(Assembly, 0x04000001))),
                     new(2, 3, CilOperation.Return, new CilOperand.None()),
                 ],
             }
@@ -946,10 +967,13 @@ public sealed class ManagedInliningResolverTests
         // An instance field accessor that a call with its key as the operand reaches.
         public static readonly EntityKey AccessorKey = new(Assembly, 0x0600000a);
 
+        // The accessor reads a field, calls itself, or has no body.
+        public string AccessorShape { get; init; } = "field";
+
         private MethodInstanceModel Accessor => Target with
         {
             Definition = new MethodDefinitionModel(AccessorKey, Target.Definition.DeclaringType, "get_Value", false,
-                MethodSignatureModel.Create(Int32), 1),
+                MethodSignatureModel.Create(Int32), AccessorShape == "bodiless" ? 0 : 1),
             Signature = MethodSignatureModel.Create(Int32),
         };
 
@@ -1175,7 +1199,6 @@ public sealed class ManagedInliningResolverTests
                 CilOperation.BranchIfLessThanOrEqualSigned or
                 CilOperation.BranchIfLessThanOrEqualUnsigned or
                 CilOperation.Leave => new CilOperand.BranchTarget(invalidTarget ? 99 : 1),
-                CilOperation.Switch => new CilOperand.SwitchTargets([invalidTarget ? 99 : 1]),
                 CilOperation.Call or
                 CilOperation.CallVirtual or
                 CilOperation.NewObject => new CilOperand.MethodInstance(CreateCaller()),

@@ -60,19 +60,21 @@ internal sealed class SimdVectorIntrinsicEmitter(
         {
             // A product may take its scalar first.
             RuntimeIntrinsic.SimdCreateBroadcast or RuntimeIntrinsic.SimdCreateElements or
-                RuntimeIntrinsic.SimdLoad or RuntimeIntrinsic.SimdMultiply => signature.ReturnSignatureType,
+                RuntimeIntrinsic.SimdCreateScalar or RuntimeIntrinsic.SimdLoad or
+                RuntimeIntrinsic.SimdMultiply => signature.ReturnSignatureType,
             // Vector.ConditionalSelect(Vector<int>, Vector<float>, Vector<float>)
             // takes its condition with a different element type.
             RuntimeIntrinsic.SimdConditionalSelect => signature.ParameterSignatureTypes[1],
             _ => signature.ParameterSignatureTypes[0],
         };
+        // The classifier takes only Vector128<T> and Vector<T> operands and
+        // results, each with its one element type.
+        var element = vector.TypeArguments[0];
         var result = default(Lane);
-        if (vector.TypeArguments is not [var element] ||
-            !TryGetLane(element, request.Target, out var lane) ||
+        if (!TryGetLane(element, request.Target, out var lane) ||
             request.Intrinsic is RuntimeIntrinsic.SimdReinterpret or RuntimeIntrinsic.SimdConvert or
                 RuntimeIntrinsic.SimdWidenLower or RuntimeIntrinsic.SimdWidenUpper or RuntimeIntrinsic.SimdNarrow &&
-            (signature.ReturnSignatureType.TypeArguments is not [var target] ||
-                !TryGetLane(target, request.Target, out result)))
+            !TryGetLane(signature.ReturnSignatureType.TypeArguments[0], request.Target, out result))
         {
             exceptions.Emit(
                 code,
@@ -128,6 +130,9 @@ internal sealed class SimdVectorIntrinsicEmitter(
             case RuntimeIntrinsic.SimdGetElement:
                 EmitGetElement(request, code, element, lane);
                 return;
+            case RuntimeIntrinsic.SimdWithElement:
+                EmitWithElement(request, code, lane);
+                return;
             case RuntimeIntrinsic.SimdSum:
                 SumLanes(request, code, lane, 0, Lanes(lane));
                 Normalize(code, lane);
@@ -136,6 +141,12 @@ internal sealed class SimdVectorIntrinsicEmitter(
             case RuntimeIntrinsic.SimdDivide when !lane.IsFloating:
                 EmitDivisionChecks(request, code, lane);
                 break;
+            case RuntimeIntrinsic.SimdShuffle:
+                Load(request, code, 0);
+                ShuffleByteIndices(request, code, lane);
+                Simd(code, I8x16Swizzle);
+                Set(code, request.Local(0, CliValueKind.V128));
+                return;
             case RuntimeIntrinsic.SimdStore:
                 ElementAddress(request, code, 1, lane);
                 Load(request, code, 0);
@@ -254,6 +265,26 @@ internal sealed class SimdVectorIntrinsicEmitter(
                 Get(code, request.Local(0, request.Method.Signature.ParameterTypes[0]));
                 Simd(code, Splat(lane));
                 return;
+            case RuntimeIntrinsic.SimdCreateScalar:
+                // CreateScalarUnsafe leaves the other lanes undefined, so the scalar
+                // fills them too; CreateScalar zeroes them.
+                if (request.Method.Definition.Name == "CreateScalarUnsafe")
+                {
+                    Get(code, request.Local(0, request.Method.Signature.ParameterTypes[0]));
+                    Simd(code, Splat(lane));
+                    return;
+                }
+                VectorConstant(code, new byte[16]);
+                Get(code, request.Local(0, request.Method.Signature.ParameterTypes[0]));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.PrefixedPair(ReplaceLane(lane), 0)));
+                return;
+            case RuntimeIntrinsic.SimdPermute:
+                Load(request, code, 0);
+                Load(request, code, 1);
+                Shuffle(code, PermutedBytes(request.Method.Definition.Name, LaneSize(lane)));
+                return;
             case RuntimeIntrinsic.SimdShiftLeft:
             case RuntimeIntrinsic.SimdShiftRightArithmetic:
             case RuntimeIntrinsic.SimdShiftRightLogical:
@@ -333,33 +364,10 @@ internal sealed class SimdVectorIntrinsicEmitter(
             case RuntimeIntrinsic.SimdMultiply:
                 Multiply(request, code, lane);
                 return;
-            case RuntimeIntrinsic.SimdMultiplyAddEstimate when lane.Shape == LaneShape.F32:
-                // Each half widens to double, where the product of two floats is
-                // exact, so the sum rounds once before narrowing: float's own
-                // MultiplyAddEstimate, and the fused result desktop gives.
-                foreach (var upper in (ReadOnlySpan<bool>)[false, true])
-                {
-                    for (var operand = 0; operand < 3; operand++)
-                    {
-                        Load(request, code, operand);
-                        if (upper)
-                        {
-                            Load(request, code, operand);
-                            Shuffle(code, UpperWords);
-                        }
-                        Simd(code, F64x2PromoteLowF32x4);
-                        if (operand == 1) Simd(code, F64x2Multiply);
-                    }
-                    Simd(code, F64x2Add);
-                    Simd(code, F32x4DemoteF64x2Zero);
-                }
-                Shuffle(code, LowWords);
-                return;
             case RuntimeIntrinsic.SimdMultiplyAddEstimate:
-                // Wasm SIMD has no fused multiply-add, and double has no wider
-                // type, so the product rounds before the addend is added, as
-                // upstream's estimate does on hardware without FMA and as Mono
-                // computes it.
+                // Wasm SIMD has no fused multiply-add, so the product rounds before
+                // the addend is added, as upstream's estimate does on hardware
+                // without FMA and as Mono computes it.
                 Multiply(request, code, lane);
                 Load(request, code, 2);
                 Simd(code, Binary(RuntimeIntrinsic.SimdAdd, lane));
@@ -654,8 +662,8 @@ internal sealed class SimdVectorIntrinsicEmitter(
         }
     }
 
-    // Pushes one lane of a vector argument: extracted from a vector value, or
-    // read from the storage a receiver's address points to.
+    // Pushes one lane of a vector argument. Only get_Item has a receiver, and
+    // EmitGetElement reads it, so every vector argument here is a vector value.
     private static void LoadLane(
         RuntimeIntrinsicEmissionRequest request,
         IWasmInstructionWriter code,
@@ -663,30 +671,10 @@ internal sealed class SimdVectorIntrinsicEmitter(
         Lane lane,
         int index)
     {
-        var kind = request.Instruction.Stack[request.ArgumentBase + argument];
-        if (kind == CliValueKind.V128)
-        {
-            Get(code, request.Local(argument, CliValueKind.V128));
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.SimdPrefixed,
-                WasmInstructionOperand.PrefixedPair(ExtractLane(lane), (uint)index)));
-            return;
-        }
-        Get(code, request.Local(argument, kind));
-        var (opcode, alignment) = (lane.Shape, lane.Unsigned) switch
-        {
-            (LaneShape.I8, false) => (WasmOpcodes.I32Load8Signed, 0u),
-            (LaneShape.I8, true) => (WasmOpcodes.I32Load8Unsigned, 0u),
-            (LaneShape.I16, false) => (WasmOpcodes.I32Load16Signed, 1u),
-            (LaneShape.I16, true) => (WasmOpcodes.I32Load16Unsigned, 1u),
-            (LaneShape.I32, _) => (WasmOpcodes.I32Load, 2u),
-            (LaneShape.I64, _) => (WasmOpcodes.I64Load, 3u),
-            (LaneShape.F32, _) => (WasmOpcodes.F32Load, 2u),
-            _ => (WasmOpcodes.F64Load, 3u),
-        };
+        Get(code, request.Local(argument, CliValueKind.V128));
         code.Write(WasmInstruction.WithOperand(
-            opcode,
-            WasmInstructionOperand.Memory(alignment, (uint)(index * LaneSize(lane)))));
+            WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.PrefixedPair(ExtractLane(lane), (uint)index)));
     }
 
     private static void Constant(IWasmInstructionWriter code, bool wide, long value) =>
@@ -697,10 +685,87 @@ internal sealed class SimdVectorIntrinsicEmitter(
     private static void Saturate(IWasmInstructionWriter code, byte truncate) =>
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.Prefixed(truncate)));
 
+    // The byte indices of a shuffle: each lane's index times its size plus the
+    // lane's byte offsets. An index past the last lane becomes byte indices of 16
+    // or more, which i8x16.swizzle reads as zero, as upstream's Shuffle does.
+    private static void ShuffleByteIndices(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, Lane lane)
+    {
+        var size = LaneSize(lane);
+        Load(request, code, 1);
+        if (size == 1)
+        {
+            return;
+        }
+        if (size == 8)
+        {
+            // No unsigned 64-bit minimum: the index's low bit selects the lane, and
+            // 0x80 marks every byte of a lane whose index is 2 or more.
+            VectorConstant(code, Repeat(8, 1));
+            Simd(code, V128And);
+            VectorConstant(code, Repeat(8, 0x0808080808080808));
+            Simd(code, I64x2Multiply);
+            VectorConstant(code, Repeat(8, unchecked((long)0x8080808080808080)));
+            Load(request, code, 1);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(1)));
+            Simd(code, I64x2ShiftRightUnsigned);
+            VectorConstant(code, new byte[16]);
+            Simd(code, I64x2Equal);
+            Simd(code, V128AndNot);
+            Simd(code, V128Or);
+        }
+        else
+        {
+            // The index clamped to the lane count, times the size, in every byte.
+            var lanes = 16 / size;
+            VectorConstant(code, Repeat(size, lanes));
+            Simd(code, size == 2 ? I16x8MinimumUnsigned : I32x4MinimumUnsigned);
+            VectorConstant(code, Repeat(size, size == 2 ? 0x0202 : 0x04040404));
+            Simd(code, size == 2 ? I16x8Multiply : I32x4Multiply);
+        }
+        VectorConstant(code, [.. Enumerable.Range(0, 16).Select(index => (byte)(index % size))]);
+        Simd(code, I8x16Add);
+    }
+
+    // Value in every lane of the given byte size, little-endian.
+    private static byte[] Repeat(int size, long value) =>
+        [.. Enumerable.Range(0, 16).Select(index => (byte)(value >> (index % size * 8)))];
+
+    private static void VectorConstant(IWasmInstructionWriter code, byte[] bytes) =>
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.FromBytes([(byte)V128Constant, .. bytes])));
+
     private static void Shuffle(IWasmInstructionWriter code, byte[] lanes) =>
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.SimdPrefixed,
             WasmInstructionOperand.FromBytes([(byte)I8x16Shuffle, .. lanes])));
+
+    // Upstream builds these from Vector64 halves: ZipLower interleaves the lower
+    // halves of its operands, UnzipEven takes the even lanes of the first and then
+    // of the second, ConcatUpperLower joins the first's upper half to the second's
+    // lower half. Lanes 0 to count - 1 are the first operand's, count onwards the
+    // second's.
+    internal static byte[] PermutedBytes(string name, int size)
+    {
+        var count = 16 / size;
+        var half = count / 2;
+        return [.. Enumerable.Range(0, count).SelectMany(lane =>
+        {
+            var source = name switch
+            {
+                "ZipLower" => lane / 2 + lane % 2 * count,
+                "ZipUpper" => half + lane / 2 + lane % 2 * count,
+                "UnzipEven" => 2 * lane,
+                "UnzipOdd" => 2 * lane + 1,
+                "ConcatLowerLower" => lane < half ? lane : count + lane - half,
+                "ConcatLowerUpper" => lane < half ? lane : count + lane,
+                "ConcatUpperLower" => lane < half ? half + lane : count + lane - half,
+                "ConcatUpperUpper" => lane < half ? half + lane : count + lane,
+                _ => throw new ArgumentOutOfRangeException(nameof(name)),
+            };
+            return Enumerable.Range(0, size).Select(index => (byte)(source * size + index));
+        })];
+    }
 
     private static int Lanes(Lane lane) => 16 / LaneSize(lane);
 
@@ -728,14 +793,14 @@ internal sealed class SimdVectorIntrinsicEmitter(
             LaneShape.F32 => F32x4Subtract,
             _ => F64x2Subtract,
         },
+        // Byte lanes multiply through widening, in Multiply.
         RuntimeIntrinsic.SimdMultiply => lane.Shape switch
         {
             LaneShape.I16 => I16x8Multiply,
             LaneShape.I32 => I32x4Multiply,
             LaneShape.I64 => I64x2Multiply,
             LaneShape.F32 => F32x4Multiply,
-            LaneShape.F64 => F64x2Multiply,
-            _ => throw Unsupported(intrinsic, lane),
+            _ => F64x2Multiply,
         },
         RuntimeIntrinsic.SimdMinimum => (lane.Shape, lane.Unsigned) switch
         {
@@ -746,9 +811,9 @@ internal sealed class SimdVectorIntrinsicEmitter(
             (LaneShape.I32, false) => I32x4MinimumSigned,
             (LaneShape.I32, true) => I32x4MinimumUnsigned,
             // IEEE 754:2019 minimum, as upstream's float.Min and double.Min.
+            // 64-bit integer lanes select by comparison, in EmitVector.
             (LaneShape.F32, _) => F32x4Minimum,
-            (LaneShape.F64, _) => F64x2Minimum,
-            _ => throw Unsupported(intrinsic, lane),
+            _ => F64x2Minimum,
         },
         RuntimeIntrinsic.SimdMaximum => (lane.Shape, lane.Unsigned) switch
         {
@@ -759,8 +824,7 @@ internal sealed class SimdVectorIntrinsicEmitter(
             (LaneShape.I32, false) => I32x4MaximumSigned,
             (LaneShape.I32, true) => I32x4MaximumUnsigned,
             (LaneShape.F32, _) => F32x4Maximum,
-            (LaneShape.F64, _) => F64x2Maximum,
-            _ => throw Unsupported(intrinsic, lane),
+            _ => F64x2Maximum,
         },
         _ => throw Unsupported(intrinsic, lane),
     };
@@ -893,19 +957,35 @@ internal sealed class SimdVectorIntrinsicEmitter(
     {
         var size = LaneSize(lane);
         var index = request.Local(1, CliValueKind.I4);
-        Get(code, index);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(16 / size)));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.If,
-            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        exceptions.Emit(
-            code,
-            ManagedExceptionKind.ArgumentOutOfRange,
-            request.Instruction.Context.ManagedThrowFunction);
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+        ThrowOutsideLanes(request, code, index, lane);
 
         var receiver = request.Instruction.Stack[request.ArgumentBase];
+        if (receiver == CliValueKind.V128 && Lanes(lane) <= 4)
+        {
+            // Each lane's extract_lane, kept where the index selects it. Upstream's
+            // Vector2, Vector3, Vector4 and matrix code passes a constant index, so
+            // the optimizer folds the selects and keeps that lane's extract alone.
+            var result = request.Local(0, request.Method.Signature.ReturnType);
+            Get(code, request.Local(0, CliValueKind.V128));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.PrefixedPair(ExtractLane(lane), 0)));
+            Set(code, result);
+            for (var other = 1; other < Lanes(lane); other++)
+            {
+                Get(code, request.Local(0, CliValueKind.V128));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.PrefixedPair(ExtractLane(lane), (uint)other)));
+                Get(code, result);
+                Get(code, index);
+                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(other)));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.Select));
+                Set(code, result);
+            }
+            return;
+        }
         if (receiver == CliValueKind.V128)
         {
             // The element's bytes move to lane 0: each byte lane i reads byte
@@ -941,6 +1021,60 @@ internal sealed class SimdVectorIntrinsicEmitter(
         code.Write(WasmInstruction.NoOperand(wide ? WasmOpcodes.I64Add : WasmOpcodes.I32Add));
         ManagedMemoryEmitter.EmitLoadByType(code, request.Target, 0, element, size);
         Set(code, request.Local(0, request.Method.Signature.ReturnType));
+    }
+
+    // As upstream: an index outside the lanes throws. The value replaces the lane
+    // the index selects through a mask of that lane, so the index need not be a
+    // constant.
+    private void EmitWithElement(
+        RuntimeIntrinsicEmissionRequest request,
+        IWasmInstructionWriter code,
+        Lane lane)
+    {
+        var index = request.Local(1, CliValueKind.I4);
+        ThrowOutsideLanes(request, code, index, lane);
+        Get(code, request.Local(2, request.Method.Signature.ParameterTypes[2]));
+        Simd(code, Splat(lane));
+        Load(request, code, 0);
+        var bits = new Lane(lane.Bits, Unsigned: false);
+        Get(code, index);
+        if (bits.Shape == LaneShape.I64)
+        {
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+        }
+        Simd(code, Splat(bits));
+        var size = LaneSize(lane);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.FromBytes([(byte)V128Constant, .. Enumerable.Range(0, 16).Select(i => i % size == 0 ? (byte)(i / size) : (byte)0)])));
+        Simd(code, bits.Shape switch
+        {
+            LaneShape.I8 => I8x16Equal,
+            LaneShape.I16 => I16x8Equal,
+            LaneShape.I32 => I32x4Equal,
+            _ => I64x2Equal,
+        });
+        Simd(code, V128BitSelect);
+        Set(code, request.Local(0, CliValueKind.V128));
+    }
+
+    private void ThrowOutsideLanes(
+        RuntimeIntrinsicEmissionRequest request,
+        IWasmInstructionWriter code,
+        int index,
+        Lane lane)
+    {
+        Get(code, index);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(16 / LaneSize(lane))));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.If,
+            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        exceptions.Emit(
+            code,
+            ManagedExceptionKind.ArgumentOutOfRange,
+            request.Instruction.Context.ManagedThrowFunction);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
     private static int LaneSize(Lane lane) => lane.Shape switch
@@ -1018,18 +1152,8 @@ internal sealed class SimdVectorIntrinsicEmitter(
     private static void Load(
         RuntimeIntrinsicEmissionRequest request,
         IWasmInstructionWriter code,
-        int argument)
-    {
-        // A vector value, or the address of an instance method's receiver.
-        var kind = request.Instruction.Stack[request.ArgumentBase + argument];
-        Get(code, request.Local(argument, kind));
-        if (kind != CliValueKind.V128)
-        {
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.SimdPrefixed,
-                WasmInstructionOperand.PrefixedTriple(V128Load, 0, 0)));
-        }
-    }
+        int argument) =>
+        Get(code, request.Local(argument, CliValueKind.V128));
 
     // A vector operand, or a scalar operand broadcast to every lane.
     private static void Operand(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code, int argument, Lane lane)

@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class EncodingStreamBoundaryTests(CorrectnessTestRunner runner) : CSharpSemanticTestBase(runner)
 {
     public static TheoryData<string, string> Cells => CorpusCaseTestData.Cells(CorpusCaseTestData.EncodingStreams);

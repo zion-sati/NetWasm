@@ -23,6 +23,15 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.GCCollectionRuntime", "Collect"),
             ("System.GCFinalizerRuntime", "WaitForPending"),
             ("System.Array", "InternalGetValue"),
+            // Clones and conversions the runtime allocates: an array, a range
+            // of one, the boxes a copy into an object array makes, a boxed
+            // value, a multicast delegate and an uncached type object.
+            ("System.Array", "InternalClone"),
+            ("System.Array", "InternalCloneRange"),
+            ("System.Array", "InternalCopy"),
+            ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "CloneBoxedValue"),
+            ("System.DelegateRuntime", "Clone"),
+            ("System.Nullable", "GetUnderlyingType"),
             // Enum intrinsics allocate arrays, boxes and uncached type objects,
             // or call the allocating formatting helper outside managed CIL.
             // Wrappers and dispatch callers must inherit those safepoints.

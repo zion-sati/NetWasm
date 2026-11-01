@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class Matrix4x4CompatibilityCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]

@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class WideIntegerEdgeTests(CorrectnessTestRunner runner) : CSharpSemanticTestBase(runner)
 {
     public static TheoryData<string, string> ArithmeticCells => CorpusCaseTestData.Cells(CorpusCaseTestData.WideArithmetic);

@@ -731,7 +731,7 @@ namespace System
             {
                 throw new ArgumentNullException();
             }
-            ValidateOrdinal(comparisonType);
+            ValidateComparison(comparisonType);
             ValidateRange(startIndex, count, Length);
             if (value.Length == 0)
             {
@@ -757,7 +757,7 @@ namespace System
             {
                 throw new ArgumentNullException();
             }
-            ValidateOrdinal(comparisonType);
+            ValidateComparison(comparisonType);
             return value.Length <= Length &&
                 IndexOf(value, 0, value.Length, comparisonType) == 0;
         }
@@ -768,7 +768,7 @@ namespace System
             {
                 throw new ArgumentNullException();
             }
-            ValidateOrdinal(comparisonType);
+            ValidateComparison(comparisonType);
             return value.Length <= Length &&
                 IndexOf(value, Length - value.Length, value.Length, comparisonType) ==
                     Length - value.Length;
@@ -931,14 +931,6 @@ namespace System
             if (startIndex < 0 || count < 0 || startIndex > length - count)
             {
                 throw new ArgumentOutOfRangeException();
-            }
-        }
-
-        private static void ValidateOrdinal(StringComparison comparisonType)
-        {
-            if (comparisonType is not StringComparison.Ordinal and not StringComparison.OrdinalIgnoreCase)
-            {
-                throw new ArgumentException();
             }
         }
 
@@ -1818,11 +1810,15 @@ namespace System
                 (comparisonType == StringComparison.Ordinal ? this[Length - 1] == value : FoldOrdinalIgnoreCase(this[Length - 1]) == FoldOrdinalIgnoreCase(value));
         }
 
+        // A value outside the enumeration is an argument error, as upstream. The culture
+        // comparisons are outside NetWasm's ordinal text profile, so they throw
+        // PlatformNotSupportedException, as the span overloads and StringComparer do.
         private static void ValidateComparison(StringComparison comparisonType)
         {
-            if (comparisonType is not StringComparison.Ordinal and not StringComparison.OrdinalIgnoreCase)
+            CheckStringComparison(comparisonType);
+            if (comparisonType < StringComparison.Ordinal)
             {
-                throw new ArgumentException(nameof(comparisonType));
+                throw new PlatformNotSupportedException();
             }
         }
 

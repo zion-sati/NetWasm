@@ -42,7 +42,8 @@ internal sealed class NativeCallEmitter(
         var frame = instruction.Context.ValueLayout;
         var result = plan.Result;
         var resultOffset = 0;
-        if (result.LogicalType.StackKind == CliValueKind.ValueType)
+        // A vector value, as Vector4, is an aggregate in memory to native code.
+        if (result.LogicalType.StackKind is CliValueKind.ValueType or CliValueKind.V128)
         {
             if (!frame.TemporaryOffsets.TryGetValue(instruction.Instruction.Offset, out resultOffset))
                 throw Invariant("A native aggregate result has no planned storage.");
@@ -66,6 +67,11 @@ internal sealed class NativeCallEmitter(
                 continue;
             EmitFrameAddress(ArgumentOffset(parameter));
             EmitArgument(parameter);
+            if (parameter.Value.LogicalType.StackKind == CliValueKind.V128)
+            {
+                ManagedMemoryEmitter.EmitVectorStore(code, 0, parameter.Value.Size);
+                continue;
+            }
             _addresses.Emit(code, parameter.Value.Size);
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed,
                 WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
@@ -131,6 +137,11 @@ internal sealed class NativeCallEmitter(
         {
             if (result.LogicalType.StackKind == CliValueKind.ValueType)
                 EmitFrameAddress(resultOffset);
+            else if (result.LogicalType.StackKind == CliValueKind.V128)
+            {
+                EmitFrameAddress(resultOffset);
+                ManagedMemoryEmitter.EmitVectorLoad(code, 0, result.Size);
+            }
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)StackLocal(instruction.Context,
                     request.ArgumentBase, result.LogicalType.StackKind))));

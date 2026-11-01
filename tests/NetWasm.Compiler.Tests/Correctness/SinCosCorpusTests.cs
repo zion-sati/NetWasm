@@ -4,7 +4,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // what Sin and Cos return in every quadrant, at huge arguments and at the
 // special values. Desktop's SinCos differs from its Sin and Cos by up to one
 // ULP, so the budget is one ULP rather than equality.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class SinCosCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -12,7 +11,14 @@ public sealed class SinCosCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "SinCosCorpus",
             "NetWasm.Correctness.SinCos",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
 
             namespace NetWasm.Correctness.SinCos;
@@ -66,10 +72,5 @@ public sealed class SinCosCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

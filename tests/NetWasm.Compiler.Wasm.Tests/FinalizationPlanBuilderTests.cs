@@ -35,8 +35,7 @@ public sealed class FinalizationPlanBuilderTests
             ])).Build([
                 Emission(
                     I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
-                    I(1, CilOperation.Call, new CilOperand.None()),
-                    I(2, CilOperation.Call, new CilOperand.Entity(StringLengthKey)))
+                    I(1, CilOperation.Call, new CilOperand.Entity(StringLengthKey)))
             ]);
 
         Assert.False(plan.RequiresRuntime);

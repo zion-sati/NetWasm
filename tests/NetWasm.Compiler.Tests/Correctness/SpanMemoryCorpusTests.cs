@@ -4,7 +4,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // sources. The copies cover every size class of SpanHelpers.Memmove and the fill and clear
 // helpers, with and without references and overlapping both ways; the exceptions compare types
 // and parameter names, which upstream's ThrowHelper sets.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class SpanMemoryCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -12,7 +11,15 @@ public sealed class SpanMemoryCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "SpanMemoryCorpus",
             "NetWasm.Correctness.SpanMemory",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+        {
+            AllowUnsafe = true,
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Collections.Generic;
             using System.Runtime.InteropServices;
@@ -296,11 +303,5 @@ public sealed class SpanMemoryCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-        {
-            AllowUnsafe = true,
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

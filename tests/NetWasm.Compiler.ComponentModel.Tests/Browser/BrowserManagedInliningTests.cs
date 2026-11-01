@@ -23,15 +23,15 @@ public sealed class BrowserManagedInliningTests
             { OptimizationOverrides = overrides };
             if (optimization == FinalWasmOptimization.None)
             {
-                Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateLinkPlan(request,
+                Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(request,
                     new("environment", "host", "adapter", "merged", "sanitized", "runtime-sanitized")));
-                Assert.Throws<ArgumentException>(() => BrowserRawCoreModules.CreateLinkPlan(rawRequest,
+                Assert.Throws<ArgumentException>(() => BrowserRawCoreModules.CreateOrderedLinkPlan(rawRequest,
                     new("temporary", "linked")));
                 continue;
             }
-            var component = BrowserComponentCoreModules.CreateLinkPlan(request,
+            var component = BrowserComponentCoreModules.CreateOrderedLinkPlan(request,
                 new("environment", "host", "adapter", "merged", "sanitized", "runtime-sanitized"));
-            var raw = BrowserRawCoreModules.CreateLinkPlan(rawRequest, new("temporary", "linked"));
+            var raw = BrowserRawCoreModules.CreateOrderedLinkPlan(rawRequest, new("temporary", "linked"));
             var expected = hint == ManagedInliningHints.Preserve
                 ? WasmInlineAnnotationSelection.Preserve : WasmInlineAnnotationSelection.SizeAware;
             Assert.Equal(expected, component.Operations.OfType<BrowserLinkInlineOperation>().First().Selection);
@@ -47,11 +47,11 @@ public sealed class BrowserManagedInliningTests
     [Fact]
     public void UnknownModeKeepsItsOriginalDiagnosticDespiteWorkspaceCleanup()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentOutOfRangeException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             new("application", "runtime", "output", ComponentTarget.Wasm32Wasi02,
                 Optimization: (FinalWasmOptimization)255),
             new("environment", "host", "adapter", "merged", "sanitized", "runtime-sanitized")));
-        Assert.Throws<ArgumentOutOfRangeException>(() => BrowserRawCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentOutOfRangeException>(() => BrowserRawCoreModules.CreateOrderedLinkPlan(
             new("application", "runtime", "output", ComponentTarget.Wasm32Wasi02,
                 (FinalWasmOptimization)255), new("temporary", "linked")));
     }
@@ -66,10 +66,10 @@ public sealed class BrowserManagedInliningTests
     public void ComponentAndRawSelectManagedAndRuntimeInputsBeforeMerge(
         FinalWasmOptimization optimization, ComponentTarget target)
     {
-        var component = BrowserComponentCoreModules.CreateLinkPlan(
+        var component = BrowserComponentCoreModules.CreateOrderedLinkPlan(
             new("application", "runtime", "output", target, Optimization: optimization),
             new("environment", "host", "adapter", "merged", "sanitized", "runtime-sanitized"));
-        var raw = BrowserRawCoreModules.CreateLinkPlan(
+        var raw = BrowserRawCoreModules.CreateOrderedLinkPlan(
             new RawModuleLinkRequest("application", "runtime", "output", target, optimization),
             new("temporary", "linked"));
         var expected = IsSpeedProfile(optimization)

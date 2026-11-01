@@ -65,7 +65,7 @@ public sealed class DifferentialCorpusRunnerTests
             fixture,
             CilProfile.Debug,
             Path.GetTempPath());
-        var expected = new ConstantDesktopRunner().Run(compilation);
+        var expected = new ConstantDesktopRunner().Run(compilation, TestContext.Current.CancellationToken);
         var netWasm = new RecordingNetWasmRunner();
         var runner = Assert.IsAssignableFrom<ICompiledCorpusComparisonRunner>(new CompiledCorpusComparisonRunner(
             netWasm,
@@ -76,9 +76,9 @@ public sealed class DifferentialCorpusRunnerTests
             new UnexpectedFailureWriter(),
             new RandomCilCaseProgressReporter(TextWriter.Null),
             new CorpusExpectationVerifier(),
-            new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander())));
+            new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander(), new CorpusBackendOverride(Backend: null))));
 
-        runner.RunAgainstOracle(compilation, expected);
+        runner.RunAgainstOracle(compilation, expected, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [NetWasm.Compiler.Core.WasmTarget.Wasm32, NetWasm.Compiler.Core.WasmTarget.Wasm64],
@@ -128,12 +128,12 @@ public sealed class DifferentialCorpusRunnerTests
                     new CompiledCorpusTestFactory.RecordingLinkedReceipts(),
                     new OracleComparer(), new UnexpectedFailureWriter(),
                     new RandomCilCaseProgressReporter(TextWriter.Null), new CorpusExpectationVerifier(),
-                    new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander())));
-                comparison.RunAgainstOracle(compilation, desktop.Run(compilation));
+                    new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander(), new CorpusBackendOverride(Backend: null))));
+                comparison.RunAgainstOracle(compilation, desktop.Run(compilation, TestContext.Current.CancellationToken), TestContext.Current.CancellationToken);
             }
             else
             {
-                runner.Run(compilation);
+                runner.Run(compilation, TestContext.Current.CancellationToken);
             }
         });
 

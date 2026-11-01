@@ -17,7 +17,7 @@ internal static class CompiledCorpusTestFactory
         ICorpusSourceFingerprint sourceFingerprint,
         ILinkedCorpusOracleRunner? linked = null)
     {
-        var selections = new CorpusCompilationCellsSelector(matrices);
+        var selections = new CorpusCompilationCellsSelector(matrices, new CorpusBackendOverride(Backend: null));
         var comparisons = new CompiledCorpusComparisonRunner(
             netWasm, linked ?? RejectingLinkedCorpusOracleRunner.Instance,
             new RecordingReceiptDestinations(), new RecordingLinkedReceipts(), comparer, failures,

@@ -6,7 +6,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // than through memory.copy and memory.fill: every length, both overlap
 // directions, and every boundary between the chunk sizes must still match
 // desktop .NET.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -14,7 +13,16 @@ public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "SmallBlockCopyCorpus",
             "NetWasm.Correctness.SmallBlockCopies",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+            // The speed presets inline small blocks; Oz keeps memory.copy and memory.fill.
+            Optimization = FinalWasmOptimization.O3,
+        });
+
+    internal const string Source = """
             using System;
             using System.Runtime.CompilerServices;
 
@@ -80,12 +88,5 @@ public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-            // The speed presets inline small blocks; Oz keeps memory.copy and memory.fill.
-            Optimization = FinalWasmOptimization.O3,
-        });
+            """;
 }

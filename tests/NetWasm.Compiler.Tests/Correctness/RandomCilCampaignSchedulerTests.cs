@@ -29,7 +29,7 @@ public sealed class RandomCilCampaignSchedulerTests
                 _ => throw new InvalidOperationException("not expected")))
             .ToImmutableArray();
 
-        var run = subject.RunAsync(cases);
+        var run = subject.RunAsync(cases, TestContext.Current.CancellationToken);
         Assert.True(SpinWait.SpinUntil(
             () => Volatile.Read(ref maximumActive) == 4,
             TimeSpan.FromSeconds(5)));
@@ -63,7 +63,7 @@ public sealed class RandomCilCampaignSchedulerTests
                 "success",
                 _ => Interlocked.Increment(ref completed),
                 _ => throw new InvalidOperationException("not expected")),
-        ]);
+        ], TestContext.Current.CancellationToken);
 
         Assert.Equal(0, completed);
         Assert.IsType<InvalidOperationException>(results[0].Failure);
@@ -103,11 +103,11 @@ public sealed class RandomCilCampaignSchedulerTests
                     releaseActiveCase.Wait(CancellationToken.None);
                 },
                 _ => throw new InvalidOperationException("not expected")),
-        ]);
+        ], TestContext.Current.CancellationToken);
 
         try
         {
-            Assert.True(cancellationObserved.Wait(TimeSpan.FromSeconds(5)));
+            Assert.True(cancellationObserved.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
             var heartbeatCountAfterFailure = progress.HeartbeatCount;
             Assert.True(SpinWait.SpinUntil(
                 () => progress.HeartbeatCount > heartbeatCountAfterFailure,

@@ -11,9 +11,9 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
     <PackageReference Include="Microsoft.Build.Utilities.Core" Version="18.0.2" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +34,7 @@
 
   <ItemGroup>
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestSupport/TestAssets.cs" />
+    <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
     <Compile Remove="Fixtures/**/*.cs" />
     <None Include="IntegrationAssets/NativeRuntimeMetadata.proj" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets"

@@ -2,7 +2,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 
 // Primitive hash codes are deterministic in .NET and decide hashed collections' layout, so each
 // primitive's matches desktop's, char's upper half included.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class PrimitiveHashCodeCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -10,7 +9,14 @@ public sealed class PrimitiveHashCodeCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "PrimitiveHashCodeCorpus",
             "NetWasm.Correctness.PrimitiveHashCodes",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
 
             namespace NetWasm.Correctness.PrimitiveHashCodes;
@@ -32,10 +38,5 @@ public sealed class PrimitiveHashCodeCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

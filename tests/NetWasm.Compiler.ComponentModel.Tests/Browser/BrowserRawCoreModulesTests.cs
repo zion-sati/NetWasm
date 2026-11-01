@@ -24,7 +24,7 @@ public sealed class BrowserRawCoreModulesTests
             InternalRuntimeExports = [new("LZ4_compressBound", 0), new("__heap_base", 3)],
         };
 
-        var plan = BrowserRawCoreModules.CreateLinkPlan(request, Workspace());
+        var plan = BrowserRawCoreModules.CreateOrderedLinkPlan(request, Workspace());
 
         Assert.Equal("v/tmp/environment.wasm", Assert.Single(plan.Operations.OfType<BrowserLinkTextOperation>().ToArray()).OutputPath);
         Assert.Equal(BinaryenToolIds.WasmMerge, plan.Operations.OfType<BrowserLinkToolOperation>().First().ToolId);
@@ -59,7 +59,7 @@ public sealed class BrowserRawCoreModulesTests
     [Fact]
     public void OmitsPruningWhenNoTemporaryExportsExist()
     {
-        var plan = BrowserRawCoreModules.CreateLinkPlan(Request(FinalWasmOptimization.None), Workspace());
+        var plan = BrowserRawCoreModules.CreateOrderedLinkPlan(Request(FinalWasmOptimization.None), Workspace());
 
         Assert.Null(plan.Operations.OfType<BrowserLinkExportOperation>().SingleOrDefault());
         Assert.Equal(new BrowserLinkInlineOperation("v/tmp/merged.wasm", "v/tmp/linked.wasm",
@@ -70,9 +70,9 @@ public sealed class BrowserRawCoreModulesTests
     [Fact]
     public void RejectsAliasedAndUninitializedInputs()
     {
-        Assert.Throws<ArgumentException>(() => BrowserRawCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentException>(() => BrowserRawCoreModules.CreateOrderedLinkPlan(
             Request(FinalWasmOptimization.Oz), Workspace() with { LinkedModulePath = "v/application.wasm" }));
-        Assert.Throws<NetWasm.Compiler.Core.CompilerException>(() => BrowserRawCoreModules.CreateLinkPlan(
+        Assert.Throws<NetWasm.Compiler.Core.CompilerException>(() => BrowserRawCoreModules.CreateOrderedLinkPlan(
             Request(FinalWasmOptimization.Oz) with { InternalRuntimeExports = default }, Workspace()));
     }
 

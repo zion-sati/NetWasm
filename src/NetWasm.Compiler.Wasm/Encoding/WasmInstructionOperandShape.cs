@@ -7,15 +7,12 @@ namespace NetWasm.Compiler.Wasm.Encoding;
 public enum WasmInstructionOperandShape
 {
     None = 0,
-    Byte = 1,
     UnsignedLeb128 = 2,
     SignedLeb128 = 3,
-    UnsignedLeb12864 = 4,
     SignedLeb12864 = 5,
     Float32 = 6,
     Float64 = 7,
     Bytes = 8,
-    String = 9,
     MemoryArgument = 10,
     PrefixedUnsignedLeb128 = 11,
     PrefixedUnsignedLeb128Pair = 12,

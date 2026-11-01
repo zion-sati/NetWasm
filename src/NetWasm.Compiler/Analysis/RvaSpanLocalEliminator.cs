@@ -37,20 +37,19 @@ internal sealed class RvaSpanLocalEliminator(
         var uses = definitions.Keys.ToDictionary(local => local, _ => new List<int>());
         for (var index = 0; index < instructions.Length; index++)
         {
+            // The definition is the local's one store.
             if (instructions[index] is not
                 {
-                    Operation: CilOperation.LoadLocal or CilOperation.LoadLocalAddress or CilOperation.StoreLocal,
+                    Operation: CilOperation.LoadLocal or CilOperation.LoadLocalAddress,
                     Operand: CilOperand.Index { Value: var local },
                 } instruction ||
-                !definitions.TryGetValue(local, out var definition) ||
-                index == definition.Store)
+                !definitions.TryGetValue(local, out var definition))
             {
                 continue;
             }
-            // The address is read only by a field load that follows it on the same path.
+            // The address is read only by a field load that follows it on the same
+            // path. A body ends in a branch, return or throw, so something follows.
             var read = instruction.Operation == CilOperation.LoadLocal ||
-                instruction.Operation == CilOperation.LoadLocalAddress &&
-                index + 1 < instructions.Length &&
                 !entries.Contains(instructions[index + 1].Offset) &&
                 SpanField(instructions[index + 1], definition.View) is not null;
             if (read)
@@ -158,10 +157,10 @@ internal sealed class RvaSpanLocalEliminator(
         return definitions;
     }
 
+    // _reference or _length, the span's two fields.
     private static string? SpanField(CilInstruction instruction, CilOperand.ReadOnlySpanData view) =>
         instruction is { Operation: CilOperation.LoadField, Operand: CilOperand.FieldInstance { Value: var field } } &&
-        field.DeclaringType.Equals(view.SpanType) &&
-        field.Definition.Name is "_reference" or "_length"
+        field.DeclaringType.Equals(view.SpanType)
             ? field.Definition.Name
             : null;
 
@@ -175,14 +174,9 @@ internal sealed class RvaSpanLocalEliminator(
         var offsets = new HashSet<int>();
         foreach (var instruction in body.Instructions)
         {
-            switch (instruction.Operand)
+            if (instruction.Operand is CilOperand.BranchTarget branch)
             {
-                case CilOperand.BranchTarget branch:
-                    offsets.Add(branch.Offset);
-                    break;
-                case CilOperand.SwitchTargets branches:
-                    offsets.UnionWith(branches.Offsets);
-                    break;
+                offsets.Add(branch.Offset);
             }
         }
         foreach (var region in body.ExceptionRegions)

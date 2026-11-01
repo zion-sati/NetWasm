@@ -799,8 +799,11 @@ internal sealed class EmptyEnumStorageResolver : IEnumStorageResolver
     public ImmutableArray<EnumStorage> Resolve() => [];
 }
 
+// Values are valueSize bytes; zeroing a value takes stores up to 64 bytes and
+// memory.fill above them.
 internal sealed class RecordingLayoutProvider(
-    WasmTargetLayout? target = null) :
+    WasmTargetLayout? target = null,
+    int valueSize = 4) :
     ITargetLayout,
     IValueLayoutProvider,
     ITypeLayoutProvider,
@@ -877,7 +880,7 @@ internal sealed class RecordingLayoutProvider(
     }
 
     public ValueLayout GetValueLayout(CliTypeIdentity type) =>
-        new(type, 4, 4, type.StackKind == CliValueKind.ManagedReference ? [0] : []);
+        new(type, valueSize, Math.Min(valueSize, 8), type.StackKind == CliValueKind.ManagedReference ? [0] : []);
 
     public FieldLayout GetFieldLayout(EntityKey field)
     {

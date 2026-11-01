@@ -154,7 +154,7 @@ public sealed class DispatcherEliminationCompilationTests
 
         Assert.True(labeled.ApplicationModule.Length < dispatched.ApplicationModule.Length,
             $"labeled {labeled.ApplicationModule.Length} bytes, dispatched {dispatched.ApplicationModule.Length}");
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 labeled.ApplicationModule, assets.Directory, input, target, labeled.StaticDataEnd));

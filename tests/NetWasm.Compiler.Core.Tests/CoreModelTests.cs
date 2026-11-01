@@ -48,7 +48,6 @@ public sealed class CoreModelTests
         Assert.Equal(8, wasm64.ObjectReferenceSize);
         Assert.Equal(4, wasm32.ObjectHeaderSize);
         Assert.Equal(8, wasm64.ObjectHeaderSize);
-        Assert.Equal(4, WasmTargetLayout.TypeIdSize);
         Assert.Equal(4, WasmTargetLayout.SemanticLengthSize);
         Assert.Equal(4, wasm32.GetStorageSize(reference));
         Assert.Equal(8, wasm64.GetStorageSize(reference));
@@ -526,7 +525,6 @@ public sealed class CoreModelTests
             RelativeVirtualAddress = 0,
         };
 
-        Assert.Equal("Example.Widget::Value", field.DisplayName("Example.Widget"));
         Assert.Equal(new EntityKey(Assembly, 0x04000001), field.Key);
         Assert.Equal(TypeKey, field.DeclaringType);
         Assert.Equal("Value", field.Name);
@@ -710,7 +708,6 @@ public sealed class CoreModelTests
             [],
             null,
             null);
-        var implementation = new MethodImplementationModel(method, method);
         var implementationInstance = new MethodImplementationInstanceModel(
             instance, instance);
 
@@ -731,8 +728,6 @@ public sealed class CoreModelTests
         Assert.False((propertyInstance with { DeclaringType = declaringType }).IsConstructed);
         Assert.Contains("0x17000001", propertyInstance.CanonicalName);
         Assert.Contains("0x04000002", fieldInstance.CanonicalName);
-        Assert.Same(method, implementation.Body);
-        Assert.Same(method, implementation.Declaration);
         Assert.Same(instance, implementationInstance.Body);
         Assert.Same(instance, implementationInstance.Declaration);
         var substituted = method.Signature.Substitute([value], [value]);
@@ -745,12 +740,6 @@ public sealed class CoreModelTests
         Assert.True(layout.GetValueLayout(
             CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference))
             .ContainsReferences);
-        Assert.False(layout.GetValueLayout(
-            CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference))
-            .IsFlattenedAbiEligible);
-        Assert.True(new ValueLayout(value, 8, 4, []).IsFlattenedAbiEligible);
-        Assert.False(new ValueLayout(value, 0, 4, []).IsFlattenedAbiEligible);
-        Assert.False(new ValueLayout(value, 12, 4, []).IsFlattenedAbiEligible);
         Assert.Equal(7, layout.GetFieldLayout(fieldInstance).Offset);
         Assert.Equal(11, layout.GetStaticFieldLayout(fieldInstance).Address);
         Assert.Equal(1, layout.GetObjectLayout(constructed).TypeId);
@@ -762,6 +751,12 @@ public sealed class CoreModelTests
         var staticDataLayout = (IStaticDataLayout)layout;
         Assert.Equal(0, staticDataLayout.TypeFactsTableAddress);
         Assert.Equal(0, staticDataLayout.TypeFactsTableCount);
+        // A layout without static Type objects has none to name.
+        Assert.Empty(staticDataLayout.TypeObjectAddresses);
+        Assert.Equal(0, staticDataLayout.TypeObjectTableAddress);
+        Assert.Equal(0, staticDataLayout.TypeObjectCacheAddress);
+        Assert.Equal(0, staticDataLayout.TypeObjectCount);
+        Assert.Equal(0, staticDataLayout.TypeObjectSize);
         Assert.Empty(layout.ConstructedTypeDescriptors);
         Assert.Empty(layout.ValueTypeDescriptors);
 
@@ -937,6 +932,8 @@ public sealed class CoreModelTests
         Assert.Equal("root_frame_leave", RuntimeAbi.RuntimeRootFrameLeave);
         Assert.Equal("value_frame_enter", RuntimeAbi.RuntimeValueFrameEnter);
         Assert.Equal("value_frame_leave", RuntimeAbi.RuntimeValueFrameLeave);
+        Assert.Equal("value_frame_leave_mapped", RuntimeAbi.RuntimeValueFrameLeaveMapped);
+        Assert.Equal("object_contains_references", RuntimeAbi.RuntimeObjectContainsReferences);
         Assert.Equal("allocate", RuntimeAbi.RuntimeAllocate);
     }
 

@@ -459,6 +459,33 @@ public sealed class StructuredControlFlowEmitterTests
                 .Take(2).Select(instruction => instruction.Opcode));
     }
 
+    // A labeled block inside a loop body adds one level between a break or a
+    // continue and the loop it leaves or repeats.
+    [Fact]
+    public void LabeledRegionsInALoopBodyDeepenItsBreakAndContinue()
+    {
+        var transfers = new StructuredSequence([new StructuredLoopBreak(), new StructuredLoopContinue()]);
+        IEnumerable<uint> Branches(StructuredSequence body)
+        {
+            var code = new RecordingInstructionWriter();
+            CreateEmitter().Emit(
+                code,
+                new StructuredSequence([new StructuredLoop(Block(2), true, body, StructuredSequence.Empty, StructuredSequence.Empty)]),
+                CreateContext(),
+                (_, _, _) => new ConditionValue(0, CliValueKind.I4),
+                (_, _, _, _, _, _) => { });
+            return code.ToInstructions().Where(instruction => instruction.Opcode == WasmOpcodes.Branch)
+                .Select(instruction => instruction.Operand.UnsignedValue);
+        }
+
+        var direct = Branches(transfers).ToArray();
+        var labeled = Branches(new([new StructuredLabeledBlock(new StructuredBlockId(5), transfers)])).ToArray();
+
+        // The loop's own branch back to its condition follows the body.
+        Assert.Equal(3, direct.Length);
+        Assert.Equal([direct[0] + 1, direct[1] + 1, direct[2]], labeled);
+    }
+
     [Fact]
     public void LabelBranchOutsideItsRegionIsRejected() =>
         Assert.Throws<InvalidOperationException>(() => CreateEmitter().Emit(

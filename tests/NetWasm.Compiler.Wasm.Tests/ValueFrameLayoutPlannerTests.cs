@@ -1047,10 +1047,12 @@ public sealed class ValueFrameLayoutPlannerTests
         Assert.Equal([1], selected);
     }
 
+    // A call cannot change a local whose address is never taken, so the load
+    // still transfers in place after it; an exposed address keeps the snapshot.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void SuspendedValueLoadKeepsSnapshotAcrossCallsAndAddressExposure(bool address)
+    public void SuspendedValueLoadTransfersAcrossCallsUnlessItsAddressIsExposed(bool address)
     {
         var fixture = new PlannerFixture();
         var body = new CilMethodBody(fixture.BodyMethod, 2, [],
@@ -1066,7 +1068,59 @@ public sealed class ValueFrameLayoutPlannerTests
         var selected = ThroughSelector(new DirectValueLoadSelector()).Select(
             PlanningMethod(body, (0, 0), (1, 1), (2, 2), (3, 1)));
 
-        Assert.Empty(selected);
+        Assert.Equal(address ? [] : [0], selected.Order());
+    }
+
+    // A struct a call takes by value reads the caller's local or argument in
+    // place when nothing else can reach it: not its address, not a store
+    // between the load and the call, and not a call it cannot see.
+    [Theory]
+    [InlineData("local", true)]
+    [InlineData("argument", true)]
+    [InlineData("addressed local", false)]
+    [InlineData("addressed argument", false)]
+    [InlineData("stored before the call", false)]
+    [InlineData("entity call", false)]
+    public void ValueArgumentsOfACallReadUnreachableStorageInPlace(string scenario, bool selected)
+    {
+        var fixture = new PlannerFixture();
+        var takes = new MethodInstanceModel(
+            fixture.ValueStatic,
+            fixture.ReferenceType,
+            [],
+            MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), fixture.ValueType, fixture.ValueType));
+        var load = scenario.EndsWith("argument", StringComparison.Ordinal) ? CilOperation.LoadArgument : CilOperation.LoadLocal;
+        var shapes = new List<(CilOperation Operation, CilOperand? Operand, int Entry)>
+        {
+            (load, new CilOperand.Index(0), 0),
+            (load, new CilOperand.Index(1), 1),
+        };
+        if (scenario == "stored before the call")
+        {
+            shapes.Add((CilOperation.LoadLocal, new CilOperand.Index(1), 2));
+            shapes.Add((CilOperation.StoreLocal, new CilOperand.Index(0), 3));
+        }
+        shapes.Add((CilOperation.Call, scenario == "entity call"
+            ? new CilOperand.Entity(fixture.ValueStatic.Key)
+            : new CilOperand.MethodInstance(takes), 2));
+        if (scenario.StartsWith("addressed", StringComparison.Ordinal))
+        {
+            shapes.Add((scenario.EndsWith("argument", StringComparison.Ordinal)
+                ? CilOperation.LoadArgumentAddress
+                : CilOperation.LoadLocalAddress, new CilOperand.Index(0), 0));
+            shapes.Add((CilOperation.Pop, null, 1));
+        }
+        shapes.Add((CilOperation.Return, null, 0));
+        var instructions = shapes.Select((shape, offset) => shape.Operand is null
+            ? I(offset, shape.Operation)
+            : I(offset, shape.Operation, shape.Operand)).ToArray();
+        var body = new CilMethodBody(fixture.BodyMethod, 2, [], [.. instructions]);
+
+        var chosen = ThroughSelector(new DirectValueLoadSelector()).Select(
+            PlanningMethod(body, [.. shapes.Select((shape, offset) => (offset, shape.Entry))]));
+
+        Assert.Equal(selected, chosen.Contains(0));
+        Assert.Equal(scenario != "entity call", chosen.Contains(1));
     }
 
     [Theory]

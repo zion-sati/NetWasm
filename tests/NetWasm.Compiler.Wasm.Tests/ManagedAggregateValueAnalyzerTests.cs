@@ -299,6 +299,25 @@ public sealed class ManagedAggregateValueAnalyzerTests
         Assert.Empty(fixture.Analyze(fixture.StoreThenLoopMethod(storeInLoop: true)).Storages);
     }
 
+    // A labeled loop and a dispatcher's blocks are one loop deeper than their
+    // surroundings and a labeled block and a dispatcher's exit are not, so a store beside them reloads the
+    // lanes their reads use while a store inside rejects them.
+    [Theory]
+    [InlineData("labeled loop", false, 1)]
+    [InlineData("labeled loop", true, 0)]
+    [InlineData("labeled block", false, 0)]
+    [InlineData("dispatcher", false, 1)]
+    [InlineData("dispatcher", true, 0)]
+    [InlineData("dispatcher exit", false, 0)]
+    public void LabeledAndDispatchedRegionsCountTheLoopsAroundTheirBlocks(string region, bool storeInside, int storages)
+    {
+        var fixture = new Fixture();
+
+        var analysis = fixture.Analyze(fixture.StoreThenRegionMethod(region, storeInside));
+
+        Assert.Equal(storages, analysis.Storages.Count);
+    }
+
     [Fact]
     public void ExcludedLocalsAreNoStorage()
     {
@@ -441,6 +460,21 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var clear = analysis.LaneAccesses[2];
         Assert.True(clear.Writes);
         Assert.Equal(high ? 4 : 0, Assert.Single(clear.LaneOffsets));
+    }
+
+    // A field narrower than its lane would need a partial lane write, whether
+    // the clear stops inside the lane or starts there.
+    [Theory]
+    [InlineData("i2", 0)]
+    [InlineData("i1", 1)]
+    public void InitializeObjectOfAFieldNarrowerThanItsLaneRejectsTheStorage(string type, int offset)
+    {
+        var narrow = CliTypeIdentity.Primitive(type, CliValueKind.I4);
+        var fixture = new Fixture { LowFieldType = narrow, LowFieldOffset = offset };
+
+        var analysis = fixture.Analyze(fixture.FieldClearMethod(fixture.Low with { FieldType = narrow }));
+
+        Assert.Empty(analysis.Storages);
     }
 
     [Fact]
@@ -802,6 +836,17 @@ public sealed class ManagedAggregateValueAnalyzerTests
             analysis.LaneAccesses.Values.OrderBy(access => access.InstructionOffset),
             access => Assert.False(access.Writes),
             access => Assert.True(access.Writes));
+    }
+
+    // ldobj and stobj of a short read and write its two bytes, not the four of
+    // the lane they share with the field beside them.
+    [Fact]
+    public void ScalarObjectAccessesTakeTheirTypesWidth()
+    {
+        var fixture = new Fixture();
+        var analysis = fixture.Analyze(fixture.ObjectAccessMethod(CliTypeIdentity.Primitive("i2", CliValueKind.I4)));
+
+        Assert.All(analysis.LaneAccesses.Values, access => Assert.Equal(2, access.Size));
     }
 
     [Fact]
@@ -1328,10 +1373,10 @@ public sealed class ManagedAggregateValueAnalyzerTests
             return Graph(entry, blocks, steps, [CliValueKind.ManagedAddress], [ByRefAggregate]);
         }
 
-        public StructuredMethod ObjectAccessMethod()
+        public StructuredMethod ObjectAccessMethod(CliTypeIdentity? scalar = null)
         {
             var i4 = new CilOperand.TypeIdentity(
-                CliTypeIdentity.FromStackKind(CliValueKind.I4));
+                scalar ?? CliTypeIdentity.FromStackKind(CliValueKind.I4));
             var steps = new[]
             {
                 Step(I(0, CilOperation.LoadArgumentAddress, new CilOperand.Index(0))),
@@ -1390,6 +1435,43 @@ public sealed class ManagedAggregateValueAnalyzerTests
                     .Add(loop, Block(loop, loopSteps, new StructuredFallthroughExit(null))),
                 [.. storeSteps, .. loopSteps], [CliValueKind.ValueType], [Aggregate],
                 new(storeInLoop ? [Loop(Code(store), Code(loop))] : [Code(store), Loop(Code(loop))]));
+        }
+
+        // The store and the read of StoreThenLoopMethod, with the read in a
+        // labeled loop or a dispatcher's block, or the store in a labeled block.
+        public StructuredMethod StoreThenRegionMethod(string region, bool storeInside)
+        {
+            var store = new StructuredBlockId(0);
+            var read = new StructuredBlockId(1);
+            var storeSteps = new[]
+            {
+                Step(I(0, CilOperation.LoadLocal, new CilOperand.Index(0))),
+                Step(I(1, CilOperation.StoreLocal, new CilOperand.Index(0)), CliValueKind.ValueType),
+            };
+            var readSteps = new[]
+            {
+                Step(I(2, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
+                Step(I(3, CilOperation.LoadField, new CilOperand.FieldInstance(Low)), CliValueKind.ManagedAddress),
+                Step(I(4, CilOperation.Pop), CliValueKind.I4),
+            };
+            StructuredCode Code(StructuredBlockId id) => new(new(id, StructuredBlockRole.Owner));
+            StructuredDispatcherBlock Dispatched(StructuredBlockId id) => new(new(id, StructuredBlockRole.Owner), null, null);
+            StructuredSequence body = region switch
+            {
+                "labeled loop" => storeInside
+                    ? new([new StructuredLabeledLoop(store, new([Code(store), Code(read)]))])
+                    : new([Code(store), new StructuredLabeledLoop(read, new([Code(read)]))]),
+                "labeled block" => new([new StructuredLabeledBlock(read, new([Code(store)])), Code(read)]),
+                "dispatcher exit" => new([Code(store), new StructuredDispatcher(null, [], [new(read, new([Code(read)]))])]),
+                _ => storeInside
+                    ? new([new StructuredDispatcher(store, [Dispatched(store), Dispatched(read)], [])])
+                    : new([Code(store), new StructuredDispatcher(read, [Dispatched(read)], [])]),
+            };
+            return Graph(store,
+                ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
+                    .Add(store, Block(store, storeSteps, new StructuredFallthroughExit(read)))
+                    .Add(read, Block(read, readSteps, new StructuredFallthroughExit(null))),
+                [.. storeSteps, .. readSteps], [CliValueKind.ValueType], [Aggregate], body);
         }
 
         public StructuredMethod LocalValueMethod(bool storeWholeValue)
@@ -1454,8 +1536,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
             {
                 Step(I(0, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
                 Step(I(1, CilOperation.LoadFieldAddress, new CilOperand.FieldInstance(field)), CliValueKind.ManagedAddress),
-                Step(I(2, CilOperation.InitializeObject, new CilOperand.TypeIdentity(CliTypeIdentity.FromStackKind(CliValueKind.I4))),
-                    CliValueKind.ManagedAddress),
+                Step(I(2, CilOperation.InitializeObject, new CilOperand.TypeIdentity(field.FieldType)), CliValueKind.ManagedAddress),
                 Step(I(3, CilOperation.LoadLocalAddress, new CilOperand.Index(0))),
                 Step(I(4, CilOperation.LoadField, new CilOperand.FieldInstance(Low)), CliValueKind.ManagedAddress),
                 Step(I(5, CilOperation.Pop), CliValueKind.I4),
@@ -1940,6 +2021,14 @@ public sealed class ManagedAggregateValueAnalyzerTests
 
         public ValueLayout GetValueLayout(CliTypeIdentity type) => type.Equals(Aggregate) && AggregateLayout is { } configured
             ? configured
+            : type.Shape == CliTypeShape.Primitive
+            ? type.CanonicalName switch
+            {
+                "primitive:bool" or "primitive:i1" or "primitive:u1" => new(type, 1, 1, []),
+                "primitive:char" or "primitive:i2" or "primitive:u2" => new(type, 2, 2, []),
+                "primitive:nativeint" or "primitive:nativeuint" => new(type, _layout.AddressSize, _layout.AddressSize, []),
+                _ => new(type, _layout.GetStorageSize(type), _layout.GetStorageSize(type), []),
+            }
             : type.Equals(LargeView)
             ? new(type, 12, 4, [])
             : type.Equals(ReferenceView)

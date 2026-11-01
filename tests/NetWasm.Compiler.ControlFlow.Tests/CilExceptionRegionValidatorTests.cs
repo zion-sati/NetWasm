@@ -224,20 +224,8 @@ public sealed class CilExceptionRegionValidatorTests
     }
 
     [Fact]
-    public void ValidatesSwitchTargetsAndRejectsLeaveOutsideAnExceptionRegion()
+    public void RejectsLeaveOutsideAnExceptionRegion()
     {
-        var switchBody = Body(
-            CliValueKind.Void,
-            1,
-            [],
-            I(0, CilOperation.Switch, new CilOperand.SwitchTargets([1, 2])),
-            I(1, CilOperation.Nop),
-            I(2, CilOperation.Return));
-
-        CreateExceptionRegionValidator().Validate(
-            switchBody,
-            switchBody.Instructions[^1].NextOffset);
-
         AssertDiagnostic(
             () => ControlFlowGraphBuilder.Build(Body(
                 CliValueKind.Void,

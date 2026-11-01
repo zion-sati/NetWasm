@@ -58,12 +58,12 @@ public sealed class TerminalContinuationInliningPlannerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void RejectsSwitchEntryOnlyWhenItTargetsTheTerminalSuffix(bool targetsSuffix)
+    public void RejectsAConditionalEntryOnlyWhenItTargetsTheTerminalSuffix(bool targetsSuffix)
     {
         var (request, _) = Request();
         var instructions = ImmutableArray.Create(
             new CilInstruction(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
-            new CilInstruction(1, 2, CilOperation.Switch, new CilOperand.SwitchTargets([targetsSuffix ? 4 : 2])),
+            new CilInstruction(1, 2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(targetsSuffix ? 4 : 2)),
             new CilInstruction(2, 3, CilOperation.LoadArgument, new CilOperand.Index(0)),
             request.CallerBody.Instructions[1] with { Offset = 3, NextOffset = 4 },
             new CilInstruction(4, 5, CilOperation.LoadArgument, new CilOperand.Index(0)),
@@ -173,7 +173,6 @@ public sealed class TerminalContinuationInliningPlannerTests
 
     [Theory]
     [InlineData(CilOperation.Branch)]
-    [InlineData(CilOperation.Switch)]
     [InlineData(CilOperation.Throw)]
     [InlineData(CilOperation.LocalAllocate)]
     [InlineData(CilOperation.Constrained)]
@@ -184,7 +183,6 @@ public sealed class TerminalContinuationInliningPlannerTests
         CilOperand operand = operation switch
         {
             CilOperation.Branch => new CilOperand.BranchTarget(3),
-            CilOperation.Switch => new CilOperand.SwitchTargets([3]),
             _ => new CilOperand.None(),
         };
         var instructions = request.CallerBody.Instructions.SetItem(

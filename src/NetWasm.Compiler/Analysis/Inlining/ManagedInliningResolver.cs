@@ -166,7 +166,7 @@ internal sealed class ManagedInliningResolver(
                 CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject or CilOperation.Throw) ||
                 instruction.Operation == CilOperation.NewObject && InlinedInTheNextRound(instruction)) &&
             !Allocates(body, index) &&
-            instruction.Operand is not (CilOperand.BranchTarget or CilOperand.SwitchTargets));
+            instruction.Operand is not CilOperand.BranchTarget);
 
     // A loop body is larger than a leaf and may branch forward but not loop,
     // and neither allocates nor throws; each call it makes is to an aggressive
@@ -175,17 +175,12 @@ internal sealed class ManagedInliningResolver(
     private bool IsLoopBody(CilMethodBody body) =>
         body.Instructions.Count(static instruction => instruction.Operation != CilOperation.Nop) is var size &&
         size > _leafBodyInstructionLimit && size <= _loopBodyInstructionLimit &&
-        body.Instructions.Count(static instruction => instruction.Operand is CilOperand.BranchTarget or CilOperand.SwitchTargets) <=
+        body.Instructions.Count(static instruction => instruction.Operand is CilOperand.BranchTarget) <=
             LoopBodyBranchLimit &&
         Enumerable.Range(0, body.Instructions.Length).All(index =>
             body.Instructions[index] is var instruction &&
             instruction.Operation != CilOperation.Throw && !Allocates(body, index) &&
-            instruction.Operand switch
-            {
-                CilOperand.BranchTarget target => target.Offset > instruction.Offset,
-                CilOperand.SwitchTargets targets => targets.Offsets.All(offset => offset > instruction.Offset),
-                _ => true,
-            } &&
+            (instruction.Operand is not CilOperand.BranchTarget target || target.Offset > instruction.Offset) &&
             (instruction.Operation is not (CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject) ||
                 InlinedInTheNextRound(instruction)));
 
@@ -397,8 +392,6 @@ internal sealed class ManagedInliningResolver(
         HashSet<int> offsets) => operand switch
         {
             CilOperand.BranchTarget target => offsets.Contains(target.Offset),
-            CilOperand.SwitchTargets targets =>
-                targets.Offsets.All(offsets.Contains),
             _ => true,
         };
 

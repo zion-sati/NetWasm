@@ -10,7 +10,11 @@ namespace System.Text
     /// <summary>Represents a parsed composite format string.</summary>
     public sealed class CompositeFormat
     {
-        private readonly (string? Literal, int ArgIndex, int Alignment, string? Format)[] _segments;
+        // _segments, _literalLength and _formattedCount are the members
+        // upstream's MemoryExtensions.TryWrite reads.
+        internal readonly (string? Literal, int ArgIndex, int Alignment, string? Format)[] _segments;
+        internal readonly int _literalLength;
+        internal readonly int _formattedCount;
         private readonly int _minimumArgumentCount;
 
         private CompositeFormat(
@@ -25,6 +29,11 @@ namespace System.Text
                 if (segment.ArgIndex >= 0)
                 {
                     minimumArgumentCount = Math.Max(minimumArgumentCount, segment.ArgIndex + 1);
+                    _formattedCount++;
+                }
+                else
+                {
+                    _literalLength += segment.Literal?.Length ?? 0;
                 }
             }
             _minimumArgumentCount = minimumArgumentCount;

@@ -52,3 +52,40 @@ test('Native contract imports reject an unsupported target before memory access'
 test('Native contract imports require a memory accessor', () => {
   assert.throws(() => createRuntimeContractImports('wasm32', null), /memory accessor/);
 });
+
+for (const target of ['wasm32', 'wasm64']) {
+  test(`Random bytes come back in a list the guest allocates: ${target}`, () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const address = value => target === 'wasm64' ? BigInt(value) : Number(value);
+    const requests = [];
+    const exports = {
+      component_realloc(oldAddress, oldSize, alignment, size) {
+        requests.push([oldAddress, oldSize, alignment, size]);
+        return address(256);
+      },
+    };
+    const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
+    const random = createRuntimeContractImports(target, () => memory, () => exports)[
+      `${prefix}|wasi:random/random@0.2`];
+
+    random['get-random-bytes'](5n, address(64));
+
+    assert.deepEqual(requests, [[address(0), address(0), address(1), address(5)]]);
+    const view = new DataView(memory.buffer);
+    const [pointer, count] = target === 'wasm64'
+      ? [view.getBigUint64(64, true), view.getBigUint64(72, true)]
+      : [view.getUint32(64, true), view.getUint32(68, true)];
+    assert.equal(Number(pointer), 256);
+    assert.equal(Number(count), 5);
+    assert.deepEqual([...new Uint8Array(memory.buffer, 256, 5)], [1, 2, 3, 4, 5]);
+    random['get-random-bytes'](2n, address(64));
+    assert.deepEqual([...new Uint8Array(memory.buffer, 256, 2)], [6, 7]);
+  });
+
+  test(`Random bytes need the guest's allocator: ${target}`, () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const prefix = target === 'wasm64' ? 'cm64p2' : 'cm32p2';
+    const random = createRuntimeContractImports(target, () => memory)[`${prefix}|wasi:random/random@0.2`];
+    assert.throws(() => random['get-random-bytes'](1n, 0), /Unexpected runtime service call/);
+  });
+}

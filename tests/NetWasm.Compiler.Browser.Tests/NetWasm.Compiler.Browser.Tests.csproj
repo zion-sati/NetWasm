@@ -8,4 +8,7 @@
     <ProjectReference Include="../NetWasm.Compiler.Tasks.Tests/Fixtures/ManagedExecutable/ManagedExecutable.csproj" />
     <ProjectReference Include="../NetWasm.Compiler.Tasks.Tests/Fixtures/AsyncStringArgumentsManagedExecutable/AsyncStringArgumentsManagedExecutable.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../TestInfrastructure/MethodSignatureModelFactories.cs" Link="MethodSignatureModelFactories.cs" />
+  </ItemGroup>
 </Project>

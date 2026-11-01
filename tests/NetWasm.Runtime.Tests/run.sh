@@ -6,6 +6,13 @@ workspace_dir="$(cd "$script_dir/../.." && pwd)"
 output_dir="$(mktemp -d)"
 trap 'rm -rf "$output_dir"' EXIT
 
+# The runtime is built by clang (emcc), and its portable range checks are written
+# for clang's warnings: GCC's -Wtype-limits rejects checks that only a 64-bit host
+# makes always true. The host contracts compile with clang wherever there is one.
+if command -v clang >/dev/null 2>&1; then
+  cc() { clang "$@"; }
+fi
+
 node --test "$script_dir/runtime-contract-imports.test.mjs"
 node --test "$script_dir/yield-reactor-imports.test.mjs"
 node --test --experimental-test-coverage \

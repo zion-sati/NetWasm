@@ -43,21 +43,21 @@ public sealed class AttributeQueryBodyRewriterTests
     }
 
     [Fact]
-    public void SwitchTargetsUseTheirOwningCoordinateSpace()
+    public void BranchTargetsUseTheirOwningCoordinateSpace()
     {
         var body = Body(
-            I(0, CilOperation.Switch, new CilOperand.SwitchTargets([10, 20])),
+            I(0, CilOperation.Branch, new CilOperand.BranchTarget(20)),
             I(10, CilOperation.Call),
             I(20, CilOperation.Return));
         var fragment = new AttributeCilFragment(
-            [I(0, CilOperation.Switch, new CilOperand.SwitchTargets([1, 2])),
+            [I(0, CilOperation.Branch, new CilOperand.BranchTarget(2)),
              I(1, CilOperation.Nop), I(2, CilOperation.Nop)], [], 1);
 
         var actual = Rewrite(new AttributeQueryBodyRewriter(), body,
             ImmutableDictionary<int, AttributeCilFragment>.Empty.Add(10, fragment));
 
-        Assert.Equal<int>([1, 4], Assert.IsType<CilOperand.SwitchTargets>(actual.Instructions[0].Operand).Offsets);
-        Assert.Equal<int>([2, 3], Assert.IsType<CilOperand.SwitchTargets>(actual.Instructions[1].Operand).Offsets);
+        Assert.Equal(4, Assert.IsType<CilOperand.BranchTarget>(actual.Instructions[0].Operand).Offset);
+        Assert.Equal(3, Assert.IsType<CilOperand.BranchTarget>(actual.Instructions[1].Operand).Offset);
     }
 
     [Theory]

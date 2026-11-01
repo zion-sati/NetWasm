@@ -30,9 +30,9 @@ public sealed class ConcurrentPreparationCacheTests
                 TaskScheduler.Default))
             .ToArray();
 
-        Assert.True(callersReady.Wait(TimeSpan.FromSeconds(2)));
+        Assert.True(callersReady.Wait(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
         start.Set();
-        Assert.True(preparationEntered.Wait(TimeSpan.FromSeconds(2)));
+        Assert.True(preparationEntered.Wait(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
         Assert.Equal(1, Volatile.Read(ref preparationCount));
         releasePreparation.Set();
         var values = await Task.WhenAll(calls);

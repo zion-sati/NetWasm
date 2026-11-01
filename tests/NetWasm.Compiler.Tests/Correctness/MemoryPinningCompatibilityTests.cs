@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class MemoryPinningCompatibilityTests(CorrectnessTestRunner runner)
     : CSharpSemanticTestBase(runner)
 {
@@ -12,7 +11,7 @@ public sealed class MemoryPinningCompatibilityTests(CorrectnessTestRunner runner
             "MemoryPinningCompatibility",
             "NetWasm.Correctness.MemoryPinningCompatibility",
             Source,
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
         {
             AllowUnsafe = true,
             ExpectedReturnValue = 42,
@@ -73,10 +72,57 @@ public sealed class MemoryPinningCompatibilityTests(CorrectnessTestRunner runner
                 7 => EmptyArrayAndTailReferencesPreserveIdentity(),
                 8 => DefaultMemoryPinsToNull(),
                 9 => MemoryHashingIgnoresOwnerOverrides(),
+                11 => PinnedHandlesRejectObjectsThatHoldReferences(),
                 _ => CreateFromPinnedArrayValidatesInRuntimeOrder(),
             };
 
             public static int Trace() => 0;
+
+            private struct Plain { public int Value; }
+            private struct Holding { public object? Value; }
+            private sealed class Fields { public int Value; }
+            private sealed class Linked { public object? Next; }
+
+            private static bool Pins(object? value)
+            {
+                try
+                {
+                    GCHandle.Alloc(value, GCHandleType.Pinned).Free();
+                    return true;
+                }
+                catch (ArgumentException)
+                {
+                    return false;
+                }
+            }
+
+            // GCHandle.Alloc checks Marshal.IsPinnable, as Memory<T>.Pin relies on:
+            // an object whose fields or element type hold references cannot be
+            // pinned, even with no elements, and neither can a pinned handle's new
+            // target. A normal handle takes anything.
+            private static int PinnedHandlesRejectObjectsThatHoldReferences()
+            {
+                var pins = Pins(new int[3]) && Pins("text") && Pins(new Plain[2]) && Pins(new Fields { Value = 1 }) &&
+                    Pins(42) && Pins(null) && Pins(new Plain { Value = 2 });
+                var rejects = !Pins(new object[1]) && !Pins(new string[0]) && !Pins(new Holding[1]) &&
+                    !Pins(new Linked { Next = "next" }) && !Pins(new Holding { Value = "boxed" });
+                var handle = GCHandle.Alloc(new int[1], GCHandleType.Pinned);
+                var retargetRejected = false;
+                try
+                {
+                    handle.Target = new object[1];
+                }
+                catch (ArgumentException)
+                {
+                    retargetRejected = true;
+                }
+                handle.Target = new byte[4];
+                handle.Free();
+                var normal = GCHandle.Alloc(new object[1]);
+                normal.Target = new Linked();
+                normal.Free();
+                return pins && rejects && retargetRejected ? 42 : (pins ? 1 : 0) + (rejects ? 2 : 0) + (retargetRejected ? 4 : 0);
+            }
 
             private static int StringViewsAliasAndRoot()
             {

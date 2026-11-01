@@ -46,7 +46,7 @@ public sealed class FrontendArtifactCacheActorTests
             new EntryAssemblyBindingFingerprinter(), new ManagedAssemblyImageReader(),
             new CompilationInputHasher(), new FrontendArtifactCompilerIdentity(),
             new WasmOptimizationSettingsResolver());
-        var options = new CompilerOptions(typeof(NetWasmCompiler).Assembly.Location,
+        var options = new CompilerOptions(typeof(INetWasmCompiler).Assembly.Location,
             [typeof(AssemblyIdentity).Assembly.Location], "Program", "Main", [],
             Optimization: FinalWasmOptimization.O3);
         var disabled = feature switch
@@ -751,7 +751,7 @@ public sealed class FrontendArtifactCacheActorTests
         var wit = Path.GetTempFileName();
         File.WriteAllText(wit, "fixture");
         var options = new CompilerOptions(
-            typeof(NetWasmCompiler).Assembly.Location,
+            typeof(INetWasmCompiler).Assembly.Location,
             [typeof(AssemblyIdentity).Assembly.Location],
             "Program", "Main", [new("run", "Program", "Run")],
             WitPath: wit,
@@ -875,7 +875,7 @@ public sealed class FrontendArtifactCacheActorTests
         var intermediate = Path.Combine(Path.GetTempPath(),
             Guid.NewGuid().ToString("N"));
         var options = new CompilerOptions(
-            typeof(NetWasmCompiler).Assembly.Location,
+            typeof(INetWasmCompiler).Assembly.Location,
             [typeof(AssemblyIdentity).Assembly.Location],
             "Program", "Main", [],
             IntermediateOutputPath: intermediate);
@@ -925,7 +925,7 @@ public sealed class FrontendArtifactCacheActorTests
     [Fact]
     public void BindingFingerprintIgnoresMvidAndMethodBodyRvasButRetainsMetadata()
     {
-        var original = File.ReadAllBytes(typeof(NetWasmCompiler).Assembly.Location);
+        var original = File.ReadAllBytes(typeof(INetWasmCompiler).Assembly.Location);
         var changedNoise = (byte[])original.Clone();
         using (var stream = new MemoryStream(changedNoise, writable: true))
         using (var pe = new PEReader(stream, PEStreamOptions.LeaveOpen))

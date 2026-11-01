@@ -303,12 +303,12 @@ public sealed class RuntimeTypeCompilationTests
         var compilation = global::Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
             "VoidRuntimeType.Desktop",
             [global::Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(
-                VoidRuntimeTypeSource)],
+                VoidRuntimeTypeSource, cancellationToken: TestContext.Current.CancellationToken)],
             references,
             new global::Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
                 global::Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
         using var assemblyStream = new MemoryStream();
-        var emit = compilation.Emit(assemblyStream);
+        var emit = compilation.Emit(assemblyStream, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(emit.Success);
 
         assemblyStream.Position = 0;

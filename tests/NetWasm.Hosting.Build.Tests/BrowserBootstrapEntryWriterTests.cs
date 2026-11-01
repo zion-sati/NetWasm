@@ -28,6 +28,9 @@ public sealed class BrowserBootstrapEntryWriterTests
         Assert.Contains("export const runNetWasm = createCommandRun(executeNetWasm);", source, StringComparison.Ordinal);
         Assert.Contains("./deployment.json", source, StringComparison.Ordinal);
         Assert.DoesNotContain("function executeNetWasm(", source, StringComparison.Ordinal);
+        Assert.Contains("/hosting/browser-web-platform.mjs\";", source, StringComparison.Ordinal);
+        Assert.Contains("  ...webPlatform,\n", source, StringComparison.Ordinal);
+        BrowserApiBindings.AssertNoneAtImport(source);
     }
 
     [Fact]

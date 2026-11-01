@@ -211,6 +211,40 @@ public sealed class AsyncJSExportFunctionEmitterTests
         Assert.Contains(WasmOpcodes.ThrowRef, body);
     }
 
+    // A date parameter becomes a struct in a value frame that lives until the
+    // method returns its task, and the normal path leaves that frame.
+    [Fact]
+    public void JavaScriptWrapperConvertsADateArgumentInAValueFrame()
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var layouts = new RecordingLayoutProvider();
+        var methods = new FakeProgram();
+        var date = CliTypeIdentity.Named(Assembly, "System", "DateTime", isValueType: true);
+        var emitter = CreateWrapperEmitter(layouts, imports);
+        var interop = new InteropImportPlan([], default, default, default, default, default, default)
+        {
+            Conversions = ImmutableDictionary<string, int>.Empty.Add(JavaScriptConversion.ToManaged(date)!, 77),
+        };
+        byte[] Wrap(CliTypeIdentity parameter) => Calls(emitter.Emit(
+            methods.GetMethod(EntryKey) with
+            {
+                Signature = MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.ManagedReference), parameter),
+            },
+            CreateBinding(methods, CliValueKind.I4),
+            initialization: TestRuntimeInitialization.Create(512),
+            hasFinalizers: false,
+            CreateFunctionIndices(methods),
+            interopImports: interop));
+        int Count(byte[] calls, RuntimeImportSymbol symbol) => calls.Count(call => call == Call(imports.Resolve(symbol)));
+
+        var plain = Wrap(CliTypeIdentity.FromStackKind(CliValueKind.I4));
+        var converted = Wrap(date);
+
+        Assert.Contains(Call(77), converted);
+        Assert.Equal(Count(plain, RuntimeImportSymbol.ValueFrameEnter) + 1, Count(converted, RuntimeImportSymbol.ValueFrameEnter));
+        Assert.Equal(Count(plain, RuntimeImportSymbol.ValueFrameLeave) + 1, Count(converted, RuntimeImportSymbol.ValueFrameLeave));
+    }
+
     [Fact]
     public void WrapperWithoutAJavaScriptBoundaryPassesReferencesThrough()
     {
@@ -342,6 +376,39 @@ public sealed class AsyncJSExportFunctionEmitterTests
             ((IAsyncJSExportResultEmitter)emitter).Emit(binding));
 
         Assert.Contains("only at a JavaScript boundary", exception.Message);
+    }
+
+    // At a JavaScript boundary a date result leaves as its Unix milliseconds and a
+    // string array as a host handle, each through its CoreLib conversion.
+    [Theory]
+    [InlineData("date")]
+    [InlineData("strings")]
+    public void ResultEmitterConvertsAResultThroughItsBoundaryConversion(string kind)
+    {
+        var layouts = new RecordingLayoutProvider();
+        var result = kind == "date"
+            ? CliTypeIdentity.Named(Assembly, "System", "DateTime", isValueType: true)
+            : CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false));
+        var binding = CreateBinding(new FakeProgram(), CliValueKind.I4) with
+        {
+            Return = new JavaScriptAsyncReturn(JavaScriptAsyncReturnKind.Task, result),
+        };
+        var emitter = new AsyncJSExportResultEmitter(
+            layouts,
+            layouts,
+            WasmRuntimeImports.CreateCatalog(),
+            CreateAddressInstructions(layouts),
+            new JavaScriptNullableEmitter(layouts, layouts, CreateAddressInstructions(layouts)),
+            new GeneratedFunctionWriterFactory());
+        const byte conversion = 77;
+        var imports = new InteropImportPlan([], default, default, default, default, default, default)
+        {
+            Conversions = ImmutableDictionary<string, int>.Empty.Add(JavaScriptConversion.FromManaged(result)!, conversion),
+        };
+
+        var body = ((IAsyncJSExportResultEmitter)emitter).Emit(binding, imports);
+
+        Assert.Equal<byte>([WasmOpcodes.Call, conversion, WasmOpcodes.End], body[^3..]);
     }
 
     [Fact]

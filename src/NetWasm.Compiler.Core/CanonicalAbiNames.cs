@@ -6,11 +6,6 @@ namespace NetWasm.Compiler.Core;
 
 public static class CanonicalAbiNames
 {
-    public static string ImportModule(string interfaceName, WasmTarget target) =>
-        interfaceName.Length == 0
-            ? Prefix(target)
-            : $"{Prefix(target)}|{VersionedInterface(interfaceName)}";
-
     public static string ImportModule(
         CanonicalAbiFunction function,
         WasmTarget target) => function.Kind is

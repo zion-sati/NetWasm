@@ -3,7 +3,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // A struct element copied out of an array field by field keeps its reference
 // field in a local. Once the array slot is cleared, that local alone holds the
 // object, which must survive the collections that follow.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class StructElementCopyRootingTests(CorrectnessTestRunner runner)
 {
     [Fact]

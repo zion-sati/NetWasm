@@ -24,10 +24,6 @@ public sealed class WasmInstructionEncodingTests
             [0x04, 0x7f]
         },
         {
-            WasmInstruction.WithOperand(0x05, WasmInstructionOperand.Unsigned64(128)),
-            [0x05, 0x80, 0x01]
-        },
-        {
             WasmInstruction.WithOperand(0x06, WasmInstructionOperand.Signed64(-64)),
             [0x06, 0x40]
         },
@@ -42,10 +38,6 @@ public sealed class WasmInstructionEncodingTests
         {
             WasmInstruction.WithOperand(0x09, WasmInstructionOperand.FromBytes([0xaa, 0xbb])),
             [0x09, 0xaa, 0xbb]
-        },
-        {
-            WasmInstruction.WithOperand(0x0a, WasmInstructionOperand.String("AΩ")),
-            [0x0a, 0x03, 0x41, 0xce, 0xa9]
         },
         {
             WasmInstruction.WithOperand(0x0b, WasmInstructionOperand.Memory(2, 12)),
@@ -73,10 +65,6 @@ public sealed class WasmInstructionEncodingTests
             WasmInstruction.WithOperand(0x1f,
                 WasmInstructionOperand.TryTableCatchAllRef(0x40, 128)),
             [0x1f, 0x40, 0x01, 0x03, 0x80, 0x01]
-        },
-        {
-            WasmInstruction.WithOperand(0x10, WasmInstructionOperand.Byte(0x2a)),
-            [0x10, 0x2a]
         },
         {
             WasmInstruction.WithOperand(
@@ -245,17 +233,17 @@ public sealed class WasmInstructionEncodingTests
         var output = new MemoryWriter();
         var encoder = new RecordingEncoder();
         var registry = new WasmInstructionEncoderRegistry(
-            [new(WasmInstructionOperandShape.Byte, encoder)]);
+            [new(WasmInstructionOperandShape.SignedLeb128, encoder)]);
         var writer = new WasmInstructionWriter(output, registry);
         var instruction = WasmInstruction.WithOperand(
             0x7f,
-            WasmInstructionOperand.Byte(0x2a));
+            WasmInstructionOperand.Signed(42));
 
         writer.Write(instruction);
 
         Assert.Same(instruction, encoder.Instruction);
         Assert.Same(output, encoder.Writer);
-        Assert.Equal(WasmInstructionOperandShape.Byte, encoder.Shape);
+        Assert.Equal(WasmInstructionOperandShape.SignedLeb128, encoder.Shape);
     }
 
     [Fact]
@@ -271,10 +259,9 @@ public sealed class WasmInstructionEncodingTests
 
         var registry = new WasmInstructionEncoderRegistry(
             [new(WasmInstructionOperandShape.None, encoder)]);
-        Assert.Equal(1, registry.Count);
         var missing = Assert.Throws<InvalidOperationException>(() =>
-            registry.Resolve(WasmInstructionOperandShape.Byte));
-        Assert.Contains("Byte", missing.Message);
+            registry.Resolve(WasmInstructionOperandShape.SignedLeb128));
+        Assert.Contains("SignedLeb128", missing.Message);
     }
 
     [Fact]

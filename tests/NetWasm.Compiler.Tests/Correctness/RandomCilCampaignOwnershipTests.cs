@@ -22,8 +22,8 @@ public sealed class RandomCilCampaignOwnershipTests
         var campaign = services.GetRequiredService<IRandomCilInteractionCampaign>();
         try
         {
-            var first = Assert.Single(await campaign.RunAsync(1));
-            var second = Assert.Single(await campaign.RunAsync(1));
+            var first = Assert.Single(await campaign.RunAsync(1, cancellationToken: TestContext.Current.CancellationToken));
+            var second = Assert.Single(await campaign.RunAsync(1, cancellationToken: TestContext.Current.CancellationToken));
 
             Assert.Equal(2, compiler.Compilations.Count);
             Assert.Equal([CilProfile.Debug, CilProfile.Release], compiler.Compilations.Select(item => item.Profile));
@@ -63,8 +63,8 @@ public sealed class RandomCilCampaignOwnershipTests
             .BuildServiceProvider();
         var campaign = services.GetRequiredService<IRandomCilInteractionCampaign>();
 
-        Assert.Same(cause, await Assert.ThrowsAsync<IOException>(() => campaign.RunAsync(1)));
-        Assert.Same(cause, await Assert.ThrowsAsync<IOException>(() => campaign.RunAsync(1)));
+        Assert.Same(cause, await Assert.ThrowsAsync<IOException>(() => campaign.RunAsync(1, cancellationToken: TestContext.Current.CancellationToken)));
+        Assert.Same(cause, await Assert.ThrowsAsync<IOException>(() => campaign.RunAsync(1, cancellationToken: TestContext.Current.CancellationToken)));
 
         Assert.Equal(release ? 2 : 1, compiler.Compilations.Count);
         Assert.Equal(compiler.Compilations[^1].Directory, cause.Data["CorpusTemplateDirectory"]);

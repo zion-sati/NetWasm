@@ -8,7 +8,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // default values, reinterpretation and the vectors' own fields. The results
 // match desktop, whose Vector<T> is as wide as its host's vectors, so a
 // Vector<T> sum counts per lane.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class VectorValueShapesCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -16,7 +15,14 @@ public sealed class VectorValueShapesCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "VectorValueShapesCorpus",
             "NetWasm.Correctness.VectorValueShapes",
-            """
+            Source,
+            [.. Enumerable.Range(0, 17)])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Collections.Generic;
             using System.Numerics;
@@ -262,10 +268,5 @@ public sealed class VectorValueShapesCorpusTests(CorrectnessTestRunner runner)
                     return Sum(total) * 100 + data[5];
                 }
             }
-            """,
-            [.. Enumerable.Range(0, 17)])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

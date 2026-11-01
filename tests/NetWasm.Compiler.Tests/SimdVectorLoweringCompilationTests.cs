@@ -151,6 +151,9 @@ public sealed partial class SimdVectorLoweringCompilationTests
 
         public static class EntryPoint
         {
+            // 1 + 2^-12, whose square needs one bit more than a float holds.
+            private static float s_near = 1f + 1f / 4096;
+
             public static int Run(int input)
             {
                 // Every product is exact, so a fused and an unfused estimate agree.
@@ -158,7 +161,13 @@ public sealed partial class SimdVectorLoweringCompilationTests
                 var d = Vector128.MultiplyAddEstimate(Vector128.Create(2.5 + input, -7.25), Vector128.Create(2.0, -4.0), Vector128.Create(1.0));
                 var numerics = Vector.MultiplyAddEstimate(new Vector<float>(2f + input), new Vector<float>(0.5f), Vector<float>.One);
                 var dn = Vector.MultiplyAddEstimate(new Vector<double>(-1.5 * input), new Vector<double>(6.0), new Vector<double>(0.125));
-                return (int)(Vector128.Sum(f) * 7) + (int)(Vector128.Sum(d) * 5) + (int)(numerics[0] * 3) + (int)(dn[1] * 16);
+                // The product rounds first, as Mono computes it: s_near squared rounds
+                // to 1 + 2^-11, so the estimate is exactly 2^-11. Fused, it would be
+                // 2^-11 + 2^-24.
+                var rounded = Vector128.MultiplyAddEstimate(Vector128.Create(s_near), Vector128.Create(s_near), Vector128.Create(-1f));
+                var scalar = float.MultiplyAddEstimate(s_near, s_near, -1f);
+                return (int)(Vector128.Sum(f) * 7) + (int)(Vector128.Sum(d) * 5) + (int)(numerics[0] * 3) + (int)(dn[1] * 16) +
+                    (rounded.GetElement(2) == 1f / 2048 ? 1000 : 0) + (scalar == 1f / 2048 ? 2000 : 0);
             }
         }
         """;
@@ -178,15 +187,17 @@ public sealed partial class SimdVectorLoweringCompilationTests
         using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
         var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
         Assert.True(printed.ExitCode == 0, printed.StandardError);
-        foreach (var instruction in new[] { "f64x2.promote_low_f32x4", "f32x4.demote_f64x2_zero", "f64x2.mul", "f64x2.add" })
+        foreach (var instruction in new[] { "f32x4.mul", "f32x4.add", "f64x2.mul", "f64x2.add" })
         {
             Assert.Contains(instruction, printed.StandardOutput);
         }
+        Assert.DoesNotContain("f64x2.promote_low_f32x4", printed.StandardOutput);
         var call = SoftwareMultiplyAddCall().Match(printed.StandardOutput);
         Assert.False(call.Success, call.Value);
 
-        // As desktop .NET computes them; every product is exact.
-        foreach (var (input, expected) in new[] { (0, 394), (1, 296), (3, 101) })
+        // As Mono computes them: the exact products agree with desktop, and the
+        // inexact one rounds before the addend, where desktop fuses.
+        foreach (var (input, expected) in new[] { (0, 3394), (1, 3296), (3, 3101) })
         {
             Assert.Equal(expected,
                 ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
@@ -325,6 +336,233 @@ public sealed partial class SimdVectorLoweringCompilationTests
 
     [GeneratedRegex(@"\(func \$EntryPoint::Run .*?(?=\n  \(func |\n  \(export |\z)", RegexOptions.Singleline)]
     private static partial Regex EntryFunction();
+
+    // Vector128.Shuffle of lanes wider than a byte ran upstream's software
+    // implementation, a loop that reads and writes each element through memory;
+    // SpanHelpers.Reverse shuffles every vector it reverses. Every lane width
+    // lowers to i8x16.swizzle by byte indices.
+    private const string ShuffleSource = """
+        using System;
+        using System.Runtime.Intrinsics;
+
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                var ints = Vector128.Shuffle(Vector128.Create(10, 20, 30, 40), Vector128.Create(3, input, 9, -1));
+                var shorts = Vector128.Shuffle(Vector128.Create((short)1, 2, 3, 4, 5, 6, 7, 8), Vector128.Create((short)7, 6, 5, 4, 3, 2, 1, 0));
+                var longs = Vector128.Shuffle(Vector128.Create(5L, 6L), Vector128.Create(1L, input));
+                var floats = Vector128.Shuffle(Vector128.Create(1f, 2f, 3f, 4f), Vector128.Create(0, 0, input, 2));
+                var bytes = Vector128.Shuffle(Vector128.Create((byte)input), Vector128.Create((byte)0, 16, 1, 255, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13));
+                var values = new int[37];
+                for (var i = 0; i < values.Length; i++) values[i] = i * 3 - input;
+                values.AsSpan().Reverse();
+                return ints.GetElement(0) + ints.GetElement(1) * 3 + ints.GetElement(2) * 5 + ints.GetElement(3) * 7
+                    + shorts.GetElement(0) * 11 + (int)longs.GetElement(1) * 13 + (int)floats.GetElement(2) * 17
+                    + bytes.GetElement(0) + bytes.GetElement(1) * 19 + values[0] * 23 + values[36] * 29;
+            }
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void ShufflesOfEveryLaneWidthLowerToSwizzle(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("SimdShuffleLowering", ShuffleSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Target: target, Optimization: preset));
+
+        var module = Path.Combine(assets.Directory, "application.wasm");
+        File.WriteAllBytes(module, result.ApplicationModule);
+        using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+        var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
+        Assert.True(printed.ExitCode == 0, printed.StandardError);
+        Assert.Contains("i8x16.swizzle", printed.StandardOutput);
+        Assert.DoesNotMatch(@"ShuffleFallback|call \$[^\s]*Vector128[^\s]*::Shuffle\b", printed.StandardOutput);
+
+        // As desktop .NET computes them: lane 9 and -1 read zero, as do byte lanes 16 and 255.
+        foreach (var (input, expected) in new[] { (0, 2724), (1, 2733), (2, 2651), (3, 2647) })
+        {
+            Assert.Equal(expected,
+                ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
+        }
+    }
+
+    // Upstream's Vector2, Vector3, Vector4 and matrix code reads lanes with a
+    // constant GetElement index. Vectors of up to four lanes select among their
+    // lanes' extracts, so a constant index leaves one extract_lane, where a byte
+    // swizzle by the index kept a swizzle and a constant load.
+    private const string ElementSource = """
+        using System;
+        using System.Runtime.CompilerServices;
+        using System.Runtime.Intrinsics;
+
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                var v = Vector128.Create(1.5f + input, 2.5f, 3.5f, 4.5f) * Vector128.Create(input + 1f);
+                var longs = Vector128.Create(10L + input, 20L);
+                var broadcast = Vector128.Create(v.GetElement(2));
+                return (int)(v.GetElement(1) * 10) + (int)broadcast.GetElement(3) + (int)longs.GetElement(1) +
+                    Variable(v, input & 3);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Variable(Vector128<float> vector, int index) => (int)vector.GetElement(index);
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void ConstantElementIndicesExtractTheirLane(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("SimdElementLowering", ElementSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Target: target, Optimization: FinalWasmOptimization.O3));
+
+        var module = Path.Combine(assets.Directory, "application.wasm");
+        File.WriteAllBytes(module, result.ApplicationModule);
+        using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+        var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
+        Assert.True(printed.ExitCode == 0, printed.StandardError);
+        var run = Regex.Match(printed.StandardOutput, @"\(func \$EntryPoint::Run [\s\S]*?(?=\n  \(func |\z)").Value;
+        Assert.Contains("f32x4.extract_lane", run);
+        Assert.DoesNotContain("i8x16.swizzle", run);
+
+        // As desktop .NET computes them, with the variable index reading lane input & 3.
+        foreach (var (input, expected) in new[] { (0, 49), (1, 82), (3, 152) })
+        {
+            Assert.Equal(expected,
+                ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
+        }
+    }
+
+    // Upstream builds ZipLower, UnzipEven, ConcatLowerUpper and the rest from
+    // Vector64 halves, which NetWasm runs in software through memory; Matrix4x4's
+    // Transpose and Invert are made of them. Each is one byte shuffle for its lane
+    // width. The program checks every one against the lanes it should pick, built
+    // element by element, so it returns the count of wrong lanes times 1000 plus
+    // the scalars it creates.
+    private const string PermuteSource = """
+        using System;
+        using System.Numerics;
+        using System.Runtime.Intrinsics;
+
+        public static class EntryPoint
+        {
+            public static int Run(int input)
+            {
+                var wrong = Check<byte>(input) + Check<ushort>(input) + Check<int>(input) + Check<long>(input) +
+                    Check<float>(input) + Check<double>(input);
+                var a = new Vector<int>(input);
+                var b = Vector<int>.Indices;
+                wrong += Mismatches(Vector.ZipLower(a, b).AsVector128(), [input, 0, input, 1]) +
+                    Mismatches(Vector.ConcatUpperLower(a, b).AsVector128(), [input, input, 0, 1]);
+                var scalar = Vector128.CreateScalar(input + 5);
+                var single = Vector128.CreateScalar(2.5f * input);
+                var numerics = Vector.CreateScalar((short)(input + 9));
+                var anyUpper = Vector128.CreateScalarUnsafe(input * 3L);
+                return wrong * 1000 + scalar.GetElement(0) + (scalar.GetElement(1) + scalar.GetElement(3)) * 7 +
+                    (int)single.GetElement(0) + (int)single.GetElement(2) * 11 + numerics[0] + numerics[7] * 13 +
+                    (int)anyUpper.GetElement(0);
+            }
+
+            private static int Check<T>(int input) where T : INumber<T>
+            {
+                var count = Vector128<T>.Count;
+                var half = count / 2;
+                var left = new T[count];
+                var right = new T[count];
+                for (var i = 0; i < count; i++)
+                {
+                    left[i] = T.CreateTruncating(i + 1 + input);
+                    right[i] = T.CreateTruncating(100 + i);
+                }
+                var l = Vector128.Create(left);
+                var r = Vector128.Create(right);
+                var zipLower = new T[count];
+                var zipUpper = new T[count];
+                var unzipEven = new T[count];
+                var unzipOdd = new T[count];
+                var lowerLower = new T[count];
+                var lowerUpper = new T[count];
+                var upperLower = new T[count];
+                var upperUpper = new T[count];
+                for (var i = 0; i < half; i++)
+                {
+                    zipLower[2 * i] = left[i];
+                    zipLower[2 * i + 1] = right[i];
+                    zipUpper[2 * i] = left[half + i];
+                    zipUpper[2 * i + 1] = right[half + i];
+                    unzipEven[i] = left[2 * i];
+                    unzipEven[half + i] = right[2 * i];
+                    unzipOdd[i] = left[2 * i + 1];
+                    unzipOdd[half + i] = right[2 * i + 1];
+                    lowerLower[i] = left[i];
+                    lowerLower[half + i] = right[i];
+                    lowerUpper[i] = left[i];
+                    lowerUpper[half + i] = right[half + i];
+                    upperLower[i] = left[half + i];
+                    upperLower[half + i] = right[i];
+                    upperUpper[i] = left[half + i];
+                    upperUpper[half + i] = right[half + i];
+                }
+                return Mismatches(Vector128.ZipLower(l, r), zipLower) + Mismatches(Vector128.ZipUpper(l, r), zipUpper) +
+                    Mismatches(Vector128.UnzipEven(l, r), unzipEven) + Mismatches(Vector128.UnzipOdd(l, r), unzipOdd) +
+                    Mismatches(Vector128.ConcatLowerLower(l, r), lowerLower) +
+                    Mismatches(Vector128.ConcatLowerUpper(l, r), lowerUpper) +
+                    Mismatches(Vector128.ConcatUpperLower(l, r), upperLower) +
+                    Mismatches(Vector128.ConcatUpperUpper(l, r), upperUpper);
+            }
+
+            private static int Mismatches<T>(Vector128<T> actual, T[] expected) where T : INumber<T>
+            {
+                var wrong = 0;
+                for (var i = 0; i < expected.Length; i++)
+                {
+                    if (actual.GetElement(i) != expected[i]) wrong++;
+                }
+                return wrong;
+            }
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void LanePermutationsAndScalarsLowerToShuffles(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("SimdPermuteLowering", PermuteSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Target: target, Optimization: preset));
+
+        var module = Path.Combine(assets.Directory, "application.wasm");
+        File.WriteAllBytes(module, result.ApplicationModule);
+        using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+        var printed = services.GetRequiredService<IWasmTools>().Run("print", module);
+        Assert.True(printed.ExitCode == 0, printed.StandardError);
+        Assert.Contains("i8x16.shuffle", printed.StandardOutput);
+        Assert.DoesNotMatch(
+            @"call \$[^\s]*Vector(64|128)?(`1)?[^\s]*::(ZipLower|ZipUpper|UnzipEven|UnzipOdd|Concat\w+|CreateScalar\w*|GetLower|GetUpper)\b",
+            printed.StandardOutput);
+
+        // No wrong lane; CreateScalar zeroes the lanes above the first.
+        foreach (var (input, expected) in new[] { (0, 5 + 9), (1, 6 + 2 + 10 + 3), (4, 9 + 10 + 13 + 12) })
+        {
+            Assert.Equal(expected,
+                ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
+        }
+    }
 
     [GeneratedRegex(@"call \$[^\s]*Vector(128)?(`1)?[^\s]*::(op_Addition|op_Multiply|op_Subtraction|Equals|ExtractMostSignificantBits|Create)\b")]
     private static partial Regex SoftwareVectorCall();

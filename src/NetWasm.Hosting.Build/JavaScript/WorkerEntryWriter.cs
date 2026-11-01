@@ -152,7 +152,6 @@ public sealed partial class WorkerEntryWriter : IWorkerEntryWriter
         source.AppendLine("  if (onNotification !== null && typeof onNotification !== \"function\") throw new TypeError(\"worker notification handler must be a function\");");
         AppendLine(source, $"  const worker = new Worker(new URL({Json("./" + request.WorkerFileName)}, import.meta.url), {{ type: \"module\" }});");
         source.AppendLine("  const session = createWorkerSessionClient({");
-        source.AppendLine("    generation: crypto.randomUUID(),");
         source.AppendLine("    operations, onNotification,");
         source.AppendLine("    environment: options.environment, stderr: options.stderr, stdout: options.stdout,");
         source.AppendLine("    startup: Object.freeze({");

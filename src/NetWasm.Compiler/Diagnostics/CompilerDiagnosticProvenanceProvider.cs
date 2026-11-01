@@ -28,7 +28,7 @@ internal sealed class CompilerDiagnosticProvenanceProvider :
     {
         ArgumentNullException.ThrowIfNull(options);
         return new CompilerProvenanceArtifact(
-            typeof(NetWasmCompiler).Assembly.GetName().Version!.ToString(),
+            typeof(INetWasmCompiler).Assembly.GetName().Version!.ToString(),
             Environment.Version.ToString(),
             RuntimeInformation.FrameworkDescription,
             RuntimeInformation.OSDescription,

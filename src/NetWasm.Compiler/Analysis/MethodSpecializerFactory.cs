@@ -32,7 +32,8 @@ internal sealed class MethodSpecializerFactory(
         IMethodBodyReader methodBodies,
         WasmOptimizationSettings optimizationSettings,
         IRuntimeIntrinsicRegistry intrinsics,
-        PlatformWorldCapabilities world)
+        PlatformWorldCapabilities world,
+        ITypeIdentityResolver typeIdentities)
     {
         var constrainedTargets = new ConstrainedCallTargetResolver(
             types,
@@ -72,6 +73,12 @@ internal sealed class MethodSpecializerFactory(
             new CreateSpanCallRewriter(
                 calledMethods,
                 new ReadOnlySpanDataResolver()),
+            new RvaPointerSpanRewriter(
+                calledMethods,
+                fields,
+                typeIdentities,
+                typeDefinitions,
+                methods),
             new InitializeArrayCallRewriter(
                 calledMethods,
                 symbols),

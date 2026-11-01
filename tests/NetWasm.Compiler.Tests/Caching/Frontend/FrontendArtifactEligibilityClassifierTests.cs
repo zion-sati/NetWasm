@@ -39,6 +39,19 @@ public sealed class FrontendArtifactEligibilityClassifierTests
             : FrontendArtifactEligibility.Eligible, Classifier().Classify(request));
     }
 
+    // GetType's exact type names a type as a type token does.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ClassifyChecksAnExactTypeOperand(bool entry)
+    {
+        var request = CreateRequest(instructionOperand: new CilOperand.ExactType(
+            CliTypeIdentity.Named(entry ? Entry : Dependency, "Fixture", "Leaf", false)));
+
+        Assert.Equal(entry ? FrontendArtifactEligibility.ReferencesEntryAssembly
+            : FrontendArtifactEligibility.Eligible, Classifier().Classify(request));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -83,7 +83,7 @@ public sealed class LanguageCorpusGeneratorTests
             ["arithmetic", "async", "control-flow", "eh", "iterator", "mixed", "object-model"]));
         Assert.Equal(SyntaxTreeProfileCorpusTemplate.FeatureManifest.Length, cases.Length);
         Assert.All(cases, item => Assert.DoesNotContain(
-            CSharpSyntaxTree.ParseText(item.Fixture.Source).GetDiagnostics(),
+            CSharpSyntaxTree.ParseText(item.Fixture.Source, cancellationToken: TestContext.Current.CancellationToken).GetDiagnostics(TestContext.Current.CancellationToken),
             diagnostic => diagnostic.Severity ==
                 global::Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
     }
@@ -99,7 +99,7 @@ public sealed class LanguageCorpusGeneratorTests
 
         Assert.All(cases, item =>
         {
-            var root = CSharpSyntaxTree.ParseText(item.Fixture.Source).GetRoot();
+            var root = CSharpSyntaxTree.ParseText(item.Fixture.Source, cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken);
             var trace = root.DescendantNodes()
                 .OfType<global::Microsoft.CodeAnalysis.CSharp.Syntax.VariableDeclaratorSyntax>()
                 .Single(variable => variable.Identifier.ValueText == "_trace");

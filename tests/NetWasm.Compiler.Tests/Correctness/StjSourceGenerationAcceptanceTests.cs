@@ -5,7 +5,6 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class StjSourceGenerationAcceptanceTests
 {
     [Fact]
@@ -135,8 +134,8 @@ public sealed class StjSourceGenerationAcceptanceTests
             environment,
             processes,
             profile);
-        var expected = desktop.Run(built.Compilation);
-        var execution = netWasm.CompileAndRun(built.Compilation, target);
+        var expected = desktop.Run(built.Compilation, TestContext.Current.CancellationToken);
+        var execution = netWasm.CompileAndRun(built.Compilation, target, TestContext.Current.CancellationToken);
 
         Assert.True(execution.Executed);
         Assert.Equal(target, execution.Target);
@@ -167,8 +166,8 @@ public sealed class StjSourceGenerationAcceptanceTests
             environment,
             processes,
             CilProfile.Debug);
-        var expected = desktop.Run(built.Compilation);
-        var execution = netWasm.CompileAndRun(built.Compilation, WasmTarget.Wasm32);
+        var expected = desktop.Run(built.Compilation, TestContext.Current.CancellationToken);
+        var execution = netWasm.CompileAndRun(built.Compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken);
 
         Assert.True(execution.Executed);
         Assert.Equal(expected.Keys.Order(), execution.Observations.Keys.Order());

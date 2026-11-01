@@ -163,20 +163,27 @@ internal sealed class StructLocalScalarReplacer(
             }
             var localFields = layouts[local];
             var type = body.LocalSignatureTypes[local];
-            Plan? plan = (address, instruction.Operation) switch
+            // A value ldfld reads or pop drops; every other access takes the
+            // address. A field of another type, as Unsafe.As reads one, or a
+            // whole access of another type keeps the struct whole.
+            Plan? plan = instruction.Operation switch
             {
-                (_, CilOperation.LoadField) when FieldOf(localFields, instruction.Operand) is { } field =>
-                    new LoadField(local, field),
-                (true, CilOperation.LoadFieldAddress) when FieldOf(localFields, instruction.Operand) is { } field =>
-                    new FieldAddress(local, field),
-                (true, CilOperation.StoreField) when FieldOf(localFields, instruction.Operand) is { } field &&
-                    StoreConversion(field.Type, stack[^1]) is { } conversion =>
-                    new StoreField(local, field, conversion),
-                (true, CilOperation.InitializeObject) when Operates(instruction, type) => new Clear(local),
-                (true, CilOperation.LoadObject) when Operates(instruction, type) => new LoadWhole(local),
-                (true, CilOperation.StoreObject) when Operates(instruction, type) => new StoreWhole(local),
-                (true, CilOperation.Pop) => new Removed(local),
-                _ => null,
+                CilOperation.LoadField =>
+                    FieldOf(localFields, instruction.Operand) is { } field ? new LoadField(local, field) : null,
+                _ when !address => null,
+                CilOperation.LoadFieldAddress =>
+                    FieldOf(localFields, instruction.Operand) is { } field ? new FieldAddress(local, field) : null,
+                CilOperation.StoreField =>
+                    FieldOf(localFields, instruction.Operand) is { } field &&
+                        StoreConversion(field.Type, stack[^1]) is { } conversion
+                        ? new StoreField(local, field, conversion)
+                        : null,
+                CilOperation.Pop => new Removed(local),
+                _ when !Operates(instruction, type) => null,
+                CilOperation.InitializeObject => new Clear(local),
+                CilOperation.LoadObject => new LoadWhole(local),
+                // stobj, the last access the slot above takes.
+                _ => new StoreWhole(local),
             };
             if (plan is null) continue;
             plans[producer] = new Removed(local);
@@ -251,11 +258,11 @@ internal sealed class StructLocalScalarReplacer(
         }
         // A struct of declared size keeps bytes beyond its fields, which only
         // a whole read of the value could expose.
+        // Each copy's target sits with its source.
         rejected.UnionWith(sized.Where(local => plans.Values.Any(plan => plan switch
         {
             LoadWhole load => load.Local == local,
             CopySource copy => copy.From == local || copy.To == local,
-            CopyTarget copy => copy.From == local || copy.To == local,
             _ => false,
         })));
         var split = layouts.Keys.Where(local => accessed.Contains(local) && !rejected.Contains(local)).ToHashSet();
@@ -312,9 +319,8 @@ internal sealed class StructLocalScalarReplacer(
             .SelectMany(block => block.Instructions.Select(instruction => (instruction.Offset, block.Index)))
             .ToDictionary(pair => pair.Offset, pair => pair.Index);
         var loops = _loops.Analyze(graph, graph.Entry.Index, graph.ReachableBlocks);
-        int Depth(int index) => blocks.TryGetValue(instructions[index].Offset, out var block)
-            ? loops.Count(loop => loop.Contains(block))
-            : 0;
+        // Blocks partition the body, so each instruction has one.
+        int Depth(int index) => loops.Count(loop => loop.Contains(blocks[instructions[index].Offset]));
         bool changed;
         do
         {
@@ -379,25 +385,21 @@ internal sealed class StructLocalScalarReplacer(
         return result.Count == 0 ? null : result.ToImmutable();
     }
 
+    // A byref's kind is an address and a generic parameter's unknown, so
+    // neither is one; a modified field keeps its memory semantics.
     private static bool IsScalar(CliTypeIdentity type) =>
         type.StackKind is CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8 or
             CliValueKind.NativeInt or CliValueKind.ManagedReference &&
-        type.Shape is not (CliTypeShape.ManagedByReference or CliTypeShape.GenericTypeParameter or
-            CliTypeShape.GenericMethodParameter or CliTypeShape.Modified);
+        type.Shape != CliTypeShape.Modified;
 
     private static Field? FieldOf(ImmutableArray<Field> fields, CilOperand operand)
     {
-        var key = operand switch
-        {
-            CilOperand.FieldInstance instance => instance.Value.Definition.Key,
-            CilOperand.Entity entity => entity.Key,
-            _ => (EntityKey?)null,
-        };
-        return key is null ? null : fields.FirstOrDefault(field => field.Instance.Definition.Key == key);
+        var key = CilOperands.FieldKey(operand);
+        return fields.FirstOrDefault(field => field.Instance.Definition.Key == key);
     }
 
     private static bool Operates(CilInstruction instruction, CliTypeIdentity type) =>
-        instruction.Operand is CilOperand.TypeIdentity { Value: var operand } && operand.Equals(type);
+        CilOperands.Type(instruction.Operand).Equals(type);
 
     // Whether the instruction only pushes a value or stores another local, so
     // the local keeps the value an earlier load of it read.
@@ -410,27 +412,29 @@ internal sealed class StructLocalScalarReplacer(
     };
 
     // Whether the instruction reads a whole value of the type from memory, an
-    // unprefixed ldobj or ldelem.
+    // unprefixed ldobj or ldelem. Either follows the address or array it reads.
     private static bool IsMemorySource(ImmutableArray<CilInstruction> instructions, int index, CliTypeIdentity type) =>
         instructions[index].Operation is CilOperation.LoadObject or CilOperation.LoadArrayElement &&
         Operates(instructions[index], type) &&
-        (index == 0 || instructions[index - 1].Operation is not (CilOperation.Volatile or CilOperation.Unaligned));
+        instructions[index - 1].Operation is not (CilOperation.Volatile or CilOperation.Unaligned);
 
     // Whether an indirect load, store or initobj reads, writes or clears
     // exactly a field of the given type, as an access to its own local would.
     private static bool AccessesField(CilInstruction instruction, CliTypeIdentity field) =>
         instruction.Operation is CilOperation.LoadObject or CilOperation.StoreObject or CilOperation.InitializeObject &&
-        instruction.Operand is CilOperand.TypeIdentity { Value: var type } &&
+        CilOperands.Type(instruction.Operand) is var type &&
         (field.StackKind == CliValueKind.ManagedReference
             ? type.StackKind == CliValueKind.ManagedReference
             : LocalAddressDereferenceFolder.Width(type) is { } width &&
                 width == LocalAddressDereferenceFolder.Width(field));
 
     // What a store to the field does to its value beyond a store to a local of
-    // the field's type: truncate it to the field's width, or round it to its
-    // precision. Null when the stack value is of another kind.
+    // the field's type: truncate it to the field's width. The typed stack holds
+    // a value of the field's own kind, or an address a native int field takes,
+    // which keeps the struct whole: null.
     private static ImmutableArray<CilInstruction>? StoreConversion(CliTypeIdentity field, CliValueKind value)
     {
+        if (value != field.StackKind) return null;
         var narrowing = field.CanonicalName switch
         {
             "primitive:bool" or "primitive:u1" => (8, true),
@@ -439,19 +443,9 @@ internal sealed class StructLocalScalarReplacer(
             "primitive:i2" => (16, false),
             _ => ((int Bits, bool Unsigned)?)null,
         };
-        if (narrowing is { } width)
-        {
-            return value == CliValueKind.I4
-                ? [Synthetic(CilOperation.ConvertNumeric, new CilOperand.NumericConversion(width.Bits, width.Unsigned, false, false, false))]
-                : null;
-        }
-        return (field.StackKind, value) switch
-        {
-            (CliValueKind.F4, CliValueKind.F8) => [Synthetic(CilOperation.ConvertFloat32, new CilOperand.None())],
-            (CliValueKind.F8, CliValueKind.F4) => [Synthetic(CilOperation.ConvertFloat64, new CilOperand.None())],
-            var (kind, stackKind) when kind == stackKind => [],
-            _ => null,
-        };
+        return narrowing is { } width
+            ? [Synthetic(CilOperation.ConvertNumeric, new CilOperand.NumericConversion(width.Bits, width.Unsigned, false, false, false))]
+            : [];
     }
 
     private static CilInstruction Synthetic(CilOperation operation, CilOperand operand) => new(0, 1, operation, operand);

@@ -66,7 +66,7 @@ public sealed class AggregateFieldHoistingRewriterTests
     }
 
     [Fact]
-    public void RewriteRemapsSwitchTargetsAndExceptionRegions()
+    public void RewriteRemapsBranchTargetsAndExceptionRegions()
     {
         var body = Body();
         body = body with
@@ -76,8 +76,8 @@ public sealed class AggregateFieldHoistingRewriterTests
                 .. body.Instructions.Select(instruction => instruction.Offset == 5
                     ? instruction with
                     {
-                        Operation = CilOperation.Switch,
-                        Operand = new CilOperand.SwitchTargets([3, 7, 10]),
+                        Operation = CilOperation.BranchIfTrue,
+                        Operand = new CilOperand.BranchTarget(7),
                     }
                     : instruction),
             ],
@@ -105,9 +105,7 @@ public sealed class AggregateFieldHoistingRewriterTests
         var rewritten = new AggregateFieldHoistingRewriter(
             new FixedPlanner(Plan(body))).Rewrite(body);
 
-        var targets = Assert.IsType<CilOperand.SwitchTargets>(
-            rewritten.Instructions[8].Operand);
-        Assert.Equal([6, 10, 13], targets.Offsets.ToArray());
+        Assert.Equal(10, Assert.IsType<CilOperand.BranchTarget>(rewritten.Instructions[8].Operand).Offset);
         Assert.Collection(
             rewritten.ExceptionRegions,
             region =>

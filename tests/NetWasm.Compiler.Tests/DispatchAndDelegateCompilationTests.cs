@@ -340,7 +340,7 @@ public sealed class DispatchAndDelegateCompilationTests
 
         Assert.Equal(2, result.Program.DelegateTypes.Length);
         Assert.Equal(2, result.Program.DelegateTypes
-            .Select(type => result.Layouts.ObjectIdentityLayouts[type].TypeId)
+            .Select(type => result.Layouts.TypeLayouts.ObjectIdentities[type].TypeId)
             .Distinct().Count());
         Assert.Equal(4095, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
     }

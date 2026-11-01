@@ -11,11 +11,7 @@ public sealed class ManagedLayoutSnapshot :
     ITypeDescriptorSource,
     IEnumMetadataSource
 {
-    public const int Wasm32ObjectHeaderSize = 4;
-    public const int Wasm32StringLengthOffset = 4;
-    public const int Wasm32StringDataOffset = 8;
     public const int Wasm32ArrayLengthOffset = 4;
-    public const int Wasm32ArrayDataPointerOffset = 8;
     internal const int StaticDataStart = 16;
 
     internal ManagedLayoutSnapshot(
@@ -68,21 +64,8 @@ public sealed class ManagedLayoutSnapshot :
     public ImmutableArray<int> StaticRootAddresses => StaticData.StaticRootAddresses;
     public IReadOnlyDictionary<EntityKey, ObjectLayout> ObjectLayouts =>
         TypeLayouts.Objects;
-    public IReadOnlyDictionary<CliTypeIdentity, ObjectLayout> ObjectIdentityLayouts =>
-        TypeLayouts.ObjectIdentities;
-    public IReadOnlyDictionary<CliTypeIdentity, ObjectLayout> ConstructedObjectLayouts =>
-        TypeLayouts.ConstructedObjects;
     public IReadOnlyDictionary<CliTypeIdentity, ValueLayout> ValueLayouts =>
         TypeLayouts.ValueLayoutState.Values;
-    public IReadOnlyDictionary<EntityKey, FieldLayout> InstanceFieldLayouts =>
-        TypeLayouts.ValueLayoutState.Fields;
-    public IReadOnlyDictionary<string, FieldLayout> ConstructedInstanceFieldLayouts =>
-        TypeLayouts.ValueLayoutState.ConstructedFields;
-    public IReadOnlyDictionary<EntityKey, StaticFieldLayout> StaticFieldLayouts =>
-        StaticData.StaticFields;
-    public IReadOnlyDictionary<string, StaticFieldLayout> ConstructedStaticFieldLayouts =>
-        StaticData.ConstructedStaticFields;
-    public IReadOnlyDictionary<string, StringLayout> StringLayouts => StaticData.Strings;
 
     private int GetTypeId(string fullName) => TypeLayouts.ObjectsByName.TryGetValue(
         fullName,

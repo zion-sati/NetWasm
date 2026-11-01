@@ -3,7 +3,6 @@ using System.Reflection.Emit;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
-using System.Security.Cryptography;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.NativeInterop;
 
@@ -102,8 +101,6 @@ public sealed class ManagedAssemblyContractTests
         using (parsed)
         {
             Assert.Equal("Contracts", parsed.Identity.Name);
-            Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(bytes)), parsed.ContentSha256);
-            Assert.Same(parsed.ContentSha256, parsed.ContentSha256);
             Assert.Equal(parsed.References.Order(StringComparer.Ordinal), parsed.References);
             Assert.NotEmpty(parsed.References);
             Assert.Equal(parsed.Methods.Count, native.Calls);

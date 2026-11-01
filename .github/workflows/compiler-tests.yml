@@ -27,6 +27,18 @@ on:
         description: File listing the test classes to run, one per line; empty runs every compiler test.
         type: string
         default: ''
+      corpus-backend:
+        description: NETWASM_CORPUS_BACKEND for every shard; linked runs each executed fixture on the linked runtime.
+        type: string
+        default: ''
+      collector:
+        description: NETWASM_CORPUS_COLLECTOR, the linked runtime's collector; empty is Compact.
+        type: string
+        default: ''
+      gc-stress:
+        description: Collect before every allocation on the linked runtime (NETWASM_CORPUS_GC_STRESS).
+        type: boolean
+        default: false
       coverage:
         description: Collect each shard's Coverlet JSON report as an artifact.
         type: boolean
@@ -161,6 +173,9 @@ jobs:
         shell: bash
         env:
           CORPUS_PROFILE: ${{ inputs.corpus-profile }}
+          CORPUS_BACKEND: ${{ inputs.corpus-backend }}
+          CORPUS_COLLECTOR: ${{ inputs.collector }}
+          GC_STRESS: ${{ inputs.gc-stress }}
           TEST_CLASSES: ${{ inputs.classes }}
           COVERAGE: ${{ inputs.coverage }}
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
@@ -172,6 +187,15 @@ jobs:
           export PATH="$RUNNER_TEMP/emsdk/upstream/bin:$PATH"
           if [[ -n "$CORPUS_PROFILE" ]]; then
             export NETWASM_CORPUS_PROFILE="$CORPUS_PROFILE"
+          fi
+          if [[ -n "$CORPUS_BACKEND" ]]; then
+            export NETWASM_CORPUS_BACKEND="$CORPUS_BACKEND"
+          fi
+          if [[ -n "$CORPUS_COLLECTOR" ]]; then
+            export NETWASM_CORPUS_COLLECTOR="$CORPUS_COLLECTOR"
+          fi
+          if [[ "$GC_STRESS" == true ]]; then
+            export NETWASM_CORPUS_GC_STRESS=1
           fi
           NETWASM_NODE_PATH="$(command -v node)"
           export NETWASM_NODE_PATH

@@ -20,7 +20,7 @@ public sealed class BrowserComponentOrderedCaptureTests
         { Optimization = optimization };
         var workspace = new BrowserComponentCoreModuleWorkspace("v/env.wasm", "v/host.wasm", "v/command.wasm",
             "v/merged.wasm", "v/sanitized.wasm", "v/runtime-sanitized.wasm");
-        var captured = BrowserComponentCoreModules.CreateLinkPlan(request, workspace);
+        var captured = BrowserComponentCoreModules.CreateOrderedLinkPlan(request, workspace);
         var operations = captured.Operations;
 
         Assert.IsType<BrowserLinkTextOperation>(operations[0]);

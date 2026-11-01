@@ -172,9 +172,11 @@ export function report(value) {
 }
 ```
 
-Publish with `NetWasmPublishTarget=browser`, serve the publish directory over
-HTTPS or from `localhost`, and call the generated `run()` from
-`./browser/<AssemblyName>.mjs` in the page's module script. It starts the
+Publish with `NetWasmPublishTarget=browser`, serve the publish directory from
+any static web server, and call the generated `run()` from
+`./browser/<AssemblyName>.mjs` in the page's module script. During development,
+`dotnet run -p:NetWasmPublishTarget=browser` does both; see
+[Run a browser project](#run-a-browser-project). It starts the
 published deployment with the project's arguments, environment and grants; see
 [JavaScript interop](javascript-interop.md) for its options and for
 `executeNetWasm`, which takes a request you build yourself. This is an authored
@@ -264,6 +266,27 @@ A preopen grants the host-side filesystem capability; it does not create the
 currently missing general `System.IO.File`, `FileStream` or `Directory` API
 surface. Those APIs remain outside the first-preview profile.
 
+
+### Run a browser project
+
+`dotnet run` runs what `dotnet publish` produces. An application published for
+the local launcher, the default, runs in Node. A browser project, a `JsModule`
+or `WitWebWorker` project or an application published with
+`NetWasmPublishTarget=browser`, publishes to a staging directory under `obj`
+and serves it on `http://localhost:5080/`, or another free port when 5080 is in
+use, until you stop it:
+
+```text
+$ dotnet run
+Now listening on: http://localhost:5080/
+```
+
+Open the address to load the page the project publishes, its `index.html`. A
+project that publishes no `index.html`, such as a worker module whose page is in
+another project, stops with `NWSDK052`; run the project with the page instead.
+Choose the port with `dotnet run -- --port 8080`. The server is for
+development: it listens on the loopback interface only and serves each file as
+it is on disk, without caching. A library cannot be run (`NWSDK018`).
 ## 4. Publish
 
 Publish a portable local deployment:

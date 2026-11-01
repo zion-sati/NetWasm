@@ -5,7 +5,6 @@ using NetWasm.Compiler.Tests.Correctness;
 
 namespace NetWasm.Compiler.Tests;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class BoundedArrayCompilationTests(CorrectnessTestRunner runner) : EmittedAssemblyTestBase(runner)
 {
     [Theory]

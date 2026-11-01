@@ -238,8 +238,14 @@ NetWasmGcResult netwasm_gc_allocate(
     if (gc == NULL || result == NULL || gc->collecting) return NETWASM_GC_INVALID_ARGUMENT;
     if (bytes > SIZE_MAX - HEADER - ALIGNMENT * 2 - sizeof(Large)) return NETWASM_GC_SIZE_OVERFLOW;
     size_t size = (HEADER + (bytes == 0 ? 1 : bytes) + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
+#ifdef NETWASM_GC_STRESS
+    // Qualification only: collect before every allocation, so a reference
+    // held without a root is freed at the first chance.
+    if (gc->object_count != 0) netwasm_gc_collect(gc);
+#else
     if ((size >= gc->next_collection || gc->occupied_bytes >= gc->next_collection - size) &&
         gc->object_count != 0) netwasm_gc_collect(gc);
+#endif
     unsigned char *object = size <= SMALL_LIMIT
         ? allocate_small(gc, size) : allocate_large(gc, bytes, &size);
     if (object == NULL) return NETWASM_GC_OUT_OF_MEMORY;
@@ -362,6 +368,11 @@ static void sweep(NetWasmGc *gc)
                     *word = size | FREE;
                     set_start(chunk, object, false);
                     memcpy(object, &gc->free[size / ALIGNMENT - 1], sizeof(unsigned char *));
+#ifdef NETWASM_GC_STRESS
+                    // A freed object reads as garbage, not as itself, until
+                    // allocation zeroes its slot again.
+                    memset(object + sizeof(unsigned char *), 0xA5, size - HEADER - sizeof(unsigned char *));
+#endif
                     gc->free[size / ALIGNMENT - 1] = object;
                 }
                 slot += size;

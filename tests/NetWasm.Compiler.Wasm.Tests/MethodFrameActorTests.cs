@@ -40,6 +40,28 @@ public sealed class MethodFrameActorTests
             Calls(new WasmBinarySnapshotReader(outputBuffer).Read()));
     }
 
+    // A frame that holds references is on the collector's list and leaves
+    // through the mapped leave; one without restores the list it recorded.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LeavesAValueFrameByWhetherItHoldsReferences(bool mapped)
+    {
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var context = CreateContext() with
+        {
+            ValueFrameReferences = mapped ? new([1], [(false, 0)]) : ValueFrameReferenceMap.Empty,
+        };
+        var outputBuffer = new WasmBinaryBuffer();
+        var code = new WasmInstructionWriter(new WasmBinaryWriter(outputBuffer));
+
+        CreateMethodFrameExit(imports).Emit(code, context);
+
+        var calls = Calls(new WasmBinarySnapshotReader(outputBuffer).Read());
+        Assert.Contains(imports.Resolve(mapped ? RuntimeImportSymbol.ValueFrameLeaveMapped : RuntimeImportSymbol.ValueFrameLeave), calls);
+        Assert.DoesNotContain(imports.Resolve(mapped ? RuntimeImportSymbol.ValueFrameLeave : RuntimeImportSymbol.ValueFrameLeaveMapped), calls);
+    }
+
     [Fact]
     public void Memory64UsesI64ForFilterEnvironmentAddress()
     {

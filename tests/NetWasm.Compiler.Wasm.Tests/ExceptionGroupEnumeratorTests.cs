@@ -35,6 +35,8 @@ public sealed class ExceptionGroupEnumeratorTests
         var filter = Group(12, []);
         var continuation = Group(13, []);
         var continuationDispatcherExit = Group(14, []);
+        var labeledBlock = Group(15, []);
+        var labeledLoop = Group(16, []);
         var sequence = new StructuredSequence(
         [
             new StructuredCode(Occurrence()),
@@ -61,6 +63,8 @@ public sealed class ExceptionGroupEnumeratorTests
                 [new StructuredDispatcherExit(
                     new StructuredBlockId(0),
                     Sequence(dispatcherExit))]),
+            new StructuredLabeledBlock(new StructuredBlockId(0), Sequence(labeledBlock)),
+            new StructuredLabeledLoop(new StructuredBlockId(0), Sequence(labeledLoop)),
         ]);
         var parent = Group(
             0,
@@ -98,6 +102,8 @@ public sealed class ExceptionGroupEnumeratorTests
             filter,
             continuation,
             continuationDispatcherExit,
+            labeledBlock,
+            labeledLoop,
         ],
         [parent.Id, direct.Id]);
 
@@ -114,6 +120,8 @@ public sealed class ExceptionGroupEnumeratorTests
                 postContinue.Id,
                 postExit.Id,
                 dispatcherExit.Id,
+                labeledBlock.Id,
+                labeledLoop.Id,
                 handler.Id,
                 filter.Id,
                 continuation.Id,

@@ -233,7 +233,7 @@ internal sealed class AttributeProvenanceAnalyzer(
                 CilOperation.BranchIfGreaterThanOrEqualSigned or CilOperation.BranchIfGreaterThanOrEqualUnsigned or
                 CilOperation.BranchIfLessThanSigned or CilOperation.BranchIfLessThanUnsigned or
                 CilOperation.BranchIfLessThanOrEqualSigned or CilOperation.BranchIfLessThanOrEqualUnsigned or
-                CilOperation.Switch or CilOperation.StoreArgument or CilOperation.StoreField or
+                CilOperation.StoreArgument or CilOperation.StoreField or
                 CilOperation.StoreStaticField or CilOperation.StoreObject or CilOperation.CopyObject or
                 CilOperation.InitializeObject or CilOperation.CopyBlock or CilOperation.InitializeBlock or
                 CilOperation.InitializeArrayData or CilOperation.StoreArrayElementReference or

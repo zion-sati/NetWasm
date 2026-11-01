@@ -21,6 +21,14 @@ internal sealed class DefaultComparerCallRewriter(
     bool devirtualize) : IMethodRewriteRule
 {
     private readonly NullableTypeResolver _nullableTypes = new();
+    private readonly ITypeDefinitionResolver _typeDefinitions = typeDefinitions ?? throw new ArgumentNullException(nameof(typeDefinitions));
+    private readonly IMethodRepository _methods = methods ?? throw new ArgumentNullException(nameof(methods));
+    private readonly IMethodInstanceResolver _methodInstances = methodInstances ?? throw new ArgumentNullException(nameof(methodInstances));
+    private readonly ITypeFinder _types = types ?? throw new ArgumentNullException(nameof(types));
+    private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
+    private readonly ISymbolFormatter _symbols = symbols ?? throw new ArgumentNullException(nameof(symbols));
+    private readonly ITypeRelationshipClassifier _relationships = relationships ?? throw new ArgumentNullException(nameof(relationships));
+    private readonly IConstrainedCallTargetResolver _targets = targets ?? throw new ArgumentNullException(nameof(targets));
     private readonly IStackValueConsumerFinder _consumers = consumers ?? throw new ArgumentNullException(nameof(consumers));
 
     public CilMethodBody Rewrite(CilMethodBody body)
@@ -35,7 +43,7 @@ internal sealed class DefaultComparerCallRewriter(
                 continue;
             }
 
-            var target = calledMethods.Resolve(call);
+            var target = _calledMethods.Resolve(call);
             if (target is null || target.Definition.Name != "CreateDefaultComparer" ||
                 target.DeclaringType.Shape != CliTypeShape.GenericInstantiation ||
                 target.DeclaringType.TypeArguments is not [var comparedType])
@@ -43,21 +51,21 @@ internal sealed class DefaultComparerCallRewriter(
                 continue;
             }
 
-            if (Comparer(symbols.Format(target.Definition.DeclaringType), comparedType) is not
+            if (Comparer(_symbols.Format(target.Definition.DeclaringType), comparedType) is not
                 var (comparerDefinition, comparerType, comparerArguments))
             {
                 continue;
             }
 
             var constructor = comparerDefinition.Methods
-                .Select(methods.GetMethod)
+                .Select(_methods.GetMethod)
                 .Single(method => method.Name == ".ctor" &&
                     !method.IsStatic &&
                     method.Signature.ParameterTypes.IsEmpty);
-            var comparerConstructor = methodInstances.ResolveMethodInstance(
+            var comparerConstructor = _methodInstances.ResolveMethodInstance(
                 constructor.Key.Assembly,
                 constructor.Key.MetadataToken,
-                symbols.Format(constructor),
+                _symbols.Format(constructor),
                 0,
                 new CliGenericContext(comparerArguments, []));
             instructions[index] = call with
@@ -86,12 +94,12 @@ internal sealed class DefaultComparerCallRewriter(
         for (var index = 0; index < body.Instructions.Length; index++)
         {
             if (body.Instructions[index].Operation != CilOperation.Call ||
-                calledMethods.Resolve(body.Instructions[index]) is not
+                _calledMethods.Resolve(body.Instructions[index]) is not
                 {
                     Definition.Name: "get_Default",
                     DeclaringType: { Shape: CliTypeShape.GenericInstantiation, TypeArguments: [var comparedType] },
                 } getter ||
-                symbols.Format(getter.Definition.DeclaringType) is var owner &&
+                _symbols.Format(getter.Definition.DeclaringType) is var owner &&
                 Comparer(owner, comparedType) is not var (definition, type, arguments))
             {
                 continue;
@@ -100,11 +108,10 @@ internal sealed class DefaultComparerCallRewriter(
             if (_consumers.Find(body.Instructions, entries, index) is not { } consumer ||
                 body.Instructions[consumer].Operation != CilOperation.CallVirtual ||
                 body.Instructions[consumer - 1].Operation == CilOperation.Constrained ||
-                calledMethods.Resolve(body.Instructions[consumer]) is not { Definition.IsStatic: false } declared ||
-                symbols.Format(declared.Definition.DeclaringType) != owner ||
-                declared.Definition.Name is not ("Equals" or "GetHashCode" or "Compare") ||
+                _calledMethods.Resolve(body.Instructions[consumer]) is not { Definition.IsStatic: false } declared ||
+                _symbols.Format(declared.Definition.DeclaringType) != owner ||
                 // Only the comparer's own override; an inherited one stays virtual.
-                targets.Resolve(new ConstrainedCallTargetRequest(
+                _targets.Resolve(new ConstrainedCallTargetRequest(
                     type, definition, declared.Definition, declared.Signature, arguments, [])) is not
                     {
                         IsStatic: false, HasManagedBody: true,
@@ -116,10 +123,10 @@ internal sealed class DefaultComparerCallRewriter(
             instructions[consumer] = instructions[consumer] with
             {
                 Operation = CilOperation.Call,
-                Operand = new CilOperand.MethodInstance(methodInstances.ResolveMethodInstance(
+                Operand = new CilOperand.MethodInstance(_methodInstances.ResolveMethodInstance(
                     implementation.Key.Assembly,
                     implementation.Key.MetadataToken,
-                    symbols.Format(implementation),
+                    _symbols.Format(implementation),
                     0,
                     new CliGenericContext(arguments, [])) with
                 {
@@ -141,7 +148,7 @@ internal sealed class DefaultComparerCallRewriter(
         {
             return null;
         }
-        var definition = types.FindType(selection.ComparerName);
+        var definition = _types.FindType(selection.ComparerName);
         var type = selection.TypeArguments.IsEmpty
             ? CliTypeIdentity.FromDefinition(definition)
             : CliTypeIdentity.GenericInstantiation(CliTypeIdentity.FromDefinition(definition), selection.TypeArguments);
@@ -187,15 +194,15 @@ internal sealed class DefaultComparerCallRewriter(
     private bool IsEnum(CliTypeIdentity type) =>
         type.IsValueType &&
         type.Shape is CliTypeShape.Named or CliTypeShape.GenericInstantiation &&
-        typeDefinitions.ResolveTypeIdentity(type).IsEnum;
+        _typeDefinitions.ResolveTypeIdentity(type).IsEnum;
 
     private bool Implements(CliTypeIdentity comparedType, string interfaceName)
     {
-        var interfaceDefinition = types.FindType(interfaceName);
+        var interfaceDefinition = _types.FindType(interfaceName);
         var interfaceType = CliTypeIdentity.GenericInstantiation(
             CliTypeIdentity.FromDefinition(interfaceDefinition),
             [comparedType]);
-        return relationships.Classify(comparedType, interfaceType).IsAssignmentCompatible;
+        return _relationships.Classify(comparedType, interfaceType).IsAssignmentCompatible;
     }
 
     private static Selection NonGeneric(string comparerName) =>

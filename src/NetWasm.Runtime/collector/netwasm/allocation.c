@@ -18,7 +18,8 @@ static __attribute__((noinline)) void *allocate_slow(size_t bytes, bool contains
 
 void *collector_allocate_object(size_t bytes, bool contains_references)
 {
-#ifdef NETWASM_GC_COMPACT
+    /* Stress collects in the slow path, so every allocation takes it. */
+#if defined(NETWASM_GC_COMPACT) || defined(NETWASM_GC_STRESS)
     return allocate_slow(bytes, contains_references);
 #else
     void *result = netwasm_gc_try_allocate_available(

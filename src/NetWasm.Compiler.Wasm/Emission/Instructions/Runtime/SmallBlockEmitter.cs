@@ -91,6 +91,40 @@ internal static class SmallBlockEmitter
         }, index => cases[index].Minimum);
     }
 
+    // Zeroes a block whose size the compiler knows, as initobj and default(T)
+    // do: up to the inline limit, a store of 16, 8, 4, 2 or 1 bytes for each
+    // part, which a small struct needs only a few of.
+    public static bool TryEmitKnownSizeZero(IWasmInstructionWriter code, int destination, int size)
+    {
+        if (size > InlineLimit)
+        {
+            return false;
+        }
+        for (var written = 0; written < size;)
+        {
+            var width = (size - written) switch
+            {
+                >= 16 => 16,
+                >= 8 => 8,
+                >= 4 => 4,
+                >= 2 => 2,
+                _ => 1,
+            };
+            Get(code, destination);
+            code.Write(width switch
+            {
+                16 => WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])),
+                8 => WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0)),
+                _ => WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)),
+            });
+            Store(code, width, (uint)written);
+            written += width;
+        }
+        return true;
+    }
+
     // Fills byteCount bytes at the destination, a whole number of elements of
     // elementSize bytes (2, 4 or 8), with the vector of elements that `pattern`
     // pushes. Chunks overlap at the end, as EmitFill's do; each starts a whole
@@ -290,31 +324,33 @@ internal static class SmallBlockEmitter
         }
     }
 
+    // The fill byte repeated across a store of the width (16, 8, 4, 2 or 1); a
+    // one-byte store takes the value as it is.
     private static void Repeated(IWasmInstructionWriter code, int value, int width)
     {
         Get(code, value);
-        switch (width)
+        if (width == 16)
         {
-            case 16:
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.SimdPrefixed,
-                    WasmInstructionOperand.Prefixed(WasmSimdOpcodes.I8x16Splat)));
-                return;
-            case 8:
-                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0xff)));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
-                code.Write(WasmInstruction.WithOperand(
-                    WasmOpcodes.I64Constant,
-                    WasmInstructionOperand.Signed64(0x0101010101010101)));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Multiply));
-                return;
-            case 4 or 2:
-                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0xff)));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
-                code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0x01010101)));
-                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
-                return;
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.Prefixed(WasmSimdOpcodes.I8x16Splat)));
+        }
+        else if (width == 8)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0xff)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I64Constant,
+                WasmInstructionOperand.Signed64(0x0101010101010101)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Multiply));
+        }
+        else if (width > 1)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0xff)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32And));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0x01010101)));
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
         }
     }
 

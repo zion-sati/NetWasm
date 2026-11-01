@@ -2,7 +2,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 
 // Decimal integer formatting writes two digits at a time from a constant digit
 // table, as chars for strings and char spans and as bytes for UTF-8 spans.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class IntegerFormattingCompatibilityTests(CorrectnessTestRunner runner)
     : CSharpSemanticTestBase(runner)
 {

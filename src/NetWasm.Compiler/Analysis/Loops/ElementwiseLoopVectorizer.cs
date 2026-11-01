@@ -77,13 +77,9 @@ internal sealed class ElementwiseLoopVectorizer(
         var instructions = body.Instructions;
         var indices = Enumerable.Range(0, instructions.Length).ToDictionary(index => instructions[index].Offset);
         var branches = instructions
-            .SelectMany(static instruction => instruction.Operand switch
-            {
-                CilOperand.BranchTarget target => [target.Offset],
-                CilOperand.SwitchTargets targets => targets.Offsets,
-                _ => ImmutableArray<int>.Empty,
-            })
-            .GroupBy(static offset => offset)
+            .Select(static instruction => instruction.Operand)
+            .OfType<CilOperand.BranchTarget>()
+            .GroupBy(static target => target.Offset)
             .ToDictionary(static group => group.Key, static group => group.Count());
         var locals = body.Locals.ToBuilder();
         var localTypes = body.LocalSignatureTypes.ToBuilder();
@@ -627,7 +623,9 @@ internal sealed class ElementwiseLoopVectorizer(
                         _ => "op_ExclusiveOr",
                     }), lane));
                     break;
-                case Shift shift:
+                default:
+                    // The remaining node shifts a value.
+                    var shift = (Shift)node;
                     Value(shift.Value);
                     Constant(shift.Count);
                     Call(_methods.Resolve(new VectorLoopOperator(shift.Operation switch
@@ -691,22 +689,18 @@ internal sealed class ElementwiseLoopVectorizer(
         _ => 4,
     };
 
-    // The stack kind of a value; Unknown where the operands disagree.
+    // The stack kind of a value. An argument or local of unknown kind takes its
+    // operation's other operand's; IL's binary operations take operands of one
+    // kind, and Supported checks every operand against the loop's.
     private static CliValueKind Kind(Node node) => node switch
     {
         Linear => CliValueKind.I4,
         Invariant invariant => invariant.Kind,
         Element element => Lane(element.Type),
         Unary unary => Kind(unary.Operand),
-        Binary binary => (Kind(binary.Left), Kind(binary.Right)) switch
-        {
-            var (left, right) when left == right => left,
-            (CliValueKind.Unknown, var right) => right,
-            (var left, CliValueKind.Unknown) => left,
-            _ => CliValueKind.Unknown,
-        },
-        Shift shift => Kind(shift.Value),
-        _ => CliValueKind.Unknown,
+        Binary binary => Kind(binary.Left) is var left and not CliValueKind.Unknown ? left : Kind(binary.Right),
+        // The remaining node shifts a value.
+        _ => Kind(((Shift)node).Value),
     };
 
     // Whether every operation has an exact lane-wise vector form for the kind.
@@ -721,8 +715,8 @@ internal sealed class ElementwiseLoopVectorizer(
                 ? binary.Operation != CilOperation.Divide
                 : binary.Operation is CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.Divide) &&
             Supported(binary.Left, kind) && Supported(binary.Right, kind),
-        Shift shift => kind is CliValueKind.I4 or CliValueKind.I8 && Supported(shift.Value, kind),
-        _ => false,
+        // The remaining node shifts a value.
+        _ => kind is CliValueKind.I4 or CliValueKind.I8 && Supported(((Shift)node).Value, kind),
     };
 
     // The lane kind of an array element type: 32-bit and 64-bit integers and

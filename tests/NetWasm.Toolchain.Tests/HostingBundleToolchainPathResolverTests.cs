@@ -49,9 +49,9 @@ public sealed class HostingBundleToolchainPathResolverTests
         Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!, Compatibility()));
         Assert.Throws<ArgumentNullException>(() => resolver.Resolve(Executable(), null!));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(
-            Executable() with { ToolId = HostToolIds.WasmTools }, Compatibility()));
+            Executable() with { ToolId = "wasm-tools" }, Compatibility()));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(
-            Executable(), Compatibility() with { ToolId = HostToolIds.WasmTools }));
+            Executable(), Compatibility() with { ToolId = "wasm-tools" }));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(
             Executable() with { AbsolutePath = "node" }, Compatibility()));
         Assert.Throws<ArgumentNullException>(() => resolver.Resolve(

@@ -31,64 +31,6 @@ internal sealed class ManagedStaticDataBuilder : IManagedStaticDataBuilder
         ITypeDescriptorBuilder typeDescriptors,
         IConstructedTypeDescriptorBuilder constructedTypeDescriptors,
         IValueTypeDescriptorBuilder valueTypeDescriptors,
-        IMemberDescriptorDataBuilder memberDescriptors,
-        IStringDataBuilder strings,
-        IExceptionObjectBuilder exceptionObjects,
-        IEnumMetadataCollector enumMetadataCollector,
-        IEnumMetadataBuilder enumMetadata) :
-        this(
-            types,
-            state,
-            staticFields,
-            typeDescriptors,
-            constructedTypeDescriptors,
-            valueTypeDescriptors,
-            EmptyRuntimeGenericArgumentMetadataBuilder.Instance,
-            memberDescriptors,
-            strings,
-            exceptionObjects,
-            enumMetadataCollector,
-            enumMetadata)
-    {
-    }
-
-    internal ManagedStaticDataBuilder(
-        ManagedTypeLayouts types,
-        ManagedStaticDataBuildState state,
-        IStaticFieldStorageBuilder staticFields,
-        ITypeDescriptorBuilder typeDescriptors,
-        IConstructedTypeDescriptorBuilder constructedTypeDescriptors,
-        IValueTypeDescriptorBuilder valueTypeDescriptors,
-        IRuntimeGenericArgumentMetadataBuilder genericArguments,
-        IMemberDescriptorDataBuilder memberDescriptors,
-        IStringDataBuilder strings,
-        IExceptionObjectBuilder exceptionObjects,
-        IEnumMetadataCollector enumMetadataCollector,
-        IEnumMetadataBuilder enumMetadata) :
-        this(
-            types,
-            state,
-            staticFields,
-            typeDescriptors,
-            constructedTypeDescriptors,
-            valueTypeDescriptors,
-            genericArguments,
-            memberDescriptors,
-            strings,
-            exceptionObjects,
-            EmptyTypeObjectDataBuilder.Instance,
-            enumMetadataCollector,
-            enumMetadata)
-    {
-    }
-
-    internal ManagedStaticDataBuilder(
-        ManagedTypeLayouts types,
-        ManagedStaticDataBuildState state,
-        IStaticFieldStorageBuilder staticFields,
-        ITypeDescriptorBuilder typeDescriptors,
-        IConstructedTypeDescriptorBuilder constructedTypeDescriptors,
-        IValueTypeDescriptorBuilder valueTypeDescriptors,
         IRuntimeGenericArgumentMetadataBuilder genericArguments,
         IMemberDescriptorDataBuilder memberDescriptors,
         IStringDataBuilder strings,

@@ -68,7 +68,6 @@ public sealed class SwitchBitTestRewriterTests
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
-    [InlineData(8)]
     [InlineData(9)]
     [InlineData(10)]
     [InlineData(11)]
@@ -100,12 +99,6 @@ public sealed class SwitchBitTestRewriterTests
             6 => body with { Instructions = Replace(body.Instructions, 7, CilOperation.LoadInt32, new CilOperand.ConstantI4(7)) },
             // A comparison that skips past the next case.
             7 => body with { Instructions = Replace(body.Instructions, 3, CilOperation.BranchIfNotEqual, new CilOperand.BranchTarget(11)) },
-            // An undecoded switch into the middle of the chain.
-            8 => body with
-            {
-                Instructions = [.. body.Instructions,
-                new(body.Instructions.Length, body.Instructions.Length + 1, CilOperation.Switch, new CilOperand.SwitchTargets([6]))]
-            },
             // A filter that starts inside the chain.
             9 => body with { ExceptionRegions = [new(CilExceptionRegionKind.Filter, 17, 1, 18, 1, null, 6)] },
             // Operands that are not a case constant or a branch target.

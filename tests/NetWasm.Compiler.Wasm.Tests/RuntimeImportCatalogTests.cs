@@ -20,7 +20,9 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeRootFrameEnter,
             RuntimeAbi.RuntimeRootFrameLeave,
             RuntimeAbi.RuntimeValueFrameEnter,
+            RuntimeAbi.RuntimeValueFrameEnterMapped,
             RuntimeAbi.RuntimeValueFrameLeave,
+            RuntimeAbi.RuntimeValueFrameLeaveMapped,
             RuntimeAbi.RuntimeBeginThrow,
             RuntimeAbi.RuntimeBeginRethrow,
             RuntimeAbi.RuntimeAllocateReferenceArray,
@@ -93,6 +95,7 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeRandomSeed,
             RuntimeAbi.RuntimeRegisterTypeObjects,
             RuntimeAbi.RuntimeTypeObjectCache,
+            RuntimeAbi.RuntimeObjectContainsReferences,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));

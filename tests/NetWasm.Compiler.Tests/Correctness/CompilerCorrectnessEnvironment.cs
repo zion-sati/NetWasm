@@ -20,8 +20,7 @@ internal sealed record CompilerCorrectnessEnvironment(
     public static CompilerCorrectnessEnvironment Discover(string? startDirectory = null)
     {
         var repositoryRoot = TestAssets.FindRepositoryRoot(startDirectory);
-        var dotnetPath = Environment.ProcessPath
-            ?? throw new InvalidOperationException("dotnet host path is unavailable");
+        var dotnetPath = DotNetHost.Executable;
         var sdkVersion = ReadSdkVersion(repositoryRoot);
         var dotnetRoot = Path.GetDirectoryName(dotnetPath)
             ?? throw new InvalidOperationException("dotnet root is unavailable");

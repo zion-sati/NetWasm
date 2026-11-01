@@ -333,6 +333,9 @@ public sealed class FilterEnvironmentLayoutPlannerTests
             new StructuredLoopBreak(),
             new StructuredLoopContinue(),
             new StructuredDispatcherContinue(structured.EntryBlock),
+            new StructuredLabeledBlock(structured.EntryBlock, leaf),
+            new StructuredLabeledLoop(structured.EntryBlock, leaf),
+            new StructuredLabelBranch(structured.EntryBlock),
         ]);
         var filter = ExceptionClause(structured, CilExceptionRegionKind.Filter, true) with
         {

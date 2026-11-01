@@ -158,7 +158,12 @@ public sealed class ArrayBoundsCheckEliminationPlannerTests
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
             assembly, [assets.CoreLib], "EntryPoint", "Run", [],
             Optimization: FinalWasmOptimization.O3,
-            OptimizationOverrides: new(LoopUnrolling: NetWasm.Compiler.ComponentModel.Optimization.ManagedLoopUnrolling.Disabled)));
+            // The loop stays an ordinary element loop: unrolled, folded as a
+            // reduction or vectorized, it has no single load to prove.
+            OptimizationOverrides: new(
+                LoopUnrolling: NetWasm.Compiler.ComponentModel.Optimization.ManagedLoopUnrolling.Disabled,
+                ArrayLoopIdioms: NetWasm.Compiler.ComponentModel.Optimization.ManagedArrayLoopIdioms.Disabled,
+                LoopVectorization: NetWasm.Compiler.ComponentModel.Optimization.ManagedLoopVectorization.Disabled)));
         var method = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Run");
         var dominance = new ControlFlowDominanceAnalyzer();
         var planner = new ArrayBoundsCheckEliminationPlanner(

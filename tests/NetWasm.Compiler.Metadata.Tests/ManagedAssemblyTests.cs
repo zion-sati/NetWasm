@@ -153,9 +153,6 @@ public sealed class ManagedAssemblyTests
         Assert.Contains(
             assembly.Fields.Values,
             field => field.Name == "_value" && !field.IsStatic);
-        var contentSha256 = assembly.ContentSha256;
-        Assert.Equal(64, contentSha256.Length);
-        Assert.Same(contentSha256, assembly.ContentSha256);
     }
 
     [Fact]

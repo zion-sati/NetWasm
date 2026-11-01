@@ -158,9 +158,6 @@ public sealed class ManagedLayoutTests
         var staticData = CompilerTestSupport.CreateStaticData(layouts);
         var exceptionObjects = CompilerTestSupport.CreateExceptionObjects(layouts);
         var missing = new EntityKey(new AssemblyIdentity("Missing"), 1);
-        Assert.Equal(4, ManagedLayoutSnapshot.Wasm32ObjectHeaderSize);
-        Assert.Equal(4, ManagedLayoutSnapshot.Wasm32StringLengthOffset);
-        Assert.Equal(8, ManagedLayoutSnapshot.Wasm32StringDataOffset);
         Assert.Throws<CompilerException>(() => typeLayouts.GetObjectLayout(missing));
         Assert.Throws<CompilerException>(() => instanceFields.GetFieldLayout(missing));
         Assert.Throws<CompilerException>(() => staticFields.GetStaticFieldLayout(missing));
@@ -384,12 +381,9 @@ public sealed class ManagedLayoutTests
 
         Assert.Equal((1, 1), (empty.Size, empty.Alignment));
         Assert.True(empty.ReferenceOffsets.IsEmpty);
-        Assert.True(empty.IsFlattenedAbiEligible);
         Assert.Equal((8, 4), (scalar.Size, scalar.Alignment));
-        Assert.True(scalar.IsFlattenedAbiEligible);
         Assert.Equal((12, 4), (pair.Size, pair.Alignment));
         Assert.True(pair.ReferenceOffsets.AsSpan().SequenceEqual([0, 4]));
-        Assert.False(pair.IsFlattenedAbiEligible);
         Assert.Equal((20, 4), (nested.Size, nested.Alignment));
         Assert.True(nested.ReferenceOffsets.AsSpan().SequenceEqual([4, 8]));
         Assert.Equal(8, referenceGeneric.Size);

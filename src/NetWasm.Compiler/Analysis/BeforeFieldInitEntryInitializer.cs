@@ -67,7 +67,7 @@ internal sealed class BeforeFieldInitEntryInitializer(
         {
             if (hoisted.Any(access => StaticFieldInitializationClassifier.Owner(access, _fields).Initializes(candidate.Owner)) ||
                 !blocks.TryGetValue(candidate.Access.Offset, out var block) ||
-                !returns.All(exit => dominators.TryGetValue(exit, out var exitDominators) && exitDominators.Contains(block)))
+                !returns.All(exit => dominators[exit].Contains(block)))
             {
                 continue;
             }
@@ -99,8 +99,6 @@ internal sealed class BeforeFieldInitEntryInitializer(
                 Operand = instruction.Operand switch
                 {
                     CilOperand.BranchTarget target => new CilOperand.BranchTarget(offsets[target.Offset]),
-                    CilOperand.SwitchTargets targets => new CilOperand.SwitchTargets(
-                        [.. targets.Offsets.Select(offset => offsets[offset])]),
                     var operand => operand,
                 },
             })],

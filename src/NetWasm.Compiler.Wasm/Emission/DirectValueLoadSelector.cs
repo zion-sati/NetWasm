@@ -50,6 +50,21 @@ internal sealed class DirectValueLoadSelector : IDirectValueLoadSelector
         StructuredMethod method,
         ImmutableHashSet<int>.Builder selected)
     {
+        // A local or argument whose address is never taken changes only by its
+        // own stores, so a call can read it in place: the callee owns no copy
+        // it does not make, and one that writes its parameter copies it first.
+        var addressedLocals = method.Header.Instructions
+            .Where(instruction => instruction.Operation == CilOperation.LoadLocalAddress)
+            .Select(CilOperandReader.GetIndex)
+            .ToHashSet();
+        var addressedArguments = method.Header.Instructions
+            .Where(instruction => instruction.Operation == CilOperation.LoadArgumentAddress)
+            .Select(CilOperandReader.GetIndex)
+            .ToHashSet();
+        bool Unaddressed(CilInstruction load) =>
+            !(load.Operation == CilOperation.LoadLocal ? addressedLocals : addressedArguments)
+                .Contains(CilOperandReader.GetIndex(load));
+
         foreach (var block in method.Blocks.Values)
         {
             var origins = new List<CilInstruction?>();
@@ -114,6 +129,32 @@ internal sealed class DirectValueLoadSelector : IDirectValueLoadSelector
                     case CilOperation.LoadRectangularArrayElement:
                         var array = ((CilOperand.TypeIdentity)instruction.Operand).Value;
                         ConsumeArrayInputs(origins, array.ArrayRank + 1);
+                        break;
+                    case CilOperation.Call or CilOperation.CallVirtual or CilOperation.NewObject
+                        when instruction.Operand is CilOperand.MethodInstance { Value: var called }:
+                        var parameters = called.Signature.ParameterTypes.Length;
+                        var consumed = parameters +
+                            (instruction.Operation != CilOperation.NewObject && !called.Definition.IsStatic ? 1 : 0);
+                        if (origins.Count < consumed)
+                        {
+                            origins.Clear();
+                            break;
+                        }
+                        // The receiver is an address or an object; the arguments
+                        // after it are passed by value.
+                        for (var argument = origins.Count - parameters; argument < origins.Count; argument++)
+                        {
+                            if (origins[argument] is { } origin && Unaddressed(origin))
+                            {
+                                selected.Add(origin.Offset);
+                            }
+                        }
+                        origins.RemoveRange(origins.Count - consumed, consumed);
+                        if (instruction.Operation == CilOperation.NewObject ||
+                            called.Signature.ReturnType != CliValueKind.Void)
+                        {
+                            origins.Add(null);
+                        }
                         break;
                     default:
                         // Calls, indirect writes, escaping addresses and unknown

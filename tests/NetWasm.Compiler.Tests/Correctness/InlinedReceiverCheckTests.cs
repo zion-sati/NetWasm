@@ -6,7 +6,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // and before the callee runs. A callee inlined because its first effect reads
 // a property of the receiver, through the accessor or a callvirt, must throw
 // NullReferenceException at the same point.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class InlinedReceiverCheckTests(CorrectnessTestRunner runner)
 {
     // Oz inlines the calls inside the loop; O3 inlines the one after it too.

@@ -113,7 +113,6 @@ public sealed class StackStorageAnchorPlannerTests
         var joined = Assert.Single(storage.Entries[9]);
         Assert.False(joined.BackingCovered);
         Assert.True(joined.CompleteBackingKnown);
-        Assert.Equal(new StackStorageOwner(false, 0, Pair), Assert.Single(joined.BackingOwners));
         Assert.Equal(Pair, Assert.Single(joined.CapturedBackings));
         var plan = Plan(method, storage, (9, Stack(0, Pair)));
         Assert.Equal(new StackStorageAnchorAssignment.Clear(0), Assert.Single(plan.Assignments[2]));

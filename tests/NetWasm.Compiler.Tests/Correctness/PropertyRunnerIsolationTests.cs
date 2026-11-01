@@ -18,7 +18,7 @@ public sealed class PropertyRunnerIsolationTests
             netWasm, CompiledCorpusTestFactory.RejectingLinked, new CompiledCorpusTestFactory.RecordingReceiptDestinations(),
             new CompiledCorpusTestFactory.RecordingLinkedReceipts(), new OracleComparer(), failures,
             new RandomCilCaseProgressReporter(TextWriter.Null), new CorpusExpectationVerifier(),
-            new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander()));
+            new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander(), new CorpusBackendOverride(Backend: null)));
         var runner = Assert.IsAssignableFrom<ICfgPropertyRunner>(new CfgPropertyRunner(
             new Directories(), compiler, desktop, new OracleComparer(), compiled, new RecordingCorpusCleanup()));
 

@@ -186,6 +186,24 @@ public sealed class PipelineActorTests
             new ComponentExportMerger().Merge([], null!, WasmTarget.Wasm32));
     }
 
+    // The key a binding generated before world keys names its interface by.
+    [Theory]
+    [InlineData("example:app@1.0.0/api", true)]
+    [InlineData("a:b@1/i", true)]
+    [InlineData("a:b:c@1@2/i", true)]
+    [InlineData("example:app/api", false)]
+    [InlineData("api", false)]
+    [InlineData("example:app@1.0.0/", false)]
+    [InlineData("example:app@1.0.0/api/more", false)]
+    [InlineData("example@1.0.0/api", false)]
+    [InlineData(":app@1.0.0/api", false)]
+    [InlineData("example:@1.0.0/api", false)]
+    [InlineData("example:app@/api", false)]
+    [InlineData("a@b:c@1/i", false)]
+    [InlineData("abc@1/i", false)]
+    public void RecognizesThePackageFirstInterfaceKey(string name, bool packageFirst) =>
+        Assert.Equal(packageFirst, ComponentReachabilityValidator.IsPackageFirstKey(name));
+
     [Fact]
     public void ReachabilityValidatorAcceptsEmptyProgram()
     {
@@ -306,6 +324,36 @@ public sealed class PipelineActorTests
             contract,
             new MethodRepository(reachable),
             new SymbolFormatter());
+    }
+
+    // Bindings generated before world keys name an interface package first; one
+    // the world does not declare is reported with how to regenerate it, for an
+    // import or an export.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReachabilityValidatorPointsPackageFirstBindingsAtRegeneration(bool import)
+    {
+        var original = ValidationTestData.Program().EntryPoint!;
+        var binding = original with
+        {
+            Key = new EntityKey(ValidationTestData.Assembly, 0x06000008),
+            WitImport = import ? new WitImportDeclaration("example:host@1.0.0/api", "read") : null,
+            WitExport = import ? null : new WitExportDeclaration("example:host@1.0.0/api", "read"),
+        };
+        var program = ValidationTestData.Program() with { WitImportMethods = import ? [binding] : [] };
+        var contract = new ComponentBoundaryContract("", "", [Function(new(ValidationTestData.Assembly, 0x06000009), "other")], []);
+
+        var exception = Assert.Throws<CompilerException>(() => new ComponentReachabilityValidator().Validate(
+            program,
+            import ? [] : [new ProgramExport("cm32p2|example:host@1.0.0/api|read", binding.Key)],
+            contract,
+            new MethodRepository(binding),
+            new SymbolFormatter()));
+
+        Assert.Equal(DiagnosticCode.ComponentContract, exception.Diagnostic.Code);
+        Assert.Contains("'example:host@1.0.0/api' by the package-first key", exception.Diagnostic.Message);
+        Assert.Contains("regenerate the bindings", exception.Diagnostic.Message);
     }
 
     [Fact]

@@ -54,7 +54,7 @@ public sealed class WitTypeDeclarationWriter(
                 WriteNamedType(
                     writer,
                     document,
-                    document.InterfaceKey(world, interfaceId),
+                    world.InterfaceKey(interfaceId),
                     document.Types[pair.Value],
                     importedInterfaces.Contains(interfaceId),
                     exportedInterfaces.Contains(interfaceId));

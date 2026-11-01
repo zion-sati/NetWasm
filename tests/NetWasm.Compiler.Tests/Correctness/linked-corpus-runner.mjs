@@ -13,8 +13,8 @@ export const linkedCorpusProgramDependencies = Object.freeze({
   listImports: module => WebAssembly.Module.imports(module),
   hash: bytes => createHash("sha256").update(bytes).digest("hex"),
   instantiate: instantiateNetWasm,
-  createRuntimeImports: (target, getMemory, wake) => ({
-    ...createRuntimeContractImports(target, getMemory),
+  createRuntimeImports: (target, getMemory, wake, getExports) => ({
+    ...createRuntimeContractImports(target, getMemory, getExports),
     ...createTimerReactorImports(target, () => process.hrtime.bigint(),
       (milliseconds, callback) => setTimeout(callback, milliseconds), clearTimeout, wake),
   }),

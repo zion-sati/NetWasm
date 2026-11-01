@@ -395,15 +395,19 @@ public partial struct UInt32
         }
         else if (typeof(TOther) == typeof(nint))
         {
-#if TARGET_32BIT
+            // NetWasm builds one CoreLib for both widths, so upstream's TARGET_32BIT branch is chosen by IntPtr.Size, which the compiler folds per target.
+            if (IntPtr.Size == 4)
+            {
                 nint actualResult = (value >= int.MaxValue) ? int.MaxValue : (nint)value;
                 result = (TOther)(object)actualResult;
                 return true;
-#else
-            nint actualResult = (nint)value;
-            result = (TOther)(object)actualResult;
-            return true;
-#endif
+            }
+            else
+            {
+                nint actualResult = (nint)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
         }
         else if (typeof(TOther) == typeof(sbyte))
         {

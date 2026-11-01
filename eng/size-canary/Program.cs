@@ -22,7 +22,10 @@ if (args is ["compile", var repository, var input, var application, var layout,
         assembly, File.ReadAllBytes(assembly));
     var coreLib = Path.Combine(repo, "src", "NetWasm.CoreLib", "bin",
         "Release", "net10.0", "NetWasm.CoreLib.dll");
-    var result = NetWasmCompiler.Compile(new CompilerOptions(
+    // The CLI, build tasks and browser compiler compose their compiler from the
+    // same registration.
+    using var compilerServices = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
+    var result = compilerServices.GetRequiredService<INetWasmCompiler>().Compile(new CompilerOptions(
         assembly,
         [coreLib],
         entry.TypeName,

@@ -205,7 +205,8 @@ internal sealed class ExactReceiverDevirtualizer(
             instruction.Operation is not (CilOperation.LoadArgument or CilOperation.LoadInt32 or CilOperation.LoadNull));
         return effect > 0 &&
             operations[effect].Operation == CilOperation.LoadArrayLength &&
-            operations[effect - 1] is { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index { Value: 0 } };
+            operations[effect - 1].Operation == CilOperation.LoadArgument &&
+            ((CilOperand.Index)operations[effect - 1].Operand).Value == 0;
     }
 
     // Locals of another declared type, such as IEnumerable<T>, that every store
@@ -327,7 +328,7 @@ internal sealed class ExactReceiverDevirtualizer(
             var loadBlock = blocks[loaded];
             if (storeBlock == loadBlock
                     ? stored < loaded
-                    : dominators.TryGetValue(loadBlock, out var loadDominators) && loadDominators.Contains(storeBlock))
+                    : dominators[loadBlock].Contains(storeBlock))
             {
                 return true;
             }

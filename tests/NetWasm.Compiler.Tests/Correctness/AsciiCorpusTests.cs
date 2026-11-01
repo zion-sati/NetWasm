@@ -3,7 +3,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // System.Text.Ascii is upstream's source with the Utf8Utility and Utf16Utility helpers. Every
 // operation runs over inputs of each length class, all ASCII and with one non-ASCII value near
 // the start, middle and end, so each vector width and scalar tail decides the result.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class AsciiCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -11,7 +10,14 @@ public sealed class AsciiCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "AsciiCorpus",
             "NetWasm.Correctness.AsciiCorpus",
-            """
+            Source,
+            [0, 1, 2, 3, 4])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Buffers;
             using System.Text;
@@ -170,10 +176,5 @@ public sealed class AsciiCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

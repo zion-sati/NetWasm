@@ -149,7 +149,7 @@ public sealed class EmptyFinallyRemovalCompilationTests
 
         Assert.True(removed.ApplicationModule.Length < kept.ApplicationModule.Length,
             $"removed {removed.ApplicationModule.Length} bytes, kept {kept.ApplicationModule.Length}");
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 removed.ApplicationModule, assets.Directory, input, target, removed.StaticDataEnd));

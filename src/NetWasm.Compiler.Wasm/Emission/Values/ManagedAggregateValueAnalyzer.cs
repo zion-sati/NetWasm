@@ -582,9 +582,6 @@ internal sealed class ManagedAggregateValueAnalyzer(
                     case StructuredCode code:
                         Add(code.Occurrence, depth);
                         break;
-                    case StructuredSequence nested:
-                        Visit(nested, depth);
-                        break;
                     case StructuredIf conditional:
                         Add(conditional.Condition, depth);
                         Visit(conditional.WhenTrue, depth);
@@ -840,17 +837,18 @@ internal sealed class ManagedAggregateValueAnalyzer(
         }
         // initobj of the whole value, or of a field such as an enumerator's
         // current element, zeroes the lanes its bytes cover; a field narrower
-        // than a lane would need a partial lane write.
+        // than a lane would need a partial lane write. A value's bytes are its
+        // layout's, which for a short are two where its stack slot is four.
         var size = recipe.ByteOffset == 0 && type.Equals(storage.Type)
             ? storage.Size
-            : type.StackKind == CliValueKind.ValueType
+            : type.IsValueType
                 ? _values.GetValueLayout(type).Size
                 : _layouts.Target.GetStorageSize(type);
         var end = recipe.ByteOffset + size;
         var lanes = storage.Lanes
             .Where(lane => lane.ByteOffset < end && lane.ByteOffset + lane.Size > recipe.ByteOffset)
             .ToArray();
-        if (lanes.Length == 0 || lanes[0].ByteOffset != recipe.ByteOffset ||
+        if (lanes[0].ByteOffset != recipe.ByteOffset ||
             lanes[^1].ByteOffset + lanes[^1].Size != end)
         {
             Reject(recipe.Storage, rejected);
@@ -960,7 +958,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
             instruction,
             block,
             recipe with { Type = type },
-            _layouts.Target.GetStorageSize(type),
+            _values.GetValueLayout(type).Size,
             type.StackKind,
             writes,
             storages,
@@ -1058,7 +1056,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
             CilOperation.BranchIfLessThanUnsigned or
             CilOperation.BranchIfLessThanOrEqualSigned or
             CilOperation.BranchIfLessThanOrEqualUnsigned or
-            CilOperation.Switch or CilOperation.StoreArgument or
+            CilOperation.StoreArgument or
             CilOperation.StoreLocal or CilOperation.StoreField or
             CilOperation.StoreStaticField or CilOperation.StoreObject or
             CilOperation.CopyObject or CilOperation.InitializeObject or

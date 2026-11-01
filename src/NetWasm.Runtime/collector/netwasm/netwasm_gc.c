@@ -1050,9 +1050,18 @@ void netwasm_gc_set_mark_completion(NetWasmGc *gc, NetWasmGcCompleteMark complet
     gc->mark_state = state;
 }
 
+/* Clang, which builds the runtime archive, inlines this into the allocation
+ * path across translation units. GCC, which builds the runtime contracts on
+ * Linux, accepts always_inline only on an inline function. */
+#if defined(__clang__)
+#define NWGC_CROSS_UNIT_INLINE __attribute__((always_inline))
+#else
+#define NWGC_CROSS_UNIT_INLINE
+#endif
+
 /* A bump through the class's open run. Collection retires every run, so this
  * never succeeds while collecting. */
-__attribute__((always_inline)) void *netwasm_gc_try_allocate_available(
+NWGC_CROSS_UNIT_INLINE void *netwasm_gc_try_allocate_available(
     NetWasmGc *gc, size_t bytes, bool contains_references)
 {
     if (gc == NULL || bytes >= NWGC_SMALL_LIMIT) return NULL;
@@ -1076,6 +1085,10 @@ NetWasmGcResult netwasm_gc_allocate(
     if (gc == NULL || result == NULL || gc->collecting)
         return NETWASM_GC_INVALID_ARGUMENT;
     if (gc->object_count == SIZE_MAX) return NETWASM_GC_SIZE_OVERFLOW;
+#ifdef NETWASM_GC_STRESS
+    // Qualification only: collect before every allocation.
+    if (gc->occupied_bytes != 0) netwasm_gc_collect(gc);
+#endif
     size_t slot_bytes;
     if (!slot_size(bytes, &slot_bytes)) return NETWASM_GC_SIZE_OVERFLOW;
     NetWasmGcResult allocation = slot_bytes <= NWGC_SMALL_LIMIT ?

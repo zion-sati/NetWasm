@@ -101,7 +101,6 @@ internal sealed class TerminalContinuationInliningPlanner :
             CilOperation.BranchIfLessThanUnsigned or
             CilOperation.BranchIfLessThanOrEqualSigned or
             CilOperation.BranchIfLessThanOrEqualUnsigned or
-            CilOperation.Switch or
             CilOperation.Throw or
             CilOperation.Rethrow or
             CilOperation.Leave or
@@ -120,8 +119,6 @@ internal sealed class TerminalContinuationInliningPlanner :
         HashSet<int> targets) => operand switch
         {
             CilOperand.BranchTarget target => targets.Contains(target.Offset),
-            CilOperand.SwitchTargets switchTargets =>
-                switchTargets.Offsets.Any(targets.Contains),
             _ => false,
         };
 }

@@ -127,6 +127,8 @@ public sealed class ManagedLayoutCompilerCompositionTests
                 phase,
                 phase,
                 phase,
+                phase,
+                phase,
                 phase);
         }
     }
@@ -156,9 +158,11 @@ public sealed class ManagedLayoutCompilerCompositionTests
         ITypeDescriptorBuilder,
         IConstructedTypeDescriptorBuilder,
         IValueTypeDescriptorBuilder,
+        IRuntimeGenericArgumentMetadataBuilder,
         IMemberDescriptorDataBuilder,
         IStringDataBuilder,
         IExceptionObjectBuilder,
+        ITypeObjectDataBuilder,
         IEnumMetadataCollector,
         IEnumMetadataBuilder
     {

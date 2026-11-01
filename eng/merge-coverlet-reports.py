@@ -84,9 +84,8 @@ def merge_method_coverage(
     if not isinstance(lines, dict) or not isinstance(branches, list):
         raise ValueError(f"Conflicting method shape for {method_name} in {source}.")
 
-    for line, hits in lines_value.items():
-        if not isinstance(hits, int) or isinstance(hits, bool) or hits < 0:
-            raise ValueError(f"Invalid line hit count for {method_name} in {source}.")
+    for line, value in lines_value.items():
+        hits = hit_count(value, "line", method_name, source)
         existing = lines.get(line, 0)
         if not isinstance(existing, int) or isinstance(existing, bool):
             raise ValueError(f"Conflicting line hit count for {method_name} in {source}.")
@@ -101,9 +100,7 @@ def merge_method_coverage(
         if not isinstance(branch_value, dict):
             raise ValueError(f"Invalid branch coverage for {method_name} in {source}.")
         identity = branch_identity(branch_value, method_name, source)
-        hits = branch_value.get("Hits")
-        if not isinstance(hits, int) or isinstance(hits, bool) or hits < 0:
-            raise ValueError(f"Invalid branch hit count for {method_name} in {source}.")
+        hits = hit_count(branch_value.get("Hits"), "branch", method_name, source)
         if identity in indexed_branches:
             existing = indexed_branches[identity]
             existing_hits = existing.get("Hits")
@@ -113,9 +110,17 @@ def merge_method_coverage(
                 )
             existing["Hits"] = existing_hits + hits
         else:
-            copy = dict(branch_value)
+            copy = dict(branch_value, Hits=hits)
             branches.append(copy)
             indexed_branches[identity] = copy
+
+
+def hit_count(value: object, kind: str, method_name: str, source: Path) -> int:
+    # Coverlet counts hits in a 32-bit integer, so code run more than 2^31
+    # times in one report has a negative count, its count modulo 2^32.
+    if not isinstance(value, int) or isinstance(value, bool) or not -(2**31) <= value < 2**32:
+        raise ValueError(f"Invalid {kind} hit count for {method_name} in {source}.")
+    return value + 2**32 if value < 0 else value
 
 
 def branch_identity(

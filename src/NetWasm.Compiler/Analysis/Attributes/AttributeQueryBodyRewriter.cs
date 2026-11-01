@@ -65,8 +65,6 @@ internal sealed class AttributeQueryBodyRewriter : IAttributeQueryBodyRewriter
                         Operand = inserted.Operand switch
                         {
                             CilOperand.BranchTarget target => new CilOperand.BranchTarget(start + target.Offset),
-                            CilOperand.SwitchTargets targets => new CilOperand.SwitchTargets(
-                                [.. targets.Offsets.Select(offset => start + offset)]),
                             _ => inserted.Operand,
                         },
                         OriginalOffset = instruction.SourceOffset,
@@ -83,8 +81,6 @@ internal sealed class AttributeQueryBodyRewriter : IAttributeQueryBodyRewriter
                     Operand = instruction.Operand switch
                     {
                         CilOperand.BranchTarget target => new CilOperand.BranchTarget(starts[target.Offset]),
-                        CilOperand.SwitchTargets targets => new CilOperand.SwitchTargets(
-                            [.. targets.Offsets.Select(offset => starts[offset])]),
                         _ => instruction.Operand,
                     },
                     OriginalOffset = instruction.SourceOffset,

@@ -370,6 +370,54 @@ public sealed class FieldInstructionEmitterTests
         Assert.Empty(request.Stack);
     }
 
+    // A scalar field of a vector value, such as Vector<T>'s ulongs, is the lane
+    // its offset names, extracted with the field's width and signedness.
+    [Theory]
+    [InlineData("f8", 8, 8, WasmSimdOpcodes.F64x2ExtractLane, 1u)]
+    [InlineData("u8", 8, 0, WasmSimdOpcodes.I64x2ExtractLane, 0u)]
+    [InlineData("f4", 4, 12, WasmSimdOpcodes.F32x4ExtractLane, 3u)]
+    [InlineData("i4", 4, 4, WasmSimdOpcodes.I32x4ExtractLane, 1u)]
+    [InlineData("i2", 2, 6, WasmSimdOpcodes.I16x8ExtractLaneSigned, 3u)]
+    [InlineData("u2", 2, 14, WasmSimdOpcodes.I16x8ExtractLaneUnsigned, 7u)]
+    [InlineData("i1", 1, 5, WasmSimdOpcodes.I8x16ExtractLaneSigned, 5u)]
+    [InlineData("u1", 1, 15, WasmSimdOpcodes.I8x16ExtractLaneUnsigned, 15u)]
+    public void LoadsAScalarFieldOfAVectorValueAsItsLane(string primitive, int size, int offset, uint extract, uint lane)
+    {
+        var kind = primitive switch
+        {
+            "f8" => CliValueKind.F8,
+            "f4" => CliValueKind.F4,
+            "u8" => CliValueKind.I8,
+            _ => CliValueKind.I4,
+        };
+        var fieldType = CliTypeIdentity.Primitive(primitive, kind);
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(fieldType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(offset) { Size = size, Type = fieldType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey));
+
+        Emit(emitter, request);
+
+        Assert.Equal([kind], request.Stack);
+        Assert.Contains(((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions(), instruction =>
+            instruction.Opcode == WasmOpcodes.SimdPrefixed && instruction.Operand.Alignment == extract &&
+            instruction.Operand.Offset == lane);
+    }
+
+    // No vector declares a field as wide as itself.
+    [Fact]
+    public void AScalarFieldSpanningTheWholeVectorIsRejected()
+    {
+        var fieldType = CliTypeIdentity.Primitive("u8", CliValueKind.I8);
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(fieldType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(0) { Size = 16, Type = fieldType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey));
+
+        var exception = Assert.Throws<CompilerException>(() => Emit(emitter, request));
+        Assert.Contains("spans the whole vector", exception.Message, StringComparison.Ordinal);
+    }
+
     private static IInstructionCommandProvider CreateEmitter(
         ITypeRepository? types = null,
         IFieldRepository? fieldRepository = null,

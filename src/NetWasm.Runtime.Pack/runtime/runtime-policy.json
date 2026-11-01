@@ -9,7 +9,9 @@
     { "export": "root_frame_enter", "preference": "Aggressive" },
     { "export": "root_frame_leave", "preference": "Aggressive" },
     { "export": "value_frame_enter", "preference": "Aggressive" },
-    { "export": "value_frame_leave", "preference": "Aggressive" }
+    { "export": "value_frame_enter_mapped", "preference": "Aggressive" },
+    { "export": "value_frame_leave", "preference": "Aggressive" },
+    { "export": "value_frame_leave_mapped", "preference": "Aggressive" }
   ],
   "staticNative": {
     "version": 1,

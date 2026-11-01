@@ -547,8 +547,26 @@ test("reports each diagnostic artifact envelope failure without losing the event
     assert.equal(outcome.eventId, 1);
     assert.match(outcome.artifactError, /artifact|digest/);
   }
-  const noCrypto = await reportArtifactOutcome(valid, {});
-  assert.match(noCrypto.artifactError, /cryptographic digest support/);
+});
+
+// Issue #139: a page outside a secure context has no crypto.subtle, and still
+// names managed exceptions from its diagnostic artifacts.
+test("resolves exception types without crypto.subtle", async () => {
+  const entry = {
+    typeId: 7,
+    displayName: "Example.Error",
+    canonicalIdentity: "Example.Error, Example",
+    assemblyIdentity: "Example",
+  };
+  const artifacts = diagnosticArtifacts({ schemaVersion: 2, buildId: "build", entries: [entry] });
+  for (const crypto of [{}, undefined]) {
+    const outcome = await reportArtifactOutcome(artifacts, crypto);
+    assert.equal(outcome.artifactError, undefined);
+    assert.equal(outcome.typeName, "Example.Error");
+  }
+  const mismatch = await reportArtifactOutcome(
+    { ...artifacts, manifest: { ...artifacts.manifest, wasmSha256: "0".repeat(64) } }, {});
+  assert.match(mismatch.artifactError, /digest mismatch/u);
 });
 
 test("reports each exception-map contract failure without losing the event", async () => {

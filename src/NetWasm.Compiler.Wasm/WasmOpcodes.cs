@@ -17,6 +17,7 @@ internal static class WasmOpcodes
     internal const byte Call = 0x10;
     internal const byte TryTable = 0x1f;
     internal const byte Drop = 0x1a;
+    internal const byte Select = 0x1b;
     internal const byte LocalGet = 0x20;
     internal const byte LocalSet = 0x21;
     internal const byte LocalTee = 0x22;

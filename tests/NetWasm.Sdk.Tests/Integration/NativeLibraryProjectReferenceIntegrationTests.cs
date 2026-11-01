@@ -111,7 +111,7 @@ public sealed class NativeLibraryProjectReferenceIntegrationTests
                 Cold = first,
                 Warm = warm,
                 Customized = customized,
-            }));
+            }), TestContext.Current.CancellationToken);
 
             string WriteProject(string directory, XElement framework, XElement[] references, XElement[] declarations, bool importTargets = true)
             {

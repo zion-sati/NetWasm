@@ -83,4 +83,94 @@ public sealed class ManagedAggregateLocalCompilationTests
         Assert.Equal(42, ExecuteWithStandardWasiNode(compilation.ApplicationModule,
             assets.Directory, 1, target, compilation.StaticDataEnd));
     }
+
+    // Pair<short>.A = default is initobj of a short, two bytes of the lane it
+    // shares with B; clearing it must leave B as it is.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void ClearingANarrowFieldKeepsTheRestOfItsLane(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource($"AggregateNarrowClear_{target}_{preset}", """
+            using System.Runtime.CompilerServices;
+
+            public struct Pair<T>
+            {
+                public T A;
+                public T B;
+                public int C;
+                public void ClearA() => A = default;
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int seed) => Worker(seed);
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static int Worker(int seed)
+                {
+                    var pair = new Pair<short>();
+                    pair.A = (short)(seed + 1);
+                    pair.B = (short)(seed + 2);
+                    pair.C = seed + 3;
+                    pair.ClearA();
+                    return pair.A * 10000 + pair.B * 100 + pair.C;
+                }
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: preset));
+
+        foreach (var (seed, expected) in new[] { (1, 304), (5, 708) })
+        {
+            Assert.Equal(expected, ExecuteWithStandardWasiNode(compilation.ApplicationModule,
+                assets.Directory, seed, target, compilation.StaticDataEnd));
+        }
+    }
+
+    // Clearing an empty struct field covers no lane and clearing a field whose
+    // struct ends in padding covers part of one, so neither splits the local.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void ClearingAFieldThatCoversNoWholeLaneKeepsTheLocalWhole(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource($"AggregateFieldClear_{target}_{preset}", """
+            using System.Runtime.CompilerServices;
+
+            public struct Empty { }
+            public struct Padded { public int A; public byte B; }
+            public struct Holder { public int X; public Empty E; public Padded P; public int Y; }
+
+            public static class EntryPoint
+            {
+                public static int Run(int seed) => Worker(seed);
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static int Worker(int seed)
+                {
+                    Holder holder = default;
+                    holder.X = seed;
+                    holder.P.A = seed + 1;
+                    holder.P.B = (byte)(seed + 2);
+                    holder.Y = seed + 3;
+                    holder.E = default;
+                    var before = holder.X + holder.P.A + holder.P.B + holder.Y;
+                    holder.P = default;
+                    return before * 100 + holder.X + holder.P.A + holder.P.B + holder.Y;
+                }
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: preset));
+
+        foreach (var (seed, expected) in new[] { (1, 1005), (5, 2613) })
+        {
+            Assert.Equal(expected, ExecuteWithStandardWasiNode(compilation.ApplicationModule,
+                assets.Directory, seed, target, compilation.StaticDataEnd));
+        }
+    }
 }

@@ -137,7 +137,6 @@ public sealed class ReachableProgramBuilderTests
         Assert.Same(
             snapshot.DelegateInvokeDescriptors,
             program.DelegateInvokeDescriptors);
-        Assert.True(program.RequiresDelegateInvoke);
         Assert.True(program.RequiresGenericArguments);
         Assert.Same(method, Assert.Single(program.MethodDescriptors).Value);
         Assert.Same(field, Assert.Single(program.FieldDescriptors).Value);

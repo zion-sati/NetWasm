@@ -181,7 +181,24 @@
     local.get $byte_count
     call $reserve)
 
+  ;; This runtime never collects, so it only makes room for the map words the
+  ;; caller stores after the frame's bytes, which it rounds up to sixteen.
+  (func (export "value_frame_enter_mapped")
+    (param $byte_count i32) (param $reference_words i32) (param $first_references i64) (result i32)
+    local.get $byte_count
+    i32.const 15
+    i32.add
+    i32.const -16
+    i32.and
+    local.get $reference_words
+    i32.const 3
+    i32.shl
+    i32.add
+    call $reserve)
+
   (func (export "value_frame_leave") (param $frame i32))
+
+  (func (export "value_frame_leave_mapped") (param $frame i32))
 
   (func $is_type_assignable
     (param $actual_type_id i32) (param $target_type_id i32) (result i32)

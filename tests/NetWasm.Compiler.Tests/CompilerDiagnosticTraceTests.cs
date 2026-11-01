@@ -29,9 +29,13 @@ public sealed class CompilerDiagnosticTraceTests
 
             public static class EntryPoint
             {
+                // The box escapes, so Run keeps its allocation.
+                private static Box? s_last;
+
                 public static int Run(int input)
                 {
                     var box = new Box(input);
+                    s_last = box;
                     return box.Value;
                 }
             }
@@ -296,6 +300,8 @@ public sealed class CompilerDiagnosticTraceTests
             new New.StructuredLoopBreak(),
             new New.StructuredLoopContinue(),
             new New.StructuredDispatcherContinue(block.Id),
+            new New.StructuredLabeledBlock(block.Id, leaf),
+            new New.StructuredLabeledLoop(block.Id, new([new New.StructuredLabelBranch(block.Id)])),
         ]);
 
         var formatter = new CompilerStructuredMethodFormatter();
@@ -313,7 +319,7 @@ public sealed class CompilerDiagnosticTraceTests
             "if ", "loop ", "loop unconditional", "post-loop ", "exception-region ", "protected code",
             "nested try=", "handler Catch", "filter ", "continuation ",
             "group already described", "dispatcher entry=", "exit block=", "break",
-            "continue", "dispatcher-continue",
+            "continue", "dispatcher-continue", "labeled-block next=", "labeled-loop header=", "label-branch block=",
         ];
         Assert.All(contracts, contract => Assert.Contains(contract, text));
         Assert.DoesNotContain('\r', text);

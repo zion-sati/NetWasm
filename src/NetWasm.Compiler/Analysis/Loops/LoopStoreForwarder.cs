@@ -211,7 +211,7 @@ internal sealed class LoopStoreForwarder(
             _producers = producers;
             foreach (var instruction in _instructions)
             {
-                if (instruction.Operation == CilOperation.Call && CalledMethod(instruction) is { } method &&
+                if (instruction.Operation == CilOperation.Call && CilOperands.MethodKey(instruction.Operand) is var method &&
                     intrinsics.TryGetIntrinsic(method, out var intrinsic))
                 {
                     _intrinsics[method] = intrinsic;
@@ -358,16 +358,18 @@ internal sealed class LoopStoreForwarder(
                 if (_producers.FindTop(producer, acrossBranches: true) is not { } duplicated) return null;
                 producer = duplicated;
             }
+            // A producer has a known entry stack, as every instruction its walk passes does.
             var instruction = _instructions[producer];
-            if (!_stacks.TryGetValue(instruction.Offset, out var stack)) return null;
+            var stack = _stacks[instruction.Offset];
             switch (instruction)
             {
                 case { Operation: CilOperation.LoadArrayElementAddress, Operand: CilOperand.TypeIdentity { Value: var element } }:
                     return Storage.Of(element) == storage ? ArrayElement(producer, stack.Length - 2, element) : null;
+                // Every Unsafe.Add takes one type argument, then a reference or
+                // a pointer and an int, nint or nuint offset.
                 case { Operation: CilOperation.Call, Operand: CilOperand.MethodInstance { Value: var method } }
-                    when Intrinsic(instruction) == RuntimeIntrinsic.UnsafeAdd && method.MethodArguments.Length == 1 &&
-                        Storage.Of(method.MethodArguments[0]) == storage && stack.Length >= 2 &&
-                        stack[^2] == CliValueKind.ManagedAddress && stack[^1] is CliValueKind.I4 or CliValueKind.NativeInt:
+                    when Intrinsic(instruction) == RuntimeIntrinsic.UnsafeAdd &&
+                        Storage.Of(method.MethodArguments[0]) == storage && stack[^2] == CliValueKind.ManagedAddress:
                     {
                         // A native index is an int that conv.u widens, as upstream's span indexer
                         // passes (nint)(uint)index; its scale names the widening, so such an
@@ -407,7 +409,7 @@ internal sealed class LoopStoreForwarder(
                 when !_exposed.Contains(new(ValueKind.Local, local)) => new(ValueKind.Local, local),
             { Operation: CilOperation.LoadArgument, Operand: CilOperand.Index { Value: var argument } }
                 when !_exposed.Contains(new(ValueKind.Argument, argument)) => new(ValueKind.Argument, argument),
-            { Operation: CilOperation.LoadField, Operand: var field } when FieldKey(field) is { } key &&
+            { Operation: CilOperation.LoadField, Operand: var field } when CilOperands.FieldKey(field) is var key &&
                 _producers.FindTop(index) is { } address => _instructions[address] switch
                 {
                     { Operation: CilOperation.LoadLocalAddress, Operand: CilOperand.Index { Value: var local } }
@@ -431,13 +433,6 @@ internal sealed class LoopStoreForwarder(
             _ => null,
         };
 
-        private static EntityKey? FieldKey(CilOperand operand) => operand switch
-        {
-            CilOperand.FieldInstance instance => instance.Value.Definition.Key,
-            CilOperand.Entity entity => entity.Key,
-            _ => null,
-        };
-
         // Instructions that may write memory other than through an element
         // access this pass identifies, or that may run code which does.
         private bool MayWriteMemory(CilInstruction instruction) => instruction.Operation switch
@@ -451,14 +446,7 @@ internal sealed class LoopStoreForwarder(
         };
 
         private RuntimeIntrinsic? Intrinsic(CilInstruction instruction) =>
-            CalledMethod(instruction) is { } method && _intrinsics.TryGetValue(method, out var intrinsic) ? intrinsic : null;
-
-        private static EntityKey? CalledMethod(CilInstruction instruction) => instruction.Operand switch
-        {
-            CilOperand.Entity entity => entity.Key,
-            CilOperand.MethodInstance instance => instance.Value.Definition.Key,
-            _ => null,
-        };
+            _intrinsics.TryGetValue(CilOperands.MethodKey(instruction.Operand), out var intrinsic) ? intrinsic : null;
     }
 
     // How an element is stored: narrow integers of one width share storage

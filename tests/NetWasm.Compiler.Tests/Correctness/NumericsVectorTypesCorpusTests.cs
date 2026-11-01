@@ -1,11 +1,12 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // Vector2, Vector3, Vector4, Plane, Quaternion, Matrix3x2 and Matrix4x4 are upstream's sources,
-// built on Vector128. Results compare bit for bit with desktop, which runs the same sources with
-// hardware intrinsics, so each operation must keep upstream's evaluation order. Matrix4x4.Invert
-// and Lerp use MultiplyAddEstimate, which desktop fuses where the hardware can and Wasm's SIMD128
-// cannot, so their results compare rounded to 1/4096.
-[Collection(CorrectnessTestGroup.Name)]
+// built on Vector128. Most of them use MultiplyAddEstimate, which desktop fuses where the hardware
+// can, while NetWasm rounds the product first as Mono does, so finite results compare to their
+// 12th significant bit, and Matrix4x4.Invert's to 1/4096. NaNs and infinities compare bit
+// for bit. The special values reach the operations
+// through a call the optimizer cannot see into, so their NaNs propagate at run time as desktop's
+// do rather than being computed ahead of time as Wasm's canonical NaN.
 public sealed class NumericsVectorTypesCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -13,7 +14,14 @@ public sealed class NumericsVectorTypesCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "NumericsVectorTypesCorpus",
             "NetWasm.Correctness.NumericsVectorTypes",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 7, .. Enumerable.Range(60, 14)])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Numerics;
 
@@ -146,18 +154,25 @@ public sealed class NumericsVectorTypesCorpusTests(CorrectnessTestRunner runner)
                 private static int Specials()
                 {
                     var h = 43;
-                    h = Mix(h, Vector3.Normalize(Vector3.Zero)); h = Mix(h, new Vector4(float.NaN, -0f, float.PositiveInfinity, 1) * 2);
-                    h = Mix(h, Vector2.Max(new Vector2(-0f, float.NaN), new Vector2(0f, 1f)));
-                    h = Mix(h, Vector2.Min(new Vector2(-0f, float.NaN), new Vector2(0f, 1f)));
-                    h = Mix(h, Matrix4x4.Invert(new Matrix4x4(), out var singular) ? 1 : 0); h = Mix(h, singular);
-                    h = Mix(h, Quaternion.Normalize(Quaternion.Zero));
+                    h = Mix(h, Vector3.Normalize(Opaque(Vector3.Zero))); h = Mix(h, Opaque(new Vector4(float.NaN, -0f, float.PositiveInfinity, 1)) * 2);
+                    h = Mix(h, Vector2.Max(Opaque(new Vector2(-0f, float.NaN)), new Vector2(0f, 1f)));
+                    h = Mix(h, Vector2.Min(Opaque(new Vector2(-0f, float.NaN)), new Vector2(0f, 1f)));
+                    h = Mix(h, Matrix4x4.Invert(Opaque(new Matrix4x4()), out var singular) ? 1 : 0); h = Mix(h, singular);
+                    h = Mix(h, Quaternion.Normalize(Opaque(Quaternion.Zero)));
                     var span = new float[5];
                     new Vector4(1, 2, 3, 4).CopyTo(span, 1);
                     foreach (var value in span) h = Mix(h, value);
                     return Mix(h, Vector3.One.GetHashCode() == Vector3.One.GetHashCode() ? 1 : 0);
                 }
 
-                private static int Mix(int hash, float value) => unchecked(hash * 31 + BitConverter.SingleToInt32Bits(value));
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+                private static T Opaque<T>(T value) => value;
+
+                private static int Mix(int hash, float value)
+                {
+                    var bits = BitConverter.SingleToInt32Bits(value);
+                    return unchecked(hash * 31 + (float.IsFinite(value) ? (bits + 0x800) & ~0xFFF : bits));
+                }
                 private static int Mix(int hash, int value) => unchecked(hash * 31 + value);
                 private static int Mix(int hash, Vector2 value) => Mix(Mix(hash, value.X), value.Y);
                 private static int Mix(int hash, Vector3 value) => Mix(Mix(Mix(hash, value.X), value.Y), value.Z);
@@ -183,10 +198,5 @@ public sealed class NumericsVectorTypesCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 7, .. Enumerable.Range(60, 14)])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

@@ -652,41 +652,47 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!));
 
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            null!, staticState, buildPhase, buildPhase, buildPhase,
+            null!, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, null!, buildPhase, buildPhase, buildPhase,
+            types, null!, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, null!, buildPhase, buildPhase,
+            types, staticState, null!, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, null!, buildPhase,
+            types, staticState, buildPhase, null!, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, null!,
+            types, staticState, buildPhase, buildPhase, null!, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase,
+            types, staticState, buildPhase, buildPhase, buildPhase, null!, buildPhase,
+            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
+        ThrowsNull(() => new ManagedStaticDataBuilder(
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, null!,
+            buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
+        ThrowsNull(() => new ManagedStaticDataBuilder(
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             null!, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase,
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, null!, buildPhase, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase,
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, null!, buildPhase, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase,
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, null!, buildPhase, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase,
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, null!, buildPhase));
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            types, staticState, buildPhase, buildPhase, buildPhase,
+            types, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, null!));
         var nullTargetTypes = types with { Target = null! };
         ThrowsNull(() => new ManagedStaticDataBuilder(
-            nullTargetTypes, staticState, buildPhase, buildPhase, buildPhase,
+            nullTargetTypes, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
             buildPhase, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase));
 
         ThrowsNull(() => new ManagedStaticDataBuilderFactory(null!));
@@ -926,11 +932,13 @@ public sealed class ManagedLayoutPhaseTests
             phase,
             phase,
             phase,
+            phase,
+            phase,
             phase);
 
         builder.Build();
 
-        Assert.Equal(9, phase.Calls);
+        Assert.Equal(11, phase.Calls);
     }
 
     [Fact]
@@ -2551,9 +2559,11 @@ public sealed class ManagedLayoutPhaseTests
         ITypeDescriptorBuilder,
         IConstructedTypeDescriptorBuilder,
         IValueTypeDescriptorBuilder,
+        IRuntimeGenericArgumentMetadataBuilder,
         IMemberDescriptorDataBuilder,
         IStringDataBuilder,
         IExceptionObjectBuilder,
+        ITypeObjectDataBuilder,
         IEnumMetadataCollector,
         IEnumMetadataBuilder
     {

@@ -3,7 +3,6 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tests.Correctness.TimeZoneInfoFacadeQualification;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class TimeZoneInfoFacadeAcceptanceTests
 {
     [Theory]
@@ -78,7 +77,7 @@ public sealed class TimeZoneInfoFacadeAcceptanceTests
         {
             var fixture = TimeZoneInfoFacadeCorpus.Create(environment);
             var compilation = compiler.Compile(fixture, profile, directory);
-            var expected = desktop.Run(compilation);
+            var expected = desktop.Run(compilation, TestContext.Current.CancellationToken);
             using var asset = TimeZoneInfoFacadeAssetConfiguration.FromEnvironment();
             var execution = netWasm.Run(compilation, target, asset);
 

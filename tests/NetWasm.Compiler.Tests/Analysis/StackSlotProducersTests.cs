@@ -94,6 +94,51 @@ public sealed class StackSlotProducersTests
         Assert.Null(unknown.FindTop(0));
     }
 
+    // Past a bounds check's branch around its throw, the walk continues at the
+    // branch: only it reaches the instruction after the throw. A second branch
+    // or an exception region that starts there reaches it too, so the walk stops.
+    [Theory]
+    [InlineData("branch", 0)]
+    [InlineData("second branch", null)]
+    [InlineData("filter", null)]
+    public void TheWalkCrossesOnlyABranchNothingElseEnters(string other, int? producer)
+    {
+        ImmutableArray<CilInstruction> instructions =
+        [
+            Constant(0),
+            new(1, 2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            new(2, 3, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(5)),
+            new(3, 4, CilOperation.LoadNull, new CilOperand.None()),
+            new(4, 5, CilOperation.Throw, new CilOperand.None()),
+            Store(5, 0),
+            new(6, 7, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            new(7, 8, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(other == "second branch" ? 5 : 8)),
+            new(8, 9, CilOperation.Return, new CilOperand.None()),
+        ];
+        var body = Body(instructions) with
+        {
+            ExceptionRegions = other switch
+            {
+                "filter" => [new(CilExceptionRegionKind.Filter, 0, 1, 6, 2, null, 5)],
+                _ => [],
+            },
+        };
+        var producers = new StackSlotProducers(body, new Dictionary<int, ImmutableArray<CliValueKind>>
+        {
+            [0] = [],
+            [1] = [CliValueKind.I4],
+            [2] = [CliValueKind.I4, CliValueKind.I4],
+            [3] = [CliValueKind.I4],
+            [4] = [CliValueKind.I4, CliValueKind.ManagedReference],
+            [5] = [CliValueKind.I4],
+            [6] = [],
+            [7] = [CliValueKind.I4],
+            [8] = [],
+        }.ToImmutableDictionary());
+
+        Assert.Equal(producer, producers.FindTop(5, acrossBranches: true));
+    }
+
     private static CilInstruction Constant(int offset) => new(offset, offset + 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(offset));
 
     private static CilInstruction Store(int offset, int local) => new(offset, offset + 1, CilOperation.StoreLocal, new CilOperand.Index(local));

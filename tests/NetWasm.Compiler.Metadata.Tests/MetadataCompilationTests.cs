@@ -369,7 +369,7 @@ public sealed class MetadataCompilationTests
             "PadRight", "Remove", "Remove", "Replace", "Replace",
             "SetCharUnchecked", "Split", "StartsWith", "Substring", "Substring",
             "ToCharArray", "Trim", "Trim", "TrimEnd", "TrimStart", "TrimWhiteSpace",
-            "ValidateOrdinal", "ValidateRange", "get_Chars", "get_Length",
+            "ValidateComparison", "ValidateRange", "get_Chars", "get_Length",
             "op_Equality", "op_Inequality",
         };
         Assert.All(requiredMembers, member => Assert.Contains(member, members));

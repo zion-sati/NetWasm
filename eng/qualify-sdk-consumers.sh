@@ -455,14 +455,16 @@ import json
 import sys
 from pathlib import Path
 
+# Default, Compact, NetWasm, Bump and Compact again: the default is Compact, the
+# three collectors differ, and switching back reproduces Compact's bytes.
 root = Path(sys.argv[1])
-rows = [json.loads((root / f"collector-{i}.json").read_text()) for i in range(1, 7)]
-if (rows[0] != rows[1] or rows[1] != rows[5] or
-        len({row["runtimeSha256"] for row in rows[1:5]}) != 4):
+rows = [json.loads((root / f"collector-{i}.json").read_text()) for i in range(1, 6)]
+if (rows[0] != rows[1] or rows[1] != rows[4] or
+        len({row["runtimeSha256"] for row in rows[1:4]}) != 3):
     raise ValueError("Switching collectors did not reproduce the correct runtime bytes.")
-finals = [json.loads((root / f"collector-{i}-final.json").read_text()) for i in range(1, 7)]
-if (finals[0] != finals[1] or finals[1] != finals[5] or
-        len({row["sha256"] for row in finals[1:5]}) != 4):
+finals = [json.loads((root / f"collector-{i}-final.json").read_text()) for i in range(1, 6)]
+if (finals[0] != finals[1] or finals[1] != finals[4] or
+        len({row["sha256"] for row in finals[1:4]}) != 3):
     raise ValueError("Switching collectors did not reproduce the correct runnable artifacts.")
 PY
   cp "$app_root/Program.cs" "$work_root/collector-original.Program.cs"
@@ -669,6 +671,16 @@ for target in wasm32 wasm64; do
     }
     [[ -f "$consumer_root/publish/browser/netwasm.browser.mjs" ]] || {
       echo "Browser publish is missing its entry module" >&2
+      exit 1
+    }
+    # A browser publish of the built application, as dotnet run stages it
+    # (issue #140), prepares the deployment the build did not.
+    run_log "$work_root/app-publish-browser-no-build.log" \
+      dotnet publish "$app_project" -c Release --no-build --no-restore \
+        --disable-build-servers --nologo \
+        -p:NetWasmPublishTarget=browser -o "$consumer_root/publish-no-build"
+    [[ -f "$consumer_root/publish-no-build/browser/netwasm.browser.mjs" ]] || {
+      echo "A no-build browser publish is missing its entry module" >&2
       exit 1
     }
     if [[ "${NETWASM_QUALIFY_SDK_VERSION:-}" == 10.* ||
@@ -1339,6 +1351,7 @@ EOF
     <TargetFramework>netwasm0.1</TargetFramework>
     <OutputType>Library</OutputType>
     <Nullable>enable</Nullable>
+    <IsPublishable Condition="'$(PageExportsPublishable)' != ''">$(PageExportsPublishable)</IsPublishable>
   </PropertyGroup>
 </Project>
 EOF
@@ -1366,7 +1379,97 @@ PY
   (cd "$consumer_root/PageModule" && run_log "$work_root/page-module-publish.log" \
     dotnet publish PageModule.csproj -c Release --disable-build-servers --nologo)
   page_publish="$consumer_root/PageModule/bin/Release/netwasm0.1/publish/browser"
+  # A solution publishes every publishable project (issue #143): the library
+  # publishes as a .NET class library, staging nothing, and the page stages
+  # its deployment without the library's assembly, which its module holds. A
+  # library with IsPublishable=false is skipped.
+  solution_root="$consumer_root/page-solution"
+  mkdir -p "$solution_root"
+  cp "$app_root/global.json" "$solution_root/global.json"
+  cat > "$solution_root/PageSolution.slnx" <<'EOF'
+<Solution>
+  <Project Path="../PageModule/PageModule.csproj" />
+  <Project Path="../PageExports/PageExports.csproj" />
+</Solution>
+EOF
+  for publishable in true false; do
+    rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin"
+    (cd "$solution_root" && run_log "$work_root/page-solution-publish-$publishable.log" \
+      dotnet publish PageSolution.slnx -c Release --disable-build-servers --nologo \
+        -p:PageExportsPublishable=$publishable)
+    require_file "$page_publish/PageModule.mjs"
+    if find "$consumer_root/PageModule/bin/Release/netwasm0.1/publish" \( -name '*.dll' -o -name '*.pdb' \) | grep -q .; then
+      echo "The page's publish holds managed assemblies" >&2
+      exit 1
+    fi
+    if [[ -d "$consumer_root/PageExports/bin/Release/netwasm0.1/publish" ]] &&
+        find "$consumer_root/PageExports/bin/Release/netwasm0.1/publish" -type f | grep -q .; then
+      echo "The library's publish staged files" >&2
+      exit 1
+    fi
+  done
+  rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin"
+  (cd "$consumer_root/PageModule" && run_log "$work_root/page-module-publish-again.log" \
+    dotnet publish PageModule.csproj -c Release --disable-build-servers --nologo)
   require_file "$page_publish/PageModule.mjs"
+  # dotnet run serves what dotnet publish produces (issue #140): a page module
+  # and a WIT worker publish their page to a staging directory and serve it on
+  # localhost, and a library names what to run instead.
+  serve_with_dotnet_run() {
+    local project_dir="$1" module="$2" log="$3"
+    python3 - "$project_dir" "$module" "$log" <<'PY'
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+
+project, module, log_path = sys.argv[1:4]
+windows = os.name == "nt"
+with open(log_path, "w", encoding="utf-8") as log:
+    process = subprocess.Popen(
+        ["dotnet", "run", "-c", "Release", "--disable-build-servers", "--", "--port", "0"],
+        cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if windows else 0, start_new_session=not windows)
+    try:
+        url = None
+        deadline = time.monotonic() + 900
+        for line in process.stdout:
+            log.write(line)
+            match = re.match(r"Now listening on: (http://localhost:\d+/)$", line.strip())
+            if match:
+                url = match.group(1).replace("localhost", "127.0.0.1")
+                break
+            if time.monotonic() > deadline:
+                break
+        if url is None:
+            raise SystemExit(f"dotnet run did not serve {project}; see {log_path}")
+        for path, media_type in (("", "text/html"), (module, "text/javascript")):
+            with urllib.request.urlopen(url + path, timeout=60) as response:
+                if response.status != 200 or not response.headers["content-type"].startswith(media_type):
+                    raise SystemExit(f"{url + path} answered {response.status} {response.headers['content-type']}")
+                if not response.read():
+                    raise SystemExit(f"{url + path} is empty")
+    finally:
+        if windows:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True)
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=60)
+PY
+  }
+  serve_with_dotnet_run "$consumer_root/PageModule" "browser/PageModule.mjs" "$work_root/page-module-run.log"
+  serve_with_dotnet_run "$consumer_root/WitWorker" "browser/WitWorker.worker-client.mjs" "$work_root/wit-worker-run.log"
+  if (cd "$exports_root" && dotnet run --disable-build-servers > "$work_root/library-run.log" 2>&1); then
+    echo "dotnet run on a library succeeded" >&2
+    exit 1
+  fi
+  grep -Fq "NWSDK018" "$work_root/library-run.log" || {
+    echo "dotnet run on a library did not report NWSDK018" >&2
+    exit 1
+  }
   require_file "$page_publish/PageModule.d.mts"
   for published in "$page_publish/PageModule.mjs" "$page_publish/PageModule.d.mts"; do
     grep -Fq 'libraryCallback' "$published" || {

@@ -24,8 +24,11 @@ namespace System.Runtime.InteropServices
                 throw new ArgumentOutOfRangeException(nameof(type));
             }
 
-            // The NetWasm pinning runtime supports pinning any managed object,
-            // so no separate Marshal.IsPinnable dependency is required here.
+            if (type == GCHandleType.Pinned && !Marshal.IsPinnable(value))
+            {
+                throw new ArgumentException(SR.ArgumentException_NotIsomorphic, nameof(value));
+            }
+
             _handle = GCHandleRuntime.Create(value, (int)type);
         }
 
@@ -61,6 +64,11 @@ namespace System.Runtime.InteropServices
             {
                 var handle = _handle;
                 ThrowIfInvalid(handle);
+                if (IsPinned(handle) && !Marshal.IsPinnable(value))
+                {
+                    throw new ArgumentException(SR.ArgumentException_NotIsomorphic, nameof(value));
+                }
+
                 GCHandleRuntime.Set(handle.ToInt32(), value);
             }
         }

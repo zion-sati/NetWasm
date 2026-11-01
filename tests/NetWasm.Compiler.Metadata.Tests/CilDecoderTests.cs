@@ -166,6 +166,50 @@ public sealed class CilDecoderTests
                 .ToArray());
     }
 
+    // A fixed statement pins the object whose address it takes through a local
+    // the code stores once and reads once, so the body names the pinned locals
+    // and no other.
+    [Fact]
+    public void DecoderMarksTheLocalsAFixedStatementPins()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileUnsafeSource(
+            "PinnedCil",
+            """
+            namespace PinnedCil;
+
+            public sealed class Holder
+            {
+                public int Number;
+            }
+
+            public static class EntryPoint
+            {
+                public static unsafe int Run(string text, int[] values, Holder holder)
+                {
+                    var unpinned = text.Length;
+                    fixed (char* characters = text)
+                    fixed (int* numbers = values)
+                    fixed (int* number = &holder.Number)
+                    {
+                        return characters[0] + numbers[0] + *number + unpinned;
+                    }
+                }
+            }
+            """);
+        using var lease = MetadataCompilationTestFactory.Load(assembly, [assets.CoreLib]);
+        var snapshot = lease.Snapshot;
+        var method = MetadataCapabilityTestData.MethodFinder(snapshot).FindMethod(
+            snapshot.EntryAssemblyIdentity, "PinnedCil.EntryPoint", "Run");
+        var body = MetadataCapabilityTestData.MethodBodies(snapshot).ReadMethodBody(method);
+
+        Assert.Equal(3, body.PinnedLocals.Count);
+        Assert.All(body.PinnedLocals, local => Assert.InRange(local, 0, body.Locals.Length - 1));
+        Assert.Contains(body.PinnedLocals, local => body.Locals[local] == CliValueKind.ManagedReference);
+        Assert.Equal(2, body.PinnedLocals.Count(local => body.Locals[local] == CliValueKind.ManagedAddress));
+        Assert.DoesNotContain(body.PinnedLocals, local => body.Locals[local] == CliValueKind.I4);
+    }
+
     [Fact]
     public void DecoderRetainsVolatilePrefixesFromOrdinaryRoslynFields()
     {

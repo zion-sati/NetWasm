@@ -285,7 +285,9 @@ public sealed class ManagedMethodEmitterTests
                 new ImplicitExceptionEmitter(layouts, layouts)),
             new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
             new EmptyFloatingCallPlanner(), new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(),
-            new RootClearElisionPlanner(), new RootValueElisionPlanner());
+            new RootClearElisionPlanner(), new RootValueElisionPlanner(),
+            new ValueFrameReferenceMapPlanner(layouts, layouts, types),
+            new NetWasm.Compiler.GarbageCollection.RootSlotAllocator());
     }
 
     private sealed class EmptyFloatingCallPlanner : IScalarCallLifetimePlanner

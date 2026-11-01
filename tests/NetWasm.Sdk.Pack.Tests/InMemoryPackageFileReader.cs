@@ -1,6 +1,10 @@
-namespace NetWasm.Sdk.Pack.Archives;
+using NetWasm.Sdk.Pack.Archives;
+using NetWasm.Sdk.Pack.Policies;
 
-public sealed class InMemoryPackageFileReader : IPackageFileReader
+namespace NetWasm.Sdk.Pack.Tests;
+
+// A package file reader over files the test supplies.
+internal sealed class InMemoryPackageFileReader : IPackageFileReader
 {
     private readonly IReadOnlyDictionary<string, byte[]> files;
 

@@ -12,8 +12,6 @@ internal static class RenumberedInstructions
     public static CilOperand Operand(CilOperand operand, IReadOnlyDictionary<int, int> starts) => operand switch
     {
         CilOperand.BranchTarget target => new CilOperand.BranchTarget(starts[target.Offset]),
-        CilOperand.SwitchTargets targets => new CilOperand.SwitchTargets(
-            [.. targets.Offsets.Select(offset => starts[offset])]),
         _ => operand,
     };
 

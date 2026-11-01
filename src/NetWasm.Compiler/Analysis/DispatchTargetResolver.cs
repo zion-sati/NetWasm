@@ -224,18 +224,14 @@ internal sealed class DispatchTargetResolver(
     // Overloads such as Box<T>.N(T) and N(int) coincide once T is int. The
     // implementation is the one whose declared signature matches the interface
     // method's, read through the interface as the type declares it, so N(T)
-    // implements IShape<T>.N (ECMA-335 II.12.2).
+    // implements IShape<T>.N (ECMA-335 II.12.2). Only an instantiated generic
+    // type's methods coincide, so the type is one.
     private MethodInstanceModel? DeclaredImplementation(
         MethodInstanceModel[] matching,
         CliTypeIdentity current,
         TypeDefinitionModel definition,
         MethodInstanceModel declaration)
     {
-        if (current.Shape != CliTypeShape.GenericInstantiation)
-        {
-            return null;
-        }
-
         var open = CliTypeIdentity.GenericInstantiation(
             current.ElementType!,
             [.. Enumerable.Range(0, definition.GenericArity)

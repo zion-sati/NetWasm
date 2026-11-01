@@ -46,8 +46,6 @@ internal static class WasmRuntimeImports
                 CliValueKind.ManagedReference)),
     ];
 
-    public static WasmFunctionImport[] Create() => [.. CreateCatalog().Imports];
-
     private static RuntimeImportBinding[] CreateBindings() =>
     [
         .. CreateLegacyBindings(),
@@ -170,6 +168,10 @@ internal static class WasmRuntimeImports
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeTypeObjectCache,
             WasmFunctionType.Create(CliValueKind.ManagedAddress))),
+        new(RuntimeImportSymbol.ObjectContainsReferences, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeObjectContainsReferences,
+            WasmFunctionType.Create(CliValueKind.I4, CliValueKind.ManagedReference))),
     ];
 
     private static RuntimeImportBinding[] CreateLegacyBindings() =>
@@ -225,9 +227,23 @@ internal static class WasmRuntimeImports
             WasmFunctionType.Create(
                 CliValueKind.ManagedAddress,
                 CliValueKind.NativeInt))),
+        // A frame that holds references passes its map: the word count and the
+        // first word, one bit a reference-sized word of the frame.
+        new(RuntimeImportSymbol.ValueFrameEnterMapped, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeValueFrameEnterMapped,
+            WasmFunctionType.Create(
+                CliValueKind.ManagedAddress,
+                CliValueKind.NativeInt,
+                CliValueKind.I4,
+                CliValueKind.I8))),
         new(RuntimeImportSymbol.ValueFrameLeave, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,
             RuntimeAbi.RuntimeValueFrameLeave,
+            WasmFunctionType.Create(CliValueKind.Void, CliValueKind.ManagedAddress))),
+        new(RuntimeImportSymbol.ValueFrameLeaveMapped, new WasmFunctionImport(
+            RuntimeAbi.RuntimeModule,
+            RuntimeAbi.RuntimeValueFrameLeaveMapped,
             WasmFunctionType.Create(CliValueKind.Void, CliValueKind.ManagedAddress))),
         new(RuntimeImportSymbol.BeginThrow, new WasmFunctionImport(
             RuntimeAbi.RuntimeModule,

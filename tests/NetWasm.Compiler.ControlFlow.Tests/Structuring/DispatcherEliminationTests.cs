@@ -62,6 +62,37 @@ public sealed class DispatcherEliminationTests
             region => region is StructuredDispatcher);
     }
 
+    // Labels cannot express the transfers of an exception region, so a method
+    // with one keeps whatever structure the dispatcher gave it.
+    [Fact]
+    public void DeclinesAMethodWithAnExceptionRegion()
+    {
+        var body = Body(CliValueKind.Void, 0, [],
+            I(0, CilOperation.Nop),
+            I(1, CilOperation.Leave, new CilOperand.BranchTarget(4)),
+            I(2, CilOperation.Nop),
+            I(3, CilOperation.EndFinally),
+            I(4, CilOperation.Return)) with
+        {
+            ExceptionRegions = [new(CilExceptionRegionKind.Finally, 0, 2, 2, 2, null, null)],
+        };
+
+        Assert.Null(new ReducibleControlFlowStructurer().Structure(Validate(body)));
+    }
+
+    // A conditional branch to the block it falls into has one successor, so
+    // it has no if/else shape.
+    [Fact]
+    public void DeclinesABranchToItsOwnFallthrough()
+    {
+        var body = Body(CliValueKind.Void, 1, [],
+            I(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(2)),
+            I(2, CilOperation.Return));
+
+        Assert.Null(new ReducibleControlFlowStructurer().Structure(Validate(body)));
+    }
+
     [Fact]
     public void DisabledPolicyKeepsTheDispatcher() =>
         Assert.Contains(

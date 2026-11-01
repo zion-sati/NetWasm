@@ -446,16 +446,20 @@ public partial struct Int64
         }
         else if (typeof(TOther) == typeof(nuint))
         {
-#if TARGET_32BIT
+            // NetWasm builds one CoreLib for both widths, so upstream's TARGET_32BIT branch is chosen by IntPtr.Size, which the compiler folds per target.
+            if (IntPtr.Size == 4)
+            {
                 nuint actualResult = (value >= uint.MaxValue) ? uint.MaxValue :
-                                     (value <= uint.MinValue) ? uint.MinValue : (nuint)value;
+                (value <= uint.MinValue) ? uint.MinValue : (nuint)value;
                 result = (TOther)(object)actualResult;
                 return true;
-#else
-            nuint actualResult = (value <= 0) ? 0 : (nuint)value;
-            result = (TOther)(object)actualResult;
-            return true;
-#endif
+            }
+            else
+            {
+                nuint actualResult = (value <= 0) ? 0 : (nuint)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
         }
         else
         {

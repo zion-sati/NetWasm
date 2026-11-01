@@ -1,12 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace NetWasm.Compiler.Tests.Correctness;
+// One harness for the whole assembly: each correctness class is its own
+// collection, so the classes run in parallel and share the harness's caches.
+[assembly: AssemblyFixture(typeof(NetWasm.Compiler.Tests.Correctness.CorrectnessTestRunner))]
 
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class CorrectnessTestGroup : ICollectionFixture<CorrectnessTestRunner>
-{
-    public const string Name = "compiler-correctness";
-}
+namespace NetWasm.Compiler.Tests.Correctness;
 
 public sealed class CorrectnessTestRunner : IDisposable
 {

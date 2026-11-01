@@ -74,6 +74,10 @@ public sealed record WitWorld(
 {
     // Types the world declares itself, as `type` and `enum` items, by name.
     public ImmutableDictionary<string, int> Types { get; init; } = ImmutableDictionary<string, int>.Empty;
+
+    // The key the world imports or exports one of its interfaces by.
+    public string InterfaceKey(int interfaceId) =>
+        Imports.Concat(Exports).First(item => item.InterfaceId == interfaceId).Name;
 }
 
 public sealed record WitTypeDefinition(
@@ -103,15 +107,6 @@ public sealed record WitDocument(
     ImmutableArray<WitTypeDefinition> Types,
     string NormalizedJson)
 {
-    // The key the world imports or exports an interface by; an interface the
-    // world does not place keeps its own.
-    public string InterfaceKey(WitWorld world, int interfaceId)
-    {
-        ArgumentNullException.ThrowIfNull(world);
-        return world.Imports.Concat(world.Exports).FirstOrDefault(item => item.InterfaceId == interfaceId)?.Name ??
-            Interfaces[interfaceId].Key;
-    }
-
     public WitWorld SelectWorld(string? requestedWorld)
     {
         if (requestedWorld is null)

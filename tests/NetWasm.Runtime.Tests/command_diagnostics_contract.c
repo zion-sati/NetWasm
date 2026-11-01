@@ -20,24 +20,6 @@ static void write_diagnostic_bytes(const char *value, size_t length)
     output_length += length;
     output[output_length] = 0;
 }
-static int diagnostic_string_is_empty(netwasm_reference_t string)
-{
-    return string == 0 || *(uint32_t *)(string + NETWASM_STRING_LENGTH_OFFSET) == 0;
-}
-static int diagnostic_string_ends_with_newline(netwasm_reference_t string)
-{
-    uint32_t length = *(uint32_t *)(string + NETWASM_STRING_LENGTH_OFFSET);
-    return ((uint16_t *)(string + NETWASM_STRING_DATA_OFFSET))[length - 1] == '\n';
-}
-static void write_diagnostic_string(netwasm_reference_t string)
-{
-    uint32_t length = *(uint32_t *)(string + NETWASM_STRING_LENGTH_OFFSET);
-    uint16_t *text = (uint16_t *)(string + NETWASM_STRING_DATA_OFFSET);
-    for (uint32_t index = 0; index < length; index++) {
-        char value = (char)text[index];
-        write_diagnostic_bytes(&value, 1);
-    }
-}
 void collector_register_roots(void *start, size_t size)
 {
     assert(retained_roots == NULL);

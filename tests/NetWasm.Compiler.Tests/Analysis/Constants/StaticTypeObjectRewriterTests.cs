@@ -96,15 +96,18 @@ public sealed class StaticTypeObjectRewriterTests
     [InlineData("string")]
     [InlineData("sealed field")]
     [InlineData("new object")]
+    [InlineData("sealed field definition")]
     public void GetTypeOnAReceiverOfOneTypeNamesIt(string receiver)
     {
         var facts = new MethodFacts { Definition = new(TypeKey, "Fixture", "Leaf", false, [], []) { IsSealed = true } };
+        facts.Fields[Field(Leaf).Definition.Key] = Field(Leaf).Definition;
         var constructor = new MethodInstanceModel(Method(2).Definition with { IsStatic = false, Name = ".ctor" }, Leaf, [],
             MethodSignatureModel.Create(CliValueKind.Void));
         var (load, expected) = receiver switch
         {
             "string" => (Instruction(0, CilOperation.LoadString, new CilOperand.UserString("text")), Text),
             "sealed field" => (Instruction(0, CilOperation.LoadStaticField, new CilOperand.FieldInstance(Field(Leaf))), Leaf),
+            "sealed field definition" => (Instruction(0, CilOperation.LoadStaticField, new CilOperand.Entity(Field(Leaf).Definition.Key)), Leaf),
             _ => (Instruction(0, CilOperation.NewObject, new CilOperand.MethodInstance(constructor)), Leaf),
         };
         var body = Body(load, Instruction(1, CilOperation.GetObjectType), Instruction(2, CilOperation.Return));
@@ -114,6 +117,35 @@ public sealed class StaticTypeObjectRewriterTests
         Assert.Equal(load, result.Instructions[0]);
         Assert.Equal(new CilOperand.ExactType(expected), result.Instructions[1].Operand);
         Assert.True(CilTypeMaterialization.IsExactObjectType(result.Instructions[1]));
+    }
+
+    // A constructor or call the rule cannot resolve, a new value or array, an
+    // open type and a local the signature does not describe name no type.
+    [Theory]
+    [InlineData("unresolved constructor")]
+    [InlineData("value constructor")]
+    [InlineData("array constructor")]
+    [InlineData("open constructor")]
+    [InlineData("unresolved call")]
+    [InlineData("undescribed local")]
+    public void GetTypeOnAReceiverOfNoKnownTypeStaysDynamic(string receiver)
+    {
+        var facts = new MethodFacts { Definition = new(TypeKey, "Fixture", "Leaf", false, [], []) { IsSealed = true } };
+        MethodInstanceModel Constructor(CliTypeIdentity type) => new(
+            Method(2).Definition with { IsStatic = false, Name = ".ctor" }, type, [], MethodSignatureModel.Create(CliValueKind.Void));
+        var load = receiver switch
+        {
+            "unresolved constructor" => Instruction(0, CilOperation.NewObject, new CilOperand.Entity(Method(2).Definition.Key)),
+            "value constructor" => Instruction(0, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor(Shade))),
+            "array constructor" => Instruction(0, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor(CliTypeIdentity.SzArray(Leaf)))),
+            "open constructor" => Instruction(0, CilOperation.NewObject, new CilOperand.MethodInstance(Constructor(
+                CliTypeIdentity.GenericInstantiation(Leaf, [CliTypeIdentity.GenericParameter(method: false, 0)])))),
+            "unresolved call" => Instruction(0, CilOperation.Call, new CilOperand.Entity(Method(2).Definition.Key)),
+            _ => Instruction(0, CilOperation.LoadLocal, new CilOperand.Index(0)),
+        };
+        var body = Body(load, Instruction(1, CilOperation.GetObjectType), Instruction(2, CilOperation.Return));
+
+        Assert.Same(body, Rule(body, facts).Rewrite(body));
     }
 
     // A field of an unsealed class may hold a derived object.

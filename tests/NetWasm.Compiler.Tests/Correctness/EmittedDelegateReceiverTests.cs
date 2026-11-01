@@ -3,7 +3,6 @@ using System.Reflection.PortableExecutable;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class EmittedDelegateReceiverTests(CorrectnessTestRunner runner) : EmittedAssemblyTestBase(runner)
 {
     public static TheoryData<string, string> ClosedCells => CorpusCaseTestData.Cells(CorpusCaseTestData.ClosedDelegateReceiver);

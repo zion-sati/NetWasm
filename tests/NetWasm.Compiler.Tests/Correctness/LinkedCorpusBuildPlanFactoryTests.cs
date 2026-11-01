@@ -4,6 +4,20 @@ namespace NetWasm.Compiler.Tests.Correctness;
 
 public sealed class LinkedCorpusBuildPlanFactoryTests
 {
+    // A fixture that collects at every allocation, or a stressed run, links
+    // the stress runtime.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void AStressedFixtureOrRunLinksTheStressRuntime(bool collectsAtEveryAllocation, bool gcStress)
+    {
+        var plan = ((ILinkedCorpusBuildPlanFactory)new LinkedCorpusBuildPlanFactory()).Create(
+            Request with { CollectsAtEveryAllocation = collectsAtEveryAllocation, Tools = Request.Tools with { GcStress = gcStress } });
+
+        Assert.Equal(collectsAtEveryAllocation || gcStress, plan.Steps[0].Process.Arguments.Contains("--gc-stress"));
+    }
+
     [Theory]
     [InlineData(WasmTarget.Wasm32, 0, "wasm32", "debug", 3)]
     [InlineData(WasmTarget.Wasm64, 0, "wasm64", "debug", 3)]

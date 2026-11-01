@@ -93,7 +93,8 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.IntegerDivRem => DivRemRequirements(method),
             RuntimeIntrinsic.EnumConvert => ConvertRequirements(method),
             // A vector of an element type it does not support, as upstream.
-            RuntimeIntrinsic.SimdGetElement => [NotSupported, ArgumentOutOfRange],
+            RuntimeIntrinsic.SimdGetElement or RuntimeIntrinsic.SimdWithElement =>
+                [NotSupported, ArgumentOutOfRange],
             // Integer lanes divide one by one, as upstream's Scalar<T>.Divide.
             RuntimeIntrinsic.SimdDivide => [NotSupported, DivideByZero, Overflow],
             RuntimeIntrinsic.PackedSimdInstruction when

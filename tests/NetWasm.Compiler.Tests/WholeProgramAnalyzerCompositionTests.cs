@@ -387,7 +387,8 @@ public sealed class WholeProgramAnalyzerCompositionTests
             IMethodBodyReader methodBodies,
             WasmOptimizationSettings optimizationSettings,
             IRuntimeIntrinsicRegistry intrinsics,
-            PlatformWorldCapabilities world)
+            PlatformWorldCapabilities world,
+            ITypeIdentityResolver typeIdentities)
         {
             Called = true;
             return new MethodSpecializerFactory(
@@ -405,7 +406,8 @@ public sealed class WholeProgramAnalyzerCompositionTests
                 methodBodies,
                 optimizationSettings,
                 intrinsics,
-                world);
+                world,
+                typeIdentities);
         }
     }
 

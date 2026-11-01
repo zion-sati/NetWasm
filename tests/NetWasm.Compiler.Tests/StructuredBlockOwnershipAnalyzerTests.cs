@@ -104,6 +104,8 @@ public sealed class StructuredBlockOwnershipAnalyzerTests
             new StructuredLoopBreak(),
             new StructuredLoopContinue(),
             new StructuredDispatcherContinue(block.Id),
+            new StructuredLabeledBlock(block.Id, leaf),
+            new StructuredLabeledLoop(block.Id, new([new StructuredLabelBranch(block.Id)])),
         ]);
         var analyzer = Assert.IsAssignableFrom<IStructuredBlockOwnershipAnalyzer>(
             new StructuredBlockOwnershipAnalyzer());
@@ -124,6 +126,7 @@ public sealed class StructuredBlockOwnershipAnalyzerTests
         Assert.Null(visits[0].FirstPath);
         Assert.All(visits[1..], visit => Assert.Equal(visits[0].Path, visit.FirstPath));
         Assert.DoesNotContain(visits, visit => visit.Path.Contains("Blocks[1]", StringComparison.Ordinal));
+        Assert.Contains(visits, visit => visit.Path.EndsWith(".Body.Regions[0]", StringComparison.Ordinal));
     }
 
     [Fact]

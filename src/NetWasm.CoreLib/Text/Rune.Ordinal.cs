@@ -7,12 +7,16 @@ using System.Globalization;
 
 public readonly partial struct Rune
 {
-    public bool Equals(Rune other, StringComparison comparisonType) => comparisonType switch
+    public bool Equals(Rune other, StringComparison comparisonType)
     {
-        StringComparison.Ordinal => Equals(other),
-        StringComparison.OrdinalIgnoreCase => ToLowerOrdinal(this).Equals(ToLowerOrdinal(other)),
-        _ => throw new ArgumentException(nameof(comparisonType)),
-    };
+        string.CheckStringComparison(comparisonType);
+        return comparisonType switch
+        {
+            StringComparison.Ordinal => Equals(other),
+            StringComparison.OrdinalIgnoreCase => ToLowerOrdinal(this).Equals(ToLowerOrdinal(other)),
+            _ => throw new PlatformNotSupportedException(),
+        };
+    }
 
     public static double GetNumericValue(Rune value) => CharUnicodeInfo.GetNumericValue(value._value);
 

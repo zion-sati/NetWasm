@@ -34,15 +34,21 @@ internal sealed class NullableUnboxAnyEmitter(
         addresses.Emit(code, targetOffset);
         addresses.Emit(code, AddressOperation.Add);
         code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.LocalTee,
+            WasmOpcodes.LocalSet,
             WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Constant,
-            WasmInstructionOperand.Signed(0)));
-        addresses.Emit(code, nullable.Size);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.Prefixed,
-            WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        if (!SmallBlockEmitter.TryEmitKnownSizeZero(code, request.Context.ObjectTemporary, nullable.Size))
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.I32Constant,
+                WasmInstructionOperand.Signed(0)));
+            addresses.Emit(code, nullable.Size);
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Prefixed,
+                WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        }
 
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,

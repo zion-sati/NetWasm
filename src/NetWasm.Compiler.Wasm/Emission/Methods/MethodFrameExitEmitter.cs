@@ -23,12 +23,16 @@ internal sealed class MethodFrameExitEmitter(
         }
         if (context.ValueLayout.Size != 0)
         {
+            // A frame that holds references is on the collector's list; one
+            // without leaves by restoring the list it recorded.
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.LocalGet,
                 WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.Call,
-                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(RuntimeImportSymbol.ValueFrameLeave))));
+                WasmInstructionOperand.Unsigned((uint)runtimeImports.Resolve(context.ValueFrameReferences.Words.IsEmpty
+                    ? RuntimeImportSymbol.ValueFrameLeave
+                    : RuntimeImportSymbol.ValueFrameLeaveMapped))));
         }
         if (context.RootSlotCount != 0)
         {

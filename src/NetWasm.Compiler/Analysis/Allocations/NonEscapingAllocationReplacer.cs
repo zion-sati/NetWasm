@@ -42,8 +42,7 @@ internal sealed class NonEscapingAllocationReplacer(
 {
     // Constructor chains are short; deeper ones stay allocations.
     private const int MaximumConstructorDepth = 8;
-    private const int Stale = -2;
-    private const int Unreached = -1;
+    private const int Stale = -1;
     private readonly IControlFlowGraphBuilder _graphs = graphs ?? throw new ArgumentNullException(nameof(graphs));
     private readonly ITypedStackValidator _stacks = stacks ?? throw new ArgumentNullException(nameof(stacks));
     private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
@@ -142,7 +141,9 @@ internal sealed class NonEscapingAllocationReplacer(
         // Null for the new object, or what the value is.
         var stack = new Stack<(bool Object, int? Argument, CilInstruction? Constant)>();
         var stores = ImmutableArray.CreateBuilder<FieldStore>();
-        foreach (var instruction in body.Instructions)
+        // A body ends in a control transfer, which must be the constructor's
+        // one return; a valid void return leaves nothing on the stack.
+        foreach (var instruction in body.Instructions.AsSpan()[..^1])
         {
             switch (instruction)
             {
@@ -177,22 +178,18 @@ internal sealed class NonEscapingAllocationReplacer(
                             : store);
                     }
                     break;
-                case { Operation: CilOperation.Return } when stack.Count == 0:
-                    return stores.ToImmutable();
                 default:
                     return null;
             }
         }
-        return null;
+        return body.Instructions[^1].Operation == CilOperation.Return ? stores.ToImmutable() : null;
     }
 
     // A field's definition and the type of its value.
-    private (EntityKey Field, CliTypeIdentity Type) Field(CilInstruction instruction) => instruction.Operand switch
-    {
-        CilOperand.FieldInstance { Value: var field } => (field.Definition.Key, field.FieldType),
-        CilOperand.Entity { Key: var key } => (key, _fields.GetField(key).SignatureType),
-        _ => throw new InvalidOperationException("A field access names its field."),
-    };
+    private (EntityKey Field, CliTypeIdentity Type) Field(CilInstruction instruction) =>
+        instruction.Operand is CilOperand.FieldInstance { Value: var field }
+            ? (field.Definition.Key, field.FieldType)
+            : (CilOperands.FieldKey(instruction.Operand), _fields.GetField(CilOperands.FieldKey(instruction.Operand)).SignatureType);
 
     // Values a local holds as they are, without the truncation a narrow
     // field's store performs or a struct's copy.
@@ -318,8 +315,9 @@ internal sealed class NonEscapingAllocationReplacer(
         (region.FilterOffset ?? region.HandlerOffset) <= offset && offset < region.HandlerOffset + region.HandlerLength);
 
     // Whether every load sees the newest object. Each member is stale (null,
-    // or an older object), fresh from one site, or not yet reached; a handler
-    // starts from what any point of its protected region holds.
+    // or an older object) or fresh from one site, and a block not yet reached
+    // has no state; a handler starts from what any point of its protected
+    // region holds.
     private bool Fresh(CilMethodBody body, ImmutableArray<Site> sites, HashSet<int> members, ImmutableArray<Use> uses)
     {
         var graph = _graphs.Build(body);
@@ -337,10 +335,14 @@ internal sealed class NonEscapingAllocationReplacer(
             foreach (var block in graph.Blocks)
             {
                 var input = inputs.GetValueOrDefault(block.Index);
+                // A filter and its handler both start from what the protected
+                // region held: the handler runs after the filter, which ends
+                // without passing control on, so no block's state reaches it.
                 for (var region = 0; region < body.ExceptionRegions.Length; region++)
                 {
-                    var start = body.ExceptionRegions[region].FilterOffset ?? body.ExceptionRegions[region].HandlerOffset;
-                    if (start == block.StartOffset && handlers.TryGetValue(region, out var handler))
+                    var protectedRegion = body.ExceptionRegions[region];
+                    if ((protectedRegion.HandlerOffset == block.StartOffset || protectedRegion.FilterOffset == block.StartOffset) &&
+                        handlers.TryGetValue(region, out var handler))
                     {
                         input = input is null ? (int[])handler.Clone() : Merge(input, handler);
                     }
@@ -355,7 +357,7 @@ internal sealed class NonEscapingAllocationReplacer(
                     changed |= Expose(body, handlers, instruction.Offset, state);
                     var index = indexOf[instruction.Offset];
                     if (check && loads.Contains(index) &&
-                        instruction.Operand is CilOperand.Index { Value: var loaded } && state[slots[loaded]] < 0)
+                        instruction.Operand is CilOperand.Index { Value: var loaded } && state[slots[loaded]] == Stale)
                     {
                         return false;
                     }
@@ -414,7 +416,7 @@ internal sealed class NonEscapingAllocationReplacer(
     }
 
     private static int[] Merge(int[] left, int[] right) =>
-        [.. left.Zip(right, static (a, b) => a == Unreached ? b : b == Unreached ? a : a == b ? a : Stale)];
+        [.. left.Zip(right, static (a, b) => a == b ? a : Stale)];
 
     private static CilMethodBody Apply(CilMethodBody body, Group[] groups)
     {

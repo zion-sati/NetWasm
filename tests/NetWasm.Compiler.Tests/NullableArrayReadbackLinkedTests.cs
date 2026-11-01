@@ -3,7 +3,6 @@ using NetWasm.Compiler.Tests.Correctness;
 
 namespace NetWasm.Compiler.Tests;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class NullableArrayReadbackLinkedTests(CorrectnessTestRunner runner)
 {
     [Theory]

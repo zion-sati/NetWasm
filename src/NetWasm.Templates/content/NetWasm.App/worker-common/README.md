@@ -1,12 +1,14 @@
 # NetWasmProject worker
 
-Publish the worker and its browser page:
+Run the worker and its browser page:
 
 ```bash
-dotnet publish -c Release
+dotnet run
 ```
 
-Serve `bin/Release/netwasm0.1/publish` with a static HTTP server, then open its
-`index.html`. The page calls the worker asynchronously, receives progress through
+`dotnet run` publishes the page and serves it on localhost; open the address it
+prints. `dotnet publish -c Release` writes the same site to
+`bin/Release/netwasm0.1/publish` for any static HTTP server. The page calls the
+worker asynchronously, receives progress through
 the browser's ordinary worker messaging, and disposes the worker when the call
 finishes.

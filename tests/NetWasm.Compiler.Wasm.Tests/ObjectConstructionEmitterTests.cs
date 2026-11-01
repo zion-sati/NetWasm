@@ -358,10 +358,13 @@ public sealed class ObjectConstructionEmitterTests
         Assert.Equal(DiagnosticCode.UnsupportedMetadata, exception.Diagnostic.Code);
     }
 
-    [Fact]
-    public void ValueTypeConstructionUsesAnEmptyValueFrameAtZeroOffset()
+    // A value of up to 64 bytes zeroes with stores; a larger one fills.
+    [Theory]
+    [InlineData(4, false)]
+    [InlineData(80, true)]
+    public void ValueTypeConstructionUsesAnEmptyValueFrameAtZeroOffset(int size, bool fills)
     {
-        var layouts = new RecordingLayoutProvider();
+        var layouts = new RecordingLayoutProvider(valueSize: size);
         var valueType = CliTypeIdentity.Named(
             Assembly,
             "Test",
@@ -381,7 +384,9 @@ public sealed class ObjectConstructionEmitterTests
             CreateFunctionIndexResolver(new FakeProgram()));
 
         Assert.Equal([CliValueKind.ValueType], request.Stack);
-        Assert.Contains(WasmOpcodes.Prefixed, GetCodeBytes(request));
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.Equal(fills, instructions.Any(instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
+            instruction.Operand == WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
     }
 
     [Fact]

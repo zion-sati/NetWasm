@@ -74,6 +74,31 @@ const closed = (overrides = {}) => ({ data: {
   protocolVersion: 2, generation: "generation-1", kind: "closed", ...overrides,
 } });
 
+// Issue #139: a client the page creates without a generation makes its own
+// with crypto.getRandomValues, which works outside a secure context, where
+// crypto.randomUUID does not exist.
+test("creates a random generation when the page gives none", async () => {
+  const randomUUID = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(crypto), "randomUUID");
+  Object.defineProperty(Object.getPrototypeOf(crypto), "randomUUID", { configurable: true, value: undefined });
+  try {
+    const generations = [];
+    for (let index = 0; index < 2; index++) {
+      const worker = new FakeWorker();
+      // As for the other optional options, null is the same as none.
+      const client = createWorkerSessionClient(
+        index === 0 ? { operations: ["add"], startup, worker } : { generation: null, operations: ["add"], startup, worker });
+      assert.match(client.generation, /^[0-9a-f]{32}$/u);
+      assert.equal(worker.sent[0].generation, client.generation);
+      worker.emit("message", ready({ generation: client.generation, operations: ["add"] }));
+      await client.ready;
+      generations.push(client.generation);
+    }
+    assert.notEqual(generations[0], generations[1]);
+  } finally {
+    Object.defineProperty(Object.getPrototypeOf(crypto), "randomUUID", randomUUID);
+  }
+});
+
 // Issue #126: calls run concurrently in the worker, as page calls do.
 test("starts one generation and dispatches every accepted call without waiting for earlier ones", async () => {
   const { client, worker } = fixture();
@@ -409,7 +434,7 @@ test("contains post and terminate failures and validates composition", async () 
   for (const value of [null, [], {}, { ...valid, extra: true }, {
     ...valid, [Symbol("invalid")]: true,
   }]) assert.throws(() => createWorkerSessionClient(value), TypeError);
-  for (const generation of [null, "", "x".repeat(129), "bad\0generation"]) {
+  for (const generation of [42, "", "x".repeat(129), "bad\0generation"]) {
     assert.throws(() => createWorkerSessionClient({ ...valid, generation }), /generation/);
   }
   for (const operations of [null, [null], [""], ["same", "same"]]) {

@@ -49,9 +49,6 @@ public static class BrowserRawCoreModules
         ImmutableArray<WasmInternalExport> exports) =>
         BrowserComponentExportPruner.Remove(module, exports);
 
-    public static BrowserLinkPlan CreateLinkPlan(RawModuleLinkRequest request, BrowserRawCoreModuleWorkspace workspace) =>
-        CreateOrderedLinkPlan(request, workspace);
-
     private static void ValidatePaths(
         RawModuleLinkRequest request,
         BrowserRawCoreModuleWorkspace workspace)

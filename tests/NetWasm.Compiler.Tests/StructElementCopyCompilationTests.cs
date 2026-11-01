@@ -232,7 +232,7 @@ public sealed class StructElementCopyCompilationTests
 
         Assert.Equal(["Padding"], WholeElementLoads(split));
         Assert.Equal([.. FieldWise.Append("Padding").Order()], WholeElementLoads(whole));
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 split.ApplicationModule, assets.Directory, input, target, split.StaticDataEnd));

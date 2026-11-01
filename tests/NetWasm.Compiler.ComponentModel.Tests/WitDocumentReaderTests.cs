@@ -198,6 +198,13 @@ public sealed class WitDocumentReaderTests
             "unsupported.wit"));
         Assert.Contains("unsupported WIT world item", itemException.Diagnostic.Message,
             StringComparison.Ordinal);
+
+        var unnamed = new WitDocumentReader(new StubTools(
+            "unnamed.wit", 0, UnplacedUnnamedInterfaceDocument, string.Empty));
+        var unnamedException = Assert.Throws<CompilerException>(() => unnamed.Read(
+            "unnamed.wit"));
+        Assert.Contains("WIT interface 0 has no name and no world places it",
+            unnamedException.Diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -296,6 +303,15 @@ public sealed class WitDocumentReaderTests
         {
           "worlds": [{"name":"main","package":0,"imports":{"bad":{"unknown":{}}},"exports":{}}],
           "interfaces": [], "types": [], "packages":[{"name":"example:test@1.0.0","interfaces":{},"worlds":{}}]
+        }
+        """;
+
+    // An interface without a name is a world's inline interface; one that no
+    // world places is malformed.
+    private const string UnplacedUnnamedInterfaceDocument = """
+        {
+          "worlds": [], "interfaces": [{"name":null,"package":0,"types":{},"functions":{}}],
+          "types": [], "packages":[{"name":"example:test@1.0.0","interfaces":{},"worlds":{}}]
         }
         """;
 

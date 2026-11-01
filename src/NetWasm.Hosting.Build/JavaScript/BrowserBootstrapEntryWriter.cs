@@ -30,7 +30,7 @@ public sealed class BrowserBootstrapEntryWriter : IBrowserBootstrapEntryWriter
         builder.Append("import { createCommandRun } from ")
             .Append(ModuleSpecifier(Path.Combine(Path.GetDirectoryName(request.HostingBrowserModulePath)!, "command-run.mjs")))
             .AppendLine(";");
-        BrowserHostSource.AppendImports(builder, request.Preview2ShimRoot);
+        BrowserHostSource.AppendImports(builder, request.Preview2ShimRoot, Path.GetDirectoryName(request.HostingBrowserModulePath)!);
         foreach (var (module, index) in modules.Select((module, index) => (module, index)))
         {
             builder.Append("import * as consumerModule").Append(index).Append(" from ")

@@ -51,7 +51,7 @@ public sealed class CorpusApplicationCompilerTests
         var dependencies = new Dependencies { FailureStage = failureStage };
 
         var failure = Assert.Throws<InvalidOperationException>(() =>
-            CreateCompiler(dependencies).Compile(CreateCompilation(), CreateRequest(WasmTarget.Wasm64)));
+            CreateCompiler(dependencies).Compile(CreateCompilation(), CreateRequest(WasmTarget.Wasm64), TestContext.Current.CancellationToken));
 
         Assert.Same(dependencies.Failure, failure);
         Assert.Equal(callCount, dependencies.Calls.Count);
@@ -67,8 +67,8 @@ public sealed class CorpusApplicationCompilerTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        Assert.Throws<ArgumentNullException>(() => compiler.Compile(null!, CreateRequest(WasmTarget.Wasm32)));
-        Assert.Throws<ArgumentNullException>(() => compiler.Compile(CreateCompilation(), null!));
+        Assert.Throws<ArgumentNullException>(() => compiler.Compile(null!, CreateRequest(WasmTarget.Wasm32), TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentNullException>(() => compiler.Compile(CreateCompilation(), null!, TestContext.Current.CancellationToken));
         var failure = Assert.Throws<OperationCanceledException>(() =>
             compiler.Compile(CreateCompilation(), CreateRequest(WasmTarget.Wasm32), cancellation.Token));
 

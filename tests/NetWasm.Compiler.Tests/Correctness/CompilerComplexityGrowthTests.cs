@@ -6,7 +6,6 @@ using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class CompilerComplexityGrowthTests
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -34,10 +33,10 @@ public sealed class CompilerComplexityGrowthTests
                 fixture.Fixture,
                 CilProfile.Release,
                 directory);
-            var desktop = desktopRunner.Run(compilation);
+            var desktop = desktopRunner.Run(compilation, TestContext.Current.CancellationToken);
             var netWasm = netWasmRunner.CompileAndRun(
                 compilation,
-                WasmTarget.Wasm32);
+                WasmTarget.Wasm32, TestContext.Current.CancellationToken);
             Assert.True(comparer.Compare(desktop[3], netWasm.Observations[3]).Equivalent);
             var metricsPath = Path.Combine(
                 netWasm.DiagnosticTracePath + ".passes",

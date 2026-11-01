@@ -2,72 +2,142 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace System.Runtime.InteropServices
 {
     public static class MemoryMarshal
     {
-        public static bool TryGetString(
-            ReadOnlyMemory<char> memory,
-            out string? text,
-            out int start,
-            out int length) => memory.TryGetString(out text, out start, out length);
+        // TryGetString, AsMemory, CreateFromPinnedArray, TryGetArray and TryGetMemoryManager are
+        // upstream's, from the same file at 474ed963699fc29809015392738a15231aaae2de.
 
-        public static System.Memory<T> AsMemory<T>(System.ReadOnlyMemory<T> memory) =>
-            memory.DangerousAsMemory();
-
-        public static System.Memory<T> CreateFromPinnedArray<T>(
-            T[]? array,
-            int start,
-            int length)
+        public static bool TryGetString(ReadOnlyMemory<char> memory, [NotNullWhen(true)] out string? text, out int start, out int length)
         {
-            if (array is null)
+            if (memory.GetObjectStartLength(out int offset, out int count) is string s)
+            {
+                Debug.Assert(offset >= 0);
+                Debug.Assert(count >= 0);
+                text = s;
+                start = offset;
+                length = count;
+                return true;
+            }
+            else
+            {
+                text = null;
+                start = 0;
+                length = 0;
+                return false;
+            }
+        }
+
+        public static Memory<T> AsMemory<T>(ReadOnlyMemory<T> memory) =>
+            new Memory<T>(memory._object, memory._index, memory._length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Memory<T> CreateFromPinnedArray<T>(T[]? array, int start, int length)
+        {
+            if (array == null)
             {
                 if (start != 0 || length != 0)
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
+                    ThrowHelper.ThrowArgumentOutOfRangeException();
                 return default;
             }
             if (!typeof(T).IsValueType && array.GetType() != typeof(T[]))
-            {
-                throw new ArrayTypeMismatchException();
-            }
-            if ((uint)start > (uint)array.Length ||
-                (uint)length > (uint)(array.Length - start))
-            {
-                throw new ArgumentOutOfRangeException();
-            }
+                ThrowHelper.ThrowArrayTypeMismatchException();
+            if ((uint)start > (uint)array.Length || (uint)length > (uint)(array.Length - start))
+                ThrowHelper.ThrowArgumentOutOfRangeException();
 
-            return new System.Memory<T>(
-                (object)array,
-                start | System.ReadOnlyMemory<T>.PrePinnedFlag,
-                length);
+            // Before using _index, check if _index < 0, then 'and' it with RemoveFlagsBitMask
+            return new Memory<T>((object)array, start | (1 << 31), length);
         }
 
-        public static bool TryGetArray<T>(
-            System.ReadOnlyMemory<T> memory,
-            out System.ArraySegment<T> segment) =>
-            memory.TryGetArray(out segment);
-
-        public static bool TryGetMemoryManager<T, TManager>(
-            System.ReadOnlyMemory<T> memory,
-            out TManager? manager)
-            where TManager : System.Buffers.MemoryManager<T>
+        public static bool TryGetArray<T>(ReadOnlyMemory<T> memory, out ArraySegment<T> segment)
         {
-            return memory.TryGetMemoryManager(out manager, out _, out _);
+            object? obj = memory.GetObjectStartLength(out int index, out int length);
+
+            // As an optimization, we skip the "is string?" check below if typeof(T) is not char,
+            // as Memory<T> / ROM<T> can't possibly contain a string instance in this case.
+
+            if (obj != null && !(
+                (typeof(T) == typeof(char) && obj.GetType() == typeof(string))
+                ))
+            {
+                if (RuntimeHelpers.ObjectHasComponentSize(obj))
+                {
+                    // The object has a component size, which means it's variable-length, but we already
+                    // checked above that it's not a string. The only remaining option is that it's a T[]
+                    // or a U[] which is blittable to a T[] (e.g., int[] and uint[]).
+
+                    // The array may be prepinned, so remove the high bit from the start index in the line below.
+                    // The ArraySegment<T> ctor will perform bounds checking on index & length.
+
+                    segment = new ArraySegment<T>(Unsafe.As<T[]>(obj), index & ReadOnlyMemory<T>.RemoveFlagsBitMask, length);
+                    return true;
+                }
+                else
+                {
+                    // The object isn't null, and it's not variable-length, so the only remaining option
+                    // is MemoryManager<T>. The ArraySegment<T> ctor will perform bounds checking on index & length.
+
+                    Debug.Assert(obj is MemoryManager<T>);
+                    if (Unsafe.As<MemoryManager<T>>(obj).TryGetArray(out ArraySegment<T> tempArraySegment))
+                    {
+                        segment = new ArraySegment<T>(tempArraySegment.Array!, tempArraySegment.Offset + index, length);
+                        return true;
+                    }
+                }
+            }
+
+            // If we got to this point, the object is null, or it's a string, or it's a MemoryManager<T>
+            // which isn't backed by an array. We'll quickly homogenize all zero-length Memory<T> instances
+            // to an empty array for the purposes of reporting back to our caller.
+
+            if (length == 0)
+            {
+                segment = ArraySegment<T>.Empty;
+                return true;
+            }
+
+            // Otherwise, there's *some* data, but it's not convertible to T[].
+
+            segment = default;
+            return false;
         }
 
-        public static bool TryGetMemoryManager<T, TManager>(
-            System.ReadOnlyMemory<T> memory,
-            out TManager? manager,
-            out int start,
-            out int length)
-            where TManager : System.Buffers.MemoryManager<T> =>
-            memory.TryGetMemoryManager(out manager, out start, out length);
+        public static bool TryGetMemoryManager<T, TManager>(ReadOnlyMemory<T> memory, [NotNullWhen(true)] out TManager? manager)
+            where TManager : MemoryManager<T>
+        {
+            TManager? localManager; // Use register for null comparison rather than byref
+            manager = localManager = memory.GetObjectStartLength(out _, out _) as TManager;
+#pragma warning disable 8762 // "Parameter 'manager' may not have a null value when exiting with 'true'."
+            return localManager != null;
+#pragma warning restore 8762
+        }
+
+        public static bool TryGetMemoryManager<T, TManager>(ReadOnlyMemory<T> memory, [NotNullWhen(true)] out TManager? manager, out int start, out int length)
+           where TManager : MemoryManager<T>
+        {
+            TManager? localManager; // Use register for null comparison rather than byref
+            manager = localManager = memory.GetObjectStartLength(out start, out length) as TManager;
+
+            Debug.Assert(length >= 0);
+
+            if (localManager == null)
+            {
+                start = default;
+                length = default;
+                return false;
+            }
+#pragma warning disable 8762 // "Parameter 'manager' may not have a null value when exiting with 'true'."
+            return true;
+#pragma warning restore 8762
+        }
 
         // The current ReadOnlyMemory representation is either an array slice or
         // a MemoryManager slice.  Keep the enumerable as a view over that

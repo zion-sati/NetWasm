@@ -38,6 +38,7 @@
 #endif
 
 typedef uint32_t u32;
+typedef uint64_t u64;
 
 NETWASM_EXPORT("random_seed") uint64_t random_seed(void)
 {
@@ -74,10 +75,14 @@ typedef struct {
 
 /* The frame arenas as they stood at a point managed code may later catch an
    exception. Methods do not release their frames when an exception passes
-   through them; whatever catches it restores these marks instead. */
+   through them; whatever catches it restores these marks instead. Frames
+   without references are not on the value-frame list, so the value arena's
+   own position is part of the marks. */
 typedef struct {
     uintptr_t root;
     struct ValueFrame *value;
+    struct FrameArenaChunk *value_chunk;
+    uintptr_t value_cursor;
     u32 stack_trace;
 } FrameMarks;
 
@@ -131,9 +136,24 @@ typedef struct {
 static inline __attribute__((always_inline)) unsigned char *frame_arena_bytes(
     FrameArenaChunk *chunk);
 
+/* The low bits of a value frame's chunk: a frame that holds references, and
+   one whose map is longer than a word. */
+enum { VALUE_FRAME_MAPPED = 1u, VALUE_FRAME_MAP_FOLLOWS = 2u };
+
+/* A frame that holds references is on the value-frame list a collection
+   traces. A frame without them is not: it only records the list as it stood
+   when the frame was entered, which leaving it restores, so that leaving it
+   also leaves any mapped frames an exception left above it. */
 typedef struct ValueFrame {
     struct ValueFrame *previous;
     FrameArenaChunk *chunk;
+    /* Only a mapped frame writes its map, one bit a reference-sized word of
+       the bytes, set where the frame holds a reference. A collection traces
+       those words as they are when it runs, so it sees a reference a callee
+       stores through a span or a ref field. A map of one word is this word; a
+       longer one follows the bytes, and this word holds its length above its
+       offset from the bytes. */
+    u64 references;
     _Alignas(16) unsigned char bytes[];
 } ValueFrame;
 
@@ -630,6 +650,23 @@ static void enumerate_managed_roots(void)
     for (FrameArenaChunk *chunk = root_frame_arena.current; chunk != NULL; chunk = chunk->previous) {
         collector_trace_root_range(frame_arena_bytes(chunk), (void *)end);
         if (chunk->previous != NULL) end = chunk->previous->saved_cursor;
+    }
+    for (ValueFrame *frame = value_frame; frame != NULL; frame = frame->previous) {
+        uintptr_t tag = (uintptr_t)frame->chunk;
+        if ((tag & VALUE_FRAME_MAPPED) == 0) continue;
+        const u64 *references = &frame->references;
+        u32 reference_words = 1;
+        if ((tag & VALUE_FRAME_MAP_FOLLOWS) != 0) {
+            references = (const u64 *)(const void *)(frame->bytes + (u32)frame->references);
+            reference_words = (u32)(frame->references >> 32);
+        }
+        for (u32 word = 0; word < reference_words; word++) {
+            for (u64 bits = references[word]; bits != 0; bits &= bits - 1) {
+                netwasm_reference_t *slot = (netwasm_reference_t *)(void *)frame->bytes +
+                    (size_t)word * 64u + (size_t)__builtin_ctzll(bits);
+                collector_trace_root_range(slot, slot + 1);
+            }
+        }
     }
 }
 
@@ -1232,47 +1269,178 @@ void root_frame_leave(netwasm_address_t frame)
     }
 }
 
-NETWASM_EXPORT("value_frame_enter")
-netwasm_address_t value_frame_enter(netwasm_address_t byte_count)
+/* Pushes a value frame whose bytes, rounded up to sixteen, are followed by
+   extra bytes, and returns its bytes. A frame without a map writes nothing
+   beyond its links, and only a mapped frame joins the list. */
+static inline __attribute__((always_inline)) unsigned char *value_frame_push(
+    netwasm_address_t byte_count,
+    size_t extra,
+    int mapped,
+    netwasm_address_t *aligned)
 {
     const netwasm_address_t alignment = 16u;
     netwasm_address_t aligned_count;
-    size_t frame_size;
     ValueFrame *frame;
     if (byte_count > UINT32_MAX - (alignment - 1u) ||
         byte_count > SIZE_MAX - (alignment - 1u)) {
-        return 0;
+        return NULL;
     }
     aligned_count = (byte_count + alignment - 1u) & ~(alignment - 1u);
-    if ((size_t)aligned_count > SIZE_MAX - sizeof(ValueFrame)) {
-        return 0;
+    if ((size_t)aligned_count > SIZE_MAX - sizeof(ValueFrame) - extra) {
+        return NULL;
     }
-    frame_size = sizeof(ValueFrame) + (size_t)aligned_count;
     frame = (ValueFrame *)frame_arena_allocate(
         &value_frame_arena,
-        frame_size);
+        sizeof(ValueFrame) + (size_t)aligned_count + extra);
     if (frame == NULL) {
-        return 0;
+        return NULL;
     }
     frame->previous = value_frame;
     frame->chunk = value_frame_arena.current;
-    value_frame = frame;
-    return (netwasm_address_t)(uintptr_t)frame->bytes;
+    if (mapped) {
+        value_frame = frame;
+    }
+    *aligned = aligned_count;
+    return frame->bytes;
 }
 
-NETWASM_EXPORT("value_frame_leave")
-void value_frame_leave(netwasm_address_t frame)
+/* Rewinds the arena to a frame being left. A mapped frame's chunk carries its
+   tags, so it never matches the current chunk and only it strips them. */
+static inline __attribute__((always_inline)) void value_frame_arena_rewind(ValueFrame *frame)
 {
-    ValueFrame *target = value_frame;
-    unsigned char *bytes = (unsigned char *)(uintptr_t)frame;
-    while (target != NULL && bytes != target->bytes) {
-        target = target->previous;
+    if (frame->chunk == value_frame_arena.current) {
+        value_frame_arena.cursor = (uintptr_t)frame;
+        return;
     }
-    if (target == NULL) {
+    frame_arena_rewind(
+        &value_frame_arena,
+        (FrameArenaChunk *)((uintptr_t)frame->chunk &
+            ~(uintptr_t)(VALUE_FRAME_MAPPED | VALUE_FRAME_MAP_FOLLOWS)),
+        frame);
+}
+
+NETWASM_EXPORT("value_frame_enter")
+netwasm_address_t value_frame_enter(netwasm_address_t byte_count)
+{
+    netwasm_address_t aligned;
+    return (netwasm_address_t)(uintptr_t)value_frame_push(byte_count, 0, 0, &aligned);
+}
+
+NETWASM_EXPORT("value_frame_enter_mapped")
+netwasm_address_t value_frame_enter_mapped(
+    netwasm_address_t byte_count,
+    u32 reference_words,
+    u64 first_references)
+{
+    netwasm_address_t aligned;
+    unsigned char *bytes;
+    ValueFrame *frame;
+    u64 *references;
+    if (reference_words == 0) {
+        return value_frame_enter(byte_count);
+    }
+    if (reference_words == 1) {
+        bytes = value_frame_push(byte_count, 0, 1, &aligned);
+        if (bytes == NULL) {
+            return 0;
+        }
+        frame = value_frame;
+        frame->references = first_references;
+        frame->chunk = (FrameArenaChunk *)((uintptr_t)frame->chunk | VALUE_FRAME_MAPPED);
+        return (netwasm_address_t)(uintptr_t)bytes;
+    }
+    if ((size_t)reference_words > (SIZE_MAX - sizeof(ValueFrame) - 15u) / sizeof(u64)) {
+        return 0;
+    }
+    /* A longer map's room is rounded up to sixteen too, so the frames entered
+       after this one keep their bytes aligned. */
+    bytes = value_frame_push(
+        byte_count,
+        ((size_t)reference_words * sizeof(u64) + 15u) & ~(size_t)15u,
+        1,
+        &aligned);
+    if (bytes == NULL) {
+        return 0;
+    }
+    frame = value_frame;
+    /* The caller stores any later nonzero words before its first safepoint. */
+    references = (u64 *)(void *)(bytes + aligned);
+    references[0] = first_references;
+    memset(references + 1, 0, (size_t)(reference_words - 1) * sizeof(u64));
+    frame->references = (u64)reference_words << 32 | (u64)aligned;
+    frame->chunk = (FrameArenaChunk *)((uintptr_t)frame->chunk |
+        VALUE_FRAME_MAPPED | VALUE_FRAME_MAP_FOLLOWS);
+    return (netwasm_address_t)(uintptr_t)bytes;
+}
+
+/* Leaving a frame the fast path did not: one from an earlier chunk, after
+   the frames above it crossed into later ones, or an address that is not an
+   active frame, which traps. The chunk must be one the arena passed through,
+   and the frame inside it. */
+static __attribute__((noinline)) void value_frame_leave_slow(uintptr_t bytes, ValueFrame *target)
+{
+    if (bytes == 0 || (bytes & 15u) != 0 || target->chunk == value_frame_arena.current) {
+        __builtin_trap();
+    }
+    FrameArenaChunk *chunk = value_frame_arena.current;
+    while (chunk != NULL && chunk != target->chunk) {
+        chunk = chunk->previous;
+    }
+    if (chunk == NULL || (uintptr_t)target < (uintptr_t)frame_arena_bytes(chunk) ||
+        (uintptr_t)target >= (uintptr_t)frame_arena_bytes(chunk) + chunk->capacity) {
         __builtin_trap();
     }
     value_frame = target->previous;
-    frame_arena_rewind(&value_frame_arena, target->chunk, target);
+    frame_arena_rewind(&value_frame_arena, chunk, target);
+}
+
+/* Leaves a frame without references: the list returns to how it stood when
+   the frame was entered, and the arena to the frame. An active frame in the
+   current chunk lies below its cursor; anything else takes the slow path. */
+NETWASM_EXPORT("value_frame_leave")
+void value_frame_leave(netwasm_address_t frame)
+{
+    uintptr_t bytes = (uintptr_t)frame;
+    ValueFrame *target = (ValueFrame *)(void *)(bytes - offsetof(ValueFrame, bytes));
+    if (target->chunk == value_frame_arena.current && (uintptr_t)target < value_frame_arena.cursor) {
+        value_frame = target->previous;
+        value_frame_arena.cursor = (uintptr_t)target;
+        return;
+    }
+    value_frame_leave_slow(bytes, target);
+}
+
+/* Leaving a mapped frame the fast path did not: one an exception left frames
+   above, or one in an earlier chunk. It must still be on the list a collection
+   traces. */
+static __attribute__((noinline)) void value_frame_leave_mapped_slow(ValueFrame *target)
+{
+    ValueFrame *listed = value_frame;
+    while (listed != NULL && listed != target) {
+        listed = listed->previous;
+    }
+    if (listed == NULL) {
+        __builtin_trap();
+    }
+    value_frame = target->previous;
+    value_frame_arena_rewind(target);
+}
+
+/* Leaves a mapped frame. It is the newest on the list unless an exception left
+   frames above it, and in the current chunk unless the frames above it crossed
+   into later ones. */
+NETWASM_EXPORT("value_frame_leave_mapped")
+void value_frame_leave_mapped(netwasm_address_t frame)
+{
+    ValueFrame *target = (ValueFrame *)(void *)((unsigned char *)(uintptr_t)frame - offsetof(ValueFrame, bytes));
+    if (target == value_frame &&
+        ((uintptr_t)target->chunk & ~(uintptr_t)(VALUE_FRAME_MAPPED | VALUE_FRAME_MAP_FOLLOWS)) ==
+            (uintptr_t)value_frame_arena.current) {
+        value_frame = target->previous;
+        value_frame_arena.cursor = (uintptr_t)target;
+        return;
+    }
+    value_frame_leave_mapped_slow(target);
 }
 
 static void root_frame_rewind(uintptr_t mark)
@@ -1306,19 +1474,29 @@ static void root_frame_rewind(uintptr_t mark)
     arena->cursor = mark;
 }
 
-static void value_frame_rewind(ValueFrame *mark)
+/* Returns the value-frame list to a mark, and the arena to where it stood
+   then. A mark taken before the arena had a chunk rewinds to its first. */
+static void value_frame_rewind(const FrameMarks *marks)
 {
-    ValueFrame *oldest = NULL;
-    for (ValueFrame *frame = value_frame; frame != mark; frame = frame->previous) {
+    for (ValueFrame *frame = value_frame; frame != marks->value; frame = frame->previous) {
         if (frame == NULL) {
             __builtin_trap();
         }
-        oldest = frame;
     }
-    if (oldest != NULL) {
-        value_frame = mark;
-        frame_arena_rewind(&value_frame_arena, oldest->chunk, oldest);
+    value_frame = marks->value;
+    FrameArenaChunk *chunk = marks->value_chunk;
+    uintptr_t cursor = marks->value_cursor;
+    if (chunk == NULL) {
+        chunk = value_frame_arena.current;
+        if (chunk == NULL) {
+            return;
+        }
+        while (chunk->previous != NULL) {
+            chunk = chunk->previous;
+        }
+        cursor = (uintptr_t)frame_arena_bytes(chunk);
     }
+    frame_arena_rewind(&value_frame_arena, chunk, (void *)cursor);
 }
 
 static FrameMarks frame_marks_capture(void)
@@ -1326,6 +1504,8 @@ static FrameMarks frame_marks_capture(void)
     return (FrameMarks){
         root_frame_arena.current == NULL ? 0 : root_frame_arena.cursor,
         value_frame,
+        value_frame_arena.current,
+        value_frame_arena.cursor,
         stack_trace_frame_top,
     };
 }
@@ -1336,7 +1516,7 @@ static void frame_marks_restore(const FrameMarks *marks)
         __builtin_trap();
     }
     root_frame_rewind(marks->root);
-    value_frame_rewind(marks->value);
+    value_frame_rewind(marks);
     stack_trace_frame_top = marks->stack_trace;
 }
 
@@ -2717,6 +2897,17 @@ NETWASM_EXPORT("gc_handle_address") netwasm_address_t gc_handle_address(u32 hand
         NETWASM_OBJECT_HEADER_SIZE,
         NETWASM_STRING_DATA_OFFSET,
         NETWASM_ARRAY_DATA_POINTER_OFFSET);
+}
+
+/* Marshal.IsPinnable: whether the object's fields or elements hold references,
+   from the layout the collector reads. An array's element type decides even
+   when it has no elements, as CoreCLR's type flag does. */
+NETWASM_EXPORT("object_contains_references")
+u32 object_contains_references(netwasm_reference_t object)
+{
+    NetWasmCollectorLayout layout;
+    collector_object_layout((const void *)(uintptr_t)object, &layout);
+    return layout.fixed_reference_count != 0 || layout.element_reference_count != 0;
 }
 
 NETWASM_EXPORT("gc_get_metric") uint64_t gc_get_metric(u32 metric)

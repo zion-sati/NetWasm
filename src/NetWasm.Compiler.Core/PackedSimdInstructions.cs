@@ -20,7 +20,6 @@ public enum PackedSimdShape
 // The 64-bit-lane form a native-width overload takes on wasm64. Wasm has no
 // unsigned 64-bit lane comparisons, so those compare with the sign bit flipped.
 public readonly record struct PackedSimdWideInstruction(
-    string Name,
     uint Opcode,
     int LaneBytes,
     bool FlipsSign);
@@ -61,7 +60,7 @@ public static partial class PackedSimdInstructions
             var prefix = parameter.Shape switch
             {
                 CliTypeShape.GenericInstantiation when
-                    parameter.ElementType?.FullName == "System.Runtime.Intrinsics.Vector128`1" => "v:",
+                    parameter.ElementType!.FullName == "System.Runtime.Intrinsics.Vector128`1" => "v:",
                 CliTypeShape.UnmanagedPointer => "p:",
                 CliTypeShape.Primitive => "s:",
                 _ => null,
@@ -81,7 +80,7 @@ public static partial class PackedSimdInstructions
     private static string Element(CliTypeIdentity type) => type.Shape switch
     {
         CliTypeShape.GenericInstantiation when type.TypeArguments is [var element] => element.CanonicalName,
-        CliTypeShape.UnmanagedPointer => type.ElementType?.CanonicalName ?? "",
+        CliTypeShape.UnmanagedPointer => type.ElementType!.CanonicalName,
         _ => type.CanonicalName,
     };
 }

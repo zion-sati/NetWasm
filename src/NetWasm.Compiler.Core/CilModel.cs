@@ -201,6 +201,10 @@ public sealed record CilMethodBody(
         [.. Locals.Select(CliTypeIdentity.FromStackKind)];
 
     public ImmutableArray<CilExceptionRegion> ExceptionRegions { get; init; } = [];
+
+    // The locals the signature pins: each keeps what it holds alive until it is
+    // overwritten, though the code reads it only once to take an address.
+    public ImmutableHashSet<int> PinnedLocals { get; init; } = [];
 }
 
 public enum CilExceptionRegionKind

@@ -27,11 +27,6 @@ public static class JavaScriptValueArray
             ["primitive:f8"] = ("f64[]", "System.Double"),
         }.ToImmutableDictionary(StringComparer.Ordinal);
 
-    /// <summary>The ABI names of every supported array, <c>bytes</c> first.</summary>
-    public static ImmutableArray<string> AbiTypes { get; } =
-        [.. Elements.Values.Select(element => element.AbiType).OrderBy(name => name == "bytes" ? 0 : 1)
-            .ThenBy(name => name, StringComparer.Ordinal)];
-
     public static bool IsSupported(CliTypeIdentity type)
     {
         ArgumentNullException.ThrowIfNull(type);

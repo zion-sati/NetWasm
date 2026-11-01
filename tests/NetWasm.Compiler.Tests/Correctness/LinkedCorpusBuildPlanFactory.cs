@@ -6,9 +6,10 @@ namespace NetWasm.Compiler.Tests.Correctness;
 internal enum LinkedCorpusBuildStage { NativeRuntime, Merge, ValidateMerged, Optimize, ValidateFinal }
 
 // Collector names the native runtime's collector: compact (the default), netwasm (NetWasmGC) or bump.
+// With GcStress, every linked run collects before each managed allocation.
 internal sealed record LinkedCorpusToolPaths(
     string EmsdkRoot, string Merge, string Optimize, string Validate, string Node,
-    string Collector = "compact");
+    string Collector = "compact", bool GcStress = false);
 
 internal sealed record LinkedCorpusBuildRequest(
     string RepositoryRoot,
@@ -18,7 +19,8 @@ internal sealed record LinkedCorpusBuildRequest(
     WasmTarget Target,
     CorpusWasmForm Form,
     LinkedCorpusToolPaths Tools,
-    TimeSpan Timeout);
+    TimeSpan Timeout,
+    bool CollectsAtEveryAllocation = false);
 
 internal sealed record LinkedCorpusBuildStep(LinkedCorpusBuildStage Stage, QualifiedProcessRequest Process);
 
@@ -84,7 +86,8 @@ internal sealed class LinkedCorpusBuildPlanFactory : ILinkedCorpusBuildPlanFacto
             [Path.Combine(request.RepositoryRoot, "eng", "build-netwasm-runtime.sh"),
              "--collector", request.Tools.Collector,
              "--runtime-layout", request.RuntimeLayoutPath, "--target", target,
-             "--configuration", configuration, "--output", runtime],
+             "--configuration", configuration, "--output", runtime,
+             .. request.CollectsAtEveryAllocation || request.Tools.GcStress ? ["--gc-stress"] : Array.Empty<string>()],
             ImmutableDictionary<string, string>.Empty
                 .Add("NETWASM_EMSDK_ROOT", request.Tools.EmsdkRoot)
                 .Add("TMPDIR", request.RunDirectory));

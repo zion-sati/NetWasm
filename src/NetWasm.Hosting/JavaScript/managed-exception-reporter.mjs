@@ -1,3 +1,5 @@
+import { sha256 as sha256InJavaScript } from "./sha256.mjs";
+
 const MAP_MEDIA_TYPE = "application/vnd.netwasm.exception-types+json;version=2";
 
 export function createManagedExceptionReporter(options) {
@@ -186,7 +188,6 @@ export async function loadAndValidateArtifacts(loadArtifacts, cryptoProvider) {
   const { manifest, mapBytes, wasmBytes } = artifacts;
   if (!manifest || manifest.schemaVersion !== 1 || typeof manifest.buildId !== "string") throw new Error("invalid diagnostic artifact manifest");
   if (!(mapBytes instanceof Uint8Array) || !(wasmBytes instanceof Uint8Array)) throw new Error("diagnostic artifacts must be byte arrays");
-  if (!cryptoProvider?.subtle) throw new Error("cryptographic digest support is unavailable");
 
   const [mapDigest, wasmDigest] = await Promise.all([
     sha256(mapBytes, cryptoProvider),
@@ -214,7 +215,10 @@ export async function loadAndValidateArtifacts(loadArtifacts, cryptoProvider) {
   return { manifest, types };
 }
 
+// A page outside a secure context has no crypto.subtle; it hashes in
+// JavaScript, as its deployment's files are.
 async function sha256(bytes, cryptoProvider) {
-  const digest = new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", bytes));
+  const subtle = cryptoProvider?.subtle;
+  const digest = new Uint8Array(subtle === undefined ? sha256InJavaScript(bytes) : await subtle.digest("SHA-256", bytes));
   return Array.from(digest, value => value.toString(16).padStart(2, "0")).join("");
 }

@@ -204,6 +204,99 @@ public sealed class StringAndArrayCompilationTests
         Assert.Equal(0, result);
     }
 
+    // The ordinal text profile rejects every culture comparison the same way, whichever
+    // type takes it, and a value outside the enumeration stays an argument error.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void CultureComparisonsAreUnsupportedEverywhere(bool optimize, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        var result = executor.Execute(new CompilationScenario(
+            $"CultureComparisonProfile_{optimize}_{target}",
+            """
+            using System;
+            using System.Text;
+
+            namespace CultureComparisonProfile;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    const string text = "abcABC";
+                    Action<StringComparison>[] calls =
+                    [
+                        comparison => _ = text.Equals("ABCabc", comparison),
+                        comparison => _ = string.Equals(text, "x", comparison),
+                        comparison => _ = string.Compare(text, "x", comparison),
+                        comparison => _ = string.Compare(text, 1, "x", 0, 1, comparison),
+                        comparison => _ = text.GetHashCode(comparison),
+                        comparison => _ = string.GetHashCode(text.AsSpan(), comparison),
+                        comparison => _ = text.IndexOf("b", comparison),
+                        comparison => _ = text.IndexOf('b', comparison),
+                        comparison => _ = text.LastIndexOf("b", comparison),
+                        comparison => _ = text.LastIndexOf('b', comparison),
+                        comparison => _ = text.Contains("b", comparison),
+                        comparison => _ = text.Contains('b', comparison),
+                        comparison => _ = text.StartsWith("a", comparison),
+                        comparison => _ = text.StartsWith('a', comparison),
+                        comparison => _ = text.EndsWith("C", comparison),
+                        comparison => _ = text.EndsWith('C', comparison),
+                        comparison => _ = text.Replace("b", "x", comparison),
+                        comparison => _ = 'a'.Equals('A', comparison),
+                        comparison => _ = new Rune('a').Equals(new Rune('A'), comparison),
+                        comparison => _ = StringComparer.FromComparison(comparison),
+                        comparison => _ = text.AsSpan().Equals("x".AsSpan(), comparison),
+                        comparison => _ = text.AsSpan().CompareTo("x".AsSpan(), comparison),
+                        comparison => _ = text.AsSpan().IndexOf("b".AsSpan(), comparison),
+                        comparison => _ = text.AsSpan().LastIndexOf("b".AsSpan(), comparison),
+                        comparison => _ = text.AsSpan().Contains("b".AsSpan(), comparison),
+                        comparison => _ = text.AsSpan().StartsWith("a".AsSpan(), comparison),
+                        comparison => _ = text.AsSpan().EndsWith("C".AsSpan(), comparison),
+                    ];
+
+                    for (var call = 0; call < calls.Length; call++)
+                    {
+                        for (var comparison = StringComparison.CurrentCulture;
+                            comparison <= StringComparison.InvariantCultureIgnoreCase;
+                            comparison++)
+                        {
+                            try
+                            {
+                                calls[call](comparison);
+                                return 100 + call;
+                            }
+                            catch (PlatformNotSupportedException) { }
+                            catch (Exception) { return 200 + call; }
+                        }
+                        try
+                        {
+                            calls[call]((StringComparison)6);
+                            return 300 + call;
+                        }
+                        catch (ArgumentException) { }
+                        catch (Exception) { return 400 + call; }
+                        try { calls[call](StringComparison.OrdinalIgnoreCase); }
+                        catch (Exception) { return 500 + call; }
+                    }
+
+                    return input - input;
+                }
+            }
+            """,
+            "CultureComparisonProfile.EntryPoint",
+            optimize,
+            target,
+            41,
+            []));
+
+        Assert.Equal(0, result);
+    }
+
     // Invariant casing skips unchanged ASCII four characters at a time. Each kind
     // of change, at every position after the letter-range bounds, must still map.
     [Theory]
@@ -652,7 +745,7 @@ public sealed class StringAndArrayCompilationTests
                             "too long",
                             System.StringComparison.CurrentCulture);
                     }
-                    catch (System.ArgumentException) { passed++; }
+                    catch (System.PlatformNotSupportedException) { passed++; }
                     try { _ = System.StringComparer.InvariantCulture; }
                     catch (System.PlatformNotSupportedException) { passed++; }
                     try { _ = new string('x', -1); }
@@ -776,7 +869,7 @@ public sealed class StringAndArrayCompilationTests
             var array = result.Layouts.ObjectLayouts[arrayType.Key];
             Assert.Equal(4 * sizeof(int), array.Size);
             Assert.True(array.ReferenceOffsets.AsSpan().SequenceEqual(
-                [ManagedLayoutSnapshot.Wasm32ArrayDataPointerOffset]));
+                [result.Layouts.ArrayDataPointerOffset]));
             Assert.True(result.ApplicationModule.AsSpan().IndexOf(
                 "allocate_reference_array"u8) >= 0);
         }

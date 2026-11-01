@@ -45,7 +45,8 @@ export function createLinkedCorpusProgram({
             manifest,
             runtimeModules: createRuntimeImports(
               request.target, () => managed.instance.exports.memory,
-              token => managed.instance.exports[`${prefix}|netwasm:runtime/reactor-guest@1|wake`](token)),
+              token => managed.instance.exports[`${prefix}|netwasm:runtime/reactor-guest@1|wake`](token),
+              () => managed.instance.exports),
             managedExceptionReporting: { reportImmediate },
           });
           return managed;

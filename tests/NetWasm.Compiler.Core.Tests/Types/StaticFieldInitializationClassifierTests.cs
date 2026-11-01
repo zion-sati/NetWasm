@@ -73,6 +73,23 @@ public sealed class StaticFieldInitializationClassifierTests
         Assert.False(classifier.IsInitializedFor(accessor, null, [entry, read], read));
     }
 
+    // Only a static field's load, store or address names a type to initialize;
+    // its owner comes from the field instance or from the field's definition.
+    [Fact]
+    public void OnlyStaticFieldAccessesNameAnOwner()
+    {
+        var classifier = Classifier(isValueType: false, beforeFieldInit: false);
+        var instanceRead = Access(0, CilOperation.LoadField, Field);
+        var byIndex = new CilInstruction(0, 1, CilOperation.LoadStaticField, new CilOperand.Index(0));
+        var byEntity = new CilInstruction(0, 1, CilOperation.LoadStaticField, new CilOperand.Entity(Field.Key));
+
+        Assert.False(classifier.IsInitializedFor(Method, null, [instanceRead], instanceRead));
+        Assert.False(StaticFieldInitializationClassifier.IsStaticFieldAccess(byIndex));
+        Assert.True(StaticFieldInitializationClassifier.IsStaticFieldAccess(byEntity));
+        Assert.Equal(Field.DeclaringType, StaticFieldInitializationClassifier.Owner(byEntity, new Fields()).Type);
+        Assert.Throws<ArgumentException>(() => StaticFieldInitializationClassifier.Owner(byIndex, new Fields()));
+    }
+
     [Fact]
     public void RejectsMissingDependenciesAndInput()
     {

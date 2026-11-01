@@ -61,6 +61,26 @@ public sealed class FrontendArtifactCodecTests
         Assert.Throws<InvalidDataException>(() => new FrontendArtifactDecoder().Decode([.. payload]));
     }
 
+    // A cached body keeps the locals it pins, which stay roots while they hold
+    // what a fixed statement pinned.
+    [Fact]
+    public void RoundTripKeepsPinnedLocals()
+    {
+        var snapshot = CreateStressSnapshot();
+        ImmutableHashSet<int> pinned = [5, 0, 2];
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with { Body = snapshot.Analysis.Body with { PinnedLocals = pinned } },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+
+        var restored = new FrontendArtifactDecoder().Decode(payload);
+
+        Assert.True(pinned.SetEquals(restored.Analysis.Body.PinnedLocals));
+        Assert.Equal(payload.ToArray(), encoder.Encode(restored).ToArray());
+    }
+
     [Fact]
     public void RoundTripKeepsConstructedCatchTypesInBodiesAndStructuredClauses()
     {
@@ -350,6 +370,64 @@ public sealed class FrontendArtifactCodecTests
         Assert.True(decoded.NonNullableResult);
     }
 
+    // A field with no RVA data keeps default bytes, as against an empty array.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoundTripPreservesAbsentAndEmptyFieldData(bool empty)
+    {
+        var snapshot = CreateStressSnapshot();
+        var field = snapshot.Analysis.Instructions.Fields[0];
+        field = field with { Definition = field.Definition with { InitialData = empty ? [] : default } };
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Instructions = snapshot.Analysis.Instructions with { Fields = [field] },
+            },
+        };
+
+        var decoded = new FrontendArtifactDecoder().Decode(new FrontendArtifactEncoder().Encode(snapshot));
+
+        var data = Assert.Single(decoded.Analysis.Instructions.Fields).Definition.InitialData;
+        Assert.Equal(!empty, data.IsDefault);
+    }
+
+    // Decoding lowers switch to branches, so no body carries its targets; a
+    // payload naming an operand tag the decoder does not know is corrupt.
+    [Fact]
+    public void RejectsAnOperandTheFormatDoesNotCarry()
+    {
+        var snapshot = CreateStressSnapshot();
+        var marked = snapshot.Analysis.Body.Instructions[1] with { Operand = new CilOperand.ConstantI4(0x5A5A5A5A) };
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Body = snapshot.Analysis.Body with { Instructions = snapshot.Analysis.Body.Instructions.SetItem(1, marked) },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot).ToArray();
+        var marker = MemoryExtensions.IndexOf(payload.AsSpan(), (ReadOnlySpan<byte>)[0x5A, 0x5A, 0x5A, 0x5A]);
+        Assert.Equal(1, payload[marker - 1]);
+        payload[marker - 1] = 99;
+
+        var corrupt = Assert.Throws<InvalidDataException>(() => new FrontendArtifactDecoder().Decode([.. payload]));
+        Assert.Contains("CIL operand tag 99 is unsupported", corrupt.Message, StringComparison.Ordinal);
+        Assert.Throws<InvalidDataException>(() => encoder.Encode(snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Body = snapshot.Analysis.Body with
+                {
+                    Instructions = snapshot.Analysis.Body.Instructions.SetItem(1,
+                        marked with { Operand = new CilOperand.SwitchTargets([0]) }),
+                },
+            },
+        }));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(0)]
@@ -370,6 +448,32 @@ public sealed class FrontendArtifactCodecTests
         var payload = encoder.Encode(snapshot);
         var decoded = new FrontendArtifactDecoder().Decode(payload);
         Assert.Equal(offset, Assert.Single(decoded.Analysis.Instructions.Fields).Definition.ExplicitOffset);
+        Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
+    }
+
+    // GetType on a receiver of one type keeps that type through the cache.
+    [Fact]
+    public void RoundTripPreservesAnExactTypeOperand()
+    {
+        var snapshot = CreateStressSnapshot();
+        var instruction = snapshot.Analysis.Body.Instructions[1] with
+        {
+            Operation = CilOperation.GetObjectType,
+            Operand = new CilOperand.ExactType(CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false)),
+        };
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Body = snapshot.Analysis.Body with { Instructions = snapshot.Analysis.Body.Instructions.SetItem(1, instruction) },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+
+        var decoded = new FrontendArtifactDecoder().Decode(payload);
+
+        Assert.Equal(instruction, decoded.Analysis.Body.Instructions[1]);
         Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
     }
 
@@ -442,7 +546,7 @@ public sealed class FrontendArtifactCodecTests
         var decoded = decoder.Decode(payload);
 
         Assert.Equal(payload.ToArray(), encoder.Encode(decoded).ToArray());
-        Assert.Equal(16, decoded.Analysis.Body.Instructions.Length);
+        Assert.Equal(15, decoded.Analysis.Body.Instructions.Length);
         Assert.Equal(11, decoded.StructuredMethod.Body.Regions.Length);
         Assert.Equal(5, decoded.StructuredMethod.Blocks.Count);
         Assert.Equal(2, decoded.StructuredMethod.ExceptionGroups[Group(1)].ProtectedParts.Length);
@@ -582,17 +686,12 @@ public sealed class FrontendArtifactCodecTests
             LocalSignatureTypes = default,
             ExceptionRegions = default,
         };
-        var defaultTableArrays = analysis.Body.Instructions
-            .Select(instruction => instruction.Operand is CilOperand.SwitchTargets
-                ? instruction with { Operand = new CilOperand.SwitchTargets(default) }
-                : instruction)
-            .ToImmutableArray();
         var sparse = snapshot with
         {
             Analysis = analysis with
             {
                 Method = analysis.Method with { MethodArguments = default },
-                Body = body with { Instructions = defaultTableArrays },
+                Body = body,
                 CatchTypes = default,
                 Exceptions = default,
                 Instructions = new(
@@ -691,7 +790,6 @@ public sealed class FrontendArtifactCodecTests
     [InlineData(15)]
     [InlineData(16)]
     [InlineData(17)]
-    [InlineData(18)]
     [InlineData(19)]
     [InlineData(20)]
     public void DecoderRejectsCorruptBoundedValues(int corruption)
@@ -718,7 +816,6 @@ public sealed class FrontendArtifactCodecTests
             15 => AddTrailingTypeEntryData(payload),
             16 => CorruptRootCollectionLength(payload, int.MinValue),
             17 => CorruptRootCollectionLength(payload, int.MaxValue),
-            18 => CorruptRootBoolean(payload),
             19 => CorruptRootEnum(payload),
             20 => CorruptRawStringLength(payload),
             _ => throw new InvalidOperationException(),
@@ -726,10 +823,77 @@ public sealed class FrontendArtifactCodecTests
 
         var exception = Assert.Throws<InvalidDataException>(() =>
             new FrontendArtifactDecoder().Decode([.. malformed]));
-        if (corruption == 4)
+        // Each corruption reaches the check it targets.
+        Assert.Contains(corruption switch
         {
-            Assert.Contains("operand tag", exception.Message, StringComparison.Ordinal);
-        }
+            0 => "invalid Boolean value",
+            1 => "CLI type shape -1 is unsupported",
+            2 or 3 or 16 or 17 => "invalid collection length",
+            4 => "CIL operand tag 255 is unsupported",
+            5 => "CLI type identity is inconsistent",
+            6 => "block-exit tag 255",
+            7 => "region tag 255",
+            8 => "exception-part tag 255",
+            9 => "named CLI type is incomplete",
+            10 => "requires an element type",
+            11 or 19 => "invalid CliValueKind value",
+            12 => "invalid type table reference",
+            13 => "invalid method-instance table reference",
+            14 => "primitive CLI type name is invalid",
+            15 => "table entry contains trailing data",
+            _ => "invalid string length",
+        }, exception.Message, StringComparison.Ordinal);
+    }
+
+    // A presence flag the session reads is 0 or 1. The catch type's follows
+    // the region's handler length.
+    [Fact]
+    public void DecoderRejectsAPresenceFlagOtherThanZeroOrOne()
+    {
+        var snapshot = CreateStressSnapshot();
+        var region = snapshot.Analysis.Body.ExceptionRegions[0] with { HandlerLength = 0x5A5A5A5A };
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Body = snapshot.Analysis.Body with { ExceptionRegions = [region] },
+            },
+        };
+        var payload = new FrontendArtifactEncoder().Encode(snapshot).ToArray();
+        var marker = Find(payload, BitConverter.GetBytes(0x5A5A5A5A));
+        Assert.Equal(1, payload[marker + sizeof(int)]);
+        payload[marker + sizeof(int)] = 2;
+
+        var exception = Assert.Throws<InvalidDataException>(() => new FrontendArtifactDecoder().Decode([.. payload]));
+
+        Assert.Contains("invalid Boolean value", exception.Message, StringComparison.Ordinal);
+    }
+
+    // A body that never set its local types, and a declaration whose parameter
+    // names were set to default, keep them default.
+    [Fact]
+    public void RoundTripPreservesDefaultArrays()
+    {
+        var snapshot = CreateStressSnapshot();
+        snapshot = snapshot with
+        {
+            Analysis = snapshot.Analysis with
+            {
+                Method = snapshot.Analysis.Method with
+                {
+                    Definition = snapshot.Analysis.Method.Definition with
+                    {
+                        JSExport = new InteropExportDeclaration("published") { ParameterNames = default },
+                    },
+                },
+                Body = snapshot.Analysis.Body with { LocalSignatureTypes = default },
+            },
+        };
+
+        var decoded = new FrontendArtifactDecoder().Decode(new FrontendArtifactEncoder().Encode(snapshot));
+
+        Assert.True(decoded.Analysis.Body.LocalSignatureTypes.IsDefault);
+        Assert.True(decoded.Analysis.Method.Definition.JSExport!.ParameterNames.IsDefault);
     }
 
     private static FrontendArtifactSnapshot CreateStressSnapshot()
@@ -899,7 +1063,6 @@ public sealed class FrontendArtifactCodecTests
             new CilOperand.ConstantF8(4),
             new CilOperand.Index(5),
             new CilOperand.BranchTarget(6),
-            new CilOperand.SwitchTargets([7, 8]),
             new CilOperand.Entity(Key(0x02000002)),
             new CilOperand.MethodInstance(method),
             new CilOperand.FieldInstance(field),
@@ -1188,13 +1351,6 @@ public sealed class FrontendArtifactCodecTests
     {
         var copy = payload.ToArray();
         BitConverter.GetBytes(value).CopyTo(copy, RootOffset(copy) + 12);
-        return copy;
-    }
-
-    private static byte[] CorruptRootBoolean(byte[] payload)
-    {
-        var copy = payload.ToArray();
-        copy[RootOffset(copy) + 92] = 2;
         return copy;
     }
 

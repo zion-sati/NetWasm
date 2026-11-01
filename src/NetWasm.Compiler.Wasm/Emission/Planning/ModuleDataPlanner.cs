@@ -25,13 +25,6 @@ internal sealed record ModuleDataPlan(
     public int? StateRegistrationGuardAddress { get; init; }
     public int? StackTraceSymbolRegistrationGuardAddress { get; init; }
     public ImmutableArray<StackTraceSymbolData> StackTraceSymbols { get; init; } = [];
-
-    public static ModuleDataPlan Empty { get; } = new(
-        ImmutableDictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>.Empty,
-        [],
-        [],
-        [],
-        0);
 }
 
 internal sealed class ModuleDataPlanner(

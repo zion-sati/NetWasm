@@ -88,6 +88,68 @@ public sealed class NativeCallEmitterTests
             WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
     }
 
+    // A Vector4 is a v128 value to managed code and an aggregate in memory to
+    // native code: the argument stores its vector into the private copy and the
+    // result loads the vector back from its storage.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void VectorValuesCrossTheNativeBoundaryThroughTheirStorage(WasmTarget target)
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
+        var vector = CliTypeIdentity.Named(Assembly, "System.Numerics", "Vector4", true);
+        var pointer = CliTypeIdentity.FromStackKind(CliValueKind.NativeInt);
+        var logical = MethodSignatureModel.Create(vector, vector);
+        var method = Method(logical);
+        var indirect = new NativeAbiValuePlan(NativeAbiValueKind.IndirectAggregate, vector, pointer, 16, 4);
+        var plan = new NativeAbiPlan(method.Definition.NativeImport!, new(logical,
+            MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.NativeInt, CliValueKind.NativeInt),
+            [new(0, 0, indirect)], indirect, 0));
+        var context = CreateMethodEmissionContext(7) with
+        {
+            ValueLayout = new(32, [], [], ImmutableDictionary<int, int>.Empty.Add(0, 16), [])
+            {
+                NativeArgumentOffsets = ImmutableDictionary<(int, int), int>.Empty.Add((0, 0), 0),
+            },
+        };
+        var instruction = Publish(CreateInstructionRequest(CilOperation.Call,
+            logical.ParameterTypes, context: context), method, plan);
+        var writer = new RecordingInstructionWriter();
+
+        new NativeCallEmitter(layouts, new RecordingInitialization(), CreateAddressInstructions(layouts), new RecordingExceptions())
+            .Emit(new(instruction, method, 0, 1), writer, new RecordingIndices());
+
+        var expected = new List<WasmInstruction>();
+        expected.Add(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+        Get(0, CliValueKind.V128);
+        expected.Add(WasmInstruction.WithOperand(WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Store, 3, 0)));
+        Address(16);
+        expected.Add(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+        expected.Add(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned(37)));
+        Address(16);
+        expected.Add(WasmInstruction.WithOperand(WasmOpcodes.SimdPrefixed,
+            WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Load, 3, 0)));
+        expected.Add(WasmInstruction.WithOperand(WasmOpcodes.LocalSet,
+            WasmInstructionOperand.Unsigned((uint)WasmLocalLayoutPlanner.GetEvaluationStackLocal(
+                context.StackLocals, 0, CliValueKind.V128, layouts.Target))));
+        Assert.Equal(expected, writer.ToInstructions());
+        Assert.Equal([CliValueKind.V128], instruction.Stack);
+
+        void Address(int offset)
+        {
+            expected.Add(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+                WasmInstructionOperand.Unsigned((uint)context.ValueFrame)));
+            expected.Add(WasmInstruction.WithOperand(
+                target == WasmTarget.Wasm64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant,
+                target == WasmTarget.Wasm64 ? WasmInstructionOperand.Signed64(offset) : WasmInstructionOperand.Signed(offset)));
+            expected.Add(WasmInstruction.NoOperand(target == WasmTarget.Wasm64 ? WasmOpcodes.I64Add : WasmOpcodes.I32Add));
+        }
+        void Get(int slot, CliValueKind kind) => expected.Add(WasmInstruction.WithOperand(WasmOpcodes.LocalGet,
+            WasmInstructionOperand.Unsigned((uint)WasmLocalLayoutPlanner.GetEvaluationStackLocal(context.StackLocals,
+                slot, kind, layouts.Target))));
+    }
+
     public static TheoryData<WasmTarget, string, CliValueKind, int, byte, byte, uint> SingletonCalls
     {
         get

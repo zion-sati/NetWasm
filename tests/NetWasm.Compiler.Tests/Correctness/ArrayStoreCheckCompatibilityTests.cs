@@ -2,7 +2,6 @@ using NetWasm.Compiler.ComponentModel;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ArrayStoreCheckCompatibilityTests(CorrectnessTestRunner runner)
 {
     // Stores into arrays with an exact element type skip the covariant check;

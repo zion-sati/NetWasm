@@ -37,6 +37,7 @@ internal static class MethodEmissionServiceCollectionExtensions
         services.AddSingleton<ITransientAggregatePromotionPlanner,
             TransientAggregatePromotionPlanner>();
         services.AddSingleton<IValueFrameLayoutPlanner, ValueFrameLayoutPlanner>();
+        services.AddSingleton<IValueFrameReferenceMapPlanner, ValueFrameReferenceMapPlanner>();
         services.AddSingleton<FilterEnvironmentLayoutPlanner>();
         services.AddSingleton<IFilterEnvironmentLayoutPlanner>(provider =>
             provider.GetRequiredService<FilterEnvironmentLayoutPlanner>());

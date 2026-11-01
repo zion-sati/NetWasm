@@ -6,6 +6,7 @@ using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
+using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Tests;
 
@@ -75,8 +76,43 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         Emit((IInstructionCommandProvider)CreateEmitter(), request);
 
         Assert.Empty(request.Stack);
-        Assert.Contains(WasmOpcodes.Prefixed, GetCodeBytes(request));
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.DoesNotContain(instructions, IsMemoryFill);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
     }
+
+    [Fact]
+    public void InitializeObjectAndDefaultFillValuesOverSixtyFourBytes()
+    {
+        var initialize = CreateRequest(
+            CilOperation.InitializeObject,
+            [CliValueKind.ManagedAddress],
+            new CilOperand.TypeIdentity(ValueType()));
+        var defaultValue = CreateRequest(
+            CilOperation.DefaultValue,
+            [],
+            new CilOperand.TypeIdentity(ValueType()),
+            CreateMethodEmissionContext() with
+            {
+                ValueLayout = new ValueFrameLayout(
+                    96,
+                    [],
+                    [],
+                    ImmutableDictionary<int, int>.Empty.Add(0, 8),
+                    []),
+            });
+        var emitter = (IInstructionCommandProvider)CreateEmitter(valueSize: 80);
+
+        Emit(emitter, initialize);
+        Emit(emitter, defaultValue);
+
+        Assert.Contains(((RecordingInstructionWriter)GetCodeWriter(initialize)).ToInstructions(), IsMemoryFill);
+        Assert.Contains(((RecordingInstructionWriter)GetCodeWriter(defaultValue)).ToInstructions(), IsMemoryFill);
+    }
+
+    private static bool IsMemoryFill(WasmInstruction instruction) =>
+        instruction.Opcode == WasmOpcodes.Prefixed &&
+        instruction.Operand == WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0);
 
     [Fact]
     public void InitializeAndCopyBlocksConsumeThreeOperands()
@@ -313,7 +349,9 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         Emit((IInstructionCommandProvider)CreateEmitter(WasmTargetLayout.For(target)), request);
 
         Assert.Equal([CliValueKind.ValueType], request.Stack);
-        Assert.Contains(WasmOpcodes.Prefixed, GetCodeBytes(request));
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.DoesNotContain(instructions, IsMemoryFill);
+        Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Store);
     }
 
     [Fact]
@@ -429,10 +467,11 @@ public sealed class ValueObjectBlockMemoryEmitterTests
 
     private static ValueObjectBlockMemoryEmitter CreateEmitter(
         WasmTargetLayout? target = null,
-        IAddressTakenAggregateProjectionEmitter? projections = null)
+        IAddressTakenAggregateProjectionEmitter? projections = null,
+        int valueSize = 4)
     {
         var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider(target);
+        var layouts = new RecordingLayoutProvider(target, valueSize);
         return new ValueObjectBlockMemoryEmitter(layouts, layouts, CreateTypeOperands(program),
             WasmRuntimeImports.CreateCatalog(),
             projections ?? new AddressTakenAggregateProjectionEmitter(layouts));

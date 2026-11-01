@@ -109,6 +109,96 @@ public sealed class SdkRoutingTests
         Assert.Contains("<OutputType>JsModule</OutputType>", output, StringComparison.Ordinal);
     }
 
+    // Issue #141: an item naming a missing file fails where the build reads
+    // it, naming the item and the path, instead of reaching the page bundle
+    // as an import of the build machine's path.
+    [Fact]
+    public void FileItemsThatNameMissingFilesFailNamingTheItem()
+    {
+        using var project = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>JsModule</OutputType>
+            """,
+            projectItems: """
+                <NetWasmJavaScriptModule Include="present.mjs" Module="app.present" />
+                <NetWasmJavaScriptModule Include="missing/host.mjs" Module="app.host" />
+                <NetWasmJavaScriptModule Include="generated.mjs" Module="app.generated" NetWasmGeneratedWorkerClient="true" />
+                """,
+            files: new Dictionary<string, string> { ["present.mjs"] = "export {};" });
+
+        var (javaScriptExit, javaScript) = project.RunTarget("_NetWasmValidateJavaScriptItems");
+        Assert.NotEqual(0, javaScriptExit);
+        Assert.Contains("NWSDK093", javaScript, StringComparison.Ordinal);
+        Assert.Contains("module 'app.host'", javaScript, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(project.ProjectDirectory, "missing", "host.mjs"), javaScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("app.present", javaScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("app.generated", javaScript, StringComparison.Ordinal);
+
+        using var imports = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>WitWebWorker</OutputType>
+            """,
+            projectItems: """<NetWasmApplicationImport Include="imports/notify.mjs" Module="example:app/notify@1.0.0" />""");
+        var (importExit, import) = imports.RunTarget("_NetWasmValidateJavaScriptItems");
+        Assert.NotEqual(0, importExit);
+        Assert.Contains("NWSDK095", import, StringComparison.Ordinal);
+        Assert.Contains("module 'example:app/notify@1.0.0'", import, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(imports.ProjectDirectory, "imports", "notify.mjs"), import, StringComparison.Ordinal);
+
+        // WIT bindings resolve before compilation, so the project fails there.
+        var wit = Assert.ThrowsAny<Exception>(() => EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>JsModule</OutputType>
+            """,
+            projectItems: """
+                <NetWasmWit Include="wit/missing.wit" />
+                <NetWasmWit Include="wit/present.wit" />
+                """,
+            files: new Dictionary<string, string> { ["wit/present.wit"] = "package example:app;" })).Message;
+        Assert.Contains("NWSDK096", wit, StringComparison.Ordinal);
+        Assert.Contains($"{Path.DirectorySeparatorChar}wit{Path.DirectorySeparatorChar}missing.wit", wit, StringComparison.Ordinal);
+        Assert.DoesNotContain("present.wit", wit, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FileItemsThatExistPassValidation()
+    {
+        using var project = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>JsModule</OutputType>
+            """,
+            projectItems: """
+                <NetWasmJavaScriptModule Include="host.mjs" Module="app.host" />
+                <NetWasmWit Include="wit" />
+                """,
+            files: new Dictionary<string, string>
+            {
+                ["host.mjs"] = "export {};",
+                ["wit/world.wit"] = "package example:app;",
+            });
+
+        var (javaScriptExit, javaScript) = project.RunTarget("_NetWasmValidateJavaScriptItems");
+        Assert.True(javaScriptExit == 0, javaScript);
+        var (witExit, wit) = project.RunTarget("_NetWasmValidateWitItems");
+        Assert.True(witExit == 0, wit);
+    }
+
+    // Issue #140: dotnet run computes its command with ComputeRunArguments, and
+    // never runs the Run target, so a library's diagnostic is raised there.
+    [Fact]
+    public void RunningALibraryNamesWhatToRunInstead()
+    {
+        using var project = EvaluationProject.Create("""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>Library</OutputType>
+            """);
+
+        var (exitCode, output) = project.RunTarget("ComputeRunArguments");
+        Assert.NotEqual(0, exitCode);
+        Assert.Contains("NWSDK018", output, StringComparison.Ordinal);
+        Assert.Contains("run an application or browser project that references the library", output, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RenamedJavaScriptModuleItemNamesItsReplacement()
     {
@@ -341,8 +431,8 @@ public sealed class SdkRoutingTests
         process.StartInfo.ArgumentList.Add("/v:minimal");
 
         Assert.True(process.Start());
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
+        var outputTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var errorTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         process.WaitForExit();
         var output = (await outputTask).Trim();
         _ = await errorTask;

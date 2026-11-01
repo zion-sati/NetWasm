@@ -13,8 +13,6 @@ public sealed record PlatformWorldCapabilities(bool ReactorHost, bool EventLoop)
     internal const string PollInterface = "wasi:io/poll@0.2.11";
     internal const string MonotonicClockInterface = "wasi:clocks/monotonic-clock@0.2.11";
 
-    public static PlatformWorldCapabilities None { get; } = new(ReactorHost: false, EventLoop: false);
-
     public static PlatformWorldCapabilities From(ComponentBoundaryContract contract)
     {
         ArgumentNullException.ThrowIfNull(contract);

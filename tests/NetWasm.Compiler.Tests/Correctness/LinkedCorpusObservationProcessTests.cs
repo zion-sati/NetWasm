@@ -49,7 +49,7 @@ public sealed class LinkedCorpusObservationProcessTests
         var failure = Assert.Throws<LinkedCorpusObservationException>(() =>
             CreateProcess(dependencies).Observe(
                 LinkedCorpusObservationResponseParserTests.CreateRequest(),
-                ImmutableDictionary<int, string>.Empty, Environment));
+                ImmutableDictionary<int, string>.Empty, Environment, TestContext.Current.CancellationToken));
 
         Assert.Same(dependencies.ProcessResult, failure.Result);
         Assert.Same(dependencies.ProcessResult.LaunchException, failure.InnerException);
@@ -70,7 +70,7 @@ public sealed class LinkedCorpusObservationProcessTests
         var failure = Assert.Throws<InvalidOperationException>(() =>
             CreateProcess(dependencies).Observe(
                 LinkedCorpusObservationResponseParserTests.CreateRequest(),
-                ImmutableDictionary<int, string>.Empty, Environment));
+                ImmutableDictionary<int, string>.Empty, Environment, TestContext.Current.CancellationToken));
         Assert.Same(dependencies.Failure, failure);
         Assert.Equal(callCount, dependencies.Calls.Count);
         Assert.Equal(stage, dependencies.Calls[^1]);
@@ -85,9 +85,9 @@ public sealed class LinkedCorpusObservationProcessTests
         var request = LinkedCorpusObservationResponseParserTests.CreateRequest();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        Assert.Throws<ArgumentNullException>(() => process.Observe(null!, ImmutableDictionary<int, string>.Empty, Environment));
-        Assert.Throws<ArgumentNullException>(() => process.Observe(request, null!, Environment));
-        Assert.Throws<ArgumentNullException>(() => process.Observe(request, ImmutableDictionary<int, string>.Empty, null!));
+        Assert.Throws<ArgumentNullException>(() => process.Observe(null!, ImmutableDictionary<int, string>.Empty, Environment, TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentNullException>(() => process.Observe(request, null!, Environment, TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentNullException>(() => process.Observe(request, ImmutableDictionary<int, string>.Empty, null!, TestContext.Current.CancellationToken));
         var failure = Assert.Throws<OperationCanceledException>(() =>
             process.Observe(request, ImmutableDictionary<int, string>.Empty, Environment, cancellation.Token));
         Assert.Equal(cancellation.Token, failure.CancellationToken);

@@ -32,7 +32,7 @@ public sealed class WitWorkerHostEntryWriter : IWitWorkerHostEntryWriter
         AppendLine(source, $"import {{ createBrowserComponentExportSession }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "browser-component-export-session.mjs"))};");
         AppendLine(source, $"import {{ createWorkerSessionHost }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "worker-session-host.mjs"))};");
         AppendLine(source, $"import {{ mergeEnvironment }} from {ModuleSpecifier(Path.Combine(request.HostingJavaScriptRoot, "session-options.mjs"))};");
-        BrowserHostSource.AppendImports(source, request.Preview2ShimRoot);
+        BrowserHostSource.AppendImports(source, request.Preview2ShimRoot, request.HostingJavaScriptRoot);
         source.AppendLine();
         source.AppendLine("const manifestUrl = new URL(\"./deployment.json\", import.meta.url).href;");
         source.AppendLine("let fatalScheduled = false;");

@@ -17,11 +17,11 @@ public sealed class ExceptionOnlyContinuationLoopCompilationTests
             .Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path));
         var compilation = CSharpCompilation.Create(
             "ExceptionOnlyContinuationLoops.Desktop",
-            [CSharpSyntaxTree.ParseText(Source, new CSharpParseOptions(LanguageVersion.Preview))],
+            [CSharpSyntaxTree.ParseText(Source, new CSharpParseOptions(LanguageVersion.Preview), cancellationToken: TestContext.Current.CancellationToken)],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         using var stream = new MemoryStream();
-        Assert.True(compilation.Emit(stream).Success);
+        Assert.True(compilation.Emit(stream, cancellationToken: TestContext.Current.CancellationToken).Success);
         stream.Position = 0;
         var assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
         var run = assembly.GetType("ExceptionOnlyContinuationLoops.EntryPoint")!

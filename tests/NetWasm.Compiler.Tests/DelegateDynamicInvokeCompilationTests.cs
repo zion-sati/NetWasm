@@ -46,7 +46,6 @@ public sealed class DelegateDynamicInvokeCompilationTests
         Assert.Equal(baseline.ApplicationModule, unused.ApplicationModule);
         Assert.Null(baseline.Program.MemberExecution.DelegateInvocation);
         Assert.Null(unused.Program.MemberExecution.DelegateInvocation);
-        Assert.False(unused.Program.RequiresDelegateInvoke);
     }
 
     [Theory]

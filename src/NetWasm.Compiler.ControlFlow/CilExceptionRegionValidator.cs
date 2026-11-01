@@ -302,7 +302,6 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
         instruction.Operand switch
         {
             CilOperand.BranchTarget target => [target.Offset],
-            CilOperand.SwitchTargets targets => targets.Offsets,
             _ => [],
         };
 

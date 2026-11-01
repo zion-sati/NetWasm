@@ -14,7 +14,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // form must not change: one array read at another offset than it is written
 // (here the same array twice), loops that leave their arrays or meet a null array
 // part way, which a catch observes, and a counter copy read after the loop.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """
@@ -45,6 +44,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                         10 => LateStart(Ints(size + 6, 2), 5),
                         11 => Bounded(),
                         12 => CopyAfterLoop(Ints(size, 4)),
+                        14 => Shapes(Ints(size, 5), Floats(size, 2.5f), Doubles(size, 1.5), size + 1),
                         _ => Offsets(Ints(size + 4, 9), Ints(size + 4, 2), size),
                     });
                 }
@@ -212,6 +212,42 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                 return Sum(b) * 10 + k;
             }
 
+            // Constants and values the loop does not change that inlining leaves in
+            // it: negated and complemented constants, bitwise constants, a negated
+            // and a shifted argument and conversions of it, a pure Math call three
+            // helpers deep, a scaled counter copy read after the loop, and a switch
+            // ahead of the loops.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Shapes(int[] a, float[] f, double[] d, int n)
+            {
+                var bias = (n % 4) switch { 0 => 1, 1 => 3, 2 => 5, _ => 7 };
+                var c = new int[a.Length];
+                var g = new float[f.Length];
+                var e = new double[d.Length];
+                var k = -1;
+                for (var i = 0; i < c.Length; i++)
+                {
+                    k = i * 3 + 1;
+                    c[i] = a[i] * -Five() + ~Five() + (-n) + (n << 3) + (a[i] & (Mask() | 0x0F0F)) +
+                        (Mask() ^ 0xFF) + (Mask() & 0x3C) + k + bias;
+                }
+                for (var i = 0; i < g.Length; i++) g[i] = f[i] * (float)n - (float)bias;
+                for (var i = 0; i < e.Length; i++) e[i] = d[i] * Root(n) + (double)n;
+                var hash = Sum(c) * 31 + k;
+                foreach (var value in g) hash = hash * 31 + BitConverter.SingleToInt32Bits(value);
+                return hash * 31 + Hash(e);
+            }
+
+            private static int Five() => 5;
+
+            private static int Mask() => 0xF0F0;
+
+            private static double Root(int n) => Rooted(n) + 1.0;
+
+            private static double Rooted(int n) => SquareRoot(n) * 2.0;
+
+            private static double SquareRoot(int n) => Math.Sqrt(n);
+
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static int Offsets(int[] a, int[] b, int size)
             {
@@ -281,7 +317,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
             "ElementwiseLoopVectorizerCorpus",
             "NetWasm.Correctness.ElementwiseLoops",
             Source,
-            [.. Enumerable.Range(0, 14)])
+            [.. Enumerable.Range(0, 15)])
         {
             Optimization = FinalWasmOptimization.O3,
             ExecuteWasm64 = true,
@@ -305,12 +341,12 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
         string[] loops =
         [
             "Bounded", "CopyAfterLoop", "Counters", "Floats", "InPlace", "Integers", "Ints", "LateStart", "Longs",
-            "NullArray", "Offsets", "PastTheEnd", "Stencil", "StencilInto", "UInts", "Unsigned",
+            "NullArray", "Offsets", "PastTheEnd", "Shapes", "Stencil", "StencilInto", "UInts", "Unsigned",
         ];
         var actual = string.Join(", ", Vectorized(vectorized));
         Assert.True(string.Join(", ", loops) == actual, "vectorized: " + actual);
         Assert.Empty(Vectorized(scalar));
-        foreach (var input in (int[])[0, 5, 6, 8])
+        foreach (var input in (int[])[0, 5, 6, 8, 14])
         {
             Assert.Equal(
                 CompilerTestSupport.ExecuteWithStandardWasiNode(scalar.ApplicationModule, assets.Directory, input, target, scalar.StaticDataEnd),

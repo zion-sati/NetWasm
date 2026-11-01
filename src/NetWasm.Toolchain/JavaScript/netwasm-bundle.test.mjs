@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const command = fileURLToPath(new URL("./netwasm-bundle.mjs", import.meta.url));
 
@@ -116,6 +116,48 @@ test("leaves runtime imports external to an entry and reaches them by URL", asyn
       assert.equal(rejected.status, 1);
       assert.match(rejected.stderr, /NW-BUNDLE-002/u);
     }
+  });
+});
+
+// Issue #141: the SDK's entries import files by file: URL, which rolldown keeps
+// as an external import when the file is missing, shipping the build
+// machine's path. A missing file fails the bundle and names its path, and no
+// bundle, minified or not, carries a path of the build machine.
+test("fails on a missing file and keeps build-machine paths out of a bundle", async () => {
+  await withDirectory(async directory => {
+    const present = path.join(directory, "present.mjs");
+    const missing = path.join(directory, "missing", "host.mjs");
+    await writeFile(present, "export const present = 42;\n");
+    const entry = path.join(directory, "entry.mjs");
+    const output = path.join(directory, "out", "entry.mjs");
+    await writeFile(entry,
+      `import { present } from ${JSON.stringify(pathToFileURL(present).href)};\n`
+      + "export const value = present;\n");
+    for (const minify of ["false", "true"]) {
+      const result = run("bundle", entry, "--output", output, "--platform", "browser", "--minify", minify);
+      assert.equal(result.status, 0, result.stderr);
+      const text = await readFile(output, "utf8");
+      assert.ok(text.includes("42"));
+      assert.ok(!text.includes("file:"));
+      assert.ok(!text.includes(path.basename(directory)), text);
+    }
+
+    await writeFile(entry,
+      `import { present } from ${JSON.stringify(pathToFileURL(present).href)};\n`
+      + `import { host } from ${JSON.stringify(pathToFileURL(missing).href)};\n`
+      + "export const value = present + host;\n");
+    const rejected = run("bundle", entry, "--output", path.join(directory, "rejected.mjs"),
+      "--platform", "browser", "--minify", "false");
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /NW-BUNDLE-002: bundling failed: NW-BUNDLE-003: /u);
+    assert.ok(rejected.stderr.includes(missing), rejected.stderr);
+
+    // A missing relative import names what could not be resolved too.
+    await writeFile(entry, "import { helper } from \"./helper.mjs\";\nexport const value = helper;\n");
+    const relative = run("bundle", entry, "--output", path.join(directory, "relative.mjs"),
+      "--platform", "browser", "--minify", "false");
+    assert.equal(relative.status, 1);
+    assert.match(relative.stderr, /NW-BUNDLE-002: bundling failed: .*\.\/helper\.mjs/u);
   });
 });
 

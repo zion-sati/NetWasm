@@ -88,6 +88,41 @@ public sealed class ManagedMethodInlinerTests
             Assert.Equal(call.SourceOffset, instruction.SourceOffset));
     }
 
+    // A local the callee pins stays pinned where its body lands in the caller,
+    // after the locals that take the callee's arguments.
+    [Fact]
+    public void InlinedBodiesKeepTheLocalsTheyPin()
+    {
+        var caller = Method("Caller", MethodSignatureModel.Create(CliValueKind.Void), 1);
+        var callee = Method("Leaf", MethodSignatureModel.Create(Void, Int32Reference, Int32), 2);
+        var calleeBody = Body(
+            callee.Definition,
+            [
+                new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(1)),
+                new(1, 2, CilOperation.StoreLocal, new CilOperand.Index(0)),
+                new(2, 3, CilOperation.LoadArgument, new CilOperand.Index(0)),
+                new(3, 4, CilOperation.LoadLocal, new CilOperand.Index(0)),
+                new(4, 5, CilOperation.StoreObject, new CilOperand.TypeIdentity(Int32)),
+                new(5, 6, CilOperation.Return, new CilOperand.None()),
+            ],
+            [Int32]) with
+        { PinnedLocals = [0] };
+        var call = new CilInstruction(2, 3, CilOperation.Call, new CilOperand.MethodInstance(callee));
+        var callerBody = Body(
+            caller.Definition,
+            [
+                new(0, 1, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+                new(1, 2, CilOperation.LoadInt32, new CilOperand.ConstantI4(7)),
+                call,
+                new(3, 4, CilOperation.Return, new CilOperand.None()),
+            ]);
+
+        var result = Inline(Create(call, callee, calleeBody), caller, callerBody);
+
+        Assert.Equal(3, result.Locals.Length);
+        Assert.Equal(2, Assert.Single(result.PinnedLocals));
+    }
+
     [Fact]
     public void CapturesInstanceReceiverBeforeExplicitArguments()
     {
@@ -189,7 +224,7 @@ public sealed class ManagedMethodInlinerTests
     }
 
     [Fact]
-    public void RemapsCallerBranchesSwitchesAndTerminalBoundary()
+    public void RemapsCallerBranchesAndTerminalBoundary()
     {
         var caller = Method("Caller", MethodSignatureModel.Create(CliValueKind.Void), 1);
         var callee = Method(
@@ -214,7 +249,7 @@ public sealed class ManagedMethodInlinerTests
                 new(0, 1, CilOperation.Branch, new CilOperand.BranchTarget(2)),
                 new(1, 2, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
                 call,
-                new(3, 4, CilOperation.Switch, new CilOperand.SwitchTargets([2, 5])),
+                new(3, 4, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(5)),
                 new(4, 5, CilOperation.Return, new CilOperand.None()),
             ]);
 
@@ -222,10 +257,8 @@ public sealed class ManagedMethodInlinerTests
 
         Assert.Equal(2, Assert.IsType<CilOperand.BranchTarget>(
             result.Instructions[0].Operand).Offset);
-        var switchTargets = Assert.IsType<CilOperand.SwitchTargets>(
-            result.Instructions[5].Operand).Offsets;
-        Assert.Equal(2, switchTargets[0]);
-        Assert.Equal(7, switchTargets[1]);
+        Assert.Equal(7, Assert.IsType<CilOperand.BranchTarget>(
+            result.Instructions[5].Operand).Offset);
         Assert.Equal(
             Enumerable.Range(0, result.Instructions.Length),
             result.Instructions.Select(static instruction => instruction.Offset));
@@ -235,7 +268,7 @@ public sealed class ManagedMethodInlinerTests
     }
 
     [Fact]
-    public void RemapsCalleeBranchesSwitchesAndMultipleReturnsToContinuation()
+    public void RemapsCalleeBranchesAndMultipleReturnsToContinuation()
     {
         var caller = Method("Caller", MethodSignatureModel.Create(CliValueKind.Void), 1);
         var callee = Method(
@@ -246,13 +279,11 @@ public sealed class ManagedMethodInlinerTests
             callee.Definition,
             [
                 new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
-                new(1, 2, CilOperation.Switch, new CilOperand.SwitchTargets([4, 6])),
+                new(1, 2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(4)),
                 new(2, 3, CilOperation.LoadInt32, new CilOperand.ConstantI4(10)),
                 new(3, 4, CilOperation.Return, new CilOperand.None()),
                 new(4, 5, CilOperation.LoadInt32, new CilOperand.ConstantI4(20)),
                 new(5, 6, CilOperation.Return, new CilOperand.None()),
-                new(6, 7, CilOperation.LoadInt32, new CilOperand.ConstantI4(30)),
-                new(7, 8, CilOperation.Return, new CilOperand.None()),
             ]);
         var call = new CilInstruction(
             1,
@@ -276,9 +307,7 @@ public sealed class ManagedMethodInlinerTests
                 CilOperation.LoadInt32,
                 CilOperation.StoreLocal,
                 CilOperation.LoadLocal,
-                CilOperation.Switch,
-                CilOperation.LoadInt32,
-                CilOperation.Branch,
+                CilOperation.BranchIfTrue,
                 CilOperation.LoadInt32,
                 CilOperation.Branch,
                 CilOperation.LoadInt32,
@@ -286,15 +315,11 @@ public sealed class ManagedMethodInlinerTests
                 CilOperation.Return,
             ],
             result.Instructions.Select(static instruction => instruction.Operation));
-        Assert.Equal(
-            [6, 8],
-            Assert.IsType<CilOperand.SwitchTargets>(result.Instructions[3].Operand)
-                .Offsets.ToArray());
-        Assert.Equal(9, Assert.IsType<CilOperand.BranchTarget>(
+        Assert.Equal(6, Assert.IsType<CilOperand.BranchTarget>(
+            result.Instructions[3].Operand).Offset);
+        Assert.Equal(7, Assert.IsType<CilOperand.BranchTarget>(
             result.Instructions[5].Operand).Offset);
-        Assert.Equal(9, Assert.IsType<CilOperand.BranchTarget>(
-            result.Instructions[7].Operand).Offset);
-        Assert.All(result.Instructions[1..9], instruction =>
+        Assert.All(result.Instructions[1..7], instruction =>
             Assert.Equal(call.SourceOffset, instruction.SourceOffset));
     }
 
@@ -372,7 +397,7 @@ public sealed class ManagedMethodInlinerTests
     }
 
     [Fact]
-    public void RemapsBranchesAndSwitchesTargetingDistinctCalleeReturns()
+    public void RemapsBranchesTargetingDistinctCalleeReturns()
     {
         var caller = Method(
             "Caller",
@@ -386,7 +411,7 @@ public sealed class ManagedMethodInlinerTests
             callee.Definition,
             [
                 new(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0)),
-                new(1, 2, CilOperation.Switch, new CilOperand.SwitchTargets([3, 5])),
+                new(1, 2, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(3)),
                 new(2, 3, CilOperation.Branch, new CilOperand.BranchTarget(5)),
                 new(3, 4, CilOperation.Return, new CilOperand.None()),
                 new(4, 5, CilOperation.Branch, new CilOperand.BranchTarget(3)),
@@ -416,10 +441,8 @@ public sealed class ManagedMethodInlinerTests
             callerBody,
             entryStacks);
 
-        Assert.Equal(
-            [5, 8],
-            Assert.IsType<CilOperand.SwitchTargets>(result.Instructions[3].Operand)
-                .Offsets.ToArray());
+        Assert.Equal(5, Assert.IsType<CilOperand.BranchTarget>(
+            result.Instructions[3].Operand).Offset);
         Assert.Equal(8, Assert.IsType<CilOperand.BranchTarget>(
             result.Instructions[4].Operand).Offset);
         Assert.Equal(5, Assert.IsType<CilOperand.BranchTarget>(
@@ -1003,7 +1026,7 @@ public sealed class ManagedMethodInlinerTests
                 new(2, 3, CilOperation.Call, call),
                 new(3, 4, CilOperation.Branch, new CilOperand.BranchTarget(1)),
                 new(4, 5, CilOperation.Call, call),
-                new(5, 6, CilOperation.Switch, new CilOperand.SwitchTargets([7, 4])),
+                new(5, 6, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(4)),
                 new(6, 7, CilOperation.Call, call),
                 new(7, 8, CilOperation.Return, new CilOperand.None()),
             ]);
@@ -1011,7 +1034,7 @@ public sealed class ManagedMethodInlinerTests
 
         Inline(new ManagedMethodInliner(resolver, new TerminalContinuationInliningPlanner()), caller, body);
 
-        // The branch at 3 loops over 1 to 3, and the switch at 5 back to 4.
+        // The branch at 3 loops over 1 to 3, and the one at 5 back to 4.
         Assert.Equal(
             [(0, false), (1, true), (2, true), (4, true), (6, false)],
             resolver.Requests);
