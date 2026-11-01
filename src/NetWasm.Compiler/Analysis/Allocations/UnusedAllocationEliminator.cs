@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis.Allocations;
@@ -12,12 +13,14 @@ namespace NetWasm.Compiler.Analysis.Allocations;
 // never touches it, or the object allocated only to make that call. A store to
 // a local that is never read becomes a pop, a pure push that is popped
 // disappears, and so does an allocation whose constructor only initializes the
-// new object, when no finalizer could observe it. .NET's JIT removes such
+// new object, when no finalizer could observe it and no constructor in its chain
+// runs a static constructor first (ECMA-335 I.8.9.5). .NET's JIT removes such
 // allocations once escape analysis proves them unused.
 internal sealed class UnusedAllocationEliminator(
     IMethodBodyReader methodBodies,
     ICalledMethodResolver calledMethods,
     IFinalizerResolver finalizers,
+    IMethodInitializationTriggerClassifier initializationTriggers,
     bool enabled) : IMethodSpecializer
 {
     // Constructor chains are short; deeper ones stay allocations.
@@ -25,6 +28,8 @@ internal sealed class UnusedAllocationEliminator(
     private readonly IMethodBodyReader _methodBodies = methodBodies ?? throw new ArgumentNullException(nameof(methodBodies));
     private readonly ICalledMethodResolver _calledMethods = calledMethods ?? throw new ArgumentNullException(nameof(calledMethods));
     private readonly IFinalizerResolver _finalizers = finalizers ?? throw new ArgumentNullException(nameof(finalizers));
+    private readonly IMethodInitializationTriggerClassifier _initializationTriggers = initializationTriggers ??
+        throw new ArgumentNullException(nameof(initializationTriggers));
     private readonly ConcurrentDictionary<string, bool> _pure = new(StringComparer.Ordinal);
     private readonly object _finalizerLock = new();
 
@@ -98,12 +103,14 @@ internal sealed class UnusedAllocationEliminator(
         CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
 
     // A constructor that only stores constants and arguments into the new
-    // object, after a base constructor that does the same. A string's
+    // object, after a base constructor that does the same, of a type whose
+    // construction does not run its static constructor. A string's
     // constructors are placeholders: the compiler builds the string and
     // checks the arguments, so a discarded one still runs.
     private bool IsPure(MethodInstanceModel constructor, int depth) =>
         depth < MaximumConstructorDepth && constructor.Definition.HasManagedBody &&
         !constructor.DeclaringType.Equals(StringType) &&
+        !_initializationTriggers.Classify(constructor.Definition) &&
         _pure.GetOrAdd(constructor.CanonicalName, _ => StoresOnlyIntoItself(constructor, depth));
 
     private bool StoresOnlyIntoItself(MethodInstanceModel constructor, int depth)

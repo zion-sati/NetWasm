@@ -73,12 +73,16 @@ internal sealed class ConstrainedCallTargetResolver(
         System.Collections.Immutable.ImmutableArray<EntityKey> candidateMethods,
         ConstrainedCallTargetRequest request)
     {
+        // A virtual or interface method is implemented only by a virtual method:
+        // C# emits every implicit implementation virtual, so a non-virtual method
+        // of the same name only hides it.
         var named = candidateMethods
             .Select(methods.GetMethod)
             .Where(candidate =>
                 candidate.Name == request.Declaration.Name &&
                 candidate.IsStatic == request.Declaration.IsStatic &&
-                candidate.GenericArity == request.Declaration.GenericArity)
+                candidate.GenericArity == request.Declaration.GenericArity &&
+                (candidate.IsStatic || !request.Declaration.IsVirtual || candidate.IsVirtual))
             .ToArray();
         var exact = named
             .Where(candidate => MatchesSignature(candidate, request))

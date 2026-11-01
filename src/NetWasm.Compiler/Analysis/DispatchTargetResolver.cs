@@ -70,94 +70,260 @@ internal sealed class DispatchTargetResolver(
                 [],
                 [declaration.DeclaringType.TypeArguments[0]]);
         }
-        var interfaceDispatch = typeDefinitions.ResolveTypeIdentity(
-            declaration.DeclaringType).IsInterface;
-        for (var current = receiver;
-             current is not null;
-             current = baseTypes.Resolve(current))
+        return typeDefinitions.ResolveTypeIdentity(declaration.DeclaringType).IsInterface
+            ? ResolveInterfaceImplementation(receiver, declaration)
+            : ResolveOverride(receiver, declaration);
+    }
+
+    // ECMA-335 II.12.2: the most derived type with a MethodImpl for the interface
+    // method, or that declares the interface and so maps the method to its own or
+    // a base type's public virtual method of that name and signature, provides
+    // the slot; a type that does not declare the interface keeps its base type's
+    // mapping. The receiver runs that slot's override. An exact implementation
+    // of the interface comes before a variant one, and with no class
+    // implementation the most specific default implementation runs.
+    private MethodInstanceModel? ResolveInterfaceImplementation(
+        CliTypeIdentity receiver,
+        MethodInstanceModel declaration)
+    {
+        foreach (var variant in (ReadOnlySpan<bool>)[false, true])
         {
-            if (current.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
+            for (var current = receiver;
+                 current is not null;
+                 current = baseTypes.Resolve(current))
+            {
+                if (current.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
+                {
+                    continue;
+                }
+                if (ExplicitImplementation(current, declaration, variant) is { } body)
+                {
+                    return ResolveOverride(receiver, body);
+                }
+                if (DeclaredInterface(current, declaration.DeclaringType, variant) is not { } declared)
+                {
+                    continue;
+                }
+                var expected = ResolveInstance(
+                    declaration.Definition,
+                    declared.Shape == CliTypeShape.GenericInstantiation ? declared.TypeArguments : [],
+                    declaration.MethodArguments);
+                for (var holder = current; holder is not null; holder = baseTypes.Resolve(holder))
+                {
+                    if (ImplicitImplementation(holder, declaration, expected) is { } slot)
+                    {
+                        return ResolveOverride(receiver, slot);
+                    }
+                }
+            }
+        }
+        return DefaultImplementation(receiver, declaration);
+    }
+
+    private MethodInstanceModel? ExplicitImplementation(
+        CliTypeIdentity type,
+        MethodInstanceModel declaration,
+        bool variant) =>
+        methodImplementations.GetMethodImplementations(type)
+            .Where(mapping => Implements(mapping.Declaration, declaration, variant))
+            .Select(mapping => WithMethodArguments(mapping.Body, declaration.MethodArguments))
+            .FirstOrDefault();
+
+    private bool Implements(MethodInstanceModel implemented, MethodInstanceModel declaration, bool variant) =>
+        implemented.Definition.Key == declaration.Definition.Key &&
+        (variant
+            ? relationships.Classify(implemented.DeclaringType, declaration.DeclaringType)
+                .RequiresVariantMethodResolution
+            : implemented.DeclaringType.Equals(declaration.DeclaringType) &&
+              SameSignature(
+                  WithMethodArguments(implemented, declaration.MethodArguments).Signature,
+                  declaration.Signature));
+
+    private CliTypeIdentity? DeclaredInterface(CliTypeIdentity type, CliTypeIdentity interfaceType, bool variant) =>
+        implementedInterfaces.GetInterfaces(type).FirstOrDefault(declared => variant
+            ? relationships.Classify(declared, interfaceType).RequiresVariantMethodResolution
+            : declared.Equals(interfaceType));
+
+    // The type's public virtual method with the interface method's name and its
+    // signature as the declared interface gives it.
+    private MethodInstanceModel? ImplicitImplementation(
+        CliTypeIdentity holder,
+        MethodInstanceModel declaration,
+        MethodInstanceModel expected)
+    {
+        var definition = typeDefinitions.ResolveTypeIdentity(holder);
+        var matching = VirtualMethods(holder, definition, declaration.Definition.Name, declaration.MethodArguments)
+            .Where(method => method.Definition.IsPublic && SameSignature(method.Signature, expected.Signature))
+            .ToArray();
+        return matching.Length > 1
+            ? DeclaredImplementation(matching, holder, definition, expected)
+            : matching.SingleOrDefault();
+    }
+
+    // ECMA-335 II.10.3: from the slot's type down to the receiver, a virtual
+    // method of the slot's name and signature replaces its body until a new slot
+    // of that name and signature hides it. A MethodImpl replaces the body when it
+    // names a method whose own slot this is, or, from a method that preserves
+    // base overrides (a covariant override), any method that replaced it.
+    private MethodInstanceModel ResolveOverride(CliTypeIdentity receiver, MethodInstanceModel slot)
+    {
+        var chain = new List<CliTypeIdentity>();
+        var current = receiver;
+        while (current is not null && !current.Equals(slot.DeclaringType))
+        {
+            chain.Add(current);
+            current = baseTypes.Resolve(current);
+        }
+        if (current is null)
+        {
+            return slot;
+        }
+        var body = slot;
+        var ownSlot = new HashSet<EntityKey> { slot.Definition.Key };
+        var replacing = new HashSet<EntityKey> { slot.Definition.Key };
+        var visible = true;
+        for (var index = chain.Count - 1; index >= 0; index--)
+        {
+            var type = chain[index];
+            if (type.Shape is CliTypeShape.SzArray or CliTypeShape.Array)
             {
                 continue;
             }
-            var implementations = methodImplementations.GetMethodImplementations(current);
-            var explicitImplementation = implementations.FirstOrDefault(mapping =>
-                    mapping.Declaration.Definition.Key == declaration.Definition.Key &&
-                    mapping.Declaration.DeclaringType.Equals(
-                        declaration.DeclaringType) &&
-                    SameSignature(
-                        WithMethodArguments(mapping.Declaration, declaration.MethodArguments)
-                            .Signature,
-                        declaration.Signature));
-            explicitImplementation ??= implementations.FirstOrDefault(mapping =>
-                mapping.Declaration.Definition.Key == declaration.Definition.Key &&
-                relationships.Classify(
-                    mapping.Declaration.DeclaringType,
-                    declaration.DeclaringType).RequiresVariantMethodResolution);
-            if (explicitImplementation is not null)
+            var replaced = methodImplementations.GetMethodImplementations(type).FirstOrDefault(mapping =>
+                ownSlot.Contains(mapping.Declaration.Definition.Key) ||
+                mapping.Body.Definition.PreservesBaseOverrides &&
+                replacing.Contains(mapping.Declaration.Definition.Key));
+            if (replaced is not null)
             {
-                return WithMethodArguments(
-                    explicitImplementation.Body,
-                    declaration.MethodArguments);
+                body = WithMethodArguments(replaced.Body, slot.MethodArguments);
+                replacing.Add(body.Definition.Key);
+                if (!body.Definition.IsNewSlot)
+                {
+                    ownSlot.Add(body.Definition.Key);
+                }
+                continue;
             }
-
-            var definition = typeDefinitions.ResolveTypeIdentity(current);
-            var candidates = definition.Methods
-                .Select(methods.GetMethod)
-                .Where(method => method.Name == declaration.Definition.Name)
-                .Where(method => method.GenericArity == declaration.MethodArguments.Length)
-                .Select(method => InstanceFor(
-                    method,
-                    current,
-                    declaration.MethodArguments))
+            if (!visible)
+            {
+                continue;
+            }
+            var definition = typeDefinitions.ResolveTypeIdentity(type);
+            var matching = VirtualMethods(type, definition, slot.Definition.Name, slot.MethodArguments)
+                .Where(method => SameSignature(method.Signature, slot.Signature))
                 .ToArray();
-            if (interfaceDispatch)
+            if ((matching.Length > 1 ? DeclaredOverride(matching, type, definition, slot) : matching.SingleOrDefault())
+                is not { } same)
             {
-                var matching = candidates
-                    .Where(method => SameSignature(method.Signature, declaration.Signature))
-                    .ToArray();
-                var implicitImplementation = matching.Length > 1
-                    ? DeclaredImplementation(matching, current, definition, declaration)
-                    : matching.SingleOrDefault();
-                if (implicitImplementation is null &&
-                    implementedInterfaces.GetInterfaces(current).Any(implemented =>
-                        relationships.Classify(
-                            implemented,
-                            declaration.DeclaringType).RequiresVariantMethodResolution))
-                {
-                    implicitImplementation = candidates.SingleOrDefault(method =>
-                        IsSubstitutableSignature(
-                            method.Signature,
-                            declaration.Signature));
-                }
-                if (implicitImplementation is not null)
-                {
-                    return implicitImplementation;
-                }
+                continue;
             }
-            else
+            if (same.Definition.IsNewSlot)
             {
-                var matching = candidates
-                    .Where(method => SameSignature(method.Signature, declaration.Signature))
-                    .ToArray();
-                // In the declaring type, the declaration itself, also where another
-                // overload's signature coincides with it once the type's parameters
-                // are substituted.
-                var overrideMethod = current.Equals(declaration.DeclaringType)
-                    ? matching.FirstOrDefault(method => method.Definition.Key == declaration.Definition.Key) ??
-                        matching.SingleOrDefault()
-                    : matching.SingleOrDefault(method => method.Definition.IsVirtual && !method.Definition.IsNewSlot);
-                if (overrideMethod is not null)
-                {
-                    return overrideMethod;
-                }
+                visible = false;
+                continue;
             }
+            body = same;
+            ownSlot.Add(same.Definition.Key);
+            replacing.Add(same.Definition.Key);
         }
-        if (interfaceDispatch && !declaration.Definition.IsAbstract)
+        return body;
+    }
+
+    // Overloads such as G<T>.M(T) and M(int) coincide once T is int. The method
+    // that overrides the slot is the one whose declared signature is the slot's
+    // as the type declares its base (ECMA-335 II.10.3.2). Only an instantiated
+    // generic type's methods coincide, so the type is one.
+    private MethodInstanceModel? DeclaredOverride(
+        MethodInstanceModel[] matching,
+        CliTypeIdentity type,
+        TypeDefinitionModel definition,
+        MethodInstanceModel slot)
+    {
+        var open = CliTypeIdentity.GenericInstantiation(
+            type.ElementType!,
+            [.. Enumerable.Range(0, definition.GenericArity)
+                .Select(index => CliTypeIdentity.GenericParameter(method: false, index))]);
+        var slotType = typeDefinitions.ResolveTypeIdentity(slot.DeclaringType).Key;
+        var baseType = baseTypes.Resolve(open);
+        while (baseType is not null && typeDefinitions.ResolveTypeIdentity(baseType).Key != slotType)
         {
-            return declaration;
+            baseType = baseTypes.Resolve(baseType);
         }
-        return null;
+        if (baseType is null)
+        {
+            return null;
+        }
+        var declared = slot.Definition.Signature.Substitute(
+            baseType.Shape == CliTypeShape.GenericInstantiation ? baseType.TypeArguments : []);
+        return matching.SingleOrDefault(method => SameSignature(method.Definition.Signature, declared));
+    }
+
+    private IEnumerable<MethodInstanceModel> VirtualMethods(
+        CliTypeIdentity type,
+        TypeDefinitionModel definition,
+        string name,
+        ImmutableArray<CliTypeIdentity> methodArguments) =>
+        definition.Methods
+            .Select(methods.GetMethod)
+            .Where(method => method.Name == name &&
+                             method.IsVirtual &&
+                             !method.IsStatic &&
+                             method.GenericArity == methodArguments.Length)
+            .Select(method => InstanceFor(method, type, methodArguments));
+
+    // With no class implementation, the default implementations the receiver's
+    // interfaces provide: the interface method's own body and each interface's
+    // MethodImpl for it. The most specific is the one whose interface derives
+    // from every other's; with none, there is no implementation.
+    private MethodInstanceModel? DefaultImplementation(
+        CliTypeIdentity receiver,
+        MethodInstanceModel declaration)
+    {
+        var interfaces = AllInterfaces(receiver);
+        var candidates = new List<(CliTypeIdentity Owner, MethodInstanceModel Body)>();
+        if (!declaration.Definition.IsAbstract)
+        {
+            candidates.Add((declaration.DeclaringType, declaration));
+        }
+        foreach (var owner in interfaces)
+        {
+            foreach (var variant in (ReadOnlySpan<bool>)[false, true])
+            {
+                if (ExplicitImplementation(owner, declaration, variant) is { } body)
+                {
+                    candidates.Add((owner, body));
+                    break;
+                }
+            }
+        }
+        var specific = candidates
+            .Where(candidate => candidates.All(other =>
+                other.Owner.Equals(candidate.Owner) || AllInterfaces(candidate.Owner).Contains(other.Owner)))
+            .ToArray();
+        return specific.Length == 1 ? specific[0].Body : null;
+    }
+
+    private HashSet<CliTypeIdentity> AllInterfaces(CliTypeIdentity type)
+    {
+        var all = new HashSet<CliTypeIdentity>();
+        var pending = new Stack<CliTypeIdentity>();
+        for (var current = type; current is not null; current = baseTypes.Resolve(current))
+        {
+            if (current.Shape is not (CliTypeShape.SzArray or CliTypeShape.Array))
+            {
+                pending.Push(current);
+            }
+        }
+        while (pending.TryPop(out var next))
+        {
+            foreach (var implemented in implementedInterfaces.GetInterfaces(next))
+            {
+                if (all.Add(implemented))
+                {
+                    pending.Push(implemented);
+                }
+            }
+        }
+        return all;
     }
 
     private string? ResolveArrayHelperName(MethodInstanceModel declaration)
@@ -249,21 +415,4 @@ internal sealed class DispatchTargetResolver(
         MethodSignatureModel right) =>
         left.ReturnSignatureType.Equals(right.ReturnSignatureType) &&
         left.ParameterSignatureTypes.SequenceEqual(right.ParameterSignatureTypes);
-
-    private bool IsSubstitutableSignature(
-        MethodSignatureModel implementation,
-        MethodSignatureModel declaration) =>
-        implementation.ParameterSignatureTypes.Length ==
-            declaration.ParameterSignatureTypes.Length &&
-        IsAssignableOrEqual(
-            implementation.ReturnSignatureType,
-            declaration.ReturnSignatureType) &&
-        implementation.ParameterSignatureTypes
-            .Zip(declaration.ParameterSignatureTypes)
-            .All(pair => IsAssignableOrEqual(pair.Second, pair.First));
-
-    private bool IsAssignableOrEqual(
-        CliTypeIdentity candidate,
-        CliTypeIdentity target) =>
-        candidate.Equals(target) || relationships.Classify(candidate, target).IsAssignmentCompatible;
 }

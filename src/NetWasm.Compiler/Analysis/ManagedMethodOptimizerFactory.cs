@@ -106,6 +106,7 @@ internal sealed class ManagedMethodOptimizerFactory(
             new Devirtualization.ExactReceiverDevirtualizer(calledMethods, dispatchTargets, methodBodies, fields, graphBuilder, stackValidator,
                 dominance, settings.Devirtualization == DevirtualizationPolicy.ExactType),
             new Allocations.UnusedAllocationEliminator(methodBodies, calledMethods, finalizers,
+                new MethodInitializationTriggerClassifier(types),
                 settings.AllocationElimination == AllocationEliminationPolicy.Unused),
             new RvaSpanLocalEliminator(graphBuilder, dominance,
                 settings.StaticDataViewElimination == StaticDataViewEliminationPolicy.Conservative),

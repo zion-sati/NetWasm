@@ -1123,6 +1123,29 @@ public sealed class ValueFrameLayoutPlannerTests
         Assert.Equal(scenario != "entity call", chosen.Contains(1));
     }
 
+    // Validated stacks always hold a call's operands; a plan whose stack is
+    // shorter selects nothing at the call rather than reading past it.
+    [Fact]
+    public void ACallTakingMoreValuesThanTheStackHoldsSelectsNone()
+    {
+        var fixture = new PlannerFixture();
+        var takes = new MethodInstanceModel(
+            fixture.ValueStatic,
+            fixture.ReferenceType,
+            [],
+            MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), fixture.ValueType, fixture.ValueType));
+        var body = new CilMethodBody(fixture.BodyMethod, 2, [],
+        [
+            I(0, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(1, CilOperation.Call, new CilOperand.MethodInstance(takes)),
+            I(2, CilOperation.Return),
+        ]);
+
+        var chosen = ThroughSelector(new DirectValueLoadSelector()).Select(PlanningMethod(body, [(0, 0), (1, 1), (2, 0)]));
+
+        Assert.Empty(chosen);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

@@ -418,6 +418,32 @@ public sealed class FieldInstructionEmitterTests
         Assert.Contains("spans the whole vector", exception.Message, StringComparison.Ordinal);
     }
 
+    // A struct field of a vector, as Plane's Normal, copies out whole 32-bit
+    // lanes; every System.Numerics vector is made of them.
+    [Theory]
+    [InlineData(2, 4)]
+    [InlineData(0, 6)]
+    public void AVectorsStructFieldOutsideItsLanesIsRejected(int offset, int size)
+    {
+        var valueType = CreateValueType();
+        var context = CreateMethodEmissionContext() with
+        {
+            ValueLayout = new ValueFrameLayout(
+                8,
+                [],
+                [],
+                ImmutableDictionary<int, int>.Empty.Add(0, 0),
+                []),
+        };
+        var emitter = CreateEmitter(
+            new FieldProgram(CreateField(valueType), true),
+            new FieldLayoutScenario(WasmTargetLayout.Wasm32, new FieldLayout(offset) { Size = size, Type = valueType }));
+        var request = CreateRequest(CilOperation.LoadField, [CliValueKind.V128], new CilOperand.Entity(InstanceFieldKey), context);
+
+        var exception = Assert.Throws<CompilerException>(() => Emit(emitter, request));
+        Assert.Contains("not made of 32-bit lanes", exception.Message, StringComparison.Ordinal);
+    }
+
     private static IInstructionCommandProvider CreateEmitter(
         ITypeRepository? types = null,
         IFieldRepository? fieldRepository = null,

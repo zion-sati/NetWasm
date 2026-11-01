@@ -250,15 +250,21 @@ jobs:
             project=tests/NetWasm.Runtime.Pack.Tests/NetWasm.Runtime.Pack.Tests.csproj
             listing="$RUNNER_TEMP/runtime-pack-tests.list"
             dotnet test "$project" -c Release --no-build --no-restore \
-              --disable-build-servers --nologo --list-tests > "$listing"
+              --disable-build-servers --nologo --list-tests --filter 'Category!=Performance' > "$listing"
+            plan="$RUNNER_TEMP/runtime-pack-test-plan.json"
             filter="$(
               python3 eng/create-compiler-test-shard-filter.py "$listing" \
                 --namespace NetWasm.Runtime.Pack.Tests. \
                 --shard-count 3 \
-                --shard-index '${{ matrix.project-shard }}'
+                --shard-index '${{ matrix.project-shard }}' \
+                --plan-output "$plan"
             )"
             dotnet test "$project" -c Release --no-build --no-restore \
-              --disable-build-servers --nologo --filter "$filter"
+              --disable-build-servers --nologo --filter "$filter" \
+              --results-directory "$RUNNER_TEMP/runtime-pack-test-results" \
+              --logger "trx;LogFileName=runtime-pack.trx"
+            python3 eng/check-compiler-test-shard.py "$plan" \
+              "$RUNNER_TEMP/runtime-pack-test-results/runtime-pack.trx"
           else
             dotnet test NetWasm.slnx -c Release --no-build --no-restore \
               --disable-build-servers --nologo \

@@ -68,18 +68,18 @@ native code outside any Wasm sandbox:
 
 | Workload | NetWasm, NetWasmGC | Mono AOT, .NET 11 | Desktop .NET 11 JIT | Desktop .NET 11 NativeAOT |
 | --- | ---: | ---: | ---: | ---: |
-| Full transaction | **29.8 ms** | 56.5 ms | 49.7 ms | 32.4 ms |
-| Retained object graph | **4.8 ms** | 14.4 ms | 9.9 ms | 7.6 ms |
-| UI churn | **7.8 ms** | 26.9 ms | 8.7 ms | 6.6 ms |
+| Full transaction | **29.7 ms** | 56.6 ms | 50.1 ms | 32.1 ms |
+| Retained object graph | **4.9 ms** | 14.4 ms | 9.7 ms | 7.5 ms |
+| UI churn | **7.8 ms** | 26.9 ms | 8.6 ms | 6.6 ms |
 
 These are medians of 15 runs on an Apple M1 Max, with every Wasm build under
 Wasmtime 49.0.3 and each run checked against desktop .NET's result. Mono AOT is
 Microsoft's `wasi-wasm` target on .NET 11 RC3 in Release, with Wasm SIMD.
-NetWasmGC takes 47% to 71% less time than Mono AOT and 10% to 51% less than the
+NetWasmGC takes 48% to 71% less time than Mono AOT and 9% to 49% less than the
 desktop JIT. It is also faster than desktop NativeAOT on the full transaction
 and the retained object graph; NativeAOT is still faster on UI churn.
 
-Without allocation in the timed region, NetWasm takes 33% less time than Mono AOT
+Without allocation in the timed region, NetWasm takes 31% less time than Mono AOT
 on the transaction's library work and 7% less on a quicksort, and matches it on
 n-body and CRC-32 kernels. Desktop .NET is faster on the library work and the
 quicksort without allocation.
@@ -265,8 +265,8 @@ mean “desktop .NET, but in Wasm.” The main remaining themes are:
 - production diagnostics and broader host qualification.
 
 **New in NetWasm 0.10.7:** `Vector128<T>` and `Vector<T>` run on WebAssembly
-SIMD, the compiler vectorizes ordinary loops, and generated code takes 0.44 of
-0.10.6's time on dotnet/performance's runtime micro-benchmarks. WIT bindings
+SIMD, the compiler vectorizes ordinary loops, and generated code takes 0.45 of
+Mono AOT's time on dotnet/performance's micro-benchmarks. WIT bindings
 follow the component model's interface names, so regenerate bindings made by
 earlier releases. [Release notes](docs/releases/0.10.7.md). NetWasm 0.10.6 made
 generic variance work through implicitly implemented interface members.

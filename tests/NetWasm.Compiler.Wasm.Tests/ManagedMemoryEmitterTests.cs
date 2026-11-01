@@ -117,6 +117,18 @@ public sealed class ManagedMemoryEmitterTests
         Assert.NotEmpty(code.ToArray());
     }
 
+    // A 16-byte value is a v128, moved with one SIMD load or store.
+    [Fact]
+    public void SixteenByteLoadsAndStoresAreV128Instructions()
+    {
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        ManagedMemoryEmitter.EmitLoadBySize(code, WasmTargetLayout.Wasm32, 32, 16);
+        ManagedMemoryEmitter.EmitStoreBySize(code, WasmTargetLayout.Wasm32, 48, 16);
+
+        Assert.Equal([0xfd, 0x00, 0x03, 0x20, 0xfd, 0x0b, 0x03, 0x30], code.ToArray());
+    }
+
     [Fact]
     public void LoadValueTypeMatchesTheInstructionProducedForEveryScalarWidth()
     {

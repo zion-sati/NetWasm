@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
@@ -19,6 +20,7 @@ internal sealed class ConstrainedCallRewriter(
     {
         var instructions = body.Instructions.ToArray();
         var changed = false;
+        var boxed = new List<(int Prefix, CliTypeIdentity Type, ImmutableArray<CliTypeIdentity> Arguments)>();
         for (var index = 1; index < instructions.Length; index++)
         {
             var call = instructions[index];
@@ -120,6 +122,19 @@ internal sealed class ConstrainedCallRewriter(
                 implementation,
                 implementationTypeArguments,
                 methodArguments);
+            // A value type that does not implement the method, so that a default
+            // interface method runs, calls it virtually on a box of its value
+            // (ECMA-335 III.2.1), which dispatch binds to the most specific
+            // default; what the method does to the box leaves the caller's value
+            // as it was.
+            if (concreteType.IsValueType && !implementation.IsStatic && directOperation == CilOperation.Call &&
+                typeDefinitions.ResolveTypeIdentity(resolved.DeclaringType).IsInterface)
+            {
+                boxed.Add((index - 1, constrainedType, resolved.Signature.ParameterSignatureTypes));
+                instructions[index] = call with { Operation = CilOperation.CallVirtual };
+                changed = true;
+                continue;
+            }
             instructions[index] = call with
             {
                 Operation = directOperation,
@@ -127,8 +142,52 @@ internal sealed class ConstrainedCallRewriter(
             };
             changed = true;
         }
-        return changed ? body with { Instructions = [.. instructions] } : body;
+        if (!changed)
+        {
+            return body;
+        }
+        var rewritten = body with { Instructions = [.. instructions] };
+        return boxed.Count == 0 ? rewritten : Box(rewritten, boxed);
     }
+
+    // Each boxed call's prefix becomes: the arguments into new locals, the value
+    // at the receiver's address boxed, and the arguments back on the stack.
+    private static CilMethodBody Box(
+        CilMethodBody body,
+        List<(int Prefix, CliTypeIdentity Type, ImmutableArray<CliTypeIdentity> Arguments)> sites)
+    {
+        var locals = body.Locals.ToBuilder();
+        var signatureTypes = body.LocalSignatureTypes.ToBuilder();
+        var replacements = body.Instructions.Select(static instruction => new List<CilInstruction> { instruction }).ToArray();
+        foreach (var (prefix, type, arguments) in sites)
+        {
+            var first = locals.Count;
+            foreach (var argument in arguments)
+            {
+                locals.Add(argument.StackKind);
+                signatureTypes.Add(argument);
+            }
+            var sequence = new List<CilInstruction>();
+            for (var argument = arguments.Length - 1; argument >= 0; argument--)
+            {
+                sequence.Add(Instruction(CilOperation.StoreLocal, new CilOperand.Index(first + argument)));
+            }
+            sequence.Add(Instruction(CilOperation.LoadObject, new CilOperand.TypeIdentity(type)));
+            sequence.Add(Instruction(CilOperation.Box, new CilOperand.TypeIdentity(type)));
+            for (var argument = 0; argument < arguments.Length; argument++)
+            {
+                sequence.Add(Instruction(CilOperation.LoadLocal, new CilOperand.Index(first + argument)));
+            }
+            replacements[prefix] = sequence;
+        }
+        return RenumberedInstructions.Splice(body, replacements) with
+        {
+            Locals = locals.ToImmutable(),
+            LocalSignatureTypes = signatureTypes.ToImmutable(),
+        };
+    }
+
+    private static CilInstruction Instruction(CilOperation operation, CilOperand operand) => new(0, 1, operation, operand);
 
     // A value type that inherits a parameterless ToString from Object or ValueType still has its
     // managed pointer on the stack, not a box, so a direct call would read the value as an object.

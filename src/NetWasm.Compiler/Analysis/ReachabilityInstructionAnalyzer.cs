@@ -57,27 +57,10 @@ internal sealed class ReachabilityInstructionAnalyzer(
             var calledMethod = calledMethods.Resolve(instruction);
             if (calledMethod is not null)
             {
-                if (calledMethod.Definition.Name == "get_Name" &&
-                    calledMethod.DeclaringType.FullName ==
-                        "System.Reflection.MemberInfo")
-                {
-                    requiresMemberNames = true;
-                }
-                if (calledMethod.DeclaringType.FullName == "System.Type")
-                {
-                    requiresDelegateInvoke |=
-                        calledMethod.Definition.Name == "GetDelegateInvokeMethod";
-                    requiresGenericArguments |=
-                        calledMethod.Definition.Name == "GetGenericArguments";
-                    typeNamePayload |= calledMethod.Definition.Name switch
-                    {
-                        "GetRuntimeName" => RuntimeTypeNamePayload.Name,
-                        "GetRuntimeNamespace" => RuntimeTypeNamePayload.Namespace,
-                        "GetRuntimeFullName" => RuntimeTypeNamePayload.FullName,
-                        "GetRuntimeDisplayName" => RuntimeTypeNamePayload.DisplayName,
-                        _ => RuntimeTypeNamePayload.None,
-                    };
-                }
+                requiresMemberNames |= ReachabilityMarkers.RequiresMemberNames(calledMethod);
+                requiresDelegateInvoke |= ReachabilityMarkers.RequiresDelegateInvoke(calledMethod);
+                requiresGenericArguments |= ReachabilityMarkers.RequiresGenericArguments(calledMethod);
+                typeNamePayload |= ReachabilityMarkers.TypeNamePayload(calledMethod);
                 callSites.Add(managedCallSites.Create(
                     request.Method,
                     request.Body,

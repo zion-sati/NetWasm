@@ -148,6 +148,41 @@ class CompilerTestShardFilterTests(unittest.TestCase):
         self.assertIn(f"FullyQualifiedName={method}", filter_value)
         self.assertIn("DisplayName~caseId%3A%20%22decimal%22", filter_value)
 
+    def test_a_shortened_argument_keeps_its_ellipsis_unescaped(self):
+        # xUnit shortens a long string argument and ends it with '···'. VSTest
+        # decodes %XX one character at a time, so an escaped UTF-8 sequence
+        # would select nothing.
+        method = "NetWasm.Compiler.Tests.GuardTests.Rejects"
+        case = f'{method}(actor: "NetWasm.Compiler.Analysis.AddressTakenValues.Local"···, missing: 0)'
+        item = SHARDS.ShardItem(method, case, 1, 1.0)
+
+        filter_value = SHARDS.create_vstest_filter([item])
+
+        self.assertIn(
+            'DisplayName~actor%3A%20%22NetWasm.Compiler.Analysis.AddressTakenValues.Local%22···%2C%20missing%3A%200)',
+            filter_value,
+        )
+        self.assertNotIn("%C2%B7", filter_value)
+
+    def test_plan_records_whole_methods_and_split_cases(self):
+        method = "NetWasm.Compiler.Tests.AlphaTests.Theory"
+        items = [
+            SHARDS.ShardItem("NetWasm.Compiler.Tests.AlphaTests.Fact", None, 1, 1.0),
+            SHARDS.ShardItem(method, f"{method}(value: 1)", 1, 1.0),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plan.json"
+            SHARDS.write_plan(path, items)
+            plan = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            [
+                {"method": "NetWasm.Compiler.Tests.AlphaTests.Fact", "displayName": None},
+                {"method": method, "displayName": f"{method}(value: 1)"},
+            ],
+            plan["items"],
+        )
+
     def test_normal_and_unsafe_theories_remain_atomic(self):
         normal = "NetWasm.Compiler.Tests.NormalTests.Theory"
         unsafe = "NetWasm.Compiler.Tests.UnsafeTests.Theory"

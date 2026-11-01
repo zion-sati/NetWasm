@@ -93,6 +93,8 @@ internal sealed class ManagedInliningResolver(
             method.Definition.JSImport is not null || method.Definition.WitImport is not null ||
             method.Definition.NativeImport is not null ||
             _initializationTriggers.Classify(method.Definition) ||
+            // Reachability reads these calls to emit the runtime facts they read.
+            ReachabilityMarkers.IsMarker(method) ||
             method.CanonicalName == request.Caller.CanonicalName ||
             !HasSupportedCallMetadata(request.Call, method))
         {

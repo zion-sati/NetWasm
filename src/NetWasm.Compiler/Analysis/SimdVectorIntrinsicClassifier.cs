@@ -238,9 +238,9 @@ internal static class SimdVectorIntrinsicClassifier
         method.Signature.ParameterSignatureTypes is [var left, var right] &&
         IsVector(left) && IsVector(right);
 
-    // CreateScalar<T>(T) and the overloads that take one element type.
+    // CreateScalar<T>(T) and the overloads that take one element type. Every
+    // CreateScalar of Vector128 and Vector returns its vector.
     private static bool Scalar(MethodDefinitionModel method) =>
-        IsVector(method.Signature.ReturnSignatureType) &&
         method.Signature.ParameterSignatureTypes is [var value] &&
         (method.GenericArity == 1 && value.Shape == CliTypeShape.GenericMethodParameter ||
          method.GenericArity == 0 && method.Signature.ReturnSignatureType.TypeArguments is [var element] &&
