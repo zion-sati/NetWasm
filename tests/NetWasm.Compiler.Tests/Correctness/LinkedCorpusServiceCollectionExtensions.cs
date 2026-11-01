@@ -13,7 +13,8 @@ internal static class LinkedCorpusServiceCollectionExtensions
             Environment.GetEnvironmentVariable("NETWASM_EMSDK_ROOT"),
             Environment.GetEnvironmentVariable("NETWASM_NODE_PATH"),
             Environment.GetEnvironmentVariable("NETWASM_WASM_TOOLS_PATH"),
-            Environment.GetEnvironmentVariable("NETWASM_CORPUS_COLLECTOR")));
+            Environment.GetEnvironmentVariable("NETWASM_CORPUS_COLLECTOR"),
+            Environment.GetEnvironmentVariable("NETWASM_CORPUS_GC_STRESS")));
         services.AddSingleton<ILinkedCorpusToolPathsProvider,
             LinkedCorpusToolPathsProvider>();
         services.AddSingleton<ICorpusArtifactFingerprint,

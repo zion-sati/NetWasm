@@ -58,8 +58,9 @@ public sealed class RootMapAnalyzer(
                 (instruction.Offset, Block: pair.Key)))
             .ToImmutableDictionary(pair => pair.Offset, pair => pair.Block);
         var liveAfter = AnalyzeVariableLiveness(method, blockInstructions);
-        var persistentManagedAddressArguments =
-            GetPersistentManagedAddressArgumentRoots(method);
+        var exposed = AnalyzeAddressExposure(method, blockInstructions);
+        ImmutableArray<RootSource> persistent =
+            [.. GetPersistentManagedAddressArgumentRoots(method), .. GetPinnedLocalRoots(method)];
         var safepoints = new List<SafepointRootMap>();
         var selected = new List<(CilInstruction Instruction, ImmutableArray<CliValueKind> Stack, int CalleeRooted)>();
         foreach (var instruction in method.Body.Instructions)
@@ -94,14 +95,14 @@ public sealed class RootMapAnalyzer(
         {
             var roots = liveAfter[instruction.Offset].ToBuilder();
             var demanded = ImmutableHashSet.CreateBuilder<StackStorageAnchor>();
-            roots.UnionWith(persistentManagedAddressArguments);
+            roots.UnionWith(persistent);
+            if (exposed.TryGetValue(instruction.Offset, out var exposedRoots)) roots.UnionWith(exposedRoots);
             if (storage.Locals.TryGetValue(instruction.Offset, out var localTypes))
             {
                 foreach (var localIndex in roots
                              .Where(source => source.Kind == RootSourceKind.ManagedAddressLocal && !source.IsIndirect)
                              .Select(source => source.Index).ToArray())
                 {
-                    AddBackingOwners(localTypes[localIndex], roots);
                     AddAnchorDemands(method, instruction, localTypes[localIndex],
                         new(StackStorageLocationKind.Local, localIndex), demanded);
                 }
@@ -213,6 +214,65 @@ public sealed class RootMapAnalyzer(
         return liveAfter.ToImmutableDictionary();
     }
 
+    // A local or an argument whose address is taken can be read and written
+    // through whatever holds that address: a byref, a span over it or a ref
+    // struct that keeps one, here or in a callee, long after the last load of
+    // the storage itself. Ref safety keeps each holder within this method, so
+    // the storage stays a root at every safepoint its address reaches; its
+    // frame starts zeroed.
+    private ImmutableDictionary<int, ImmutableHashSet<RootSource>> AnalyzeAddressExposure(
+        ManagedMethodBody method,
+        ImmutableDictionary<int, ImmutableArray<CilInstruction>> blockInstructions)
+    {
+        var exposures = method.Body.Instructions
+            .Select(instruction => (instruction.Offset, Sources: Exposes(method, instruction)))
+            .Where(exposure => !exposure.Sources.IsEmpty)
+            .ToImmutableDictionary(exposure => exposure.Offset, exposure => exposure.Sources);
+        if (exposures.IsEmpty) return ImmutableDictionary<int, ImmutableHashSet<RootSource>>.Empty;
+
+        var graph = method.ControlFlow.Graph;
+        var flow = _continuations.Analyze(method);
+        var exposedIn = graph.Blocks.ToDictionary(block => block.Index, _ => ImmutableHashSet<RootSource>.Empty);
+        var exposedAfter = new Dictionary<int, ImmutableHashSet<RootSource>>();
+        var blocks = graph.Blocks.OrderBy(block => block.Index).ToArray();
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var block in blocks)
+            {
+                var exposed = exposedIn[block.Index];
+                foreach (var instruction in blockInstructions[block.Index])
+                {
+                    if (exposures.TryGetValue(instruction.Offset, out var sources)) exposed = exposed.Union(sources);
+                    exposedAfter[instruction.Offset] = exposed;
+                }
+                // Exposure only grows along a block, so its last set covers
+                // every instruction that can throw to a handler.
+                foreach (var successor in flow.Normal[block.Index].Concat(flow.Exceptional[block.Index]))
+                {
+                    var merged = exposedIn[successor.Block].Union(exposed);
+                    if (merged.Count == exposedIn[successor.Block].Count) continue;
+                    exposedIn[successor.Block] = merged;
+                    changed = true;
+                }
+            }
+        }
+        while (changed);
+
+        return exposedAfter.ToImmutableDictionary();
+    }
+
+    private ImmutableArray<RootSource> Exposes(ManagedMethodBody method, CilInstruction instruction) =>
+        instruction.Operation switch
+        {
+            CilOperation.LoadLocalAddress => SourcesFor(RootSourceKind.Local, ((CilOperand.Index)instruction.Operand).Value,
+                method.Body.LocalSignatureTypes[((CilOperand.Index)instruction.Operand).Value]),
+            CilOperation.LoadArgumentAddress => SourcesFor(RootSourceKind.Argument, ((CilOperand.Index)instruction.Operand).Value,
+                GetParameterSignatureTypes(method)[((CilOperand.Index)instruction.Operand).Value]),
+            _ => [],
+        };
+
     private ImmutableHashSet<RootSource> Transfer(
         ManagedMethodBody method,
         CilInstruction instruction,
@@ -278,12 +338,24 @@ public sealed class RootMapAnalyzer(
         return signature.ParameterSignatureTypes.Insert(0, declaringType);
     }
 
+    // A pinned local keeps what it holds alive until it is overwritten, though
+    // the code reads it only to take an address; it is zero until stored.
+    private ImmutableArray<RootSource> GetPinnedLocalRoots(ManagedMethodBody method) =>
+        [.. method.Body.PinnedLocals.Order().SelectMany(local =>
+            SourcesFor(RootSourceKind.Local, local, method.Body.LocalSignatureTypes[local]))];
+
+    // What a byref argument addresses stays rooted for the whole call, as a
+    // value type's receiver, which its instance methods take by reference, does.
     private ImmutableArray<RootSource> GetPersistentManagedAddressArgumentRoots(
-        ManagedMethodBody method) =>
-        [.. GetParameterSignatureTypes(method)
-            .SelectMany((type, index) => type.StackKind == CliValueKind.ManagedAddress
-                ? SourcesFor(RootSourceKind.Argument, index, type)
-                : [])];
+        ManagedMethodBody method)
+    {
+        var parameters = GetParameterSignatureTypes(method);
+        if (!method.Method.Definition.IsStatic && method.Method.DeclaringType.IsValueType)
+            parameters = parameters.SetItem(0, CliTypeIdentity.ManagedByReference(method.Method.DeclaringType));
+        return [.. parameters.SelectMany((type, index) => type.StackKind == CliValueKind.ManagedAddress
+            ? SourcesFor(RootSourceKind.Argument, index, type)
+            : [])];
+    }
 
     private ImmutableArray<RootSource> SourcesFor(
         RootSourceKind kind,
@@ -321,7 +393,6 @@ public sealed class RootMapAnalyzer(
     {
         for (var stackIndex = 0; stackIndex < stackTypes.Length; stackIndex++)
         {
-            AddBackingOwners(stackTypes[stackIndex], roots);
             if (stackTypes[stackIndex].Type is not { } type)
             {
                 if (!stackTypes[stackIndex].BackingCovered && !stackTypes[stackIndex].CompleteBackingKnown &&
@@ -380,21 +451,6 @@ public sealed class RootMapAnalyzer(
                     method.Method.Definition.Name, instruction.Offset));
             }
             demands.Add(new(location, backing));
-        }
-    }
-
-    private void AddBackingOwners(StackStorageType storage, ImmutableHashSet<RootSource>.Builder roots)
-    {
-        foreach (var owner in storage.BackingOwners)
-        {
-            if (storage.Type is { StackKind: CliValueKind.ManagedAddress } address &&
-                address.ElementType!.Equals(owner.Type.StackKind == CliValueKind.ManagedAddress
-                    ? owner.Type.ElementType! : owner.Type))
-            {
-                continue;
-            }
-            roots.UnionWith(SourcesFor(owner.IsArgument ? RootSourceKind.Argument : RootSourceKind.Local,
-                owner.Index, owner.Type));
         }
     }
 

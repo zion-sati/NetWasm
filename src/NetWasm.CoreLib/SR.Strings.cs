@@ -30,6 +30,7 @@ namespace System
         internal const string Arg_RanksAndBounds = "Number of lengths and lowerBounds must match.";
         internal const string Arg_SpanMustHaveElementsForColor = "Span must have at least 4 elements for color components.";
         internal const string Arg_WrongType = "The value \"{0}\" is not of type \"{1}\" and cannot be used in this generic collection.";
+        internal const string ArgumentException_NotIsomorphic = "Object contains references.";
         internal const string ArgumentException_OtherNotArrayOfCorrectLength = "The object is not an array with the same number of elements as the array to compare it to.";
         internal const string ArgumentNull_Array = "Array cannot be null.";
         internal const string ArgumentNull_SafeHandle = "SafeHandle cannot be null.";

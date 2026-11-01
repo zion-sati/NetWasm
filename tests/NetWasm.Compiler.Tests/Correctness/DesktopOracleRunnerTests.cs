@@ -4,7 +4,6 @@ using System.Text.Json;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class DesktopOracleRunnerTests
 {
     [Fact]
@@ -23,7 +22,7 @@ public sealed class DesktopOracleRunnerTests
         var observations = new DesktopOracleRunner(
             environment,
             new QualifiedProcessRunner(),
-            new DesktopOracleProgressReporter(TextWriter.Null)).Run(compilation);
+            new DesktopOracleProgressReporter(TextWriter.Null)).Run(compilation, TestContext.Current.CancellationToken);
 
         Assert.Equal(OracleObservationKind.Value, observations[3].Kind);
         Assert.Equal(4, observations[3].Value);
@@ -54,7 +53,7 @@ public sealed class DesktopOracleRunnerTests
             new QualifiedProcessRunner(),
             new DesktopOracleProgressReporter(TextWriter.Null));
 
-        var isolated = runner.Run(compilation);
+        var isolated = runner.Run(compilation, TestContext.Current.CancellationToken);
         var progress = new RecordingDesktopProgressReporter();
         var batched = new DesktopOracleRunner(
             environment,
@@ -65,7 +64,7 @@ public sealed class DesktopOracleRunnerTests
                 {
                     SupportsBatchedOracle = true,
                 },
-            });
+            }, TestContext.Current.CancellationToken);
 
         Assert.Equal(isolated.Keys.Order(), batched.Keys.Order());
         foreach (var input in isolated.Keys)
@@ -108,7 +107,7 @@ public sealed class DesktopOracleRunnerTests
         var observations = new DesktopOracleRunner(
             environment,
             processes,
-            new DesktopOracleProgressReporter(TextWriter.Null)).Run(compilation);
+            new DesktopOracleProgressReporter(TextWriter.Null)).Run(compilation, TestContext.Current.CancellationToken);
 
         Assert.Equal(inputs, observations.Keys.Order());
         Assert.Contains(100, processes.BatchLengths);

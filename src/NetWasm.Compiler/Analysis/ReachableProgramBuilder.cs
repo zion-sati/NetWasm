@@ -109,7 +109,6 @@ internal sealed class ReachableProgramBuilder(
             MemberExecution = state.MemberExecution,
             NamedMemberDescriptors = state.NamedMemberDescriptors,
             RequiresTypeFacts = state.RequiresTypeFacts,
-            RequiresDelegateInvoke = state.RequiresDelegateInvoke,
             RequiresGenericArguments = state.RequiresGenericArguments,
             TypeNamePayload = state.TypeNamePayload,
             ConstructedStaticInitializers = [

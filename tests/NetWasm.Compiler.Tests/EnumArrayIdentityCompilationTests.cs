@@ -22,10 +22,10 @@ public sealed class EnumArrayIdentityCompilationTests
                 0 => Source,
                 1 => GenericSource,
                 _ => ImplicitArraySource,
-            })], references,
+            }, cancellationToken: TestContext.Current.CancellationToken)], references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         using var stream = new MemoryStream();
-        Assert.True(compilation.Emit(stream).Success);
+        Assert.True(compilation.Emit(stream, cancellationToken: TestContext.Current.CancellationToken).Success);
         stream.Position = 0;
         var context = new AssemblyLoadContext("EnumArrayIdentity.Desktop", isCollectible: true);
         try

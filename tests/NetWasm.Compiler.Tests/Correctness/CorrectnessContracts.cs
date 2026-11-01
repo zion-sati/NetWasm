@@ -77,6 +77,11 @@ internal sealed record CorpusFixture(
     // appearing in its CIL. A simulated import cannot satisfy these requirements.
     public OracleRuntimeCapabilities RequiredRuntimeCapabilities { get; init; }
 
+    // A linked run collects before every managed allocation, so a reference
+    // compiled code holds without a root is freed at the first chance, however
+    // rarely ordinary pacing would collect there.
+    public bool CollectsAtEveryAllocation { get; init; }
+
     // Null preserves differential-only fixtures; a value declares an independent
     // success contract for every input, checked before NetWasm execution.
     public int? ExpectedReturnValue { get; init; }

@@ -5,6 +5,7 @@ internal static class WasmSimdOpcodes
 {
     internal const uint V128Load = 0x00;
     internal const uint V128Store = 0x0b;
+    internal const uint V128Load64Zero = 0x5d;
     internal const uint V128Constant = 0x0c;
     internal const uint I8x16Shuffle = 0x0d;
     internal const uint I8x16Swizzle = 0x0e;

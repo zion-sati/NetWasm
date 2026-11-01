@@ -114,6 +114,12 @@ internal sealed class CilDecoder(
                         assembly.Reader,
                         assembly.Metadata.AssemblyIdentityAliases),
                     genericContext);
+        var pinnedLocals = body.LocalSignature.IsNil
+            ? []
+            : assembly.Reader.GetStandaloneSignature(body.LocalSignature)
+                .DecodeLocalSignature(PinnedLocalProvider.Instance, genericContext)
+                .Select((pinned, index) => (pinned, index)).Where(local => local.pinned)
+                .Select(local => local.index).ToImmutableHashSet();
         var localSignatureTypes = decodedLocalSignatureTypes
             .Select(type => _stackTypes.Resolve(type, genericContext))
             .ToImmutableArray();
@@ -134,6 +140,7 @@ internal sealed class CilDecoder(
             MethodInstance = methodInstance,
             LocalSignatureTypes = localSignatureTypes,
             ExceptionRegions = lowered.ExceptionRegions,
+            PinnedLocals = pinnedLocals,
         };
     }
 

@@ -25,7 +25,7 @@ public sealed class CompiledCorpusBoundaryTests
             Fixture = Compilation().Fixture with { FrozenOracleEvidencePath = "frozen.json" },
         };
 
-        runner.Run(compilation);
+        runner.Run(compilation, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, desktop.Calls);
         Assert.Equal(2, netWasm.Calls);
@@ -54,7 +54,7 @@ public sealed class CompiledCorpusBoundaryTests
             Fixture = Compilation().Fixture with { FrozenOracleEvidencePath = "frozen.json" },
         };
 
-        var error = Assert.Throws<InvalidOperationException>(() => runner.Run(compilation));
+        var error = Assert.Throws<InvalidOperationException>(() => runner.Run(compilation, TestContext.Current.CancellationToken));
 
         Assert.Contains("frozen desktop oracle does not match", error.Message);
         Assert.Equal(1, desktop.Calls);
@@ -72,7 +72,7 @@ public sealed class CompiledCorpusBoundaryTests
         var netWasm = new NetWasm(Value(42), Value(41), artifactIdentity);
         var runner = Runner(new Desktop(Value(42)), netWasm, new Frozen(Value(42)), failures);
 
-        Assert.Throws<CorpusOracleMismatchException>(() => runner.Run(Compilation()));
+        Assert.Throws<CorpusOracleMismatchException>(() => runner.Run(Compilation(), TestContext.Current.CancellationToken));
 
         var result = Assert.Single(failures.Results);
         Assert.Equal(42, result.Reference.Value);
@@ -93,7 +93,7 @@ public sealed class CompiledCorpusBoundaryTests
             Fixture = Compilation().Fixture with { Matrix = new(CorpusMatrixProfile.Fast) },
         };
 
-        runner.Run(compilation);
+        runner.Run(compilation, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, netWasm.Calls);
         Assert.Empty(failures.Results);
@@ -110,7 +110,7 @@ public sealed class CompiledCorpusBoundaryTests
             Fixture = Compilation().Fixture with { ExecuteWasm64 = false },
         };
 
-        runner.Run(compilation);
+        runner.Run(compilation, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, netWasm.Calls);
         Assert.Empty(failures.Results);
@@ -128,8 +128,8 @@ public sealed class CompiledCorpusBoundaryTests
 
         Assert.Throws<ArgumentNullException>(() =>
         {
-            if (request == 0) runner.Run(null!);
-            else Comparison(netWasm, new Failures()).RunAgainstOracle(request == 1 ? null! : Compilation(), request == 2 ? null! : Observations(Value(42)));
+            if (request == 0) runner.Run(null!, TestContext.Current.CancellationToken);
+            else Comparison(netWasm, new Failures()).RunAgainstOracle(request == 1 ? null! : Compilation(), request == 2 ? null! : Observations(Value(42)), TestContext.Current.CancellationToken);
         });
 
         Assert.Equal(0, desktop.Calls);
@@ -156,7 +156,7 @@ public sealed class CompiledCorpusBoundaryTests
             netWasm, CompiledCorpusTestFactory.RejectingLinked, new CompiledCorpusTestFactory.RecordingReceiptDestinations(),
             new CompiledCorpusTestFactory.RecordingLinkedReceipts(), new OracleComparer(), failures,
             new RandomCilCaseProgressReporter(TextWriter.Null), new CorpusExpectationVerifier(),
-            new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander())));
+            new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander(), new CorpusBackendOverride(Backend: null))));
 
     private sealed class Desktop(OracleObservation observation) : IDesktopOracleRunner
     {

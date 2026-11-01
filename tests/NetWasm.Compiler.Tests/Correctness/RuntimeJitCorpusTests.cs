@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class RuntimeJitCorpusTests
 {
     private static readonly string[] AllowedDispositions = ["run"];

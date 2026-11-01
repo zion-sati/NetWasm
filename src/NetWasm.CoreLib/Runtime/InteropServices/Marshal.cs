@@ -6,7 +6,7 @@ using System.Text;
 
 namespace System.Runtime.InteropServices
 {
-    public static unsafe class Marshal
+    public static unsafe partial class Marshal
     {
         public static readonly int SystemDefaultCharSize = 2;
 

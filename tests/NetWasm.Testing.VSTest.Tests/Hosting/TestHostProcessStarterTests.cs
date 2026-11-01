@@ -28,7 +28,7 @@ public sealed class TestHostProcessStarterTests
                 error.Enqueue,
                 (processId, exitCode) => completion.TrySetResult((processId, exitCode)));
 
-            var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
             Assert.Equal(process.Id, result.ProcessId);
             Assert.Equal(7, result.ExitCode);
@@ -54,7 +54,7 @@ public sealed class TestHostProcessStarterTests
             (processId, exitCode) => completion.TrySetResult((processId, exitCode)));
 
         process.Terminate();
-        var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var result = await completion.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.Equal(process.Id, result.ProcessId);
         Assert.NotEqual(0, result.ExitCode);
@@ -133,12 +133,7 @@ public sealed class TestHostProcessStarterTests
         };
     }
 
-    private static string DotnetPath()
-    {
-        var path = Environment.ProcessPath;
-        Assert.False(string.IsNullOrWhiteSpace(path));
-        return path;
-    }
+    private static string DotnetPath() => NetWasm.TestInfrastructure.DotNetHost.Executable;
 
     private static TestHostProcessStarter Starter() =>
         new(new TestHostProcessTerminator());

@@ -5,7 +5,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // instantiations, as a dictionary key or a lock, after a collection, and where
 // two typeof branches meet and the type is only known at run time. GetType on a
 // receiver of one possible type uses that object too, and still throws on null.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class StaticTypeObjectTests(CorrectnessTestRunner runner)
 {
     [Fact]

@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class DesktopOracleTimeoutTests
 {
     [Fact]
@@ -41,7 +40,7 @@ public sealed class DesktopOracleTimeoutTests
             environment,
             processes,
             new DesktopOracleProgressReporter(TextWriter.Null))
-            .Run(compilation)[0];
+            .Run(compilation, TestContext.Current.CancellationToken)[0];
 
         Assert.Equal(OracleObservationKind.TimedOut, observation.Kind);
         Assert.Empty(observation.TraceRecords);

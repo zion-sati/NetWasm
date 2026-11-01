@@ -3,7 +3,6 @@ using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class DateRangeBoundaryTests
 {
     public static TheoryData<bool, WasmTarget, int> Cells

@@ -10,8 +10,6 @@ internal sealed record FinalizationPlan(
     ImmutableHashSet<int> FinalizableTypeIds,
     bool UsesExplicitFinalizationApi)
 {
-    public static FinalizationPlan Empty { get; } = new([], false);
-
     public bool RequiresRuntime => !FinalizableTypeIds.IsEmpty;
 
     public bool IsFinalizable(int typeId) => FinalizableTypeIds.Contains(typeId);
@@ -52,22 +50,13 @@ internal sealed class FinalizationPlanBuilder(
             .SelectMany(static emission => emission.Method.Header.Instructions)
             .Where(static instruction =>
                 instruction.Operation is CilOperation.Call or CilOperation.CallVirtual)
-            .Select(GetMethodKey)
+            .Select(static instruction => CilOperands.MethodKey(instruction.Operand))
             .Any(IsStandaloneFinalizationApi);
 
         return new(finalizableTypeIds, usesExplicitFinalizationApi);
     }
 
-    private static EntityKey GetMethodKey(CilInstruction instruction) =>
-        instruction.Operand switch
-        {
-            CilOperand.Entity entity => entity.Key,
-            CilOperand.MethodInstance method => method.Value.Definition.Key,
-            _ => default,
-        };
-
     private bool IsStandaloneFinalizationApi(EntityKey method) =>
-        method != default &&
         _intrinsics.TryGetIntrinsic(method, out var intrinsic) &&
         intrinsic is RuntimeIntrinsic.ReRegisterForFinalize or
             RuntimeIntrinsic.GcWaitForPendingFinalizers;

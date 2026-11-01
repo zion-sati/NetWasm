@@ -4,7 +4,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // with and without zero, the probabilistic map for non-ASCII sets and the bitmap. Each set
 // searches haystacks of every length class with the match near the start, the middle and the
 // end, in each direction, for and against the set.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class SearchValuesCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -12,7 +11,14 @@ public sealed class SearchValuesCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "SearchValuesCorpus",
             "NetWasm.Correctness.SearchValuesCorpus",
-            """
+            Source,
+            [.. Enumerable.Range(0, 29)])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Buffers;
 
@@ -133,10 +139,5 @@ public sealed class SearchValuesCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [.. Enumerable.Range(0, 29)])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

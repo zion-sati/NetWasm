@@ -58,9 +58,9 @@ public sealed class RestoreGraphCliTests
             process.StartInfo.ArgumentList.Add("-p:RestoreRecursive=false");
             process.StartInfo.ArgumentList.Add("-v:quiet");
             Assert.True(process.Start());
-            var output = process.StandardOutput.ReadToEndAsync();
-            var error = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+            var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken);
             _ = await output;
             _ = await error;
             Assert.Equal(0, process.ExitCode);

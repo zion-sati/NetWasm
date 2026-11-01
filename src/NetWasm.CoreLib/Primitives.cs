@@ -49,6 +49,16 @@ namespace System
         public string ToString(string? format, IFormatProvider? provider) =>
             InternalToString(this, format, provider);
 
+        // Upstream's internal entry for formatting a value whose enum type a
+        // generic caller does not constrain, such as an interpolated string
+        // handler; NetWasm formats it as the enum's ISpanFormattable does.
+        internal static bool TryFormatUnconstrained<TEnum>(
+            TEnum value,
+            Span<char> destination,
+            out int charsWritten,
+            [System.Diagnostics.CodeAnalysis.StringSyntax(System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.EnumFormat)] ReadOnlySpan<char> format = default) =>
+            ((ISpanFormattable)value!).TryFormat(destination, out charsWritten, format, provider: null);
+
         bool ISpanFormattable.TryFormat(
             Span<char> destination,
             out int charsWritten,

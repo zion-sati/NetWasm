@@ -210,8 +210,8 @@ public sealed class GenericCompilationTests
             Assert.Single(type.TypeArguments).CanonicalName == "primitive:i4");
         var stringBox = first.Program.ConstructedTypes.Single(type =>
             Assert.Single(type.TypeArguments).CanonicalName == "primitive:string");
-        var intBoxLayout = first.Layouts.ConstructedObjectLayouts[intBox];
-        var stringBoxLayout = first.Layouts.ConstructedObjectLayouts[stringBox];
+        var intBoxLayout = first.Layouts.TypeLayouts.ConstructedObjects[intBox];
+        var stringBoxLayout = first.Layouts.TypeLayouts.ConstructedObjects[stringBox];
         Assert.Equal(8, intBoxLayout.Size);
         Assert.True(intBoxLayout.ReferenceOffsets.IsEmpty);
         Assert.Equal(8, stringBoxLayout.Size);
@@ -271,7 +271,7 @@ public sealed class GenericCompilationTests
                 .Fields
                 .Select(field => (
                     Field: fieldRepository.GetField(field),
-                    Layout: result.Layouts.InstanceFieldLayouts[field]))
+                    Layout: result.Layouts.TypeLayouts.ValueLayoutState.Fields[field]))
                 .ToDictionary(pair => pair.Field.Name, pair => pair.Layout, StringComparer.Ordinal);
 
         Assert.Equal((4, 1), (fields["Flag"].Offset, fields["Flag"].Size));
@@ -441,8 +441,8 @@ public sealed class GenericCompilationTests
             .ToArray();
         Assert.Equal(2, valueFields.Length);
         Assert.NotEqual(
-            result.Layouts.ConstructedStaticFieldLayouts[valueFields[0].CanonicalName].Address,
-            result.Layouts.ConstructedStaticFieldLayouts[valueFields[1].CanonicalName].Address);
+            result.Layouts.StaticData.ConstructedStaticFields[valueFields[0].CanonicalName].Address,
+            result.Layouts.StaticData.ConstructedStaticFields[valueFields[1].CanonicalName].Address);
         Assert.Equal(54, ExecuteWithNode(
             result.ApplicationModule,
             assets.Directory,

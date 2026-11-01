@@ -91,15 +91,15 @@ public sealed class NetWasmCompilerTests
         Assert.True(first.Layouts.StaticDataEnd % 4 == 0);
         Assert.True(first.StaticDataEnd >= first.Layouts.StaticDataEnd);
 
-        var textLayout = first.Layouts.StringLayouts["aΩ😀\0\ud800"];
+        var textLayout = first.Layouts.StaticData.Strings["aΩ😀\0\ud800"];
         var segment = first.Layouts.DataSegments.Single(
             candidate => candidate.Address == textLayout.Address);
         Assert.Equal(6, BinaryPrimitives.ReadInt32LittleEndian(
-            segment.Data.AsSpan()[ManagedLayoutSnapshot.Wasm32StringLengthOffset..]));
+            segment.Data.AsSpan()[first.Layouts.StringLengthOffset..]));
         var codeUnits = Enumerable.Range(0, 6)
             .Select(index => BinaryPrimitives.ReadUInt16LittleEndian(
                 segment.Data.AsSpan()[
-                    (ManagedLayoutSnapshot.Wasm32StringDataOffset + (index * sizeof(char)))..]))
+                    (first.Layouts.StringDataOffset + (index * sizeof(char)))..]))
             .ToArray();
         ushort[] expectedCodeUnits = [97, 937, 55357, 56832, 0, 55296];
         Assert.Equal(expectedCodeUnits, codeUnits);

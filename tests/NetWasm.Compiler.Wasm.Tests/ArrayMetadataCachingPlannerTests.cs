@@ -351,18 +351,6 @@ public sealed class ArrayMetadataCachingPlannerTests
     }
 
     [Fact]
-    public void NestedSequencesPreserveLoopEntrySelection()
-    {
-        var method = Create(false);
-        method = method with { Body = new([method.Body]) };
-
-        var plan = new ArrayMetadataCachingPlanner(new Arguments()).Plan(method, true);
-
-        Assert.Equal([new ArrayReferenceSlot(false, 0)], plan.Slots.ToArray());
-        Assert.Equal(plan.Slots.ToArray(), plan.LoopEntries[new(0)].ToArray());
-    }
-
-    [Fact]
     public void RepeatedLoopConditionUnionsTheAccessesOfBothBodies()
     {
         var method = Create(false);

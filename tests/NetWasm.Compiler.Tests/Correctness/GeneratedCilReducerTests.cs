@@ -35,7 +35,7 @@ public sealed class GeneratedCilReducerTests
         Assert.True(GeneratedCilReductionScore.Measure(first.Reduced).CompareTo(
             GeneratedCilReductionScore.Measure(original)) < 0);
         new GeneratedCilValidator().Validate(first.Reduced.Program);
-        Assert.Equal(Fingerprint, request.Oracle(first.Reduced, default));
+        Assert.Equal(Fingerprint, request.Oracle(first.Reduced, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class GeneratedCilReducerTests
             TimeSpan.FromSeconds(10)));
 
         Assert.False(first.TimedOut);
-        Assert.Equal(Fingerprint, Oracle(first.Reduced, default));
+        Assert.Equal(Fingerprint, Oracle(first.Reduced, TestContext.Current.CancellationToken));
         Assert.True(
             serializer.Serialize(first.Reduced.Program).Length <
             serializer.Serialize(original.Program).Length);

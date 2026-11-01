@@ -44,14 +44,11 @@ public sealed class CalleeArgumentRootingClassifier(
         {
             return 0;
         }
-        var (declared, instance) = instruction.Operand switch
-        {
-            CilOperand.Entity entity => (_methods.GetMethod(entity.Key), (MethodInstanceModel?)null),
-            CilOperand.MethodInstance call => (call.Value.Definition, call.Value),
-            _ => (null, null),
-        };
-        if (declared is null ||
-            declared is { IsStatic: false, Name: "Invoke" } &&
+        // A call names its callee by definition or by instantiation.
+        var (declared, instance) = instruction.Operand is CilOperand.MethodInstance call
+            ? (call.Value.Definition, (MethodInstanceModel?)call.Value)
+            : (_methods.GetMethod(((CilOperand.Entity)instruction.Operand).Key), null);
+        if (declared is { IsStatic: false, Name: "Invoke" } &&
             _typeClassifier.IsDelegateType(declared.DeclaringType) ||
             (instance is null
                 ? _runtimeSafepoints.Classify(declared, _types)

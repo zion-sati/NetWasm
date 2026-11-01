@@ -77,10 +77,7 @@ public sealed record StructuredBlockOccurrence(
 
 public abstract record StructuredRegion;
 
-public sealed record StructuredSequence(ImmutableArray<StructuredRegion> Regions) : StructuredRegion
-{
-    public static StructuredSequence Empty { get; } = new([]);
-}
+public sealed record StructuredSequence(ImmutableArray<StructuredRegion> Regions) : StructuredRegion;
 
 public sealed record StructuredCode(StructuredBlockOccurrence Occurrence) : StructuredRegion;
 

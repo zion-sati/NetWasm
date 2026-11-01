@@ -4,7 +4,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // round the exact a * b + c once, as desktop's hardware instruction does,
 // including where a product nearly cancels the addend, where rounding to
 // double and then to float would round twice, and at the edges of the range.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class FusedMultiplyAddCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -12,7 +11,14 @@ public sealed class FusedMultiplyAddCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "FusedMultiplyAddCorpus",
             "NetWasm.Correctness.FusedMultiplyAdd",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
 
             namespace NetWasm.Correctness.FusedMultiplyAdd;
@@ -114,10 +120,5 @@ public sealed class FusedMultiplyAddCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

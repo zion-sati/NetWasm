@@ -30,8 +30,8 @@ public sealed class CorpusCaseCatalogCompositionTests
         Assert.Equal(CorpusExecutionBackend.Linked, declaration.ExecutionBackend);
         Assert.All(rows, row =>
         {
-            Assert.Equal(caseId, row[0]);
-            var cell = Assert.IsType<string>(row[1]);
+            Assert.Equal(caseId, row.Data.Item1);
+            var cell = Assert.IsType<string>(row.Data.Item2);
             Assert.EndsWith("-Linked", cell, StringComparison.Ordinal);
             var fixture = Factory().Create(declaration, cell);
             Assert.Equal(CorpusExecutionBackend.Linked, fixture.Matrix!.Backend);
@@ -167,11 +167,11 @@ public sealed class CorpusCaseCatalogCompositionTests
             _ => count,
         };
         Assert.Equal(selectedCount, rows.Length);
-        Assert.Equal(selectedCount, rows.Select(row => row[1]).Distinct().Count());
+        Assert.Equal(selectedCount, rows.Select(row => row.Data.Item2).Distinct().Count());
         Assert.All(rows, row =>
         {
-            Assert.Equal(caseId, row[0]);
-            Assert.IsType<string>(row[1]);
+            Assert.Equal(caseId, row.Data.Item1);
+            Assert.IsType<string>(row.Data.Item2);
         });
     }
 
@@ -260,14 +260,14 @@ public sealed class CorpusCaseCatalogCompositionTests
             _ => 40,
         };
         Assert.Equal(count, rows.Length);
-        Assert.Equal(count, rows.Select(row => (row[0], row[2])).Distinct().Count());
-        Assert.All(rows, row => Assert.Equal(CorpusCaseTestData.RankOne, row[1]));
+        Assert.Equal(count, rows.Select(row => (row.Data.Item1, row.Data.Item3)).Distinct().Count());
+        Assert.All(rows, row => Assert.Equal(CorpusCaseTestData.RankOne, row.Data.Item2));
         var declaration = CorpusCaseTestData.Get(CorpusCaseTestData.RankOne);
         var factory = Factory();
         foreach (var row in rows)
         {
-            var input = Assert.IsType<int>(row[0]);
-            var cell = Assert.IsType<string>(row[2]);
+            var input = Assert.IsType<int>(row.Data.Item1);
+            var cell = Assert.IsType<string>(row.Data.Item3);
             var fixture = factory.Create(declaration, cell, input);
             Assert.Equal(input, Assert.Single(fixture.Inputs));
             Assert.Equal(input, fixture.ReplayInput);

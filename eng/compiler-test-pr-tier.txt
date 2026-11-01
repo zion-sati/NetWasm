@@ -209,6 +209,7 @@ NetWasm.Compiler.Tests.MemberDescriptorPlannerTests
 NetWasm.Compiler.Tests.MemberExecutionPlannerTests
 NetWasm.Compiler.Tests.MemberHandleIntrinsicCallRewriterTests
 NetWasm.Compiler.Tests.MemoryHandleCriticalFinalizerCompatibilityCompilationTests
+NetWasm.Compiler.Tests.MemoryInliningCompilationTests
 NetWasm.Compiler.Tests.MetadataAssemblyIdentityTests
 NetWasm.Compiler.Tests.MixedNativeArithmeticCompilationTests
 NetWasm.Compiler.Tests.ModernLanguageCompilationTests
@@ -231,6 +232,7 @@ NetWasm.Compiler.Tests.RttiCastCorrectnessCompilationTests
 NetWasm.Compiler.Tests.RuntimeTypeFactsEncodingTests
 NetWasm.Compiler.Tests.SimdVectorLoweringCompilationTests
 NetWasm.Compiler.Tests.SinCosFrameCompilationTests
+NetWasm.Compiler.Tests.SmallStructZeroingCompilationTests
 NetWasm.Compiler.Tests.StatementCompilationTests
 NetWasm.Compiler.Tests.StaticRootRegistrationCompilationTests
 NetWasm.Compiler.Tests.StructArgumentSpillCompilationTests

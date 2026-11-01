@@ -4,7 +4,8 @@ internal sealed record LinkedCorpusToolEnvironment(
     string? EmsdkRoot,
     string? NodePath,
     string? WasmToolsPath,
-    string? Collector = null);
+    string? Collector = null,
+    string? GcStress = null);
 
 // What each linked collector gives a fixture. Bump never collects, finalizes or
 // clears weak references.
@@ -41,13 +42,26 @@ internal sealed class LinkedCorpusToolPathsProvider(
             throw new InvalidOperationException(
                 "NETWASM_CORPUS_COLLECTOR must be compact, netwasm or bump");
         }
+        // NETWASM_CORPUS_GC_STRESS=1 runs every linked fixture under GC stress,
+        // to qualify roots across the corpus.
+        var gcStress = environment.GcStress switch
+        {
+            null or "" or "0" => false,
+            "1" => true,
+            _ => throw new InvalidOperationException("NETWASM_CORPUS_GC_STRESS must be 0 or 1"),
+        };
+        if (gcStress && collector == "bump")
+        {
+            throw new InvalidOperationException("NETWASM_CORPUS_GC_STRESS requires a collecting collector");
+        }
         return new(
             emsdk,
             Path.Combine(emsdk, "upstream", "bin", "wasm-merge"),
             Path.Combine(emsdk, "upstream", "bin", "wasm-opt"),
             wasmTools,
             node,
-            collector);
+            collector,
+            gcStress);
     }
 
     private static string RequireAbsolute(string? path, string name)

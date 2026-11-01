@@ -37,7 +37,7 @@ public sealed class RawBindingMetadataIntegrationTests
             var targets = Path.Combine(root, "Compiler.targets");
             document.Save(targets);
             var input = Path.Combine(root, "input");
-            await File.WriteAllTextAsync(input, "unchanged binding input");
+            await File.WriteAllTextAsync(input, "unchanged binding input", TestContext.Current.CancellationToken);
             var adapter = Path.Combine(root, "adapter.mjs");
             var observation = Path.Combine(root, "imports.txt");
             var project = Path.Combine(root, "RawBindings.proj");
@@ -65,10 +65,10 @@ public sealed class RawBindingMetadataIntegrationTests
                       Lines="@(_NetWasmRequiredImport->'%(Interface)|%(Name)|%(Parameters)|%(Results)');@(_NetWasmRequiredImportModule->'%(Identity)')" />
                   </Target>
                 </Project>
-                """);
+                """, TestContext.Current.CancellationToken);
 
             await RunAsync(1);
-            var first = await File.ReadAllLinesAsync(observation);
+            var first = await File.ReadAllLinesAsync(observation, TestContext.Current.CancellationToken);
             Assert.Equal([
                 "sample:api/math@1|sum|[{\"name\":\"value\",\"type\":\"u32\"}]|[\"u32\"]",
                 "sample:api/math@1",
@@ -78,7 +78,7 @@ public sealed class RawBindingMetadataIntegrationTests
             Assert.True(File.GetLastWriteTimeUtc(adapter) >= inputTime);
 
             await RunAsync(2);
-            Assert.Equal(first, await File.ReadAllLinesAsync(observation));
+            Assert.Equal(first, await File.ReadAllLinesAsync(observation, TestContext.Current.CancellationToken));
             Assert.Equal(inputTime, File.GetLastWriteTimeUtc(input));
 
             async Task RunAsync(int run)

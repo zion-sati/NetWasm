@@ -328,7 +328,7 @@ public sealed class NativeCallbackDceIntegrationTests
             Path.Combine(assets.Root, "global.json")));
         var sdkVersion = global.RootElement.GetProperty("sdk").GetProperty("version").GetString();
         Assert.False(string.IsNullOrWhiteSpace(sdkVersion));
-        var dotnet = ResolveDotNetHost();
+        var dotnet = NetWasm.TestInfrastructure.DotNetHost.Executable;
         var csc = Path.Combine(Path.GetDirectoryName(dotnet)!, "sdk", sdkVersion!,
             "Roslyn", "bincore", "csc.dll");
         Assert.True(File.Exists(csc));
@@ -396,35 +396,6 @@ public sealed class NativeCallbackDceIntegrationTests
             _ => false,
         };
     }
-
-    private static string ResolveDotNetHost()
-    {
-        var executable = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
-        var configured = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
-        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
-        {
-            return ResolveLink(configured);
-        }
-        if (Environment.ProcessPath is { } processPath &&
-            string.Equals(Path.GetFileName(processPath), executable,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return ResolveLink(processPath);
-        }
-        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-                     .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var candidate = Path.Combine(directory, executable);
-            if (File.Exists(candidate))
-            {
-                return ResolveLink(candidate);
-            }
-        }
-        throw new InvalidOperationException("dotnet host path is unavailable");
-    }
-
-    private static string ResolveLink(string path) =>
-        File.ResolveLinkTarget(path, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(path);
 
     private static string RequiredDirectory(string name)
     {

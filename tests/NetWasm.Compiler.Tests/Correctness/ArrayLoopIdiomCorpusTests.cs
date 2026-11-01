@@ -10,7 +10,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // iterations in bulk. Every element type and every size the fill's chunks and
 // loop handle match desktop, and so do the loops that throw part way: the
 // elements stored before the throw, the exception and the counter a catch sees.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """
@@ -53,7 +52,11 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
                         18 => CopyDoubles(size),
                         19 => CopySame(size),
                         20 => CopyThrowing(size),
-                        _ => CopyNull(size),
+                        21 => CopyNull(size),
+                        22 => FillLongConstants(size),
+                        23 => FillFloatConstants(size),
+                        24 => FillDoubleConstants(size),
+                        _ => FillOneElement(size, size + 11),
                     });
                 }
                 return hash;
@@ -142,6 +145,48 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
                 var hash = size;
                 foreach (var element in array) hash = Mix(hash, (int)element);
                 return hash;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillLongConstants(int size)
+            {
+                var array = new long[size];
+                for (var j = 0; j < array.Length; j++) array[j] = -0x1234_5678_9abcL;
+                return Hash(array);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillFloatConstants(int size)
+            {
+                var array = new float[size];
+                for (var j = 0; j < array.Length; j++) array[j] = 2.5f;
+                return Hash(array);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillDoubleConstants(int size)
+            {
+                var array = new double[size];
+                for (var j = 0; j < array.Length; j++) array[j] = -0.75;
+                return Hash(array);
+            }
+
+            // Every iteration stores the same element, not the counter's, so the
+            // loop stays; an empty array throws on the first.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillOneElement(int size, int value)
+            {
+                var array = new int[size];
+                var j = 0;
+                try
+                {
+                    for (j = 0; j < 3; j++) array[0] = value + j;
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return j + 6000;
+                }
+                return Hash(array);
             }
 
             // Only the first half is filled.
@@ -313,7 +358,7 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
             "ArrayLoopIdiomCorpus",
             "NetWasm.Correctness.ArrayLoopIdioms",
             Source,
-            [.. Enumerable.Range(0, 22)])
+            [.. Enumerable.Range(0, 26)])
         {
             Optimization = FinalWasmOptimization.O3,
             ExecuteWasm64 = true,
@@ -335,8 +380,9 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
         string[] loops =
         [
             "CopyChars", "CopyDoubles", "CopyInts", "CopyNull", "CopySame", "CopyThrowing", "FillBools", "FillBytes",
-            "FillChars", "FillDoubles", "FillEnums", "FillFloats", "FillFrom", "FillInclusive", "FillInts", "FillLongs",
-            "FillNativeInts", "FillNull", "FillPrefix", "FillShorts", "FillThrowing",
+            "FillChars", "FillDoubleConstants", "FillDoubles", "FillEnums", "FillFloatConstants", "FillFloats", "FillFrom",
+            "FillInclusive", "FillInts", "FillLongConstants", "FillLongs", "FillNativeInts", "FillNull", "FillPrefix",
+            "FillShorts", "FillThrowing",
         ];
         Assert.Equal(loops, Bulk(bulk));
         Assert.Empty(Bulk(kept));

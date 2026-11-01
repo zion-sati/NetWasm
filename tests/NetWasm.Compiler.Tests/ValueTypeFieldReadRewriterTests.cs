@@ -159,25 +159,6 @@ public sealed class ValueTypeFieldReadRewriterTests
         Assert.Equal(CilOperation.LoadLocal, rewritten.Instructions[0].Operation);
     }
 
-    [Fact]
-    public void RewriteLeavesFieldReadAtSwitchTargetAlone()
-    {
-        var body = Body(
-            Method(isStatic: true),
-            [Value],
-            Load(0, CilOperation.LoadLocal, 0),
-            FieldLoad(1),
-            new CilInstruction(
-                2,
-                3,
-                CilOperation.Switch,
-                new CilOperand.SwitchTargets([1])));
-
-        var rewritten = Rewrite(body);
-
-        Assert.Equal(CilOperation.LoadLocal, rewritten.Instructions[0].Operation);
-    }
-
     [Theory]
     [InlineData(10)]
     [InlineData(20)]

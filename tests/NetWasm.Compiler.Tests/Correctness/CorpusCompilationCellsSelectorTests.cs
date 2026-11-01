@@ -75,8 +75,42 @@ public sealed class CorpusCompilationCellsSelectorTests
         Assert.Single(matrices.Requests);
     }
 
+    // A linked sweep runs each compiled profile once on the linked runtime,
+    // whatever the fixture selects.
+    [Theory]
+    [InlineData(nameof(CilProfile.Debug), false)]
+    [InlineData(nameof(CilProfile.Release), true)]
+    [InlineData(nameof(CilProfile.Emitted), true)]
+    public void ALinkedSweepRunsEachProfileOnTheLinkedRuntime(string name, bool selected)
+    {
+        var profile = Enum.Parse<CilProfile>(name);
+        var matrices = new Matrices([]);
+        var selector = new CorpusCompilationCellsSelector(matrices, CorpusBackendOverride.Parse("linked"));
+
+        var result = selector.Select(Compilation(profile, selected ? new(CorpusMatrixProfile.Extended) : null));
+
+        Assert.Equal(new CorpusMatrixCell(profile, WasmTarget.Wasm32, CorpusWasmForm.Direct, CorpusExecutionBackend.Linked),
+            Assert.Single(result));
+        Assert.Empty(matrices.Requests);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("linked", true)]
+    public void TheBackendOverrideIsUnsetOrLinked(string? value, bool linked) =>
+        Assert.Equal(linked ? CorpusExecutionBackend.Linked : null, CorpusBackendOverride.Parse(value).Backend);
+
+    [Theory]
+    [InlineData("simulated")]
+    [InlineData("Linked")]
+    public void AnyOtherBackendOverrideIsRejected(string value) =>
+        Assert.Contains("NETWASM_CORPUS_BACKEND", Assert.Throws<InvalidOperationException>(() =>
+            CorpusBackendOverride.Parse(value)).Message, StringComparison.Ordinal);
+
     private static ICorpusCompilationCellsSelector Selector(Matrices matrices) =>
-        Assert.IsAssignableFrom<ICorpusCompilationCellsSelector>(new CorpusCompilationCellsSelector(matrices));
+        Assert.IsAssignableFrom<ICorpusCompilationCellsSelector>(
+            new CorpusCompilationCellsSelector(matrices, CorpusBackendOverride.Parse(null)));
 
     private static CorpusCompilation Compilation(CilProfile profile, CorpusMatrixSelection? selection)
     {

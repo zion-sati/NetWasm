@@ -65,13 +65,9 @@ internal sealed class ReductionLoopRewriter(
         // A test that something besides its entry jump branches to is not a
         // plain loop's, or it already has its guards from an earlier round.
         var branches = instructions
-            .SelectMany(static instruction => instruction.Operand switch
-            {
-                CilOperand.BranchTarget target => [target.Offset],
-                CilOperand.SwitchTargets targets => targets.Offsets,
-                _ => ImmutableArray<int>.Empty,
-            })
-            .GroupBy(static offset => offset)
+            .Select(static instruction => instruction.Operand)
+            .OfType<CilOperand.BranchTarget>()
+            .GroupBy(static target => target.Offset)
             .ToDictionary(static group => group.Key, static group => group.Count());
         List<CilInstruction>[]? replacements = null;
         for (var jump = 0; jump < instructions.Length; jump++)
@@ -195,7 +191,6 @@ internal sealed class ReductionLoopRewriter(
         {
             return null;
         }
-        if (next >= end) return null;
         var combine = instructions[next++];
         CilInstruction? truncation = null;
         if (next < end && IsIntegerConversion(instructions[next])) truncation = instructions[next++];
@@ -279,10 +274,11 @@ internal sealed class ReductionLoopRewriter(
             _ => false,
         };
 
-    // array[index], with ldelem, or span[index], with the indexer's call and a load.
+    // array[index], with ldelem, or span[index], with the indexer's call and a
+    // load. end is the increment, whose ldloc of the counter starts no access,
+    // so a position or index at end declines.
     private (Access Access, int Next)? ParseAccess(ImmutableArray<CilInstruction> instructions, int position, int end, int counter)
     {
-        if (position >= end) return null;
         var source = instructions[position];
         var span = source.Operation is CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress;
         if (!span && !IsLoad(source, counter) ||
@@ -299,7 +295,7 @@ internal sealed class ReductionLoopRewriter(
                 ? (new Access(source, null, element, offset), next + 1)
                 : null;
         }
-        if (next + 1 >= end || instructions[next].Operation != CilOperation.Call ||
+        if (instructions[next].Operation != CilOperation.Call ||
             _calledMethods.Resolve(instructions[next]) is not
             {
                 Definition: { Name: "get_Item", IsStatic: false },
@@ -341,7 +337,6 @@ internal sealed class ReductionLoopRewriter(
     // not write, array lengths and span lengths, with additions and subtractions.
     private bool IsInvariantBound(CilInstruction[] bound, int counter, HashSet<int> locals)
     {
-        if (bound.Length == 0) return false;
         var depth = 0;
         for (var index = 0; index < bound.Length; index++)
         {
@@ -355,10 +350,9 @@ internal sealed class ReductionLoopRewriter(
                     if (local == counter || locals.Contains(local)) return false;
                     depth++;
                     break;
+                // The loop writes only integer locals, so a span's never.
                 case CilOperation.LoadLocalAddress or CilOperation.LoadArgumentAddress:
-                    if (instruction is { Operation: CilOperation.LoadLocalAddress, Operand: CilOperand.Index { Value: var address } } &&
-                        (address == counter || locals.Contains(address)) ||
-                        index + 1 >= bound.Length || bound[index + 1].Operation != CilOperation.Call ||
+                    if (index + 1 >= bound.Length || bound[index + 1].Operation != CilOperation.Call ||
                         _calledMethods.Resolve(bound[index + 1]) is not
                         {
                             Definition: { Name: "get_Length", IsStatic: false },

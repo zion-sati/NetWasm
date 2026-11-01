@@ -66,13 +66,13 @@ public sealed class ValueFrameInitializationEmitterTests
         var emitter = CreateEmitter(layouts, addresses);
         var scalar = CliTypeIdentity.FromStackKind(CliValueKind.I4);
         var context = CreateContext(new ValueFrameLayout(
-            128,
+            320,
             ImmutableDictionary<int, int>.Empty
                 .Add(0, 4)
                 .Add(1, 40)
-                .Add(2, 72),
+                .Add(2, 300),
             [],
-            ImmutableDictionary<int, int>.Empty.Add(17, 96),
+            ImmutableDictionary<int, int>.Empty.Add(17, 308),
             []));
         var code = new RecordingInstructionWriter();
 
@@ -93,8 +93,8 @@ public sealed class ValueFrameInitializationEmitterTests
             instructions,
             instruction => instruction.Opcode == expectedLengthConstant &&
                 (target == WasmTarget.Wasm64
-                    ? instruction.Operand.Signed64Value == 72
-                    : instruction.Operand.SignedValue == 72));
+                    ? instruction.Operand.Signed64Value == 300
+                    : instruction.Operand.SignedValue == 300));
     }
 
     [Theory]
@@ -102,9 +102,14 @@ public sealed class ValueFrameInitializationEmitterTests
     [InlineData(12, new[] { WasmOpcodes.I64Store, WasmOpcodes.I32Store }, new uint[] { 0, 8 })]
     [InlineData(15, new[] { WasmOpcodes.I64Store, WasmOpcodes.I32Store, WasmOpcodes.I32Store16, WasmOpcodes.I32Store8 },
         new uint[] { 0, 8, 12, 14 })]
-    [InlineData(40, new[] { WasmOpcodes.I64Store, WasmOpcodes.I64Store, WasmOpcodes.I64Store, WasmOpcodes.I64Store,
-        WasmOpcodes.I64Store }, new uint[] { 0, 8, 16, 24, 32 })]
-    public void ZeroesRangesUpToSixtyFourBytesWithStores(
+    [InlineData(40, new[] { WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed, WasmOpcodes.I64Store },
+        new uint[] { 0, 16, 32 })]
+    // Matrix3x2.Add's inlined locals.
+    [InlineData(168, new[] { WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed,
+        WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed,
+        WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed, WasmOpcodes.SimdPrefixed, WasmOpcodes.I64Store },
+        new uint[] { 0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160 })]
+    public void ZeroesRangesUpToTwoHundredFiftySixBytesWithStores(
         int size,
         byte[] expectedStores,
         uint[] expectedOffsets)
@@ -123,7 +128,7 @@ public sealed class ValueFrameInitializationEmitterTests
             CliValueKind.ValueType);
         var context = CreateContext(
             new ValueFrameLayout(
-                80,
+                300,
                 ImmutableDictionary<int, int>.Empty.Add(0, 16),
                 [],
                 [],
@@ -136,12 +141,18 @@ public sealed class ValueFrameInitializationEmitterTests
         Assert.DoesNotContain(
             instructions,
             instruction => instruction.Opcode == WasmOpcodes.Prefixed);
+        // A v128.store is SIMD-prefixed; its operand holds the opcode, then the
+        // alignment, then the offset.
         var stores = instructions
             .Where(instruction => instruction.Opcode is WasmOpcodes.I64Store or WasmOpcodes.I32Store or
-                WasmOpcodes.I32Store16 or WasmOpcodes.I32Store8)
+                WasmOpcodes.I32Store16 or WasmOpcodes.I32Store8 ||
+                instruction.Opcode == WasmOpcodes.SimdPrefixed &&
+                instruction.Operand.Shape == WasmInstructionOperandShape.PrefixedUnsignedLeb128Triple &&
+                instruction.Operand.Alignment == WasmSimdOpcodes.V128Store)
             .ToArray();
         Assert.Equal(expectedStores, stores.Select(instruction => instruction.Opcode));
-        Assert.Equal(expectedOffsets, stores.Select(instruction => instruction.Operand.Offset));
+        Assert.Equal(expectedOffsets, stores.Select(instruction =>
+            instruction.Opcode == WasmOpcodes.SimdPrefixed ? instruction.Operand.Third : instruction.Operand.Offset));
         Assert.All(addresses.Offsets, offset => Assert.Equal(16, offset));
         Assert.Equal(expectedStores.Length, addresses.Offsets.Count);
     }

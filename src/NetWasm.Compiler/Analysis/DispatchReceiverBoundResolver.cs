@@ -75,11 +75,6 @@ internal sealed class DispatchReceiverBoundResolver(ITypeOperandResolver typeOpe
     }
 
     private static bool IsEntered(CilMethodBody body, int offset) =>
-        body.Instructions.Any(instruction => instruction.Operand switch
-        {
-            CilOperand.BranchTarget target => target.Offset == offset,
-            CilOperand.SwitchTargets targets => targets.Offsets.Contains(offset),
-            _ => false,
-        }) ||
+        body.Instructions.Any(instruction => instruction.Operand is CilOperand.BranchTarget target && target.Offset == offset) ||
         body.ExceptionRegions.Any(region => region.HandlerOffset == offset || region.FilterOffset == offset);
 }

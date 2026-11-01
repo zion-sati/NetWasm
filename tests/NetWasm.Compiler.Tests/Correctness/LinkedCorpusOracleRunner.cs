@@ -93,7 +93,8 @@ internal sealed class LinkedCorpusOracleRunner(
         var timeout = compilation.Fixture.ProcessTimeout ?? environment.ProcessTimeout;
         var buildPlan = buildPlans.Create(new(
             environment.RepositoryRoot, compilation.Directory, applicationPath,
-            runtimeLayoutPath, cell.Target, cell.Form, selectedTools, timeout));
+            runtimeLayoutPath, cell.Target, cell.Form, selectedTools, timeout,
+            compilation.Fixture.CollectsAtEveryAllocation));
         var buildSteps = builds.Execute(buildPlan, cancellationToken);
         var runtimeLayoutHash = fingerprints.Compute(runtimeLayoutPath);
         var manifestHash = fingerprints.Compute(manifestPath);

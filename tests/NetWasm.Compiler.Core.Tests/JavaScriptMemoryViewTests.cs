@@ -48,14 +48,6 @@ public sealed class JavaScriptMemoryViewTests
         Assert.Throws<ArgumentNullException>(() => JavaScriptMemoryView.IsSupported(null!));
     }
 
-    [Fact]
-    public void ListsTheViewNamesInOrdinalOrder()
-    {
-        Assert.Equal(
-            ["f32-view", "f64-view", "i16-view", "i32-view", "i64-view", "i8-view", "u16-view", "u32-view", "u64-view", "u8-view"],
-            JavaScriptMemoryView.AbiTypes.ToArray());
-    }
-
     private static CliTypeIdentity Span(string name, CliTypeIdentity element) =>
         CliTypeIdentity.GenericInstantiation(
             CliTypeIdentity.Named(Assembly, "System", name, isValueType: true),

@@ -17,6 +17,32 @@ public sealed class ManagedMemoryEmitterTests
             ManagedMemoryEmitter.EmitStoreBySize(code, WasmTargetLayout.Wasm32, 0, 3));
     }
 
+    // Vector values fill a v128 whatever their storage: Vector4 moves 16 bytes,
+    // Vector2 reads its 8 into the low lanes and writes only those back.
+    [Fact]
+    public void VectorValuesMoveTheirStorageWidthThroughAV128()
+    {
+        var assembly = new AssemblyIdentity("NetWasm.CoreLib");
+        var wide = CliTypeIdentity.Named(assembly, "System.Numerics", "Vector4", isValueType: true);
+        var narrow = CliTypeIdentity.Named(assembly, "System.Numerics", "Vector2", isValueType: true);
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        ManagedMemoryEmitter.EmitLoadByType(code, WasmTargetLayout.Wasm32, 4, wide, 16);
+        ManagedMemoryEmitter.EmitStoreByType(code, WasmTargetLayout.Wasm32, 4, wide, 16);
+        ManagedMemoryEmitter.EmitLoadByType(code, WasmTargetLayout.Wasm32, 8, narrow, 8);
+        ManagedMemoryEmitter.EmitStoreByType(code, WasmTargetLayout.Wasm32, 8, narrow, 8);
+
+        Assert.Equal(
+            [
+                0xfd, 0x00, 0x03, 0x04, 0xfd, 0x0b, 0x03, 0x04,
+                0xfd, 0x5d, 0x03, 0x08, 0xfd, 0x1d, 0x00, 0x37, 0x03, 0x08,
+            ],
+            code.ToArray());
+        Assert.Equal(WasmValueType.V128, ManagedMemoryEmitter.GetLoadValueType(narrow, 8));
+        Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorLoad(code, 0, 12));
+        Assert.Throws<CompilerException>(() => ManagedMemoryEmitter.EmitVectorStore(code, 0, 4));
+    }
+
     [Fact]
     public void Memory64UsesI64ForAddressesAndManagedReferences()
     {

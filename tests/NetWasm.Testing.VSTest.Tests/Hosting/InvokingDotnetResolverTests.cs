@@ -1,5 +1,6 @@
 using NetWasm.Testing.VSTest.Configuration;
 using NetWasm.Testing.VSTest.Hosting;
+using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Testing.VSTest.Tests.Hosting;
 
@@ -33,14 +34,15 @@ public sealed class InvokingDotnetResolverTests
     }
 
     [Fact]
-    public void DefaultCompositionUsesTheCurrentDotnetHost()
+    public void DefaultCompositionChecksTheExplicitHostAndTheCurrentProcess()
     {
-        var processPath = Environment.ProcessPath;
-        Assert.False(string.IsNullOrWhiteSpace(processPath));
+        var resolver = new InvokingDotnetResolver();
 
-        var result = new InvokingDotnetResolver().Resolve(Configuration(null));
-
-        Assert.Equal(processPath, result);
+        // The machine's dotnet host passes the default existence check.
+        Assert.Equal(DotNetHost.Executable, resolver.Resolve(Configuration(DotNetHost.Executable)));
+        // An xUnit v3 test process is its own executable rather than dotnet, so
+        // without an explicit host there is none to invoke.
+        Assert.Throws<InvalidOperationException>(() => resolver.Resolve(Configuration(null)));
     }
 
     [Fact]

@@ -189,6 +189,51 @@ public sealed class RootMapTests
         }
     }
 
+    // Issue 144 and its class: the runtime allocates these clones and
+    // conversions, so a call to one publishes the live references its caller
+    // holds, such as the new invocation list a multicast delegate's clone
+    // takes, and every caller up the chain allocates too.
+    [Theory]
+    [InlineData("System", "DelegateRuntime", "Clone", false)]
+    [InlineData("System", "DelegateRuntime", "Clone", true)]
+    [InlineData("System", "Array", "InternalClone", false)]
+    [InlineData("System", "Array", "InternalCloneRange", true)]
+    [InlineData("System", "Array", "InternalCopy", false)]
+    [InlineData("System", "Array", "InternalCopy", true)]
+    [InlineData("System.Runtime.CompilerServices", "RuntimeHelpersRuntime", "CloneBoxedValue", false)]
+    [InlineData("System", "Nullable", "GetUnderlyingType", true)]
+    public void RuntimeClonesPublishLiveReferencesAndPropagateThroughManagedWrappers(
+        string ns, string typeName, string methodName, bool instanceOperand)
+    {
+        var program = new FakeProgram(enumIntrinsicName: methodName, intrinsicNamespace: ns, intrinsicTypeName: typeName);
+        var intrinsicInstance = Instance(program.GetMethod(ExternalKey), CliTypeIdentity.Named(Assembly, ns, typeName, false));
+        var call = I(0, CilOperation.Call, instanceOperand
+            ? new CilOperand.MethodInstance(intrinsicInstance)
+            : new CilOperand.Entity(ExternalKey));
+        // The wrapper still holds its argument after the call, as
+        // NewMulticastDelegate holds the invocation list across the clone.
+        var wrapper = Structured(program, program.GetMethod(EntryKey),
+            call, I(1, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(2, CilOperation.Pop), I(3, CilOperation.Return));
+        var caller = Structured(program, program.GetMethod(AllocatorKey),
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Call, new CilOperand.Entity(EntryKey)),
+            I(2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(3, CilOperation.Pop), I(4, CilOperation.Return));
+        var capabilities = CreateAllocationAnalyzer(program).Analyze(new(
+            new Dictionary<EntityKey, StructuredMethod> { [EntryKey] = wrapper, [AllocatorKey] = caller },
+            new Dictionary<string, StructuredMethod>(),
+            ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
+
+        Assert.Contains(EntryKey, capabilities.Methods);
+        Assert.Contains(AllocatorKey, capabilities.Methods);
+        foreach (var (body, offset) in new[] { (wrapper, 0), (caller, 1) })
+        {
+            var roots = CreateAnalyzer(program).Analyze(new(body, capabilities.Methods, capabilities.ConstructedMethods));
+            Assert.Contains(new RootSource(RootSourceKind.Argument, 0), roots.Safepoints[offset].Roots);
+        }
+    }
+
     [Theory]
     [InlineData("ToString", false, 0, true)]
     [InlineData("ToString", false, 1, true)]
@@ -913,6 +958,24 @@ public sealed class RootMapTests
     }
 
     [Fact]
+    public void CalleeArgumentRootingRequiresEveryCollaborator()
+    {
+        var program = new FakeProgram();
+        var safepoints = new RuntimeAllocationSafepointClassifier();
+        var triggers = new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program);
+        Assert.Throws<ArgumentNullException>(() =>
+            new CalleeArgumentRootingClassifier(null!, program, null, safepoints, program, triggers));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CalleeArgumentRootingClassifier(program, null!, null, safepoints, program, triggers));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CalleeArgumentRootingClassifier(program, program, null, null!, program, triggers));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CalleeArgumentRootingClassifier(program, program, null, safepoints, null!, triggers));
+        Assert.Throws<ArgumentNullException>(() =>
+            new CalleeArgumentRootingClassifier(program, program, null, safepoints, program, null!));
+    }
+
+    [Fact]
     public void ManagedAddressArgumentPointeeRemainsRootedAfterLastExplicitUse()
     {
         var program = new FakeProgram();
@@ -948,6 +1011,122 @@ public sealed class RootMapTests
         Assert.Contains(
             new RootSource(RootSourceKind.ManagedAddressArgument, 0, 0),
             roots);
+    }
+
+    // A span, a ref struct or a callee can hold the address of a local or an
+    // argument long after the storage itself is last loaded, so what the
+    // storage references stays rooted at each safepoint the address reaches.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AddressTakenStorageStaysRootedWhereItsAddressReaches(bool argument)
+    {
+        var program = new FakeProgram();
+        var definition = Method(EntryKey, parameters: argument ? [CliValueKind.ValueType] : []) with
+        {
+            Signature = argument
+                ? MethodSignatureModel.Create(CliTypeIdentity.Primitive("void", CliValueKind.Void), PairType)
+                : MethodSignatureModel.Create(CliTypeIdentity.Primitive("void", CliValueKind.Void)),
+        };
+        var map = AnalyzeExposure(program, definition, [],
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(2, argument ? CilOperation.LoadArgumentAddress : CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.LoadNull),
+            I(5, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(6, CilOperation.Return));
+
+        var lane = new RootSource(argument ? RootSourceKind.Argument : RootSourceKind.Local, 0, 4);
+        Assert.Contains(lane, map.Safepoints[5].Roots);
+    }
+
+    // A pinned local keeps what it holds alive though the code reads it only
+    // once, to take an address, before the safepoint; an unpinned one does not.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PinnedLocalsStayRootedAtEverySafepoint(bool pinned)
+    {
+        var program = new FakeProgram();
+        var reference = CliTypeIdentity.Primitive("object", CliValueKind.ManagedReference, isValueType: false);
+        var definition = Method(EntryKey);
+        var body = new CilMethodBody(definition, 1, [CliValueKind.ManagedReference],
+        [
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(2, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.LoadNull),
+            I(5, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(6, CilOperation.Return),
+        ])
+        {
+            MethodInstance = DirectInstance(program, definition),
+            LocalSignatureTypes = [reference],
+            PinnedLocals = pinned ? [0] : [],
+        };
+        var structured = CreateStructuredMethod(new TypedStackValidator(program, program, program,
+            new StackTypeCompatibilityValidator()).Validate(CreateGraphBuilder().Build(body)));
+
+        var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
+            structured, new HashSet<EntityKey> { AllocatorKey }, new HashSet<string>()));
+
+        Assert.Equal(pinned, map.Safepoints[5].Roots.Contains(new RootSource(RootSourceKind.Local, 0)));
+    }
+
+    // The address reaches a loop's earlier safepoints again.
+    [Fact]
+    public void AddressTakenStorageStaysRootedAroundALoop()
+    {
+        var program = new FakeProgram();
+        var map = AnalyzeExposure(program, Method(EntryKey), [],
+            I(0, CilOperation.LoadNull),
+            I(1, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(2, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(3, CilOperation.Pop),
+            I(4, CilOperation.Branch, new CilOperand.BranchTarget(0)));
+
+        Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), map.Safepoints[1].Roots);
+    }
+
+    // An address taken in a protected region reaches its handler.
+    [Fact]
+    public void AddressTakenStorageStaysRootedInAHandler()
+    {
+        var program = new FakeProgram();
+        var map = AnalyzeExposure(program, Method(EntryKey),
+            [new CilExceptionRegion(CilExceptionRegionKind.Catch, 0, 4, 4, 4, TypeKey, null)],
+            I(0, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.Call, new CilOperand.Entity(LeafKey)),
+            I(3, CilOperation.Leave, new CilOperand.BranchTarget(8)),
+            I(4, CilOperation.Pop),
+            I(5, CilOperation.LoadNull),
+            I(6, CilOperation.Call, new CilOperand.Entity(AllocatorKey)),
+            I(7, CilOperation.Leave, new CilOperand.BranchTarget(8)),
+            I(8, CilOperation.Return));
+
+        Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), map.Safepoints[6].Roots);
+    }
+
+    // A method whose only local is a pair, and whose argument, if any, is one.
+    private static MethodRootMap AnalyzeExposure(
+        FakeProgram program,
+        MethodDefinitionModel definition,
+        ImmutableArray<CilExceptionRegion> regions,
+        params CilInstruction[] instructions)
+    {
+        var body = new CilMethodBody(definition, 1, [CliValueKind.ValueType], [.. instructions])
+        {
+            MethodInstance = DirectInstance(program, definition),
+            LocalSignatureTypes = [PairType],
+            ExceptionRegions = regions,
+        };
+        var structured = CreateStructuredMethod(new TypedStackValidator(program, program, program,
+            new StackTypeCompatibilityValidator()).Validate(CreateGraphBuilder().Build(body)));
+        return CreateAnalyzer(program, new FakeLayouts(PairType)).Analyze(new RootMapAnalysisRequest(
+            structured, new HashSet<EntityKey> { AllocatorKey }, new HashSet<string>()));
     }
 
     [Fact]
@@ -1827,6 +2006,43 @@ public sealed class RootMapTests
         Assert.Contains(EntryKey, capabilities.Methods);
     }
 
+    // An instance method of a precise reference type finds its own type
+    // initialized, so reading its own static field cannot run the allocating
+    // initializer.
+    [Fact]
+    public void AllocationCapabilityIgnoresTheInitializerOfAnInstanceMethodsOwnType()
+    {
+        var program = new FakeProgram();
+        var initializer = StructuredWithLocals(
+            program,
+            program.GetMethod(StaticInitializerKey),
+            [],
+            2,
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            I(1, CilOperation.NewObject, new CilOperand.Entity(ConstructorKey)),
+            I(2, CilOperation.Pop),
+            I(3, CilOperation.Return));
+        var reader = Structured(
+            program,
+            Method(EntryKey, isStatic: false) with { DeclaringType = GenericTypeKey },
+            I(0, CilOperation.LoadStaticField, new CilOperand.Entity(StaticFieldKey)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.Return));
+
+        var capabilities = CreateAllocationAnalyzer(program).Analyze(
+            new AllocationCapabilityAnalysisRequest(
+                new Dictionary<EntityKey, StructuredMethod>
+                {
+                    [StaticInitializerKey] = initializer,
+                    [EntryKey] = reader,
+                },
+                ImmutableDictionary<string, StructuredMethod>.Empty,
+                ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
+
+        Assert.Contains(StaticInitializerKey, capabilities.Methods);
+        Assert.DoesNotContain(EntryKey, capabilities.Methods);
+    }
+
     [Fact]
     public void AllocationCapabilityUsesDefinitionIdentityForUninstantiatedConstructedMethods()
     {
@@ -2500,7 +2716,7 @@ public sealed class RootMapTests
         bool delegateType = false, string delegateMethodName = "Invoke", bool delegateMethodStatic = false,
         string? enumIntrinsicName = null, bool enumIntrinsicStatic = true, bool externalAccessor = false,
         bool beforeFieldInit = false, bool genericOwnerIsValueType = false,
-        string leafName = "Method") :
+        string leafName = "Method", string intrinsicNamespace = "System", string intrinsicTypeName = "Enum") :
         ITypeRepository,
         IFieldRepository,
         IMethodRepository,
@@ -2569,7 +2785,7 @@ public sealed class RootMapTests
             }.ToImmutableDictionary();
 
         public TypeDefinitionModel GetTypeDefinition(EntityKey key) => key == EnumTypeKey
-            ? new(key, "System", "Enum", false, [], [ExternalKey])
+            ? new(key, intrinsicNamespace, intrinsicTypeName, false, [], [ExternalKey])
             : key == GenericTypeKey
             ? new(key, "Roots", "Cache`1", genericOwnerIsValueType, [StaticFieldKey],
                 [StaticInitializerKey])

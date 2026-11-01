@@ -23,7 +23,7 @@ public sealed class UnreachableInstructionRewriterTests
             Instruction(0, CilOperation.Branch, new CilOperand.BranchTarget(7)),
             Instruction(1, CilOperation.Nop),
             Instruction(2, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
-            Instruction(3, CilOperation.Switch, new CilOperand.SwitchTargets([6])),
+            Instruction(3, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(6)),
             Instruction(4, CilOperation.Branch, new CilOperand.BranchTarget(6)),
             Instruction(5, CilOperation.Throw),
             Instruction(6, CilOperation.Return),

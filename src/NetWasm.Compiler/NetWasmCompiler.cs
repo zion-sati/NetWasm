@@ -19,17 +19,6 @@ using NetWasm.Compiler.Validation;
 
 namespace NetWasm.Compiler;
 
-public static class NetWasmCompiler
-{
-    public static CompilationResult Compile(CompilerOptions options)
-    {
-        using var services = new ServiceCollection()
-            .AddNetWasmCompiler()
-            .BuildServiceProvider();
-        return services.GetRequiredService<INetWasmCompiler>().Compile(options);
-    }
-}
-
 public interface INetWasmCompiler
 {
     CompilationResult Compile(CompilerOptions options);

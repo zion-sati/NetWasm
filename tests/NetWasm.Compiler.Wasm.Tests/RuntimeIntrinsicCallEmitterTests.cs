@@ -105,7 +105,8 @@ public sealed class RuntimeIntrinsicCallEmitterTests
         var facade = new RuntimeIntrinsicCallEmitter(
             new FakeIntrinsics(),
             new RecordingLayoutProvider(),
-            new RuntimeIntrinsicEmitterRegistry(registrations));
+            new RuntimeIntrinsicEmitterRegistry(registrations),
+            new PassingWriters());
 
         EmitThroughCapability(facade, call);
 
@@ -133,7 +134,8 @@ public sealed class RuntimeIntrinsicCallEmitterTests
         var facade = new RuntimeIntrinsicCallEmitter(
             new FakeIntrinsics(),
             new RecordingLayoutProvider(),
-            new RuntimeIntrinsicEmitterRegistry(registrations));
+            new RuntimeIntrinsicEmitterRegistry(registrations),
+            new PassingWriters());
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             EmitThroughCapability(facade, call));
@@ -154,12 +156,54 @@ public sealed class RuntimeIntrinsicCallEmitterTests
         RuntimeIntrinsic intrinsic) =>
         ((IRuntimeIntrinsicEmitterRegistry)registry).Get(intrinsic);
 
+    // The intrinsic writes through the writer the safepoint check gives it.
+    [Fact]
+    public void CallFacadeEmitsThroughTheSafepointCheckedWriter()
+    {
+        var program = new FakeProgram();
+        var definition = program.GetMethod(StringLengthKey);
+        var method = new MethodInstanceModel(
+            definition,
+            CliTypeIdentity.Named(Assembly, "Test", "String", isValueType: false),
+            [],
+            definition.Signature);
+        var instruction = EmitterTestSupport.CreateInstructionRequest(
+            CilOperation.Call,
+            [CliValueKind.ManagedReference]);
+        var emitter = new RecordingEmitter();
+        var writers = new PassingWriters();
+        var facade = new RuntimeIntrinsicCallEmitter(
+            new FakeIntrinsics(),
+            new RecordingLayoutProvider(),
+            new RuntimeIntrinsicEmitterRegistry(Enum.GetValues<RuntimeIntrinsic>()
+                .Select(intrinsic => new RuntimeIntrinsicEmitterRegistration(intrinsic, emitter))),
+            writers);
+
+        EmitThroughCapability(facade, new CallEmissionRequest(instruction, method, 0, 1));
+
+        Assert.Same(writers.Created, emitter.Writer);
+        Assert.Equal(RuntimeIntrinsic.StringLength, writers.Request?.Intrinsic);
+    }
+
     private sealed class RecordingEmitter : IRuntimeIntrinsicEmitter
     {
+        public IWasmInstructionWriter? Writer { get; private set; }
+
         public void Emit(
             RuntimeIntrinsicEmissionRequest request,
-            IWasmInstructionWriter code)
+            IWasmInstructionWriter code) => Writer = code;
+    }
+
+    private sealed class PassingWriters : ISafepointCheckedWriterFactory
+    {
+        public IWasmInstructionWriter? Created { get; private set; }
+
+        public RuntimeIntrinsicEmissionRequest? Request { get; private set; }
+
+        public IWasmInstructionWriter Create(IWasmInstructionWriter code, RuntimeIntrinsicEmissionRequest request)
         {
+            Request = request;
+            return Created = new EmitterTestSupport.RecordingInstructionWriter();
         }
     }
 }

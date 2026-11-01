@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis;
 
@@ -52,22 +53,14 @@ internal sealed class CreateSpanCallRewriter(
         return changed ? body with { Instructions = [.. instructions] } : body;
     }
 
-    private static HashSet<int> GetEntryOffsets(CilMethodBody body)
+    internal static HashSet<int> GetEntryOffsets(CilMethodBody body)
     {
         var offsets = new HashSet<int>();
         foreach (var instruction in body.Instructions)
         {
-            switch (instruction.Operand)
+            if (instruction.Operand is CilOperand.BranchTarget branch)
             {
-                case CilOperand.BranchTarget branch:
-                    offsets.Add(branch.Offset);
-                    break;
-                case CilOperand.SwitchTargets branches:
-                    foreach (var offset in branches.Offsets)
-                    {
-                        offsets.Add(offset);
-                    }
-                    break;
+                offsets.Add(branch.Offset);
             }
         }
         foreach (var region in body.ExceptionRegions)
@@ -83,4 +76,88 @@ internal sealed class CreateSpanCallRewriter(
         }
         return offsets;
     }
+}
+
+// Roslyn creates a ReadOnlySpan<byte> over constant data as
+// new ReadOnlySpan<byte>(&<PrivateImplementationDetails>.field, length) rather
+// than through RuntimeHelpers.CreateSpan. Over the whole field it is the same
+// view, so later passes read its length and elements as constants. Taking the
+// address of a static field runs its type's static constructor, so the field's
+// type must have none.
+internal sealed class RvaPointerSpanRewriter(
+    ICalledMethodResolver calledMethods,
+    IFieldRepository fields,
+    ITypeIdentityResolver typeIdentities,
+    ITypeDefinitionResolver typeDefinitions,
+    IMethodRepository methods) : IMethodRewriteRule
+{
+    public CilMethodBody Rewrite(CilMethodBody body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        var instructions = body.Instructions.ToArray();
+        var entryOffsets = CreateSpanCallRewriter.GetEntryOffsets(body);
+        var changed = false;
+
+        for (var index = 2; index < instructions.Length; index++)
+        {
+            if (instructions[index - 2] is not { Operation: CilOperation.LoadStaticFieldAddress } address ||
+                instructions[index - 1] is not
+                {
+                    Operation: CilOperation.LoadInt32,
+                    Operand: CilOperand.ConstantI4 length,
+                } count ||
+                instructions[index] is not { Operation: CilOperation.NewObject } construction ||
+                entryOffsets.Contains(count.Offset) ||
+                entryOffsets.Contains(construction.Offset) ||
+                Field(address.Operand) is not { } field ||
+                HasStaticConstructor(field.DeclaringType) ||
+                View(calledMethods.Resolve(construction), field, length.Value) is not { } view)
+            {
+                continue;
+            }
+
+            instructions[index - 2] = address with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+            instructions[index - 1] = count with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
+            instructions[index] = construction with
+            {
+                Operation = CilOperation.CreateReadOnlySpanFromRva,
+                Operand = view,
+            };
+            changed = true;
+        }
+
+        return changed ? body with { Instructions = [.. instructions] } : body;
+    }
+
+    // The pointer constructor over the whole of a read-only initialized field.
+    private static CilOperand.ReadOnlySpanData? View(MethodInstanceModel? constructor, FieldInstanceModel field, int length)
+    {
+        if (constructor is not { Definition: { Name: ".ctor", IsStatic: false } } ||
+            !ReadOnlySpanDataResolver.TryGetReadOnlySpanElement(constructor.DeclaringType, out var elementType) ||
+            elementType.ContainsGenericParameters ||
+            constructor.Signature.ParameterSignatureTypes is not
+                [{ Shape: CliTypeShape.UnmanagedPointer }, { StackKind: CliValueKind.I4 }] ||
+            !ReadOnlySpanDataResolver.TryGetPrimitiveSize(elementType, out var elementSize) ||
+            !field.Definition.IsStatic ||
+            !field.Definition.IsInitOnly ||
+            field.Definition.InitialData.IsDefaultOrEmpty ||
+            length <= 0 ||
+            (long)length * elementSize != field.Definition.InitialData.Length)
+        {
+            return null;
+        }
+
+        return new(field, constructor.DeclaringType, elementType, length);
+    }
+
+    private FieldInstanceModel? Field(CilOperand operand) => operand switch
+    {
+        CilOperand.FieldInstance instance => instance.Value,
+        CilOperand.Entity { Key: var key } when fields.GetField(key) is var definition =>
+            new(definition, typeIdentities.GetTypeIdentity(definition.DeclaringType), definition.SignatureType),
+        _ => null,
+    };
+
+    private bool HasStaticConstructor(CliTypeIdentity type) =>
+        typeDefinitions.ResolveTypeIdentity(type).Methods.Any(method => methods.GetMethod(method).Name == ".cctor");
 }

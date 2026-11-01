@@ -691,7 +691,7 @@ internal sealed class AddressTakenAggregatePromotionPlanner(
                 CilOperation.BranchIfLessThanUnsigned or
                 CilOperation.BranchIfLessThanOrEqualSigned or
                 CilOperation.BranchIfLessThanOrEqualUnsigned or
-                CilOperation.Switch or CilOperation.StoreArgument or
+                CilOperation.StoreArgument or
                 CilOperation.StoreLocal or CilOperation.StoreField or
                 CilOperation.StoreStaticField or CilOperation.StoreObject or
                 CilOperation.CopyObject or CilOperation.InitializeObject or

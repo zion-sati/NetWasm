@@ -770,10 +770,9 @@ namespace System
                 goto Longer;
             }
 
-#if TARGET_64BIT
+            // NetWasm builds one CoreLib for both widths, so upstream's TARGET_64BIT branch is chosen by IntPtr.Size, which the compiler folds per target.
             // On 32-bit, this will always be true since sizeof(nuint) == 4
-            if (length < sizeof(uint))
-#endif
+            if (IntPtr.Size == 4 || length < sizeof(uint))
             {
                 uint differentBits = 0;
                 nuint offset = (length & 2);
@@ -789,7 +788,6 @@ namespace System
                 result = (differentBits == 0);
                 goto Result;
             }
-#if TARGET_64BIT
             else
             {
                 nuint offset = length - sizeof(uint);
@@ -798,7 +796,6 @@ namespace System
                 result = (differentBits == 0);
                 goto Result;
             }
-#endif
         Longer:
             // Only check that the ref is the same if buffers are large,
             // and hence its worth avoiding doing unnecessary comparisons

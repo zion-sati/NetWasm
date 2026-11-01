@@ -34,6 +34,7 @@ public sealed class WorkerEntryWriterTests
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
         Assert.Contains("createBrowserRawExportSession", source, StringComparison.Ordinal);
         Assert.Contains("createWorkerSessionHost", source, StringComparison.Ordinal);
+        BrowserApiBindings.AssertNoneAtImport(source);
         Assert.Contains("\"consumer.worker\": Object.freeze", source, StringComparison.Ordinal);
         Assert.Contains("\"increment\": imports0[\"increment\"]", source, StringComparison.Ordinal);
         Assert.Contains("./deployment.json", source, StringComparison.Ordinal);
@@ -135,6 +136,7 @@ public sealed class WorkerEntryWriterTests
             source.IndexOf("worker notification handler must be a function", StringComparison.Ordinal) <
             source.IndexOf("new Worker", StringComparison.Ordinal));
         Assert.Contains("operations, onNotification,", source, StringComparison.Ordinal);
+        BrowserApiBindings.AssertNoneAtImport(source);
         Assert.Contains("environment: options.environment, stderr: options.stderr, stdout: options.stdout,", source,
             StringComparison.Ordinal);
         Assert.Contains("buildFingerprint: \"1111", source, StringComparison.Ordinal);

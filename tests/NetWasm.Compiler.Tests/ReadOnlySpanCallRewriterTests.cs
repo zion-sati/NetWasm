@@ -44,21 +44,6 @@ public sealed class ReadOnlySpanCallRewriterTests
     }
 
     [Fact]
-    public void SwitchEntryIntoCallPreservesOriginalPair()
-    {
-        var fixture = new Fixture();
-        var body = fixture.Body(
-            new CilInstruction(0, 1, CilOperation.Switch,
-                new CilOperand.SwitchTargets([2, 2])),
-            fixture.Token(1, 2),
-            fixture.Call(2, 3));
-
-        var rewritten = fixture.Rewrite(body);
-
-        Assert.Same(body, rewritten);
-    }
-
-    [Fact]
     public void ExceptionBoundaryBetweenTokenAndCallPreservesOriginalPair()
     {
         var fixture = new Fixture();

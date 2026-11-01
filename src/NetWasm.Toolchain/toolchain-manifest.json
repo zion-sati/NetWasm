@@ -239,9 +239,9 @@
     },
     {
       "id": "hosting-bundle.command",
-      "version": "2",
+      "version": "3",
       "relativePath": "tools/bundler/netwasm-bundle.mjs",
-      "sha256": "aaf428954b5c0da1d50d58e28f4a5e91acd27ea9f5ae1bedc5041ec4996f2d04"
+      "sha256": "939272deb74f7935388fa608bb2ae8f1e3e87df4176aee55b3877c5a18abee85"
     },
     {
       "id": "rolldown.package",

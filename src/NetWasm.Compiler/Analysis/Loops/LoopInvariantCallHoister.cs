@@ -37,12 +37,9 @@ internal sealed class LoopInvariantCallHoister(ICalledMethodResolver calledMetho
         var instructions = body.Instructions;
         var indices = Enumerable.Range(0, instructions.Length).ToDictionary(index => instructions[index].Offset);
         var targets = instructions
-            .SelectMany(static instruction => instruction.Operand switch
-            {
-                CilOperand.BranchTarget target => [target.Offset],
-                CilOperand.SwitchTargets switches => switches.Offsets,
-                _ => ImmutableArray<int>.Empty,
-            })
+            .Select(static instruction => instruction.Operand)
+            .OfType<CilOperand.BranchTarget>()
+            .Select(static target => target.Offset)
             .Concat(body.ExceptionRegions.SelectMany(static region => (int?[])
                 [region.TryOffset, region.HandlerOffset, region.FilterOffset]).OfType<int>())
             .ToHashSet();

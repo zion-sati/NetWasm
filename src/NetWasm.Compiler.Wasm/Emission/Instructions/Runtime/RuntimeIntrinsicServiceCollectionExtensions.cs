@@ -1,6 +1,8 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.GarbageCollection;
 using NetWasm.Compiler.Wasm.Emission;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
@@ -44,6 +46,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<GcHandleSetIntrinsicEmitter>();
         services.AddSingleton<GcHandleReleaseIntrinsicEmitter>();
         services.AddSingleton<GcHandleAddressIntrinsicEmitter>();
+        services.AddSingleton<ObjectContainsReferencesIntrinsicEmitter>();
         services.AddSingleton<GcGetMetricIntrinsicEmitter>();
         services.AddSingleton<GcMetricIsSupportedIntrinsicEmitter>();
         services.AddSingleton<GcWaitForPendingFinalizersIntrinsicEmitter>();
@@ -112,6 +115,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<IntegerDivRemIntrinsicEmitter>();
         services.AddSingleton<SimdVectorIntrinsicEmitter>();
         services.AddSingleton<PackedSimdIntrinsicEmitter>();
+        services.AddSingleton<NumericsVectorBridgeIntrinsicEmitter>();
         services.AddSingleton<ObjectArrayDelegateAdapterIntrinsicEmitter>();
         services.AddSingleton<MemberExecutionIntrinsicEmitter>();
         services.AddSingleton<DelegateDynamicInvokeIntrinsicEmitter>();
@@ -212,6 +216,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<GcHandleSetIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleSet);
         AddRegistration<GcHandleReleaseIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleRelease);
         AddRegistration<GcHandleAddressIntrinsicEmitter>(services, RuntimeIntrinsic.GcHandleAddress);
+        AddRegistration<ObjectContainsReferencesIntrinsicEmitter>(services, RuntimeIntrinsic.ObjectContainsReferences);
         AddRegistration<GcGetMetricIntrinsicEmitter>(services, RuntimeIntrinsic.GcGetMetric);
         AddRegistration<GcMetricIsSupportedIntrinsicEmitter>(
             services,
@@ -353,6 +358,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         }
         AddRegistration<PackedSimdIntrinsicEmitter>(services, RuntimeIntrinsic.PackedSimdIsSupported);
         AddRegistration<PackedSimdIntrinsicEmitter>(services, RuntimeIntrinsic.PackedSimdInstruction);
+        AddRegistration<NumericsVectorBridgeIntrinsicEmitter>(services, RuntimeIntrinsic.NumericsToVector128);
+        AddRegistration<NumericsVectorBridgeIntrinsicEmitter>(services, RuntimeIntrinsic.NumericsFromVector128);
         AddRegistration<ObjectArrayDelegateAdapterIntrinsicEmitter>(
             services, RuntimeIntrinsic.ObjectArrayDelegateAdapterCreate);
         AddRegistration<MemberExecutionIntrinsicEmitter>(
@@ -391,8 +398,12 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<EnumConvertIntrinsicEmitter>(
             services, RuntimeIntrinsic.EnumConvert);
 
+        services.TryAddSingleton<IRuntimeAllocationSafepointClassifier,
+            RuntimeAllocationSafepointClassifier>();
         services.AddSingleton<IRuntimeIntrinsicEmitterRegistry,
             RuntimeIntrinsicEmitterRegistry>();
+        services.AddSingleton<ICollectingRuntimeImportResolver, CollectingRuntimeImports>();
+        services.AddSingleton<ISafepointCheckedWriterFactory, SafepointCheckedWriterFactory>();
         services.AddSingleton<RuntimeIntrinsicCallEmitter>();
         services.AddSingleton<RootPublicationEmitter>();
         services.AddSingleton<IRootPublicationEmitter>(provider =>

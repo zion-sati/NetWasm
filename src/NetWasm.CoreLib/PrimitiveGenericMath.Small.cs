@@ -729,12 +729,16 @@ public partial struct Char
         return (char)rune.Value;
     }
 
-    public bool Equals(char other, StringComparison comparisonType) => comparisonType switch
+    public bool Equals(char other, StringComparison comparisonType)
     {
-        StringComparison.Ordinal => this == other,
-        StringComparison.OrdinalIgnoreCase => ToUpperOrdinal(this) == ToUpperOrdinal(other),
-        _ => throw new ArgumentException(nameof(comparisonType)),
-    };
+        string.CheckStringComparison(comparisonType);
+        return comparisonType switch
+        {
+            StringComparison.Ordinal => this == other,
+            StringComparison.OrdinalIgnoreCase => ToUpperOrdinal(this) == ToUpperOrdinal(other),
+            _ => throw new PlatformNotSupportedException(),
+        };
+    }
 
     public TypeCode GetTypeCode() => TypeCode.Char;
 
@@ -851,7 +855,9 @@ public partial struct Char
     public static bool IsSymbol(string s, int index) => IsSymbol(GetIndexedChar(s, index));
     public static bool IsUpper(char c) => GetUnicodeCategory(c) is Globalization.UnicodeCategory.UppercaseLetter;
     public static bool IsUpper(string s, int index) => IsUpper(GetIndexedChar(s, index));
-    public static bool IsWhiteSpace(char c) => Globalization.CharUnicodeInfo.GetIsWhiteSpace(c);
+    // Upstream's: the Latin-1 table, then the Unicode data.
+    public static bool IsWhiteSpace(char c) =>
+        IsLatin1(c) ? IsWhiteSpaceLatin1(c) : Globalization.CharUnicodeInfo.GetIsWhiteSpace(c);
     public static bool IsWhiteSpace(string s, int index) => IsWhiteSpace(GetIndexedChar(s, index));
 
     public static char ToLower(char c) => ToLowerInvariant(c);

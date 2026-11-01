@@ -60,6 +60,20 @@ public sealed class FloatingBinaryIntrinsicEmitterTests
         Assert.Empty(writer.ToInstructions());
     }
 
+    [Fact]
+    public void RejectsAnotherIntrinsicBeforeWriting()
+    {
+        var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
+            RuntimeIntrinsic.ArrayLoopXor, [CliValueKind.F8, CliValueKind.F8]);
+        var writer = new EmitterTestSupport.RecordingInstructionWriter();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ((IRuntimeIntrinsicEmitter)new FloatingBinaryIntrinsicEmitter()).Emit(request, writer));
+
+        Assert.Contains("is not a floating-point binary intrinsic", exception.Message);
+        Assert.Empty(writer.ToInstructions());
+    }
+
     [Theory]
     [InlineData(CliValueKind.I4, CliValueKind.F4)]
     [InlineData(CliValueKind.F4, CliValueKind.I4)]

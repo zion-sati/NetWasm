@@ -183,7 +183,7 @@ public sealed class ReachableMethodBatchAnalyzerTests
 
         var analysisTask = Task.Run(() => analyzer.Analyze(requests).ToArray());
 
-        Assert.True(entered.Wait(TimeSpan.FromMinutes(1)));
+        Assert.True(entered.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
         release.Set();
         var results = await analysisTask;
 

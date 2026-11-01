@@ -118,18 +118,11 @@ internal sealed record StackSlotProducers(
         var excluded = new HashSet<int>();
         for (var index = 0; index < Body.Instructions.Length; index++)
         {
-            switch (Body.Instructions[index].Operand)
+            if (Body.Instructions[index].Operand is CilOperand.BranchTarget { Offset: var target } &&
+                indices.TryGetValue(target, out var targetIndex))
             {
-                case CilOperand.BranchTarget { Offset: var target } when indices.TryGetValue(target, out var targetIndex):
-                    if (!sources.TryGetValue(targetIndex, out var list)) sources[targetIndex] = list = [];
-                    list.Add(index);
-                    break;
-                case CilOperand.SwitchTargets { Offsets: var targets }:
-                    foreach (var target in targets)
-                    {
-                        if (indices.TryGetValue(target, out var switchTarget)) excluded.Add(switchTarget);
-                    }
-                    break;
+                if (!sources.TryGetValue(targetIndex, out var list)) sources[targetIndex] = list = [];
+                list.Add(index);
             }
         }
         foreach (var region in Body.ExceptionRegions)

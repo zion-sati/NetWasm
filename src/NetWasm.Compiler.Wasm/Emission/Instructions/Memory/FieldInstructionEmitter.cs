@@ -158,9 +158,23 @@ internal sealed class FieldInstructionEmitter(
             addresses.Emit(code, targetOffset);
             addresses.Emit(code, AddressOperation.Add);
         }
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
-        Extract();
-        ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, 0, layout.Size);
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+        // A struct within the vector, as Plane's Normal, copies out a 32-bit
+        // lane at a time.
+        if (layout.Offset % sizeof(int) != 0 || layout.Size % sizeof(int) != 0)
+        {
+            throw new CompilerException(new CompilerDiagnostic(
+                DiagnosticCode.UnsupportedCil, "a vector's struct field is not made of 32-bit lanes"));
+        }
+        for (var word = 0; word < layout.Size / sizeof(int); word++)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)vector)));
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.SimdPrefixed,
+                WasmInstructionOperand.PrefixedPair(WasmSimdOpcodes.I32x4ExtractLane, (uint)(layout.Offset / sizeof(int) + word))));
+            ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, word * sizeof(int), sizeof(int));
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)request.Context.ObjectTemporary)));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)GetStackLocal(
             request.Context, slot, CliValueKind.ValueType))));

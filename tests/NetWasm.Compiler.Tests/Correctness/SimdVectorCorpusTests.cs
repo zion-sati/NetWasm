@@ -4,7 +4,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // Vector<T> is 16 bytes in NetWasm and follows the host on desktop, so results
 // that depend on the width compare against Count rather than a constant, and
 // floating-point reductions use values every summation order adds exactly.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class SimdVectorCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -12,7 +11,18 @@ public sealed class SimdVectorCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "SimdVectorCorpus",
             "NetWasm.Correctness.SimdVectors",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+                34, 35, 36, 37, 38, 39])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    // SimdVectorLoweringCompilationTests compiles the same program in the test
+    // process, where coverage sees the lowering, which this corpus runs in a
+    // compiler process of its own.
+    internal const string Source = """
             using System;
             using System.Numerics;
             using System.Runtime.Intrinsics;
@@ -32,6 +42,7 @@ public sealed class SimdVectorCorpusTests(CorrectnessTestRunner runner)
                     6 => NumericsVector(),
                     7 => OtherWidths(),
                     8 => Shuffles(),
+                    14 => EveryLaneShuffle(),
                     9 => TooShort(),
                     11 => ScalarMinMax(),
                     12 => ScalarConversions(),
@@ -169,6 +180,46 @@ public sealed class SimdVectorCorpusTests(CorrectnessTestRunner runner)
                     var reversed = Vector128.Shuffle(bytes, Vector128.Create((byte)15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0));
                     var outOfRange = Vector128.Shuffle(Vector128.Create(1, 2, 3, 4), Vector128.Create(3, 0, 9, -1));
                     return Mix(reversed, outOfRange, Vector128.Create(5, 6, 7, 8).GetUpper());
+                }
+
+                // Each lane takes the lane its index names, or zero for an index past the
+                // last lane or below zero, for every lane width; ShuffleNative is only
+                // specified for indices in range.
+                private static readonly int[] Picks =
+                    [0, 1, 2, 3, 5, 7, 8, 9, 15, 16, 17, 31, 63, 64, 127, 128, 200, 255, 256, -1, -2, int.MaxValue, int.MinValue];
+
+                private static int EveryLaneShuffle()
+                {
+                    var hash = 17;
+                    for (var seed = 0; seed < Picks.Length; seed++)
+                    {
+                        hash = unchecked(hash * 31 + Mix(
+                            Vector128.Shuffle(Make(16, static lane => (byte)(lane * 3 + 1)), Make(16, lane => (byte)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(16, static lane => (sbyte)(lane * 5 - 40)), Make(16, lane => (sbyte)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(8, static lane => (short)(lane * 1001 - 3000)), Make(8, lane => (short)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(8, static lane => (ushort)(lane * 7001 + 5)), Make(8, lane => (ushort)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(4, static lane => lane * 100003 - 7), Make(4, lane => Pick(seed, lane))),
+                            Vector128.Shuffle(Make(4, static lane => (uint)lane * 0x9E3779B9u), Make(4, lane => (uint)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(4, static lane => lane * 1.5f - 2), Make(4, lane => Pick(seed, lane))),
+                            Vector128.Shuffle(Make(2, static lane => lane * 0x100000001L - 5), Make(2, lane => (long)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(2, static lane => (ulong)lane * 0x9E3779B97F4A7C15UL), Make(2, lane => (ulong)(long)Pick(seed, lane))),
+                            Vector128.Shuffle(Make(2, static lane => lane * 2.25 - 1), Make(2, lane => (long)Pick(seed, lane))),
+                            Vector128.ShuffleNative(Make(16, static lane => (byte)(lane + 100)), Make(16, lane => (byte)(Pick(seed, lane) & 15))),
+                            Vector128.ShuffleNative(Make(8, static lane => (short)(lane - 4)), Make(8, lane => (short)(Pick(seed, lane) & 7))),
+                            Vector128.ShuffleNative(Make(4, static lane => lane * 3), Make(4, lane => Pick(seed, lane) & 3)),
+                            Vector128.ShuffleNative(Make(2, static lane => lane - 9L), Make(2, lane => (long)(Pick(seed, lane) & 1)))));
+                    }
+                    return hash;
+                }
+
+                private static int Pick(int seed, int lane) => Picks[(seed + lane * 7) % Picks.Length];
+
+                private static Vector128<T> Make<T>(int count, Func<int, T> lane)
+                {
+                    var values = new T[count];
+                    for (var index = 0; index < count; index++)
+                        values[index] = lane(index);
+                    return Vector128.Create(values);
                 }
 
                 private static int TooShort()
@@ -456,11 +507,5 @@ public sealed class SimdVectorCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
-                34, 35, 36, 37, 38, 39])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

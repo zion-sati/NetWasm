@@ -40,7 +40,7 @@ public sealed partial class PageEntryWriterTests
         Assert.DoesNotContain("\r", source, StringComparison.Ordinal);
         // Issue #128: the page imports the shared runtime its workers load too.
         Assert.Contains("import { createPageSession } from \"netwasm:runtime/page\";", source, StringComparison.Ordinal);
-        Assert.Contains("import { createSelectedPreview2ShimFactory } from \"netwasm:runtime/page\";", source,
+        Assert.Contains("import { createSelectedPreview2ShimFactory, webPlatform } from \"netwasm:runtime/page\";", source,
             StringComparison.Ordinal);
         Assert.Contains("import { io as preview2Io } from \"netwasm:runtime/page\";", source, StringComparison.Ordinal);
         Assert.Contains("import { random as preview2Random } from \"netwasm:runtime/random\";", source, StringComparison.Ordinal);
@@ -54,7 +54,8 @@ public sealed partial class PageEntryWriterTests
         Assert.Contains("Object.freeze({ name: \"MODE\", value: \"test\" })", source, StringComparison.Ordinal);
         Assert.Contains("clocks: Object.freeze([\"wall\",\"monotonic\"])", source, StringComparison.Ordinal);
         Assert.Contains("randomness: true,", source, StringComparison.Ordinal);
-        Assert.Contains("compileCoreModule: WebAssembly.compile.bind(WebAssembly),", source, StringComparison.Ordinal);
+        Assert.Contains("    ...webPlatform,\n", source, StringComparison.Ordinal);
+        BrowserApiBindings.AssertNoneAtImport(source);
         // Issue #121: only the Preview 2 families and providers the application links.
         Assert.Contains("createShim: createSelectedPreview2ShimFactory({ cli: preview2Cli, io: preview2Io, random: preview2Random }),",
             source, StringComparison.Ordinal);

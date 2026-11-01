@@ -74,10 +74,17 @@ internal sealed class BitCastCallRewriter(
             ("primitive:i4" or "primitive:u4", "primitive:i4" or "primitive:u4") or
                 ("primitive:i8" or "primitive:u8", "primitive:i8" or "primitive:u8") or
                 ("primitive:f4", "primitive:f4") or ("primitive:f8", "primitive:f8") => (null, null, []),
-            _ => Vector(from) is { } vector && vector == Vector(to)
-                ? (vector, "As", [from.TypeArguments[0], to.TypeArguments[0]])
-                : null,
+            _ when Vector(from) is { } vector && vector == Vector(to) =>
+                (vector, "As", [from.TypeArguments[0], to.TypeArguments[0]]),
+            // Two 16-byte vectors, as Vector4 and Vector128<float>, are one v128.
+            _ when Whole(from) && Whole(to) => (null, null, []),
+            _ => null,
         };
+
+    // A vector value of 16 bytes; a Vector2 fills only 8, so its cast keeps
+    // the call, which throws as upstream's does for types of different sizes.
+    private static bool Whole(CliTypeIdentity type) =>
+        type.StackKind == CliValueKind.V128 && type.FullName != "System.Numerics.Vector2";
 
     // The static class whose As reinterprets a Vector128 or Vector instantiation.
     private static string? Vector(CliTypeIdentity type) =>

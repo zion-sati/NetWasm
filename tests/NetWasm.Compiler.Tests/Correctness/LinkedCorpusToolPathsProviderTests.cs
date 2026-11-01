@@ -27,6 +27,13 @@ public sealed class LinkedCorpusToolPathsProviderTests
             environment with { Collector = "bump" }).Get().Collector);
         Assert.Throws<InvalidOperationException>(() => new LinkedCorpusToolPathsProvider(
             environment with { Collector = "boehm" }).Get());
+        Assert.False(tools.GcStress);
+        Assert.False(new LinkedCorpusToolPathsProvider(environment with { GcStress = "0" }).Get().GcStress);
+        Assert.True(new LinkedCorpusToolPathsProvider(environment with { GcStress = "1" }).Get().GcStress);
+        Assert.Throws<InvalidOperationException>(() => new LinkedCorpusToolPathsProvider(
+            environment with { GcStress = "yes" }).Get());
+        Assert.Throws<InvalidOperationException>(() => new LinkedCorpusToolPathsProvider(
+            environment with { Collector = "bump", GcStress = "1" }).Get());
     }
 
     [Theory]

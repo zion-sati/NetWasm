@@ -186,12 +186,14 @@ internal static class CompilerTestSupport
             "let departedExceptionFrame=null;" +
             "let filterSearchFloor=0;let application=null;" +
             "let nextPollable=1,collectionCount=0,runtimeRandomState=0n;const watchedTokens=[];const weakHandles=[0];const gcHandles=[null];const canceledTokens=new Set();" +
-            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map(),valueTypePayloadOffsets=new Map();const typeObjects=new Map();const exceptionFrames=[];" +
+            "const typeBases=new Map(),typeSizes=new Map(),typeAssignable=new Map(),typeInterfaces=new Set(),valueTypeSizes=new Map(),valueTypePayloadOffsets=new Map(),typeReferences=new Map(),valueTypeReferences=new Map(),arrayElementReferences=new Map();const typeObjects=new Map();" +
+            "const bitmapHasReferences=(bitmap,bits)=>{const v=new DataView(memory.buffer),b=Number(bitmap);for(let i=0;i<bits;i++)if((v.getUint8(b+(i>>3))>>(i&7))&1)return true;return false;};const exceptionFrames=[];" +
             "const z=()=>0;" +
             "const raw=size=>{const p=heap;heap=(heap+size+3)&~3;" +
             "const pages=Math.ceil(heap/65536);const current=memory.buffer.byteLength/65536;" +
             "if(pages>current)memory.grow(pages-current);return p;};" +
             "const valueEnter=size=>{const p=raw(Math.max(16,size+15));return(p+15)&~15;};" +
+            "const valueEnterMapped=(size,words)=>valueEnter(((size+15)&~15)+8*words);" +
             "const valueLeave=p=>{};" +
             "const rootEnter=count=>{const frame=raw(4+count*4);" +
             "const v=new DataView(memory.buffer);v.setInt32(frame,0,true);" +
@@ -252,12 +254,12 @@ internal static class CompilerTestSupport
             "const leftBytes=new Uint8Array(memory.buffer,leftAddress+payloadOffset,valueSize)," +
             "rightBytes=new Uint8Array(memory.buffer,rightAddress+payloadOffset,valueSize);" +
             "return leftBytes.every((value,index)=>value===rightBytes[index])?1:0;};" +
-            "const array=(length,type,elementType,size=4)=>{const data=raw(Math.max(4,length*size));" +
+            "const array=(length,type,elementType,size=4)=>{arrayElementReferences.set(type,!valueTypeSizes.has(elementType)||valueTypeReferences.get(elementType)===true);const data=raw(Math.max(4,length*size));" +
             "const p=allocate(16,type);const v=new DataView(memory.buffer);" +
             "v.setInt32(p+4,length,true);v.setInt32(p+8,data,true);" +
             "v.setInt32(p+12,elementType,true);return p;};" +
             "const rectangularArray=(rank,dims,type,element,size,refs,bounded=false)=>{" +
-            "if(rank<=0||rank>32)return 0;" +
+            "if(rank<=0||rank>32)return 0;arrayElementReferences.set(type,Boolean(refs)||valueTypeReferences.get(element)===true);" +
             "const v=new DataView(memory.buffer),lengths=[];let total=1,stride=1;" +
             "for(let d=rank-1;d>=0;d--){const n=v.getInt32(dims+d*4,true);lengths[d]=n;" +
             "if(n<0||n>1073741823||n&&total>1073741823/n)return 0;total*=n;}" +
@@ -337,10 +339,11 @@ internal static class CompilerTestSupport
             "native_aligned_free:p=>nativeSizes.delete(p)," +
             "register_type:(type,base,size,bitmap,bits,assignables,count,finalizer,isInterface)=>{" +
             "typeBases.set(type,base);typeSizes.set(type,size);const ids=new Set(),v=new DataView(memory.buffer);" +
-            "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);if(isInterface)typeInterfaces.add(type);}," +
-            "register_value_type:(type,size,boxedPayloadOffset)=>{valueTypeSizes.set(type,size);valueTypePayloadOffsets.set(type,boxedPayloadOffset);}," +
+            "for(let i=0;i<count;i++)ids.add(v.getInt32(Number(assignables)+i*4,true));typeAssignable.set(type,ids);if(isInterface)typeInterfaces.add(type);typeReferences.set(type,bitmapHasReferences(bitmap,bits));}," +
+            "register_value_type:(type,size,boxedPayloadOffset,bitmap,bits)=>{valueTypeSizes.set(type,size);valueTypePayloadOffsets.set(type,boxedPayloadOffset);valueTypeReferences.set(type,bitmapHasReferences(bitmap,bits));}," +
             "register_static_root:()=>{staticRootRegistrations++;},root_frame_enter:rootEnter,root_frame_leave:rootLeave," +
-            "value_frame_enter:valueEnter,value_frame_leave:valueLeave," +
+            "value_frame_enter:valueEnter,value_frame_enter_mapped:valueEnterMapped,value_frame_leave:valueLeave," +
+            "value_frame_leave_mapped:valueLeave," +
             "handle_new:()=>0,handle_get:()=>0,handle_release:z," +
             "begin_throw:beginThrow,begin_rethrow:beginThrow," +
             "allocate_reference_array:array,allocate_value_array:array," +
@@ -362,7 +365,7 @@ internal static class CompilerTestSupport
             "register_type_objects:(first,count,stride)=>{const v=new DataView(memory.buffer);" +
             "for(let i=0;i<count;i++){const p=first+i*stride;typeObjects.set(v.getInt32(p+4,true),p);}}," +
             $"type_object_cache_address:()=>{zeroAddressText}," +
-            "suppress_finalize:z,weak_handle_new:(target,trackResurrection)=>{weakHandles.push(target);return weakHandles.length-1;},weak_handle_get:handle=>weakHandles[handle]??0,weak_handle_set:(handle,target)=>{weakHandles[handle]=target;},weak_handle_release:handle=>{weakHandles[handle]=0;},gc_handle_new:(target,kind)=>{gcHandles.push({target,kind});return((gcHandles.length-1)<<2)|kind;},gc_handle_get:handle=>gcHandles[handle>>2]?.target??0,gc_handle_set:(handle,target)=>{const entry=gcHandles[handle>>2];if(entry)entry.target=target;},gc_handle_release:handle=>{gcHandles[handle>>2]=null;},gc_handle_address:handle=>gcHandles[handle>>2]?.target??0,reregister_for_finalize:z," +
+            "suppress_finalize:z,weak_handle_new:(target,trackResurrection)=>{weakHandles.push(target);return weakHandles.length-1;},weak_handle_get:handle=>weakHandles[handle]??0,weak_handle_set:(handle,target)=>{weakHandles[handle]=target;},weak_handle_release:handle=>{weakHandles[handle]=0;},gc_handle_new:(target,kind)=>{gcHandles.push({target,kind});return((gcHandles.length-1)<<2)|kind;},gc_handle_get:handle=>gcHandles[handle>>2]?.target??0,gc_handle_set:(handle,target)=>{const entry=gcHandles[handle>>2];if(entry)entry.target=target;},gc_handle_release:handle=>{gcHandles[handle>>2]=null;},gc_handle_address:handle=>gcHandles[handle>>2]?.target??0,object_contains_references:o=>{const t=new DataView(memory.buffer).getInt32(Number(o),true);return(arrayElementReferences.get(t)??typeReferences.get(t)===true)?1:0;},reregister_for_finalize:z," +
             "gc_get_metric:metric=>metric===0?BigInt(collectionCount):metric===3?1n:0n," +
             "gc_metric_is_supported:metric=>metric!==4," +
             "gc_wait_for_pending_finalizers:()=>{}," +

@@ -9,7 +9,7 @@ public sealed class WasmRuntimeImportsTests
     public void CreatesEquivalentCatalogAndLegacyRuntimeImportViews()
     {
         var catalog = WasmRuntimeImports.CreateCatalog();
-        var imports = WasmRuntimeImports.Create();
+        var imports = WasmRuntimeImports.CreateCatalog().Imports.ToArray();
 
         Assert.Equal(catalog.Imports.Select(import => import.Module),
             imports.Select(import => import.Module));

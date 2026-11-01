@@ -59,6 +59,31 @@ public sealed class WitWorldValidatorTests
         Assert.Contains("future and stream", exception.Diagnostic.Message);
     }
 
+    // The message names the type by its owner: the interface or world that
+    // declares it, or where an anonymous one is used.
+    [Theory]
+    [InlineData(true, false, "type 'events' in interface 'example:test/api@1.0.0'")]
+    [InlineData(false, true, "type 'events' in world 'test'")]
+    [InlineData(false, false, "an anonymous type, future")]
+    public void NamesTheDeferredTypeByItsOwner(bool inInterface, bool inWorld, string description)
+    {
+        var document = CreateDocument(
+            new WitFunction("run", [], null, new WitFunctionKind("freestanding")),
+            Json("{\"future\":null}"));
+        var type = document.Types[0] with
+        {
+            Name = inInterface || inWorld ? "events" : null,
+            OwnerInterface = inInterface ? 0 : null,
+            OwnerWorld = inWorld ? 0 : null,
+        };
+        document = document with { Types = [type] };
+
+        var exception = Assert.Throws<CompilerException>(() =>
+            new WitWorldValidator().Validate(document, document.Worlds[0]));
+
+        Assert.Contains(description, exception.Diagnostic.Message);
+    }
+
     [Fact]
     public void RejectsFlagsBeyondTheComponentModelMaximum()
     {

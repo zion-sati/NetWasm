@@ -1076,6 +1076,10 @@ NetWasmGcResult netwasm_gc_allocate(
     if (gc == NULL || result == NULL || gc->collecting)
         return NETWASM_GC_INVALID_ARGUMENT;
     if (gc->object_count == SIZE_MAX) return NETWASM_GC_SIZE_OVERFLOW;
+#ifdef NETWASM_GC_STRESS
+    // Qualification only: collect before every allocation.
+    if (gc->occupied_bytes != 0) netwasm_gc_collect(gc);
+#endif
     size_t slot_bytes;
     if (!slot_size(bytes, &slot_bytes)) return NETWASM_GC_SIZE_OVERFLOW;
     NetWasmGcResult allocation = slot_bytes <= NWGC_SMALL_LIMIT ?

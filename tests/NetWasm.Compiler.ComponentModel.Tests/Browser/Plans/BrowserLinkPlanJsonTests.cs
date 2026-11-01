@@ -40,10 +40,9 @@ public sealed class BrowserLinkPlanJsonTests
     [Fact]
     public void DeserializesTheCompleteTypedContractAndPreservesOperationOrder()
     {
-        var deserializer = CreateDeserializer();
         var expected = CreatePlan();
 
-        var actual = deserializer.Deserialize(Contract);
+        var actual = BrowserLinkPlanDeserializer.Deserialize(Contract);
 
         Assert.Equal(expected.SchemaVersion, actual.SchemaVersion);
         Assert.Equal(expected.RequiredCapabilities, actual.RequiredCapabilities);
@@ -88,36 +87,31 @@ public sealed class BrowserLinkPlanJsonTests
     [InlineData("not json")]
     public void RejectsMissingOrMalformedTransportObjects(string json)
     {
-        var deserializer = CreateDeserializer();
-        Assert.Throws<JsonException>(() => deserializer.Deserialize(json));
+        Assert.Throws<JsonException>(() => BrowserLinkPlanDeserializer.Deserialize(json));
     }
 
     [Fact]
     public void RejectsUnknownOperationKindsAndUnrecognizedFields()
     {
-        var deserializer = CreateDeserializer();
-        Assert.Throws<JsonException>(() => deserializer.Deserialize(Contract.Replace("\"text\"", "\"unknown\"")));
-        Assert.Throws<JsonException>(() => deserializer.Deserialize(Contract.Replace("\"schemaVersion\": 1,", "\"schemaVersion\": 1, \"unknown\": true,")));
-        Assert.Throws<JsonException>(() => deserializer.Deserialize(Contract.Replace("\"text\":\"support module\"", "\"unknown\":\"support module\"")));
+        Assert.Throws<JsonException>(() => BrowserLinkPlanDeserializer.Deserialize(Contract.Replace("\"text\"", "\"unknown\"")));
+        Assert.Throws<JsonException>(() => BrowserLinkPlanDeserializer.Deserialize(Contract.Replace("\"schemaVersion\": 1,", "\"schemaVersion\": 1, \"unknown\": true,")));
+        Assert.Throws<JsonException>(() => BrowserLinkPlanDeserializer.Deserialize(Contract.Replace("\"text\":\"support module\"", "\"unknown\":\"support module\"")));
     }
 
     [Fact]
     public void RejectsNullOrBlankArguments()
     {
         var serializer = CreateSerializer();
-        var deserializer = CreateDeserializer();
         Assert.Throws<ArgumentNullException>(() => serializer.Serialize((BrowserLinkPlan)null!));
         Assert.Throws<ArgumentNullException>(() => serializer.Serialize((BrowserLinkExecutionPlan)null!));
-        Assert.Throws<ArgumentNullException>(() => deserializer.Deserialize(null!));
-        Assert.Throws<ArgumentException>(() => deserializer.Deserialize(""));
-        Assert.Throws<ArgumentException>(() => deserializer.Deserialize(" "));
+        Assert.Throws<ArgumentNullException>(() => BrowserLinkPlanDeserializer.Deserialize(null!));
+        Assert.Throws<ArgumentException>(() => BrowserLinkPlanDeserializer.Deserialize(""));
+        Assert.Throws<ArgumentException>(() => BrowserLinkPlanDeserializer.Deserialize(" "));
     }
 
     private static IBrowserLinkPlanSerializer CreateSerializer() =>
         Assert.IsAssignableFrom<IBrowserLinkPlanSerializer>(new BrowserLinkPlanSerializer());
 
-    private static IBrowserLinkPlanDeserializer CreateDeserializer() =>
-        Assert.IsAssignableFrom<IBrowserLinkPlanDeserializer>(new BrowserLinkPlanDeserializer());
 
     private static BrowserLinkPlan CreatePlan() => new(1,
         ["text", "tool", "inline", "exports", "validate", "move"],

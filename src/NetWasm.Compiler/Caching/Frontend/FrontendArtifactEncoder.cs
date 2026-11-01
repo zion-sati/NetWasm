@@ -16,7 +16,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 25;
+    private const ushort SchemaVersion = 26;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -255,10 +255,6 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write((byte)6);
                     writer.Write(operand.Offset);
                     break;
-                case CilOperand.SwitchTargets operand:
-                    writer.Write((byte)7);
-                    WriteArray(writer, operand.Offsets, writer.Write);
-                    break;
                 case CilOperand.Entity operand:
                     writer.Write((byte)8);
                     WriteEntityKey(writer, operand.Key);
@@ -303,7 +299,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                     writer.Write(operand.ElementCount);
                     break;
                 case CilOperand.ExactType operand:
-                    writer.Write((byte)17);
+                    writer.Write((byte)7);
                     writer.Write(Type(operand.Value));
                     break;
                 default:
@@ -377,18 +373,8 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
         private static void WriteArray<T>(
             BinaryWriter writer,
             ImmutableArray<T> values,
-            Func<T, int> resolve)
-        {
-            writer.Write(values.IsDefault ? -1 : values.Length);
-            if (values.IsDefault)
-            {
-                return;
-            }
-            foreach (var value in values)
-            {
-                writer.Write(resolve(value));
-            }
-        }
+            Func<T, int> resolve) =>
+            WriteArray(writer, values, (T value) => writer.Write(resolve(value)));
 
         private static void WriteArray<T>(
             BinaryWriter writer,
@@ -563,6 +549,7 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 WriteNullable(region.FilterOffset, writer.Write);
                 WriteNullable(region.CatchTypeIdentity, WriteType);
             });
+            WriteArray([.. body.PinnedLocals.Order()], writer.Write);
         }
 
         private void WriteInstruction(CilInstruction instruction) =>

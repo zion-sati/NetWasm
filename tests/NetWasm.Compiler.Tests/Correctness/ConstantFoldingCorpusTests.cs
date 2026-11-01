@@ -11,7 +11,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // the comparison after a folded check. Folding never removes a throw: a
 // constant division by zero or int.MinValue / -1 still throws, and shift
 // counts wrap as Wasm's do.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ConstantFoldingCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """

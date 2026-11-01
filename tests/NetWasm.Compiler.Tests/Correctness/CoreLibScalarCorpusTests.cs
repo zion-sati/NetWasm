@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class CoreLibScalarCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]

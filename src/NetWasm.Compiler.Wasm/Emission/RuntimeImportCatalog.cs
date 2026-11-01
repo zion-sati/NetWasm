@@ -15,7 +15,9 @@ internal enum RuntimeImportSymbol
     RootFrameEnter,
     RootFrameLeave,
     ValueFrameEnter,
+    ValueFrameEnterMapped,
     ValueFrameLeave,
+    ValueFrameLeaveMapped,
     BeginThrow,
     BeginRethrow,
     AllocateReferenceArray,
@@ -88,6 +90,7 @@ internal enum RuntimeImportSymbol
     RandomSeed,
     RegisterTypeObjects,
     TypeObjectCache,
+    ObjectContainsReferences,
 }
 
 internal readonly record struct RuntimeImportBinding(
@@ -133,7 +136,7 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
 
     public ImmutableArray<WasmFunctionImport> Resolve(RuntimeImportSelection selection) =>
         _bindings
-            .Where(binding => IsIncluded(binding.Symbol, selection))
+            .Where(binding => selection.Includes(binding.Symbol))
             .Select(static binding => binding.Import)
             .ToImmutableArray();
 
@@ -147,7 +150,7 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
         var index = 0;
         foreach (var binding in _bindings)
         {
-            if (!IsIncluded(binding.Symbol, selection))
+            if (!selection.Includes(binding.Symbol))
             {
                 continue;
             }
@@ -169,37 +172,4 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
             profile == WasmModuleProfile.CoreApplication,
             IncludeFinalization: true,
             IncludeRandomSeed: true);
-
-    private static bool IsIncluded(
-        RuntimeImportSymbol symbol,
-        RuntimeImportSelection selection) =>
-        (selection.IncludeExceptionCapture || symbol != RuntimeImportSymbol.ManagedExceptionCapture) &&
-        (selection.IncludeStackTrace || symbol is not
-            (RuntimeImportSymbol.StackTraceFrameEnter or
-             RuntimeImportSymbol.StackTraceFrameLocation or
-             RuntimeImportSymbol.StackTraceFrameLeave or
-             RuntimeImportSymbol.StackTraceInitialize or
-             RuntimeImportSymbol.StackTraceRegisterSymbol)) &&
-        (selection.IncludeEphemeronHandles || symbol is not
-            (RuntimeImportSymbol.EphemeronHandleCreate or
-             RuntimeImportSymbol.EphemeronHandleGetKey or
-             RuntimeImportSymbol.EphemeronHandleGetValue or
-             RuntimeImportSymbol.EphemeronHandleSetTargetToNull or
-             RuntimeImportSymbol.EphemeronHandleSetValue or
-             RuntimeImportSymbol.EphemeronHandleRelease)) &&
-        (selection.IncludeFinalization || symbol is not
-            (RuntimeImportSymbol.InitializeFinalization or
-             RuntimeImportSymbol.AllocateFinalizable or
-             RuntimeImportSymbol.SuppressFinalize or
-             RuntimeImportSymbol.ReRegisterForFinalize or
-             RuntimeImportSymbol.FinalizerSafepoint or
-             RuntimeImportSymbol.GcWaitForPendingFinalizers)) &&
-        (selection.IncludeRandomSeed || symbol != RuntimeImportSymbol.RandomSeed) &&
-        (selection.IncludeTerminalExceptionRaise ||
-            symbol != RuntimeImportSymbol.ManagedTerminalExceptionRaise) &&
-        (selection.ModuleProfile == WasmModuleProfile.ComponentCoreModule
-            ? symbol != RuntimeImportSymbol.ManagedTerminalExceptionReport ||
-              selection.IncludeTerminalExceptionReporter
-            : symbol is not RuntimeImportSymbol.ComponentReallocate
-                and not RuntimeImportSymbol.ComponentFree);
 }

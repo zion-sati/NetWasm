@@ -61,7 +61,7 @@ public sealed class WitWorkerClientWriter(
         js.AppendLine("if (onNotification !== null && typeof onNotification !== 'function') throw new TypeError('worker notification handler must be a function');");
         js.AppendLine(CultureInfo.InvariantCulture, $"const worker = new Worker(new URL({Json("./" + request.WorkerFileName)}, import.meta.url), {{ type: 'module' }});");
         js.AppendLine("const session = createWorkerSessionClient({");
-        js.AppendLine("generation: crypto.randomUUID(), worker, onNotification,");
+        js.AppendLine("worker, onNotification,");
         js.AppendLine("environment: options.environment, stderr: options.stderr, stdout: options.stdout,");
         js.AppendLine(CultureInfo.InvariantCulture, $"operations: {System.Text.Json.JsonSerializer.Serialize([.. contract.Exports.Select(export => export!.Operation)], HostingBuildJsonContext.Default.StringArray)},");
         js.AppendLine(CultureInfo.InvariantCulture, $"startup: {{ buildFingerprint: {Json(request.BuildFingerprint)}, manifestSha256: {Json(request.ManifestSha256)} }},");

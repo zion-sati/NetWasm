@@ -308,6 +308,109 @@ public sealed class StaticDataViewEliminatorTests
         Assert.Same(method.Body, optimized);
     }
 
+    [Theory]
+    [InlineData("bool", "u1", true)]
+    [InlineData("char", "u2", true)]
+    [InlineData("u4", "i4", false)]
+    [InlineData("u1", "i1", false)]
+    public void ElementLoadOfTheSameBytesAndValueIsEligible(string element, string loaded, bool eligible)
+    {
+        var fixture = new Fixture(element: element);
+        var instructions = fixture.Instructions.ToArray();
+        instructions[5] = instructions[5] with
+        {
+            Operand = new CilOperand.TypeIdentity(CliTypeIdentity.Primitive(loaded, CliValueKind.I4)),
+        };
+
+        var optimized = fixture.Optimizer().Optimize(fixture.Managed(fixture.Body([.. instructions])));
+
+        Assert.Equal(eligible, optimized.Instructions.Any(static instruction =>
+            instruction.Operation == CilOperation.LoadStaticDataElement));
+    }
+
+    // A table's length guard, (uint)i < (uint)Table.Length, reads the view's
+    // length, which is the data's element count.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LengthOfTheViewBecomesItsElementCount(bool field)
+    {
+        var fixture = new Fixture();
+        var body = fixture.LengthBody(fixture.Length());
+        if (field)
+        {
+            body = body with
+            {
+                Instructions = body.Instructions.SetItem(3, body.Instructions[3] with
+                {
+                    Operation = CilOperation.LoadField,
+                    Operand = new CilOperand.FieldInstance(fixture.LengthField("_length")),
+                }),
+            };
+        }
+        var optimized = fixture.Optimizer().Optimize(fixture.Managed(body, Fixture.LengthStacks()));
+
+        Assert.Equal(
+            [CilOperation.Nop, CilOperation.Nop, CilOperation.Nop, CilOperation.LoadInt32, CilOperation.Return],
+            optimized.Instructions.Select(static instruction => instruction.Operation));
+        Assert.Equal(new CilOperand.ConstantI4(fixture.View.ElementCount), optimized.Instructions[3].Operand);
+    }
+
+    public enum LengthFault { Static, Parameter, OtherSpan, OtherMember }
+
+    [Theory]
+    [InlineData(LengthFault.Static)]
+    [InlineData(LengthFault.Parameter)]
+    [InlineData(LengthFault.OtherSpan)]
+    [InlineData(LengthFault.OtherMember)]
+    public void AnotherCallOnTheViewPreservesTheOriginalBody(LengthFault fault)
+    {
+        var fixture = new Fixture();
+        var method = fixture.Managed(fixture.LengthBody(fixture.Length(fault)), Fixture.LengthStacks());
+
+        Assert.Same(method.Body, fixture.Optimizer().Optimize(method));
+    }
+
+    [Theory]
+    [InlineData(CilOperation.Call)]
+    [InlineData(CilOperation.LoadField)]
+    public void AnUnresolvedReadOfTheViewPreservesTheOriginalBody(CilOperation operation)
+    {
+        var fixture = new Fixture();
+        var body = fixture.LengthBody(fixture.Length());
+        body = body with
+        {
+            Instructions = body.Instructions.SetItem(3, body.Instructions[3] with
+            {
+                Operation = operation,
+                Operand = new CilOperand.Entity(new(new AssemblyIdentity("fixture"), 8)),
+            }),
+        };
+        var method = fixture.Managed(body, Fixture.LengthStacks());
+
+        Assert.Same(method.Body, fixture.Optimizer().Optimize(method));
+    }
+
+    [Theory]
+    [InlineData("_reference", false)]
+    [InlineData("_length", true)]
+    public void AnotherFieldOfTheViewPreservesTheOriginalBody(string name, bool otherSpan)
+    {
+        var fixture = new Fixture();
+        var body = fixture.LengthBody(fixture.Length());
+        body = body with
+        {
+            Instructions = body.Instructions.SetItem(3, body.Instructions[3] with
+            {
+                Operation = CilOperation.LoadField,
+                Operand = new CilOperand.FieldInstance(fixture.LengthField(name, otherSpan)),
+            }),
+        };
+        var method = fixture.Managed(body, Fixture.LengthStacks());
+
+        Assert.Same(method.Body, fixture.Optimizer().Optimize(method));
+    }
+
     [Fact]
     public void InvalidPolicyAndNullInputFailBeforeAnalysis()
     {
@@ -332,9 +435,9 @@ public sealed class StaticDataViewEliminatorTests
         private readonly MethodInstanceModel _callerInstance;
         private readonly FixedViewResolver _views;
 
-        public Fixture(bool proveView = true)
+        public Fixture(bool proveView = true, string element = "u4")
         {
-            ElementType = CliTypeIdentity.Primitive("u4", CliValueKind.I4);
+            ElementType = CliTypeIdentity.Primitive(element, CliValueKind.I4);
             SpanType = CliTypeIdentity.GenericInstantiation(
                 CliTypeIdentity.Named(
                     _assembly,
@@ -424,6 +527,52 @@ public sealed class StaticDataViewEliminatorTests
         public MethodInstanceModel OtherCall { get; }
         public CilOperand.ReadOnlySpanData View { get; }
         public ImmutableArray<CilInstruction> Instructions { get; }
+
+        public MethodInstanceModel Length(LengthFault? fault = null)
+        {
+            var signature = fault == LengthFault.Parameter
+                ? MethodSignatureModel.Create(CliTypeIdentity.Primitive("i4", CliValueKind.I4), CliTypeIdentity.Primitive("i4", CliValueKind.I4))
+                : MethodSignatureModel.Create(CliTypeIdentity.Primitive("i4", CliValueKind.I4));
+            var definition = new MethodDefinitionModel(
+                Key(6), Key(21), fault == LengthFault.OtherMember ? "get_IsEmpty" : "get_Length",
+                fault == LengthFault.Static, signature, 1);
+            var declaring = fault == LengthFault.OtherSpan
+                ? CliTypeIdentity.GenericInstantiation(
+                    CliTypeIdentity.Named(_assembly, "System", "Span`1", isValueType: true), [ElementType])
+                : SpanType;
+            return new(definition, declaring, [], signature);
+        }
+
+        public FieldInstanceModel LengthField(string name, bool otherSpan = false)
+        {
+            var definition = new FieldDefinitionModel(Key(7), Key(21), name, CliTypeIdentity.Primitive("i4", CliValueKind.I4), false);
+            return new(
+                definition,
+                otherSpan
+                    ? CliTypeIdentity.GenericInstantiation(
+                        CliTypeIdentity.Named(_assembly, "System", "Span`1", isValueType: true), [ElementType])
+                    : SpanType,
+                definition.SignatureType);
+        }
+
+        public CilMethodBody LengthBody(MethodInstanceModel length) => Body(
+        [
+            new(0, 1, CilOperation.Call, new CilOperand.MethodInstance(Getter)),
+            new(1, 2, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            new(2, 3, CilOperation.LoadLocalAddress, new CilOperand.Index(0)),
+            new(3, 4, CilOperation.Call, new CilOperand.MethodInstance(length)),
+            new(4, 5, CilOperation.Return, new CilOperand.None()),
+        ]);
+
+        public static ImmutableDictionary<int, ImmutableArray<CliValueKind>> LengthStacks() =>
+            new Dictionary<int, ImmutableArray<CliValueKind>>
+            {
+                [0] = [],
+                [1] = [CliValueKind.ValueType],
+                [2] = [],
+                [3] = [CliValueKind.ManagedAddress],
+                [4] = [CliValueKind.I4],
+            }.ToImmutableDictionary();
 
         public MethodInstanceModel IndexerWithReturnType(CliTypeIdentity returnType)
         {

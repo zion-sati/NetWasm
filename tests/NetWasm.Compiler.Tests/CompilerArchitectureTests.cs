@@ -136,8 +136,8 @@ public sealed partial class CompilerArchitectureTests
             Assert.Single(declarations);
             Assert.Contains($"class {expected}", declarations[0], StringComparison.Ordinal);
 
-            var syntax = CSharpSyntaxTree.ParseText(File.ReadAllText(sourceFile));
-            var extensionType = syntax.GetRoot()
+            var syntax = CSharpSyntaxTree.ParseText(File.ReadAllText(sourceFile), cancellationToken: TestContext.Current.CancellationToken);
+            var extensionType = syntax.GetRoot(TestContext.Current.CancellationToken)
                 .DescendantNodes()
                 .OfType<ClassDeclarationSyntax>()
                 .Single();
@@ -175,8 +175,8 @@ public sealed partial class CompilerArchitectureTests
         var violations = new List<string>();
         foreach (var sourceFile in EnumerateCompilerSourceFiles())
         {
-            var syntax = CSharpSyntaxTree.ParseText(File.ReadAllText(sourceFile));
-            var root = syntax.GetRoot();
+            var syntax = CSharpSyntaxTree.ParseText(File.ReadAllText(sourceFile), cancellationToken: TestContext.Current.CancellationToken);
+            var root = syntax.GetRoot(TestContext.Current.CancellationToken);
             if (root.DescendantNodes().OfType<IdentifierNameSyntax>().Any(identifier =>
                     identifier.Identifier.Text is "IServiceProvider" or
                     "IServiceScopeFactory"))

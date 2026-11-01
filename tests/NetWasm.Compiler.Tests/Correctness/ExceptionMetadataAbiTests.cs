@@ -17,7 +17,7 @@ public sealed class ExceptionMetadataAbiTests
         var result = runner.Run(new(
             "node",
             ["--test", script],
-            environment.ProcessTimeout));
+            environment.ProcessTimeout), TestContext.Current.CancellationToken);
 
         Assert.True(
             result.Succeeded,

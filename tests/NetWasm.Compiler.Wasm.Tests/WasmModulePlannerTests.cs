@@ -435,7 +435,7 @@ public sealed class WasmModulePlannerTests
                 NativeAbiTestSupport.CallbackPlanner(), FinalizationPlans()),
             request));
 
-        Assert.Contains("has no method operand", exception.Message);
+        Assert.Contains("names no method", exception.Message);
     }
 
     [Fact]

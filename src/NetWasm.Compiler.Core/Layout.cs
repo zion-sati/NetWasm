@@ -16,7 +16,6 @@ public readonly record struct ValueLayout(
 {
     public ImmutableArray<int> ByReferenceOffsets { get; init; } = [];
     public bool ContainsReferences => !ReferenceOffsets.IsEmpty;
-    public bool IsFlattenedAbiEligible => !ContainsReferences && Size is > 0 and <= 8;
 }
 public readonly record struct FieldLayout(int Offset)
 {
@@ -231,7 +230,9 @@ public static class RuntimeAbi
     public const string RuntimeRootFrameEnter = "root_frame_enter";
     public const string RuntimeRootFrameLeave = "root_frame_leave";
     public const string RuntimeValueFrameEnter = "value_frame_enter";
+    public const string RuntimeValueFrameEnterMapped = "value_frame_enter_mapped";
     public const string RuntimeValueFrameLeave = "value_frame_leave";
+    public const string RuntimeValueFrameLeaveMapped = "value_frame_leave_mapped";
     public const string RuntimeStackTraceFrameEnter = "stack_trace_frame_enter";
     public const string RuntimeStackTraceFrameLocation = "stack_trace_frame_location";
     public const string RuntimeStackTraceFrameLeave = "stack_trace_frame_leave";
@@ -283,6 +284,7 @@ public static class RuntimeAbi
     public const string RuntimeGcHandleSet = "gc_handle_set";
     public const string RuntimeGcHandleRelease = "gc_handle_release";
     public const string RuntimeGcHandleAddress = "gc_handle_address";
+    public const string RuntimeObjectContainsReferences = "object_contains_references";
     public const string RuntimeGcGetMetric = "gc_get_metric";
     public const string RuntimeGcMetricIsSupported = "gc_metric_is_supported";
     public const string RuntimeGcWaitForPendingFinalizers = "gc_wait_for_pending_finalizers";

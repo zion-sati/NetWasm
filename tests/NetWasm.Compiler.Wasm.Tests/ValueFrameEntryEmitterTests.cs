@@ -55,6 +55,38 @@ public sealed class ValueFrameEntryEmitterTests
         Assert.Same(context, fixture.Initialization.Context);
     }
 
+    // A frame that holds references passes its map: the word count and first
+    // word to the runtime, any later nonzero word stored after the frame's
+    // bytes, which the runtime rounds up to sixteen.
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AFrameThatHoldsReferencesPassesItsMap(WasmTarget target)
+    {
+        var fixture = new Fixture(target);
+        var context = CreateMethodEmissionContext() with
+        {
+            ValueLayout = new(40, [], [], [], []),
+            ValueFrameReferences = new([0b1010, 0, 1UL << 3], [(false, 0)]),
+        };
+
+        fixture.Emitter.Emit(fixture.Code, fixture.Header, context);
+
+        var instructions = fixture.Code.ToInstructions();
+        Assert.Equal(target == WasmTarget.Wasm64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant, instructions[0].Opcode);
+        Assert.Equal((WasmOpcodes.I32Constant, 3L), (instructions[1].Opcode, instructions[1].Operand.SignedValue));
+        Assert.Equal((WasmOpcodes.I64Constant, 0b1010L), (instructions[2].Opcode, instructions[2].Operand.Signed64Value));
+        Assert.Equal((WasmOpcodes.Call, (uint)fixture.Imports.Resolve(RuntimeImportSymbol.ValueFrameEnterMapped)),
+            (instructions[3].Opcode, instructions[3].Operand.UnsignedValue));
+        Assert.Equal((WasmOpcodes.LocalSet, (uint)context.ValueFrame), (instructions[4].Opcode, instructions[4].Operand.UnsignedValue));
+        Assert.Equal((WasmOpcodes.LocalGet, (uint)context.ValueFrame), (instructions[5].Opcode, instructions[5].Operand.UnsignedValue));
+        Assert.Equal((WasmOpcodes.I64Constant, 8L), (instructions[6].Opcode, instructions[6].Operand.Signed64Value));
+        Assert.Equal(WasmOpcodes.I64Store, instructions[7].Opcode);
+        Assert.Equal(48u + 16u, instructions[7].Operand.Offset);
+        Assert.Equal(WasmOpcodes.I32Constant, instructions[8].Opcode);
+        Assert.Single(instructions, instruction => instruction.Opcode == WasmOpcodes.Call);
+    }
+
     [Fact]
     public void EmptyFrameDoesNotAllocateInitializeOrTouchMethodRoots()
     {

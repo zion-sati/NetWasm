@@ -43,10 +43,14 @@ internal sealed class ValueObjectBlockMemoryEmitter(
     {
         var slot = request.Stack.Count - 1;
         var layout = values.GetValueLayout(types.Resolve(request.Instruction, request.Header.MethodInstance));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(request.Context, slot, request.Stack[slot])))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-        EmitAddressConstant(code, layout.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        var address = GetStackLocal(request.Context, slot, request.Stack[slot]);
+        if (!SmallBlockEmitter.TryEmitKnownSizeZero(code, address, layout.Size))
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)address)));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+            EmitAddressConstant(code, layout.Size);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        }
         request.Stack.RemoveAt(slot);
     }
 
@@ -121,10 +125,14 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         var offset = request.Context.ValueLayout.TemporaryOffsets[
             request.Instruction.Offset];
         EmitValueFrameAddress(code, request.Context, offset);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-        EmitAddressConstant(code, layout.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
+        if (!SmallBlockEmitter.TryEmitKnownSizeZero(code, request.Context.ObjectTemporary, layout.Size))
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+            EmitAddressConstant(code, layout.Size);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
         PushLocal(request, code, CliValueKind.ValueType);
     }

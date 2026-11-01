@@ -3,7 +3,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // Base64, Base64Url, the hex converter, BitConverter, BinaryPrimitives, UInt128 and BitOperations
 // are upstream's sources, with their vectorized paths. Each runs over inputs of every length class
 // and edge value and compares with desktop.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class BinaryPrimitivesCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -11,7 +10,14 @@ public sealed class BinaryPrimitivesCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "BinaryPrimitivesCorpus",
             "NetWasm.Correctness.BinaryPrimitivesCorpus",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6, 7])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Buffers;
             using System.Buffers.Binary;
@@ -243,10 +249,5 @@ public sealed class BinaryPrimitivesCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6, 7])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

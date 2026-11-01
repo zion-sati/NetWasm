@@ -9,7 +9,8 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 internal sealed class RuntimeIntrinsicCallEmitter(
     IRuntimeIntrinsicRegistry intrinsics,
     ITargetLayout layouts,
-    IRuntimeIntrinsicEmitterRegistry emitters) : ICallEmitter
+    IRuntimeIntrinsicEmitterRegistry emitters,
+    ISafepointCheckedWriterFactory checkedWriters) : ICallEmitter
 {
     public void Emit(
         CallEmissionRequest request, IWasmInstructionWriter code,
@@ -29,7 +30,7 @@ internal sealed class RuntimeIntrinsicCallEmitter(
             request.ConstrainedType,
             layouts.Target,
             functionIndices);
-        emitters.Get(intrinsic).Emit(emissionRequest, code);
+        emitters.Get(intrinsic).Emit(emissionRequest, checkedWriters.Create(code, emissionRequest));
         var instruction = request.Instruction;
         instruction.Stack.RemoveRange(request.ArgumentBase, request.Consumed);
         if (request.Method.Signature.ReturnType != CliValueKind.Void)

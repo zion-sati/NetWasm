@@ -38,6 +38,25 @@ public sealed class StackValueConsumerFinderTests
         Assert.Null(Consumers.Find(instructions, [4], 0));
     }
 
+    // A branch back to an earlier block ends the method with the value live.
+    [Fact]
+    public void AValueLiveAtTheMethodsEndHasNoConsumer()
+    {
+        ImmutableArray<CilInstruction> instructions =
+        [
+            Load(0, 0), new(1, 2, CilOperation.Branch, new CilOperand.BranchTarget(0)),
+        ];
+
+        Assert.Null(Consumers.Find(instructions, [0], 0));
+    }
+
+    [Fact]
+    public void RequiresItsCollaborators()
+    {
+        Assert.Throws<ArgumentNullException>(() => new StackValueConsumerFinder(null!));
+        Assert.Throws<ArgumentNullException>(() => new StackEffectResolver(null!));
+    }
+
     private static CilInstruction Load(int offset, int local) =>
         new(offset, offset + 1, CilOperation.LoadLocal, new CilOperand.Index(local));
 

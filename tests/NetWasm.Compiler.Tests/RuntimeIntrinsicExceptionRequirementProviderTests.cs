@@ -159,7 +159,7 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.EnumFormat or
             RuntimeIntrinsic.EnumToObject =>
                 [ManagedExceptionKind.ArgumentNull, ManagedExceptionKind.Argument],
-            RuntimeIntrinsic.SimdGetElement =>
+            RuntimeIntrinsic.SimdGetElement or RuntimeIntrinsic.SimdWithElement =>
                 [ManagedExceptionKind.NotSupported, ManagedExceptionKind.ArgumentOutOfRange],
             RuntimeIntrinsic.SimdDivide =>
                 [ManagedExceptionKind.NotSupported, ManagedExceptionKind.DivideByZero, ManagedExceptionKind.Overflow],

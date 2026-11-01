@@ -8,13 +8,13 @@ public sealed class HostToolCompatibilityValidatorResolverTests
     [Fact]
     public void ResolveReturnsEveryRequiredKeyedStrategy()
     {
-        var validators = HostToolIds.Required.ToImmutableDictionary(
+        var validators = ImmutableArray.Create(HostToolIds.Node, HostToolIds.WasmLd).ToImmutableDictionary(
             static toolId => toolId,
             static toolId => new RecordingValidator(toolId),
             StringComparer.Ordinal);
         var resolver = Assert.IsAssignableFrom<IHostToolCompatibilityValidatorResolver>(
             new HostToolCompatibilityValidatorResolver(
-                HostToolIds.Required,
+                ImmutableArray.Create(HostToolIds.Node, HostToolIds.WasmLd),
                 [.. validators.Select(static pair => new HostToolCompatibilityValidatorRegistration(
                     pair.Key,
                     pair.Value))]));
@@ -61,7 +61,7 @@ public sealed class HostToolCompatibilityValidatorResolverTests
             [HostToolIds.Node, HostToolIds.Node],
             [registration]));
         Assert.Throws<ArgumentException>(() => new HostToolCompatibilityValidatorResolver(
-            [HostToolIds.Node, HostToolIds.WasmTools],
+            [HostToolIds.Node, "wasm-tools"],
             [registration]));
     }
 
@@ -99,8 +99,8 @@ public sealed class HostToolCompatibilityValidatorResolverTests
         Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(" "));
         var exception = Assert.Throws<UnsupportedHostToolException>(() =>
-            resolver.Resolve(HostToolIds.WasmTools));
-        Assert.Equal(HostToolIds.WasmTools, exception.ToolId);
+            resolver.Resolve("wasm-tools"));
+        Assert.Equal("wasm-tools", exception.ToolId);
     }
 
     private sealed class RecordingValidator(string toolId) : IHostToolCompatibilityValidator

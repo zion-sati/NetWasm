@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class FloatingMathEdgeTests(CorrectnessTestRunner runner) : CSharpSemanticTestBase(runner)
 {
     public static TheoryData<string, string> ExactCells => CorpusCaseTestData.Cells(CorpusCaseTestData.FloatingMathExact);

@@ -42,12 +42,16 @@ namespace System
             get { throw new PlatformNotSupportedException(); }
         }
 
-        public static StringComparer FromComparison(StringComparison comparisonType) => comparisonType switch
+        public static StringComparer FromComparison(StringComparison comparisonType)
         {
-            StringComparison.Ordinal => Ordinal,
-            StringComparison.OrdinalIgnoreCase => OrdinalIgnoreCase,
-            _ => throw new PlatformNotSupportedException(),
-        };
+            string.CheckStringComparison(comparisonType);
+            return comparisonType switch
+            {
+                StringComparison.Ordinal => Ordinal,
+                StringComparison.OrdinalIgnoreCase => OrdinalIgnoreCase,
+                _ => throw new PlatformNotSupportedException(),
+            };
+        }
 
         public static bool IsWellKnownOrdinalComparer(IEqualityComparer<string>? comparer, out bool ignoreCase)
         {

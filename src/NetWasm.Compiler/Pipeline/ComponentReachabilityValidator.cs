@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
-using System.Text.RegularExpressions;
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
@@ -18,7 +17,7 @@ internal interface IComponentReachabilityValidator
         ISymbolFormatter symbols);
 }
 
-internal sealed partial class ComponentReachabilityValidator : IComponentReachabilityValidator
+internal sealed class ComponentReachabilityValidator : IComponentReachabilityValidator
 {
     public void Validate(
         ReachableProgram program,
@@ -70,7 +69,7 @@ internal sealed partial class ComponentReachabilityValidator : IComponentReachab
             // Bindings generated before world keys name an interface
             // `namespace:package@version/interface`, which no world item matches.
             var packageFirst = missing
-                .Where(binding => PackageFirst().IsMatch(InterfaceName(methods.GetMethod(binding)) ?? string.Empty))
+                .Where(binding => IsPackageFirstKey(InterfaceName(methods.GetMethod(binding))))
                 .ToArray();
             if (packageFirst.Length != 0)
             {
@@ -90,11 +89,20 @@ internal sealed partial class ComponentReachabilityValidator : IComponentReachab
         }
     }
 
-    [GeneratedRegex("^[^/@]+:[^/@]+@[^/]+/[^/]+$")]
-    private static partial Regex PackageFirst();
+    // namespace:package@version/interface, the key bindings generated before
+    // world keys name an interface by.
+    internal static bool IsPackageFirstKey(string name)
+    {
+        var slash = name.IndexOf('/');
+        if (slash < 0 || slash == name.Length - 1 || name.IndexOf('/', slash + 1) >= 0)
+            return false;
+        var at = name.IndexOf('@', 0, slash);
+        return at >= 3 && at < slash - 1 && name.AsSpan(1, at - 2).Contains(':');
+    }
 
-    private static string? InterfaceName(MethodDefinitionModel method) =>
-        method.WitImport?.InterfaceName ?? method.WitExport?.InterfaceName;
+    // A missing binding is a WIT import or export.
+    private static string InterfaceName(MethodDefinitionModel method) =>
+        method.WitImport?.InterfaceName ?? method.WitExport!.InterfaceName;
 
     private static string FormatFirstBinding(
         IEnumerable<EntityKey> bindings,

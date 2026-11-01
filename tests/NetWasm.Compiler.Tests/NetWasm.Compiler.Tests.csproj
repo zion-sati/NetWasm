@@ -7,7 +7,7 @@
     <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <ProjectReference Include="../../src/NetWasm.Compiler/NetWasm.Compiler.csproj" />
     <ProjectReference Include="../../src/NetWasm.JSImportGenerator/NetWasm.JSImportGenerator.csproj" />
@@ -17,7 +17,11 @@
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="../NetWasm.Testing.CompilerHost/NetWasm.Testing.CompilerHost.csproj"
                       ReferenceOutputAssembly="false" />
+    <Compile Include="../TestInfrastructure/StructuredSequenceFixtures.cs" Link="StructuredSequenceFixtures.cs" />
+    <Compile Include="../TestInfrastructure/NetWasmCompiler.cs" Link="NetWasmCompiler.cs" />
+    <Compile Include="../TestInfrastructure/MethodSignatureModelFactories.cs" Link="MethodSignatureModelFactories.cs" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
+    <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
     <Compile Include="../../src/NetWasm.CoreLib/EnumMetadataView.cs"
              Link="CoreLib/EnumMetadataView.cs" />
     <Compile Include="../../src/NetWasm.CoreLib/EnumAlgorithms.cs"

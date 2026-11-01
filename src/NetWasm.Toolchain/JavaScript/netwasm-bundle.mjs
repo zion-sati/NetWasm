@@ -1,13 +1,31 @@
 #!/usr/bin/env node
 
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { rolldown } from "rolldown";
 
 // The shared runtime's modules are imported by these specifiers and stay
 // external to an entry bundle, which reaches them by URL.
 const runtimeSpecifier = /^netwasm:runtime\/[a-z][a-z0-9-]*$/u;
+
+// The SDK's entries import every file by its file: URL, and rolldown keeps a
+// URL it cannot resolve as an external import, which would ship the build
+// machine's path in the bundle. A missing file fails the bundle instead, as a
+// missing relative or absolute import does.
+const fileUrls = {
+  name: "netwasm-file-urls",
+  resolveId(source, importer) {
+    if (!source.startsWith("file:")) return null;
+    const path = fileURLToPath(source);
+    if (!existsSync(path)) {
+      throw new Error(`NW-BUNDLE-003: ${importer ?? "the entry"} imports ${path}, which does not exist`);
+    }
+    return path;
+  },
+};
 
 const arguments_ = process.argv.slice(2);
 const command = readInvocation(arguments_);
@@ -17,10 +35,18 @@ if (command === null) {
 } else {
   try {
     await command();
-  } catch {
-    process.stderr.write("NW-BUNDLE-002: bundling failed\n");
+  } catch (error) {
+    process.stderr.write(`NW-BUNDLE-002: bundling failed: ${describe(error)}\n`);
     process.exitCode = 1;
   }
+}
+
+// The first line of each error, without terminal colours: rolldown reports
+// every unresolved import of a build as one error.
+function describe(error) {
+  const errors = Array.isArray(error?.errors) && error.errors.length !== 0 ? error.errors : [error];
+  return errors.map(value => String(value?.message ?? value).replace(/\u001b\[[0-9;]*m/gu, "").split("\n")[0].trim())
+    .join("; ");
 }
 
 function readInvocation(values) {
@@ -50,6 +76,8 @@ function readInvocation(values) {
 async function bundle(input, output, platform, minify, runtimePath) {
   const runtime = runtimePath === null ? null : await readRuntimeImports(runtimePath);
   const build = await rolldown({
+    // Region comments name each source by its path on the build machine.
+    experimental: { attachDebugInfo: "none" },
     external: id => {
       if (runtimeSpecifier.test(id)) {
         if (runtime !== null && Object.hasOwn(runtime, id)) return true;
@@ -59,6 +87,7 @@ async function bundle(input, output, platform, minify, runtimePath) {
     },
     input,
     platform,
+    plugins: [fileUrls],
     treeshake: true,
   });
   try {
@@ -103,6 +132,7 @@ async function bundleRuntime(facades, output, minify) {
     experimental: { attachDebugInfo: "none" },
     input: Object.fromEntries(names.map(name => [basename(name, ".mjs"), join(facades, name)])),
     platform: "browser",
+    plugins: [fileUrls],
     treeshake: true,
   });
   try {

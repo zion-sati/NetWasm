@@ -7,7 +7,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // must survive each path a value is copied through. Copies between partially
 // overlapping instances are unspecified (desktop's JIT copies them chunk by
 // chunk), so the emitter tests pin their memmove order instead.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -15,7 +14,15 @@ public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "StructCopyCorpus",
             "NetWasm.Correctness.StructCopies",
-            """
+            Source,
+            [0, 1, 2, 3])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+            Optimization = FinalWasmOptimization.O3,
+        });
+
+    internal const string Source = """
             using System;
             using System.Runtime.CompilerServices;
             using System.Runtime.InteropServices;
@@ -118,11 +125,5 @@ public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-            Optimization = FinalWasmOptimization.O3,
-        });
+            """;
 }

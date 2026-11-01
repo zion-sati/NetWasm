@@ -103,24 +103,12 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
             provider.GetRequiredService<IVirtualFunctionLoader>());
         Assert.IsType<DelegateInvokeFunctionEmitter>(
             provider.GetRequiredService<IDelegateInvokeFunctionEmitter>());
-        Assert.IsType<DelegateCloneIntrinsicEmitter>(
-            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
-                .Get(RuntimeIntrinsic.DelegateClone));
-        Assert.IsType<NativeMemoryClearIntrinsicEmitter>(
-            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
-                .Get(RuntimeIntrinsic.NativeMemoryClear));
-        Assert.IsType<NativeMemoryCopyIntrinsicEmitter>(
-            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
-                .Get(RuntimeIntrinsic.NativeMemoryCopy));
-        Assert.IsType<NativeMemoryFillIntrinsicEmitter>(
-            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
-                .Get(RuntimeIntrinsic.NativeMemoryFill));
-        Assert.IsType<ArrayLoopFillIntrinsicEmitter>(
-            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
-                .Get(RuntimeIntrinsic.ArrayLoopFill));
-        Assert.IsType<ArrayLoopCopyIntrinsicEmitter>(
-            provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>()
-                .Get(RuntimeIntrinsic.ArrayLoopCopy));
+        Assert.IsType<DelegateCloneIntrinsicEmitter>(Registered(provider, RuntimeIntrinsic.DelegateClone));
+        Assert.IsType<NativeMemoryClearIntrinsicEmitter>(Registered(provider, RuntimeIntrinsic.NativeMemoryClear));
+        Assert.IsType<NativeMemoryCopyIntrinsicEmitter>(Registered(provider, RuntimeIntrinsic.NativeMemoryCopy));
+        Assert.IsType<NativeMemoryFillIntrinsicEmitter>(Registered(provider, RuntimeIntrinsic.NativeMemoryFill));
+        Assert.IsType<ArrayLoopFillIntrinsicEmitter>(Registered(provider, RuntimeIntrinsic.ArrayLoopFill));
+        Assert.IsType<ArrayLoopCopyIntrinsicEmitter>(Registered(provider, RuntimeIntrinsic.ArrayLoopCopy));
         Assert.IsType<HostCallbackFunctionEmitter>(
             provider.GetRequiredService<IHostCallbackFunctionEmitter>());
         Assert.IsType<AsyncJSImportResolveEmitter>(
@@ -173,6 +161,9 @@ public sealed class WasmModuleServiceCollectionExtensionsTests
         Assert.IsType<VirtualDispatchCallEmitter>(
             callEmitters[CallEmissionKind.VirtualDispatch].Emitter);
     }
+
+    private static IRuntimeIntrinsicEmitter Registered(IServiceProvider provider, RuntimeIntrinsic intrinsic) =>
+        provider.GetRequiredService<IRuntimeIntrinsicEmitterRegistry>().Get(intrinsic);
 
     private sealed class DescriptorSourceWithoutEnumMetadata : ITypeDescriptorSource
     {

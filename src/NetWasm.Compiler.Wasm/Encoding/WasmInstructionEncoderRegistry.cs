@@ -33,8 +33,6 @@ public sealed class WasmInstructionEncoderRegistry : IWasmInstructionEncoderRegi
         _encoders = encoders.ToImmutable();
     }
 
-    public int Count => _encoders.Count;
-
     public IWasmInstructionEncoder Resolve(WasmInstructionOperandShape shape) =>
         _encoders.TryGetValue(shape, out var encoder)
             ? encoder

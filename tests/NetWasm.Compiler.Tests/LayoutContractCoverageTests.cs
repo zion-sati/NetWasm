@@ -137,16 +137,7 @@ public sealed class LayoutContractCoverageTests
         Assert.Equal(staticData.ValueTypeDescriptors, snapshot.ValueTypeDescriptors);
         Assert.Equal(staticData.StaticRootAddresses, snapshot.StaticRootAddresses);
         Assert.Same(types.Objects, snapshot.ObjectLayouts);
-        Assert.Same(types.ObjectIdentities, snapshot.ObjectIdentityLayouts);
-        Assert.Same(types.ConstructedObjects, snapshot.ConstructedObjectLayouts);
         Assert.Same(types.ValueLayoutState.Values, snapshot.ValueLayouts);
-        Assert.Same(types.ValueLayoutState.Fields, snapshot.InstanceFieldLayouts);
-        Assert.Same(types.ValueLayoutState.ConstructedFields,
-            snapshot.ConstructedInstanceFieldLayouts);
-        Assert.Same(staticData.StaticFields, snapshot.StaticFieldLayouts);
-        Assert.Same(staticData.ConstructedStaticFields,
-            snapshot.ConstructedStaticFieldLayouts);
-        Assert.Same(staticData.Strings, snapshot.StringLayouts);
     }
 
     [Fact]

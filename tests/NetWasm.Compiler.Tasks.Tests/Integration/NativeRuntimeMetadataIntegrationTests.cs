@@ -31,22 +31,22 @@ public sealed class NativeRuntimeMetadataIntegrationTests
             var first = Expected("first");
 
             await RunAsync("first", 1);
-            Assert.Equal(first, reader.Read(await File.ReadAllTextAsync(observation)).ToArray());
-            var firstIdentity = await File.ReadAllTextAsync(identity);
+            Assert.Equal(first, reader.Read(await File.ReadAllTextAsync(observation, TestContext.Current.CancellationToken)).ToArray());
+            var firstIdentity = await File.ReadAllTextAsync(identity, TestContext.Current.CancellationToken);
             var firstTime = File.GetLastWriteTimeUtc(identity);
             Assert.Equal("internalRuntimeExports=" + JsonSerializer.Serialize(first),
-                Assert.Single(await File.ReadAllLinesAsync(identity), line => line.StartsWith("internalRuntimeExports=", StringComparison.Ordinal)));
+                Assert.Single(await File.ReadAllLinesAsync(identity, TestContext.Current.CancellationToken), line => line.StartsWith("internalRuntimeExports=", StringComparison.Ordinal)));
 
             await RunAsync("first", 2);
-            Assert.Equal(firstIdentity, await File.ReadAllTextAsync(identity));
+            Assert.Equal(firstIdentity, await File.ReadAllTextAsync(identity, TestContext.Current.CancellationToken));
             Assert.Equal(firstTime, File.GetLastWriteTimeUtc(identity));
 
             await RunAsync("second", 3);
             var second = Expected("second");
-            Assert.Equal(second, reader.Read(await File.ReadAllTextAsync(observation)).ToArray());
-            Assert.NotEqual(firstIdentity, await File.ReadAllTextAsync(identity));
+            Assert.Equal(second, reader.Read(await File.ReadAllTextAsync(observation, TestContext.Current.CancellationToken)).ToArray());
+            Assert.NotEqual(firstIdentity, await File.ReadAllTextAsync(identity, TestContext.Current.CancellationToken));
             Assert.Equal("internalRuntimeExports=" + JsonSerializer.Serialize(second),
-                Assert.Single(await File.ReadAllLinesAsync(identity), line => line.StartsWith("internalRuntimeExports=", StringComparison.Ordinal)));
+                Assert.Single(await File.ReadAllLinesAsync(identity, TestContext.Current.CancellationToken), line => line.StartsWith("internalRuntimeExports=", StringComparison.Ordinal)));
 
             async Task RunAsync(string variant, int run)
             {

@@ -63,8 +63,19 @@ internal sealed class StaticDataViewEliminator(
             ReplaceWithNop(candidate.ProducerOffset);
             ReplaceWithNop(candidate.StoreOffset);
             ReplaceWithNop(candidate.AddressOffset);
+            if (candidate.LoadOffset is null)
+            {
+                // The view's length is the data's element count.
+                var lengthIndex = indices[candidate.IndexerOffset];
+                instructions[lengthIndex] = instructions[lengthIndex] with
+                {
+                    Operation = CilOperation.LoadInt32,
+                    Operand = new CilOperand.ConstantI4(candidate.View.ElementCount),
+                };
+                continue;
+            }
             ReplaceWithNop(candidate.IndexerOffset);
-            var loadIndex = indices[candidate.LoadOffset];
+            var loadIndex = indices[candidate.LoadOffset.Value];
             instructions[loadIndex] = instructions[loadIndex] with
             {
                 Operation = CilOperation.LoadStaticDataElement,
@@ -128,6 +139,21 @@ internal sealed class StaticDataViewEliminator(
                 continue;
             }
 
+            // A read of the view's length.
+            if (TryGetNextNonNop(instructions, addressIndex, out var lengthIndex) &&
+                IsLength(instructions[lengthIndex], view))
+            {
+                yield return new(
+                    storeLocal.Value,
+                    view,
+                    producer.Offset,
+                    store.Offset,
+                    address.Offset,
+                    instructions[lengthIndex].Offset,
+                    null,
+                    [store.Offset, address.Offset]);
+                continue;
+            }
             var indexerIndex = FindIndexer(
                 method,
                 instructions,
@@ -147,7 +173,7 @@ internal sealed class StaticDataViewEliminator(
             var load = instructions[loadIndex];
             if (load.Operation != CilOperation.LoadObject ||
                 load.Operand is not CilOperand.TypeIdentity loadedType ||
-                !loadedType.Value.Equals(view.ElementType))
+                !string.Equals(LoadsAs(loadedType.Value), LoadsAs(view.ElementType), StringComparison.Ordinal))
             {
                 continue;
             }
@@ -196,6 +222,20 @@ internal sealed class StaticDataViewEliminator(
         return -1;
     }
 
+    // The caller's own read is still a call; an inlined callee's already reads
+    // the length field, as accessors are canonicalized before inlining.
+    private bool IsLength(CilInstruction instruction, CilOperand.ReadOnlySpanData view) => instruction switch
+    {
+        { Operation: CilOperation.Call } => calledMethods.Resolve(instruction) is
+        {
+            Definition: { IsStatic: false, Name: "get_Length" },
+            Signature.ParameterSignatureTypes.IsEmpty: true,
+        } target && target.DeclaringType.Equals(view.SpanType),
+        { Operation: CilOperation.LoadField, Operand: CilOperand.FieldInstance { Value: var field } } =>
+            field.Definition.Name == "_length" && field.DeclaringType.Equals(view.SpanType),
+        _ => false,
+    };
+
     private static bool IsIndexer(
         MethodInstanceModel? target,
         CilOperand.ReadOnlySpanData view)
@@ -241,6 +281,15 @@ internal sealed class StaticDataViewEliminator(
             _ => -1,
         };
 
+    // Roslyn reads a bool with ldind.u1 and a char with ldind.u2, which load
+    // the same value from the same bytes.
+    private static string LoadsAs(CliTypeIdentity type) => type.CanonicalName switch
+    {
+        "primitive:bool" => "primitive:u1",
+        "primitive:char" => "primitive:u2",
+        var name => name,
+    };
+
     private static bool TryGetNextNonNop(
         ImmutableArray<CilInstruction> instructions,
         int current,
@@ -273,6 +322,6 @@ internal sealed class StaticDataViewEliminator(
         int StoreOffset,
         int AddressOffset,
         int IndexerOffset,
-        int LoadOffset,
+        int? LoadOffset,
         ImmutableArray<int> LocalAccessOffsets);
 }

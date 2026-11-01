@@ -213,7 +213,7 @@ public sealed class IdempotentLoopCollapseCompilationTests
         var looping = Looping(kept);
         Assert.Empty(Collapsible.Except(looping));
         Assert.Equal(looping.Except(Collapsible), Looping(collapsed));
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 collapsed.ApplicationModule, assets.Directory, input, target, collapsed.StaticDataEnd));
@@ -239,12 +239,8 @@ public sealed class IdempotentLoopCollapseCompilationTests
     private static string[] Looping(CompilationResult result) =>
         [.. result.Program.Methods.Values
             .Where(static method => method.Method.DeclaringType.FullName == "EntryPoint" &&
-                method.Body.Instructions.Any(static instruction => instruction.Operand switch
-                {
-                    CilOperand.BranchTarget target => target.Offset <= instruction.Offset,
-                    CilOperand.SwitchTargets targets => targets.Offsets.Any(offset => offset <= instruction.Offset),
-                    _ => false,
-                }))
+                method.Body.Instructions.Any(static instruction =>
+                    instruction.Operand is CilOperand.BranchTarget target && target.Offset <= instruction.Offset))
             .Select(static method => method.Method.Definition.Name)
             .Order()];
 

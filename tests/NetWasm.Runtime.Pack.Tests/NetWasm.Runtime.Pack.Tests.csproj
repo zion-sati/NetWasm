@@ -13,9 +13,9 @@
     </Reference>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.Build.Utilities.Core" Version="18.0.2" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,7 +45,9 @@
     <None Update="IntegrationAssets/native-mule-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/hello42-dce-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
     <None Update="IntegrationAssets/callback-cache-runner.mjs" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../TestInfrastructure/NetWasmCompiler.cs" Link="NetWasmCompiler.cs" />
     <Compile Include="../TestInfrastructure/TestAssets.cs" Link="TestAssets.cs" />
+    <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
     <Compile Include="../TestInfrastructure/WasmModuleInspection.cs" Link="WasmModuleInspection.cs" />
   </ItemGroup>
 </Project>

@@ -3,7 +3,6 @@ using System.Text;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Diagnostics;
 using NetWasm.TestInfrastructure;
-using Xunit.Abstractions;
 
 namespace NetWasm.Compiler.Tests;
 

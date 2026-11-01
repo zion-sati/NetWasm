@@ -4,6 +4,7 @@ using System.Linq;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.GarbageCollection;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 using NetWasm.Compiler.Wasm.Emission.Methods;
@@ -40,7 +41,9 @@ internal sealed class ManagedMethodEmitter(
     IAuthoritativeRootSourceSelector authoritativeSources,
     IAuthoritativeRootLayoutPlanner authoritativeLayouts,
     IRootClearElisionPlanner rootClearElisions,
-    IRootValueElisionPlanner rootValueElisions) : IManagedMethodEmitter
+    IRootValueElisionPlanner rootValueElisions,
+    IValueFrameReferenceMapPlanner frameReferences,
+    IRootSlotAllocator rootSlots) : IManagedMethodEmitter
 {
     public ManagedMethodEmission Emit(
         MethodDefinitionModel method,
@@ -113,6 +116,12 @@ internal sealed class ManagedMethodEmitter(
                 index => index, index => emissionStructure.Header.LocalSignatureTypes[index]), []),
         };
         var arrayPlan = arrayMetadata.Plan(emissionStructure, enableArrayMetadataCaching, hoistArrayNullChecks);
+        // A collection reads the frame storage its map covers, so no safepoint
+        // publishes it; a frame placed on terminal branches keeps publishing.
+        var references = placement is null
+            ? frameReferences.Plan(emissionStructure.Header, allocationLayout, filterEnvironment, managedAggregateValues)
+            : ValueFrameReferenceMap.Empty;
+        rootMap = references.Exclude(rootMap, rootSlots);
         var authoritative = authoritativeLayouts.Plan(rootMap,
             authoritativeSources.Select(rootMap, allocationLayout, filterEnvironment, arrayPlan));
         rootMap = authoritative.RootMap;
@@ -133,6 +142,7 @@ internal sealed class ManagedMethodEmitter(
             RuntimeImportSelection = runtimeImportSelection,
             ManagedThrowFunction = managedThrowFunction,
             AuthoritativeRootSlots = authoritative.Slots,
+            ValueFrameReferences = references,
             LoopRotation = loopRotation,
             InlineSmallBlocks = inlineSmallBlocks,
             ExactArrayStores = arrayStoreChecks.Plan(emissionStructure, eliminateArrayStoreChecks),
@@ -142,7 +152,11 @@ internal sealed class ManagedMethodEmitter(
             context = context with
             {
                 ValueLayout = allocationLayout with { Size = 0, LocalOffsets = [], TemporaryOffsets = [] },
-                TerminalBranchValueFramePlacement = new(placement, valueLayout),
+                TerminalBranchValueFramePlacement = new(placement, valueLayout)
+                {
+                    FramedReferences = frameReferences.Plan(
+                        emissionStructure.Header, valueLayout, filterEnvironment, managedAggregateValues),
+                },
             };
         }
         context = context with { RootClearElisions = rootClearElisions.Plan(emissionStructure, context) };

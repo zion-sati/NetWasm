@@ -18,11 +18,13 @@ runtime layout and native runtime target must match the application target.
 ## Browser and runtime requirements
 
 NetWasm output uses the standardized WebAssembly exception-handling
-instructions (`try_table` and `exnref`), bulk memory, reference types,
-multi-value, non-trapping float-to-int conversions, sign-extension operations
-and mutable globals. Exception handling is the most recent of these, so it
-decides the oldest browsers that run NetWasm output. A browser that predates it
-rejects the module when it compiles it.
+instructions (`try_table` and `exnref`), fixed-width SIMD, bulk memory,
+reference types, multi-value, non-trapping float-to-int conversions,
+sign-extension operations and mutable globals. Exception handling is the most
+recent of these, so it decides the oldest browsers that run NetWasm output. In
+a browser that predates it, `open()` and `run()` fail with a
+`NetWasmUnsupportedBrowserError` that names the missing features and the
+versions below.
 
 | Browser | wasm32 | wasm64 (Memory64) |
 | --- | --- | --- |

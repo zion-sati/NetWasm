@@ -13,9 +13,10 @@ using static CompilerTestSupport;
 // field once its constructor and calls are inlined: foreach's enumerator over
 // an array seen as an interface, also anew on each round of an outer loop, a
 // class allocated in a loop, copied and tested for null, and fields written
-// in a handler. An object
-// passed to a call, a finalizable one, a narrow field's compound assignment and
-// a type whose static constructor construction must run keep their allocations.
+// in a handler. An object passed to a call, a finalizable one, a narrow
+// field's compound assignment, a type whose static constructor construction
+// must run, and an older object a filtered handler reads after a newer one of
+// its type keep their allocations.
 public sealed partial class AllocationScalarReplacementCompilationTests
 {
     private const string Source = """
@@ -153,11 +154,34 @@ public sealed partial class AllocationScalarReplacementCompilationTests
                 return before * 1000 + Initialized * 100 + counted.Value;
             }
 
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void Fail(int value)
+            {
+                if (value >= 0) throw new InvalidOperationException();
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Filtered(int input)
+            {
+                var older = new Point(input, 1);
+                try
+                {
+                    var newer = new Point(input * 2, 2);
+                    if (input > 3) newer.X = newer.X + 1;
+                    Fail(newer.X);
+                    return newer.X;
+                }
+                catch (InvalidOperationException) when (input >= 0)
+                {
+                    return older.X;
+                }
+            }
+
             public static int Run(int input)
             {
                 Values = [input, input * 2, input * 3, 7];
                 return ViaInterface(input) + ViaInterfaceInLoop() * 19 + (int)(Points(input) % 1_000_003) * 3 +
-                    Guarded(input) * 5 + Escapes(input) * 7 + Narrow(input) * 11 + Final(input) * 13 + Precise(input) * 17;
+                    Guarded(input) * 5 + Escapes(input) * 7 + Narrow(input) * 11 + Final(input) * 13 + Precise(input) * 17 + Filtered(input) * 23;
             }
         }
         """;
@@ -169,11 +193,11 @@ public sealed partial class AllocationScalarReplacementCompilationTests
     public static TheoryData<int, int> Cases => new()
     {
         { 0, 575644 },
-        { 1, 6530527 },
-        { 2, 12487842 },
-        { 5, 30352491 },
-        { 40, 238795284 },
-        { 5000, 483551791 },
+        { 1, 6530550 },
+        { 2, 12487888 },
+        { 5, 30352606 },
+        { 40, 238796204 },
+        { 5000, 483666791 },
     };
 
     [Theory]
@@ -189,15 +213,15 @@ public sealed partial class AllocationScalarReplacementCompilationTests
             new WasmOptimizationOverrides(AllocationScalarReplacement: ManagedAllocationScalarReplacement.Disabled));
 
         var allocating = Allocating(assets, replaced);
-        Assert.Equal(["Escapes", "Final", "Narrow", "Precise"], allocating
-            .Intersect([.. Replaceable, "Escapes", "Narrow", "Final", "Precise"]).Order());
+        Assert.Equal(["Escapes", "Filtered", "Final", "Narrow", "Precise"], allocating
+            .Intersect([.. Replaceable, "Escapes", "Narrow", "Final", "Precise", "Filtered"]).Order());
         Assert.Empty(Replaceable.Except(Allocating(assets, kept)));
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 replaced.ApplicationModule, assets.Directory, input, target, replaced.StaticDataEnd));
         }
-        Assert.Equal(6530527, ExecuteWithStandardWasiNode(
+        Assert.Equal(6530550, ExecuteWithStandardWasiNode(
             kept.ApplicationModule, assets.Directory, 1, target, kept.StaticDataEnd));
     }
 
@@ -213,6 +237,52 @@ public sealed partial class AllocationScalarReplacementCompilationTests
 
         Assert.Equal(expected, ExecuteWithStandardWasiNode(
             result.ApplicationModule, assets.Directory, input, WasmTarget.Wasm32, result.StaticDataEnd));
+    }
+
+    // do-while in a finally makes the handler's first instruction the loop's
+    // head, so the handler starts from both its protected region and the loop.
+    private const string LoopingFinallySource = """
+        public static class EntryPoint
+        {
+            private sealed class Box
+            {
+                public int Value;
+                public Box(int value) { Value = value; }
+            }
+
+            public static int Run(int input)
+            {
+                var box = new Box(input);
+                var rounds = 0;
+                try
+                {
+                    // Not +=, whose dup the pass declines.
+                    box.Value = box.Value + 2;
+                }
+                finally
+                {
+                    do { rounds++; } while (rounds < 3);
+                }
+                return box.Value * 10 + rounds;
+            }
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32)]
+    [InlineData(WasmTarget.Wasm64)]
+    public void AHandlerThatLoopsToItsStartKeepsTheObjectsItsRegionHeld(WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource($"AllocationLoopingFinally_{target}", LoopingFinallySource);
+        var result = Compile(assets, assembly, target, null);
+
+        // (input + 2) * 10 + 3.
+        foreach (var (input, expected) in new[] { (1, 33), (5, 73) })
+        {
+            Assert.Equal(expected, ExecuteWithStandardWasiNode(
+                result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
+        }
     }
 
     // The EntryPoint methods that call the runtime's object allocation.

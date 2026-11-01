@@ -25,7 +25,6 @@ public sealed class AddressTakenScalarPromotionPlannerTests
     [InlineData(CilOperation.BranchIfLessThanUnsigned, false)]
     [InlineData(CilOperation.BranchIfLessThanOrEqualSigned, false)]
     [InlineData(CilOperation.BranchIfLessThanOrEqualUnsigned, false)]
-    [InlineData(CilOperation.Switch, false)]
     [InlineData(CilOperation.StoreArgument, false)]
     [InlineData(CilOperation.StoreLocal, false)]
     [InlineData(CilOperation.StoreField, false)]

@@ -72,10 +72,7 @@ public sealed class StackStorageTypeAnalyzer(
                 type.StackKind == CliValueKind.ManagedAddress && storage.StackKind != CliValueKind.ManagedAddress &&
                 !unstableArgumentPointers.Contains(((CilOperand.Index)instruction.Operand).Value);
             backingIsKnown |= stableArgumentPointer;
-            ImmutableHashSet<StackStorageOwner> owners = backingIsKnown && containsReferences
-                ? [new(instruction.Operation != CilOperation.LoadLocalAddress,
-                    ((CilOperand.Index)instruction.Operand).Value, stableArgumentPointer ? type : storage)] : [];
-            producers.Add(instruction.Offset, new(type, false, backingIsKnown, owners,
+            producers.Add(instruction.Offset, new(type, false, backingIsKnown,
                 backingIsKnown || storage.StackKind == CliValueKind.ManagedAddress ? [] : [storage],
                 storage.StackKind != CliValueKind.ManagedAddress));
         }
@@ -89,7 +86,7 @@ public sealed class StackStorageTypeAnalyzer(
             var closed = type.Substitute(method.Method.DeclaringType.TypeArguments, method.Method.MethodArguments);
             while (closed.Shape == CliTypeShape.Modified) closed = closed.ElementType!;
             return closed.StackKind == CliValueKind.ManagedAddress
-                ? new StorageIdentity(closed, false, false, [], [closed.ElementType!],
+                ? new StorageIdentity(closed, false, false, [closed.ElementType!],
                     closed.ElementType!.StackKind != CliValueKind.ManagedAddress) : default;
         }).ToImmutableArray();
         var flow = _continuations.Analyze(method);
@@ -146,7 +143,7 @@ public sealed class StackStorageTypeAnalyzer(
                     // An unmanaged pointer stored into a byref local, as `ref *pointer` stores one,
                     // addresses memory the collector does not manage: no backing to keep alive.
                     locals[local] = controlFlow.InstructionEntryStacks[instruction.Offset][^1] == CliValueKind.NativeInt
-                        ? new StorageIdentity(initialLocals[local].Type, false, true, [], [], true)
+                        ? new StorageIdentity(initialLocals[local].Type, false, true, [], true)
                         : stack[^1];
                     transfers[instruction.Offset] = new(new(StackStorageLocationKind.Local, local),
                         locals[local].Captures.ToImmutableDictionary(type => type,
@@ -174,7 +171,6 @@ public sealed class StackStorageTypeAnalyzer(
                     identity = identity with
                     {
                         BackingCovered = stack[^1].BackingCovered,
-                        BackingOwners = stack[^1].Owners,
                         BackingCaptures = stack[^1].Captures,
                         CompleteBackingKnown = stack[^1].CompleteBackingKnown,
                     };
@@ -186,7 +182,7 @@ public sealed class StackStorageTypeAnalyzer(
                         controlFlow.InstructionEntryStacks[instruction.Offset][^2] == CliValueKind.ManagedAddress
                             ? stack.Count - 2 : stack.Count - 1);
                     var address = stack[copySource.Value.Index];
-                    identity = new(null, true, address.BackingCovered, address.Owners, address.Captures,
+                    identity = new(null, true, address.BackingCovered, address.Captures,
                         address.CompleteBackingKnown);
                 }
                 var preserved = outgoing.Length - produced;
@@ -251,13 +247,12 @@ public sealed class StackStorageTypeAnalyzer(
                         var joined = new StorageIdentity(first[slot].Type ?? second[slot].Type,
                             first[slot].Unresolved || second[slot].Unresolved,
                             first[slot].BackingCovered && second[slot].BackingCovered,
-                            first[slot].Owners.Union(second[slot].Owners),
                             first[slot].Captures.Union(second[slot].Captures),
                             first[slot].CompleteBackingKnown && second[slot].CompleteBackingKnown);
                         if (joined.Type != first[slot].Type || joined.Unresolved != first[slot].Unresolved ||
                             joined.BackingCovered != first[slot].BackingCovered ||
                             joined.CompleteBackingKnown != first[slot].CompleteBackingKnown ||
-                            !joined.Owners.SetEquals(first[slot].Owners) || !joined.Captures.SetEquals(first[slot].Captures))
+                            !joined.Captures.SetEquals(first[slot].Captures))
                         {
                             merged[slot] = joined;
                             changed = true;
@@ -274,7 +269,6 @@ public sealed class StackStorageTypeAnalyzer(
     private static StackStorageType Describe(StorageIdentity slot) =>
         new(slot.Unresolved ? null : slot.Type, slot.BackingCovered)
         {
-            BackingOwners = slot.Owners,
             CapturedBackings = slot.Captures,
             CompleteBackingKnown = slot.CompleteBackingKnown,
         };
@@ -370,7 +364,7 @@ public sealed class StackStorageTypeAnalyzer(
             CilOperation.BranchIfGreaterThanOrEqualSigned or CilOperation.BranchIfGreaterThanOrEqualUnsigned or
             CilOperation.BranchIfLessThanSigned or CilOperation.BranchIfLessThanUnsigned or
             CilOperation.BranchIfLessThanOrEqualSigned or CilOperation.BranchIfLessThanOrEqualUnsigned or
-            CilOperation.Switch or CilOperation.StoreArgument or CilOperation.StoreLocal or
+            CilOperation.StoreArgument or CilOperation.StoreLocal or
             CilOperation.StoreField or CilOperation.StoreStaticField or CilOperation.StoreObject or
             CilOperation.CopyObject or CilOperation.InitializeObject or CilOperation.CopyBlock or
             CilOperation.InitializeBlock or CilOperation.InitializeArrayData or
@@ -386,11 +380,8 @@ public sealed class StackStorageTypeAnalyzer(
         new(new CompilerDiagnostic(DiagnosticCode.InvalidCil, reason, method.Method.Definition.Name, instruction.Offset));
 
     private readonly record struct StorageIdentity(CliTypeIdentity? Type, bool Unresolved,
-        bool BackingCovered, ImmutableHashSet<StackStorageOwner>? BackingOwners,
-        ImmutableHashSet<CliTypeIdentity>? BackingCaptures = null, bool CompleteBackingKnown = false)
+        bool BackingCovered, ImmutableHashSet<CliTypeIdentity>? BackingCaptures = null, bool CompleteBackingKnown = false)
     {
-        public ImmutableHashSet<StackStorageOwner> Owners => BackingOwners ?? ImmutableHashSet<StackStorageOwner>.Empty;
-
         public ImmutableHashSet<CliTypeIdentity> Captures => BackingCaptures ?? ImmutableHashSet<CliTypeIdentity>.Empty;
     }
 

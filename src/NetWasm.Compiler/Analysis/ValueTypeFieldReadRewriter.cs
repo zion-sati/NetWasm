@@ -43,14 +43,9 @@ internal sealed class ValueTypeFieldReadRewriter : IMethodRewriteRule
         var result = new HashSet<int>();
         foreach (var instruction in body.Instructions)
         {
-            switch (instruction.Operand)
+            if (instruction.Operand is CilOperand.BranchTarget target)
             {
-                case CilOperand.BranchTarget target:
-                    result.Add(target.Offset);
-                    break;
-                case CilOperand.SwitchTargets targets:
-                    result.UnionWith(targets.Offsets);
-                    break;
+                result.Add(target.Offset);
             }
         }
 

@@ -89,10 +89,10 @@ public sealed class ReadOnlySpanRvaCompilationTests
                 instruction.Operand))
             .ToArray();
 
-        // Roslyn uses the pointer constructor directly for byte-sized elements.
+        // Roslyn uses the pointer constructor for byte-sized elements, which is the same view.
         Assert.Equal(
-            ["primitive:char", "primitive:f4", "primitive:f8", "primitive:i2",
-                "primitive:i4", "primitive:i8", "primitive:u2", "primitive:u4", "primitive:u8"],
+            ["primitive:bool", "primitive:char", "primitive:f4", "primitive:f8", "primitive:i1", "primitive:i2",
+                "primitive:i4", "primitive:i8", "primitive:u1", "primitive:u2", "primitive:u4", "primitive:u8"],
             creations.Select(creation => creation.ElementType.CanonicalName).Order());
         Assert.All(creations, creation =>
         {
@@ -151,6 +151,76 @@ public sealed class ReadOnlySpanRvaCompilationTests
                 compilation.ApplicationModule,
                 assets.Directory,
                 1));
+    }
+
+    // Roslyn creates byte tables with the span's pointer constructor; a length
+    // guard and an element read of one fold to constant data, as CoreLib's
+    // char.IsWhiteSpace reads Latin1CharInfo.
+    private const string ByteTableSource = """
+        using System;
+        using System.Runtime.CompilerServices;
+
+        public static class EntryPoint
+        {
+            private static ReadOnlySpan<byte> Flags => [0x80, 0x01, 0x80, 0x02];
+            private static ReadOnlySpan<sbyte> Signed => [-1, 2, -3];
+            private static ReadOnlySpan<bool> Truths => [true, false];
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private static bool IsMarked(int c) => (uint)c < (uint)Flags.Length && (Flags[c] & 0x80) != 0;
+
+            public static int Run(int input) =>
+                (IsMarked(input) ? 100 : 0) + (IsMarked(input + 1) ? 10 : 0) +
+                ((uint)input < (uint)Signed.Length ? Signed[input] : 7) + (Truths[input & 1] ? 1000 : 0);
+        }
+        """;
+
+    [Fact]
+    public void O3ReadsByteTablesAsConstantData()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("ReadOnlySpanRvaBytes", ByteTableSource);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "EntryPoint",
+            "Run",
+            [],
+            Optimization: FinalWasmOptimization.O3));
+        var entry = compilation.Program.Methods.Values.Single(method =>
+            method.Method.Definition.Name == "Run");
+
+        Assert.DoesNotContain(entry.Body.Instructions, instruction =>
+            instruction.Operation is CilOperation.Call or CilOperation.NewObject or CilOperation.LoadStaticFieldAddress);
+        Assert.Equal(
+            ["primitive:bool", "primitive:i1", "primitive:u1", "primitive:u1"],
+            entry.Body.Instructions
+                .Where(instruction => instruction.Operation == CilOperation.LoadStaticDataElement)
+                .Select(instruction => Assert.IsType<CilOperand.ReadOnlySpanData>(instruction.Operand).ElementType.CanonicalName)
+                .Order());
+    }
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, true, 0, 1099)]
+    [InlineData(WasmTarget.Wasm32, true, 1, 12)]
+    [InlineData(WasmTarget.Wasm32, true, 2, 1097)]
+    [InlineData(WasmTarget.Wasm32, true, 3, 7)]
+    [InlineData(WasmTarget.Wasm32, true, 4, 1007)]
+    [InlineData(WasmTarget.Wasm64, true, 2, 1097)]
+    [InlineData(WasmTarget.Wasm32, false, 3, 7)]
+    public void ByteTablesReadAsDesktopDoes(WasmTarget target, bool optimize, int input, int expected)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+
+        Assert.Equal(expected, executor.Execute(new CompilationScenario(
+            $"ReadOnlySpanRvaBytes_{target}_{optimize}",
+            ByteTableSource,
+            "EntryPoint",
+            Optimize: optimize,
+            target,
+            input,
+            [])));
     }
 
     private const string LocalTableSource = """

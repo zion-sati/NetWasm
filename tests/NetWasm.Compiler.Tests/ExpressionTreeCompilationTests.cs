@@ -1531,7 +1531,6 @@ public sealed class ExpressionTreeCompilationTests
             41,
             target,
             compilation.StaticDataEnd));
-        Assert.True(compilation.Program.RequiresDelegateInvoke);
         var invoke = Assert.Single(
             compilation.Program.DelegateInvokeDescriptors.Values,
             candidate => candidate.DeclaringType.Shape ==

@@ -95,6 +95,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Runtime.CompilerServices.RuntimeHelpers",
                     "IsReferenceOrContainsReferences") =>
                     RuntimeIntrinsic.IsReferenceOrContainsReferences,
+                ("System.Runtime.CompilerServices.RuntimeHelpers", "ObjectContainsReferences") =>
+                    RuntimeIntrinsic.ObjectContainsReferences,
                 ("System.Runtime.CompilerServices.Unsafe", "Add") =>
                     RuntimeIntrinsic.UnsafeAdd,
                 ("System.Runtime.CompilerServices.Unsafe", "As")

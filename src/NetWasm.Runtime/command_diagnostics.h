@@ -58,7 +58,7 @@ static CommandDiagnosticCompletion command_diagnostic_completion;
 static netwasm_reference_t command_diagnostic_roots[2];
 static uint32_t command_diagnostic_owned;
 
-static size_t encode_utf8(u32 value, char *destination)
+static size_t encode_utf8(uint32_t value, char *destination)
 {
     if (value <= 0x7f) {
         destination[0] = (char)value;
@@ -86,15 +86,15 @@ static void write_diagnostic_string(netwasm_reference_t string)
 {
     char buffer[256];
     size_t buffered = 0;
-    u32 length;
+    uint32_t length;
     uint16_t *characters;
     if (string == 0) {
         return;
     }
-    length = *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
+    length = *(uint32_t *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
     characters = (uint16_t *)(uintptr_t)(string + NETWASM_STRING_DATA_OFFSET);
-    for (u32 index = 0; index < length; index++) {
-        u32 value = characters[index];
+    for (uint32_t index = 0; index < length; index++) {
+        uint32_t value = characters[index];
         if (value >= 0xd800 && value <= 0xdbff && index + 1 < length &&
             characters[index + 1] >= 0xdc00 && characters[index + 1] <= 0xdfff) {
             value = 0x10000 + ((value - 0xd800) << 10) +
@@ -114,17 +114,17 @@ static void write_diagnostic_string(netwasm_reference_t string)
 static int diagnostic_string_is_empty(netwasm_reference_t string)
 {
     return string == 0 ||
-        *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET) == 0;
+        *(uint32_t *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET) == 0;
 }
 
 static int diagnostic_string_ends_with_newline(netwasm_reference_t string)
 {
-    u32 length;
+    uint32_t length;
     uint16_t *characters;
     if (diagnostic_string_is_empty(string)) {
         return 0;
     }
-    length = *(u32 *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
+    length = *(uint32_t *)(uintptr_t)(string + NETWASM_STRING_LENGTH_OFFSET);
     characters = (uint16_t *)(uintptr_t)(string + NETWASM_STRING_DATA_OFFSET);
     return characters[length - 1] == '\n';
 }

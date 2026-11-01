@@ -2,8 +2,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="18.0.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <ProjectReference Include="../../src/NetWasm.Testing.VSTest/NetWasm.Testing.VSTest.csproj" />
     <ProjectReference Include="../NetWasm.Testing.VSTest.Tests.Adapter/NetWasm.Testing.VSTest.Tests.Adapter.csproj" />
@@ -13,5 +13,8 @@
     <None Include="../../global.json"
           Link="global.json"
           CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
   </ItemGroup>
 </Project>

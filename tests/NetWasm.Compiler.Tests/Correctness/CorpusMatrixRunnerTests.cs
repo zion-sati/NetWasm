@@ -74,7 +74,7 @@ public sealed class CorpusMatrixRunnerTests
         var fixture = Fixture() with { Matrix = new(CorpusMatrixProfile.Extended, cell) };
         var profile = cell.StartsWith("Emitted", StringComparison.Ordinal) ? CilProfile.Emitted : CilProfile.Release;
 
-        runner.Run(Compilation(fixture, profile));
+        runner.Run(Compilation(fixture, profile), TestContext.Current.CancellationToken);
 
         Assert.Equal(1, desktop.Calls);
         var call = Assert.Single(netWasm.Calls);
@@ -96,7 +96,7 @@ public sealed class CorpusMatrixRunnerTests
 
         if (optimizedAlsoWrong)
         {
-            Assert.Throws<CorpusOracleMismatchException>(() => runner.Run(Compilation(fixture)));
+            Assert.Throws<CorpusOracleMismatchException>(() => runner.Run(Compilation(fixture), TestContext.Current.CancellationToken));
             var result = Assert.Single(failures.Results);
             Assert.Equal(42, result.Desktop.Value);
             Assert.Equal(-1, result.NetWasm.Value);
@@ -105,7 +105,7 @@ public sealed class CorpusMatrixRunnerTests
         }
         else
         {
-            runner.Run(Compilation(fixture));
+            runner.Run(Compilation(fixture), TestContext.Current.CancellationToken);
             Assert.Empty(failures.Results);
         }
         Assert.Single(netWasm.Calls);
@@ -130,12 +130,12 @@ public sealed class CorpusMatrixRunnerTests
                     new CompiledCorpusTestFactory.RecordingReceiptDestinations(),
                     new CompiledCorpusTestFactory.RecordingLinkedReceipts(),
                     new OracleComparer(), new RecordingFailures(), new RandomCilCaseProgressReporter(TextWriter.Null),
-                    new CorpusExpectationVerifier(), new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander())));
-                comparison.RunAgainstOracle(compilation, Observations(42));
+                    new CorpusExpectationVerifier(), new CorpusExecutionVerifier(), new CorpusCompilationCellsSelector(new CorpusMatrixExpander(), new CorpusBackendOverride(Backend: null))));
+                comparison.RunAgainstOracle(compilation, Observations(42), TestContext.Current.CancellationToken);
             }
             else
             {
-                runner.Run(compilation);
+                runner.Run(compilation, TestContext.Current.CancellationToken);
             }
         });
 
@@ -154,7 +154,7 @@ public sealed class CorpusMatrixRunnerTests
         var failures = new RecordingFailures();
         var runner = CreateRunner(new RecordingDesktop(), netWasm, failures, linked);
 
-        runner.Run(Compilation(Fixture() with { Matrix = new((CorpusMatrixProfile)profile) }));
+        runner.Run(Compilation(Fixture() with { Matrix = new((CorpusMatrixProfile)profile) }), TestContext.Current.CancellationToken);
 
         Assert.Equal(targets, netWasm.Calls.Count);
         Assert.All(netWasm.Calls, call => Assert.Equal(optimized, call.Fixture.ExecuteOptimizedWasm));

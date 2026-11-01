@@ -237,7 +237,7 @@ internal sealed class FrontendArtifactCacheIdentityBuilder(
     IWasmOptimizationSettingsResolver optimizationSettings) :
     IFrontendArtifactCacheIdentityBuilder
 {
-    internal const string Schema = "frontend-artifact-cache-v5";
+    internal const string Schema = "frontend-artifact-cache-v6";
     private readonly IEntryAssemblyBindingFingerprinter _bindingFingerprints =
         bindingFingerprints ?? throw new ArgumentNullException(nameof(bindingFingerprints));
     private readonly IManagedAssemblyImageReader _images = images ??

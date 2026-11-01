@@ -141,7 +141,6 @@ public sealed class CliTypeIdentityFactoryTests
         Assert.Equal(CliValueKind.NativeInt, pointerIdentity.StackKind);
         Assert.Equal(CliValueKind.I4, enumIdentity.StackKind);
         Assert.Equal(enumType.EnumUnderlyingType, enumIdentity.StackStorageType);
-        Assert.Equal(CliValueKind.I4, enumType.EnumUnderlyingKind);
     }
 
     [Fact]

@@ -78,7 +78,6 @@ public sealed record ReachableProgram(
 
     public bool RequiresTypeFacts { get; init; }
 
-    public bool RequiresDelegateInvoke { get; init; }
 
     public bool RequiresGenericArguments { get; init; }
 

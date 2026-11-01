@@ -21,7 +21,7 @@ public sealed class BrowserComponentCoreModulesTests
     public void RawPlanPreservesExactVirtualPathsAndAuthoritativeReleaseArguments(bool memory64)
     {
         var target = memory64 ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02;
-        var plan = BrowserComponentCoreModules.CreateLinkPlan(
+        var plan = BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(target) with { Optimization = FinalWasmOptimization.Oz }, CreateWorkspace());
         var width = memory64 ? "i64" : "i32";
 
@@ -73,7 +73,7 @@ public sealed class BrowserComponentCoreModulesTests
     {
         var abi = new ManagedExecutableEntryPointAbi(ManagedExecutableParameterShape.StringArray, returns,
             asynchronous ? ManagedExecutableCompletionShape.Asynchronous : ManagedExecutableCompletionShape.Synchronous);
-        var plan = BrowserComponentCoreModules.CreateLinkPlan(
+        var plan = BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02) with { ManagedExecutableEntryPoint = abi }, CreateWorkspace());
 
         Assert.Equal(ExpectedManagedModulePaths, plan.Operations.OfType<BrowserLinkTextOperation>().ToArray().Select(module => module.OutputPath));
@@ -105,7 +105,7 @@ public sealed class BrowserComponentCoreModulesTests
     public void CaseDistinctVirtualPathsRemainDistinct()
     {
         var request = CreateRequest(ComponentTarget.Wasm32Wasi02) with { OutputPath = "v/application.wasm" };
-        var plan = BrowserComponentCoreModules.CreateLinkPlan(request, CreateWorkspace());
+        var plan = BrowserComponentCoreModules.CreateOrderedLinkPlan(request, CreateWorkspace());
         Assert.Equal("v/Application.wasm", plan.Operations.OfType<BrowserLinkInlineOperation>().First().InputPath);
         Assert.Contains(plan.Operations.OfType<BrowserLinkInlineOperation>().First().OutputPath, plan.Operations.OfType<BrowserLinkToolOperation>().First().Arguments);
         Assert.Equal("v/application.wasm", plan.Operations.OfType<BrowserLinkToolOperation>().Skip(1).SingleOrDefault()!.Arguments[^1]);
@@ -115,7 +115,7 @@ public sealed class BrowserComponentCoreModulesTests
     [Fact]
     public void NonePlanCopiesSanitizedCoreWithoutOptimizerInvocation()
     {
-        var plan = BrowserComponentCoreModules.CreateLinkPlan(
+        var plan = BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02) with
             {
                 Optimization = FinalWasmOptimization.None,
@@ -131,25 +131,25 @@ public sealed class BrowserComponentCoreModulesTests
     [Fact]
     public void RejectsInputsThatAliasOwnedIntermediatesOrOutput()
     {
-        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02) with { OutputPath = "v/runtime.wasm" }, CreateWorkspace()));
-        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02), CreateWorkspace() with { MergedModulePath = "v/Application.wasm" }));
-        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02), CreateWorkspace() with { SanitizedModulePath = "v/merged.wasm" }));
     }
 
     [Fact]
     public void RejectsBlankPathsAndMissingArguments()
     {
-        Assert.Throws<ArgumentNullException>(() => BrowserComponentCoreModules.CreateLinkPlan(null!, CreateWorkspace()));
-        Assert.Throws<ArgumentNullException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentNullException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(null!, CreateWorkspace()));
+        Assert.Throws<ArgumentNullException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02), null!));
-        Assert.Throws<ArgumentNullException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentNullException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(null!), CreateWorkspace()));
-        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02) with { ApplicationModulePath = " " }, CreateWorkspace()));
-        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02), CreateWorkspace() with { EnvironmentModulePath = " " }));
     }
 
@@ -158,7 +158,7 @@ public sealed class BrowserComponentCoreModulesTests
     {
         var invalid = new ManagedExecutableEntryPointAbi(ManagedExecutableParameterShape.None,
             ManagedExecutableReturnShape.Void, (ManagedExecutableCompletionShape)99);
-        Assert.Throws<ArgumentOutOfRangeException>(() => BrowserComponentCoreModules.CreateLinkPlan(
+        Assert.Throws<ArgumentOutOfRangeException>(() => BrowserComponentCoreModules.CreateOrderedLinkPlan(
             CreateRequest(ComponentTarget.Wasm32Wasi02) with { ManagedExecutableEntryPoint = invalid }, CreateWorkspace()));
     }
 

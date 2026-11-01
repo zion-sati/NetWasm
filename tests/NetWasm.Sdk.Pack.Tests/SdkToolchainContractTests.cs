@@ -74,8 +74,9 @@ public sealed partial class SdkToolchainContractTests
         Assert.Contains("NetWasmSdkPublishBrowser", targetNames);
         Assert.Contains("NetWasmSdkPublishJsModule", targetNames);
         Assert.Contains("NetWasmSdkPublishWitWorker", targetNames);
-        Assert.Contains("NetWasmSdkRejectWorkerRun", targetNames);
-        Assert.Contains("NetWasmSdkRejectLibraryLifecycle", targetNames);
+        Assert.Contains("NetWasmSdkComputeRunArguments", targetNames);
+        Assert.DoesNotContain("NetWasmSdkRejectWorkerRun", targetNames);
+        Assert.DoesNotContain("NetWasmSdkRejectLibraryLifecycle", targetNames);
         Assert.Contains("NetWasmComponentInput", source, StringComparison.Ordinal);
         Assert.DoesNotContain("NetWasmComponentRuntime", source, StringComparison.Ordinal);
         Assert.DoesNotContain("NetWasmRuntimeModulePath", source, StringComparison.Ordinal);
@@ -169,11 +170,17 @@ public sealed partial class SdkToolchainContractTests
             .Descendants(XName.Get(
                 "RunArguments",
                 "http://schemas.microsoft.com/developer/msbuild/2003"))
-            .Single();
+            .ToArray();
+        var local = Assert.Single(runArguments, element => element.Value.Contains("NetWasmLocalLauncherPath", StringComparison.Ordinal));
 
-        Assert.Contains("--forward-command-result", runArguments.Value, StringComparison.Ordinal);
-        Assert.Contains("--result", runArguments.Value, StringComparison.Ordinal);
-        Assert.Contains("--replace-result", runArguments.Value, StringComparison.Ordinal);
+        Assert.Contains("--forward-command-result", local.Value, StringComparison.Ordinal);
+        Assert.Contains("--result", local.Value, StringComparison.Ordinal);
+        Assert.Contains("--replace-result", local.Value, StringComparison.Ordinal);
+        // Issue #140: a browser project serves the site its staged publish writes.
+        var browser = Assert.Single(runArguments, element => element.Value.Contains("netwasm-serve.mjs", StringComparison.Ordinal));
+        Assert.Contains("--root", browser.Value, StringComparison.Ordinal);
+        Assert.Contains("--stage", browser.Value, StringComparison.Ordinal);
+        Assert.Equal(2, runArguments.Length);
     }
 
     [Theory]

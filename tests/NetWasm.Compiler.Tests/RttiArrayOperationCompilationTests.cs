@@ -8,7 +8,6 @@ using NetWasm.Compiler.Tests.Correctness;
 
 namespace NetWasm.Compiler.Tests;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class RttiArrayOperationCompilationTests(CorrectnessTestRunner runner) : EmittedAssemblyTestBase(runner)
 {
     public static TheoryData<string, string> ZeroBoundCells => CorpusCaseTestData.Cells(CorpusCaseTestData.ZeroBound);

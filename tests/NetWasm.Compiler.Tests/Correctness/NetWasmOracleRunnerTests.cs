@@ -4,7 +4,6 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class NetWasmOracleRunnerTests
 {
     private static CorpusApplicationCompiler CreateApplicationCompiler(
@@ -34,8 +33,8 @@ public sealed class NetWasmOracleRunnerTests
             CorrectnessTestAssets.CreateDirectory());
         var runner = services.GetRequiredService<INetWasmOracleRunner>();
 
-        var wasm32 = runner.CompileAndRun(compilation, WasmTarget.Wasm32);
-        var wasm64 = runner.CompileAndRun(compilation, WasmTarget.Wasm64);
+        var wasm32 = runner.CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken);
+        var wasm64 = runner.CompileAndRun(compilation, WasmTarget.Wasm64, TestContext.Current.CancellationToken);
 
         Assert.True(wasm32.Executed);
         Assert.Equal(OracleObservationKind.Value, wasm32.Observations[3].Kind);
@@ -77,14 +76,14 @@ public sealed class NetWasmOracleRunnerTests
             new OracleRuntimeCapabilityVerifier(),
             CreateApplicationCompiler(services.GetRequiredService<CompilerCorrectnessEnvironment>(), new QualifiedProcessRunner(), progress));
 
-        var isolated = runner.CompileAndRun(compilation, WasmTarget.Wasm32);
+        var isolated = runner.CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken);
         var batched = runner.CompileAndRun(compilation with
         {
             Fixture = compilation.Fixture with
             {
                 SupportsBatchedOracle = true,
             },
-        }, WasmTarget.Wasm32);
+        }, WasmTarget.Wasm32, TestContext.Current.CancellationToken);
 
         Assert.Equal(isolated.Observations.Keys.Order(), batched.Observations.Keys.Order());
         foreach (var input in isolated.Observations.Keys)
@@ -112,7 +111,7 @@ public sealed class NetWasmOracleRunnerTests
                 ExecuteWasm64 = true,
                 SupportsBatchedOracle = true,
             },
-        }, WasmTarget.Wasm64);
+        }, WasmTarget.Wasm64, TestContext.Current.CancellationToken);
 
         Assert.True(wasm64.Executed);
         Assert.Equal(4, wasm64.Observations[3].Value);
@@ -137,7 +136,7 @@ public sealed class NetWasmOracleRunnerTests
             CorrectnessTestAssets.CreateDirectory());
 
         var execution = services.GetRequiredService<INetWasmOracleRunner>()
-            .CompileAndRun(compilation, WasmTarget.Wasm32);
+            .CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken);
 
         Assert.NotNull(execution.DiagnosticTracePath);
         Assert.True(File.Exists(execution.DiagnosticTracePath));
@@ -179,7 +178,7 @@ public sealed class NetWasmOracleRunnerTests
             CreateApplicationCompiler(environment, processes));
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            runner.CompileAndRun(compilation, WasmTarget.Wasm32));
+            runner.CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken));
 
         Assert.Contains($"exit={exitCode}", exception.Message);
         Assert.Equal(1, processes.Calls);
@@ -217,7 +216,7 @@ public sealed class NetWasmOracleRunnerTests
             CreateApplicationCompiler(environment, new InfiniteCompilerProcessRunner()));
 
         var exception = Assert.Throws<TimeoutException>(() =>
-            runner.CompileAndRun(compilation, WasmTarget.Wasm32));
+            runner.CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken));
 
         Assert.Contains("compiler exceeded", exception.Message);
     }
@@ -254,7 +253,7 @@ public sealed class NetWasmOracleRunnerTests
             new CorpusExportFactory(), new OracleRuntimeCapabilityVerifier(),
             CreateApplicationCompiler(environment, processes));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => runner.CompileAndRun(compilation, target));
+        var exception = Assert.Throws<InvalidOperationException>(() => runner.CompileAndRun(compilation, target, TestContext.Current.CancellationToken));
 
         Assert.StartsWith("Oracle runtime lacks required capabilities:", exception.Message, StringComparison.Ordinal);
         Assert.Equal(0, processes.Calls);
@@ -284,7 +283,7 @@ public sealed class NetWasmOracleRunnerTests
                 new OracleRuntimeCapabilityVerifier(),
                 CreateApplicationCompiler(environment, processes));
 
-            Assert.Throws<InvalidOperationException>(() => runner.CompileAndRun(compilation, WasmTarget.Wasm32));
+            Assert.Throws<InvalidOperationException>(() => runner.CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken));
 
             var request = Assert.Single(processes.Requests);
             using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(request.Arguments[1]));
@@ -331,7 +330,7 @@ public sealed class NetWasmOracleRunnerTests
                 new OracleOperationProgressReporter(new OracleOperationProgressPlan()), new CorpusExportFactory(),
                 new OracleRuntimeCapabilityVerifier(), CreateApplicationCompiler(environment, processes, failures: writer));
 
-            var failure = Assert.Throws<InvalidOperationException>(() => runner.CompileAndRun(compilation, WasmTarget.Wasm32));
+            var failure = Assert.Throws<InvalidOperationException>(() => runner.CompileAndRun(compilation, WasmTarget.Wasm32, TestContext.Current.CancellationToken));
 
             Assert.Equal(1, processes.Calls);
             if (response is null) Assert.IsType<FileNotFoundException>(failure.InnerException);

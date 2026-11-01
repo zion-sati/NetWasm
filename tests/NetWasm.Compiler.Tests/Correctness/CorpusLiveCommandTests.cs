@@ -37,9 +37,9 @@ public sealed class CorpusLiveCommandTests
         var compilation = Compilation(true);
         var calls = new List<string>();
         var failure = new InvalidOperationException("injected dependency failure");
-        var runner = Create(compilation, calls, Observations(42), Observations(42), stage, failure);
+        var runner = Create(compilation, calls, Observations(42), Observations(42), stage, failure, TestContext.Current.CancellationToken);
 
-        var error = Assert.Throws<InvalidOperationException>(() => runner.Run(compilation));
+        var error = Assert.Throws<InvalidOperationException>(() => runner.Run(compilation, TestContext.Current.CancellationToken));
 
         Assert.Same(failure, error);
         string[] sequence = ["select", "progress", "desktop", "expectations", "fingerprint", "frozen", "compare", "delegate-frozen"];

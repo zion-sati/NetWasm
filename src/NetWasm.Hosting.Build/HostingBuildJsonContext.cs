@@ -12,5 +12,6 @@ namespace NetWasm.Hosting.Build;
 [JsonSerializable(typeof(bool[]))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(ComponentTranspiler.JcoTranspileMetadata))]
+[JsonSerializable(typeof(Execution.BrowserRunStage))]
 [ExcludeFromCodeCoverage]
 internal sealed partial class HostingBuildJsonContext : JsonSerializerContext;

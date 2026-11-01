@@ -28,10 +28,6 @@ public static class JavaScriptMemoryView
             ["primitive:f8"] = "f64-view",
         }.ToImmutableDictionary(StringComparer.Ordinal);
 
-    /// <summary>The ABI names of every supported view, in ordinal order.</summary>
-    public static ImmutableArray<string> AbiTypes { get; } =
-        [.. Elements.Values.OrderBy(name => name, StringComparer.Ordinal)];
-
     public static bool IsSupported(CliTypeIdentity type)
     {
         ArgumentNullException.ThrowIfNull(type);

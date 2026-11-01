@@ -48,7 +48,8 @@ internal sealed class PackedSimdIntrinsicEmitter(
                 for (var argument = 0; argument < signature.ParameterTypes.Length; argument++)
                 {
                     Get(code, Argument(request, argument));
-                    if (flipsSign && IsVector(signature.ParameterSignatureTypes[argument]))
+                    // Only the unsigned comparisons of two vectors flip the sign.
+                    if (flipsSign)
                     {
                         code.Write(WasmInstruction.WithOperand(
                             WasmOpcodes.SimdPrefixed,
@@ -78,7 +79,7 @@ internal sealed class PackedSimdIntrinsicEmitter(
             case PackedSimdShape.LoadLane:
                 CheckLane(request, code, 2, laneBytes);
                 Get(code, Argument(request, 0));
-                Load(code, laneBytes, floating: false, signed: false);
+                Load(code, laneBytes);
                 Simd(code, Splat(laneBytes, floating: false));
                 Get(code, Argument(request, 1));
                 LaneMask(request, code, 2, laneBytes);
@@ -89,7 +90,7 @@ internal sealed class PackedSimdIntrinsicEmitter(
                 Get(code, Argument(request, 0));
                 SelectLane(request, code, 1, 2, laneBytes);
                 ExtractFirst(code, laneBytes, floating: false, signed: false);
-                Store(code, laneBytes, floating: false);
+                Store(code, laneBytes);
                 return;
         }
 
@@ -188,39 +189,31 @@ internal sealed class PackedSimdIntrinsicEmitter(
                 _ => I64x2ExtractLane,
             }, 0)));
 
-    private static void Load(IWasmInstructionWriter code, int laneBytes, bool floating, bool signed)
+    // A lane moves as its bits, so it loads and stores as an unsigned integer of
+    // its width whatever its element type.
+    private static void Load(IWasmInstructionWriter code, int laneBytes)
     {
-        var (opcode, alignment) = (laneBytes, floating, signed) switch
+        var (opcode, alignment) = laneBytes switch
         {
-            (1, _, true) => (WasmOpcodes.I32Load8Signed, 0u),
-            (1, _, false) => (WasmOpcodes.I32Load8Unsigned, 0u),
-            (2, _, true) => (WasmOpcodes.I32Load16Signed, 1u),
-            (2, _, false) => (WasmOpcodes.I32Load16Unsigned, 1u),
-            (4, true, _) => (WasmOpcodes.F32Load, 2u),
-            (4, false, _) => (WasmOpcodes.I32Load, 2u),
-            (_, true, _) => (WasmOpcodes.F64Load, 3u),
+            1 => (WasmOpcodes.I32Load8Unsigned, 0u),
+            2 => (WasmOpcodes.I32Load16Unsigned, 1u),
+            4 => (WasmOpcodes.I32Load, 2u),
             _ => (WasmOpcodes.I64Load, 3u),
         };
         code.Write(WasmInstruction.WithOperand(opcode, WasmInstructionOperand.Memory(alignment, 0)));
     }
 
-    private static void Store(IWasmInstructionWriter code, int laneBytes, bool floating)
+    private static void Store(IWasmInstructionWriter code, int laneBytes)
     {
-        var (opcode, alignment) = (laneBytes, floating) switch
+        var (opcode, alignment) = laneBytes switch
         {
-            (1, _) => (WasmOpcodes.I32Store8, 0u),
-            (2, _) => (WasmOpcodes.I32Store16, 1u),
-            (4, true) => (WasmOpcodes.F32Store, 2u),
-            (4, false) => (WasmOpcodes.I32Store, 2u),
-            (_, true) => (WasmOpcodes.F64Store, 3u),
+            1 => (WasmOpcodes.I32Store8, 0u),
+            2 => (WasmOpcodes.I32Store16, 1u),
+            4 => (WasmOpcodes.I32Store, 2u),
             _ => (WasmOpcodes.I64Store, 3u),
         };
         code.Write(WasmInstruction.WithOperand(opcode, WasmInstructionOperand.Memory(alignment, 0)));
     }
-
-    private static bool IsVector(CliTypeIdentity type) =>
-        type.Shape == CliTypeShape.GenericInstantiation &&
-        type.ElementType?.FullName == "System.Runtime.Intrinsics.Vector128`1";
 
     private static void Simd(IWasmInstructionWriter code, uint opcode) =>
         code.Write(WasmInstruction.WithOperand(

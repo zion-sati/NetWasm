@@ -152,10 +152,14 @@ internal sealed class ObjectConstructionEmitter(
         var offset = request.Context.ValueLayout.TemporaryOffsets[
             request.Instruction.Offset];
         EmitValueFrameAddress(code, request.Context, offset);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalTee, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-        addresses.Emit(code, value.Size);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
+        if (!SmallBlockEmitter.TryEmitKnownSizeZero(code, request.Context.ObjectTemporary, value.Size))
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+            addresses.Emit(code, value.Size);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(request.Context.ObjectTemporary))));
         EmitArguments(request, code, signature, argumentBase);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.Call, WasmInstructionOperand.Unsigned((uint)(GetConstructorIndex(request, constructor, functionIndices)))));
@@ -164,7 +168,7 @@ internal sealed class ObjectConstructionEmitter(
         var kind = declaringType.StackKind == CliValueKind.V128 ? CliValueKind.V128 : CliValueKind.ValueType;
         if (kind == CliValueKind.V128)
         {
-            ManagedMemoryEmitter.EmitLoadBySize(code, layouts.Target, 0, value.Size);
+            ManagedMemoryEmitter.EmitVectorLoad(code, 0, value.Size);
         }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
             request.Context,

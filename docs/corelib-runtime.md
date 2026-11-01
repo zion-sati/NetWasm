@@ -54,7 +54,10 @@ thread pool, blocking waits, and implicit browser capabilities. APIs that
 require the single-reactor runtime to provide threads may throw
 `PlatformNotSupportedException`; source compatibility alone is not runtime
 support. Culture/ICU and timezone data are explicit optional capabilities, not
-implicit CoreLib contents.
+implicit CoreLib contents. Text comparison is ordinal: overloads that would
+select the current culture compare ordinally, and an explicit culture-sensitive
+`StringComparison` throws `PlatformNotSupportedException`, whether `string`,
+a span, `char`, `Rune` or `StringComparer` takes it.
 
 Abstract and in-memory streams do not imply a general filesystem:
 `System.IO.File`, `FileStream`, `Directory`, enumeration/mutation/watching and

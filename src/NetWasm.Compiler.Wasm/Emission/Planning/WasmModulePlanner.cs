@@ -270,31 +270,23 @@ internal sealed class WasmModulePlanner(
             .Where(static instruction =>
                 instruction.Operation is CilOperation.Call or CilOperation.CallVirtual))
         {
-            var method = instruction.Operand switch
-            {
-                CilOperand.Entity entity => entity.Key,
-                CilOperand.MethodInstance instance => instance.Value.Definition.Key,
-                _ => default,
-            };
-            if (method != default && intrinsics.TryGetIntrinsic(method, out var intrinsic))
+            if (intrinsics.TryGetIntrinsic(CilOperands.MethodKey(instruction.Operand), out var intrinsic))
             {
                 yield return intrinsic;
             }
         }
     }
 
-    private MethodInstanceModel GetMethodInstance(CilInstruction instruction) =>
-        instruction.Operand switch
+    // A callvirt names its method by instance or by definition.
+    private MethodInstanceModel GetMethodInstance(CilInstruction instruction)
+    {
+        if (instruction.Operand is CilOperand.MethodInstance method)
         {
-            CilOperand.MethodInstance method => method.Value,
-            CilOperand.Entity method => new(
-                methods.GetMethod(method.Key),
-                GetTypeIdentity(methods.GetMethod(method.Key).DeclaringType),
-                [],
-                methods.GetMethod(method.Key).Signature),
-            _ => throw new InvalidOperationException(
-                $"instruction {instruction.Operation} has no method operand"),
-        };
+            return method.Value;
+        }
+        var definition = methods.GetMethod(((CilOperand.Entity)instruction.Operand).Key);
+        return new(definition, GetTypeIdentity(definition.DeclaringType), [], definition.Signature);
+    }
 
     private CliTypeIdentity GetTypeIdentity(EntityKey key)
     {

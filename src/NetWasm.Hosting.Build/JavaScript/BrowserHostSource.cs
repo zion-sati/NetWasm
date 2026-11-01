@@ -21,18 +21,16 @@ internal static class BrowserHostSource
         "createShim: configuration => new WASIShim(configuration),",
     ];
 
-    private static readonly string[] WebMembers =
-    [
-        "compileCoreModule: WebAssembly.compile.bind(WebAssembly),",
-        "createModuleUrl: bytes => URL.createObjectURL(new Blob([bytes], { type: \"text/javascript\" })),",
-        "digest: crypto.subtle.digest.bind(crypto.subtle),",
-        "fetch: globalThis.fetch.bind(globalThis),",
-        "importModule: url => import(url),",
-        "revokeModuleUrl: URL.revokeObjectURL.bind(URL),",
-    ];
+    // The hosting module's web actions look their browser APIs up when they
+    // run: a browser without one, or a page outside a secure context, still
+    // imports the host and reports the failure from open() or run().
+    private static readonly string[] WebMembers = ["...webPlatform,"];
 
-    public static void AppendImports(StringBuilder source, string preview2ShimRoot)
+    public static void AppendImports(StringBuilder source, string preview2ShimRoot, string hostingRoot)
     {
+        source.Append("import { webPlatform } from ")
+            .Append(ModuleSpecifier(Path.Combine(hostingRoot, "browser-web-platform.mjs")))
+            .AppendLine(";");
         source.Append("import { WASIShim } from ")
             .Append(ModuleSpecifier(Path.Combine(preview2ShimRoot, "dist", "common", "instantiation.js")))
             .AppendLine(";");
@@ -64,7 +62,7 @@ internal static class BrowserHostSource
         string host,
         RawBrowserHostCapabilities capabilities)
     {
-        source.Append("import { createSelectedPreview2ShimFactory } from ")
+        source.Append("import { createSelectedPreview2ShimFactory, webPlatform } from ")
             .Append(JavaScriptRuntime.Quoted(host)).AppendLine(";");
         if (capabilities.LinksFilesystem)
         {

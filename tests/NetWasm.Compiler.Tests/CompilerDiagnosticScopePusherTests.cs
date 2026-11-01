@@ -69,7 +69,7 @@ public sealed class CompilerDiagnosticScopePusherTests
             Assert.Same(outer, reader.Read());
             using var innerLease = pusher.Push(inner);
             Assert.Same(inner, reader.Read());
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Same(outer, reader.Read());
     }

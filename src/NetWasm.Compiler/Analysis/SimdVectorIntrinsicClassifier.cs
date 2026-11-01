@@ -51,6 +51,11 @@ internal static class SimdVectorIntrinsicClassifier
             return null;
         }
 
+        if (declaringType is Vector128 && NumericsBridge(method) is { } bridge)
+        {
+            return bridge;
+        }
+
         return method.Name switch
         {
             "Add" when Binary(method) => RuntimeIntrinsic.SimdAdd,
@@ -92,6 +97,13 @@ internal static class SimdVectorIntrinsicClassifier
                 method.Signature.ParameterSignatureTypes is [var condition, var left, var right] &&
                 IsVector(condition) && IsVector(left) && IsVector(right) =>
                 RuntimeIntrinsic.SimdConditionalSelect,
+            // Shuffle(Vector128<float>, Vector128<int>) and the rest take indices of
+            // the vector's lane width; ShuffleNative may read anything for an index
+            // past the last lane, and reads zero as Shuffle does.
+            "Shuffle" or "ShuffleNative" when IsVector(method.Signature.ReturnSignatureType) &&
+                method.Signature.ParameterSignatureTypes is [var vector, var indices] &&
+                IsVector(vector) && IsVector(indices) =>
+                RuntimeIntrinsic.SimdShuffle,
             "EqualsAll" when Predicate(method) => RuntimeIntrinsic.SimdEqualsAll,
             "LessThanAll" or "LessThanOrEqualAll" or "GreaterThanAll" or "GreaterThanOrEqualAll" when Predicate(method) =>
                 RuntimeIntrinsic.SimdCompareAll,
@@ -107,6 +119,12 @@ internal static class SimdVectorIntrinsicClassifier
                 method.Signature.ParameterSignatureTypes is [{ Shape: CliTypeShape.GenericMethodParameter }] =>
                 RuntimeIntrinsic.SimdCreateBroadcast,
             "Create" when method.GenericArity == 0 => CreateFromElements(method),
+            "CreateScalar" or "CreateScalarUnsafe" when Scalar(method) => RuntimeIntrinsic.SimdCreateScalar,
+            // The lanes of the two operands in a fixed order, one byte shuffle for
+            // each lane width.
+            "ZipLower" or "ZipUpper" or "UnzipEven" or "UnzipOdd" or "ConcatLowerLower" or
+                "ConcatLowerUpper" or "ConcatUpperLower" or "ConcatUpperUpper" when Binary(method) =>
+                RuntimeIntrinsic.SimdPermute,
             "LoadUnsafe" when Load(method, CliTypeShape.ManagedByReference) => RuntimeIntrinsic.SimdLoad,
             "Load" when Load(method, CliTypeShape.UnmanagedPointer) => RuntimeIntrinsic.SimdLoad,
             "StoreUnsafe" when Store(method, CliTypeShape.ManagedByReference) => RuntimeIntrinsic.SimdStore,
@@ -116,6 +134,11 @@ internal static class SimdVectorIntrinsicClassifier
                 IsVector(vector) &&
                 method.Signature.ReturnSignatureType.Shape == CliTypeShape.GenericMethodParameter =>
                 RuntimeIntrinsic.SimdGetElement,
+            "WithElement" when method.GenericArity == 1 &&
+                method.Signature.ParameterSignatureTypes is
+                    [var vector, { CanonicalName: "primitive:i4" }, { Shape: CliTypeShape.GenericMethodParameter }] &&
+                IsVector(vector) && IsVector(method.Signature.ReturnSignatureType) =>
+                RuntimeIntrinsic.SimdWithElement,
             // As<TFrom, TTo>, AsByte, AsVectorInt64, AsVector128 and the rest:
             // the same 16 bytes viewed with another element type.
             var name when name.StartsWith("As", StringComparison.Ordinal) && Unary(method) =>
@@ -127,6 +150,32 @@ internal static class SimdVectorIntrinsicClassifier
             _ => null,
         };
     }
+
+    // Vector128's views of System.Numerics' float vectors, upstream's
+    // [Intrinsic] AsVector128, AsVector128Unsafe, AsVector2, AsVector3,
+    // AsVector4, AsQuaternion and AsPlane.
+    private static RuntimeIntrinsic? NumericsBridge(MethodDefinitionModel method)
+    {
+        if (method.GenericArity != 0 || method.Signature.ParameterSignatureTypes is not [var source])
+        {
+            return null;
+        }
+        var result = method.Signature.ReturnSignatureType;
+        return method.Name switch
+        {
+            "AsVector128" or "AsVector128Unsafe" when IsNumericsVector(source) && IsVector(result) =>
+                RuntimeIntrinsic.NumericsToVector128,
+            "AsVector2" or "AsVector3" or "AsVector4" or "AsQuaternion" or "AsPlane"
+                when IsVector(source) && IsNumericsVector(result) =>
+                RuntimeIntrinsic.NumericsFromVector128,
+            _ => null,
+        };
+    }
+
+    private static bool IsNumericsVector(CliTypeIdentity type) =>
+        type.Shape == CliTypeShape.Named && type.FullName is
+            "System.Numerics.Vector2" or "System.Numerics.Vector3" or "System.Numerics.Vector4" or
+            "System.Numerics.Quaternion" or "System.Numerics.Plane";
 
     // The non-generic overloads: one element broadcasts, one per lane fills the
     // lanes in order.
@@ -189,6 +238,14 @@ internal static class SimdVectorIntrinsicClassifier
         method.Signature.ParameterSignatureTypes is [var left, var right] &&
         IsVector(left) && IsVector(right);
 
+    // CreateScalar<T>(T) and the overloads that take one element type.
+    private static bool Scalar(MethodDefinitionModel method) =>
+        IsVector(method.Signature.ReturnSignatureType) &&
+        method.Signature.ParameterSignatureTypes is [var value] &&
+        (method.GenericArity == 1 && value.Shape == CliTypeShape.GenericMethodParameter ||
+         method.GenericArity == 0 && method.Signature.ReturnSignatureType.TypeArguments is [var element] &&
+         value.Equals(element));
+
     private static bool Ternary(MethodDefinitionModel method) =>
         IsVector(method.Signature.ReturnSignatureType) &&
         method.Signature.ParameterSignatureTypes is [var left, var right, var addend] &&
@@ -218,5 +275,5 @@ internal static class SimdVectorIntrinsicClassifier
 
     internal static bool IsVector(CliTypeIdentity type) =>
         type.Shape == CliTypeShape.GenericInstantiation &&
-        type.ElementType?.FullName is Vector128OfT or VectorOfT;
+        type.ElementType!.FullName is Vector128OfT or VectorOfT;
 }

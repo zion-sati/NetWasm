@@ -42,10 +42,12 @@ public sealed class JavaScriptProcessRunner : IJavaScriptProcessRunner
             }
 
             _ = standardOutput.GetAwaiter().GetResult();
-            _ = standardError.GetAwaiter().GetResult();
+            var error = standardError.GetAwaiter().GetResult().Trim();
             if (process.ExitCode != 0)
             {
-                throw Failure(request.Operation, "failed");
+                // The tool's own diagnostic names what failed, such as an
+                // import the bundler could not resolve.
+                throw Failure(request.Operation, error.Length == 0 ? "failed" : $"failed: {error}");
             }
         }
         catch (InvalidOperationException)

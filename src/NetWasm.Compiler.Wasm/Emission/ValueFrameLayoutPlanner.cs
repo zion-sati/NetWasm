@@ -536,7 +536,7 @@ internal sealed class ValueFrameLayoutPlanner(
                     if (parameter.Value.Kind == NativeAbiValueKind.IndirectAggregate)
                         ReserveNativeArgument(instruction, parameter);
                 }
-                if (lowering.Result.LogicalType.StackKind == CliValueKind.ValueType)
+                if (lowering.Result.LogicalType.StackKind is CliValueKind.ValueType or CliValueKind.V128)
                     ReserveNativeResult(instruction, lowering.Result);
                 return;
             }

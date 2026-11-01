@@ -106,7 +106,7 @@ public sealed partial class StructArgumentSpillCompilationTests
 
         Assert.False(Framed(assets, split, "Mandelbrot"));
         Assert.True(Framed(assets, whole, "Mandelbrot"));
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 split.ApplicationModule, assets.Directory, input, target, split.StaticDataEnd));

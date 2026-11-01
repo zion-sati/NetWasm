@@ -235,6 +235,7 @@ jobs:
           bash eng/prepare-native-interop-test-tools.sh "$RUNNER_TEMP/native-interop-tools"
           if [[ "${{ matrix.project-lane }}" == remaining ]]; then
             PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s eng/tests -p 'test_*.py'
+            bash tests/NetWasm.Runtime.Tests/run.sh
           fi
           dotnet restore NetWasm.slnx --disable-build-servers --nologo
           if [[ "${{ matrix.project-lane }}" == remaining ]]; then

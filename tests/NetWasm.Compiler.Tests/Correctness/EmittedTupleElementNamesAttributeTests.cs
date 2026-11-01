@@ -4,7 +4,6 @@ using System.Reflection.Emit;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class EmittedTupleElementNamesAttributeTests(CorrectnessTestRunner runner)
 {
     [Fact]

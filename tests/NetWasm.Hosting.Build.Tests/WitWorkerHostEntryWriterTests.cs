@@ -41,6 +41,8 @@ public sealed class WitWorkerHostEntryWriterTests
         Assert.Contains("clocks: Object.freeze([\"wall\"])", source, StringComparison.Ordinal);
         Assert.Contains("Object.freeze({ name: \"MODE\", value: \"test\" })", source,
             StringComparison.Ordinal);
+        Assert.Contains("/browser-web-platform.mjs\";", source, StringComparison.Ordinal);
+        BrowserApiBindings.AssertNoneAtImport(source);
     }
 
     [Fact]

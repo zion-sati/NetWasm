@@ -8,6 +8,7 @@ target="wasm32"
 configuration="release"
 native_profile="size"
 force_component_collection=0
+gc_stress=0
 output_kind="module"
 collector_output=""
 collector="compact"
@@ -22,6 +23,7 @@ while [[ $# -gt 0 ]]; do
         --configuration) configuration="$2"; shift 2 ;;
         --native-profile) native_profile="$2"; shift 2 ;;
         --force-component-collection) force_component_collection=1; shift ;;
+        --gc-stress) gc_stress=1; shift ;;
         --relocatable) output_kind="relocatable"; shift ;;
         --collector-output) collector_output="$2"; shift 2 ;;
         --collector) collector="$2"; shift 2 ;;
@@ -205,6 +207,16 @@ if [[ "$collector" = compact || "$collector" = netwasm ]]; then
     if [[ "$configuration" = release ]]; then
         collector_defines+=(-DNDEBUG)
     fi
+fi
+if [[ "$gc_stress" = 1 ]]; then
+    # Collects before every managed allocation, for qualification: a missing
+    # root then frees what it should keep at the first chance. Bump never
+    # collects.
+    [[ "$collector" = compact || "$collector" = netwasm ]] || {
+        echo "--gc-stress requires the compact or netwasm collector" >&2
+        exit 2
+    }
+    collector_defines+=(-DNETWASM_GC_STRESS)
 fi
 if [[ "$collector" = compact ]]; then
     # Compact shares NetWasmGC's adapters and lifetime layer around its own core.

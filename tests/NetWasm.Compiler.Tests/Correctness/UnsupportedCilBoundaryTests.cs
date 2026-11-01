@@ -3,7 +3,6 @@ using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class UnsupportedCilBoundaryTests(CorrectnessTestRunner runner) : CompilerRejectionTestBase(runner)
 {
     public static TheoryData<string, byte[]> UnsupportedOpcodes => new()

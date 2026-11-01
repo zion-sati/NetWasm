@@ -6,7 +6,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // through virtual, interface or delegate dispatch, as the receiver or inside
 // a struct. A value the caller leaves beneath the arguments stays the caller's
 // to root, and so do arguments a type initializer may collect before the call.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class CallArgumentRootingTests(CorrectnessTestRunner runner)
 {
     [Fact]

@@ -9,8 +9,7 @@ public sealed class ArtifactProcessRunnerTests
     [Fact]
     public async Task ExecutesWithoutAShellAndCopiesBothProcessStreams()
     {
-        var dotnet = Environment.ProcessPath;
-        Assert.False(string.IsNullOrWhiteSpace(dotnet));
+        var dotnet = NetWasm.TestInfrastructure.DotNetHost.Executable;
         await using var standardOutput = new MemoryStream();
         await using var standardError = new MemoryStream();
 

@@ -27,12 +27,14 @@ public sealed class AsyncTaskCompletionEmitterTests
 
         var instructions = writers.Instructions.ToInstructions().ToList();
         // Captured from the qualified process emitter once observation gained the
-        // exception frame that rewinds a fault's frames. All encoded instructions,
-        // including operands and exception handlers, must remain unchanged.
+        // exception frame that rewinds a fault's frames, and again when the
+        // value_frame_leave_mapped import moved the later imports' indices. All
+        // encoded instructions, including operands and exception handlers, must
+        // remain unchanged.
         var snapshot = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(instructions);
         Assert.Equal(target == WasmTarget.Wasm32
-                ? "343e497f6f25d3c61e6e8f9d628dd7ee175c16499014c3fa4555cf244d95c4e9"
-                : "c2e5acfb41ed0c8be1d1201b612f301338aa901ceb008dcef479354044b5d05a",
+                ? "c4ad8c27ec9a2ca56f9b7595bbeea2f03b7ed42c1047ee10ecda4a543b0edd23"
+                : "2972c749ede19a94c565057fd64b2329ef826e5d874d0fb6f064905688022066",
             Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(snapshot)));
         int CallIndex(int index) => instructions.FindIndex(i =>
             i.Opcode == WasmOpcodes.Call && i.Operand.UnsignedValue == index);

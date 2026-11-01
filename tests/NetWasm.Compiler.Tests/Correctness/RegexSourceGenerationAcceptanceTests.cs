@@ -3,7 +3,6 @@ using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class RegexSourceGenerationAcceptanceTests
 {
     [Fact]

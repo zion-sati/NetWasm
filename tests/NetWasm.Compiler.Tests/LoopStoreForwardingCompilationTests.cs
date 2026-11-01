@@ -361,7 +361,7 @@ public sealed class LoopStoreForwardingCompilationTests
         var before = ElementLoads(kept);
         var after = ElementLoads(forwarded);
         Assert.Equal(Forwarded, before.Keys.Where(method => after[method] < before[method]).Order());
-        foreach (var (input, expected) in Cases.Select(row => ((int)row[0], (int)row[1])))
+        foreach (var (input, expected) in Cases.Select(row => row.Data))
         {
             Assert.Equal(expected, ExecuteWithStandardWasiNode(
                 forwarded.ApplicationModule, assets.Directory, input, target, forwarded.StaticDataEnd));

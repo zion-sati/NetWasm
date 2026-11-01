@@ -414,7 +414,7 @@ public sealed class WasmBinaryTests
     [Fact]
     public void RuntimeImportsSeparateAddressesFromSemanticIds()
     {
-        var imports = WasmRuntimeImports.Create();
+        var imports = WasmRuntimeImports.CreateCatalog().Imports.ToArray();
         var allocate = imports.Single(import => import.Name == RuntimeAbi.RuntimeAllocate);
         var registerType = imports.Single(import => import.Name == RuntimeAbi.RuntimeRegisterType);
         var rootEnter = imports.Single(import => import.Name == RuntimeAbi.RuntimeRootFrameEnter);

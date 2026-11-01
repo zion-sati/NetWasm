@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class PortableNumericsCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -8,7 +7,14 @@ public sealed class PortableNumericsCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "PortableNumericsCorpus",
             "NetWasm.Correctness.PortableNumerics",
-            """
+            Source,
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             namespace NetWasm.Correctness.PortableNumerics;
 
             public static class EntryPoint
@@ -136,10 +142,5 @@ public sealed class PortableNumericsCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

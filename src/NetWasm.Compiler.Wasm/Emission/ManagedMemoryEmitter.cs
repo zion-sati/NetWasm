@@ -93,6 +93,11 @@ internal static class ManagedMemoryEmitter
         int size)
     {
         type = type.StackStorageType ?? type;
+        if (type.StackKind == CliValueKind.V128)
+        {
+            EmitVectorLoad(code, offset, size);
+            return;
+        }
         switch (type.CanonicalName)
         {
             case "primitive:i1": WriteMemory(code, WasmOpcodes.I32Load8Signed, 0, offset); return;
@@ -111,12 +116,15 @@ internal static class ManagedMemoryEmitter
         int size)
     {
         type = type.StackStorageType ?? type;
+        if (type.StackKind == CliValueKind.V128)
+        {
+            return WasmValueType.V128;
+        }
         return type.CanonicalName switch
         {
             "primitive:f4" => WasmValueType.F32,
             "primitive:f8" => WasmValueType.F64,
             "primitive:i8" or "primitive:u8" => WasmValueType.I64,
-            _ when type.StackKind == CliValueKind.V128 => WasmValueType.V128,
             _ => size == 8 ? WasmValueType.I64 : WasmValueType.I32,
         };
     }
@@ -129,6 +137,11 @@ internal static class ManagedMemoryEmitter
         int size)
     {
         type = type.StackStorageType ?? type;
+        if (type.StackKind == CliValueKind.V128)
+        {
+            EmitVectorStore(code, offset, size);
+            return;
+        }
         switch (type.CanonicalName)
         {
             case "primitive:f4": WriteMemory(code, WasmOpcodes.F32Store, 2, offset); return;
@@ -253,6 +266,39 @@ internal static class ManagedMemoryEmitter
     }
 
     // A v128 load or store, aligned to the vector's 8-byte halves.
+    // A vector value fills a v128 whatever its storage: Vector2 reads its 8
+    // bytes into the low lanes and writes only those back.
+    public static void EmitVectorLoad(IWasmInstructionWriter code, int offset, int size)
+    {
+        switch (size)
+        {
+            case 16: WriteSimdMemory(code, WasmSimdOpcodes.V128Load, offset); break;
+            case 8: WriteSimdMemory(code, WasmSimdOpcodes.V128Load64Zero, offset); break;
+            default:
+                throw new CompilerException(new CompilerDiagnostic(
+                    DiagnosticCode.RuntimeContract,
+                    $"vector load has unsupported size {size}"));
+        }
+    }
+
+    public static void EmitVectorStore(IWasmInstructionWriter code, int offset, int size)
+    {
+        switch (size)
+        {
+            case 16: WriteSimdMemory(code, WasmSimdOpcodes.V128Store, offset); break;
+            case 8:
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.PrefixedPair(WasmSimdOpcodes.I64x2ExtractLane, 0)));
+                WriteMemory(code, WasmOpcodes.I64Store, 3, offset);
+                break;
+            default:
+                throw new CompilerException(new CompilerDiagnostic(
+                    DiagnosticCode.RuntimeContract,
+                    $"vector store has unsupported size {size}"));
+        }
+    }
+
     private static void WriteSimdMemory(IWasmInstructionWriter code, uint opcode, int offset)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);

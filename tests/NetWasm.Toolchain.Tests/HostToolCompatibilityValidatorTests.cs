@@ -94,7 +94,7 @@ public sealed class HostToolCompatibilityValidatorTests
             new HostToolCompatibilityValidator(Requirement()));
 
         var exception = Assert.Throws<HostToolCompatibilityException>(() =>
-            validator.Validate(Observation(toolId: HostToolIds.WasmTools)));
+            validator.Validate(Observation(toolId: "wasm-tools")));
 
         Assert.Equal(HostToolIds.Node, exception.ToolId);
         Assert.Equal(HostToolCompatibilityFailure.ToolIdentityMismatch, exception.Failure);

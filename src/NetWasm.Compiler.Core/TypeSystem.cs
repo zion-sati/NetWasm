@@ -191,8 +191,15 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
                 fullName: fullName),
             // Vector128<T> and Vector<T> are 16 bytes that move as one Wasm v128
             // value; their instantiations take this kind from the definition.
+            // So do System.Numerics' float vectors, as RyuJIT's SIMD types:
+            // Vector4, Quaternion and Plane fill the 16 bytes and Vector2 the
+            // low 8, its upper lanes undefined. Vector3's 12 bytes stay in memory.
             "System.Runtime.Intrinsics.Vector128`1" or
-            "System.Numerics.Vector`1" => new(
+            "System.Numerics.Vector`1" or
+            "System.Numerics.Vector2" or
+            "System.Numerics.Vector4" or
+            "System.Numerics.Quaternion" or
+            "System.Numerics.Plane" => new(
                 $"[{assembly.Name}]{fullName}",
                 CliTypeShape.Named,
                 CliValueKind.V128,
@@ -516,7 +523,6 @@ public sealed record TypeDefinitionModel(
     public bool IsEnum { get; init; }
     public CliTypeIdentity EnumUnderlyingType { get; init; } =
         CliTypeIdentity.FromStackKind(CliValueKind.ValueType);
-    public CliValueKind EnumUnderlyingKind => EnumUnderlyingType.StackKind;
     public ImmutableArray<EnumMemberModel> EnumMembers { get; init; } = [];
     public bool IsFlagsEnum { get; init; }
 
@@ -550,9 +556,6 @@ public sealed record FieldDefinitionModel(
     {
         SignatureType = signatureType;
     }
-
-    public string DisplayName(string declaringTypeName) =>
-        $"{declaringTypeName}::{Name}";
 }
 
 public sealed record MethodSignatureModel(
@@ -573,16 +576,6 @@ public sealed record MethodSignatureModel(
         ReturnSignatureType = returnType;
         ParameterSignatureTypes = parameterTypes;
     }
-
-    public static MethodSignatureModel Create(
-        CliValueKind returnType,
-        params CliValueKind[] parameterTypes) =>
-        new(returnType, [.. parameterTypes]);
-
-    public static MethodSignatureModel Create(
-        CliTypeIdentity returnType,
-        params CliTypeIdentity[] parameterTypes) =>
-        new(returnType, [.. parameterTypes]);
 
     public MethodSignatureModel Substitute(
         ImmutableArray<CliTypeIdentity> typeArguments,
@@ -755,10 +748,6 @@ public sealed record PropertyInstanceModel(
         return left.HasEquivalentDescriptorFacts(right);
     }
 }
-
-public sealed record MethodImplementationModel(
-    MethodDefinitionModel Body,
-    MethodDefinitionModel Declaration);
 
 public sealed record MethodImplementationInstanceModel(
     MethodInstanceModel Body,
@@ -951,6 +940,7 @@ public enum RuntimeIntrinsic
     SimdLessThan,
     SimdLessThanOrEqual,
     SimdConditionalSelect,
+    SimdShuffle,
     SimdShiftLeft,
     SimdShiftRightArithmetic,
     SimdShiftRightLogical,
@@ -964,6 +954,7 @@ public enum RuntimeIntrinsic
     SimdStore,
     SimdToScalar,
     SimdGetElement,
+    SimdWithElement,
     SimdSum,
     SimdDivide,
     SimdSquareRoot,
@@ -978,9 +969,14 @@ public enum RuntimeIntrinsic
     SimdMultiplyAddEstimate,
     SimdCompareAll,
     SimdCompareAny,
+    SimdPermute,
+    SimdCreateScalar,
     SimdReinterpret,
     PackedSimdIsSupported,
     PackedSimdInstruction,
+    NumericsToVector128,
+    NumericsFromVector128,
+    ObjectContainsReferences,
 }
 
 public static class RuntimeIntrinsicKinds

@@ -112,20 +112,6 @@ public sealed class ClosedTypeIsValueTypeCallRewriterTests
         Assert.Same(body, Rewriter().Rewrite(body));
     }
 
-    [Fact]
-    public void LeavesSwitchEntryIntoSequenceUnchanged()
-    {
-        var instructions = Body(Type(isValueType: true)).Instructions.Add(
-            new(
-                3,
-                4,
-                CilOperation.Switch,
-                new CilOperand.SwitchTargets([1])));
-        var body = Body(instructions);
-
-        Assert.Same(body, Rewriter().Rewrite(body));
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -51,10 +51,6 @@ public static class BrowserComponentCoreModules
         return BrowserLinkPlanValidation.CreateBuilder().Build([.. state.Operations], inputs, outputs, temporary);
     }
 
-    public static BrowserLinkPlan CreateLinkPlan(
-        ComponentCoreModuleLinkRequest request, BrowserComponentCoreModuleWorkspace workspace) =>
-        CreateOrderedLinkPlan(request, workspace);
-
     /// <summary>
     /// Applies the authoritative component export policy to caller-provided bytes.
     /// Returns an owned module and propagates CompilerException diagnostics.

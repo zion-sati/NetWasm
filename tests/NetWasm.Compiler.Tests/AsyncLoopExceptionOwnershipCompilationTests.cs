@@ -15,11 +15,11 @@ public sealed class AsyncLoopExceptionOwnershipCompilationTests
     {
         var compilation = CSharpCompilation.Create(
             "AsyncLoopExceptionOwnership.Desktop",
-            [CSharpSyntaxTree.ParseText(Source, new CSharpParseOptions(LanguageVersion.Preview))],
+            [CSharpSyntaxTree.ParseText(Source, new CSharpParseOptions(LanguageVersion.Preview), cancellationToken: TestContext.Current.CancellationToken)],
             TrustedPlatformReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         using var assemblyStream = new MemoryStream();
-        var emit = compilation.Emit(assemblyStream);
+        var emit = compilation.Emit(assemblyStream, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(emit.Success);
 
         assemblyStream.Position = 0;

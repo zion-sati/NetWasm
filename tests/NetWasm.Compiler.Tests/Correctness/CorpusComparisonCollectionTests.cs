@@ -19,11 +19,11 @@ public sealed class CorpusComparisonCollectionTests
 
         if (wrongInputs == 0)
         {
-            runner.RunAgainstOracle(compilation, Expected());
+            runner.RunAgainstOracle(compilation, Expected(), TestContext.Current.CancellationToken);
         }
         else
         {
-            var error = Assert.Throws<AggregateException>(() => runner.RunAgainstOracle(compilation, Expected()));
+            var error = Assert.Throws<AggregateException>(() => runner.RunAgainstOracle(compilation, Expected(), TestContext.Current.CancellationToken));
             Assert.Contains($"3 observations, {wrongInputs} mismatches", error.Message);
             Assert.Equal(wrongInputs, error.InnerExceptions.Count);
             Assert.All(error.InnerExceptions, item => Assert.IsType<CorpusOracleMismatchException>(item));
@@ -45,7 +45,7 @@ public sealed class CorpusComparisonCollectionTests
         var failures = new Failures();
         var runner = Runner(new NetWasm(2), comparer, failures);
 
-        Assert.Throws<CorpusOracleMismatchException>(() => runner.RunAgainstOracle(Compilation(false), Expected()));
+        Assert.Throws<CorpusOracleMismatchException>(() => runner.RunAgainstOracle(Compilation(false), Expected(), TestContext.Current.CancellationToken));
 
         Assert.Equal(1, comparer.Calls);
         Assert.Single(failures.Writes);
@@ -84,7 +84,7 @@ public sealed class CorpusComparisonCollectionTests
         var failures = new Failures(archiveFailure ? failure : null);
         var runner = Runner(new NetWasm(3), comparer, failures);
 
-        var error = Assert.Throws<InvalidOperationException>(() => runner.RunAgainstOracle(Compilation(true), Expected()));
+        var error = Assert.Throws<InvalidOperationException>(() => runner.RunAgainstOracle(Compilation(true), Expected(), TestContext.Current.CancellationToken));
 
         Assert.Same(failure, error);
         Assert.Equal(2, comparer.Calls);
@@ -101,7 +101,7 @@ public sealed class CorpusComparisonCollectionTests
         var failures = new Failures();
         var runner = Runner(netWasm, comparer, failures, allCells: true);
 
-        var error = Assert.Throws<InvalidOperationException>(() => runner.RunAgainstOracle(Compilation(true), Expected()));
+        var error = Assert.Throws<InvalidOperationException>(() => runner.RunAgainstOracle(Compilation(true), Expected(), TestContext.Current.CancellationToken));
 
         Assert.Same(failure, error);
         Assert.Single(netWasm.Targets);
@@ -163,7 +163,7 @@ public sealed class CorpusComparisonCollectionTests
         var runner = Runner(new NetWasm(0), comparer, failures, linked: linked,
             linkedCells: true, receipts: receipts);
         Assert.Same(failure, Assert.Throws<IOException>(() =>
-            runner.RunAgainstOracle(Compilation(true), Expected())));
+            runner.RunAgainstOracle(Compilation(true), Expected(), TestContext.Current.CancellationToken)));
         Assert.Single(linked.Cells);
         Assert.Empty(receipts.Writes);
         Assert.Equal(0, comparer.Calls);
@@ -183,7 +183,7 @@ public sealed class CorpusComparisonCollectionTests
         };
         var comparer = new Comparer();
         Runner(new NetWasm(0), comparer, new Failures(), receipts: receipts, destinations: destinations)
-            .RunAgainstOracle(Compilation(false), Expected());
+            .RunAgainstOracle(Compilation(false), Expected(), TestContext.Current.CancellationToken);
         Assert.Equal(3, comparer.Calls);
         Assert.Empty(receipts.Writes);
     }
@@ -214,14 +214,14 @@ public sealed class CorpusComparisonCollectionTests
         if (fail)
         {
             Assert.Same(failure, Assert.Throws<InvalidOperationException>(() =>
-                runner.RunAgainstOracle(Compilation(false), Expected())));
+                runner.RunAgainstOracle(Compilation(false), Expected(), TestContext.Current.CancellationToken)));
             Assert.Empty(linked.Cells);
             Assert.Empty(receipts.Writes);
             Assert.Equal(0, comparer.Calls);
         }
         else
         {
-            runner.RunAgainstOracle(Compilation(false), Expected());
+            runner.RunAgainstOracle(Compilation(false), Expected(), TestContext.Current.CancellationToken);
             Assert.Equal(["in-memory"], destinations.Directories);
             Assert.Equal(2, linked.Cells.Count);
             Assert.Equal(2, receipts.Writes.Count);

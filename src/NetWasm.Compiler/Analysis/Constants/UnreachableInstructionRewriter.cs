@@ -19,7 +19,7 @@ internal sealed class UnreachableInstructionRewriter(IControlFlowGraphBuilder gr
             .Where(instruction => instruction.Operation is not
                 (CilOperation.Nop or CilOperation.Return or CilOperation.Throw or
                  CilOperation.Rethrow or CilOperation.EndFinally or CilOperation.EndFilter) &&
-                instruction.Operand is not (CilOperand.BranchTarget or CilOperand.SwitchTargets))
+                instruction.Operand is not CilOperand.BranchTarget)
             .Select(instruction => instruction.Offset)
             .ToHashSet();
         return dead.Count == 0 ? body : body with

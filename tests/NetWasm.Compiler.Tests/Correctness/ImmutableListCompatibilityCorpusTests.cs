@@ -3,7 +3,6 @@ using System.Collections.Immutable;
 namespace NetWasm.Compiler.Tests.Correctness;
 
 // This is an end-to-end differential acceptance fixture, not a unit test.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ImmutableListCompatibilityCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]

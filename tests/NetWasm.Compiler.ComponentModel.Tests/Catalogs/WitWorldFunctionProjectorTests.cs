@@ -745,6 +745,33 @@ public sealed class WitWorldFunctionProjectorTests
             CreateUnchecked().Project(Document(world), world));
     }
 
+    // One reactor wakes a worker, so a world exporting the guest interface twice
+    // is invalid, as are two deployment functions of one identity, which no
+    // validated world has.
+    [Fact]
+    public void RejectsADuplicatedReactorOrDeploymentFunction()
+    {
+        var reactorGuest = new WitInterface(
+            0,
+            "reactor-guest",
+            "netwasm:runtime@1.0.0",
+            [],
+            [Function("wake", [new("token", new WitTypeReference.Primitive("u32"))], null)]);
+        var twice = new WitWorld(0, "worker", "example:worker@1.0.0", [],
+        [
+            new("netwasm:runtime/reactor-guest@1.0.0", 0, null),
+            new("guest", 0, null),
+        ]);
+        AssertInvalid(() => CreateUnchecked().Project(new WitDocument([], [reactorGuest], [twice], [], "{}"), twice),
+            "reactor-guest export is duplicated");
+
+        var duplicate = ExportWorld([
+            new("run", null, Function("run", [], null)),
+            new("run", null, Function("run", [], null)),
+        ]);
+        AssertInvalid(() => CreateUnchecked().Project(Document(duplicate), duplicate), "duplicate identity");
+    }
+
     [Fact]
     public void RejectsIncompleteWorkerDetails()
     {

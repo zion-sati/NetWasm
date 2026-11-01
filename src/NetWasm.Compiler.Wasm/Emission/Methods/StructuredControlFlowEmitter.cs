@@ -146,13 +146,11 @@ internal sealed class StructuredControlFlowEmitter(
                     break;
                 case StructuredLabeledBlock labeled:
                     EmitLabeled(code, WasmOpcodes.Block, labeled.Next, labeled.Body, method, context, emitBlock,
-                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, exceptionLeaveDepth,
-                        dispatcherContinueDepth, labelDepths);
+                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, labelDepths);
                     break;
                 case StructuredLabeledLoop labeled:
                     EmitLabeled(code, WasmOpcodes.Loop, labeled.Header, labeled.Body, method, context, emitBlock,
-                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, exceptionLeaveDepth,
-                        dispatcherContinueDepth, labelDepths);
+                        emitExceptionRegion, loopBreakDepth, loopContinueDepth, labelDepths);
                     break;
                 case StructuredLabelBranch branch:
                     code.Write(WasmInstruction.WithOperand(
@@ -365,7 +363,9 @@ internal sealed class StructuredControlFlowEmitter(
             _ => false,
         };
 
-    // A Wasm block or loop whose label is the named block's.
+    // A Wasm block or loop whose label is the named block's. Labeled blocks come
+    // from the reducible structurer, which takes no method with exception
+    // regions and leaves no dispatcher, so neither encloses one.
     private void EmitLabeled(
         IWasmInstructionWriter code,
         byte opcode,
@@ -378,8 +378,6 @@ internal sealed class StructuredControlFlowEmitter(
             emitExceptionRegion,
         int? loopBreakDepth,
         int? loopContinueDepth,
-        int? exceptionLeaveDepth,
-        int? dispatcherContinueDepth,
         ImmutableDictionary<StructuredBlockId, int> labelDepths)
     {
         code.Write(WasmInstruction.WithOperand(
@@ -394,8 +392,8 @@ internal sealed class StructuredControlFlowEmitter(
             emitExceptionRegion,
             loopBreakDepth + 1,
             loopContinueDepth + 1,
-            exceptionLeaveDepth + 1,
-            dispatcherContinueDepth + 1,
+            null,
+            null,
             Nested(labelDepths).SetItem(label, 0));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }

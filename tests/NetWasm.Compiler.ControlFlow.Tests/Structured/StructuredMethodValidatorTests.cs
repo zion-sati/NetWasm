@@ -340,6 +340,79 @@ public sealed class StructuredMethodValidatorTests
         }
     }
 
+    // A label branch names an enclosing labeled block or loop, and control never
+    // reaches a labeled loop's end: its body ends in a branch, a loop transfer, a
+    // block that returns or throws, two arms that each do, or a loop without a
+    // break whose exit body does.
+    [Fact]
+    public void TargetContractValidatesLabeledRegions()
+    {
+        var method = SimpleMethod();
+        var entry = method.EntryBlock;
+        var occurrence = new New.StructuredBlockOccurrence(entry, New.StructuredBlockRole.Owner);
+        var branch = new New.StructuredSequence([new New.StructuredLabelBranch(entry)]);
+
+        var unlabeled = Assert.Throws<InvalidOperationException>(() => ValidateTargets(method with { Body = branch }));
+        Assert.Contains("no enclosing labeled block or loop", unlabeled.Message);
+        ValidateTargets(method with { Body = new([new New.StructuredLabeledLoop(entry, branch)]) });
+        ValidateTargets(method with
+        {
+            Body = new([new New.StructuredLabeledLoop(entry, new([new New.StructuredCode(occurrence)]))]),
+        });
+        ValidateTargets(method with
+        {
+            Body = new([new New.StructuredLabeledBlock(entry, branch)]),
+        });
+
+        var condition = new New.StructuredCondition(0, CilOperation.BranchIfTrue, 0, CliValueKind.I4, null);
+        var conditional = method with
+        {
+            Blocks = method.Blocks.SetItem(entry, method.Blocks[entry] with
+            {
+                Exit = new New.StructuredConditionalExit(condition, entry, entry),
+            }),
+        };
+        New.StructuredSequence Loop(New.StructuredSequence body) => new([new New.StructuredLabeledLoop(entry,
+            new([new New.StructuredLoop(occurrence, true, body, New.StructuredSequence.Empty, branch)]))]);
+        foreach (var body in new New.StructuredSequence[]
+                 {
+                     New.StructuredSequence.Empty,
+                     new([new New.StructuredLabeledBlock(entry, New.StructuredSequence.Empty)]),
+                     new([new New.StructuredLoopBreak()]),
+                     new([new New.StructuredIf(occurrence, new([new New.StructuredLoopBreak()]), New.StructuredSequence.Empty)]),
+                     new([new New.StructuredIf(occurrence, New.StructuredSequence.Empty, new([new New.StructuredLoopBreak()]))]),
+                     new([new New.StructuredLabeledBlock(entry, new([new New.StructuredLoopBreak()]))]),
+                     new([new New.StructuredLabeledLoop(entry, new([new New.StructuredLoopBreak()]))]),
+                 })
+        {
+            var leaves = body.Regions.Any(region => region is not New.StructuredLabeledBlock { Body.Regions.IsEmpty: true }) &&
+                !body.Regions.IsEmpty;
+            if (leaves)
+            {
+                var reaches = Assert.Throws<InvalidOperationException>(() => ValidateTargets(conditional with { Body = Loop(body) }));
+                Assert.Contains("can reach its end", reaches.Message);
+            }
+            else
+            {
+                ValidateTargets(conditional with { Body = Loop(body) });
+            }
+        }
+        // A loop body that only continues has no break, so only the exit body decides.
+        ValidateTargets(conditional with { Body = Loop(new([new New.StructuredLoopContinue()])) });
+        var open = Assert.Throws<InvalidOperationException>(() => ValidateTargets(method with
+        {
+            Body = new([new New.StructuredLabeledLoop(entry, new([new New.StructuredLabeledBlock(entry, branch)]))]),
+        }));
+        Assert.Contains("can reach its end", open.Message);
+        // Both arms of a final if must transfer; here the first falls out.
+        var openIf = Assert.Throws<InvalidOperationException>(() => ValidateTargets(conditional with
+        {
+            Body = new([new New.StructuredLabeledLoop(entry,
+                new([new New.StructuredIf(occurrence, New.StructuredSequence.Empty, branch)]))]),
+        }));
+        Assert.Contains("can reach its end", openIf.Message);
+    }
+
     [Fact]
     public void TargetContractValidatesNestedMarkersDispatchersAndLeaveRoles()
     {
@@ -714,7 +787,7 @@ public sealed class StructuredMethodValidatorTests
         var block = Assert.Single(method.Blocks.Values);
         var occurrence = new New.StructuredBlockOccurrence(block.Id, New.StructuredBlockRole.ExecutingReplica);
         New.StructuredSequence Region(int id) => new([new New.StructuredExceptionRegion(new(id), null)]);
-        var groups = Enumerable.Range(0, 12).ToImmutableDictionary(
+        var groups = Enumerable.Range(0, 14).ToImmutableDictionary(
             id => new New.StructuredExceptionGroupId(id),
             id => RootedGroup(method) with { Id = new(id) });
         groups = groups.SetItem(new(11), groups[new(11)] with { Parent = new(9) });
@@ -752,6 +825,8 @@ public sealed class StructuredMethodValidatorTests
             new New.StructuredPostTestLoop(Region(5), occurrence, false, Region(6), Region(7)),
             new New.StructuredDispatcher(null, [], [new(block.Id, Region(8))]),
             new New.StructuredExceptionRegion(new(9), null),
+            new New.StructuredLabeledBlock(block.Id, Region(12)),
+            new New.StructuredLabeledLoop(block.Id, Region(13)),
         ]);
 
         ((New.IStructuredExceptionValidator)new New.StructuredExceptionValidator()).Validate(method with

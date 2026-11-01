@@ -14,8 +14,9 @@ internal interface ILocalAddressDereferenceFolder
 // in the same block, as an inlined receiver, out parameter or defensive copy
 // leaves it, is accessed as the local: ldloca followed by a load of the local's
 // own type, or of its primitive's value field, becomes ldloc, and a store or
-// initobj through it becomes stloc. A Vector128<T> or Vector<T> local is read
-// or written as any 16-byte vector type, as Unsafe.As views it. Once no address of a local remains it is no
+// initobj through it becomes stloc. A vector local is read or written as any
+// vector type of its width, as Unsafe.As views it, and its field read just
+// after its address reads the local's lane. Once no address of a local remains it is no
 // longer address-taken, so it needs no value-frame storage, and a method left
 // with no such storage needs no frame. Runs after inlining, which turns those
 // receivers and parameters into ldloca of the caller's local; an address-taken
@@ -67,6 +68,18 @@ internal sealed class LocalAddressDereferenceFolder(
                 (uint)local >= (uint)body.LocalSignatureTypes.Length ||
                 !Accesses(instruction, body.LocalSignatureTypes[local]))
             {
+                continue;
+            }
+            if (instruction.Operation == CilOperation.LoadField && IsVector(body.LocalSignatureTypes[local]))
+            {
+                // A vector local's field reads its lane from the local's value,
+                // which nothing can change between the address and the read
+                // just after it.
+                if (found == producer && producer == index - 1)
+                {
+                    rewritten[producer] = instructions[producer] with { Operation = CilOperation.LoadLocal };
+                    changed = true;
+                }
                 continue;
             }
             if (found != producer)
@@ -148,7 +161,16 @@ internal sealed class LocalAddressDereferenceFolder(
     {
         if (IsVector(local))
         {
-            return instruction.Operand is CilOperand.TypeIdentity { Value: var vector } && IsVector(vector);
+            // Only a view as wide as the local: a Vector2 written into a
+            // Vector4's low half keeps the upper half.
+            return instruction.Operand switch
+            {
+                CilOperand.TypeIdentity { Value: var vector } =>
+                    IsVector(vector) && VectorWidth(vector) == VectorWidth(local),
+                CilOperand.FieldInstance { Value: var field } =>
+                    instruction.Operation == CilOperation.LoadField && field.DeclaringType.Equals(local),
+                _ => false,
+            };
         }
         return Width(local) is { } width &&
             (!Narrow(width) || instruction.Operation is not (CilOperation.StoreObject or CilOperation.StoreField)) &&
@@ -186,6 +208,8 @@ internal sealed class LocalAddressDereferenceFolder(
     private static bool Narrow(string width) => width is "u1" or "i1" or "u2" or "i2";
 
     private static bool IsVector(CliTypeIdentity type) => type.StackKind == CliValueKind.V128;
+
+    private static int VectorWidth(CliTypeIdentity type) => type.FullName == "System.Numerics.Vector2" ? 8 : 16;
 
     private static (CilOperation Operation, CilOperand Operand)? Zero(CliTypeIdentity type) =>
         IsVector(type) ? (CilOperation.DefaultValue, new CilOperand.TypeIdentity(type)) : Width(type) switch

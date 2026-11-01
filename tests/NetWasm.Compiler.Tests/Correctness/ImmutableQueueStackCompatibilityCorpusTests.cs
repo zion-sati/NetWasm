@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ImmutableQueueStackCompatibilityCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]

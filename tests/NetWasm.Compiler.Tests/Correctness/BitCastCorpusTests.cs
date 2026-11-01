@@ -5,7 +5,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // reinterprets in place; between laid-out types it keeps its call. Every cast
 // matches desktop bit for bit, on special and ordinary values, and a delegate
 // to BitConverter, whose own body is a BitCast, still converts.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class BitCastCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -13,7 +12,14 @@ public sealed class BitCastCorpusTests(CorrectnessTestRunner runner)
         runner.Run(new(
             "BitCastCorpus",
             "NetWasm.Correctness.BitCast",
-            """
+            Source,
+            [.. Enumerable.Range(0, 16)])
+        {
+            ExecuteWasm64 = true,
+            ExecuteOptimizedWasm = true,
+        });
+
+    internal const string Source = """
             using System;
             using System.Numerics;
             using System.Runtime.CompilerServices;
@@ -64,10 +70,5 @@ public sealed class BitCastCorpusTests(CorrectnessTestRunner runner)
 
                 public static int Trace() => 0;
             }
-            """,
-            [.. Enumerable.Range(0, 16)])
-        {
-            ExecuteWasm64 = true,
-            ExecuteOptimizedWasm = true,
-        });
+            """;
 }

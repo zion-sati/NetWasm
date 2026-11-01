@@ -39,6 +39,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases,
             phases,
+            phases,
+            phases,
             enumBuilder).Build();
 
         Assert.True(enumBuilder.Called);
@@ -56,6 +58,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         var result = new ManagedStaticDataBuilder(
             EmptyLayouts(),
             state,
+            phases,
+            phases,
             phases,
             phases,
             phases,
@@ -118,6 +122,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases,
             phases,
+            phases,
+            phases,
             phases).Build();
 
         Assert.Equal(8, result.TypeFactsTableCount);
@@ -158,6 +164,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
                 phases,
                 phases,
                 phases,
+                phases,
+                phases,
                 phases).Build());
 
         Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
@@ -186,7 +194,9 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases,
             phases,
+            phases,
             members,
+            phases,
             phases,
             phases,
             phases,
@@ -224,6 +234,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
                 phases,
                 phases,
                 phases,
+                phases,
+                phases,
                 phases).Build());
 
         Assert.Equal(DiagnosticCode.RuntimeContract, exception.Diagnostic.Code);
@@ -240,6 +252,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         var result = new ManagedStaticDataBuilder(
             EmptyLayouts(),
             state,
+            phases,
+            phases,
             phases,
             phases,
             phases,
@@ -290,6 +304,8 @@ public sealed class ManagedStaticDataEnumIntegrationTests
             phases,
             phases,
             phases,
+            phases,
+            phases,
             phases).Build();
 
         var factsAddress = state.TypeFacts[2];
@@ -312,25 +328,25 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         var phases = new NoOpStaticBuildPhase();
 
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            null!, state, phases, phases, phases, phases, phases, phases, phases, phases,
+            null!, state, phases, phases, phases, phases, phases, phases, phases, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, null!, phases, phases, phases, phases, phases, phases, phases, phases,
+            types, null!, phases, phases, phases, phases, phases, phases, phases, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, null!, phases, phases, phases, phases, phases, phases, phases,
+            types, state, null!, phases, phases, phases, phases, phases, phases, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, null!, phases, phases, phases, phases, phases, phases,
+            types, state, phases, null!, phases, phases, phases, phases, phases, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, null!, phases, phases, phases, phases, phases,
+            types, state, phases, phases, null!, phases, phases, phases, phases, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, null!, phases, phases, phases, phases,
+            types, state, phases, phases, phases, null!, phases, phases, phases, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, null!, phases, phases, phases,
+            types, state, phases, phases, phases, phases, phases, null!, phases, phases, phases, phases,
             phases));
         var genericArguments = Assert.Throws<ArgumentNullException>(() =>
             new ManagedStaticDataBuilder(
@@ -345,23 +361,26 @@ public sealed class ManagedStaticDataEnumIntegrationTests
                 phases,
                 phases,
                 phases,
+                phases,
                 phases));
         Assert.Equal("genericArguments", genericArguments.ParamName);
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, null!, phases, phases,
+            types, state, phases, phases, phases, phases, phases, phases, null!, phases, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, null!, phases,
+            types, state, phases, phases, phases, phases, phases, phases, phases, null!, phases, phases,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, phases, null!,
+            types, state, phases, phases, phases, phases, phases, phases, phases, phases, phases, null!,
             phases));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
-            types, state, phases, phases, phases, phases, phases, phases, phases, phases,
+            types, state, phases, phases, phases, phases, phases, phases, phases, phases, phases, phases,
             null!));
         Assert.Throws<ArgumentNullException>(() => new ManagedStaticDataBuilder(
             types with { Target = null! },
             state,
+            phases,
+            phases,
             phases,
             phases,
             phases,
@@ -466,9 +485,11 @@ public sealed class ManagedStaticDataEnumIntegrationTests
         ITypeDescriptorBuilder,
         IConstructedTypeDescriptorBuilder,
         IValueTypeDescriptorBuilder,
+        IRuntimeGenericArgumentMetadataBuilder,
         IMemberDescriptorDataBuilder,
         IStringDataBuilder,
         IExceptionObjectBuilder,
+        ITypeObjectDataBuilder,
         IEnumMetadataCollector,
         IEnumMetadataBuilder
     {

@@ -18,7 +18,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 25;
+    private const ushort SchemaVersion = 26;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -387,7 +387,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     4 => new CilOperand.ConstantF8(reader.ReadDouble()),
                     5 => new CilOperand.Index(reader.ReadInt32()),
                     6 => new CilOperand.BranchTarget(reader.ReadInt32()),
-                    7 => new CilOperand.SwitchTargets(ReadArray(reader.ReadInt32)),
+                    7 => new CilOperand.ExactType(tables.Type(reader.ReadInt32())),
                     8 => new CilOperand.Entity(ReadEntityKey()),
                     9 => new CilOperand.MethodInstance(
                         tables.MethodInstance(reader.ReadInt32())),
@@ -405,7 +405,6 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                         tables.Type(reader.ReadInt32()),
                         tables.Type(reader.ReadInt32()),
                         reader.ReadInt32()),
-                    17 => new CilOperand.ExactType(tables.Type(reader.ReadInt32())),
                     var tag => throw Invalid($"CIL operand tag {tag} is unsupported."),
                 };
                 return new(offset, nextOffset, operation, operand)
@@ -617,11 +616,13 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
             {
                 CatchTypeIdentity = ReadNullableClass(ReadType),
             });
+            var pinnedLocals = ReadArray(reader.ReadInt32).ToImmutableHashSet();
             return new(method, maxStack, locals, instructions)
             {
                 MethodInstance = methodInstance,
                 LocalSignatureTypes = localSignatureTypes,
                 ExceptionRegions = exceptionRegions,
+                PinnedLocals = pinnedLocals,
             };
         }
 

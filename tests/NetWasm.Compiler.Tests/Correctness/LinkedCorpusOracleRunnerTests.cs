@@ -99,7 +99,7 @@ public sealed class LinkedCorpusOracleRunnerTests
         var compilation = CreateCompilation();
         var failure = Assert.Throws<InvalidOperationException>(() =>
             CreateRunner(dependencies).CompileBuildAndRun(compilation,
-                new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct)));
+                new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct), TestContext.Current.CancellationToken));
         Assert.Same(dependencies.Failure, failure);
         Assert.Equal(callCount, dependencies.Calls.Count);
         Assert.Equal(stage, dependencies.Calls[^1]);
@@ -113,10 +113,10 @@ public sealed class LinkedCorpusOracleRunnerTests
         var runner = CreateRunner(dependencies);
         var compilation = CreateCompilation();
         Assert.Throws<ArgumentNullException>(() => runner.CompileBuildAndRun(null!,
-            new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct)));
-        Assert.Throws<ArgumentNullException>(() => runner.CompileBuildAndRun(compilation, null!));
+            new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct), TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentNullException>(() => runner.CompileBuildAndRun(compilation, null!, TestContext.Current.CancellationToken));
         Assert.Throws<ArgumentException>(() => runner.CompileBuildAndRun(compilation,
-            new(CilProfile.Debug, WasmTarget.Wasm32, CorpusWasmForm.Direct)));
+            new(CilProfile.Debug, WasmTarget.Wasm32, CorpusWasmForm.Direct), TestContext.Current.CancellationToken));
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var failure = Assert.Throws<OperationCanceledException>(() =>
@@ -138,7 +138,7 @@ public sealed class LinkedCorpusOracleRunnerTests
             target ? (WasmTarget)99 : WasmTarget.Wasm32,
             target ? CorpusWasmForm.Direct : (CorpusWasmForm)99);
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            CreateRunner(dependencies).CompileBuildAndRun(compilation, cell));
+            CreateRunner(dependencies).CompileBuildAndRun(compilation, cell, TestContext.Current.CancellationToken));
         Assert.Equal(["tools", "capabilities"], dependencies.Calls);
     }
 
@@ -149,7 +149,7 @@ public sealed class LinkedCorpusOracleRunnerTests
         var compilation = CreateCompilation();
 
         CreateRunner(dependencies).CompileBuildAndRun(compilation,
-            new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct));
+            new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct), TestContext.Current.CancellationToken);
 
         Assert.Equal(OracleRuntimeCapabilities.None, dependencies.ProvidedCapabilities);
     }
@@ -161,7 +161,7 @@ public sealed class LinkedCorpusOracleRunnerTests
         var compilation = CreateCompilation();
         Assert.Throws<InvalidOperationException>(() =>
             CreateRunner(dependencies).CompileBuildAndRun(compilation,
-                new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct)));
+                new(compilation.Profile, WasmTarget.Wasm32, CorpusWasmForm.Direct), TestContext.Current.CancellationToken));
         Assert.Equal("fingerprint-application", dependencies.Calls[^1]);
         Assert.DoesNotContain("build-plan", dependencies.Calls);
     }

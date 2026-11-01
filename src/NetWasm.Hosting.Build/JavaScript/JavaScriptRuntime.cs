@@ -47,6 +47,7 @@ internal static class JavaScriptRuntime
         string[] HostShim() =>
         [
             $"export {{ createSelectedPreview2ShimFactory }} from {Hosting("preview2-selected-shim.mjs")};",
+            $"export {{ webPlatform }} from {Hosting("browser-web-platform.mjs")};",
             .. HostFamilies.Select(family => $"export * as {family} from {Shim(family)};"),
         ];
 

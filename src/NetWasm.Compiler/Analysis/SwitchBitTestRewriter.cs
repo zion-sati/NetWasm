@@ -146,14 +146,9 @@ internal sealed class SwitchBitTestRewriter : IMethodRewriteRule
         void Add(int offset) => entries[offset] = entries.GetValueOrDefault(offset) + 1;
         foreach (var instruction in body.Instructions)
         {
-            switch (instruction.Operand)
+            if (instruction.Operand is CilOperand.BranchTarget target)
             {
-                case CilOperand.BranchTarget target:
-                    Add(target.Offset);
-                    break;
-                case CilOperand.SwitchTargets targets:
-                    foreach (var offset in targets.Offsets) Add(offset);
-                    break;
+                Add(target.Offset);
             }
         }
         foreach (var region in body.ExceptionRegions)

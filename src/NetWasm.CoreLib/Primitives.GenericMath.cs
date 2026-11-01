@@ -930,7 +930,9 @@ public partial struct Double
     public static double LogP1(double value) => Math.Log(1D + value);
     public static double Log2P1(double value) => Math.Log2(1D + value);
     public static double Log10P1(double value) => Math.Log10(1D + value);
-    public static double MultiplyAddEstimate(double left, double right, double addend) => Math.FusedMultiplyAdd(left, right, addend);
+    // Upstream's Mono build: the product rounds before the addend is added, as
+    // the vector estimates do.
+    public static double MultiplyAddEstimate(double left, double right, double addend) => (left * right) + addend;
     public static double ReciprocalEstimate(double value) => Math.ReciprocalEstimate(value);
     public static double ReciprocalSqrtEstimate(double value) => Math.ReciprocalSqrtEstimate(value);
     public static double Round(double value) => Math.Round(value);
@@ -1005,8 +1007,7 @@ public partial struct Single
     public static float LogP1(float value) => MathF.Log(value + 1);
     public static float Log2P1(float value) => MathF.Log2(value + 1);
     public static float Log10P1(float value) => MathF.Log10(value + 1);
-    public static float MultiplyAddEstimate(float left, float right, float addend) =>
-        (float)Math.FusedMultiplyAdd(left, right, addend);
+    public static float MultiplyAddEstimate(float left, float right, float addend) => (left * right) + addend;
     public static float Round(float value) => MathF.Round(value);
     public static float Round(float value, int digits) => MathF.Round(value, digits);
     public static float Round(float value, MidpointRounding mode) => MathF.Round(value, mode);

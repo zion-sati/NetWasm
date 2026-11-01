@@ -9,7 +9,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // An array initializer with field RVA data writes small arrays as constant stores, eight bytes at a
 // time, and copies a larger one from its field's static data with one memory.copy. Every element
 // type and size class reads back as desktop's does.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed partial class ArrayInitializerCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """

@@ -11,7 +11,7 @@ public sealed class CommandInvokerTests
     {
         using var directory = new TemporaryDirectory();
         var command = new RuntimeCommand(
-            ResolveDotNet(),
+            NetWasm.TestInfrastructure.DotNetHost.Executable,
             ImmutableArray.Create("--version"),
             directory.PathTo("logs/tool.log"));
 
@@ -26,7 +26,7 @@ public sealed class CommandInvokerTests
     {
         using var directory = new TemporaryDirectory();
         var command = new RuntimeCommand(
-            ResolveDotNet(),
+            NetWasm.TestInfrastructure.DotNetHost.Executable,
             ImmutableArray.Create("--definitely-invalid-netwasm-option"),
             directory.PathTo("logs/tool.log"));
 
@@ -53,7 +53,4 @@ public sealed class CommandInvokerTests
     [Fact]
     public void RejectsNullCommand() =>
         Assert.Throws<ArgumentNullException>(() => new CommandInvoker().Invoke(null!));
-
-    private static string ResolveDotNet() =>
-        Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "dotnet");
 }

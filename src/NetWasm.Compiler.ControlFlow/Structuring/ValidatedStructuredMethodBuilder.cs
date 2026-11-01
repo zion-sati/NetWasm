@@ -73,7 +73,6 @@ internal sealed class ValidatedStructuredMethodBuilder(
                 ContainsDispatcher(loop.Body) || ContainsDispatcher(loop.ContinueBody) || ContainsDispatcher(loop.ExitBody),
             Draft.StructuredPostTestLoopDraft loop =>
                 ContainsDispatcher(loop.Body) || ContainsDispatcher(loop.ContinueBody) || ContainsDispatcher(loop.ExitBody),
-            Draft.StructuredSequenceDraft nested => ContainsDispatcher(nested),
             _ => false,
         });
 }

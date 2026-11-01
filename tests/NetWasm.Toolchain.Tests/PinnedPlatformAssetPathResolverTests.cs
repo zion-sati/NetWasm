@@ -40,7 +40,7 @@ public sealed class PinnedPlatformAssetPathResolverTests
 
         var exception = Assert.Throws<UnsupportedPlatformAssetException>(
             () => resolver.Resolve("unknown"));
-        Assert.Equal("unknown", exception.AssetId);
+        Assert.Contains("'unknown'", exception.Message, StringComparison.Ordinal);
         Assert.Throws<ArgumentException>(() => resolver.Resolve(""));
         Assert.Equal(0, presence.CallCount);
         Assert.Equal(0, verifier.CallCount);

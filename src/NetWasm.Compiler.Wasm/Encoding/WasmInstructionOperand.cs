@@ -14,12 +14,10 @@ public sealed record WasmInstructionOperand
         byte byteValue = 0,
         uint unsignedValue = 0,
         int signedValue = 0,
-        ulong unsigned64Value = 0,
         long signed64Value = 0,
         float float32Value = 0,
         double float64Value = 0,
         ImmutableArray<byte> bytes = default,
-        string? text = null,
         uint alignment = 0,
         uint offset = 0,
         uint third = 0,
@@ -33,12 +31,10 @@ public sealed record WasmInstructionOperand
         ByteValue = byteValue;
         UnsignedValue = unsignedValue;
         SignedValue = signedValue;
-        Unsigned64Value = unsigned64Value;
         Signed64Value = signed64Value;
         Float32Value = float32Value;
         Float64Value = float64Value;
         Bytes = bytes.IsDefault ? ImmutableArray<byte>.Empty : bytes;
-        Text = text;
         Alignment = alignment;
         Offset = offset;
         Third = third;
@@ -59,8 +55,6 @@ public sealed record WasmInstructionOperand
 
     public int SignedValue { get; }
 
-    public ulong Unsigned64Value { get; }
-
     public long Signed64Value { get; }
 
     public float Float32Value { get; }
@@ -68,8 +62,6 @@ public sealed record WasmInstructionOperand
     public double Float64Value { get; }
 
     public ImmutableArray<byte> Bytes { get; }
-
-    public string? Text { get; }
 
     public uint Alignment { get; }
 
@@ -90,9 +82,6 @@ public sealed record WasmInstructionOperand
     public static WasmInstructionOperand None { get; } =
         new(WasmInstructionOperandShape.None);
 
-    public static WasmInstructionOperand Byte(byte value) =>
-        new(WasmInstructionOperandShape.Byte, byteValue: value);
-
     public static WasmInstructionOperand BlockType(byte value) =>
         new(WasmInstructionOperandShape.BlockType, blockTypeValue: value);
 
@@ -101,9 +90,6 @@ public sealed record WasmInstructionOperand
 
     public static WasmInstructionOperand Signed(int value) =>
         new(WasmInstructionOperandShape.SignedLeb128, signedValue: value);
-
-    public static WasmInstructionOperand Unsigned64(ulong value) =>
-        new(WasmInstructionOperandShape.UnsignedLeb12864, unsigned64Value: value);
 
     public static WasmInstructionOperand Signed64(long value) =>
         new(WasmInstructionOperandShape.SignedLeb12864, signed64Value: value);
@@ -116,12 +102,6 @@ public sealed record WasmInstructionOperand
 
     public static WasmInstructionOperand FromBytes(ReadOnlySpan<byte> value) =>
         new(WasmInstructionOperandShape.Bytes, bytes: ImmutableArray.Create(value.ToArray()));
-
-    public static WasmInstructionOperand String(string value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        return new(WasmInstructionOperandShape.String, text: value);
-    }
 
     public static WasmInstructionOperand Memory(uint alignment, uint offset) =>
         new(

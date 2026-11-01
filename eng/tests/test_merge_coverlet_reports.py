@@ -42,6 +42,14 @@ class MergeCoverletReportsTests(unittest.TestCase):
         self.assertEqual(1, len(method["Branches"]))
         self.assertEqual(1, method["Branches"][0]["Hits"])
 
+    # A line or branch run more than 2^31 times in one report wraps Coverlet's
+    # 32-bit counter negative; it was still run.
+    def test_reads_a_wrapped_hit_count_as_run(self):
+        merged = self.merge(report(-2066561544, -1), report(3, 0))
+        method = merged["Compiler.dll"]["Compiler.cs"]["Compiler"]["Run"]
+        self.assertEqual({"10": 2**32 - 2066561544 + 3}, method["Lines"])
+        self.assertEqual(2**32 - 1, method["Branches"][0]["Hits"])
+
     def test_keeps_distinct_branches_and_methods_apart(self):
         other = report(1, 4, ordinal=1)
         other["Compiler.dll"]["Compiler.cs"]["Compiler"]["Stop"] = {"Lines": {"20": 0}, "Branches": []}
@@ -59,7 +67,9 @@ class MergeCoverletReportsTests(unittest.TestCase):
             ({"Compiler.dll": {"Compiler.cs": {"Compiler": {"Run": []}}}}, "Invalid coverage"),
             ({"Compiler.dll": {"Compiler.cs": {"Compiler": {"Run": {"Lines": [], "Branches": []}}}}},
              "Invalid Coverlet method shape"),
-            ({"Compiler.dll": {"Compiler.cs": {"Compiler": {"Run": {"Lines": {"1": -1}, "Branches": []}}}}},
+            ({"Compiler.dll": {"Compiler.cs": {"Compiler": {"Run": {"Lines": {"1": -(2**31) - 1}, "Branches": []}}}}},
+             "Invalid line hit count"),
+            ({"Compiler.dll": {"Compiler.cs": {"Compiler": {"Run": {"Lines": {"1": "1"}, "Branches": []}}}}},
              "Invalid line hit count"),
             ({"Compiler.dll": {"Compiler.cs": {"Compiler": {"Run": {"Lines": {}, "Branches": [{"Line": 1}]}}}}},
              "Incomplete branch coverage"),

@@ -48,7 +48,11 @@ internal sealed class TerminalBranchValueFrameEmitter(
                 emitBody(sequence, context);
                 return;
             }
-            var framedContext = context with { ValueLayout = placement.FramedLayout };
+            var framedContext = context with
+            {
+                ValueLayout = placement.FramedLayout,
+                ValueFrameReferences = placement.FramedReferences,
+            };
             valueFrames.Emit(code, header, framedContext);
             foreach (var index in placement.Plan.IncomingScalarLocals.Order())
             {

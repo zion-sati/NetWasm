@@ -19,9 +19,10 @@ internal sealed class StackValueConsumerFinder(IStackEffectResolver effects) : I
 
     public int? Find(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int producer)
     {
-        // Values pushed above the producer's.
+        // Values pushed above the producer's. A body ends in a branch, return or
+        // throw, whose stack effects are not followed, so the walk stops within it.
         var above = 0;
-        for (var index = producer + 1; index < instructions.Length; index++)
+        for (var index = producer + 1; ; index++)
         {
             if (entries.Contains(instructions[index].Offset) ||
                 _effects.Resolve(instructions[index]) is not var (pops, pushes) || pops > above + 1)
@@ -39,6 +40,5 @@ internal sealed class StackValueConsumerFinder(IStackEffectResolver effects) : I
             }
             above += pushes - pops;
         }
-        return null;
     }
 }

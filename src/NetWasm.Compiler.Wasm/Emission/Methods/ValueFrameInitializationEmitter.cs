@@ -13,8 +13,9 @@ internal sealed class ValueFrameInitializationEmitter(
     IValueFrameAddressEmitter addresses) : IValueFrameInitializationEmitter
 {
     // Wasmtime runs memory.fill out of line, which costs more than a few
-    // stores, so ranges up to this size are zeroed with stores instead.
-    private const int MaximumStoredZeroBytes = 64;
+    // stores, so ranges up to this size are zeroed with stores instead: sixteen
+    // 16-byte stores at most. A Matrix4x4 local alone is 64 bytes.
+    private const int MaximumStoredZeroBytes = 256;
 
     public void Initialize(
         IWasmInstructionWriter code,
@@ -98,7 +99,7 @@ internal sealed class ValueFrameInitializationEmitter(
             WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
     }
 
-    // Zeroes the range with 8-byte stores and a narrower tail, each addressed
+    // Zeroes the range with 16-byte stores and a narrower tail, each addressed
     // from the range start through its memarg offset.
     private void EmitZeroStores(
         IWasmInstructionWriter code,
@@ -109,16 +110,29 @@ internal sealed class ValueFrameInitializationEmitter(
         {
             var size = (storage.Size - written) switch
             {
+                >= 16 => 16,
                 >= 8 => 8,
                 >= 4 => 4,
                 >= 2 => 2,
                 _ => 1,
             };
             addresses.Emit(code, context, storage.Offset);
-            code.Write(size == 8
-                ? WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0))
-                : WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
-            ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, written, size);
+            if (size == 16)
+            {
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.FromBytes([(byte)WasmSimdOpcodes.V128Constant, .. new byte[16]])));
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.SimdPrefixed,
+                    WasmInstructionOperand.PrefixedTriple(WasmSimdOpcodes.V128Store, 0, (uint)written)));
+            }
+            else
+            {
+                code.Write(size == 8
+                    ? WasmInstruction.WithOperand(WasmOpcodes.I64Constant, WasmInstructionOperand.Signed64(0))
+                    : WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+                ManagedMemoryEmitter.EmitStoreBySize(code, layouts.Target, written, size);
+            }
             written += size;
         }
     }

@@ -81,6 +81,7 @@ internal sealed record MethodEmissionContext(
 
     public ImmutableDictionary<int, int> AnchorLocals { get; init; } = [];
     public ImmutableDictionary<RootSource, int> AuthoritativeRootSlots { get; init; } = [];
+    public ValueFrameReferenceMap ValueFrameReferences { get; init; } = ValueFrameReferenceMap.Empty;
     public ImmutableDictionary<(int Offset, bool ConstructorCall), ImmutableHashSet<int>> RootClearElisions
     { get; init; } = [];
     public ImmutableDictionary<int, ImmutableHashSet<int>> RootValueElisions { get; init; } = [];

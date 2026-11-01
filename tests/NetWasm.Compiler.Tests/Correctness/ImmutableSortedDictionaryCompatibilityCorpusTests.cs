@@ -1,6 +1,5 @@
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ImmutableSortedDictionaryCompatibilityCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]

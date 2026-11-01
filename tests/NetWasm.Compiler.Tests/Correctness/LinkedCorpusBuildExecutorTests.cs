@@ -19,7 +19,7 @@ public sealed class LinkedCorpusBuildExecutorTests
         var plan = provider.GetRequiredService<ILinkedCorpusBuildPlanFactory>().Create(
             LinkedCorpusBuildPlanFactoryTests.Request);
 
-        var receipts = provider.GetRequiredService<ILinkedCorpusBuildExecutor>().Execute(plan);
+        var receipts = provider.GetRequiredService<ILinkedCorpusBuildExecutor>().Execute(plan, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, receipts.Length);
         Assert.Equal(plan.Steps.Select(step => step.Process), process.Requests);
@@ -69,7 +69,7 @@ public sealed class LinkedCorpusBuildExecutorTests
         var executor = new LinkedCorpusBuildExecutor(process);
         var plan = Plan;
 
-        var error = Assert.Throws<LinkedCorpusBuildException>(() => executor.Execute(plan));
+        var error = Assert.Throws<LinkedCorpusBuildException>(() => executor.Execute(plan, TestContext.Current.CancellationToken));
 
         Assert.Equal(plan.Steps[failedStage].Stage, error.Stage);
         Assert.Equal(failedStage + 1, process.Requests.Count);
@@ -92,7 +92,7 @@ public sealed class LinkedCorpusBuildExecutorTests
         var process = new RecordingProcess { FailedStage = 0, Failure = failure };
         var executor = new LinkedCorpusBuildExecutor(process);
 
-        var error = Assert.Throws<LinkedCorpusBuildException>(() => executor.Execute(Plan));
+        var error = Assert.Throws<LinkedCorpusBuildException>(() => executor.Execute(Plan, TestContext.Current.CancellationToken));
 
         Assert.Same(cause, error.InnerException);
         Assert.Same(failure, Assert.Single(error.Completed).Result);
@@ -121,7 +121,7 @@ public sealed class LinkedCorpusBuildExecutorTests
         var cause = new InvalidOperationException("process contract failed");
         var process = new RecordingProcess { Throw = cause };
         var executor = new LinkedCorpusBuildExecutor(process);
-        Assert.Same(cause, Assert.Throws<InvalidOperationException>(() => executor.Execute(Plan)));
+        Assert.Same(cause, Assert.Throws<InvalidOperationException>(() => executor.Execute(Plan, TestContext.Current.CancellationToken)));
         Assert.Single(process.Requests);
     }
 
@@ -131,9 +131,9 @@ public sealed class LinkedCorpusBuildExecutorTests
         Assert.Throws<ArgumentNullException>(() => new LinkedCorpusBuildExecutor(null!));
         var process = new RecordingProcess();
         var executor = new LinkedCorpusBuildExecutor(process);
-        Assert.Throws<ArgumentNullException>(() => executor.Execute(null!));
-        Assert.Throws<ArgumentException>(() => executor.Execute(Plan with { Steps = [] }));
-        Assert.Throws<ArgumentException>(() => executor.Execute(Plan with { Steps = default }));
+        Assert.Throws<ArgumentNullException>(() => executor.Execute(null!, TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentException>(() => executor.Execute(Plan with { Steps = [] }, TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentException>(() => executor.Execute(Plan with { Steps = default }, TestContext.Current.CancellationToken));
         Assert.Empty(process.Requests);
     }
 

@@ -12,7 +12,7 @@ public sealed class BrowserLinkConformanceTests
         Assert.NotNull(stream);
         using var expected = JsonDocument.Parse(stream);
         var planJson = expected.RootElement.GetProperty("plan").GetRawText();
-        var plan = new BrowserLinkPlanDeserializer().Deserialize(planJson);
+        var plan = BrowserLinkPlanDeserializer.Deserialize(planJson);
         var execution = BrowserLinkPlanValidation.CreateExecutionBuilder().Build(plan);
         using var actual = JsonDocument.Parse(new BrowserLinkPlanSerializer().Serialize(execution));
         Assert.True(JsonElement.DeepEquals(expected.RootElement, actual.RootElement));

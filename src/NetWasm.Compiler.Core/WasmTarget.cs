@@ -53,7 +53,6 @@ public sealed record WasmTargetLayout
     public int ObjectReferenceSize { get; }
     public int ObjectReferenceAlignment { get; }
     public int ObjectHeaderSize { get; }
-    public static int TypeIdSize => sizeof(int);
     public static int SemanticLengthSize => sizeof(int);
     public bool UsesMemory64 => Target == WasmTarget.Wasm64;
 

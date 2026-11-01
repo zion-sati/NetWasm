@@ -40,7 +40,6 @@ internal sealed class BoxedReceiverCallRewriter(
         {
             if (body.Instructions[index] is { Operation: CilOperation.Box, Operand: CilOperand.TypeIdentity { Value: var type } } &&
                 type.IsValueType && !type.ContainsGenericParameters && _nullableTypes.Resolve(type) is null &&
-                type.Shape is CliTypeShape.Primitive or CliTypeShape.Named or CliTypeShape.GenericInstantiation &&
                 FindReceiverCall(body.Instructions, entries, index, type) is { } site)
             {
                 sites.Add(site);
@@ -54,9 +53,10 @@ internal sealed class BoxedReceiverCallRewriter(
     private Site? FindReceiverCall(ImmutableArray<CilInstruction> instructions, HashSet<int> entries, int box, CliTypeIdentity type)
     {
         int? cast = null;
-        // Values pushed above the box.
+        // Values pushed above the box. A body ends in a branch, return or throw,
+        // whose stack effects are not followed, so the walk stops within it.
         var above = 0;
-        for (var index = box + 1; index < instructions.Length; index++)
+        for (var index = box + 1; ; index++)
         {
             var instruction = instructions[index];
             if (entries.Contains(instruction.Offset))
@@ -84,18 +84,16 @@ internal sealed class BoxedReceiverCallRewriter(
             }
             above += pushes - pops;
         }
-        return null;
     }
 
     private bool ReachesOwnMethod(CliTypeIdentity type, CilInstruction call)
     {
-        var declaration = call.Operand switch
-        {
-            CilOperand.Entity entity => _methods.GetMethod(entity.Key),
-            CilOperand.MethodInstance instance => instance.Value.Definition,
-            _ => null,
-        };
-        if (declaration is not { IsStatic: false, IsVirtual: true })
+        // A call names its method by definition or by instantiation, and only
+        // a virtual method, which is an instance method, dispatches on the box.
+        var declaration = call.Operand is CilOperand.MethodInstance instance
+            ? instance.Value.Definition
+            : _methods.GetMethod(((CilOperand.Entity)call.Operand).Key);
+        if (!declaration.IsVirtual)
         {
             return false;
         }
@@ -113,7 +111,7 @@ internal sealed class BoxedReceiverCallRewriter(
             type.Shape == CliTypeShape.GenericInstantiation ? type.TypeArguments : [],
             call.Operand is CilOperand.MethodInstance methodCall ? methodCall.Value.MethodArguments : []));
         // An inherited or default interface method takes the object itself.
-        return !implementation.IsStatic && implementation.DeclaringType == concreteType.Key;
+        return implementation.DeclaringType == concreteType.Key;
     }
 
     // The box becomes a store to a new local and that local's address, the cast

@@ -4,7 +4,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // copies to memory.copy; Unsafe.CopyBlock and InitBlock use memory.copy and
 // memory.fill. Every byte length from 0 to 40 crosses each size threshold, in
 // both overlap directions and at every alignment.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class MemoryCopyCompatibilityTests(CorrectnessTestRunner runner)
     : CSharpSemanticTestBase(runner)
 {

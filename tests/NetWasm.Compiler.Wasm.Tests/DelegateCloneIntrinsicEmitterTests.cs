@@ -91,6 +91,28 @@ public sealed class DelegateCloneIntrinsicEmitterTests
         Assert.Equal(1, EmitterTestSupport.CountManagedThrows(instructions));
     }
 
+    // Issue 144: the clone allocates, so DelegateRuntime.Clone must be a
+    // safepoint, or a multicast delegate's new invocation list, which only its
+    // caller holds, is collected while the clone allocates. Any other method
+    // whose call lowers to this code stops the compilation.
+    [Fact]
+    public void AllocatesOnlyAsTheSafepointDelegateRuntimeCloneIs()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var imports = WasmRuntimeImports.CreateCatalog();
+        var emitter = SafepointCheckedWriterFactoryTests.Checked(CreateEmitter(layouts, imports), imports);
+        var clone = SafepointCheckedWriterFactoryTests.Request("System", "DelegateRuntime", "Clone");
+        var unlisted = SafepointCheckedWriterFactoryTests.Request("System", "DelegateRuntime", "CloneUnlisted");
+
+        emitter.Emit(clone with { Call = clone.Call with { Instruction = CreateRequest(layouts.Target, 0).Instruction } },
+            new EmitterTestSupport.RecordingInstructionWriter());
+        var exception = Assert.Throws<InvalidOperationException>(() => emitter.Emit(
+            unlisted with { Call = unlisted.Call with { Instruction = CreateRequest(layouts.Target, 0).Instruction } },
+            new EmitterTestSupport.RecordingInstructionWriter()));
+
+        Assert.Contains(nameof(RuntimeImportSymbol.Allocate), exception.Message, StringComparison.Ordinal);
+    }
+
     private static DelegateCloneIntrinsicEmitter CreateEmitter(
         RecordingLayoutProvider layouts,
         IRuntimeImportResolver imports) => new(

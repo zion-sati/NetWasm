@@ -321,9 +321,6 @@ internal sealed class ArrayMetadataCachingPlanner(
                     // Like an unconditional loop, its body repeats.
                     CollectLoopOffsets(labeled.Body, method, true, enclosed, offsets, loopEntries, preTested, nestedLoops);
                     break;
-                case StructuredSequence nested:
-                    CollectLoopOffsets(nested, method, repeating, enclosed, offsets, loopEntries, preTested, nestedLoops);
-                    break;
                 case StructuredDispatcher dispatcher:
                     foreach (var block in dispatcher.Blocks) Add(block.Occurrence, true);
                     foreach (var exit in dispatcher.Exits)

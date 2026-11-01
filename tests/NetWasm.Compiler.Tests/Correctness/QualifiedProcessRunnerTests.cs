@@ -41,7 +41,7 @@ public sealed class QualifiedProcessRunnerTests
             TimeSpan.FromSeconds(5))
         {
             Progress = (completed, total) => reports.Add((completed, total)),
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Equal([(3, 10)], reports);
@@ -104,7 +104,7 @@ public sealed class QualifiedProcessRunnerTests
         var result = _runner.Run(new(
             "/definitely/not/a/netwasm/executable",
             ImmutableArray<string>.Empty,
-            TimeSpan.FromSeconds(1)));
+            TimeSpan.FromSeconds(1)), TestContext.Current.CancellationToken);
 
         Assert.Equal(QualifiedProcessCompletion.LaunchFailed, result.Completion);
         Assert.NotNull(result.LaunchException);
@@ -114,7 +114,7 @@ public sealed class QualifiedProcessRunnerTests
     public void RejectsNonPositiveTimeout()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => _runner.Run(new(
-            "/bin/sh", ["-c", "exit 0"], TimeSpan.Zero)));
+            "/bin/sh", ["-c", "exit 0"], TimeSpan.Zero), TestContext.Current.CancellationToken));
     }
 
     private QualifiedProcessResult Run(

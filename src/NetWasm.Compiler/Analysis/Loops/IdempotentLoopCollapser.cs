@@ -101,14 +101,11 @@ internal sealed class IdempotentLoopCollapser(
         var last = instructions[condition + 2].Offset;
         for (var index = 0; index < instructions.Count; index++)
         {
-            if (index == jump || index == condition + 2) continue;
-            var targets = instructions[index].Operand switch
+            if (index != jump && index != condition + 2 &&
+                instructions[index].Operand is CilOperand.BranchTarget { Offset: var target } && target >= first && target <= last)
             {
-                CilOperand.BranchTarget target => [target.Offset],
-                CilOperand.SwitchTargets cases => cases.Offsets,
-                _ => [],
-            };
-            if (targets.Any(target => target >= first && target <= last)) return false;
+                return false;
+            }
         }
         return true;
     }
@@ -282,14 +279,6 @@ internal sealed class IdempotentLoopCollapser(
         _ => null,
     };
 
-    private RuntimeIntrinsic? Intrinsic(CilInstruction instruction)
-    {
-        var key = instruction.Operand switch
-        {
-            CilOperand.Entity entity => entity.Key,
-            CilOperand.MethodInstance instance => instance.Value.Definition.Key,
-            _ => (EntityKey?)null,
-        };
-        return key is { } method && _intrinsics.TryGetIntrinsic(method, out var intrinsic) ? intrinsic : null;
-    }
+    private RuntimeIntrinsic? Intrinsic(CilInstruction instruction) =>
+        _intrinsics.TryGetIntrinsic(CilOperands.MethodKey(instruction.Operand), out var intrinsic) ? intrinsic : null;
 }

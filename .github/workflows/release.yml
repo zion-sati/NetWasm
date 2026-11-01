@@ -288,6 +288,28 @@ jobs:
       artifact-prefix: full-suite-timings
       coverage: true
 
+  # Every class that runs differential fixtures, on the linked runtime with a
+  # collection before every allocation, under each collector: a reference the
+  # compiler leaves unrooted is freed at once instead of now and then.
+  gc-stress:
+    name: GC stress (${{ matrix.collector }})
+    if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
+    strategy:
+      fail-fast: false
+      matrix:
+        collector: [compact, netwasm]
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+      shards: '[1, 2, 3, 4]'
+      timings: eng/compiler-test-full-durations.json
+      classes: eng/compiler-gc-stress-classes.txt
+      corpus-backend: linked
+      collector: ${{ matrix.collector }}
+      gc-stress: true
+      timeout-minutes: 120
+      artifact-prefix: gc-stress-${{ matrix.collector }}-timings
+
   # The full suite's merged coverage must meet eng/coverage-baseline.json. The
   # badge it writes is attached to the release for the README.
   coverage:
@@ -325,13 +347,15 @@ jobs:
           retention-days: 90
 
   aggregate:
-    needs: [build, host-tools, full-suite, coverage]
+    needs: [build, host-tools, full-suite, gc-stress, coverage]
     if: >-
       ${{ always() && needs.build.result == 'success' &&
           ((needs.build.outputs.mode == 'build' && needs.host-tools.result == 'success' &&
-            needs.full-suite.result == 'success' && needs.coverage.result == 'success') ||
+            needs.full-suite.result == 'success' && needs.gc-stress.result == 'success' &&
+            needs.coverage.result == 'success') ||
            (needs.build.outputs.mode != 'build' && needs.host-tools.result == 'skipped' &&
             contains(fromJSON('["success", "skipped"]'), needs.full-suite.result) &&
+            contains(fromJSON('["success", "skipped"]'), needs.gc-stress.result) &&
             contains(fromJSON('["success", "skipped"]'), needs.coverage.result))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -1,9 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <ProjectReference Include="../../src/NetWasm.Hosting/NetWasm.Hosting.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../TestInfrastructure/DotNetHost.cs" Link="DotNetHost.cs" />
   </ItemGroup>
 </Project>

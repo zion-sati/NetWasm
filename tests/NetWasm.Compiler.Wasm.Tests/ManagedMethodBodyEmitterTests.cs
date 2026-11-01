@@ -387,7 +387,9 @@ public sealed class ManagedMethodBodyEmitterTests
                 new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
                 new ScalarCallLifetimePlanner(new ControlFlowGraphBuilderFactory().Create(),
                     new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer())),
-                new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(), new RootClearElisionPlanner(), new RootValueElisionPlanner()),
+                new AuthoritativeRootSourceSelector(), new AuthoritativeRootLayoutPlanner(), new RootClearElisionPlanner(), new RootValueElisionPlanner(),
+                new ValueFrameReferenceMapPlanner(layouts, layouts, CreateArgumentSignatureTypes(program)),
+                new NetWasm.Compiler.GarbageCollection.RootSlotAllocator()),
             new ManagedMethodSequenceEmitter(
                 layouts,
                 new ExceptionRegionEmitter(

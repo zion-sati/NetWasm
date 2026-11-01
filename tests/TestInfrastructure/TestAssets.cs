@@ -193,7 +193,7 @@ public sealed class TestAssets : IDisposable
         var sourcePath = Path.Combine(Directory, assemblyName + ".cs");
         var output = Path.Combine(Directory, assemblyName + ".dll");
         File.WriteAllText(sourcePath, source);
-        var dotnetRoot = Path.GetDirectoryName(ResolveDotNetHost())
+        var dotnetRoot = Path.GetDirectoryName(DotNetHost.Executable)
             ?? throw new InvalidOperationException("dotnet root is unavailable");
         var referenceDirectory = Path.Combine(
             dotnetRoot,
@@ -421,7 +421,7 @@ public sealed class TestAssets : IDisposable
         var sdkVersion = sdkVersionOverride ?? File.ReadAllText(Path.Combine(root, "global.json"))
             .Split("\"version\": \"", StringSplitOptions.None)[1]
             .Split('"')[0];
-        var dotnet = ResolveDotNetHost();
+        var dotnet = DotNetHost.Executable;
         var csc = Path.Combine(
             Path.GetDirectoryName(dotnet)!,
             "sdk",
@@ -544,48 +544,6 @@ public sealed class TestAssets : IDisposable
         return current?.FullName
             ?? throw new InvalidOperationException("repository root was not found");
     }
-
-    private static string ResolveDotNetHost()
-    {
-        var executableName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
-        var configuredHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
-        if (!string.IsNullOrWhiteSpace(configuredHost) && File.Exists(configuredHost))
-        {
-            return ResolveLinkTarget(configuredHost);
-        }
-
-        var configuredRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
-        if (!string.IsNullOrWhiteSpace(configuredRoot))
-        {
-            var rootedHost = Path.Combine(configuredRoot, executableName);
-            if (File.Exists(rootedHost))
-            {
-                return ResolveLinkTarget(rootedHost);
-            }
-        }
-
-        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-                     .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var pathHost = Path.Combine(directory, executableName);
-            if (File.Exists(pathHost))
-            {
-                return ResolveLinkTarget(pathHost);
-            }
-        }
-
-        var processPath = Environment.ProcessPath;
-        if (processPath is not null &&
-            string.Equals(Path.GetFileName(processPath), executableName, StringComparison.OrdinalIgnoreCase))
-        {
-            return ResolveLinkTarget(processPath);
-        }
-
-        throw new InvalidOperationException("dotnet host path is unavailable");
-    }
-
-    private static string ResolveLinkTarget(string path) =>
-        File.ResolveLinkTarget(path, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(path);
 }
 
 public sealed partial class RoslynCompilationException : InvalidOperationException

@@ -576,9 +576,9 @@ public sealed class ComponentCompilationTests
         };
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("Runtime build did not start");
-        var buildOutput = process.StandardOutput.ReadToEndAsync();
-        var buildError = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var buildOutput = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var buildError = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
         Assert.True(process.ExitCode == 0, await buildOutput + await buildError);
         using var services = CreateComponentModelServices();
         var packager = services.GetRequiredService<IComponentPackager>();

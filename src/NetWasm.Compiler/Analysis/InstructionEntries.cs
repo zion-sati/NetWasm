@@ -6,20 +6,15 @@ namespace NetWasm.Compiler.Analysis;
 internal static class InstructionEntries
 {
     // Offsets that control can reach other than from the instruction before:
-    // branch and switch targets and protected region boundaries.
+    // branch targets and protected region boundaries.
     public static HashSet<int> Of(CilMethodBody body)
     {
         var entries = new HashSet<int>();
         foreach (var instruction in body.Instructions)
         {
-            switch (instruction.Operand)
+            if (instruction.Operand is CilOperand.BranchTarget target)
             {
-                case CilOperand.BranchTarget target:
-                    entries.Add(target.Offset);
-                    break;
-                case CilOperand.SwitchTargets targets:
-                    entries.UnionWith(targets.Offsets);
-                    break;
+                entries.Add(target.Offset);
             }
         }
         foreach (var region in body.ExceptionRegions)

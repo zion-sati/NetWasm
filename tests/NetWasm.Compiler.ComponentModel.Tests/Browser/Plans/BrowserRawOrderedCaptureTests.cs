@@ -28,7 +28,7 @@ public sealed class BrowserRawOrderedCaptureTests
         {
             InternalApplicationExports = prune ? [new("internal", 0)] : [],
         };
-        var captured = BrowserRawCoreModules.CreateLinkPlan(request, new("v/tmp", "v/tmp/linked.wasm"));
+        var captured = BrowserRawCoreModules.CreateOrderedLinkPlan(request, new("v/tmp", "v/tmp/linked.wasm"));
         var operations = captured.Operations;
 
         Assert.IsType<BrowserLinkTextOperation>(operations[0]);

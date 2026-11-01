@@ -3,7 +3,6 @@ using NetWasm.Compiler.ComponentModel;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class LoopInvariantFieldHoistingCompatibilityTests(
     CorrectnessTestRunner runner)
 {

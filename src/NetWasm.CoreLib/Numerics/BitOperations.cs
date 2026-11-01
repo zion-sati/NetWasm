@@ -156,13 +156,12 @@ namespace System.Numerics
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [CLSCompliant(false)]
+        // NetWasm builds one CoreLib for both widths, so upstream's TARGET_64BIT branch is chosen by IntPtr.Size, which the compiler folds per target.
         public static nuint RoundUpToPowerOf2(nuint value)
         {
-#if TARGET_64BIT
-            return (nuint)RoundUpToPowerOf2((ulong)value);
-#else
-            return (nuint)RoundUpToPowerOf2((uint)value);
-#endif
+            return IntPtr.Size == 8
+                ? (nuint)RoundUpToPowerOf2((ulong)value)
+                : (nuint)RoundUpToPowerOf2((uint)value);
         }
 
         /// <summary>
@@ -260,11 +259,9 @@ namespace System.Numerics
         [CLSCompliant(false)]
         public static int LeadingZeroCount(nuint value)
         {
-#if TARGET_64BIT
-            return LeadingZeroCount((ulong)value);
-#else
-            return LeadingZeroCount((uint)value);
-#endif
+            return IntPtr.Size == 8
+                ? LeadingZeroCount((ulong)value)
+                : LeadingZeroCount((uint)value);
         }
 
         /// <summary>
@@ -365,11 +362,9 @@ namespace System.Numerics
         [CLSCompliant(false)]
         public static int Log2(nuint value)
         {
-#if TARGET_64BIT
-            return Log2((ulong)value);
-#else
-            return Log2((uint)value);
-#endif
+            return IntPtr.Size == 8
+                ? Log2((ulong)value)
+                : Log2((uint)value);
         }
 
         /// <summary>
@@ -516,11 +511,9 @@ namespace System.Numerics
         [CLSCompliant(false)]
         public static int PopCount(nuint value)
         {
-#if TARGET_64BIT
-            return PopCount((ulong)value);
-#else
-            return PopCount((uint)value);
-#endif
+            return IntPtr.Size == 8
+                ? PopCount((ulong)value)
+                : PopCount((uint)value);
         }
 
         /// <summary>
@@ -638,11 +631,9 @@ namespace System.Numerics
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int TrailingZeroCount(nint value)
         {
-#if TARGET_64BIT
-            return TrailingZeroCount((ulong)(nuint)value);
-#else
-            return TrailingZeroCount((uint)(nuint)value);
-#endif
+            return IntPtr.Size == 8
+                ? TrailingZeroCount((ulong)(nuint)value)
+                : TrailingZeroCount((uint)(nuint)value);
         }
 
         /// <summary>
@@ -655,11 +646,9 @@ namespace System.Numerics
         [CLSCompliant(false)]
         public static int TrailingZeroCount(nuint value)
         {
-#if TARGET_64BIT
-            return TrailingZeroCount((ulong)value);
-#else
-            return TrailingZeroCount((uint)value);
-#endif
+            return IntPtr.Size == 8
+                ? TrailingZeroCount((ulong)value)
+                : TrailingZeroCount((uint)value);
         }
 
         /// <summary>
@@ -704,11 +693,9 @@ namespace System.Numerics
         [CLSCompliant(false)]
         public static nuint RotateLeft(nuint value, int offset)
         {
-#if TARGET_64BIT
-            return (nuint)RotateLeft((ulong)value, offset);
-#else
-            return (nuint)RotateLeft((uint)value, offset);
-#endif
+            return IntPtr.Size == 8
+                ? (nuint)RotateLeft((ulong)value, offset)
+                : (nuint)RotateLeft((uint)value, offset);
         }
 
         /// <summary>
@@ -753,11 +740,9 @@ namespace System.Numerics
         [CLSCompliant(false)]
         public static nuint RotateRight(nuint value, int offset)
         {
-#if TARGET_64BIT
-            return (nuint)RotateRight((ulong)value, offset);
-#else
-            return (nuint)RotateRight((uint)value, offset);
-#endif
+            return IntPtr.Size == 8
+                ? (nuint)RotateRight((ulong)value, offset)
+                : (nuint)RotateRight((uint)value, offset);
         }
 
         /// <summary>

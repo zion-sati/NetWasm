@@ -14,6 +14,11 @@ assert.ok(directory && kinds.includes(kind) && output,
 const contentSecurityPolicy = ["page", "hosts", "timezone"].includes(kind)
   ? "default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'"
   : null;
+// Issue #139: the generated hosts work outside a secure context, where
+// browsers have no crypto.subtle. These kinds load as http://netwasm.test/
+// through a proxy to the server, which is not a secure context; the others'
+// pages hash the deployment manifest with crypto.subtle themselves.
+const insecure = ["page", "worker", "wit", "hosts", "timezone"].includes(kind);
 const root = resolve(directory);
 const types = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/javascript",
   ".wasm": "application/wasm", ".json": "application/json" };
@@ -45,7 +50,7 @@ try {
   for (const [name, engine] of [["chromium", chromium], ["firefox", firefox], ["webkit", webkit]]) {
     const entry = { browser: name, passed: false, pageErrors: [], consoleErrors: [] };
     results.push(entry);
-    const browser = await engine.launch({ headless: true });
+    const browser = await engine.launch({ headless: true, ...(insecure ? { proxy: { server: address } } : {}) });
     let page;
     try {
       page = await browser.newPage();
@@ -57,8 +62,10 @@ try {
         if (message.type() === "error") entry.consoleErrors.push(message.text());
       });
       entry.stage = "navigation";
-      await page.goto(`${address}?profile=${encodeURIComponent(profile ?? "")}`,
+      await page.goto(`${insecure ? "http://netwasm.test/" : address}?profile=${encodeURIComponent(profile ?? "")}`,
         { waitUntil: "domcontentloaded" });
+      entry.secureContext = await page.evaluate(() => globalThis.isSecureContext);
+      assert.equal(entry.secureContext, !insecure, `${kind}/${name} loaded in the wrong kind of context`);
       if (kind === "command") {
         entry.stage = "command-readiness";
         await page.waitForFunction(() => document.querySelector("#managed").textContent === "ready"

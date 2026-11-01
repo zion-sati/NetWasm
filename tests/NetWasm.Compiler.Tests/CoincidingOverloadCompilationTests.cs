@@ -76,4 +76,48 @@ public sealed class CoincidingOverloadCompilationTests
                 result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
         }
     }
+
+    // Cell<byte>'s two conversions to byte coincide and differ only in the
+    // declared return type, T against byte, which then names the overload.
+    private const string ConversionSource = """
+        using System.Runtime.CompilerServices;
+
+        public readonly struct Cell<T>
+        {
+            private readonly T _value;
+            public Cell(T value) => _value = value;
+            public static implicit operator T(Cell<T> cell) => cell._value;
+            public static implicit operator byte(Cell<T> cell) => 9;
+        }
+
+        public static class EntryPoint
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static U Unwrap<U>(Cell<U> cell) => cell;
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static byte Narrow<U>(Cell<U> cell) => cell;
+
+            public static int Run(int input) =>
+                Unwrap(new Cell<byte>((byte)(input + 5))) * 10 + Narrow(new Cell<byte>(1));
+        }
+        """;
+
+    [Theory]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm64, FinalWasmOptimization.None)]
+    [InlineData(WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    public void ConversionsResolveByTheirDeclaredReturnType(WasmTarget target, FinalWasmOptimization preset)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource($"CoincidingConversion_{target}_{preset}", ConversionSource);
+        var result = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Target: target, Optimization: preset));
+
+        foreach (var (input, expected) in new[] { (0, 59), (1, 69), (7, 129) })
+        {
+            Assert.Equal(expected, ExecuteWithStandardWasiNode(
+                result.ApplicationModule, assets.Directory, input, target, result.StaticDataEnd));
+        }
+    }
 }

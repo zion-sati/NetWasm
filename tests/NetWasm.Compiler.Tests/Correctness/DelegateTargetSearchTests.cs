@@ -3,7 +3,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // A delegate type bound to more than a few methods finds its target by binary
 // search on the target's function index. Every target, static or instance, on
 // a class or a struct, multicast or not, must still be the one that runs.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class DelegateTargetSearchTests(CorrectnessTestRunner runner)
 {
     [Fact]

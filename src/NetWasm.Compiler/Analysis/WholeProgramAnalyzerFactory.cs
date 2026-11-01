@@ -131,7 +131,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             methodBodies,
             optimizationSettings,
             intrinsics,
-            world);
+            world,
+            typeIdentities);
         specializer = attributeQueries.Create(specializer, metadata, typeRepository, fieldRepository,
             methodRepository, typeFinder, typeDefinitions, typeIdentities, methodInstances,
             relationships, baseTypes, calls, types, symbols);

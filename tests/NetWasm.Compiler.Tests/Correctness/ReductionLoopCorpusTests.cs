@@ -13,7 +13,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // tail length match desktop, and so do the loops whose range leaves the array:
 // the locals a catch sees and the exception. Floating sums, checked sums and a
 // truncated minimum stay loops.
-[Collection(CorrectnessTestGroup.Name)]
 public sealed class ReductionLoopCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """

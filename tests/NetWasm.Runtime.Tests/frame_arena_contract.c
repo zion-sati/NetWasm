@@ -226,16 +226,18 @@ static void value_frames(void)
     assert(value_frame_enter(1) == 0 && value_frame == NULL && value_frame_arena.current == NULL);
     fail_metadata = false;
     netwasm_address_t outer = value_frame_enter(32);
-    assert(outer != 0 && outer % 16 == 0);
+    /* A frame without references stays off the list a collection traces. */
+    assert(outer != 0 && outer % 16 == 0 && value_frame == NULL);
     memset((void *)(uintptr_t)outer, 0x5a, 32);
     FrameArenaChunk *first = value_frame_arena.current;
     netwasm_address_t middle = value_frame_enter(8192);
-    assert(middle != 0 && middle % 16 == 0 && value_frame->chunk != first);
+    assert(middle != 0 && middle % 16 == 0 && value_frame_arena.current != first);
+    FrameArenaChunk *second = value_frame_arena.current;
     memset((void *)(uintptr_t)middle, 0xa5, 8192);
-    assert(value_frame_enter(8192) != 0);
-    assert(value_frame->chunk == value_frame_arena.current);
+    assert(value_frame_enter(8192) != 0 && value_frame_arena.current != second);
     value_frame_leave(middle); /* An exception may unwind several value frames. */
-    assert(value_frame->bytes == (unsigned char *)(uintptr_t)outer);
+    assert(value_frame == NULL && value_frame_arena.current == second &&
+        value_frame_arena.cursor == (uintptr_t)middle - sizeof(ValueFrame));
     size_t allocations_before = metadata_allocations;
     assert(value_frame_enter(8192) == middle && metadata_allocations == allocations_before);
     for (size_t i = 0; i < 32; i++) assert(((unsigned char *)(uintptr_t)outer)[i] == 0x5a);
@@ -244,6 +246,85 @@ static void value_frames(void)
     assert(value_frame == NULL && value_frame_arena.current == first &&
         value_frame_arena.cursor == (uintptr_t)frame_arena_bytes(first));
     assert(value_frame_enter(UINT32_MAX) == 0 && value_frame == NULL);
+    release_arena(&value_frame_arena);
+}
+
+/* A value frame's map names the words a collection traces, as they are when
+   it runs: a reference stored into the frame after it was entered is seen, the
+   scalars beside it are not, and a frame without a map adds nothing. A map of
+   one word stays in the frame's header and a longer one follows its bytes.
+   Leaving a mapped frame, whose chunk carries its tags, rewinds the arena as
+   leaving any frame does, within its chunk and from a chunk of its own, and the
+   frames entered after it stay aligned. */
+static void mapped_value_frames(void)
+{
+    netwasm_address_t plain = value_frame_enter(32);
+    /* A frame without a map is not on the list. */
+    assert(plain != 0 && value_frame == NULL);
+    memset((void *)(uintptr_t)plain, 0x5a, 32);
+    verify_roots(0, 0);
+    FrameArenaChunk *first = value_frame_arena.current;
+    uintptr_t cursor = value_frame_arena.cursor;
+    const size_t words = 80;
+    netwasm_address_t mapped = value_frame_enter_mapped(
+        (netwasm_address_t)(words * sizeof(netwasm_reference_t)), 2, ((u64)1 << 0) | ((u64)1 << 3));
+    assert(mapped != 0 && mapped % 16 == 0 && value_frame->references >> 32 == 2);
+    assert((uintptr_t)value_frame->chunk == ((uintptr_t)first | 3u) && value_frame_arena.current == first);
+    netwasm_reference_t *storage = (void *)(uintptr_t)mapped;
+    /* The caller stores the map's later words after the rounded bytes. */
+    size_t rounded = (words * sizeof(netwasm_reference_t) + 15) & ~(size_t)15;
+    u64 *map = (u64 *)(void *)((unsigned char *)storage + rounded);
+    assert((u32)value_frame->references == rounded &&
+        map[0] == (((u64)1 << 0) | ((u64)1 << 3)) && map[1] == 0);
+    map[1] = (u64)1 << 6;
+    for (size_t i = 0; i < words; i++) storage[i] = 0x1000 + i;
+    verify_roots(3, 0x1000 + 0x1003 + 0x1046);
+    storage[3] = 0x9000;
+    verify_roots(3, 0x1000 + 0x9000 + 0x1046);
+    storage[0] = 0;
+    verify_roots(2, 0x9000 + 0x1046);
+    /* Leaving the mapped frame also leaves a frame above it in a later chunk. */
+    assert(value_frame_enter(8192) != 0 && value_frame_arena.current != first);
+    value_frame_leave_mapped(mapped);
+    verify_roots(0, 0);
+    assert(value_frame_arena.current == first && value_frame_arena.cursor == cursor);
+    /* A map of one word takes no room after the bytes, and is traced. */
+    netwasm_address_t single = value_frame_enter_mapped(16, 1, 2);
+    assert(single != 0 && (uintptr_t)value_frame->chunk == ((uintptr_t)first | 1u));
+    ((netwasm_reference_t *)(uintptr_t)single)[0] = 0x2000;
+    ((netwasm_reference_t *)(uintptr_t)single)[1] = 0x3000;
+    verify_roots(1, 0x3000);
+    netwasm_address_t next = value_frame_enter(16);
+    assert(next == single + 16 + sizeof(ValueFrame) && value_frame_arena.current == first);
+    value_frame_leave_mapped(single);
+    assert(value_frame_arena.cursor == cursor);
+    netwasm_address_t spilled = value_frame_enter_mapped(8192, 1, 1);
+    FrameArenaChunk *own = value_frame_arena.current;
+    assert(spilled != 0 && own != first && (uintptr_t)value_frame->chunk == ((uintptr_t)own | 1u));
+    value_frame_leave_mapped(spilled);
+    assert(value_frame_arena.current == own && value_frame_arena.cursor == (uintptr_t)frame_arena_bytes(own));
+    value_frame_leave(plain);
+    assert(value_frame == NULL && value_frame_arena.current == first &&
+        value_frame_arena.cursor == (uintptr_t)frame_arena_bytes(first));
+    assert(value_frame_enter_mapped(16, UINT32_MAX, 1) == 0 && value_frame == NULL);
+    release_arena(&value_frame_arena);
+}
+
+/* Leaving a frame without references restores the list as it stood when the
+   frame was entered, so it also leaves the mapped frames an exception left
+   above it and a collection no longer traces them. */
+static void plain_frames_leave_mapped_frames_above(void)
+{
+    netwasm_address_t plain = value_frame_enter(32);
+    netwasm_address_t mapped = value_frame_enter_mapped(16, 1, 1);
+    assert(plain != 0 && mapped != 0 && value_frame->bytes == (unsigned char *)(uintptr_t)mapped);
+    ((netwasm_reference_t *)(uintptr_t)mapped)[0] = 0x4000;
+    netwasm_address_t inner = value_frame_enter(16);
+    assert(inner != 0 && value_frame->bytes == (unsigned char *)(uintptr_t)mapped);
+    verify_roots(1, 0x4000);
+    value_frame_leave(plain);
+    assert(value_frame == NULL && value_frame_arena.cursor == (uintptr_t)plain - sizeof(ValueFrame));
+    verify_roots(0, 0);
     release_arena(&value_frame_arena);
 }
 
@@ -262,6 +343,7 @@ static void exception_frame_rewinds(void)
     stack_trace_frame_enter(7);
     FrameArenaChunk *first = root_frame_arena.current;
     FrameArenaChunk *first_value = value_frame_arena.current;
+    uintptr_t value_mark = value_frame_arena.cursor;
     uintptr_t root_mark = root_frame_arena.cursor;
     u32 token = exception_frame_enter(0, 0);
     assert(token == exception_frame_top);
@@ -277,7 +359,10 @@ static void exception_frame_rewinds(void)
         for (size_t j = 0; j < 600; j++) ((netwasm_reference_t *)(uintptr_t)frame)[j] = 1000;
     }
     netwasm_address_t middle_value = value_frame_enter(8192);
-    assert(middle_value != 0 && value_frame->chunk != first_value);
+    assert(middle_value != 0 && value_frame_arena.current != first_value);
+    netwasm_address_t mapped_value = value_frame_enter_mapped(16, 1, 1);
+    assert(mapped_value != 0);
+    ((netwasm_reference_t *)(uintptr_t)mapped_value)[0] = 0x5000;
     for (size_t i = 0; i < 4; i++) assert(value_frame_enter(8192) != 0);
     stack_trace_frame_enter(8);
     stack_trace_frame_enter(9);
@@ -288,8 +373,8 @@ static void exception_frame_rewinds(void)
         root_frame_arena.begin == (uintptr_t)frame_arena_bytes(first) &&
         root_frame_arena.limit == root_frame_arena.begin + first->capacity);
     verify_roots(65, 65 * 66 / 2);
-    assert(value_frame->bytes == (unsigned char *)(uintptr_t)outer_value &&
-        value_frame_arena.cursor == (uintptr_t)middle_value - sizeof(ValueFrame));
+    assert(value_frame == NULL && value_frame_arena.current == first_value &&
+        value_frame_arena.cursor == value_mark);
     assert(stack_trace_frame_top == 1 && stack_trace_frames[0].method_id == 7);
 
     /* The arenas carry on as if the skipped frames had left normally: their
@@ -305,6 +390,17 @@ static void exception_frame_rewinds(void)
     value_frame_leave(outer_value);
     root_frame_leave(outer);
     assert(root_slot_count() == 0 && value_frame == NULL && stack_trace_frame_top == 0);
+
+    /* A region that an exception leaves with only frames without references
+       above it still rewinds the value arena to where it began. */
+    netwasm_address_t base = value_frame_enter(32);
+    uintptr_t base_mark = value_frame_arena.cursor;
+    token = exception_frame_enter(0, 0);
+    assert(value_frame_enter(64) != 0 && value_frame_enter(8192) != 0);
+    exception_frame_unwind(token);
+    assert(value_frame == NULL && value_frame_arena.cursor == base_mark);
+    value_frame_leave(base);
+    assert(value_frame_arena.cursor == (uintptr_t)base - sizeof(ValueFrame));
 
     /* A normal exit leaves the exception frame without touching the arenas. */
     netwasm_address_t kept = root_frame_enter(3);
@@ -346,6 +442,8 @@ int main(void)
     root_chunk_transitions();
     root_frame_capacity_boundary();
     value_frames();
+    mapped_value_frames();
+    plain_frames_leave_mapped_frames_above();
     exception_frame_rewinds();
     assert(metadata_allocations == metadata_releases);
     return 0;
