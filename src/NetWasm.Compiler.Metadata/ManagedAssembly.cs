@@ -262,6 +262,7 @@ public sealed class ManagedAssembly : IDisposable
                         IsNewSlot = (method.Attributes & MethodAttributes.NewSlot) != 0,
                         IsFinal = (method.Attributes & MethodAttributes.Final) != 0,
                         IsAbstract = (method.Attributes & MethodAttributes.Abstract) != 0,
+                        PreservesBaseOverrides = HasPreserveBaseOverridesAttribute(method),
                         IsAggressiveInlining = (method.ImplAttributes & MethodImplAttributes.AggressiveInlining) != 0,
                         IsNoInlining = (method.ImplAttributes & MethodImplAttributes.NoInlining) != 0,
                         IsDelegateAsynchronousCall =
@@ -447,6 +448,12 @@ public sealed class ManagedAssembly : IDisposable
                     $"enum has unsupported underlying type '{underlyingType.CanonicalName}'"),
             };
     }
+
+    private bool HasPreserveBaseOverridesAttribute(MethodDefinition method) =>
+        method.GetCustomAttributes()
+            .Select(handle => Reader.GetCustomAttribute(handle))
+            .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
+                "System.Runtime.CompilerServices.PreserveBaseOverridesAttribute");
 
     private bool HasFlagsAttribute(TypeDefinition definition) =>
         definition.GetCustomAttributes()

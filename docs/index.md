@@ -15,6 +15,8 @@ repository.
 - [Performance compared with Mono AOT and desktop .NET](performance.md):
   speed, size and memory on allocation and garbage-collection workloads, with
   versions, settings and reproduction.
+- [Micro-benchmark results](micro-benchmarks.md): every dotnet/performance
+  micro-benchmark case on NetWasm, Mono AOT and desktop .NET.
 - [NetWasm SDK quickstart](sdk-quickstart.md) — create an app or dual-target
   library, restore the pinned host tools through NuGet, then build, run and
   publish with ordinary `dotnet` commands.

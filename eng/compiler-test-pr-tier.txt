@@ -128,6 +128,7 @@ NetWasm.Compiler.Tests.Correctness.ManagedIoCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.MathDifferentialTests
 NetWasm.Compiler.Tests.Correctness.MemoryBoundaryTests
 NetWasm.Compiler.Tests.Correctness.MemoryCopyCompatibilityTests
+NetWasm.Compiler.Tests.Correctness.MethodResolutionCorpusTests
 NetWasm.Compiler.Tests.Correctness.MultiFileCorpusTests
 NetWasm.Compiler.Tests.Correctness.NetWasmOracleRunnerTests
 NetWasm.Compiler.Tests.Correctness.NumericConversionEdgeTests
@@ -154,11 +155,14 @@ NetWasm.Compiler.Tests.Correctness.StaticTypeObjectTests
 NetWasm.Compiler.Tests.Correctness.StjSourceGenerationAcceptanceTests
 NetWasm.Compiler.Tests.Correctness.StructElementCopyRootingTests
 NetWasm.Compiler.Tests.Correctness.TimeZoneInfoFacadeQualification.TimeZoneInfoFacadeAcceptanceTests
+NetWasm.Compiler.Tests.Correctness.TypeInitializationTriggerCorpusTests
+NetWasm.Compiler.Tests.Correctness.TypeNameCorpusTests
 NetWasm.Compiler.Tests.Correctness.TypedTraceDifferentialTests
 NetWasm.Compiler.Tests.Correctness.UnsafeByReferenceDifferentialTests
 NetWasm.Compiler.Tests.Correctness.UnsupportedCilBoundaryTests
 NetWasm.Compiler.Tests.Correctness.ValueAndCallDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ValueFrameInitializationTests
+NetWasm.Compiler.Tests.Correctness.ValueTypeDefaultInterfaceMethodCorpusTests
 NetWasm.Compiler.Tests.Correctness.VectorValueShapesCorpusTests
 NetWasm.Compiler.Tests.Correctness.WideIntegerEdgeTests
 NetWasm.Compiler.Tests.DateTimeCompilationTests
@@ -167,6 +171,7 @@ NetWasm.Compiler.Tests.DecimalCompilationTests
 NetWasm.Compiler.Tests.DelegateAsynchronousProgrammingModelCompilationTests
 NetWasm.Compiler.Tests.DelegateBindingConversionCompilationTests
 NetWasm.Compiler.Tests.DispatchAndDelegateCompilationTests
+NetWasm.Compiler.Tests.DispatchTargetResolverTests
 NetWasm.Compiler.Tests.EmphasisRemovalCompilationTests
 NetWasm.Compiler.Tests.EncodingContractCompilationTests
 NetWasm.Compiler.Tests.EntryPointResolverTests
@@ -224,6 +229,7 @@ NetWasm.Compiler.Tests.PayForPlayFormattingCompilationTests
 NetWasm.Compiler.Tests.PlatformWorldCallRewriterTests
 NetWasm.Compiler.Tests.PrimitiveCompilationTests
 NetWasm.Compiler.Tests.PrimitiveDifferentialCompilationTests
+NetWasm.Compiler.Tests.ReachabilityMarkersTests
 NetWasm.Compiler.Tests.RectangularArrayCompilationTests
 NetWasm.Compiler.Tests.RepeatedArrayAccessPlannerTests
 NetWasm.Compiler.Tests.RootFramePreservationCompilationTests

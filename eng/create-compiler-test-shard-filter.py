@@ -301,9 +301,39 @@ def create_vstest_filter(items: list[str | ShardItem]) -> str:
             raise ValueError(f"Cannot select discovered test case exactly: {item.display_name}")
         clauses.append(
             f"(FullyQualifiedName={item.method_name}"
-            f"&DisplayName~{quote(arguments, safe='.-_')})"
+            f"&DisplayName~{filter_value(arguments)})"
         )
     return f"({'|'.join(sorted(clauses))})&{NORMAL_RUN_EXCLUSION}"
+
+
+def filter_value(text: str) -> str:
+    """Escapes a display-name fragment for a VSTest filter.
+
+    VSTest decodes each %XX escape as one character, so a percent-encoded UTF-8
+    sequence never matches. Only ASCII is escaped; other characters, such as
+    the '···' xUnit writes after a shortened argument, stay as they are.
+    """
+    return "".join(
+        character if ord(character) > 0x7F else quote(character, safe=".-_")
+        for character in text
+    )
+
+
+def write_plan(path: Path, items: list[ShardItem]) -> None:
+    """Records what the shard selects, for check-compiler-test-shard.py."""
+    path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"method": item.method_name, "displayName": item.display_name}
+                    for item in items
+                ]
+            },
+            indent=1,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> int:
@@ -320,6 +350,8 @@ def main() -> int:
     parser.add_argument("--classes", type=Path)
     # Other test projects shard the same way by their own namespace.
     parser.add_argument("--namespace", default=TEST_NAMESPACE)
+    # The shard's selection, which the run's results are checked against.
+    parser.add_argument("--plan-output", type=Path)
     parser.add_argument(
         "--split-threshold-seconds",
         type=float,
@@ -357,6 +389,8 @@ def main() -> int:
         selected_cases = sum(item.cases for item in selected_items)
         selected_weight = sum(item.weight for item in selected_items)
         print(create_vstest_filter(selected_items))
+        if args.plan_output is not None:
+            write_plan(args.plan_output, selected_items)
         print(
             (
                 f"compiler-test shard {args.shard_index + 1}/{args.shard_count}: "

@@ -599,6 +599,10 @@ public sealed record MethodDefinitionModel(
     public bool IsNewSlot { get; init; }
     public bool IsFinal { get; init; }
     public bool IsAbstract { get; init; }
+    // PreserveBaseOverridesAttribute: a covariant override that also replaces
+    // every slot the method it overrides replaced (ECMA-335 II.10.3.4 as .NET 5
+    // extends it).
+    public bool PreservesBaseOverrides { get; init; }
     public bool IsAggressiveInlining { get; init; }
     public bool IsNoInlining { get; init; }
     public InteropImportDeclaration? JSImport { get; init; }

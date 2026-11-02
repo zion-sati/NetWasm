@@ -201,8 +201,11 @@ jobs:
           export NETWASM_NODE_PATH
           project=tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj
           listing="$RUNNER_TEMP/compiler-tests.list"
+          # The listing leaves out what every shard's filter excludes, so the plan
+          # names only tests the shard runs.
           dotnet test "$project" -c Release --no-build --no-restore \
-            --disable-build-servers --nologo --list-tests > "$listing"
+            --disable-build-servers --nologo --list-tests --filter 'Category!=Performance' > "$listing"
+          plan="$RUNNER_TEMP/compiler-test-plan.json"
           selection=()
           if [[ -n "$TEST_CLASSES" ]]; then
             selection=(--classes "$TEST_CLASSES")
@@ -211,7 +214,7 @@ jobs:
             python3 eng/create-compiler-test-shard-filter.py "$listing" \
               --shard-count '${{ strategy.job-total }}' \
               --shard-index '${{ strategy.job-index }}' \
-              --timings '${{ inputs.timings }}' "${selection[@]}"
+              --timings '${{ inputs.timings }}' --plan-output "$plan" "${selection[@]}"
           )"
           collection=()
           if [[ "$COVERAGE" == true ]]; then
@@ -222,6 +225,8 @@ jobs:
             --disable-build-servers --nologo --filter "$filter" \
             --results-directory "$RUNNER_TEMP/compiler-test-results" \
             --logger "trx;LogFileName=compiler-${{ strategy.job-index }}.trx" "${collection[@]}"
+          python3 eng/check-compiler-test-shard.py "$plan" \
+            "$RUNNER_TEMP/compiler-test-results/compiler-${{ strategy.job-index }}.trx"
           if [[ "$COVERAGE" == true && '${{ strategy.job-index }}' == 0 ]]; then
             # The other compiler test projects complete the coverage baseline, as in eng/test.sh.
             units="$RUNNER_TEMP/compiler-test-results/units/coverage.json"

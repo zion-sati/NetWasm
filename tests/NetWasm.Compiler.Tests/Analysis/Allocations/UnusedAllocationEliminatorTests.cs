@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
 using NetWasm.Compiler.Analysis.Allocations;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Tests.Analysis.Allocations;
@@ -213,16 +214,38 @@ public sealed class UnusedAllocationEliminatorTests
         Assert.Same(body, fixture.Rule().Rewrite(body));
     }
 
+    // Creating an object of a type with an explicit static constructor, or one
+    // whose base constructor is such a type's, runs that static constructor, so
+    // the allocation stays even when nothing reads it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnAllocationThatInitializesItsTypeStays(bool throughBase)
+    {
+        var baseConstructor = Constructor(31, Owner, 0);
+        var constructor = Constructor(30, Owner, 0);
+        var fixture = new Fixture([
+            .. Constructs(constructor, Chain(throughBase ? baseConstructor : null), 0),
+            .. Constructs(baseConstructor, Chain(), 0)])
+        {
+            Initializing = [(throughBase ? baseConstructor : constructor).Definition.Key],
+        };
+        var body = Body(I(CilOperation.NewObject, new CilOperand.MethodInstance(constructor)), I(CilOperation.Pop), I(CilOperation.Return));
+
+        Assert.Same(body, fixture.Rule().Rewrite(body));
+    }
+
     [Fact]
     public void DisabledRuleAndMissingInputs()
     {
         var fixture = new Fixture([]);
         var body = Body(I(CilOperation.LoadNull), I(CilOperation.Pop), I(CilOperation.Return));
 
-        Assert.Same(body, new UnusedAllocationEliminator(fixture, fixture, fixture, enabled: false).Rewrite(body));
-        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(null!, fixture, fixture, true));
-        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(fixture, null!, fixture, true));
-        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(fixture, fixture, null!, true));
+        Assert.Same(body, new UnusedAllocationEliminator(fixture, fixture, fixture, fixture, enabled: false).Rewrite(body));
+        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(null!, fixture, fixture, fixture, true));
+        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(fixture, null!, fixture, fixture, true));
+        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(fixture, fixture, null!, fixture, true));
+        Assert.Throws<ArgumentNullException>(() => new UnusedAllocationEliminator(fixture, fixture, fixture, null!, true));
         Assert.Throws<ArgumentNullException>(() => fixture.Rule().Rewrite(null!));
     }
 
@@ -256,11 +279,16 @@ public sealed class UnusedAllocationEliminatorTests
     }
 
     private sealed class Fixture(ImmutableArray<(MethodInstanceModel Constructor, CilMethodBody Body)> constructors) :
-        IMethodBodyReader, ICalledMethodResolver, IFinalizerResolver
+        IMethodBodyReader, ICalledMethodResolver, IFinalizerResolver, IMethodInitializationTriggerClassifier
     {
         public bool Finalizable { get; init; }
 
-        public UnusedAllocationEliminator Rule() => new(this, this, this, enabled: true);
+        // Constructors of types with an explicit static constructor.
+        public ImmutableHashSet<EntityKey> Initializing { get; init; } = [];
+
+        public UnusedAllocationEliminator Rule() => new(this, this, this, this, enabled: true);
+
+        public bool Classify(MethodDefinitionModel method) => Initializing.Contains(method.Key);
 
         public CilMethodBody ReadMethodBody(MethodDefinitionModel method) => throw new InvalidOperationException();
 

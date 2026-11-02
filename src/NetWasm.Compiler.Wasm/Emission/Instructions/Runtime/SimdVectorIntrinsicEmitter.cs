@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
@@ -748,24 +750,25 @@ internal sealed class SimdVectorIntrinsicEmitter(
     internal static byte[] PermutedBytes(string name, int size)
     {
         var count = 16 / size;
-        var half = count / 2;
+        var source = PermutationSources[name];
         return [.. Enumerable.Range(0, count).SelectMany(lane =>
-        {
-            var source = name switch
-            {
-                "ZipLower" => lane / 2 + lane % 2 * count,
-                "ZipUpper" => half + lane / 2 + lane % 2 * count,
-                "UnzipEven" => 2 * lane,
-                "UnzipOdd" => 2 * lane + 1,
-                "ConcatLowerLower" => lane < half ? lane : count + lane - half,
-                "ConcatLowerUpper" => lane < half ? lane : count + lane,
-                "ConcatUpperLower" => lane < half ? half + lane : count + lane - half,
-                "ConcatUpperUpper" => lane < half ? half + lane : count + lane,
-                _ => throw new ArgumentOutOfRangeException(nameof(name)),
-            };
-            return Enumerable.Range(0, size).Select(index => (byte)(source * size + index));
-        })];
+            Enumerable.Range(0, size).Select(index => (byte)(source(lane, count, count / 2) * size + index)))];
     }
+
+    // The source lane of each result lane, given the lane count and its half;
+    // the classifier admits only these names.
+    private static readonly FrozenDictionary<string, Func<int, int, int, int>> PermutationSources =
+        new Dictionary<string, Func<int, int, int, int>>
+        {
+            ["ZipLower"] = (lane, count, _) => lane / 2 + lane % 2 * count,
+            ["ZipUpper"] = (lane, count, half) => half + lane / 2 + lane % 2 * count,
+            ["UnzipEven"] = (lane, _, _) => 2 * lane,
+            ["UnzipOdd"] = (lane, _, _) => 2 * lane + 1,
+            ["ConcatLowerLower"] = (lane, count, half) => lane < half ? lane : count + lane - half,
+            ["ConcatLowerUpper"] = (lane, count, half) => lane < half ? lane : count + lane,
+            ["ConcatUpperLower"] = (lane, count, half) => lane < half ? half + lane : count + lane - half,
+            ["ConcatUpperUpper"] = (lane, count, half) => lane < half ? half + lane : count + lane,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
 
     private static int Lanes(Lane lane) => 16 / LaneSize(lane);
 

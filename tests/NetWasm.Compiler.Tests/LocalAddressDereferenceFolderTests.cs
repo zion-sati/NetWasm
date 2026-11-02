@@ -124,15 +124,37 @@ public sealed class LocalAddressDereferenceFolderTests
         Assert.Same(body, Folder().Rewrite(body));
     }
 
+    // Only a read of the vector's own field is its lane: a write to the field
+    // and a read of another type's field keep the local's address.
+    [Fact]
+    public void AStoreToAVectorsFieldThroughItsAddressStays()
+    {
+        var body = Body([Vector4], code => code.Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.LoadFloat32, 1)
+            .Op(CilOperation.StoreField, ValueField(Vector4, Single)).Return());
+
+        Assert.Same(body, Folder().Rewrite(body));
+    }
+
+    [Fact]
+    public void AnotherTypesFieldReadThroughAVectorsAddressStays()
+    {
+        var body = Body([Vector4], code => code.Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.LoadField, ValueField(Vector2, Single)).Op(CilOperation.Pop).Return());
+
+        Assert.Same(body, Folder().Rewrite(body));
+    }
+
     // A view as wide as the local is the local; a Vector2 written into a
     // Vector4's low half keeps its upper half, so it stays a store to memory.
     [Theory]
     [InlineData("Vector4", true)]
     [InlineData("Vector128", true)]
     [InlineData("Vector2", false)]
+    [InlineData("Int32", false)]
     public void VectorViewsFoldOnlyAtTheLocalsWidth(string view, bool folds)
     {
-        var type = view switch { "Vector4" => Vector4, "Vector128" => Vector, _ => Vector2 };
+        var type = view switch { "Vector4" => Vector4, "Vector128" => Vector, "Int32" => Int32, _ => Vector2 };
         var body = Body([Vector4], code => code.Local(CilOperation.LoadLocalAddress, 0)
             .Op(CilOperation.DefaultValue, new CilOperand.TypeIdentity(type))
             .Op(CilOperation.StoreObject, new CilOperand.TypeIdentity(type)).Return());
