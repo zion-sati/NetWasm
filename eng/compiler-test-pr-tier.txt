@@ -100,6 +100,7 @@ NetWasm.Compiler.Tests.Correctness.FloatingKeyEdgeTests
 NetWasm.Compiler.Tests.Correctness.FloatingMathEdgeTests
 NetWasm.Compiler.Tests.Correctness.FrozenOracleEvidenceReaderTests
 NetWasm.Compiler.Tests.Correctness.FrozenOrdinalStringCompatibilityCorpusTests
+NetWasm.Compiler.Tests.Correctness.GcStressClassListTests
 NetWasm.Compiler.Tests.Correctness.GeneratedCilRegressionPromoterTests
 NetWasm.Compiler.Tests.Correctness.GeneratedCilRegressionRunnerTests
 NetWasm.Compiler.Tests.Correctness.GeneratedCorpusRunnerTests

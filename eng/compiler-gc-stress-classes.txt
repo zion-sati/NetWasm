@@ -98,6 +98,7 @@ NetWasm.Compiler.Tests.Correctness.MemoryBoundaryTests
 NetWasm.Compiler.Tests.Correctness.MemoryCopyCompatibilityTests
 NetWasm.Compiler.Tests.Correctness.MemoryExtensionsCorpusTests
 NetWasm.Compiler.Tests.Correctness.MemoryPinningCompatibilityTests
+NetWasm.Compiler.Tests.Correctness.MethodResolutionCorpusTests
 NetWasm.Compiler.Tests.Correctness.MonitorTests
 NetWasm.Compiler.Tests.Correctness.MultiFileCorpusTests
 NetWasm.Compiler.Tests.Correctness.NarrowIntegerBitOperationTests
@@ -153,6 +154,8 @@ NetWasm.Compiler.Tests.Correctness.TaskSchedulerContinuationTests
 NetWasm.Compiler.Tests.Correctness.TaskSchedulerEventTests
 NetWasm.Compiler.Tests.Correctness.TaskSchedulerTests
 NetWasm.Compiler.Tests.Correctness.ThreadLocalTests
+NetWasm.Compiler.Tests.Correctness.TypeInitializationTriggerCorpusTests
+NetWasm.Compiler.Tests.Correctness.TypeNameCorpusTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorFailureTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorGcTests
 NetWasm.Compiler.Tests.Correctness.UnsafeAccessorNestedGenericTests
@@ -162,6 +165,7 @@ NetWasm.Compiler.Tests.Correctness.UnsupportedCilBoundaryTests
 NetWasm.Compiler.Tests.Correctness.ValidCSharpFuzzTests
 NetWasm.Compiler.Tests.Correctness.ValueAndCallDifferentialTests
 NetWasm.Compiler.Tests.Correctness.ValueFrameInitializationTests
+NetWasm.Compiler.Tests.Correctness.ValueTypeDefaultInterfaceMethodCorpusTests
 NetWasm.Compiler.Tests.Correctness.VectorValueShapesCorpusTests
 NetWasm.Compiler.Tests.Correctness.WebUtilityCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.WideIntegerEdgeTests
