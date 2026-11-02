@@ -104,6 +104,8 @@ public sealed class SimdVectorIntrinsicClassifierTests
         { Vector128, "CreateScalarUnsafe", true, 0, Floats, [Single], RuntimeIntrinsic.SimdCreateScalar },
         { Vector128, "CreateScalar", true, 0, Floats, [Int32], null },
         { Vector128, "CreateScalar", true, 1, Vector, [T, T], null },
+        { Vector128, "CreateScalar", true, 2, Vector, [T], null },
+        { Vector128, "CreateScalar", true, 0, Vector2, [Single], null },
         // The views of System.Numerics' float vectors, upstream's [Intrinsic] bridges.
         { Vector128, "AsVector128", true, 0, Floats, [Vector2], RuntimeIntrinsic.NumericsToVector128 },
         { Vector128, "AsVector128Unsafe", true, 0, Floats, [Vector3], RuntimeIntrinsic.NumericsToVector128 },
