@@ -190,7 +190,7 @@ profile. The separate library and test packages below are also published.
 | Package profile | Supported boundary |
 | --- | --- |
 | Reflection-free dependency injection | `NetWasm.Microsoft.Extensions.DependencyInjection` and its Abstractions package provide generated activation, keyed/sequence services, scopes and package-owned open-generic closure. Runtime reflection, dynamic activation and runtime generic construction remain outside the profile. |
-| `System.Xml` | `NetWasm.System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, schemas, interpreted transforms and primitive serialization. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
+| `System.Xml` | `NetWasm.System.Xml` provides the selected reflection-free readers/writers, DOM, XPath, LINQ to XML, interpreted transforms and primitive serialization. Its `System.Xml.Schema` types are a minimal object model that checks only the document element's name against the schema's top-level elements; they do not perform XSD validation. A port of the .NET schema compiler and validator is in progress. Nonprimitive runtime serializer discovery and ambient network/filesystem resolution remain excluded. |
 | WASI-only HTTP (`System.Net.Http`) | `NetWasm.System.Net.Http` provides the qualified WASI HTTP Preview 2 wasm32 native/browser client profile, with a version-neutral transport seam and no framework `[JSImport]`. wasm64 Component packaging remains externally blocked. |
 | TUnit | The `NetWasm.TUnit.*` packages provide the generated catalog, sequential runner and `dotnet test` integration. A later upstream contribution is a separate decision. |
 
