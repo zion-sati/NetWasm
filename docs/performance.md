@@ -82,7 +82,7 @@ Geometric mean of NetWasm's time over the other runtime's, lower is faster:
 | Math | 96 | 0.85 | 1.41 |
 | `System.Memory` spans | 364 | 0.59 | 2.34 |
 | `System.Numerics` vectors | 770 | 0.39 | 3.18 |
-| `System.Runtime.Intrinsics` | 588 | 0.35 | 3.29 |
+| `System.Runtime.Intrinsics` | 588 | 0.35 | 3.28 |
 | All | 2,202 | 0.45 | 2.34 |
 
 [Micro-benchmark results](micro-benchmarks.md) lists every case. The three
