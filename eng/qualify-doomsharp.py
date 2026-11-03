@@ -70,6 +70,23 @@ def qualify(bench: Path, preset: str, collector: str, expected: str, environment
     return None
 
 
+def configure(bench: Path, packages: Path, version: str) -> None:
+    """Points the benchmark at the candidate SDK and packages, and stops MSBuild's
+    search for Directory.Build files at it, so a checkout inside another
+    repository, as CI's is inside NetWasm's, takes none of that repository's
+    build properties, such as its package version defaults."""
+    (bench / "global.json").write_text(json.dumps(
+        {"sdk": {"version": "10.0.100", "rollForward": "latestFeature"},
+         "msbuild-sdks": {"NetWasm.Sdk": version}}, indent=2) + "\n")
+    (bench / "NuGet.Config").write_text(
+        "<configuration>\n  <packageSources>\n    <clear />\n"
+        f"    <add key=\"candidate\" value=\"{packages}\" />\n"
+        "    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" protocolVersion=\"3\" />\n"
+        "  </packageSources>\n</configuration>\n")
+    for name in ("Directory.Build.props", "Directory.Build.targets"):
+        (bench / name).write_text("<Project />\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("checkout", type=Path)
@@ -91,14 +108,7 @@ def main() -> int:
     if reduced.returncode != 0 or f"checksum {pin['checksum']} " not in reduced.stdout:
         raise SystemExit(f"desktop .NET did not render checksum {pin['checksum']}:\n{reduced.stdout}{reduced.stderr}")
 
-    (bench / "global.json").write_text(json.dumps(
-        {"sdk": {"version": "10.0.100", "rollForward": "latestFeature"},
-         "msbuild-sdks": {"NetWasm.Sdk": arguments.version}}, indent=2) + "\n")
-    (bench / "NuGet.Config").write_text(
-        "<configuration>\n  <packageSources>\n    <clear />\n"
-        f"    <add key=\"candidate\" value=\"{arguments.packages.resolve()}\" />\n"
-        "    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" protocolVersion=\"3\" />\n"
-        "  </packageSources>\n</configuration>\n")
+    configure(bench, arguments.packages.resolve(), arguments.version)
     environment = dict(os.environ, NUGET_PACKAGES=str(bench.parent / ".packages"))
 
     # One restore before the parallel builds share the package folder.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import tempfile
 import unittest
 
 
@@ -27,6 +28,20 @@ class CellTests(unittest.TestCase):
         self.assertEqual("zion-sati/doomsharp", pin["repository"])
         self.assertRegex(pin["commit"], r"^[0-9a-f]{40}$")
         self.assertRegex(pin["checksum"], r"^-?\d+$")
+
+
+class ConfigureTests(unittest.TestCase):
+    def test_selects_the_candidate_and_stops_the_directory_build_search(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bench = Path(directory)
+            MODULE.configure(bench, Path("/packages"), "1.2.3-ci.4")
+            self.assertEqual({"NetWasm.Sdk": "1.2.3-ci.4"},
+                             json.loads((bench / "global.json").read_text())["msbuild-sdks"])
+            config = (bench / "NuGet.Config").read_text()
+            self.assertIn("<clear />", config)
+            self.assertIn('value="/packages"', config)
+            for name in ("Directory.Build.props", "Directory.Build.targets"):
+                self.assertEqual("<Project />\n", (bench / name).read_text())
 
 
 class ChecksumTests(unittest.TestCase):

@@ -58,7 +58,8 @@ public sealed class ConstantTripLoopUnrollerCorpusTests(CorrectnessTestRunner ru
                     break;
                 }
                 var flag = (ulong)(value ^ (value - 1));
-                return i * 8 + (int)((flag * 0x0001020304050608ul) >> 57);
+                // No lane set reads as -1, whatever the vector's width.
+                return (i < Vector<long>.Count ? i : -1) * 8 + (int)((flag * 0x0001020304050608ul) >> 57);
             }
 
             [MethodImpl(MethodImplOptions.NoInlining)]
@@ -179,10 +180,12 @@ public sealed class ConstantTripLoopUnrollerCorpusTests(CorrectnessTestRunner ru
                 return sum;
             }
 
+            // One byte set within the first 16, which every vector width holds, so
+            // the scan finds it in the same lane on desktop .NET's wider vectors.
             private static Vector<byte> Lanes(int seed)
             {
                 var bytes = new byte[Vector<byte>.Count];
-                if (seed % 7 != 6) bytes[(seed * 5) % bytes.Length] = (byte)(seed * 13 + 1);
+                if (seed % 7 != 6) bytes[(seed * 5) % 16] = (byte)(seed * 13 + 1);
                 return new Vector<byte>(bytes);
             }
 
