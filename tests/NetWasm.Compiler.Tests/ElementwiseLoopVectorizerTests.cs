@@ -8,8 +8,9 @@ namespace NetWasm.Compiler.Tests;
 // Loop shapes Roslyn does not emit but CIL allows, and those other passes leave
 // in place before the vectorizer sees them: constants and calls inlining
 // exposes, loops entered with values on the stack, and bounds and bodies the
-// vector form cannot keep. ElementwiseLoopVectorizerCorpusTests covers the
-// shapes C# writes, against desktop .NET.
+// vector form cannot keep, and walks that use their reference as a number or
+// read their element as another type. ElementwiseLoopVectorizerCorpusTests
+// covers the shapes C# writes, against desktop .NET.
 public sealed class ElementwiseLoopVectorizerTests
 {
     private static readonly AssemblyIdentity Assembly = new("fixture");
@@ -46,7 +47,8 @@ public sealed class ElementwiseLoopVectorizerTests
         "convert of nothing", "counter divided", "value left on the stack",
         "call without its arguments", "call of an element", "impure call", "argument halved",
         "store read at another offset", "element of a double constant", "complemented double element",
-        "xor of double elements", "shifted double element",
+        "xor of double elements", "shifted double element", "double fold", "int fold into a native int",
+        "long plus int elements", "int fold of elements divided by three",
     ];
 
     [Theory]
@@ -56,6 +58,34 @@ public sealed class ElementwiseLoopVectorizerTests
         var body = Shape(shape);
 
         Assert.Same(body, Vectorizer().Rewrite(body));
+    }
+
+    // A walk folds the elements it reads through p, as the type p walks, into a
+    // local of their kind with operations vectors have; one that also reads p's
+    // address as a number, reads its element as another type, divides, folds a
+    // value of another kind or folds into a native int stays a walk.
+    [Theory]
+    [InlineData("its elements", true)]
+    [InlineData("its element plus its reference's complement", false)]
+    [InlineData("its reference's complement plus its element", false)]
+    [InlineData("its elements as another type", false)]
+    [InlineData("its elements divided by three", false)]
+    [InlineData("a long plus its elements", false)]
+    [InlineData("its elements into a native int", false)]
+    public void WalkFoldsOnlyElementsOfItsOwnType(string value, bool vectorized)
+    {
+        CilInstruction element = I(CilOperation.LoadObject, new CilOperand.TypeIdentity(Int32));
+        var body = Walk(value switch
+        {
+            "its element plus its reference's complement" => [Walked(), element, Walked(), I(CilOperation.OnesComplement), I(CilOperation.Add)],
+            "its reference's complement plus its element" => [Walked(), I(CilOperation.OnesComplement), Walked(), element, I(CilOperation.Add)],
+            "its elements as another type" => [Walked(), I(CilOperation.LoadObject, new CilOperand.TypeIdentity(CliTypeIdentity.Primitive("u4", CliValueKind.I4)))],
+            "its elements divided by three" => [Walked(), element, I(CilOperation.LoadInt32, 3), I(CilOperation.Divide)],
+            "a long plus its elements" => [I(CilOperation.LoadInt64, new CilOperand.ConstantI8(5)), Walked(), element, I(CilOperation.Add)],
+            _ => [Walked(), element],
+        }, value == "its elements into a native int" ? CliValueKind.NativeInt : CliValueKind.I4);
+
+        Assert.Equal(vectorized, !ReferenceEquals(body, Vectorizer().Rewrite(body)));
     }
 
     private static ElementwiseLoopVectorizer Vectorizer() => new(new FakeVectorMethods(), new OperandCalledMethodResolver(), true);
@@ -98,6 +128,20 @@ public sealed class ElementwiseLoopVectorizerTests
             [Arg(0), Counter(), Arg(1), Counter(), I(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(Float64)),
                 I(CilOperation.LoadInt32, 2), I(CilOperation.ShiftLeft), I(CilOperation.StoreArrayElement, new CilOperand.TypeIdentity(Float64))],
             Bound()),
+        // s = s + b[i] * 0.5 over doubles, whose sum depends on its order.
+        "double fold" => Loop(
+            [I(CilOperation.LoadLocal, new CilOperand.Index(1)), Arg(1), Counter(),
+                I(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(Float64)),
+                I(CilOperation.LoadFloat64, new CilOperand.ConstantF8(0.5)), I(CilOperation.Multiply), I(CilOperation.Add),
+                I(CilOperation.StoreLocal, new CilOperand.Index(1))], Bound(), sum: CliValueKind.F8),
+        // s = s + value over int elements, into a native int, or of values another
+        // kind leads or division computes.
+        "int fold into a native int" => IntFold([Arg(1), Counter(), I(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(Int32))],
+            CliValueKind.NativeInt),
+        "long plus int elements" => IntFold([I(CilOperation.LoadInt64, new CilOperand.ConstantI8(5)), Arg(1), Counter(),
+            I(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(Int32)), I(CilOperation.Add)], CliValueKind.I4),
+        "int fold of elements divided by three" => IntFold([Arg(1), Counter(), I(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(Int32)),
+            I(CilOperation.LoadInt32, 3), I(CilOperation.Divide)], CliValueKind.I4),
         "no bound" => Loop(IntBody([I(CilOperation.LoadInt32, 1)]), []),
         "bound reads the counter" => Loop(IntBody([I(CilOperation.LoadInt32, 1)]), [Counter()]),
         "bound subtracts nothing" => Loop(IntBody([I(CilOperation.LoadInt32, 1)]), [I(CilOperation.Subtract)]),
@@ -125,6 +169,11 @@ public sealed class ElementwiseLoopVectorizerTests
     private static readonly MethodInstanceModel Impure = Method("Fixture", "Owner", "Next", Float64, Float64);
 
     private static CilMethodBody IntLoop(CilInstruction[] value) => Loop(IntBody(value), Bound());
+
+    // s = s + value, with s in local 1.
+    private static CilMethodBody IntFold(CilInstruction[] value, CliValueKind sum) => Loop(
+        [I(CilOperation.LoadLocal, new CilOperand.Index(1)), .. value, I(CilOperation.Add), I(CilOperation.StoreLocal, new CilOperand.Index(1))],
+        Bound(), sum: sum);
 
     // a[i] = b[i] + value.
     private static CilInstruction[] IntBody(CilInstruction[] value) =>
@@ -155,7 +204,8 @@ public sealed class ElementwiseLoopVectorizerTests
     private static CilMethodBody Loop(
         CilInstruction[] body,
         CilInstruction[] bound,
-        CilOperation branch = CilOperation.BranchIfLessThanSigned)
+        CilOperation branch = CilOperation.BranchIfLessThanSigned,
+        CliValueKind sum = CliValueKind.I4)
     {
         var code = new List<CilInstruction> { I(CilOperation.LoadInt32, 0), I(CilOperation.StoreLocal, new CilOperand.Index(0)) };
         var jump = code.Count;
@@ -173,10 +223,49 @@ public sealed class ElementwiseLoopVectorizerTests
             .ToImmutableArray();
         var method = new MethodDefinitionModel(new(Assembly, 0x06000001), new(Assembly, 0x02000001), "Run", true,
             MethodSignatureModel.Create(CliValueKind.Void), 1);
-        return new(method, 4, [CliValueKind.I4, CliValueKind.I4], instructions)
+        return new(method, 4, [CliValueKind.I4, sum], instructions)
         {
-            LocalSignatureTypes = [Int32, Int32],
+            LocalSignatureTypes = [Int32, CliTypeIdentity.FromStackKind(sum)],
         };
+    }
+
+    // sum = sum + value, walking p over n ints: p in local 0, sum in local 1 and
+    // n in local 2, from arguments 0 and 1.
+    private static CilMethodBody Walk(CilInstruction[] value, CliValueKind sum)
+    {
+        CilInstruction[] code =
+        [
+            I(CilOperation.LoadInt32, 0), I(CilOperation.StoreLocal, new CilOperand.Index(1)),
+            Arg(0), I(CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Arg(1), I(CilOperation.StoreLocal, new CilOperand.Index(2)),
+            I(CilOperation.LoadLocal, new CilOperand.Index(1)), .. value, I(CilOperation.Add), I(CilOperation.StoreLocal, new CilOperand.Index(1)),
+            Walked(), I(CilOperation.LoadInt32, 1), Call(UnsafeAdd), I(CilOperation.StoreLocal, new CilOperand.Index(0)),
+            I(CilOperation.LoadLocal, new CilOperand.Index(2)), I(CilOperation.LoadInt32, 1), I(CilOperation.Subtract),
+            I(CilOperation.StoreLocal, new CilOperand.Index(2)),
+            I(CilOperation.LoadLocal, new CilOperand.Index(2)), new(0, 0, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(6)),
+            I(CilOperation.Return),
+        ];
+        var reference = CliTypeIdentity.ManagedByReference(Int32);
+        var method = new MethodDefinitionModel(new(Assembly, 0x06000001), new(Assembly, 0x02000001), "Walk", true,
+            MethodSignatureModel.Create(CliTypeIdentity.FromStackKind(CliValueKind.Void), reference, Int32), 1);
+        return new(method, 4, [CliValueKind.ManagedAddress, sum, CliValueKind.I4],
+            [.. code.Select(static (instruction, index) => instruction with { Offset = index, NextOffset = index + 1 })])
+        {
+            LocalSignatureTypes = [reference, CliTypeIdentity.FromStackKind(sum), Int32],
+        };
+    }
+
+    private static CilInstruction Walked() => I(CilOperation.LoadLocal, new CilOperand.Index(0));
+
+    // Unsafe.Add<int>(ref int, int).
+    private static readonly MethodInstanceModel UnsafeAdd = UnsafeAddOfInt();
+
+    private static MethodInstanceModel UnsafeAddOfInt()
+    {
+        var reference = CliTypeIdentity.ManagedByReference(Int32);
+        var signature = MethodSignatureModel.Create(reference, reference, Int32);
+        var definition = new MethodDefinitionModel(new(Assembly, 0x06000004), new(Assembly, 0x02000004), "Add", true, signature, 1);
+        return new(definition, CliTypeIdentity.Named(Assembly, "System.Runtime.CompilerServices", "Unsafe", isValueType: false), [Int32], signature);
     }
 
     private static CilInstruction I(CilOperation operation, CilOperand? operand = null) =>

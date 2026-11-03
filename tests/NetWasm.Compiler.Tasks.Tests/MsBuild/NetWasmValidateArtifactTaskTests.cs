@@ -48,6 +48,27 @@ public sealed class NetWasmValidateArtifactTaskTests
     }
 
     [Fact]
+    public void ExecuteNamesWhatMadeTheManifestStale()
+    {
+        var build = new RecordingBuildEngine();
+        var task = new NetWasmValidateArtifactTask(
+            new RecordingRequestBuilder(),
+            new StaleValidator("Program.cs changed since the build"))
+        {
+            BuildEngine = build,
+            InputAssemblyPath = "app.dll",
+            ArtifactManifestPath = "manifest.json",
+            ProjectDirectory = ".",
+        };
+
+        Assert.False(task.Execute());
+        var error = Assert.Single(build.Errors);
+        Assert.Equal(
+            "NWSDK003: NetWasm artifact manifest is stale because Program.cs changed since the build; rebuild the application.",
+            error.Message);
+    }
+
+    [Fact]
     public void ExecuteReconstructsAnExistingCallbackSupportArtifact()
     {
         using var directory = new TemporaryDirectory();
@@ -145,6 +166,12 @@ public sealed class NetWasmValidateArtifactTaskTests
     {
         public CompilerArtifactManifestBuildResult Validate(CompilerArtifactManifestValidationRequest request) =>
             throw new InvalidOperationException("sensitive implementation detail");
+    }
+
+    private sealed class StaleValidator(string reason) : ICompilerArtifactManifestValidator
+    {
+        public CompilerArtifactManifestBuildResult Validate(CompilerArtifactManifestValidationRequest request) =>
+            throw new StaleCompilerArtifactManifestException(reason);
     }
 
     private sealed class RecordingBuildEngine : IBuildEngine

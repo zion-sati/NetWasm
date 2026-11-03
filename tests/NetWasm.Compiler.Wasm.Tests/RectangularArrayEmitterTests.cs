@@ -2,9 +2,11 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission;
+using NetWasm.Compiler.Wasm.Emission.Arrays;
 using NetWasm.Compiler.Wasm.Emission.Instructions;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Objects;
 using NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
+using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -89,6 +91,69 @@ public sealed class RectangularArrayEmitterTests
 
         Assert.Equal(asksRuntime, imports.Symbols.Contains(RuntimeImportSymbol.ArrayGetLowerBound));
     }
+
+    // Elements are stored row-major, so the offset multiplies by each later
+    // dimension's length, which the bounds check reads, and never by a stride.
+    [Fact]
+    public void AddressReadsLengthsAndNoStrides()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var request = RankTwoRequest(CreateMethodEmissionContext());
+
+        CreateAddressEmitter(layouts).Emit(new(request, 0), GetCodeWriter(request));
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.DoesNotContain(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(2, sizeof(int))),
+            instructions);
+    }
+
+    // An array the method's loops snapshot has its lower bounds, lengths and
+    // data in locals, so its element address reads no memory.
+    [Fact]
+    public void CachedAddressReadsTheSnapshotInsteadOfTheShape()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var slot = new ArrayReferenceSlot(true, 0);
+        var request = RankTwoRequest(CreateMethodEmissionContext() with
+        {
+            ArrayMetadata = new(
+                new ArrayMetadataCachingPlan([slot], ImmutableDictionary<int, ArrayReferenceSlot>.Empty.Add(0, slot))
+                {
+                    Ranks = ImmutableDictionary<ArrayReferenceSlot, int>.Empty.Add(slot, 2),
+                },
+                [])
+            {
+                RectangularSlots = ImmutableDictionary<ArrayReferenceSlot, RectangularArraySnapshotLocals>.Empty
+                    .Add(slot, new([new(30, 31), new(32, 33)], 34)),
+            },
+        });
+
+        CreateAddressEmitter(layouts).Emit(new(request, 0), GetCodeWriter(request));
+
+        var instructions = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Load);
+        Assert.All([30, 31, 32, 33, 34], local => Assert.Contains(
+            WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)), instructions));
+    }
+
+    private static RectangularArrayElementAddressEmitter CreateAddressEmitter(RecordingLayoutProvider layouts) =>
+        new RectangularArrayElementAddressEmitter(
+            layouts,
+            layouts,
+            layouts,
+            CreateAddressInstructions(layouts),
+            layouts,
+            layouts,
+            new RecordingExceptionEmitter(),
+            WasmRuntimeImports.CreateCatalog());
+
+    private static InstructionEmissionRequest RankTwoRequest(MethodEmissionContext context) =>
+        CreateInstructionRequest(
+            CilOperation.LoadRectangularArrayElement,
+            [CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4],
+            new CilOperand.TypeIdentity(CliTypeIdentity.Array(CliTypeIdentity.Primitive("i4", CliValueKind.I4), 2)),
+            context,
+            maxStack: 3);
 
     [Fact]
     public void AddressCapabilityRejectsMissingArrayTypeOperand()

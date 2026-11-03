@@ -163,8 +163,93 @@ public sealed class CompilerArtifactManifestTests
 
         var validator = new CompilerArtifactManifestValidator(builder, new CompilerArtifactManifestReader());
 
-        var exception = Assert.Throws<InvalidOperationException>(() => validator.Validate(new(request, manifestPath)));
-        Assert.Equal("NetWasm artifact manifest is stale.", exception.Message);
+        var exception = Assert.Throws<StaleCompilerArtifactManifestException>(() => validator.Validate(new(request, manifestPath)));
+        Assert.Equal("app.core.wasm changed since the build", exception.Reason);
+    }
+
+    [Theory]
+    [InlineData("InputAssembly", "app.dll changed since the build")]
+    [InlineData("CompilationIdentity", "the compilation settings changed since the build")]
+    public void ValidatorNamesTheInputThatChanged(string kind, string reason)
+    {
+        using var directory = new TemporaryDirectory();
+        var input = directory.Write("app.dll", "input");
+        var core = directory.Write("app.core.wasm", "wasm");
+        var manifestPath = Path.Combine(directory.Path, "manifest.json");
+        var request = CreateRequest(directory.Path, input, input, core, core) with
+        {
+            ManifestPath = manifestPath,
+            Inputs = [new(kind, input)],
+        };
+        var builder = new CompilerArtifactManifestBuilder(new Sha256ArtifactFileDigestCalculator());
+        new CompilerArtifactManifestWriter().Write(new(manifestPath, builder.Build(request).Manifest));
+        File.AppendAllText(input, "changed");
+
+        var exception = Assert.Throws<StaleCompilerArtifactManifestException>(() =>
+            new CompilerArtifactManifestValidator(builder, new CompilerArtifactManifestReader()).Validate(new(request, manifestPath)));
+
+        Assert.Equal(reason, exception.Reason);
+    }
+
+    // MSBuild can name the project through a symbolic link while the operating system names its
+    // files by their targets (macOS's /var and /tmp link to /private/var and /private/tmp), so one
+    // build can see both forms. The project's own files stay the project's.
+    [Fact]
+    public void BuilderKeepsTheProjectsFilesWhenTheProjectIsNamedThroughALink()
+    {
+        using var directory = new TemporaryDirectory();
+        var project = Directory.CreateDirectory(Path.Combine(directory.Path, "project")).FullName;
+        var link = Path.Combine(directory.Path, "link");
+        CreateDirectoryLinkOrSkip(link, project);
+        var input = Path.Combine(project, "app.dll");
+        File.WriteAllText(input, "input");
+        var core = Path.Combine(project, "app.core.wasm");
+        File.WriteAllText(core, "wasm");
+
+        var result = new CompilerArtifactManifestBuilder(new Sha256ArtifactFileDigestCalculator())
+            .Build(CreateRequest(link, input, input, core, core));
+
+        Assert.All(result.Manifest.Inputs, static entry => Assert.Equal("app.dll", entry.Path));
+        Assert.All(result.Manifest.Artifacts, static entry => Assert.Equal("app.core.wasm", entry.Path));
+    }
+
+    [Fact]
+    public void ValidatorAcceptsTheSameBuildWithTheProjectNamedThroughALink()
+    {
+        using var directory = new TemporaryDirectory();
+        var project = Directory.CreateDirectory(Path.Combine(directory.Path, "project")).FullName;
+        var link = Path.Combine(directory.Path, "link");
+        CreateDirectoryLinkOrSkip(link, project);
+        File.WriteAllText(Path.Combine(project, "app.dll"), "input");
+        File.WriteAllText(Path.Combine(project, "app.core.wasm"), "wasm");
+        var manifestPath = Path.Combine(project, "manifest.json");
+        var builder = new CompilerArtifactManifestBuilder(new Sha256ArtifactFileDigestCalculator());
+        var built = CreateRequest(project, "app.dll", "app.dll", "app.core.wasm", "app.core.wasm") with { ManifestPath = manifestPath };
+        new CompilerArtifactManifestWriter().Write(new(manifestPath, builder.Build(built).Manifest));
+        var linked = Path.Combine(link, "app.dll");
+        var published = CreateRequest(link, linked, linked, Path.Combine(link, "app.core.wasm"), Path.Combine(link, "app.core.wasm")) with
+        {
+            ManifestPath = Path.Combine(link, "manifest.json"),
+        };
+
+        var result = new CompilerArtifactManifestValidator(builder, new CompilerArtifactManifestReader())
+            .Validate(new(published, published.ManifestPath));
+
+        Assert.Equal(builder.Build(built).Manifest.SemanticBuildId, result.Manifest.SemanticBuildId);
+    }
+
+    // Relative paths are the project's, not the process's working directory's.
+    [Fact]
+    public void BuilderResolvesRelativePathsAgainstTheProject()
+    {
+        using var directory = new TemporaryDirectory();
+        directory.Write("app.dll", "input");
+        directory.Write("app.core.wasm", "wasm");
+
+        var result = new CompilerArtifactManifestBuilder(new Sha256ArtifactFileDigestCalculator())
+            .Build(CreateRequest(directory.Path, "app.dll", "app.dll", "app.core.wasm", "app.core.wasm"));
+
+        Assert.All(result.Manifest.Inputs, static entry => Assert.Equal("app.dll", entry.Path));
     }
 
     [Fact]
@@ -233,6 +318,18 @@ public sealed class CompilerArtifactManifestTests
                 new("RuntimeLayout", "application/json", layout),
                 new("CoreModule", "application/wasm", core),
             ]);
+
+    private static void CreateDirectoryLinkOrSkip(string link, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            Assert.Skip($"Symbolic links are not available here: {exception.Message}");
+        }
+    }
 
     private sealed class TemporaryDirectory : IDisposable
     {

@@ -12,8 +12,6 @@ namespace NetWasm.Compiler.Tasks.Composition;
 internal static class CompilerTaskComposition
 {
     public static IInternalRuntimeExportReader CreateInternalRuntimeExportReader() => new InternalRuntimeExportReader();
-    private const string DisableExperimentalWarningOption =
-        "--disable-warning=ExperimentalWarning";
 
     public static ICompilerArtifactManifestTaskRequestBuilder CreateArtifactManifestTaskRequestBuilder() =>
         new CompilerArtifactManifestTaskRequestBuilder();
@@ -63,9 +61,7 @@ internal static class CompilerTaskComposition
     public static ExternalToolCommand CreateWasmToolsCommand(
         string nodePath,
         string commandPath,
-        string modulePath) => new(
-            nodePath,
-            [DisableExperimentalWarningOption, commandPath, modulePath]);
+        string modulePath) => ExternalToolCommand.ForWasmTools(nodePath, commandPath, modulePath);
 
     public static BinaryenToolRunnerConfiguration CreateBinaryenConfiguration(
         string nodePath,

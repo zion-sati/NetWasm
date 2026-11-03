@@ -6,6 +6,7 @@ namespace NetWasm.Runtime.Pack.Materialization;
 
 internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuilder
 {
+    private const string ArraySetValueFeature = "array-set-value";
     private const string EphemeronHandlesFeature = "ephemeron-handles";
     private const string FinalizationFeature = "finalization";
     private const string StructuredCommandDiagnosticsFeature =
@@ -104,6 +105,10 @@ internal sealed class RuntimeLinkExportPlanBuilder : IRuntimeLinkExportPlanBuild
             exports = exports
                 .Where(name => !FinalizationExports.Contains(name))
                 .ToImmutableArray();
+        }
+        if (!request.RuntimeFeatures.IsDefault && !request.RuntimeFeatures.Contains(ArraySetValueFeature))
+        {
+            exports = exports.Remove("array_set_value");
         }
         return exports;
     }

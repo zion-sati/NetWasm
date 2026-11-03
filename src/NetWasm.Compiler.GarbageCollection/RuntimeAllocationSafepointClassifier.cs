@@ -16,6 +16,8 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.Runtime.InteropServices.NativeMemory", "AlignedReallocCore"),
             ("System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "Reallocate"),
             ("System.Runtime.InteropServices.WebAssembly.CanonicalAbi", "CreateResourceHandle"),
+            // Every string comes from FastAllocateString.
+            ("System.String", "FastAllocateString"),
             ("System.WeakReferenceRuntime", "Create"),
             ("System.WeakReferenceRuntime", "Set"),
             ("System.GCHandleRuntime", "Create"),
@@ -23,6 +25,8 @@ public sealed class RuntimeAllocationSafepointClassifier :
             ("System.GCCollectionRuntime", "Collect"),
             ("System.GCFinalizerRuntime", "WaitForPending"),
             ("System.Array", "InternalGetValue"),
+            // The element type is an uncached type object.
+            ("System.Array", "InternalElementType"),
             // Clones and conversions the runtime allocates: an array, a range
             // of one, the boxes a copy into an object array makes, a boxed
             // value, a multicast delegate and an uncached type object.
@@ -60,6 +64,10 @@ public sealed class RuntimeAllocationSafepointClassifier :
     public bool Classify(MethodInstanceModel method)
     {
         ArgumentNullException.ThrowIfNull(method);
-        return Safepoints.Contains((method.DeclaringType.FullName!, method.Definition.Name));
+        // String's identity is the primitive one, which has no full name.
+        var typeName = method.DeclaringType.CanonicalName == "primitive:string"
+            ? "System.String"
+            : method.DeclaringType.FullName!;
+        return Safepoints.Contains((typeName, method.Definition.Name));
     }
 }

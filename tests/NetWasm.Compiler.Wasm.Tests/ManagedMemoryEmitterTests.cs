@@ -51,17 +51,35 @@ public sealed class ManagedMemoryEmitterTests
         ManagedMemoryEmitter.EmitRootSlotStore(
             code, WasmTargetLayout.Wasm64, rootFrameLocal: 0, slot: 1, valueLocal: 2);
         ManagedMemoryEmitter.EmitArrayElementAddress(
-            code, WasmTargetLayout.Wasm64, arrayLocal: 3, indexLocal: 4, elementSize: 8);
+            code, WasmTargetLayout.Wasm64, arrayLocal: 3, indexLocal: 4, inlineData: true, elementSize: 8);
         ManagedMemoryEmitter.EmitLoadBySize(code, WasmTargetLayout.Wasm64, 0, 8);
         ManagedMemoryEmitter.EmitStoreBySize(code, WasmTargetLayout.Wasm64, 0, 8);
 
         Assert.Equal(
             [
                 0x20, 0x00, 0x42, 0x08, 0x7c, 0x20, 0x02, 0x37, 0x03, 0x00,
-                0x20, 0x03, 0x29, 0x03, 0x10, 0x20, 0x04, 0xad, 0x42, 0x08,
+                // The elements sit inline, 32 bytes into the array.
+                0x20, 0x03, 0x42, 0x20, 0x7c, 0x20, 0x04, 0xad, 0x42, 0x08,
                 0x7e, 0x7c, 0x29, 0x03, 0x00, 0x37, 0x03, 0x00,
             ],
             code.ToArray());
+    }
+
+    // Without inline array data an element's address starts from the data
+    // pointer every array keeps.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WithoutInlineArrayDataTheDataPointerIsLoaded(bool memory64)
+    {
+        var target = memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32;
+        var code = new EmitterTestSupport.RecordingInstructionWriter();
+
+        ManagedMemoryEmitter.EmitArrayElementAddress(code, target, arrayLocal: 2, indexLocal: 3, inlineData: false);
+
+        var load = code.ToInstructions()[1];
+        Assert.Equal(memory64 ? WasmOpcodes.I64Load : WasmOpcodes.I32Load, load.Opcode);
+        Assert.Equal((uint)(memory64 ? 16 : 8), load.Operand!.Offset);
     }
 
     [Fact]
@@ -72,10 +90,14 @@ public sealed class ManagedMemoryEmitterTests
         ManagedMemoryEmitter.EmitRootSlotStore(
             code, WasmTargetLayout.Wasm32, rootFrameLocal: 0, slot: 0, valueLocal: 1);
         ManagedMemoryEmitter.EmitArrayElementAddress(
-            code, WasmTargetLayout.Wasm32, arrayLocal: 2, indexLocal: 3, elementSize: 4);
+            code, WasmTargetLayout.Wasm32, arrayLocal: 2, indexLocal: 3, inlineData: true, elementSize: 4);
 
+        // The elements sit inline, 16 bytes into the array, so no load finds them.
+        var instructions = code.ToInstructions();
+        Assert.DoesNotContain(instructions, static instruction => instruction.Opcode == WasmOpcodes.I32Load);
+        Assert.Contains(instructions, static instruction =>
+            instruction.Opcode == WasmOpcodes.I32Constant && instruction.Operand?.SignedValue == 16);
         var bytes = code.ToArray();
-        Assert.Contains(WasmOpcodes.I32Load, bytes);
         Assert.Contains(WasmOpcodes.I32Store, bytes);
         Assert.Contains(WasmOpcodes.I32Multiply, bytes);
         Assert.Contains(WasmOpcodes.I32Add, bytes);

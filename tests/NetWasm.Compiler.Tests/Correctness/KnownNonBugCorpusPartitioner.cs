@@ -8,9 +8,6 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // theories make that policy visible in normal test discovery.
 internal static class KnownNonBugSkipReasons
 {
-    public const string UncheckedRemainder =
-        "Unchecked signed minimum % -1 may return zero or throw (C# 12.13.3-4; ECMA-335 III.3.55); desktop exception identity is not required.";
-
     public const string UnsignedSinglePrecision =
         "Unsigned 64-bit to Single may use intermediate precision (C# 10.2.3; ECMA-335 I.12.1.3); desktop exact bits are over-specific.";
 
@@ -56,8 +53,6 @@ internal static class KnownNonBugCorpusPartitioner
     private static readonly ImmutableDictionary<string, Rule> Rules =
         new Dictionary<string, Rule>(StringComparer.Ordinal)
         {
-            [CorpusCaseTestData.FixedIntegerArithmetic] = new([1377, 4864]),
-            [CorpusCaseTestData.NativeArithmetic] = new([703]),
             [CorpusCaseTestData.UnsignedPrecision] = new([40, 41]),
             [CorpusCaseTestData.NativeFloating] = new(
                 [728, 729, 732, 733, 844, 845, 848, 849, 960, 961, 964, 965], WasmTarget.Wasm64),

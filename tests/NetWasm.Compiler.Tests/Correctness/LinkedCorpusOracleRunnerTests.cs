@@ -174,7 +174,7 @@ public sealed class LinkedCorpusOracleRunnerTests
 
     private static CompilerCorrectnessEnvironment Environment { get; } = new(
         Path.GetFullPath("repository"), "dotnet", "sdk", "roslyn", "corelib",
-        "references", "oracle.mjs", "oracle.dll", "compiler.dll",
+        "references", "oracle.mjs", "oracle.dll", "11.0.0", "compiler.dll",
         TimeSpan.FromSeconds(3));
 
     private static CorpusCompilation CreateCompilation()

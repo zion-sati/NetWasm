@@ -13,6 +13,16 @@ internal static class Program
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(createCommand);
+        if (WitBindingUsage.IsRequested(arguments))
+        {
+            Console.Out.Write(WitBindingUsage.Text);
+            return 0;
+        }
+        if (arguments.Length == 0)
+        {
+            Console.Error.Write(WitBindingUsage.Text);
+            return 1;
+        }
         try
         {
             return createCommand().Run(arguments);
@@ -21,6 +31,10 @@ internal static class Program
                                           CompilerException)
         {
             Console.Error.WriteLine(exception.Message);
+            if (exception is WitBindingException { IsUsage: true })
+            {
+                Console.Error.WriteLine("Run 'netwasm-wit-bindgen --help' for usage.");
+            }
             return 1;
         }
     }

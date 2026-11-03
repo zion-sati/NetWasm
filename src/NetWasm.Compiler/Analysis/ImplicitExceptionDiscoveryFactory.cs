@@ -3,9 +3,7 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Analysis;
 
-internal sealed class ImplicitExceptionDiscoveryFactory(
-    IStringConstructionExceptionRequirementProvider stringConstruction) :
-    IImplicitExceptionDiscoveryFactory
+internal sealed class ImplicitExceptionDiscoveryFactory : IImplicitExceptionDiscoveryFactory
 {
     public IImplicitExceptionDiscovery Create(
         IMethodRepository methods,
@@ -14,6 +12,5 @@ internal sealed class ImplicitExceptionDiscoveryFactory(
         new ImplicitExceptionDiscovery(
             methods,
             symbols,
-            stringConstruction,
             new RuntimeIntrinsicExceptionRequirementProvider(intrinsics));
 }

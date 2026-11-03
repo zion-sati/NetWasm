@@ -226,7 +226,8 @@ namespace System
             var magnitude = new UInt128(
                 (ulong)(uint)bits[2],
                 ((ulong)(uint)bits[1] << 32) | (uint)bits[0]);
-            var digits = UInt128ToDecStr(magnitude);
+            // As upstream, zero has no digits, which is how NumberToString formats a decimal -0 as 0.
+            var digits = magnitude == UInt128.Zero ? string.Empty : UInt128ToDecStr(magnitude);
             var count = digits.Length;
             for (var i = 0; i < count; i++) number.Digits[i] = (byte)digits[i];
             number.Digits[count] = 0;
@@ -709,7 +710,7 @@ namespace System
                 }
                 prefix[i]++;
             }
-            digits = string.Create(prefix);
+            digits = new string(prefix);
             decoded = new DecodedDecimalIeee754<TValue>(decoded.Signed, decoded.UnbiasedExponent + discarded, decoded.Significand);
         }
 

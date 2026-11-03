@@ -638,8 +638,9 @@ public sealed class PrimitiveCompilationTests
                     if (bfloat.ToString("g5", null) != "0.1001") return 18;
 
                     if (double.PositiveInfinity.ToString("E2") != "Infinity") return 19;
-                    try { _ = doubleValue.ToString("R2"); return 20; }
-                    catch (FormatException) { }
+                    // As .NET 11 formats them, R ignores a precision.
+                    if (doubleValue.ToString("R2") != "12345.6789" || 0.1.ToString("R0") != "0.1" ||
+                        1e21.ToString("r3") != "1e+21" || 1.5f.ToString("R7") != "1.5") return 20;
 
                     Span<char> chars = stackalloc char[16];
                     if (!doubleValue.TryFormat(chars, out var written, "E2") ||
@@ -882,9 +883,11 @@ public sealed class PrimitiveCompilationTests
                 public static int Run(int input)
                 {
                     Span<byte> destination = stackalloc byte[32];
+                    // IBinaryInteger writes whole limbs, as .NET 11 does: nint.Size bytes each.
                     if (BigInteger.Zero.GetByteCount() != 1 ||
-                        !BigInteger.Zero.TryWriteLittleEndian(destination, out var written) ||
-                        written != 1 || destination[0] != 0) return 1;
+                        !WriteLittleEndian(BigInteger.Zero, destination, out var written) ||
+                        written != ByteCount(BigInteger.Zero) || written % IntPtr.Size != 0 ||
+                        destination[..written].IndexOfAnyExcept((byte)0) >= 0) return 1;
 
                     var positive = new BigInteger(33022);
                     if (positive.GetByteCount() != 3 || positive.GetByteCount(isUnsigned: true) != 2) return 2;
@@ -901,12 +904,12 @@ public sealed class PrimitiveCompilationTests
 
                     var negative = new BigInteger(-129);
                     if (negative.GetByteCount() != 2 ||
-                        !negative.TryWriteBigEndian(destination, out written) || written != 2 ||
-                        destination[0] != 0xFF || destination[1] != 0x7F) return 6;
+                        !WriteBigEndian(negative, destination, out written) || written != ByteCount(negative) ||
+                        destination[written - 1] != 0x7F || destination[..(written - 1)].IndexOfAnyExcept((byte)0xFF) >= 0) return 6;
                     var negativeBoundary = new BigInteger(-128);
                     if (negativeBoundary.GetByteCount() != 1 ||
-                        !negativeBoundary.TryWriteLittleEndian(destination, out written) ||
-                        written != 1 || destination[0] != 0x80) return 11;
+                        !WriteLittleEndian(negativeBoundary, destination, out written) || written != ByteCount(negativeBoundary) ||
+                        destination[0] != 0x80 || destination[1..written].IndexOfAnyExcept((byte)0xFF) >= 0) return 11;
 
                     try
                     {
@@ -921,19 +924,28 @@ public sealed class PrimitiveCompilationTests
                     if (allocated.Length != 3 || allocated[0] != 0 || allocated[1] != 0x80 || allocated[2] != 0xFE) return 8;
 
                     var large = (BigInteger.One << 72) + 0x80FE;
-                    if (!large.TryWriteBigEndian(destination, out written) ||
+                    if (!WriteBigEndian(large, destination, out written) ||
                         new BigInteger(destination[..written], isUnsigned: false, isBigEndian: true) != large) return 9;
 
                     var largeNegative = -((BigInteger.One << 72) + 1);
-                    if (!largeNegative.TryWriteLittleEndian(destination, out written) ||
+                    if (!WriteLittleEndian(largeNegative, destination, out written) ||
                         new BigInteger(destination[..written], isUnsigned: false, isBigEndian: false) != largeNegative) return 10;
 
                     var carryAcrossLimbs = -(BigInteger.One << 64);
-                    if (!carryAcrossLimbs.TryWriteLittleEndian(destination, out written) || written != 9 ||
-                        destination[0] != 0 || destination[7] != 0 || destination[8] != 0xFF) return 12;
+                    if (!WriteLittleEndian(carryAcrossLimbs, destination, out written) || written != ByteCount(carryAcrossLimbs) ||
+                        destination[0] != 0 || destination[7] != 0 || destination[8..written].IndexOfAnyExcept((byte)0xFF) >= 0) return 12;
 
                     return input - input;
                 }
+
+                // .NET implements these IBinaryInteger members explicitly.
+                private static int ByteCount<T>(T value) where T : IBinaryInteger<T> => value.GetByteCount();
+
+                private static bool WriteLittleEndian<T>(T value, Span<byte> destination, out int written) where T : IBinaryInteger<T> =>
+                    value.TryWriteLittleEndian(destination, out written);
+
+                private static bool WriteBigEndian<T>(T value, Span<byte> destination, out int written) where T : IBinaryInteger<T> =>
+                    value.TryWriteBigEndian(destination, out written);
             }
             """;
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);

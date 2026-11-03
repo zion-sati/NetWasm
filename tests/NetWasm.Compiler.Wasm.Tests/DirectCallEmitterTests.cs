@@ -34,7 +34,7 @@ public sealed class DirectCallEmitterTests
             isStatic ? [] : [CliValueKind.ManagedReference], new CilOperand.Entity(EntryKey));
         var initialization = new RecordingInitialization();
         var emitter = Assert.IsAssignableFrom<ICallEmitter>(new DirectCallEmitter(layouts, layouts,
-            new ImplicitExceptionEmitter(layouts, layouts), initialization,
+            new ImplicitExceptionEmitter(layouts), initialization,
             new MethodInitializationTriggerClassifier(program)));
 
         emitter.Emit(new(instruction, method, 0, isStatic ? 0 : 1),
@@ -393,7 +393,7 @@ public sealed class DirectCallEmitterTests
             new DirectCallEmitter(
                 layouts,
                 layouts,
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new RecordingInitialization(),
                 new MethodInitializationTriggerClassifier(new FakeProgram())),
         }.Cast<ICallEmitter>().Single();

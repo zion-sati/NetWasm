@@ -30,7 +30,7 @@ public sealed class StringCharacterAtIntrinsicEmitterTests
         var emitter = ThroughContract(new StringCharacterAtIntrinsicEmitter(
             layouts,
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             CreateAddressInstructions(layouts)));
 
         emitter.Emit(request, code);

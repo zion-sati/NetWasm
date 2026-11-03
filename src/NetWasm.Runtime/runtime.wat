@@ -602,6 +602,8 @@
       i32.const 0
       return
     end
+    ;; The elements follow the 16 header bytes, as the native runtime keeps
+    ;; them, so compiled code finds them without reading the data pointer.
     local.get $length
     i32.eqz
     if (result i32)
@@ -611,13 +613,15 @@
       i32.const 4
       i32.mul
     end
-    i32.const 0
-    call $allocate
-    local.set $elements
     i32.const 16
+    i32.add
     local.get $type_id
     call $allocate
     local.tee $array
+    i32.const 16
+    i32.add
+    local.set $elements
+    local.get $array
     local.get $length
     i32.store offset=4
     local.get $array
@@ -652,16 +656,19 @@
     end
     ;; The portable runtime is a compiler fixture. Production native code uses
     ;; the registered exact per-element descriptor and canonical element size.
+    ;; The elements follow the 16 header bytes, as the native runtime keeps them.
     local.get $length
     local.get $element_size
     i32.mul
-    i32.const 0
-    call $allocate
-    local.set $elements
     i32.const 16
+    i32.add
     local.get $type_id
     call $allocate
     local.tee $array
+    i32.const 16
+    i32.add
+    local.set $elements
+    local.get $array
     local.get $length
     i32.store offset=4
     local.get $array

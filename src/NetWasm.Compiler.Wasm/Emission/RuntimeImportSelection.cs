@@ -9,7 +9,9 @@ internal readonly record struct RuntimeImportSelection(
     bool IncludeTerminalExceptionRaise = true,
     bool IncludeFinalization = false,
     bool IncludeWeakHandles = false,
-    bool IncludeRandomSeed = false)
+    bool IncludeRandomSeed = false,
+    bool IncludeArraySetValue = false,
+    bool IncludeUnhandledExceptionHint = false)
 {
     // Whether a module with this selection imports the runtime function.
     public bool Includes(RuntimeImportSymbol symbol) =>
@@ -35,6 +37,8 @@ internal readonly record struct RuntimeImportSelection(
              RuntimeImportSymbol.FinalizerSafepoint or
              RuntimeImportSymbol.GcWaitForPendingFinalizers)) &&
         (IncludeRandomSeed || symbol != RuntimeImportSymbol.RandomSeed) &&
+        (IncludeArraySetValue || symbol != RuntimeImportSymbol.ArraySetValue) &&
+        (IncludeUnhandledExceptionHint || symbol != RuntimeImportSymbol.ReportUnhandledException) &&
         (IncludeTerminalExceptionRaise ||
             symbol != RuntimeImportSymbol.ManagedTerminalExceptionRaise) &&
         (ModuleProfile == WasmModuleProfile.ComponentCoreModule

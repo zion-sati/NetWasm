@@ -26,7 +26,7 @@ public sealed class CheckedBinaryEmitterTests
 
         contract(new CheckedBinaryEmitter(
             WasmTargetLayout.For(target),
-            new ImplicitExceptionEmitter(layouts, layouts)));
+            new ImplicitExceptionEmitter(layouts)));
 
         var bytes = writer.ToArray();
         Assert.Contains(arithmeticOpcode, bytes);
@@ -41,7 +41,7 @@ public sealed class CheckedBinaryEmitterTests
         var layouts = new RecordingLayoutProvider();
         var emitter = new CheckedBinaryEmitter(
             WasmTargetLayout.Wasm32,
-            new ImplicitExceptionEmitter(layouts, layouts));
+            new ImplicitExceptionEmitter(layouts));
 
         var error = Assert.Throws<InvalidOperationException>(() =>
             emitter.Emit(
@@ -83,7 +83,7 @@ public sealed class CheckedBinaryEmitterTests
         var writer = new EmitterTestSupport.RecordingInstructionWriter();
         var emitter = ThroughContract(new CheckedBinaryEmitter(
             WasmTargetLayout.For(target),
-            new ImplicitExceptionEmitter(layouts, layouts)));
+            new ImplicitExceptionEmitter(layouts)));
 
         emitter.Emit(writer, operation, type, 0, 1, 2, OptionalFunctionIndex.At(7));
 
@@ -104,7 +104,7 @@ public sealed class CheckedBinaryEmitterTests
         var layouts = new RecordingLayoutProvider();
         var emitter = ThroughContract(new CheckedBinaryEmitter(
             WasmTargetLayout.Wasm32,
-            new ImplicitExceptionEmitter(layouts, layouts)));
+            new ImplicitExceptionEmitter(layouts)));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => emitter.Emit(
             new EmitterTestSupport.RecordingInstructionWriter(),

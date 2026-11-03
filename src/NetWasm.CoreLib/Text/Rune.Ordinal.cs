@@ -1,5 +1,5 @@
 // Ported from dotnet/runtime System.Private.CoreLib; upstream commit 474ed963699fc29809015392738a15231aaae2de.
-// Ordinal Rune members retained without culture/ICU dependencies.
+// Rune members of upstream Rune.cs that compare and categorize.
 
 namespace System.Text;
 
@@ -7,15 +7,22 @@ using System.Globalization;
 
 public readonly partial struct Rune
 {
-    public bool Equals(Rune other, StringComparison comparisonType)
+    // From Rune.cs.
+    public unsafe bool Equals(Rune other, StringComparison comparisonType)
     {
-        string.CheckStringComparison(comparisonType);
-        return comparisonType switch
+        if (comparisonType is StringComparison.Ordinal)
         {
-            StringComparison.Ordinal => Equals(other),
-            StringComparison.OrdinalIgnoreCase => ToLowerOrdinal(this).Equals(ToLowerOrdinal(other)),
-            _ => throw new PlatformNotSupportedException(),
-        };
+            return this == other;
+        }
+
+        // Convert this to span
+        ReadOnlySpan<char> thisChars = AsSpan(stackalloc char[MaxUtf16CharsPerRune]);
+
+        // Convert other to span
+        ReadOnlySpan<char> otherChars = other.AsSpan(stackalloc char[MaxUtf16CharsPerRune]);
+
+        // Compare span equality
+        return thisChars.Equals(otherChars, comparisonType);
     }
 
     public static double GetNumericValue(Rune value) => CharUnicodeInfo.GetNumericValue(value._value);

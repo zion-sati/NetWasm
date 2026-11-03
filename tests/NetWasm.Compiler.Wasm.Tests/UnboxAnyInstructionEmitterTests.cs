@@ -53,7 +53,7 @@ public sealed class UnboxAnyInstructionEmitterTests
     {
         var layouts = new RecordingLayoutProvider();
         var types = CreateTypeOperands(new FakeProgram());
-        var exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        var exceptions = new ImplicitExceptionEmitter(layouts);
         var addresses = new AddressInstructionEmitter(layouts);
         var unboxes = new BoxedValueUnboxEmitter(
             layouts,

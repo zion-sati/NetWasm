@@ -238,7 +238,7 @@ public sealed class NetWasmOracleRunnerTests
     {
         var environment = new CompilerCorrectnessEnvironment(
             "unused", "unused", "unused", "unused", "unused", "unused",
-            "unused", "unused", "unused", TimeSpan.FromSeconds(1));
+            "unused", "unused", "11.0.0", "unused", TimeSpan.FromSeconds(1));
         var fixture = CorrectnessTestAssets.CreateFixture("RealRuntimeRequired") with
         {
             RequiredRuntimeCapabilities = (OracleRuntimeCapabilities)required,

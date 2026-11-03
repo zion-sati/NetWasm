@@ -64,4 +64,9 @@ enum {
     NETWASM_RECTANGULAR_ARRAY_DIMENSION_STRIDE_OFFSET = sizeof(uint32_t)
 };
 
+/* Compiled code addresses a one-dimensional array's elements at this offset
+   without reading its data pointer: WasmTargetLayout.ArrayInlineDataOffset. */
+_Static_assert(NETWASM_ARRAY_INLINE_DATA_OFFSET == (NETWASM_OBJECT_REFERENCE_SIZE == 4 ? 16 : 32),
+    "one-dimensional array elements must stay where compiled code addresses them");
+
 #endif

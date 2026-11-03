@@ -36,7 +36,7 @@ internal sealed class PackedSimdIntrinsicEmitter(
             PackedSimdInstructions.IsNativeWidth(request.Method.Signature);
         var opcode = wide ? instruction.Wide.Opcode : instruction.Opcode;
         var laneBytes = wide ? instruction.Wide.LaneBytes : instruction.LaneBytes;
-        var flipsSign = wide && instruction.Wide.FlipsSign;
+        var flipsSign = wide ? instruction.Wide.FlipsSign : instruction.FlipsSign;
         var floating = instruction.Name.StartsWith("f32x4", StringComparison.Ordinal) ||
             instruction.Name.StartsWith("f64x2", StringComparison.Ordinal);
         var signature = request.Method.Signature;

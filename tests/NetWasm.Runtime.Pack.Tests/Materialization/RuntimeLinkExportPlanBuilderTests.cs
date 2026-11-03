@@ -51,7 +51,8 @@ public sealed class RuntimeLinkExportPlanBuilderTests
             "gc_wait_for_pending_finalizers",
             "initialize_finalization",
             "reregister_for_finalize",
-            "suppress_finalize");
+            "suppress_finalize",
+            "array_set_value");
 
         var ordinary = builder.Build(new(manifestExports, [])
         {
@@ -63,6 +64,7 @@ public sealed class RuntimeLinkExportPlanBuilderTests
             argument => argument.Contains("command_exception", StringComparison.Ordinal));
         Assert.DoesNotContain(ordinary.Arguments,
             argument => argument.Contains("finaliz", StringComparison.Ordinal));
+        Assert.DoesNotContain("--export=array_set_value", ordinary.Arguments);
 
         var ephemerons = builder.Build(new(manifestExports, [])
         {
@@ -94,10 +96,19 @@ public sealed class RuntimeLinkExportPlanBuilderTests
         Assert.Contains("--export=reregister_for_finalize", finalization.Arguments);
         Assert.Contains("--export=suppress_finalize", finalization.Arguments);
 
+        var boxedValues = builder.Build(new(manifestExports, [])
+        {
+            RuntimeFeatures = ["array-set-value"],
+        });
+        Assert.Contains("--export=array_set_value", boxedValues.Arguments);
+        Assert.DoesNotContain(boxedValues.Arguments,
+            argument => argument.Contains("finaliz", StringComparison.Ordinal));
+
         var legacy = builder.Build(new(manifestExports, []));
         Assert.Contains("--export=ephemeron_handle_new", legacy.Arguments);
         Assert.Contains("--export=command_exception_capture", legacy.Arguments);
         Assert.Contains("--export=allocate_finalizable", legacy.Arguments);
+        Assert.Contains("--export=array_set_value", legacy.Arguments);
     }
 
     [Fact]

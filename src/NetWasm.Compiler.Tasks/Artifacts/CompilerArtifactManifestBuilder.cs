@@ -20,15 +20,18 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
         ArgumentNullException.ThrowIfNull(request);
         ValidateMetadata(request);
 
+        // Relative paths are the project's, whatever the process's working directory, and a path
+        // is placed in the project as the file system resolves both.
         var projectDirectory = Path.GetFullPath(request.ProjectDirectory);
+        var resolvedProject = ArtifactPath.Resolve(projectDirectory);
         var inputs = request.Inputs
-            .Select(input => CreateInput(input, projectDirectory))
+            .Select(input => CreateInput(input, projectDirectory, resolvedProject))
             .OrderBy(input => input.Kind, StringComparer.Ordinal)
             .ThenBy(input => input.Path, StringComparer.Ordinal)
             .ThenBy(input => input.Sha256, StringComparer.Ordinal)
             .ToImmutableArray();
         var outputIdentities = request.Outputs
-            .Select(output => CreateOutput(output, projectDirectory))
+            .Select(output => CreateOutput(output, projectDirectory, resolvedProject))
             .OrderBy(output => output.Kind, StringComparer.Ordinal)
             .ThenBy(output => output.Path, StringComparer.Ordinal)
             .ThenBy(output => output.Sha256, StringComparer.Ordinal)
@@ -70,30 +73,32 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
 
     private CompilerArtifactManifestInput CreateInput(
         CompilerArtifactInputRequest input,
-        string projectDirectory)
+        string projectDirectory,
+        string resolvedProject)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(input.Kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(input.Path);
-        var fullPath = Path.GetFullPath(input.Path);
+        var fullPath = Path.GetFullPath(input.Path, projectDirectory);
         return new CompilerArtifactManifestInput(
             input.Kind,
-            NormalizePath(fullPath, projectDirectory),
+            NormalizePath(fullPath, resolvedProject),
             _digests.Calculate(fullPath));
     }
 
     private CompilerArtifactOutputIdentity CreateOutput(
         CompilerArtifactOutputRequest output,
-        string projectDirectory)
+        string projectDirectory,
+        string resolvedProject)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(output.Kind);
         ArgumentException.ThrowIfNullOrWhiteSpace(output.MediaType);
         ArgumentException.ThrowIfNullOrWhiteSpace(output.Path);
-        var fullPath = Path.GetFullPath(output.Path);
+        var fullPath = Path.GetFullPath(output.Path, projectDirectory);
         return new CompilerArtifactOutputIdentity(
             fullPath,
             output.Kind,
             output.MediaType,
-            NormalizePath(fullPath, projectDirectory),
+            NormalizePath(fullPath, resolvedProject),
             _digests.Calculate(fullPath),
             output.CopyToPublishDirectory);
     }
@@ -111,9 +116,9 @@ internal sealed class CompilerArtifactManifestBuilder : ICompilerArtifactManifes
         ArgumentException.ThrowIfNullOrWhiteSpace(request.RuntimeVersion);
     }
 
-    private static string NormalizePath(string fullPath, string projectDirectory)
+    private static string NormalizePath(string fullPath, string resolvedProject)
     {
-        var relative = Path.GetRelativePath(projectDirectory, fullPath);
+        var relative = Path.GetRelativePath(resolvedProject, ArtifactPath.Resolve(fullPath));
         var isOutsideProject = relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
         var normalized = isOutsideProject
             ? $"external/{Path.GetFileName(fullPath)}"

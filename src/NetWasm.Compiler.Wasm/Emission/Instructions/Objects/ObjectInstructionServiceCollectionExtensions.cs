@@ -14,9 +14,6 @@ internal static class ObjectInstructionServiceCollectionExtensions
         services.AddSingleton<INullableUnboxAnyEmitter, NullableUnboxAnyEmitter>();
         services.AddSingleton<IBoxedValueTypeValidator, BoxedValueTypeValidator>();
         services.AddSingleton<IUnboxEmitter, BoxedValueUnboxEmitter>();
-        services.AddSingleton<IStringConstructionPlanResolver,
-            StringConstructionPlanResolver>();
-        services.AddSingleton<IStringConstructionEmitter, StringConstructionEmitter>();
         services.AddSingleton<INativeIntegerConstructionEmitter,
             NativeIntegerConstructionEmitter>();
         services.AddInstructionCommandProvider<TypeMaterializationEmitter>();

@@ -17,10 +17,6 @@ public sealed class IntegerArithmeticEdgeTests(CorrectnessTestRunner runner) : C
     public void NativeArithmeticUsesTargetWidthValueAndExceptionContracts(string caseId, string cell) =>
         Run(CorpusCaseTestData.Active(caseId, cell), cell);
 
-    [Fact(Skip = KnownNonBugSkipReasons.UncheckedRemainder)]
-    public void NativeUncheckedMinimumRemainderDesktopChoiceIsNotRequired() =>
-        throw new InvalidOperationException("The known non-bug partition must remain skipped.");
-
     [Theory]
     [MemberData(nameof(ShiftUnaryCells))]
     public void ShiftsAndUnaryOperationsPreserveMaskedCountsResultsAndState(string caseId, string cell) =>
@@ -30,8 +26,4 @@ public sealed class IntegerArithmeticEdgeTests(CorrectnessTestRunner runner) : C
     [MemberData(nameof(MatrixCells))]
     public void FixedWidthOperationsRespectWrappingOverflowAndDivisionContracts(string caseId, string cell) =>
         Run(CorpusCaseTestData.Active(caseId, cell), cell);
-
-    [Fact(Skip = KnownNonBugSkipReasons.UncheckedRemainder)]
-    public void FixedUncheckedMinimumRemainderDesktopChoiceIsNotRequired() =>
-        throw new InvalidOperationException("The known non-bug partition must remain skipped.");
 }

@@ -65,10 +65,23 @@ public sealed class WitDocumentReader : IWitDocumentReader
         return _coreBindings.Resolve(witPath, document, document.SelectWorld(world));
     }
 
+    private const string MissingPackageHint =
+        "The WIT tools do not fetch imported packages: put each package the world imports " +
+        "in a deps directory beside it, such as deps/wasi-http for wasi:http. See " +
+        "https://github.com/zion-sati/NetWasm/blob/main/docs/wit-bindings.md#path-and-dependency-rules.";
+
+    // The parser points at a column with a caret on the line below, so its lines stay.
     private static string NormalizeError(string error)
     {
-        var normalized = error.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return normalized.Length == 0 ? "wasm-tools reported an unknown error" : normalized;
+        var normalized = error.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
+        if (normalized.Length == 0)
+        {
+            return "wasm-tools reported an unknown error";
+        }
+        var missingPackage = normalized.IndexOf("error: package '", StringComparison.Ordinal);
+        return missingPackage >= 0 && normalized.IndexOf("' not found", missingPackage, StringComparison.Ordinal) > 0
+            ? normalized + "\n" + MissingPackageHint
+            : normalized;
     }
 }
 

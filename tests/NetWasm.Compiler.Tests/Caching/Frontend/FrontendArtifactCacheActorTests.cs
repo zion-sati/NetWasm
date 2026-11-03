@@ -40,6 +40,9 @@ public sealed class FrontendArtifactCacheActorTests
     [InlineData(15)]
     [InlineData(16)]
     [InlineData(17)]
+    [InlineData(18)]
+    [InlineData(19)]
+    [InlineData(20)]
     public void BodyAffectingOverridesGetIndependentCacheNamespaces(int feature)
     {
         var builder = new FrontendArtifactCacheIdentityBuilder(
@@ -68,7 +71,10 @@ public sealed class FrontendArtifactCacheActorTests
             14 => new WasmOptimizationOverrides(IdempotentLoopCollapse: ManagedIdempotentLoopCollapse.Disabled),
             15 => new WasmOptimizationOverrides(LoopStoreForwarding: ManagedLoopStoreForwarding.Disabled),
             16 => new WasmOptimizationOverrides(ArrayLoopIdioms: ManagedArrayLoopIdioms.Disabled),
-            _ => new WasmOptimizationOverrides(LoopVectorization: ManagedLoopVectorization.Disabled),
+            17 => new WasmOptimizationOverrides(LoopVectorization: ManagedLoopVectorization.Disabled),
+            18 => new WasmOptimizationOverrides(PureCallReuse: ManagedPureCallReuse.Disabled),
+            19 => new WasmOptimizationOverrides(FieldLoadReuse: ManagedFieldLoadReuse.Disabled),
+            _ => new WasmOptimizationOverrides(ConditionalStoreMerging: ManagedConditionalStoreMerging.Disabled),
         };
 
         var enabledContext = builder.Build(options);

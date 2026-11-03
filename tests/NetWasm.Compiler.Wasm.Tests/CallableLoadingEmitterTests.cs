@@ -234,7 +234,7 @@ public sealed class CallableLoadingEmitterTests
         var emitter = new VirtualFunctionLoadEmitter(
             layouts,
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new InstructionCommandFactory());
         return (
             new[] { emitter }.Cast<IVirtualFunctionLoader>().Single(),

@@ -3,7 +3,7 @@ using NetWasm.Compiler.Metadata;
 
 namespace NetWasm.Compiler.Layout;
 
-internal sealed class ManagedObjectLayoutBuilderFactory :
+internal sealed class ManagedObjectLayoutBuilderFactory(IExplicitValueLayoutResolver explicitLayouts) :
     IManagedObjectLayoutBuilderFactory
 {
     public IManagedObjectLayoutBuilder Create(
@@ -26,5 +26,6 @@ internal sealed class ManagedObjectLayoutBuilderFactory :
             identityBaseTypes,
             target,
             state,
-            valueLayouts);
+            valueLayouts,
+            explicitLayouts);
 }

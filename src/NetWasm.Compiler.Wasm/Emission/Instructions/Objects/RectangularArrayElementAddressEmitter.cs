@@ -1,5 +1,6 @@
 using System;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Arrays;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Encoding;
@@ -29,7 +30,11 @@ internal sealed class RectangularArrayElementAddressEmitter(
             instruction.Context,
             request.ArraySlot,
             CliValueKind.ManagedReference);
-        EmitNullCheck(code, arrayLocal, request.Instruction.Context.ManagedThrowFunction);
+        var metadata = instruction.Context.ArrayMetadata;
+        if (!metadata.Plan.CheckedAccesses.Contains(instruction.Instruction.Offset))
+        {
+            EmitNullCheck(code, arrayLocal, request.Instruction.Context.ManagedThrowFunction);
+        }
 
         if (instruction.Instruction.Operation ==
                 CilOperation.LoadRectangularArrayElementAddress &&
@@ -57,46 +62,74 @@ internal sealed class RectangularArrayElementAddressEmitter(
             return;
         }
 
+        // A snapshot of the array's lower bounds, lengths and data, or its shape.
+        var snapshot = metadata.Plan.Accesses.TryGetValue(instruction.Instruction.Offset, out var slot) &&
+            metadata.RectangularSlots.TryGetValue(slot, out var cached)
+            ? cached
+            : null;
         var shape = rectangularLayouts.Provide();
+        // Elements are stored row-major, so the offset is
+        // (...(i0 * length1 + i1) * length2 + ...) + i(rank - 1).
         var accumulator = instruction.Context.NumericTemporaryI4;
-        WriteI32(code, 0);
-        Set(code, accumulator);
         for (var dimension = 0; dimension < arrayType.ArrayRank; dimension++)
         {
             var indexLocal = GetStackLocal(
                 instruction.Context,
                 request.ArraySlot + dimension + 1,
                 CliValueKind.I4);
-            SubtractLowerBound(code, arrayLocal, indexLocal, shape, arrayType.ArrayRank, dimension);
+            Get(code, indexLocal);
+            if (snapshot is not null)
+            {
+                Get(code, snapshot.Dimensions[dimension].LowerBound);
+            }
+            else
+            {
+                Get(code, arrayLocal);
+                ManagedMemoryEmitter.EmitReferenceLoad(
+                    code,
+                    layouts.Target,
+                    shape.ShapePointerOffset);
+                code.Write(WasmInstruction.WithOperand(
+                    WasmOpcodes.I32Load,
+                    WasmInstructionOperand.Memory(
+                        2,
+                        (uint)shape.LowerBoundOffset(arrayType.ArrayRank, dimension))));
+            }
+            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
+            Set(code, indexLocal);
 
             Get(code, indexLocal);
-            EmitShapeFieldAddress(code, arrayLocal, shape, dimension);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Load,
-                WasmInstructionOperand.Memory(
-                    2,
-                    (uint)shape.DimensionLengthOffset)));
+            EmitDimensionLength(code, arrayLocal, shape, snapshot, dimension);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
             ThrowIf(code, ManagedExceptionKind.IndexOutOfRange, request.Instruction.Context.ManagedThrowFunction);
 
-            Get(code, accumulator);
-            Get(code, indexLocal);
-            EmitShapeFieldAddress(code, arrayLocal, shape, dimension);
-            code.Write(WasmInstruction.WithOperand(
-                WasmOpcodes.I32Load,
-                WasmInstructionOperand.Memory(
-                    2,
-                    (uint)shape.DimensionStrideOffset)));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Add));
+            if (dimension != 0)
+            {
+                Get(code, accumulator);
+                EmitDimensionLength(code, arrayLocal, shape, snapshot, dimension);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Multiply));
+                Get(code, indexLocal);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Add));
+            }
+            else
+            {
+                Get(code, indexLocal);
+            }
             Set(code, accumulator);
         }
 
-        Get(code, arrayLocal);
-        ManagedMemoryEmitter.EmitReferenceLoad(
-            code,
-            layouts.Target,
-            objects.ArrayDataPointerOffset);
+        if (snapshot is not null)
+        {
+            Get(code, snapshot.Data);
+        }
+        else
+        {
+            Get(code, arrayLocal);
+            ManagedMemoryEmitter.EmitReferenceLoad(
+                code,
+                layouts.Target,
+                objects.ArrayDataPointerOffset);
+        }
         Get(code, accumulator);
         if (layouts.Target.UsesMemory64)
         {
@@ -160,32 +193,6 @@ internal sealed class RectangularArrayElementAddressEmitter(
         Set(code, index);
     }
 
-    // An array of rank two or more has the rank of its static type, so its
-    // lower bounds are read from its shape without asking the runtime which
-    // kind of array it is.
-    private void SubtractLowerBound(
-        IWasmInstructionWriter code,
-        int array,
-        int index,
-        RectangularArrayLayout shape,
-        int rank,
-        int dimension)
-    {
-        Get(code, index);
-        Get(code, array);
-        ManagedMemoryEmitter.EmitReferenceLoad(
-            code,
-            layouts.Target,
-            shape.ShapePointerOffset);
-        code.Write(WasmInstruction.WithOperand(
-            WasmOpcodes.I32Load,
-            WasmInstructionOperand.Memory(
-                2,
-                (uint)shape.LowerBoundOffset(rank, dimension))));
-        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
-        Set(code, index);
-    }
-
     private static bool HasReadonlyPrefix(InstructionEmissionRequest request)
     {
         var instructions = request.Header.Instructions;
@@ -200,19 +207,31 @@ internal sealed class RectangularArrayElementAddressEmitter(
         return false;
     }
 
-    private void EmitShapeFieldAddress(
+    // An array of rank two or more has the rank of its static type, so its
+    // lengths are read from its shape without asking the runtime which kind
+    // of array it is.
+    private void EmitDimensionLength(
         IWasmInstructionWriter code,
         int arrayLocal,
         RectangularArrayLayout shape,
+        RectangularArraySnapshotLocals? snapshot,
         int dimension)
     {
+        if (snapshot is not null)
+        {
+            Get(code, snapshot.Dimensions[dimension].Length);
+            return;
+        }
         Get(code, arrayLocal);
         ManagedMemoryEmitter.EmitReferenceLoad(
             code,
             layouts.Target,
             shape.ShapePointerOffset);
-        addresses.Emit(code, checked(dimension * shape.DimensionSize));
-        addresses.Emit(code, AddressOperation.Add);
+        code.Write(WasmInstruction.WithOperand(
+            WasmOpcodes.I32Load,
+            WasmInstructionOperand.Memory(
+                2,
+                (uint)(dimension * shape.DimensionSize + shape.DimensionLengthOffset))));
     }
 
     private void EmitNullCheck(

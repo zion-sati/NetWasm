@@ -20,7 +20,9 @@ internal interface IArrayLoopIdiomRewriter
 // the store and the increment, so nothing else can change the arrays, the value
 // or end; they are constants, arguments or locals other than j, and the
 // elements are primitives. `j <= C` with a constant C below int.MaxValue ends
-// at C + 1.
+// at C + 1. When j starts at a constant and the arrays are locals of known
+// lengths that hold every iteration, FillInBounds or CopyInBounds does them
+// without checks.
 internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, bool enabled) : IArrayLoopIdiomRewriter
 {
     private readonly IArrayLoopMethodResolver _methods = methods ?? throw new ArgumentNullException(nameof(methods));
@@ -35,12 +37,13 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
 
         var instructions = body.Instructions;
         var indices = Enumerable.Range(0, instructions.Length).ToDictionary(index => instructions[index].Offset);
+        var bounds = new Bounds(KnownLengths(body), Entered(body));
         List<CilInstruction>[]? replacements = null;
         for (var jump = 0; jump < instructions.Length; jump++)
         {
             if (instructions[jump] is not { Operation: CilOperation.Branch, Operand: CilOperand.BranchTarget { Offset: var test } } ||
                 !indices.TryGetValue(test, out var condition) || condition <= jump ||
-                Match(instructions, jump, condition) is not { } call)
+                Match(instructions, jump, condition, bounds) is not { } call)
             {
                 continue;
             }
@@ -55,7 +58,7 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
 
     // The instructions that run the loop's in-bounds iterations ahead of its
     // entry jump and store the next index to the counter.
-    private List<CilInstruction>? Match(ImmutableArray<CilInstruction> instructions, int jump, int condition)
+    private List<CilInstruction>? Match(ImmutableArray<CilInstruction> instructions, int jump, int condition, Bounds bounds)
     {
         if (instructions[condition] is not { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index { Value: var counter } } ||
             End(instructions, condition + 1, counter) is not var (end, branch) ||
@@ -89,10 +92,13 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
             IsArray(instructions[jump + 1], counter) && IsCounter(instructions[jump + 2], counter) &&
             IsValue(instructions[jump + 3], counter, element))
         {
+            var fill = bounds.Hold(Start(instructions, jump, counter, bounds), end, [instructions[jump + 1]])
+                ? "FillInBounds"
+                : "Fill";
             return
             [
                 Copy(instructions[jump + 1]), counterLoad, .. end, Copy(instructions[jump + 3]),
-                Call(_methods.Resolve("Fill", element)), storeCounter,
+                Call(_methods.Resolve(fill, element)), storeCounter,
             ];
         }
         // destination[j] = source[j]
@@ -102,10 +108,13 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
             instructions[jump + 5] is { Operation: CilOperation.LoadArrayElement, Operand: CilOperand.TypeIdentity { Value: var loaded } } &&
             IsPrimitive(loaded) && loaded.StackKind == element.StackKind && PrimitiveElements.Size(loaded) is { } size && PrimitiveElements.Size(element) == size)
         {
+            var copy = bounds.Hold(Start(instructions, jump, counter, bounds), end, [instructions[jump + 1], instructions[jump + 3]])
+                ? "CopyInBounds"
+                : "Copy";
             return
             [
                 Copy(instructions[jump + 1]), Copy(instructions[jump + 3]), counterLoad, .. end,
-                Call(_methods.Resolve("Copy", element)), storeCounter,
+                Call(_methods.Resolve(copy, element)), storeCounter,
             ];
         }
         return null;
@@ -137,6 +146,90 @@ internal sealed class ArrayLoopIdiomRewriter(IArrayLoopMethodResolver methods, b
             return ([new CilInstruction(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(last + 1))], bound + 1);
         }
         return null;
+    }
+
+    // The counter's first value, when the loop's `ldc K; stloc j; br test` sets
+    // it to a constant and nothing else enters there.
+    private static int? Start(ImmutableArray<CilInstruction> instructions, int jump, int counter, Bounds bounds) =>
+        jump >= 2 &&
+        instructions[jump - 1] is { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var stored } } &&
+        stored == counter &&
+        instructions[jump - 2] is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: var start } } &&
+        !bounds.Entered.Contains(instructions[jump - 1].Offset) && !bounds.Entered.Contains(instructions[jump].Offset)
+            ? start
+            : null;
+
+    // Locals that hold an array of a known length wherever they are read: stored
+    // once, from a newarr of a constant length, ahead of the method's first
+    // control transfer and protected region, and never addressed, so every path
+    // stores the local before it reads it.
+    private static Dictionary<int, int> KnownLengths(CilMethodBody body)
+    {
+        var instructions = body.Instructions;
+        var stores = new Dictionary<int, int>();
+        var addressed = new HashSet<int>();
+        var transfer = instructions.Length;
+        for (var index = 0; index < instructions.Length; index++)
+        {
+            var instruction = instructions[index];
+            switch (instruction)
+            {
+                case { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } }:
+                    stores[local] = stores.ContainsKey(local) ? -1 : index;
+                    break;
+                case { Operation: CilOperation.LoadLocalAddress, Operand: CilOperand.Index { Value: var local } }:
+                    addressed.Add(local);
+                    break;
+            }
+            if (transfer == instructions.Length &&
+                (instruction.Operand is CilOperand.BranchTarget ||
+                 instruction.Operation is CilOperation.Throw or CilOperation.Rethrow or CilOperation.EndFinally or
+                     CilOperation.EndFilter or CilOperation.Return))
+            {
+                transfer = index;
+            }
+        }
+        var protectedFrom = body.ExceptionRegions.Select(region => region.TryOffset).DefaultIfEmpty(int.MaxValue).Min();
+        var lengths = new Dictionary<int, int>();
+        foreach (var (local, store) in stores)
+        {
+            if (store >= 2 && store < transfer && instructions[store].Offset < protectedFrom && !addressed.Contains(local) &&
+                instructions[store - 1].Operation == CilOperation.NewArray &&
+                instructions[store - 2] is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: >= 0 and var length } })
+            {
+                lengths[local] = length;
+            }
+        }
+        return lengths;
+    }
+
+    // The offsets a branch enters at.
+    private static HashSet<int> Entered(CilMethodBody body) =>
+    [
+        .. body.Instructions
+            .Select(static instruction => instruction.Operand)
+            .OfType<CilOperand.BranchTarget>()
+            .Select(static target => target.Offset),
+    ];
+
+    private sealed record Bounds(Dictionary<int, int> Lengths, HashSet<int> Entered)
+    {
+        // Whether every iteration from start to end lies within each array: start
+        // is a constant below end, and every array is a local of a known length
+        // at least end, a constant or one of those lengths.
+        public bool Hold(int? start, CilInstruction[] end, CilInstruction[] arrays)
+        {
+            int? last = end switch
+            {
+                [{ Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: var value } }] => value,
+                [{ Operation: CilOperation.LoadLocal, Operand: CilOperand.Index { Value: var local } },
+                { Operation: CilOperation.LoadArrayLength }, ..] when Lengths.TryGetValue(local, out var length) => length,
+                _ => null,
+            };
+            return start is >= 0 and var first && last is { } bound && first < bound &&
+                arrays.All(array => array is { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index { Value: var local } } &&
+                    Lengths.TryGetValue(local, out var length) && bound <= length);
+        }
     }
 
     private static bool IsCounter(CilInstruction instruction, int counter) =>

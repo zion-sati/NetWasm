@@ -145,7 +145,12 @@ internal sealed class EntryPointEmitter(
                     code.Instructions,
                     resultKind,
                     resultLocal,
-                    EmitBody);
+                    EmitBody,
+                    initialization.RuntimeImportSelection.Includes(RuntimeImportSymbol.ReportUnhandledException)
+                        ? runtimeImports.Resolve(
+                            RuntimeImportSymbol.ReportUnhandledException,
+                            initialization.RuntimeImportSelection)
+                        : null);
             }
         }
         else

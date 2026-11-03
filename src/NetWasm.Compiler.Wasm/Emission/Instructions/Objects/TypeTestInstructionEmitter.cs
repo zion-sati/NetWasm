@@ -62,7 +62,7 @@ internal sealed class TypeTestInstructionEmitter(
         EmitReferenceEqualZero(code);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-        var runs = Runs(site.MatchingTypes);
+        var runs = Runs(site);
         if (runs.Count == 0)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
@@ -82,19 +82,32 @@ internal sealed class TypeTestInstructionEmitter(
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }
 
-    // The matching type ids as runs of consecutive ids, in order.
-    private List<(int First, int Last)> Runs(ImmutableArray<CliTypeIdentity> matchingTypes)
+    // The matching type ids as runs of consecutive ids, in order. The ids from
+    // the target's through its last subtype's are the types derived from it,
+    // so where matching ids fall among them that interval is one run: a type
+    // in it that the program never allocates is never an object's type, and
+    // would match if it were. Matches outside it, by array covariance or
+    // variance, keep their own runs.
+    private List<(int First, int Last)> Runs(TypeTestSiteModel site)
     {
-        var runs = new List<(int First, int Last)>();
-        foreach (var id in matchingTypes.Select(type => typeLayouts.GetObjectLayout(type).TypeId).Distinct().Order())
+        var ids = site.MatchingTypes.Select(type => typeLayouts.GetObjectLayout(type).TypeId).ToHashSet();
+        var target = nullableTypes.Resolve(site.TargetType) ?? site.TargetType;
+        var matches = ids.Select(id => (First: id, Last: id)).ToList();
+        if (typeLayouts.GetObjectLayout(target, out var layout) && layout.LastSubtypeId >= layout.TypeId &&
+            ids.Any(id => id >= layout.TypeId && id <= layout.LastSubtypeId))
         {
-            if (runs.Count != 0 && runs[^1].Last + 1 == id)
+            matches.Add((layout.TypeId, layout.LastSubtypeId));
+        }
+        var runs = new List<(int First, int Last)>();
+        foreach (var (first, last) in matches.OrderBy(match => match.First))
+        {
+            if (runs.Count != 0 && first <= runs[^1].Last + 1)
             {
-                runs[^1] = (runs[^1].First, id);
+                runs[^1] = (runs[^1].First, Math.Max(runs[^1].Last, last));
             }
             else
             {
-                runs.Add((id, id));
+                runs.Add((first, last));
             }
         }
         return runs;

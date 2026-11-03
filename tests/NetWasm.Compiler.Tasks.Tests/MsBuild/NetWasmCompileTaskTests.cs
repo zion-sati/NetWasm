@@ -39,6 +39,10 @@ public sealed class NetWasmCompileTaskTests
         task.ManagedLoopRotation = "Enabled";
         task.ManagedAllocationElimination = string.Empty;
         task.ManagedLoopVectorization = "Disabled";
+        task.ManagedPureCallReuse = "Enabled";
+        task.ManagedFieldLoadReuse = "Enabled";
+        task.ManagedConditionalStoreMerging = "Enabled";
+        task.ManagedInlineArrayData = "Enabled";
 
         Assert.Equal(
             [
@@ -52,6 +56,10 @@ public sealed class NetWasmCompileTaskTests
                 "-projectdirectory:/project", "-pathmap:/project=/_/", "-intermediatedirectory:obj/netwasm/",
                 "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
                 "-managedmethodinlining:Disabled", "-managedlooprotation:Enabled", "-managedloopvectorization:Disabled",
+                "-managedpurecallreuse:Enabled",
+                "-managedfieldloadreuse:Enabled",
+                "-managedconditionalstoremerging:Enabled",
+                "-managedinlinearraydata:Enabled",
             ],
             Lines(task.ResponseFileCommands));
     }

@@ -192,7 +192,7 @@ public sealed class NullableBoxEmitterTests
             layouts,
             layouts,
             WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts));
+            new ImplicitExceptionEmitter(layouts));
 
     private static InstructionEmissionRequest Request() =>
         CreateInstructionRequest(

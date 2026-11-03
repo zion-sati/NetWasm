@@ -577,7 +577,7 @@ internal sealed class SourceGenerationFixtureBuild : IDisposable
         }
     }
 
-    private static ImmutableArray<string> CreateNetWasmReferences(
+    internal static ImmutableArray<string> CreateNetWasmReferences(
         string root,
         bool usesStjDependencies,
         bool usesRegexDependencies)

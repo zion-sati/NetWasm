@@ -411,6 +411,44 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedLoopVectorization.Enabled => LoopVectorizationPolicy.CountedLoops,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        // A reused result is one call less and no more code, so every
+        // optimizing preset takes it.
+        var pureCallOverride = options?.PureCallReuse ?? ManagedPureCallReuse.Auto;
+        var pureCalls = pureCallOverride switch
+        {
+            ManagedPureCallReuse.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? PureCallReusePolicy.Disabled : PureCallReusePolicy.RepeatedArguments,
+            ManagedPureCallReuse.Disabled => PureCallReusePolicy.Disabled,
+            ManagedPureCallReuse.Enabled => PureCallReusePolicy.RepeatedArguments,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        var fieldLoadsOverride = options?.FieldLoadReuse ?? ManagedFieldLoadReuse.Auto;
+        var fieldLoads = fieldLoadsOverride switch
+        {
+            ManagedFieldLoadReuse.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? FieldLoadReusePolicy.Disabled : FieldLoadReusePolicy.AvailableLoads,
+            ManagedFieldLoadReuse.Disabled => FieldLoadReusePolicy.Disabled,
+            ManagedFieldLoadReuse.Enabled => FieldLoadReusePolicy.AvailableLoads,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        var storeMergingOverride = options?.ConditionalStoreMerging ?? ManagedConditionalStoreMerging.Auto;
+        var storeMerging = storeMergingOverride switch
+        {
+            ManagedConditionalStoreMerging.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? ConditionalStoreMergingPolicy.Disabled : ConditionalStoreMergingPolicy.SameFieldArms,
+            ManagedConditionalStoreMerging.Disabled => ConditionalStoreMergingPolicy.Disabled,
+            ManagedConditionalStoreMerging.Enabled => ConditionalStoreMergingPolicy.SameFieldArms,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        var arrayDataOverride = options?.InlineArrayData ?? ManagedInlineArrayData.Auto;
+        var arrayData = arrayDataOverride switch
+        {
+            ManagedInlineArrayData.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? InlineArrayDataPolicy.Disabled : InlineArrayDataPolicy.Inline,
+            ManagedInlineArrayData.Disabled => InlineArrayDataPolicy.Disabled,
+            ManagedInlineArrayData.Enabled => InlineArrayDataPolicy.Inline,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
@@ -437,6 +475,10 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              loopStoreOverride == ManagedLoopStoreForwarding.Enabled ||
              arrayLoopOverride == ManagedArrayLoopIdioms.Enabled ||
              vectorizationOverride == ManagedLoopVectorization.Enabled ||
+             pureCallOverride == ManagedPureCallReuse.Enabled ||
+             fieldLoadsOverride == ManagedFieldLoadReuse.Enabled ||
+             storeMergingOverride == ManagedConditionalStoreMerging.Enabled ||
+             arrayDataOverride == ManagedInlineArrayData.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -480,6 +522,10 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             idempotentLoops,
             loopStores,
             arrayLoops,
-            vectorization);
+            vectorization,
+            pureCalls,
+            fieldLoads,
+            storeMerging,
+            arrayData);
     }
 }

@@ -325,6 +325,40 @@ namespace System.Runtime.CompilerServices
             // COR_ELEMENT_TYPE_I1,I2,I4,I8,U1,U2,U4,U8,R4,R8,I,U,CHAR,BOOLEAN
             => ((1 << (int)et) & 0b_0011_0000_0000_0011_1111_1111_1100) != 0;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool CanPrimitiveWiden(System.Reflection.CorElementType srcET, System.Reflection.CorElementType dstET)
+        {
+            // The primitive widen table
+            //  The index represents source type. The value in the table is a bit vector of destination types.
+            //  If corresponding bit is set in the bit vector, source type can be widened into that type.
+            //  All types widen to themselves.
+            ReadOnlySpan<short> primitiveWidenTable =
+            [
+                0x00,      // ELEMENT_TYPE_END
+                0x00,      // ELEMENT_TYPE_VOID
+                0x0004,    // ELEMENT_TYPE_BOOLEAN
+                0x3F88,    // ELEMENT_TYPE_CHAR (W = U2, CHAR, I4, U4, I8, U8, R4, R8) (U2 == Char)
+                0x3550,    // ELEMENT_TYPE_I1   (W = I1, I2, I4, I8, R4, R8)
+                0x3FE8,    // ELEMENT_TYPE_U1   (W = CHAR, U1, I2, U2, I4, U4, I8, U8, R4, R8)
+                0x3540,    // ELEMENT_TYPE_I2   (W = I2, I4, I8, R4, R8)
+                0x3F88,    // ELEMENT_TYPE_U2   (W = U2, CHAR, I4, U4, I8, U8, R4, R8)
+                0x3500,    // ELEMENT_TYPE_I4   (W = I4, I8, R4, R8)
+                0x3E00,    // ELEMENT_TYPE_U4   (W = U4, I8, R4, R8)
+                0x3400,    // ELEMENT_TYPE_I8   (W = I8, R4, R8)
+                0x3800,    // ELEMENT_TYPE_U8   (W = U8, R4, R8)
+                0x3000,    // ELEMENT_TYPE_R4   (W = R4, R8)
+                0x2000,    // ELEMENT_TYPE_R8   (W = R8)
+            ];
+
+            System.Diagnostics.Debug.Assert(srcET.IsPrimitiveType() && dstET.IsPrimitiveType());
+            if ((int)srcET >= primitiveWidenTable.Length)
+            {
+                // I or U
+                return srcET == dstET;
+            }
+            return (primitiveWidenTable[(int)srcET] & (1 << (int)dstET)) != 0;
+        }
+
         public static int GetHashCode(object? value) => ObjectIdentityRuntime.GetHashCode(value);
 
         // CoreCLR and Mono read a component-size flag from the object's type. NetWasm's

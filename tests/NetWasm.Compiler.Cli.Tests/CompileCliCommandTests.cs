@@ -117,7 +117,11 @@ public sealed class CompileCliCommandTests
             "-managedidempotentloopcollapse:Disabled",
             "-managedloopstoreforwarding:Enabled",
             "-managedarrayloopidioms:Disabled",
-            "-managedloopvectorization:Disabled");
+            "-managedloopvectorization:Disabled",
+            "-managedpurecallreuse:Disabled",
+            "-managedfieldloadreuse:Disabled",
+            "-managedconditionalstoremerging:Disabled",
+            "-managedinlinearraydata:Disabled");
 
         Assert.Equal("node", harness.Sessions.WasmTools!.Executable);
         var options = harness.Sessions.Options!;
@@ -161,6 +165,10 @@ public sealed class CompileCliCommandTests
         Assert.Equal(ManagedLoopStoreForwarding.Enabled, overrides.LoopStoreForwarding);
         Assert.Equal(ManagedArrayLoopIdioms.Disabled, overrides.ArrayLoopIdioms);
         Assert.Equal(ManagedLoopVectorization.Disabled, overrides.LoopVectorization);
+        Assert.Equal(ManagedPureCallReuse.Disabled, overrides.PureCallReuse);
+        Assert.Equal(ManagedFieldLoadReuse.Disabled, overrides.FieldLoadReuse);
+        Assert.Equal(ManagedConditionalStoreMerging.Disabled, overrides.ConditionalStoreMerging);
+        Assert.Equal(ManagedInlineArrayData.Disabled, overrides.InlineArrayData);
         var request = harness.Artifacts.Request!;
         Assert.Equal("native/callbacks.o", request.CallbackObjectPath);
         Assert.Equal("layout.json", request.RuntimeLayoutPath);

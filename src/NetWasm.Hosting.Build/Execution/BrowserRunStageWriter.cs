@@ -35,9 +35,10 @@ public interface IBrowserRunStageWriter
 /// </summary>
 public sealed class BrowserRunStageWriter : IBrowserRunStageWriter
 {
-    // The staging publish sets these itself.
+    // The staging publish sets these itself. It publishes on purpose, so a project
+    // that sets IsPublishable=false runs too.
     private static readonly ImmutableHashSet<string> Staged = ImmutableHashSet.Create(
-        StringComparer.OrdinalIgnoreCase, "NetWasmBrowserPublishDir", "NoBuild", "PublishDir", "_NetWasmRunStaging");
+        StringComparer.OrdinalIgnoreCase, "IsPublishable", "NetWasmBrowserPublishDir", "NoBuild", "PublishDir", "_NetWasmRunStaging");
 
     public void Write(BrowserRunStageRequest request)
     {
@@ -55,6 +56,7 @@ public sealed class BrowserRunStageWriter : IBrowserRunStageWriter
             "msbuild", request.ProjectPath, "-t:Publish", "-nologo", "-v:q",
             .. request.GlobalProperties.Where(property => !Staged.Contains(property.Key))
                 .Select(property => Property(property.Key, property.Value)),
+            Property("IsPublishable", "true"),
             Property("NoBuild", "true"),
             Property("PublishDir", site + Path.DirectorySeparatorChar),
             Property("NetWasmBrowserPublishDir", Path.Combine(site, request.BrowserDirectory)),

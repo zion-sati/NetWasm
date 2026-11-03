@@ -139,6 +139,7 @@ internal sealed class RuntimeLayoutReader : IRuntimeLayoutReader
         // so RuntimeLayoutReaderTests reads every compiler feature to catch drift.
         string[] known =
         [
+            "array-set-value",
             "ephemeron-handles",
             "finalization",
             "local-time",

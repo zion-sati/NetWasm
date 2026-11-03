@@ -17,7 +17,7 @@ public sealed class HostCallbackArgumentMarshallerTests
             new HostCallbackStringArgumentMarshaller(
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new AddressInstructionEmitter(layouts)),
         }.Cast<IHostCallbackStringArgumentMarshaller>().Single();
         var code = new EmitterTestSupport.RecordingInstructionWriter();
@@ -40,7 +40,7 @@ public sealed class HostCallbackArgumentMarshallerTests
                 layouts,
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new AddressInstructionEmitter(layouts)),
         }.Cast<IHostCallbackByteArrayArgumentMarshaller>().Single();
         var code = new EmitterTestSupport.RecordingInstructionWriter();
@@ -62,7 +62,7 @@ public sealed class HostCallbackArgumentMarshallerTests
                 layouts,
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new AddressInstructionEmitter(layouts)),
         }.Cast<IHostCallbackHostObjectArgumentMarshaller>().Single();
         var code = new EmitterTestSupport.RecordingInstructionWriter();
@@ -84,7 +84,7 @@ public sealed class HostCallbackArgumentMarshallerTests
         var marshaller = new HostCallbackStringArgumentMarshaller(
             layouts,
             WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new AddressInstructionEmitter(layouts));
         var target = new InteropMarshallingTarget(new InteropImportPlan(
             [],
@@ -115,7 +115,7 @@ public sealed class HostCallbackArgumentMarshallerTests
                 layouts,
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new AddressInstructionEmitter(layouts));
         var target = new InteropMarshallingTarget(new InteropImportPlan(
             [],
@@ -150,7 +150,7 @@ public sealed class HostCallbackArgumentMarshallerTests
             new HostCallbackStringArgumentMarshaller(
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new AddressInstructionEmitter(layouts)),
         }.Cast<IHostCallbackStringArgumentMarshaller>().Single();
         var target = new InteropMarshallingTarget(new InteropImportPlan(
@@ -175,7 +175,7 @@ public sealed class HostCallbackArgumentMarshallerTests
                 layouts,
                 layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(layouts, layouts),
+                new ImplicitExceptionEmitter(layouts),
                 new AddressInstructionEmitter(layouts)),
         }.Cast<IHostCallbackByteArrayArgumentMarshaller>().Single();
         var target = new InteropMarshallingTarget(new InteropImportPlan(

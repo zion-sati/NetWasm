@@ -62,7 +62,7 @@ internal sealed class EnumGetValuesEmitter(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)temporary)));
             ManagedMemoryEmitter.EmitArrayElementAddress(
-                code, layouts.Target, result, temporary, elementLayout.Size);
+                code, layouts.Target, result, temporary, request.Instruction.Context.InlineArrayData, elementLayout.Size);
             if (definition.EnumUnderlyingType.StackKind == CliValueKind.I8)
             {
                 code.Write(WasmInstruction.WithOperand(
@@ -122,7 +122,8 @@ internal sealed class EnumGetValuesEmitter(
                 element,
                 elementLayout,
                 typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(element)).TypeId,
-                typeLayouts.GetObjectLayout(element).TypeId);
+                typeLayouts.GetObjectLayout(element).TypeId,
+                request.Instruction.Context.InlineArrayData);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.Else));
             if (entry.IsOpenDefinition)
             {
@@ -140,7 +141,8 @@ internal sealed class EnumGetValuesEmitter(
                     enumType,
                     enumLayout,
                     typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(enumType)).TypeId,
-                    entry.TypeId);
+                    entry.TypeId,
+                    request.Instruction.Context.InlineArrayData);
             }
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
@@ -155,7 +157,8 @@ internal sealed class EnumGetValuesEmitter(
         CliTypeIdentity element,
         ValueLayout elementLayout,
         int arrayTypeId,
-        int elementTypeId)
+        int elementTypeId,
+        bool inlineData)
     {
         WriteI32(code, entry.Members.Length);
         WriteI32(code, arrayTypeId);
@@ -175,7 +178,7 @@ internal sealed class EnumGetValuesEmitter(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)temporary)));
             ManagedMemoryEmitter.EmitArrayElementAddress(
-                code, layouts.Target, result, temporary, elementLayout.Size);
+                code, layouts.Target, result, temporary, inlineData, elementLayout.Size);
             if (element.StackKind == CliValueKind.I8)
             {
                 code.Write(WasmInstruction.WithOperand(

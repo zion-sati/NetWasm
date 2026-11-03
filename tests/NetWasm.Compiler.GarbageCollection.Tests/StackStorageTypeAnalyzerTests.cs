@@ -245,6 +245,46 @@ public sealed class StackStorageTypeAnalyzerTests
         }
     }
 
+    // Addresses of different types meet at a join only when neither pointee
+    // holds references: a scalar or a reference-free struct, not a struct with a
+    // reference, an object reference or another address.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(4, false)]
+    public void AddressesOfDifferentTypesMeetOnlyOverReferenceFreePointees(int pointee, bool meets)
+    {
+        var repository = new Repository(4);
+        var buffer = CliTypeIdentity.ManagedByReference(CliTypeIdentity.Named(Assembly, "Tests", "Buffer", true));
+        var other = CliTypeIdentity.ManagedByReference(pointee switch
+        {
+            0 => CliTypeIdentity.FromStackKind(CliValueKind.I4),
+            1 => CliTypeIdentity.FromStackKind(CliValueKind.I8),
+            2 => Pair,
+            3 => Reference,
+            _ => CliTypeIdentity.ManagedByReference(CliTypeIdentity.FromStackKind(CliValueKind.I4)),
+        });
+        var method = Body(repository, Method(EntryKey, Void, buffer, other), [],
+            I(0, CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
+            I(1, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(4)),
+            I(2, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            I(3, CilOperation.Branch, new CilOperand.BranchTarget(5)),
+            I(4, CilOperation.LoadArgument, new CilOperand.Index(1)),
+            I(5, CilOperation.Call, new CilOperand.Entity(CollectKey)),
+            I(6, CilOperation.Pop), I(7, CilOperation.Return));
+        if (meets)
+        {
+            Analyze(repository, method);
+        }
+        else
+        {
+            Assert.Contains("incompatible stack storage identities",
+                Assert.Throws<CompilerException>(() => Analyze(repository, method)).Message, StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -60,7 +60,7 @@ namespace System
             {
                 throw new InvalidOperationException();
             }
-            return string.Create(buffer);
+            return new string(buffer);
         }
 
         public static int ToBase64CharArray(byte[] inArray, int offsetIn, int length, char[] outArray, int offsetOut)

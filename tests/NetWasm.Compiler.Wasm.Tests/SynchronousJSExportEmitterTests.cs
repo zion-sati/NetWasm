@@ -232,7 +232,8 @@ public sealed class SynchronousJSExportEmitterTests
             IWasmInstructionWriter code,
             CliValueKind resultType,
             int resultLocal,
-            Action emitBody)
+            Action emitBody,
+            int? unhandledExceptionReporter = null)
         {
             TrapCalled = true;
             ResultType = resultType;

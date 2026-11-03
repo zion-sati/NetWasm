@@ -126,6 +126,10 @@ public sealed class LayoutContractCoverageTests
         Assert.Equal(8, snapshot.ArrayLengthOffset);
         Assert.Equal(16, snapshot.ArrayDataPointerOffset);
         Assert.Equal(24, snapshot.ArrayElementTypeIdOffset);
+        // Elements of a one-dimensional array sit inline, where the runtime's
+        // NETWASM_ARRAY_INLINE_DATA_OFFSET puts them.
+        Assert.Equal(32, snapshot.Target.ArrayInlineDataOffset);
+        Assert.Equal(16, WasmTargetLayout.Wasm32.ArrayInlineDataOffset);
         Assert.Equal(1, snapshot.DelegateTargetOffset);
         Assert.Equal(2, snapshot.DelegateMethodIdOffset);
         Assert.Equal(3, snapshot.DelegateInvocationListOffset);

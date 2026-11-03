@@ -13,6 +13,13 @@ namespace System.Globalization
     {
         internal static readonly int[] s_intArrayWithElement3 = [3];
 
+        // Upstream allows the hyphen as a negative sign where the culture's sign
+        // is one of the minus characters CLDR's lenient parsing lists; the
+        // invariant sign is "-" itself.
+        internal bool AllowHyphenDuringParsing() =>
+            _negativeSign.Length == 1 &&
+            _negativeSign[0] is '\u2012' or '\u207B' or '\u208B' or '\u2212' or '\u2796' or '\uFE63' or '\uFF0D';
+
         internal int[] _numberGroupSizes = s_intArrayWithElement3; // default to [3]; only clones of this array are handed out
         internal int[] _currencyGroupSizes = s_intArrayWithElement3; // default to [3]; only clones of this array are handed out
         internal int[] _percentGroupSizes = s_intArrayWithElement3; // default to [3]; only clones of this array are handed out

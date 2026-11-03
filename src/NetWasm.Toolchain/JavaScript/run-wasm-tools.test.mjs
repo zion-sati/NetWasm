@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { withDirectoryListing } from "./run-wasm-tools.mjs";
+import { restoreHostPaths, withCapturedStandardError, withDirectoryListing } from "./run-wasm-tools.mjs";
 
 const runner = fileURLToPath(new URL("./run-wasm-tools.mjs", import.meta.url));
 
@@ -25,6 +25,34 @@ test("propagates a WASI program exit code", async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("names the host directories that arguments were mounted from", () => {
+  const mounts = { ".": "/work", "/netwasm/paths/0": "/srv/project", "/netwasm/paths/10": "/opt/wit" };
+  assert.equal(
+    restoreHostPaths("  --> /netwasm/paths/0/world.wit:3:12 and /netwasm/paths/10/deps/a.wit", mounts),
+    "  --> /srv/project/world.wit:3:12 and /opt/wit/deps/a.wit");
+  // An unmounted root and other text stay as they are.
+  assert.equal(restoreHostPaths("/netwasm/paths/7/x.wit /netwasm/pathsX", mounts), "/netwasm/paths/7/x.wit /netwasm/pathsX");
+});
+
+test("captures standard error and passes other writes through", () => {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const bytes = new Uint8Array(memory.buffer);
+  const view = new DataView(memory.buffer);
+  bytes.set(new TextEncoder().encode("error: oops"), 64);
+  view.setUint32(16, 64, true);
+  view.setUint32(20, 11, true);
+  const passed = [];
+  const imports = { wasi_snapshot_preview1: { fd_write: (fd) => { passed.push(fd); return 0; } } };
+  const chunks = [];
+  const wrapped = withCapturedStandardError(imports, () => memory, chunks);
+
+  assert.equal(wrapped.wasi_snapshot_preview1.fd_write(2, 16, 1, 32), 0);
+  assert.equal(view.getUint32(32, true), 11);
+  assert.equal(Buffer.concat(chunks).toString("utf8"), "error: oops");
+  assert.equal(wrapped.wasi_snapshot_preview1.fd_write(1, 16, 1, 32), 0);
+  assert.deepEqual(passed, [1]);
 });
 
 function createExitModule(exitCode) {

@@ -155,12 +155,6 @@ namespace System
         internal static string FormatDouble(double value) =>
             FormatShortestFloating<double>(BitConverter.DoubleToUInt64Bits(value));
 
-        internal static string FormatSingle(float value, string? format) =>
-            FormatFloating<float>(BitConverter.SingleToUInt32Bits(value), format);
-
-        internal static string FormatDouble(double value, string? format) =>
-            FormatFloating<double>(BitConverter.DoubleToUInt64Bits(value), format);
-
         internal static bool TryParseSingle(string? text, out float value)
         {
             if (text == null)
@@ -249,143 +243,6 @@ namespace System
             return TNumber.BitsToFloat(roundedBits);
         }
 
-        private static char ParseFloatingFormat(string? format, out int precision)
-            => ParseFloatingFormat(format.AsSpan(), out precision);
-
-        private static char ParseFloatingFormat(ReadOnlySpan<char> format, out int precision)
-        {
-            precision = -1;
-            if (format.Length == 0)
-            {
-                return 'G';
-            }
-
-            var symbol = format[0];
-            if (symbol is not ('G' or 'g' or 'R' or 'r' or 'F' or 'f' or 'E' or 'e'))
-            {
-                throw new FormatException();
-            }
-            if (format.Length > 1)
-            {
-                precision = 0;
-                for (var index = 1; index < format.Length; index++)
-                {
-                    var digit = format[index] - '0';
-                    if ((uint)digit > 9u || precision > 99)
-                    {
-                        throw new FormatException();
-                    }
-                    precision = precision * 10 + digit;
-                }
-            }
-            if (precision > 999 || (symbol is 'R' or 'r') && precision >= 0) throw new FormatException();
-            return symbol;
-        }
-
-        private static string FormatFixedFloating(ulong bits, bool single, int precision) => single
-            ? FormatFixedFloating<float>(bits, precision)
-            : FormatFixedFloating<double>(bits, precision);
-
-        private static string FormatFixedFloating<TNumber>(ulong bits, int precision)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendFixedFloating<TNumber>(ref builder, bits, precision);
-            return builder.ToString();
-        }
-
-        private static void AppendFixedFloating<TNumber>(
-            scoped ref ValueStringBuilder builder,
-            ulong bits,
-            int precision)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            var fractionBits = TNumber.NormalMantissaBits - 1;
-            var signMask = 1UL << (fractionBits + TNumber.ExponentBits);
-            var exponentMask = ((1UL << TNumber.ExponentBits) - 1) << fractionBits;
-            var fractionMask = (1UL << fractionBits) - 1;
-            var negative = (bits & signMask) != 0;
-            var magnitude = bits & ~signMask;
-            if ((magnitude & exponentMask) == exponentMask)
-            {
-                AppendShortestFloating<TNumber>(ref builder, bits);
-                return;
-            }
-
-            if ((magnitude & (exponentMask | fractionMask)) == 0)
-            {
-                AppendFixedDigits(ref builder, [], 0, 0, negative, precision);
-                return;
-            }
-
-            GetFloatingRational(
-                magnitude,
-                out var numerator,
-                out var denominator,
-                TNumber.ExponentBits,
-                TNumber.ExponentBias,
-                TNumber.NormalMantissaBits);
-            var decimalExponent = 0;
-            if (CompareToPower10(numerator, denominator, 0) >= 0)
-            {
-                while (CompareToPower10(
-                    numerator,
-                    denominator,
-                    decimalExponent + 1) >= 0)
-                {
-                    decimalExponent++;
-                }
-            }
-            else
-            {
-                while (CompareToPower10(
-                    numerator,
-                    denominator,
-                    decimalExponent) < 0)
-                {
-                    decimalExponent--;
-                }
-            }
-
-            var significantPrecision = decimalExponent + precision + 1;
-            if (significantPrecision <= 0)
-            {
-                if (decimalExponent < -precision - 1 ||
-                    !RoundsSmallestFixedUnitUp(
-                        numerator,
-                        denominator,
-                        precision))
-                {
-                    AppendFixedDigits(ref builder, [], 0, 0, negative, precision);
-                    return;
-                }
-
-                AppendFixedDigits(
-                    ref builder,
-                    ['1'],
-                    1,
-                    -precision,
-                    negative,
-                    precision);
-                return;
-            }
-
-            var digits = GenerateRoundedDigits(
-                numerator,
-                denominator,
-                decimalExponent,
-                significantPrecision,
-                out var resultExponent,
-                out var resultLength);
-            AppendFixedDigits(
-                ref builder,
-                digits,
-                resultLength,
-                resultExponent,
-                negative,
-                precision);
-        }
-
         private static bool RoundsSmallestFixedUnitUp(
             FloatingBigInteger numerator,
             FloatingBigInteger denominator,
@@ -398,197 +255,12 @@ namespace System
             return FloatingBigInteger.Compare(scaledNumerator, midpoint) > 0;
         }
 
-        private static string FormatFixedDigits(
-            char[] digits,
-            int digitCount,
-            int decimalExponent,
-            bool negative,
-            int precision)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendFixedDigits(ref builder, digits, digitCount, decimalExponent, negative, precision);
-            return builder.ToString();
-        }
-
-        private static void AppendFixedDigits(
-            scoped ref ValueStringBuilder builder,
-            char[] digits,
-            int digitCount,
-            int decimalExponent,
-            bool negative,
-            int precision)
-        {
-            var integerDigitCount = decimalExponent >= 0 ? decimalExponent + 1 : 1;
-            if (negative)
-            {
-                builder.Append('-');
-            }
-
-            for (var power = integerDigitCount - 1; power >= 0; power--)
-            {
-                builder.Append(ReadFixedDigit(
-                    digits,
-                    digitCount,
-                    decimalExponent,
-                    power));
-            }
-
-            if (precision != 0)
-            {
-                builder.Append('.');
-                for (var power = -1; power >= -precision; power--)
-                {
-                    builder.Append(ReadFixedDigit(
-                        digits,
-                        digitCount,
-                        decimalExponent,
-                        power));
-                }
-            }
-        }
-
-        private static char ReadFixedDigit(
-            char[] digits,
-            int digitCount,
-            int decimalExponent,
-            int power)
-        {
-            var index = decimalExponent - power;
-            return (uint)index < (uint)digitCount ? digits[index] : '0';
-        }
-
-        private static string FormatFloating(ulong bits, bool single, string? format) => single
-            ? FormatFloating<float>(bits, format)
-            : FormatFloating<double>(bits, format);
-
         internal static string FormatShortestFloating<TNumber>(ulong bits)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
         {
             var builder = new ValueStringBuilder(32);
             AppendShortestFloating<TNumber>(ref builder, bits);
             return builder.ToString();
-        }
-
-        private static string FormatFloating<TNumber>(ulong bits, string? format)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendFloating<TNumber>(ref builder, bits, format.AsSpan());
-            return builder.ToString();
-        }
-
-        internal static void AppendFloating<TNumber>(
-            scoped ref ValueStringBuilder builder,
-            ulong bits,
-            scoped ReadOnlySpan<char> format)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            var symbol = ParseInvariantFormatSpecifier(format, out var precision);
-            var customFormat = symbol == '\0';
-            if (!customFormat)
-            {
-                symbol = ParseFloatingFormat(format, out precision);
-            }
-            if (symbol is 'F' or 'f')
-            {
-                AppendFixedFloating<TNumber>(ref builder, bits, precision < 0 ? 2 : precision);
-                return;
-            }
-            var lowerExponent = symbol is 'g' or 'r' or 'e';
-            if (!customFormat && symbol is not ('E' or 'e') && !(precision > 0 && symbol is 'G' or 'g'))
-            {
-                AppendRoundTripFloating<TNumber>(
-                    ref builder, bits, precision > 0 ? precision : TNumber.MaxRoundTripDigits, lowerExponent);
-                return;
-            }
-            var fractionBits = TNumber.NormalMantissaBits - 1;
-            var exponentBits = TNumber.ExponentBits;
-            var exponentMask = (1UL << exponentBits) - 1;
-            var fractionMask = (1UL << fractionBits) - 1;
-            var exponent = (bits >> fractionBits) & exponentMask;
-            var fraction = bits & fractionMask;
-            if (exponent == exponentMask)
-            {
-                builder.Append(fraction != 0 ? "NaN" :
-                    (bits >> (fractionBits + exponentBits)) != 0 ? "-Infinity" : "Infinity");
-                return;
-            }
-            var negative = (bits >> (fractionBits + exponentBits)) != 0;
-            if (exponent == 0 && fraction == 0)
-            {
-                if (customFormat)
-                {
-                    AppendCustomInvariant(ref builder, [], 0, negative, NumberBufferKind.FloatingPoint, format);
-                    return;
-                }
-                if (symbol is 'E' or 'e')
-                {
-                    AppendScientificDigits(ref builder, ['0'], 1, 0, negative, precision < 0 ? 6 : precision, lowerExponent);
-                }
-                else
-                {
-                    builder.Append(negative ? "-0" : "0");
-                }
-                return;
-            }
-
-            var decimalExponent = GetFloatingDecimal<TNumber>(bits, out var numerator, out var denominator);
-
-            if (customFormat)
-            {
-                var customDigits = GenerateRoundedDigits(
-                    numerator,
-                    denominator,
-                    decimalExponent,
-                    TNumber.MaxPrecisionCustomFormat,
-                    out var customExponent,
-                    out var customLength);
-                AppendCustomInvariant(
-                    ref builder,
-                    customDigits.AsSpan(0, customLength),
-                    customExponent + 1,
-                    negative,
-                    NumberBufferKind.FloatingPoint,
-                    format);
-                return;
-            }
-
-            if (symbol is 'E' or 'e')
-            {
-                var fractionalDigits = precision < 0 ? 6 : precision;
-                var scientificDigits = GenerateRoundedDigits(
-                    numerator,
-                    denominator,
-                    decimalExponent,
-                    fractionalDigits + 1,
-                    out var scientificExponent,
-                    out var scientificLength);
-                AppendScientificDigits(
-                    ref builder,
-                    scientificDigits,
-                    scientificLength,
-                    scientificExponent,
-                    negative,
-                    fractionalDigits,
-                    lowerExponent);
-                return;
-            }
-
-            var generalDigits = GenerateRoundedDigits(
-                numerator,
-                denominator,
-                decimalExponent,
-                precision,
-                out var generalExponent,
-                out var generalLength);
-            AppendGeneralDigits(
-                ref builder,
-                generalDigits,
-                generalLength,
-                generalExponent,
-                negative,
-                precision,
-                lowerExponent);
         }
 
         // The shortest digits that round-trip, as ToString() writes them. It takes
@@ -683,53 +355,6 @@ namespace System
                 decimalExponent++;
             }
             return decimalExponent;
-        }
-
-        private static string FormatScientificDigits(
-            char[] digits,
-            int digitCount,
-            int decimalExponent,
-            bool negative,
-            int fractionalDigits,
-            bool lowerExponent)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendScientificDigits(ref builder, digits, digitCount, decimalExponent, negative, fractionalDigits, lowerExponent);
-            return builder.ToString();
-        }
-
-        private static void AppendScientificDigits(
-            scoped ref ValueStringBuilder builder,
-            char[] digits,
-            int digitCount,
-            int decimalExponent,
-            bool negative,
-            int fractionalDigits,
-            bool lowerExponent)
-        {
-            var exponentMagnitude = decimalExponent < 0 ? -decimalExponent : decimalExponent;
-            var exponentDigits = 3;
-            for (var remaining = exponentMagnitude; remaining >= 1000; remaining /= 10) exponentDigits++;
-            if (negative) builder.Append('-');
-            builder.Append(digits[0]);
-            if (fractionalDigits != 0)
-            {
-                builder.Append('.');
-                for (var index = 0; index < fractionalDigits; index++)
-                {
-                    builder.Append(index + 1 < digitCount ? digits[index + 1] : '0');
-                }
-            }
-            builder.Append(lowerExponent ? 'e' : 'E');
-            builder.Append(decimalExponent < 0 ? '-' : '+');
-            Span<char> exponentBuffer = stackalloc char[10];
-            var position = exponentBuffer.Length;
-            for (var index = exponentDigits - 1; index >= 0; index--)
-            {
-                exponentBuffer[--position] = (char)('0' + exponentMagnitude % 10);
-                exponentMagnitude /= 10;
-            }
-            builder.Append(exponentBuffer[position..]);
         }
 
         internal static ulong ConvertDecimalToFloatingBits<TNumber>(
@@ -912,19 +537,6 @@ namespace System
             else denominator.ShiftLeft(-power);
         }
 
-        private static string FormatGeneralDigits(
-            char[] digits,
-            int digitCount,
-            int decimalExponent,
-            bool negative,
-            int maxRoundTripDigits,
-            bool lowerExponent)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendGeneralDigits(ref builder, digits, digitCount, decimalExponent, negative, maxRoundTripDigits, lowerExponent);
-            return builder.ToString();
-        }
-
         private static void AppendGeneralDigits(
             scoped ref ValueStringBuilder builder,
             char[] digits,
@@ -1035,7 +647,7 @@ namespace System
             {
                 result[index] = source[start + index];
             }
-            return string.Create(result);
+            return new string(result);
         }
 
         // Upstream's ThrowOverflowException<TInteger> reads TInteger.OverflowMessage, which the

@@ -600,17 +600,19 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new DelegateFieldOffsetResolver(finder, fields, null!));
 
         ThrowsNull(() => new ExceptionObjectBuilder(
-            null!, program, types, target, staticState, exceptionNames));
+            null!, fields, program, types, target, staticState, exceptionNames));
         ThrowsNull(() => new ExceptionObjectBuilder(
-            finder, null!, types, target, staticState, exceptionNames));
+            finder, null!, program, types, target, staticState, exceptionNames));
         ThrowsNull(() => new ExceptionObjectBuilder(
-            finder, program, null!, target, staticState, exceptionNames));
+            finder, fields, null!, types, target, staticState, exceptionNames));
         ThrowsNull(() => new ExceptionObjectBuilder(
-            finder, program, types, null!, staticState, exceptionNames));
+            finder, fields, program, null!, target, staticState, exceptionNames));
         ThrowsNull(() => new ExceptionObjectBuilder(
-            finder, program, types, target, null!, exceptionNames));
+            finder, fields, program, types, null!, staticState, exceptionNames));
         ThrowsNull(() => new ExceptionObjectBuilder(
-            finder, program, types, target, staticState, null!));
+            finder, fields, program, types, target, null!, exceptionNames));
+        ThrowsNull(() => new ExceptionObjectBuilder(
+            finder, fields, program, types, target, staticState, null!));
 
         ThrowsNull(() => new ImplicitObjectLayoutBuilder(
             null!, typeRepository, program, objectLayouts, exceptionNames, typeState));
@@ -636,20 +638,21 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ManagedLayoutCompiler(null!,
             new ManagedStaticDataBuilderFactory(exceptionNames)));
         ThrowsNull(() => new ManagedLayoutCompiler(
-            new ManagedTypeLayoutCompilerFactory(new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver()), new ManagedObjectLayoutBuilderFactory(), exceptionNames), null!));
+            new ManagedTypeLayoutCompilerFactory(new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver()), new ManagedObjectLayoutBuilderFactory(new ExplicitValueLayoutResolver()), exceptionNames), null!));
 
         var valueStorageIdentities = identities;
 
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(null!, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, null!, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, null!, definitions, identities, entityBases, identityBases, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, null!, identities, entityBases, identityBases, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, null!, entityBases, identityBases, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, null!, identityBases, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, null!, target, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, null!, typeState, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, null!, valueResolver));
-        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(null!, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, null!, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, null!, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, null!, identities, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, null!, entityBases, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, null!, identityBases, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, null!, target, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, null!, typeState, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, null!, valueResolver, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, null!, new ExplicitValueLayoutResolver()));
+        ThrowsNull(() => new ManagedObjectLayoutBuilder(typeRepository, fields, finder, definitions, identities, entityBases, identityBases, target, typeState, valueResolver, null!));
 
         ThrowsNull(() => new ManagedStaticDataBuilder(
             null!, staticState, buildPhase, buildPhase, buildPhase, buildPhase, buildPhase,
@@ -727,9 +730,9 @@ public sealed class ManagedLayoutPhaseTests
         ThrowsNull(() => new ManagedTypeLayoutCompiler(
             typeState, target, objectPhase, resolvePhase, resolvePhase, objectPhase,
             resolvePhase, null!));
-        ThrowsNull(() => new ManagedTypeLayoutCompilerFactory(null!, new ManagedObjectLayoutBuilderFactory(), exceptionNames));
+        ThrowsNull(() => new ManagedTypeLayoutCompilerFactory(null!, new ManagedObjectLayoutBuilderFactory(new ExplicitValueLayoutResolver()), exceptionNames));
         ThrowsNull(() => new ManagedTypeLayoutCompilerFactory(new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver()), null!, exceptionNames));
-        ThrowsNull(() => new ManagedTypeLayoutCompilerFactory(new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver()), new ManagedObjectLayoutBuilderFactory(), null!));
+        ThrowsNull(() => new ManagedTypeLayoutCompilerFactory(new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver()), new ManagedObjectLayoutBuilderFactory(new ExplicitValueLayoutResolver()), null!));
 
         ThrowsNull(() => new MethodValueLayoutResolver(null!, valueResolver));
         ThrowsNull(() => new MethodValueLayoutResolver(program, null!));
@@ -843,7 +846,7 @@ public sealed class ManagedLayoutPhaseTests
             ImmutableArray<MethodDefinitionModel>.Empty,
             ImmutableArray<MethodDefinitionModel>.Empty,
             ImmutableDictionary<string, string>.Empty);
-        var objectFactory = new ManagedObjectLayoutBuilderFactory();
+        var objectFactory = new ManagedObjectLayoutBuilderFactory(new ExplicitValueLayoutResolver());
         var staticFactory = new ManagedStaticDataBuilderFactory(exceptionNames);
         var valueFactory = new ValueLayoutResolverFactory(new ExplicitValueLayoutResolver());
         var compilerFactory = new ManagedTypeLayoutCompilerFactory(valueFactory, objectFactory, exceptionNames);
@@ -955,7 +958,7 @@ public sealed class ManagedLayoutPhaseTests
             []);
         var target = WasmTargetLayout.For(WasmTarget.Wasm32);
         var state = new ManagedTypeLayoutBuildState(new ManagedValueLayoutState());
-        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository([definition]), new FieldRepository([]), new TypeFinder([definition]), new TypeDefinitions([definition]), new TypeIdentities(assembly, "Tests.Node", key), new BaseTypes(), new BaseTypes(), target, state, new FixedValueLayoutResolver()));
+        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository([definition]), new FieldRepository([]), new TypeFinder([definition]), new TypeDefinitions([definition]), new TypeIdentities(assembly, "Tests.Node", key), new BaseTypes(), new BaseTypes(), target, state, new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver()));
 
         var first = BuildObject(builder, key);
         var second = BuildObject(builder, key);
@@ -996,7 +999,7 @@ public sealed class ManagedLayoutPhaseTests
                 new BaseTypes(),
                 WasmTargetLayout.For(wasmTarget),
                 state,
-                new FixedValueLayoutResolver()));
+                new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver()));
 
             if (rankOneFirst)
             {
@@ -1045,7 +1048,7 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             target,
             state,
-            values));
+            values, new ExplicitValueLayoutResolver()));
 
         var layout = BuildObject(builder, key);
 
@@ -1089,7 +1092,7 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             target,
             state,
-            values));
+            values, new ExplicitValueLayoutResolver()));
 
         var layout = BuildObject(builder, key);
 
@@ -1128,7 +1131,7 @@ public sealed class ManagedLayoutPhaseTests
             new BaseTypes(),
             target,
             state,
-            values));
+            values, new ExplicitValueLayoutResolver()));
 
         var byReferenceLayout = builder.Build(byReference);
         var pointerLayout = builder.Build(pointer);
@@ -1357,7 +1360,7 @@ public sealed class ManagedLayoutPhaseTests
                 definition.Name,
                 false));
         var state = new ManagedTypeLayoutBuildState(new ManagedValueLayoutState());
-        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository([]), new MappedTypeFinder(firstPrivate, canonicalType), new TypeDefinitions([canonicalType]), new MappingIdentities(identities), new BaseTypes(), new BaseTypes(), WasmTargetLayout.For(WasmTarget.Wasm32), state, new FixedValueLayoutResolver()));
+        var builder = As<IManagedObjectLayoutBuilder>(new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository([]), new MappedTypeFinder(firstPrivate, canonicalType), new TypeDefinitions([canonicalType]), new MappingIdentities(identities), new BaseTypes(), new BaseTypes(), WasmTargetLayout.For(WasmTarget.Wasm32), state, new FixedValueLayoutResolver(), new ExplicitValueLayoutResolver()));
 
         _ = BuildObject(builder, firstPrivateKey);
         _ = BuildObject(builder, secondPrivateKey);
@@ -1465,7 +1468,7 @@ public sealed class ManagedLayoutPhaseTests
             [valueIdentity] = baseValueIdentity,
             [generic] = genericBase,
         });
-        var builder = new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository(fields), new TypeFinder(definitions), new TypeDefinitions(definitions), identities, entityBases, identityBases, WasmTargetLayout.For(WasmTarget.Wasm32), state, new ReferenceValueLayoutResolver());
+        var builder = new ManagedObjectLayoutBuilder(new TypeRepository(definitions), new FieldRepository(fields), new TypeFinder(definitions), new TypeDefinitions(definitions), identities, entityBases, identityBases, WasmTargetLayout.For(WasmTarget.Wasm32), state, new ReferenceValueLayoutResolver(), new ExplicitValueLayoutResolver());
 
         builder.Build(valueKey);
         builder.Build(referenceKey);
@@ -1497,7 +1500,7 @@ public sealed class ManagedLayoutPhaseTests
         var stringDefinition = Definition(stringKey, "System.String", false);
         var exceptionDefinition = Definition(
             exceptionKey,
-            "System.NullReferenceException",
+            "System.OutOfMemoryException",
             false);
         var arrayDefinition = Definition(arrayKey, "System.Array", false);
         var valueDefinition = Definition(valueKey, "Tests.Value", true);
@@ -1529,7 +1532,7 @@ public sealed class ManagedLayoutPhaseTests
         var program = EmptyProgram() with
         {
             StringLiterals = ["hello"],
-            ImplicitExceptions = [ManagedExceptionKind.NullReference],
+            ImplicitExceptions = [ManagedExceptionKind.OutOfMemory],
         };
         var state = new ManagedStaticDataBuildState();
         var metadata = new TypeRepository([
@@ -1544,6 +1547,7 @@ public sealed class ManagedLayoutPhaseTests
             exceptionDefinition,
             arrayDefinition,
             valueDefinition,
+            Definition(new EntityKey(assembly, 99), "System.Exception", false),
         ]);
         var bitmaps = As<IStaticReferenceBitmapBuilder>(new StaticReferenceBitmapBuilder());
         var target = types.Target;
@@ -1562,7 +1566,7 @@ public sealed class ManagedLayoutPhaseTests
             {
                 [stringKey] = CliTypeIdentity.Named(assembly, "System", "String", false),
                 [exceptionKey] = CliTypeIdentity.Named(
-                    assembly, "System", "NullReferenceException", false),
+                    assembly, "System", "OutOfMemoryException", false),
                 [arrayKey] = CliTypeIdentity.Named(assembly, "System", "Array", false),
                 [valueKey] = valueIdentity,
             });
@@ -1631,6 +1635,7 @@ public sealed class ManagedLayoutPhaseTests
         BuildExceptions(As<IExceptionObjectBuilder>(
             new ExceptionObjectBuilder(
                 finder,
+                fields,
                 program,
                 types,
                 target,
@@ -1639,8 +1644,8 @@ public sealed class ManagedLayoutPhaseTests
 
         Assert.Contains("hello", state.Strings.Keys);
         Assert.DoesNotContain("FFFFFFFFFFFFFFFF", state.Strings.Keys);
-        Assert.Contains(ManagedExceptionKind.NullReference, state.ExceptionObjects.Keys);
-        var exceptionAddress = state.ExceptionObjects[ManagedExceptionKind.NullReference];
+        Assert.Contains(ManagedExceptionKind.OutOfMemory, state.ExceptionObjects.Keys);
+        var exceptionAddress = state.ExceptionObjects[ManagedExceptionKind.OutOfMemory];
         Assert.Equal(
             24,
             state.Segments.Single(segment => segment.Address == exceptionAddress).Data.Length);
@@ -2292,13 +2297,14 @@ public sealed class ManagedLayoutPhaseTests
             new ManagedStaticDataBuildState()).Build());
         var exceptionDefinition = Definition(
             new EntityKey(assembly, 3),
-            "System.NullReferenceException",
+            "System.OutOfMemoryException",
             false);
         Assert.Throws<CompilerException>(() => new ExceptionObjectBuilder(
             new TypeFinder([exceptionDefinition]),
+            new FieldRepository([]),
             EmptyProgram() with
             {
-                ImplicitExceptions = [ManagedExceptionKind.NullReference],
+                ImplicitExceptions = [ManagedExceptionKind.OutOfMemory],
             },
             types with { Objects = ImmutableDictionary<EntityKey, ObjectLayout>.Empty },
             types.Target,
@@ -2422,6 +2428,78 @@ public sealed class ManagedLayoutPhaseTests
 
     private static TContract As<TContract>(object actor) where TContract : class =>
         (TContract)actor;
+
+    // Each check's exception is a new one; only the OutOfMemoryException thrown
+    // when not even that fits is frozen in the image, as
+    // new OutOfMemoryException(message: null) makes it, and its reference fields
+    // are roots, so what a program stores in it, as Data, survives collections.
+    [Fact]
+    public void OnlyOutOfMemoryIsFrozenWithItsHResultAndRootedReferences()
+    {
+        var assembly = new AssemblyIdentity("Exceptions");
+        var hResult = new FieldDefinitionModel(
+            new EntityKey(assembly, 7), new EntityKey(assembly, 6), "_hResult",
+            CliTypeIdentity.Primitive("i4", CliValueKind.I4), false);
+        var exception = Definition(new EntityKey(assembly, 6), "System.Exception", false) with { Fields = [hResult.Key] };
+        var nullReference = Definition(new EntityKey(assembly, 4), "System.NullReferenceException", false);
+        var outOfMemory = Definition(new EntityKey(assembly, 5), "System.OutOfMemoryException", false);
+        var values = new ManagedValueLayoutState();
+        values.Fields.Add(hResult.Key, new FieldLayout(28));
+        var layouts = new ManagedTypeLayouts(
+            ImmutableDictionary<EntityKey, ObjectLayout>.Empty
+                .Add(nullReference.Key, new ObjectLayout(11, 40, [8, 16]))
+                .Add(outOfMemory.Key, new ObjectLayout(12, 40, [8, 16, 24])),
+            ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty,
+            ImmutableDictionary<string, ObjectLayout>.Empty,
+            ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty,
+            values,
+            WasmTargetLayout.Wasm32,
+            -1,
+            -1,
+            -1,
+            -1);
+        var state = new ManagedStaticDataBuildState { Cursor = 17 };
+
+        new ExceptionObjectBuilder(
+            new TypeFinder([exception, nullReference, outOfMemory]),
+            new FieldRepository([hResult]),
+            EmptyProgram() with { ImplicitExceptions = [ManagedExceptionKind.NullReference, ManagedExceptionKind.OutOfMemory] },
+            layouts,
+            WasmTargetLayout.Wasm32,
+            state,
+            new ExceptionTypeNameResolver()).Build();
+
+        var (kind, address) = Assert.Single(state.ExceptionObjects);
+        Assert.Equal(ManagedExceptionKind.OutOfMemory, kind);
+        Assert.Equal(0, address % WasmTargetLayout.Wasm32.ObjectReferenceAlignment);
+        Assert.Equal([address + 8, address + 16, address + 24], state.StaticRoots);
+        var segment = Assert.Single(state.Segments);
+        Assert.Equal(address, segment.Address);
+        Assert.Equal(12, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(segment.Data.AsSpan()));
+        Assert.Equal(RuntimeExceptionGetters.OutOfMemoryHResult,
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(segment.Data.AsSpan()[28..]));
+        Assert.All(segment.Data.AsSpan()[4..28].ToArray(), static value => Assert.Equal(0, value));
+        Assert.Equal(address + 40, state.Cursor);
+    }
+
+    [Fact]
+    public void NoOutOfMemoryLeavesNoExceptionObject()
+    {
+        var state = new ManagedStaticDataBuildState { Cursor = 17 };
+
+        new ExceptionObjectBuilder(
+            new TypeFinder([]),
+            new FieldRepository([]),
+            EmptyProgram() with { ImplicitExceptions = [ManagedExceptionKind.NullReference] },
+            new ManagedTypeLayouts([], [], [], [], new(), WasmTargetLayout.Wasm32, -1, -1, -1, -1),
+            WasmTargetLayout.Wasm32,
+            state,
+            new ExceptionTypeNameResolver()).Build();
+
+        Assert.Empty(state.ExceptionObjects);
+        Assert.Empty(state.Segments);
+        Assert.Equal(17, state.Cursor);
+    }
 
     private static TypeDefinitionModel Definition(EntityKey key, string name, bool valueType) =>
         new(key, name.Contains('.') ? name[..name.LastIndexOf('.')].TrimEnd('.') : "",

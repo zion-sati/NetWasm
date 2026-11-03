@@ -96,6 +96,8 @@ public sealed class RuntimeImportCatalogTests
             RuntimeAbi.RuntimeRegisterTypeObjects,
             RuntimeAbi.RuntimeTypeObjectCache,
             RuntimeAbi.RuntimeObjectContainsReferences,
+            RuntimeAbi.RuntimeArraySetValue,
+            RuntimeAbi.RuntimeReportUnhandledException,
         };
 
         Assert.Equal(expectedNames, catalog.Imports.Select(import => import.Name));
@@ -187,6 +189,48 @@ public sealed class RuntimeImportCatalogTests
         Assert.Equal(
             RuntimeAbi.RuntimeRandomSeed,
             catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.RandomSeed, enabled)].Name);
+    }
+
+    [Theory]
+    [InlineData(WasmModuleProfile.CoreApplication)]
+    [InlineData(WasmModuleProfile.ComponentCoreModule)]
+    public void UnhandledExceptionHintIsIncludedOnlyWhenSelected(WasmModuleProfile profile)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var disabled = new RuntimeImportSelection(
+            profile,
+            IncludeTerminalExceptionReporter: false);
+        var enabled = disabled with { IncludeUnhandledExceptionHint = true };
+
+        Assert.DoesNotContain(
+            catalog.Resolve(disabled),
+            import => import.Name == RuntimeAbi.RuntimeReportUnhandledException);
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.ReportUnhandledException, disabled));
+        Assert.Equal(
+            RuntimeAbi.RuntimeReportUnhandledException,
+            catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.ReportUnhandledException, enabled)].Name);
+    }
+
+    [Theory]
+    [InlineData(WasmModuleProfile.CoreApplication)]
+    [InlineData(WasmModuleProfile.ComponentCoreModule)]
+    public void ArraySetValueImportIsIncludedOnlyWhenSelected(WasmModuleProfile profile)
+    {
+        var catalog = WasmRuntimeImports.CreateCatalog();
+        var disabled = new RuntimeImportSelection(
+            profile,
+            IncludeTerminalExceptionReporter: false);
+        var enabled = disabled with { IncludeArraySetValue = true };
+
+        Assert.DoesNotContain(
+            catalog.Resolve(disabled),
+            import => import.Name == RuntimeAbi.RuntimeArraySetValue);
+        Assert.Throws<InvalidOperationException>(() =>
+            catalog.Resolve(RuntimeImportSymbol.ArraySetValue, disabled));
+        Assert.Equal(
+            RuntimeAbi.RuntimeArraySetValue,
+            catalog.Resolve(enabled)[catalog.Resolve(RuntimeImportSymbol.ArraySetValue, enabled)].Name);
     }
 
     [Theory]

@@ -33,6 +33,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Array", "get_Rank") => RuntimeIntrinsic.ArrayRank,
                 ("System.Array", "GetLength") => RuntimeIntrinsic.ArrayGetLength,
                 ("System.Array", "GetLowerBound") => RuntimeIntrinsic.ArrayGetLowerBound,
+                ("System.Array", "InternalElementType") => RuntimeIntrinsic.ArrayElementType,
+                ("System.Array", "InternalSetValue") => RuntimeIntrinsic.ArraySetValue,
                 ("System.Array", "InternalGetValue") => RuntimeIntrinsic.ArrayGetValue,
                 ("System.Array", "InternalCopy") => RuntimeIntrinsic.ArrayCopy,
                 ("System.Array", "InternalClear") => RuntimeIntrinsic.ArrayClear,
@@ -46,6 +48,7 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.StringGetRawDataReference,
                 ("System.String", "EqualsHelper") when IsStringEqualsHelper(method) =>
                     RuntimeIntrinsic.StringEqualsOrdinal,
+                ("System.String", "FastAllocateString") => RuntimeIntrinsic.StringAllocate,
                 ("System.GCCollectionRuntime", "Collect") => RuntimeIntrinsic.GcCollect,
                 ("System.GC", "SuppressFinalize") => RuntimeIntrinsic.SuppressFinalize,
                 ("System.GC", "ReRegisterForFinalize") => RuntimeIntrinsic.ReRegisterForFinalize,
@@ -77,6 +80,8 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.ObjectIdentityRuntime", "GetHashCode") => RuntimeIntrinsic.ObjectIdentityHash,
                 ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "CloneBoxedValue") =>
                     RuntimeIntrinsic.BoxedValueClone,
+                (RuntimeExceptionGetters.PreallocatedOutOfMemoryTypeName, "GetInstance") =>
+                    RuntimeIntrinsic.PreallocatedOutOfMemoryException,
                 ("System.DelegateRuntime", "Clone") => RuntimeIntrinsic.DelegateClone,
                 ("System.Runtime.CompilerServices.RuntimeHelpersRuntime", "AreEqual") =>
                     RuntimeIntrinsic.RuntimeHelpersEquals,
@@ -146,6 +151,10 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                     RuntimeIntrinsic.ArrayLoopFill,
                 ("System.Runtime.CompilerServices.ArrayLoops", "Copy") =>
                     RuntimeIntrinsic.ArrayLoopCopy,
+                ("System.Runtime.CompilerServices.ArrayLoops", "FillInBounds") =>
+                    RuntimeIntrinsic.ArrayLoopFillInBounds,
+                ("System.Runtime.CompilerServices.ArrayLoops", "CopyInBounds") =>
+                    RuntimeIntrinsic.ArrayLoopCopyInBounds,
                 ("System.Runtime.CompilerServices.ArrayLoops", "Xor32" or "Xor64") =>
                     RuntimeIntrinsic.ArrayLoopXor,
                 ("System.Runtime.CompilerServices.ArrayLoops", "Or32" or "Or64") =>

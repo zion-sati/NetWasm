@@ -14,4 +14,6 @@ internal sealed class ManagedTypeLayoutBuildState(ManagedValueLayoutState valueL
     public ManagedValueLayoutState ValueLayouts { get; } = valueLayouts ??
         throw new ArgumentNullException(nameof(valueLayouts));
     public int NextTypeId { get; set; } = 1;
+    // Each id's base type's id, zero for none.
+    public Dictionary<int, int> BaseTypeIds { get; } = [];
 }

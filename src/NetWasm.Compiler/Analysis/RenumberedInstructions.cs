@@ -38,11 +38,16 @@ internal static class RenumberedInstructions
     public static CilOperand.BranchTarget Local(int index) => new(-(index + 1));
 
     // The body with each instruction replaced by its list of replacements, in
-    // order, numbered from 0.
-    public static CilMethodBody Splice(CilMethodBody body, List<CilInstruction>[] replacements)
+    // order, numbered from 0, after the entry instructions, which run once: a
+    // branch to the first instruction lands after them.
+    public static CilMethodBody Splice(
+        CilMethodBody body,
+        List<CilInstruction>[] replacements,
+        IReadOnlyList<CilInstruction>? entry = null)
     {
+        entry ??= [];
         var starts = new Dictionary<int, int>();
-        var count = 0;
+        var count = entry.Count;
         for (var index = 0; index < body.Instructions.Length; index++)
         {
             starts.Add(body.Instructions[index].Offset, count);
@@ -50,6 +55,13 @@ internal static class RenumberedInstructions
         }
         starts.Add(body.Instructions[^1].NextOffset, count);
         var rewritten = ImmutableArray.CreateBuilder<CilInstruction>(count);
+        foreach (var instruction in entry)
+        {
+            rewritten.Add(new CilInstruction(rewritten.Count, rewritten.Count + 1, instruction.Operation, instruction.Operand)
+            {
+                OriginalOffset = body.Instructions[0].SourceOffset,
+            });
+        }
         for (var index = 0; index < body.Instructions.Length; index++)
         {
             var source = body.Instructions[index].SourceOffset;

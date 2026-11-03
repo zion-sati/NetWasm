@@ -146,8 +146,23 @@ internal static class MethodEmissionContextFactory
         }
         var arrayPlan = arrayMetadata ?? ArrayMetadataCachingPlan.Empty;
         var arrayLocals = ImmutableDictionary.CreateBuilder<ArrayReferenceSlot, ArrayMetadataSnapshotLocals>();
+        var rectangularLocals = ImmutableDictionary.CreateBuilder<ArrayReferenceSlot, RectangularArraySnapshotLocals>();
         foreach (var slot in arrayPlan.Slots)
         {
+            if (arrayPlan.Ranks.TryGetValue(slot, out var rank))
+            {
+                var dimensions = ImmutableArray.CreateBuilder<ArrayDimensionSnapshotLocals>(rank);
+                for (var dimension = 0; dimension < rank; dimension++)
+                {
+                    var lowerBound = checked(parameterCount + localTypes.Length);
+                    localTypes = localTypes.Add(CliValueKind.I4);
+                    dimensions.Add(new(lowerBound, checked(parameterCount + localTypes.Length)));
+                    localTypes = localTypes.Add(CliValueKind.I4);
+                }
+                rectangularLocals.Add(slot, new(dimensions.MoveToImmutable(), checked(parameterCount + localTypes.Length)));
+                localTypes = localTypes.Add(CliValueKind.ManagedAddress);
+                continue;
+            }
             var length = checked(parameterCount + localTypes.Length);
             localTypes = localTypes.Add(CliValueKind.I4);
             var data = checked(parameterCount + localTypes.Length);
@@ -177,7 +192,10 @@ internal static class MethodEmissionContextFactory
             dispatcherProgramCounter,
             CallerIdentity: callerIdentity)
         {
-            ArrayMetadata = new(arrayPlan, arrayLocals.ToImmutable()),
+            ArrayMetadata = new(arrayPlan, arrayLocals.ToImmutable())
+            {
+                RectangularSlots = rectangularLocals.ToImmutable(),
+            },
             CopyDestinationTemporary = copyDestination,
             CopySourceTemporary = copySource,
             ExceptionRootSlots = exceptionRootSlots.ToImmutableDictionary(),

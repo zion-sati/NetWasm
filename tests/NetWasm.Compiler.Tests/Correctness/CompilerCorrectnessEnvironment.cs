@@ -11,6 +11,7 @@ internal sealed record CompilerCorrectnessEnvironment(
     string DesktopReferenceDirectory,
     string NodeRunnerPath,
     string DesktopOracleHostPath,
+    string DesktopOracleFrameworkVersion,
     string CompilerHostPath,
     TimeSpan ProcessTimeout)
 {
@@ -54,6 +55,7 @@ internal sealed record CompilerCorrectnessEnvironment(
             Path.Combine(AppContext.BaseDirectory, "Correctness", "netwasm-oracle.mjs"),
             Path.Combine(repositoryRoot, "tests", "NetWasm.Testing.OracleHost",
                 "bin", configuration, "net10.0", "NetWasm.Testing.OracleHost.dll"),
+            ReadDesktopOracleFrameworkVersion(repositoryRoot),
             Path.Combine(repositoryRoot, "tests", "NetWasm.Testing.CompilerHost",
                 "bin", configuration, "net10.0", "NetWasm.Testing.CompilerHost.dll"),
             TimeSpan.FromMinutes(10));
@@ -81,6 +83,16 @@ internal sealed record CompilerCorrectnessEnvironment(
         return new DirectoryInfo(baseDirectory).Parent?.Name
             ?? throw new InvalidOperationException(
                 "test build configuration could not be discovered");
+    }
+
+    // Behaviour follows .NET 11, so the oracle host, compiled against .NET 10's references,
+    // runs on the pinned .NET 11 runtime the C# 15 toolchain installs.
+    private static string ReadDesktopOracleFrameworkVersion(string repositoryRoot)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(repositoryRoot, "eng", "csharp15-toolchain.json")));
+        return document.RootElement.GetProperty("desktopOracleFrameworkVersion").GetString()
+            ?? throw new InvalidOperationException("the desktop oracle framework version is not pinned");
     }
 
     private static string ReadSdkVersion(string repositoryRoot)

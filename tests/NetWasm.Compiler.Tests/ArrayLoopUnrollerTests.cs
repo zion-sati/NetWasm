@@ -93,17 +93,43 @@ public sealed class ArrayLoopUnrollerTests
         Assert.Equal(3, result.MaxStack);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DoesNotTransformWithoutCurrentProof(bool stale)
+    [Fact]
+    public void DoesNotTransformWithAStaleProof()
     {
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
         var body = fixture.Flow.Graph.MethodBody;
-        if (stale) body = body with { ArrayBoundsProof = new([], body.Locals, body.LocalSignatureTypes, [7]) };
+        body = body with { ArrayBoundsProof = new([], body.Locals, body.LocalSignatureTypes, [7]) };
         var analysis = new RecordingAnalysis(fixture.Flow, null);
         Assert.Same(body, new ArrayLoopUnroller(analysis, analysis, analysis, true).Rewrite(body));
         Assert.Equal(0, analysis.Validations);
+    }
+
+    // An array loop's accesses need the proof; without one its plan stays unapplied.
+    [Fact]
+    public void DoesNotUnrollAnArrayLoopWithoutAProof()
+    {
+        var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
+        var body = fixture.Flow.Graph.MethodBody;
+        var analysis = new RecordingAnalysis(fixture.Flow, new(0, 1, 14, [4], body.Instructions[5..13], 4));
+        Assert.Same(body, new ArrayLoopUnroller(analysis, analysis, analysis, true).Rewrite(body));
+    }
+
+    // A loop bounded by a length local, as a split span's, reads that local
+    // and needs no array proof.
+    [Fact]
+    public void UnrollsALengthBoundLoopWithoutAProof()
+    {
+        var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
+        var body = fixture.Flow.Graph.MethodBody;
+        var analysis = new RecordingAnalysis(fixture.Flow, new(0, -1, 14, [4], body.Instructions[5..13], 4) { LengthLocal = 2 });
+
+        var result = new ArrayLoopUnroller(analysis, analysis, analysis, true).Rewrite(body);
+
+        Assert.NotSame(body, result);
+        Assert.Equal(body.Locals.Length, result.Locals.Length);
+        Assert.DoesNotContain(result.Instructions[body.Instructions.Length..], instruction => instruction.Operation == CilOperation.LoadArrayLength);
+        Assert.Equal(new CilOperand.Index(2), result.Instructions[body.Instructions.Length + 1].Operand);
+        Assert.Empty(result.ArrayBoundsProof!.AccessOffsets);
     }
 
     private sealed class RecordingAnalysis(ValidatedControlFlowGraph flow, ArrayLoopUnrollingPlan? plan) :

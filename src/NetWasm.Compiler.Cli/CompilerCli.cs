@@ -56,9 +56,10 @@ internal sealed class CompilerCli(
         }
         if (read.Errors.Length != 0)
         {
+            _console.WriteLine(NwcHelp.Hint);
             return 1;
         }
-        if (common.Flag("help") | common.Flag("?"))
+        if (common.Flag("help") | common.Flag("?") | common.Flag("h") | common.Flag("-help"))
         {
             NwcHelp.Write(_console);
             return 0;

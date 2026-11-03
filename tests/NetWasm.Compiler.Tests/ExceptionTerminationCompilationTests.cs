@@ -227,6 +227,41 @@ public sealed class ExceptionTerminationCompilationTests
             }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnUnhandledExceptionWithoutDiagnosticsSaysHowToNameItBeforeTrapping(bool structuredDiagnostics)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("UnhandledHint", """
+            using System;
+
+            namespace UnhandledHint;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) =>
+                    input < 0 ? throw new InvalidOperationException("unnamed") : input + 1;
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly,
+            [assets.CoreLib],
+            "UnhandledHint.EntryPoint",
+            "Run",
+            [],
+            StructuredDiagnostics: structuredDiagnostics));
+
+        Assert.Equal(42, ExecuteWithNode(compilation.ApplicationModule, assets.Directory, 41));
+        var terminal = Assert.ThrowsAny<Exception>(() =>
+            ExecuteWithNode(compilation.ApplicationModule, assets.Directory, -1));
+        Assert.Equal(!structuredDiagnostics,
+            terminal.Message.Contains("unhandled exception hint", StringComparison.Ordinal));
+        Assert.Equal(structuredDiagnostics,
+            terminal.Message.Contains("unnamed", StringComparison.Ordinal));
+        Assert.Contains("terminal wasm trap=true", terminal.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ExceptionObjectContractIsStacklessCatchableAndAutomaticallyMapped()
     {

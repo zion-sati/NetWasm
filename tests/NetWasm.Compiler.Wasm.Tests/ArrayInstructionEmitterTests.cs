@@ -522,7 +522,7 @@ public sealed class ArrayInstructionEmitterTests
         safepoints = [];
         var observedSafepoints = safepoints;
         IImplicitExceptionEmitter exceptions = exceptionEmitter ??
-            new ImplicitExceptionEmitter(layouts, layouts);
+            new ImplicitExceptionEmitter(layouts);
         IAddressInstructionEmitter addresses = new AddressInstructionEmitter(layouts);
         IRootPublicationEmitter roots = new RecordingRootPublicationEmitter(
             request => observedSafepoints.Add(request.Instruction.Offset));

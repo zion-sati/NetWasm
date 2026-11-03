@@ -19,6 +19,12 @@ internal abstract record VectorLoopMethod(string Type, string Name)
 
     public static VectorLoopMethod Store { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "StoreUnsafe", 3);
 
+    // Vector128.Sum<T>(Vector128<T>), the lanes' wrapping sum, and
+    // GetElement<T>(Vector128<T>, int), one lane.
+    public static VectorLoopMethod Sum { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "Sum", 1);
+
+    public static VectorLoopMethod GetElement { get; } = new GenericMethod("System.Runtime.Intrinsics.Vector128", "GetElement", 2);
+
     // Vector128.Create<T>(T): every lane the value.
     public static VectorLoopMethod Broadcast { get; } = new BroadcastMethod();
 

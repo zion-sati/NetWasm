@@ -18,13 +18,18 @@ public sealed class RepeatedArrayAccessPlannerTests
     [InlineData("result = values[index]; values = other; result += values[index];", 0, 0)]
     [InlineData("result = values[index]; if (result > 0) result += values[0];", 0, 1)]
     [InlineData("if (index > 0) result = values[0]; result += values[1];", 0, 0)]
+    // A dominating access to the same element of slots that keep their values
+    // proves both checks; a slot stored once at entry keeps its value too.
+    [InlineData("result = values[index]; if (result > 0) result += values[index];", 1, 0)]
+    [InlineData("var local = other; var at = index - 1; result = local[at]; if (result >= 0) result += local[at] + local[0];", 1, 1)]
+    [InlineData("result = values[index]; if (result > 0) index = 0; result += values[index];", 0, 1)]
     [InlineData("result = values[index] + values[index]; Touch(ref values);", 0, 0)]
     [InlineData("result = values[index]; Touch(ref index); result += values[index];", 0, 0)]
     // The index already on the stack keeps the value it had before the store.
     [InlineData("index = index + (index = 1); result = values[index] + values[index];", 1, 0)]
     // The loop's induction proof, which covers array locals, is kept beside the repeated access.
-    // The loop weighs each element by its index, so it is no sum that folds into one call.
-    [InlineData("var local = values; for (var i = 0; i < local.Length; i++) result += local[i] * i; result += other[index] + other[index];", 2, 0)]
+    // The loop scales what it has before each element, so it is no fold for a bulk call or vectors.
+    [InlineData("var local = values; for (var i = 0; i < local.Length; i++) result = result * 3 + local[i]; result += other[index] + other[index];", 2, 0)]
     public void ProvesAccessesThatRepeatAnEarlierCheck(string statement, int checkedAccesses, int nonNull)
     {
         using var assets = TestAssets.Create();
@@ -54,6 +59,63 @@ public sealed class RepeatedArrayAccessPlannerTests
         var proof = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == "Probe").Body.ArrayBoundsProof;
 
         Assert.Equal(checkedAccesses, proof?.AccessOffsets.Count ?? 0);
+        Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
+    }
+
+    // A field access proves its object non-null for the accesses after it in
+    // the block, and for those its block dominates while the slot keeps one
+    // reference; a field's own value is no slot, and `this` is argument 0.
+    [Theory]
+    [InlineData("result = node.A + node.B;", 1)]
+    [InlineData("result = node.A + other.B;", 0)]
+    [InlineData("node.A = index; result = node.B;", 1)]
+    [InlineData("result = node.A; if (index > 0) result += node.B;", 1)]
+    [InlineData("if (index > 0) result = node.A; result += node.B;", 0)]
+    [InlineData("result = node.A; node = other; result += node.B;", 0)]
+    [InlineData("result = node.A + node.B; Touch(ref node);", 0)]
+    [InlineData("result = node.Next.A + node.Next.B;", 1)]
+    [InlineData("result = node.Sum();", 2)]
+    [InlineData("result = values[0] + node.A + values[1];", 1)]
+    public void ProvesFieldAccessesOfAnObjectAlreadyAccessed(string statement, int nonNull)
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("RepeatedFieldAccesses", $$"""
+            using System.Runtime.CompilerServices;
+
+            public sealed class Node
+            {
+                public int A, B;
+                public Node Next;
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                public int Sum() => A + B + Next.A;
+            }
+
+            public static class EntryPoint
+            {
+                public static int Run(int count)
+                {
+                    var node = new Node { A = count, Next = new Node() };
+                    return Probe(node, node.Next, new int[count + 2], count);
+                }
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static int Probe(Node node, Node other, int[] values, int index)
+                {
+                    var result = 0;
+                    {{statement}}
+                    return result;
+                }
+
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                private static void Touch<T>(ref T value) => value = default!;
+            }
+            """);
+        var compilation = NetWasmCompiler.Compile(new CompilerOptions(
+            assembly, [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O3));
+        var name = statement.Contains("Sum()") ? "Sum" : "Probe";
+        var proof = compilation.Program.Methods.Values.Single(m => m.Method.Definition.Name == name).Body.ArrayBoundsProof;
+
         Assert.Equal(nonNull, proof?.NonNullOffsets.Count ?? 0);
     }
 

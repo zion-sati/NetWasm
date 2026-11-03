@@ -239,7 +239,11 @@ public sealed class StackStorageTypeAnalyzer(
                     var merged = first.ToBuilder();
                     for (var slot = 0; slot < first.Length; slot++)
                     {
-                        if (first[slot].Type is { } known && second[slot].Type is { } other && !known.Equals(other))
+                        // Addresses reinterpreted as another type, as Unsafe.As and RVA tables
+                        // give, meet as long as neither pointee holds references: the slot
+                        // roots nothing through the pointer, and its backings stay captured.
+                        if (first[slot].Type is { } known && second[slot].Type is { } other && !known.Equals(other) &&
+                            !(AddressesReferenceFreeStorage(known) && AddressesReferenceFreeStorage(other)))
                         {
                             throw Invalid(method, graph.GetBlock(block).Instructions[0],
                                 "incompatible stack storage identities at control-flow merge");
@@ -265,6 +269,14 @@ public sealed class StackStorageTypeAnalyzer(
             pending.Enqueue(block);
         }
     }
+
+    private bool AddressesReferenceFreeStorage(CliTypeIdentity type) =>
+        type.StackKind == CliValueKind.ManagedAddress && type.ElementType!.StackKind switch
+        {
+            CliValueKind.ManagedReference or CliValueKind.ManagedAddress => false,
+            CliValueKind.ValueType => _layouts.GetValueLayout(type.ElementType).ReferenceOffsets.IsEmpty,
+            _ => true,
+        };
 
     private static StackStorageType Describe(StorageIdentity slot) =>
         new(slot.Unresolved ? null : slot.Type, slot.BackingCovered)

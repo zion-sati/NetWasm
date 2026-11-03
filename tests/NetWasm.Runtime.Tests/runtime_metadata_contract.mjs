@@ -140,6 +140,8 @@ for (const kind of ['root', 'value', 'stack-trace', 'root-content', 'value-conte
       WebAssembly.RuntimeError,
       'Leaving a non-active value frame address must trap');
     api.value_frame_leave(invalidFrame);
+    assert.throws(() => api.value_frame_leave(invalidFrame), WebAssembly.RuntimeError,
+      'Leaving a value frame that was already left must trap');
     for (let iteration = 0; iteration < 8; iteration++) {
       const frames = [];
       for (const size of sizes) {

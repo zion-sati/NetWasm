@@ -13,8 +13,8 @@ internal interface IRepeatedArrayAccessPlanner
 }
 
 // Checked: the same array and index were accessed earlier in the block, so
-// both checks passed. NonNull: an earlier access to the same array passed its
-// null check.
+// both checks passed. NonNull: an earlier access to the same array, or to a
+// field of the same object, passed its null check.
 internal sealed record RepeatedArrayAccessPlan(ImmutableHashSet<int> Checked, ImmutableHashSet<int> NonNull)
 {
     public static RepeatedArrayAccessPlan Empty { get; } = new([], []);
@@ -23,10 +23,15 @@ internal sealed record RepeatedArrayAccessPlan(ImmutableHashSet<int> Checked, Im
 // An access whose array and index an earlier access already checked cannot
 // fail its checks again: without exception handlers, a failed check leaves the
 // method. Within a block, an access repeats an earlier one while neither its
-// array nor its index slot has been stored. Across blocks, an array slot that
-// is never stored or exposed keeps the reference an earlier access checked for
-// null, so an access in a block dominated by one holding such an access skips
-// its null check.
+// array nor its index slot has been stored. Across blocks, a slot that is never
+// stored or exposed keeps the reference an earlier access checked for null, so
+// an access in a block dominated by one holding such an access skips its null
+// check, and one whose index slot is stable too skips both checks when a
+// dominating block accessed the same element. A slot stored once, in an entry
+// block nothing returns to and before any read of it, holds one value too, as
+// the locals field load reuse fills do. Field accesses take part as accesses
+// of their object: an instance method that reads several fields of `this`
+// checks it once.
 internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer dominance) : IRepeatedArrayAccessPlanner
 {
     private readonly IControlFlowDominanceAnalyzer _dominance = dominance ??
@@ -38,15 +43,17 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
         var graph = controlFlow.Graph;
         if (!graph.MethodBody.ExceptionRegions.IsEmpty) return RepeatedArrayAccessPlan.Empty;
         var exposed = ExposedSlots(graph.MethodBody);
-        var stable = StableArraySlots(graph.MethodBody, exposed);
+        var stable = StableSlots(graph, exposed);
         var checkedAccesses = ImmutableHashSet.CreateBuilder<int>();
         var nonNull = ImmutableHashSet.CreateBuilder<int>();
         var unproven = new List<(int Block, int Offset, Slot Array)>();
         var accessedBlocks = new Dictionary<Slot, HashSet<int>>();
+        var unprovenPairs = new List<(int Block, int Offset, Slot Array, Origin Index)>();
+        var pairBlocks = new Dictionary<(Slot Array, Origin Index), HashSet<int>>();
         foreach (var block in graph.Blocks.Where(block => graph.ReachableBlocks.Contains(block.Index)))
         {
             var origins = new List<Origin>();
-            var checkedArrays = new HashSet<Slot>();
+            var checkedReferences = new HashSet<Slot>();
             var checkedPairs = new HashSet<(Slot Array, Origin Index)>();
             foreach (var instruction in block.Instructions)
             {
@@ -72,46 +79,85 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                     origins[^(consumed - 1)] is var index && !(index.Slot is { } indexSlot && exposed.Contains(indexSlot)) &&
                     stack[stack.Length - consumed + 1] == CliValueKind.I4)
                 {
+                    var stablePair = index.Known && stable.Contains(array) && (index.Slot is null || stable.Contains(index.Slot.Value));
                     if (index.Known && checkedPairs.Contains((array, index)))
                     {
                         checkedAccesses.Add(instruction.Offset);
                     }
-                    else if (checkedArrays.Contains(array))
+                    else
                     {
-                        nonNull.Add(instruction.Offset);
+                        Dereference(array, instruction.Offset, block.Index, checkedReferences.Contains(array));
+                        if (stablePair) unprovenPairs.Add((block.Index, instruction.Offset, array, index));
                     }
-                    else if (stable.Contains(array))
+                    if (stablePair)
                     {
-                        unproven.Add((block.Index, instruction.Offset, array));
-                    }
-                    checkedArrays.Add(array);
-                    if (index.Known) checkedPairs.Add((array, index));
-                    if (stable.Contains(array))
-                    {
-                        if (!accessedBlocks.TryGetValue(array, out var blocks)) accessedBlocks[array] = blocks = [];
+                        if (!pairBlocks.TryGetValue((array, index), out var blocks)) pairBlocks[(array, index)] = blocks = [];
                         blocks.Add(block.Index);
                     }
+                    checkedReferences.Add(array);
+                    if (index.Known) checkedPairs.Add((array, index));
+                }
+                // An object's field access, the object beneath the value for a store.
+                var receiver = instruction.Operation switch
+                {
+                    CilOperation.LoadField or CilOperation.LoadFieldAddress => 1,
+                    CilOperation.StoreField => 2,
+                    _ => 0,
+                };
+                if (receiver != 0 && stack.Length >= receiver && stack[^receiver] == CliValueKind.ManagedReference &&
+                    origins[^receiver].Slot is { } owner && !exposed.Contains(owner))
+                {
+                    Dereference(owner, instruction.Offset, block.Index, checkedReferences.Contains(owner));
+                    checkedReferences.Add(owner);
                 }
                 if (Stored(instruction) is { } stored)
                 {
-                    checkedArrays.Remove(stored);
+                    checkedReferences.Remove(stored);
                     checkedPairs.RemoveWhere(pair => pair.Array == stored || pair.Index.Slot == stored);
                 }
                 Track(instruction, origins);
             }
         }
-        if (unproven.Count != 0)
+        if (unproven.Count != 0 || unprovenPairs.Count != 0)
         {
             var dominators = _dominance.Analyze(graph, graph.Entry.Index, graph.ReachableBlocks);
+            // A proven element is also proven non-null.
+            foreach (var (block, offset, array, index) in unprovenPairs)
+            {
+                if (pairBlocks[(array, index)].Any(other => other != block && dominators[block].Contains(other)))
+                {
+                    checkedAccesses.Add(offset);
+                }
+            }
             foreach (var (block, offset, array) in unproven)
             {
-                if (accessedBlocks[array].Any(other => other != block && dominators[block].Contains(other)))
+                if (!checkedAccesses.Contains(offset) &&
+                    accessedBlocks[array].Any(other => other != block && dominators[block].Contains(other)))
                 {
                     nonNull.Add(offset);
                 }
             }
         }
         return new(checkedAccesses.ToImmutable(), nonNull.ToImmutable());
+
+        // An access whose reference this block already checked skips its null
+        // check; one of a stable slot may yet be dominated by another block's.
+        void Dereference(Slot slot, int offset, int block, bool checkedHere)
+        {
+            if (checkedHere)
+            {
+                nonNull.Add(offset);
+            }
+            else if (stable.Contains(slot))
+            {
+                unproven.Add((block, offset, slot));
+            }
+            if (stable.Contains(slot))
+            {
+                if (!accessedBlocks.TryGetValue(slot, out var blocks)) accessedBlocks[slot] = blocks = [];
+                blocks.Add(block);
+            }
+        }
     }
 
     private static HashSet<Slot> ExposedSlots(CilMethodBody body) =>
@@ -122,26 +168,32 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                 ((CilOperand.Index)instruction.Operand).Value)),
     ];
 
-    // Loaded array slots that hold one reference for the whole method: never
-    // stored after entry and never exposed by address.
-    private static HashSet<Slot> StableArraySlots(CilMethodBody body, HashSet<Slot> exposed)
+    // Loaded slots that hold one value for the whole method: never exposed by
+    // address, and never stored after entry or stored once, in an entry block no
+    // branch returns to, before the block reads it. Accesses decide which hold
+    // references.
+    private static HashSet<Slot> StableSlots(ControlFlowGraph graph, HashSet<Slot> exposed)
     {
+        var body = graph.MethodBody;
         var slots = body.Instructions.Select(Loaded).OfType<Slot>()
-            .Where(slot => !exposed.Contains(slot) && TypeOf(body, slot)?.Shape == CliTypeShape.SzArray)
+            .Where(slot => !exposed.Contains(slot))
             .ToHashSet();
-        foreach (var instruction in body.Instructions)
+        var stores = body.Instructions.Select(Stored).OfType<Slot>().GroupBy(static slot => slot)
+            .ToDictionary(static group => group.Key, static group => group.Count());
+        var entry = graph.Entry;
+        var reentered = !graph.Predecessors[entry.Index].IsEmpty;
+        var storedOnEntry = new HashSet<Slot>();
+        var readOnEntry = new HashSet<Slot>();
+        foreach (var instruction in entry.Instructions)
         {
-            if (Stored(instruction) is { } stored) slots.Remove(stored);
+            if (Loaded(instruction) is { } read && !storedOnEntry.Contains(read)) readOnEntry.Add(read);
+            if (Stored(instruction) is { } written) storedOnEntry.Add(written);
+        }
+        foreach (var (slot, count) in stores)
+        {
+            if (count != 1 || reentered || !storedOnEntry.Contains(slot) || readOnEntry.Contains(slot)) slots.Remove(slot);
         }
         return slots;
-    }
-
-    // An instance method's receiver is its declaring type, never an array.
-    private static CliTypeIdentity? TypeOf(CilMethodBody body, Slot slot)
-    {
-        if (!slot.IsArgument) return body.LocalSignatureTypes[slot.Index];
-        var first = body.Method.IsStatic ? 0 : 1;
-        return slot.Index < first ? null : body.Method.Signature.ParameterSignatureTypes[slot.Index - first];
     }
 
     private static Slot? Loaded(CilInstruction instruction) => instruction switch

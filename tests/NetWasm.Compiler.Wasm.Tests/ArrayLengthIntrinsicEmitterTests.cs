@@ -21,7 +21,7 @@ public sealed class ArrayLengthIntrinsicEmitterTests
             new ArrayLengthEmitter(
                 layouts,
                 new ArrayReceiverValidator(
-                    new ImplicitExceptionEmitter(layouts, layouts),
+                    new ImplicitExceptionEmitter(layouts),
                     CreateAddressInstructions(layouts))));
         var request = CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.ArrayLength,

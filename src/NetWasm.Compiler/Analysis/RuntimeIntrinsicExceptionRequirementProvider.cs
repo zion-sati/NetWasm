@@ -55,6 +55,12 @@ internal sealed class RuntimeIntrinsicExceptionRequirementProvider(
             RuntimeIntrinsic.EnumGetHashCode or
             RuntimeIntrinsic.EnumGetTypeCode => [NullReference],
 
+            RuntimeIntrinsic.ArrayElementType => [OutOfMemory],
+            // Throws nothing; it returns the OutOfMemoryException frozen in the image.
+            RuntimeIntrinsic.PreallocatedOutOfMemoryException => [OutOfMemory],
+
+            RuntimeIntrinsic.StringAllocate => [Overflow, OutOfMemory],
+
             RuntimeIntrinsic.NullableGetUnderlyingType => [ArgumentNull],
 
             RuntimeIntrinsic.ArrayGetLength or

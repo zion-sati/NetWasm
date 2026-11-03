@@ -27,7 +27,10 @@ namespace System
 
         public static bool Is64BitOperatingSystem => throw new PlatformNotSupportedException();
 
-        public static string NewLine => "\n";
+        // Environment.UnixOrBrowser.cs: WASI and the browser use Unix line endings.
+        internal const string NewLineConst = "\n";
+
+        public static string NewLine => NewLineConst;
 
         public static string[] GetCommandLineArgs() =>
             Runtime.InteropServices.PlatformServices.ReadCommandLineArguments();

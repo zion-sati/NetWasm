@@ -20,6 +20,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ArrayGetLengthIntrinsicEmitter>();
         services.AddSingleton<ArrayGetLowerBoundIntrinsicEmitter>();
         services.AddSingleton<ArrayGetValueIntrinsicEmitter>();
+        services.AddSingleton<ArrayElementTypeIntrinsicEmitter>();
+        services.AddSingleton<ArraySetValueIntrinsicEmitter>();
         services.AddSingleton<ArrayCopyIntrinsicEmitter>();
         services.AddSingleton<ArrayClearIntrinsicEmitter>();
         services.AddSingleton<ArrayCloneIntrinsicEmitter>();
@@ -28,6 +30,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<StringSetCharacterUncheckedIntrinsicEmitter>();
         services.AddSingleton<StringGetRawDataReferenceIntrinsicEmitter>();
         services.AddSingleton<StringEqualsOrdinalIntrinsicEmitter>();
+        services.AddSingleton<StringAllocateIntrinsicEmitter>();
         services.AddSingleton<JSObjectDisposeIntrinsicEmitter>();
         services.AddSingleton<JSSubscriptionDisposeIntrinsicEmitter>();
         services.AddSingleton<GcCollectIntrinsicEmitter>();
@@ -52,6 +55,7 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<GcWaitForPendingFinalizersIntrinsicEmitter>();
         services.AddSingleton<ObjectIdentityHashIntrinsicEmitter>();
         services.AddSingleton<BoxedValueCloneIntrinsicEmitter>();
+        services.AddSingleton<PreallocatedOutOfMemoryIntrinsicEmitter>();
         services.AddSingleton<DelegateCloneIntrinsicEmitter>();
         services.AddSingleton<RuntimeHelpersEqualsIntrinsicEmitter>();
         services.AddSingleton<RandomSeedIntrinsicEmitter>();
@@ -166,6 +170,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.ArrayGetLength);
         AddRegistration<ArrayGetLowerBoundIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayGetLowerBound);
+        AddRegistration<ArrayElementTypeIntrinsicEmitter>(services, RuntimeIntrinsic.ArrayElementType);
+        AddRegistration<ArraySetValueIntrinsicEmitter>(services, RuntimeIntrinsic.ArraySetValue);
         AddRegistration<ArrayGetValueIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayGetValue);
         AddRegistration<ArrayCopyIntrinsicEmitter>(
@@ -184,6 +190,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.StringGetRawDataReference);
         AddRegistration<StringEqualsOrdinalIntrinsicEmitter>(
             services, RuntimeIntrinsic.StringEqualsOrdinal);
+        AddRegistration<StringAllocateIntrinsicEmitter>(
+            services, RuntimeIntrinsic.StringAllocate);
         AddRegistration<JSObjectDisposeIntrinsicEmitter>(
             services, RuntimeIntrinsic.JSObjectDispose);
         AddRegistration<JSSubscriptionDisposeIntrinsicEmitter>(
@@ -227,6 +235,8 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         AddRegistration<ObjectIdentityHashIntrinsicEmitter>(services, RuntimeIntrinsic.ObjectIdentityHash);
         AddRegistration<BoxedValueCloneIntrinsicEmitter>(
             services, RuntimeIntrinsic.BoxedValueClone);
+        AddRegistration<PreallocatedOutOfMemoryIntrinsicEmitter>(
+            services, RuntimeIntrinsic.PreallocatedOutOfMemoryException);
         AddRegistration<DelegateCloneIntrinsicEmitter>(
             services, RuntimeIntrinsic.DelegateClone);
         AddRegistration<RuntimeHelpersEqualsIntrinsicEmitter>(
@@ -305,6 +315,10 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.ArrayLoopFill);
         AddRegistration<ArrayLoopCopyIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayLoopCopy);
+        AddRegistration<ArrayLoopFillIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopFillInBounds);
+        AddRegistration<ArrayLoopCopyIntrinsicEmitter>(
+            services, RuntimeIntrinsic.ArrayLoopCopyInBounds);
         AddRegistration<ArrayLoopReductionIntrinsicEmitter>(
             services, RuntimeIntrinsic.ArrayLoopXor);
         AddRegistration<ArrayLoopReductionIntrinsicEmitter>(

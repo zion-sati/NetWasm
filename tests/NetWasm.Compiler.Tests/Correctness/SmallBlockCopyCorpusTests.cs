@@ -2,10 +2,10 @@ using NetWasm.Compiler.ComponentModel;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-// At the speed presets copies and fills of up to 64 bytes run inline rather
+// At the speed presets copies and fills of up to 128 bytes run inline rather
 // than through memory.copy and memory.fill: every length, both overlap
-// directions, and every boundary between the chunk sizes must still match
-// desktop .NET.
+// directions, every boundary between the chunk sizes, and the constant
+// lengths the cascade folds to one case must still match desktop .NET.
 public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
 {
     [Fact]
@@ -14,7 +14,7 @@ public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
             "SmallBlockCopyCorpus",
             "NetWasm.Correctness.SmallBlockCopies",
             Source,
-            [0, 1, 2, 3, 4, 5, 6])
+            [0, 1, 2, 3, 4, 5, 6, 7])
         {
             ExecuteWasm64 = true,
             ExecuteOptimizedWasm = true,
@@ -32,8 +32,9 @@ public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
             {
                 public static int Run(int input)
                 {
+                    if (input == 7) return ConstantBlocks();
                     var hash = 17;
-                    for (var length = 0; length <= 70; length++)
+                    for (var length = 0; length <= 140; length++)
                     {
                         hash = unchecked(hash * 31 + input switch
                         {
@@ -50,26 +51,52 @@ public sealed class SmallBlockCopyCorpusTests(CorrectnessTestRunner runner)
                 // Span.CopyTo and Array.Copy are memmove within one array.
                 private static int Overlapping(int length, int from, int to)
                 {
-                    var data = Pattern(100);
+                    var data = Pattern(160);
                     data.AsSpan(from, length).CopyTo(data.AsSpan(to, length));
-                    var array = Pattern(100);
+                    var array = Pattern(160);
                     Array.Copy(array, to, array, from, length);
                     return Mix(data) * 7 + Mix(array);
                 }
 
                 private static int Block(int length)
                 {
-                    var source = Pattern(80);
-                    var destination = new byte[80];
+                    var source = Pattern(150);
+                    var destination = new byte[150];
                     Unsafe.CopyBlock(ref destination[3], ref source[1], (uint)length);
                     return Mix(destination);
                 }
 
                 private static int Fill(int length, byte value)
                 {
-                    var data = Pattern(80);
+                    var data = Pattern(150);
                     Unsafe.InitBlock(ref data[2], value, (uint)length);
                     return Mix(data);
+                }
+
+                // Lengths written as constants, around each case's bounds.
+                private static int ConstantBlocks()
+                {
+                    var source = Pattern(150);
+                    var hash = 17;
+                    var destination = new byte[150];
+                    Unsafe.CopyBlock(ref destination[3], ref source[1], 64);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.CopyBlock(ref destination[5], ref source[2], 65);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.CopyBlock(ref destination[7], ref source[3], 96);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.CopyBlock(ref destination[9], ref source[4], 127);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.CopyBlock(ref destination[11], ref source[5], 128);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.CopyBlock(ref destination[13], ref source[6], 129);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.InitBlock(ref destination[1], 0xA5, 65);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.InitBlock(ref destination[2], 0x3C, 128);
+                    hash = unchecked(hash * 31 + Mix(destination));
+                    Unsafe.InitBlock(ref destination[3], 0x5A, 129);
+                    return unchecked(hash * 31 + Mix(destination));
                 }
 
                 private static byte[] Pattern(int length)

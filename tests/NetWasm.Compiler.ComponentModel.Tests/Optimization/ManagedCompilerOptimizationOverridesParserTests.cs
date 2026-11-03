@@ -10,7 +10,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
         get
         {
             var data = new TheoryData<int, string?>();
-            for (var feature = 0; feature < 18; feature++)
+            for (var feature = 0; feature < 22; feature++)
                 foreach (var value in new string?[] { null, "Auto", "Disabled", "Enabled", "enabled", "", "2" })
                     data.Add(feature, value);
             return data;
@@ -40,7 +40,11 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
             idempotentLoopCollapse: feature == 14 ? value : null,
             loopStoreForwarding: feature == 15 ? value : null,
             arrayLoopIdioms: feature == 16 ? value : null,
-            loopVectorization: feature == 17 ? value : null);
+            loopVectorization: feature == 17 ? value : null,
+            pureCallReuse: feature == 18 ? value : null,
+            fieldLoadReuse: feature == 19 ? value : null,
+            conditionalStoreMerging: feature == 20 ? value : null,
+            inlineArrayData: feature == 21 ? value : null);
         if (value is null or "Auto")
         {
             Assert.Null(Parse());
@@ -88,8 +92,16 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
                 ? ManagedLoopStoreForwarding.Enabled : ManagedLoopStoreForwarding.Disabled),
             16 => new WasmOptimizationOverrides(ArrayLoopIdioms: enabled
                 ? ManagedArrayLoopIdioms.Enabled : ManagedArrayLoopIdioms.Disabled),
-            _ => new WasmOptimizationOverrides(LoopVectorization: enabled
+            17 => new WasmOptimizationOverrides(LoopVectorization: enabled
                 ? ManagedLoopVectorization.Enabled : ManagedLoopVectorization.Disabled),
+            18 => new WasmOptimizationOverrides(PureCallReuse: enabled
+                ? ManagedPureCallReuse.Enabled : ManagedPureCallReuse.Disabled),
+            19 => new WasmOptimizationOverrides(FieldLoadReuse: enabled
+                ? ManagedFieldLoadReuse.Enabled : ManagedFieldLoadReuse.Disabled),
+            20 => new WasmOptimizationOverrides(ConditionalStoreMerging: enabled
+                ? ManagedConditionalStoreMerging.Enabled : ManagedConditionalStoreMerging.Disabled),
+            _ => new WasmOptimizationOverrides(InlineArrayData: enabled
+                ? ManagedInlineArrayData.Enabled : ManagedInlineArrayData.Disabled),
         };
         Assert.Equal(expected, Parse());
     }

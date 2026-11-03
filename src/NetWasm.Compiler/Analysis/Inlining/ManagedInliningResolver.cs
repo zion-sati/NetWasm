@@ -107,6 +107,7 @@ internal sealed class ManagedInliningResolver(
         // not allocating ones: a lazily initialized getter inlined through its
         // allocating initializer put that cold path into every caller.
         if (candidate is null ||
+            request.SmallOnly && !(candidate.Small && !candidate.Allocates) ||
             !(_policy == ManagedMethodInliningPolicy.Aggressive
                 // Only what the callee asks for.
                 ? method.Definition.IsAggressiveInlining

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
 
@@ -49,6 +51,7 @@ internal sealed class ManagedTypeLayoutCompiler : IManagedTypeLayoutCompiler
         _implicitObjects.Build();
         _valueTypes.Resolve();
         var offsets = _delegateOffsets.Resolve();
+        NumberInPreorder();
         return new ManagedTypeLayouts(
             _state.Objects.ToImmutableDictionary(),
             _state.ObjectIdentities.ToImmutableDictionary(),
@@ -60,6 +63,39 @@ internal sealed class ManagedTypeLayoutCompiler : IManagedTypeLayoutCompiler
             offsets.MethodId,
             offsets.InvocationList,
             offsets.InvocationCount);
+    }
+
+    // Every layout exists now and nothing has read an id yet, so the ids the
+    // builders handed out in discovery order become preorder numbers.
+    private void NumberInPreorder()
+    {
+        var numbers = TypeIdPreorder.Number(_state.Objects.Values
+            .Concat(_state.ConstructedObjects.Values)
+            .Select(layout => layout.TypeId)
+            .Concat(_state.BaseTypeIds.Keys)
+            .Distinct()
+            .Select(typeId => (typeId, _state.BaseTypeIds.GetValueOrDefault(typeId))));
+        ObjectLayout Renumber(ObjectLayout layout) =>
+            layout with { TypeId = numbers[layout.TypeId].TypeId, LastSubtypeId = numbers[layout.TypeId].LastSubtypeId };
+        RenumberAll(_state.Objects, Renumber);
+        RenumberAll(_state.ObjectIdentities, Renumber);
+        RenumberAll(_state.ObjectsByName, Renumber);
+        RenumberAll(_state.ConstructedObjects, Renumber);
+        var bases = _state.BaseTypeIds.ToArray();
+        _state.BaseTypeIds.Clear();
+        foreach (var (typeId, baseTypeId) in bases)
+        {
+            _state.BaseTypeIds.Add(numbers[typeId].TypeId, baseTypeId == 0 ? 0 : numbers[baseTypeId].TypeId);
+        }
+    }
+
+    private static void RenumberAll<TKey>(Dictionary<TKey, ObjectLayout> layouts, Func<ObjectLayout, ObjectLayout> renumber)
+        where TKey : notnull
+    {
+        foreach (var key in layouts.Keys.ToArray())
+        {
+            layouts[key] = renumber(layouts[key]);
+        }
     }
 
     internal static int Align(int value, int alignment) =>

@@ -164,7 +164,7 @@ internal static partial class Number
             (chars[left], chars[right]) = (chars[right], chars[left]);
         }
 
-        return string.Create(chars);
+        return new string(chars);
     }
 
     private static int CountDigits(long value)

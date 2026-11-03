@@ -304,7 +304,7 @@ public sealed class NumericConversionInstructionEmitterTests
             new NumericConversionInstructionEmitter(
                 layouts,
                 null!,
-                new ImplicitExceptionEmitter(layouts, layouts)));
+                new ImplicitExceptionEmitter(layouts)));
     }
 
     [Theory]
@@ -353,7 +353,7 @@ public sealed class NumericConversionInstructionEmitterTests
         RecordingLayoutProvider layouts) => new(
         layouts,
         new NativeIntegerConversionEmitter(layouts),
-        new ImplicitExceptionEmitter(layouts, layouts));
+        new ImplicitExceptionEmitter(layouts));
 
     private static InstructionEmissionRequest CreateRequest(
         CilOperation operation,

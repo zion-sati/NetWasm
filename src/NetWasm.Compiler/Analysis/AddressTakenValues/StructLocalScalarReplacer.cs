@@ -25,8 +25,10 @@ internal interface IStructLocalScalarReplacer
 // memory, as a foreach's element copy out of an array or a span is, loads only
 // the fields the local's reads need from the element's address, and no
 // temporary. A struct of declared size is split only when its whole value is
-// never read again, which is the only way its padding could be seen. .NET's
-// JIT promotes struct locals the same way.
+// never read again, which is the only way its padding could be seen. A struct
+// argument whose address is taken, as an inlined call on a span parameter
+// takes it, is split as a local the method copies it into on entry, where it
+// splits. .NET's JIT promotes struct locals and arguments the same way.
 internal sealed class StructLocalScalarReplacer(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
@@ -49,6 +51,82 @@ internal sealed class StructLocalScalarReplacer(
     {
         ArgumentNullException.ThrowIfNull(body);
         if (!enabled) return body;
+        // The entry copy costs a copy of each argument that stays whole, so
+        // only those that split keep it.
+        var arguments = AddressedStructArguments(body);
+        if (arguments.Length != 0)
+        {
+            var promoted = Split(WithArgumentLocals(body, arguments), out var split);
+            var kept = arguments.Where((_, index) => split.Contains(body.Locals.Length + index)).ToImmutableArray();
+            if (kept.Length == arguments.Length) return promoted;
+            if (kept.Length != 0) return Split(WithArgumentLocals(body, kept), out _);
+        }
+        return Split(body, out _);
+    }
+
+    // The arguments past this whose address is taken and whose type splits.
+    private ImmutableArray<(int Argument, CliTypeIdentity Type)> AddressedStructArguments(CilMethodBody body)
+    {
+        var parameters = (body.MethodInstance?.Signature ?? body.Method.Signature).ParameterSignatureTypes;
+        var first = body.Method.IsStatic ? 0 : 1;
+        return
+        [
+            .. body.Instructions
+                .Select(instruction => instruction is
+                {
+                    Operation: CilOperation.LoadArgumentAddress, Operand: CilOperand.Index { Value: var argument },
+                } && argument >= first && argument - first < parameters.Length ? argument : -1)
+                .Where(argument => argument >= 0)
+                .Distinct()
+                .Order()
+                .Select(argument => (argument, parameters[argument - first]))
+                .Where(argument => Fields(argument.Item2, out _) is not null),
+        ];
+    }
+
+    // The body with each of the arguments in a new local, after the locals it
+    // has, that it is copied into on entry and read, written and addressed in
+    // place of the argument. The copy reads the argument through its address,
+    // as a whole store from memory, so the split loads each field from it.
+    private static CilMethodBody WithArgumentLocals(
+        CilMethodBody body,
+        ImmutableArray<(int Argument, CliTypeIdentity Type)> arguments)
+    {
+        var locals = arguments
+            .Select((argument, index) => KeyValuePair.Create(argument.Argument, body.Locals.Length + index))
+            .ToDictionary();
+        var replacements = body.Instructions
+            .Select(instruction => new List<CilInstruction>
+            {
+                instruction is { Operand: CilOperand.Index { Value: var argument } } &&
+                    locals.TryGetValue(argument, out var local) &&
+                    instruction.Operation switch
+                    {
+                        CilOperation.LoadArgument => CilOperation.LoadLocal,
+                        CilOperation.LoadArgumentAddress => CilOperation.LoadLocalAddress,
+                        CilOperation.StoreArgument => CilOperation.StoreLocal,
+                        _ => (CilOperation?)null,
+                    } is { } operation
+                    ? instruction with { Operation = operation, Operand = new CilOperand.Index(local) }
+                    : instruction,
+            })
+            .ToArray();
+        var entry = arguments.SelectMany(argument => new[]
+        {
+            Synthetic(CilOperation.LoadArgumentAddress, new CilOperand.Index(argument.Argument)),
+            Synthetic(CilOperation.LoadObject, new CilOperand.TypeIdentity(argument.Type)),
+            Local(CilOperation.StoreLocal, locals[argument.Argument]),
+        });
+        return RenumberedInstructions.Splice(body, replacements, [.. entry]) with
+        {
+            Locals = body.Locals.AddRange(arguments.Select(argument => argument.Type.StackKind)),
+            LocalSignatureTypes = body.LocalSignatureTypes.AddRange(arguments.Select(argument => argument.Type)),
+        };
+    }
+
+    private CilMethodBody Split(CilMethodBody body, out HashSet<int> split)
+    {
+        split = [];
         var layouts = new Dictionary<int, ImmutableArray<Field>>();
         var sized = new HashSet<int>();
         foreach (var instruction in body.Instructions)
@@ -265,10 +343,10 @@ internal sealed class StructLocalScalarReplacer(
             CopySource copy => copy.From == local || copy.To == local,
             _ => false,
         })));
-        var split = layouts.Keys.Where(local => accessed.Contains(local) && !rejected.Contains(local)).ToHashSet();
+        split = layouts.Keys.Where(local => accessed.Contains(local) && !rejected.Contains(local)).ToHashSet();
         if (split.Count == 0) return body;
         KeepAmortizedTransfers(graph, instructions, plans, split);
-        return split.Count == 0 ? body : Splice(body, layouts, split, plans);
+        return split.Count == 0 ? body : WithTheStackItReaches(Splice(body, layouts, split, plans));
 
         // The candidate's whole load a field read's dup copies, through the
         // chain of dups a deconstruction makes, recording who takes each copy.
@@ -385,11 +463,12 @@ internal sealed class StructLocalScalarReplacer(
         return result.Count == 0 ? null : result.ToImmutable();
     }
 
-    // A byref's kind is an address and a generic parameter's unknown, so
-    // neither is one; a modified field keeps its memory semantics.
+    // A byref field, as a span's reference, becomes a byref local, which the
+    // root maps report as they report any other. A generic parameter's kind is
+    // unknown, and a modified field keeps its memory semantics.
     private static bool IsScalar(CliTypeIdentity type) =>
         type.StackKind is CliValueKind.I4 or CliValueKind.I8 or CliValueKind.F4 or CliValueKind.F8 or
-            CliValueKind.NativeInt or CliValueKind.ManagedReference &&
+            CliValueKind.NativeInt or CliValueKind.ManagedReference or CliValueKind.ManagedAddress &&
         type.Shape != CliTypeShape.Modified;
 
     private static Field? FieldOf(ImmutableArray<Field> fields, CilOperand operand)
@@ -449,6 +528,14 @@ internal sealed class StructLocalScalarReplacer(
     }
 
     private static CilInstruction Synthetic(CilOperation operation, CilOperand operand) => new(0, 1, operation, operand);
+
+    // A split local pushes each of its fields where it pushed the whole value,
+    // so the stack can grow past the depth the body declared.
+    private CilMethodBody WithTheStackItReaches(CilMethodBody body)
+    {
+        var depth = _stacks.Validate(_graphs.Build(body with { MaxStack = int.MaxValue })).MaximumStackDepth;
+        return depth > body.MaxStack ? body with { MaxStack = depth } : body;
+    }
 
     private static CilMethodBody Splice(
         CilMethodBody body,
@@ -643,7 +730,8 @@ internal sealed class StructLocalScalarReplacer(
         CliValueKind.I8 => [Synthetic(CilOperation.LoadInt64, new CilOperand.ConstantI8(0))],
         CliValueKind.F4 => [Synthetic(CilOperation.LoadFloat32, new CilOperand.ConstantF4(0))],
         CliValueKind.F8 => [Synthetic(CilOperation.LoadFloat64, new CilOperand.ConstantF8(0))],
-        CliValueKind.NativeInt =>
+        // A null byref is the address zero, as for a native int.
+        CliValueKind.NativeInt or CliValueKind.ManagedAddress =>
         [
             Synthetic(CilOperation.LoadInt32, new CilOperand.ConstantI4(0)),
             Synthetic(CilOperation.ConvertNativeInt, new CilOperand.None()),

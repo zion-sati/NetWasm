@@ -183,6 +183,8 @@ static u32 stack_trace_symbol_capacity;
 static u32 stack_trace_exception_field_offset;
 static u32 stack_trace_string_type_id;
 static u32 stack_trace_initialized;
+/* Objects below this address are the compiler's, frozen in static data. */
+static netwasm_address_t static_data_end;
 static ExceptionFrame *exception_frames;
 static u32 exception_frame_capacity;
 static u32 exception_frame_top;
@@ -275,6 +277,17 @@ void report_unobserved_task_exception(void)
      * receives it instead. */
     static const char line[] =
         "NetWasm: an unobserved managed Task exception was finalized\n";
+    write_diagnostic_bytes(line, sizeof(line) - 1);
+}
+
+NETWASM_EXPORT("report_unhandled_exception")
+void report_unhandled_exception(void)
+{
+    /* A build without structured diagnostics carries no exception names, so
+     * the process says how to get them before it traps. */
+    static const char line[] =
+        "NetWasm: unhandled exception. Build with NetWasmStructuredDiagnostics "
+        "set to true to report its type, message and stack trace.\n";
     write_diagnostic_bytes(line, sizeof(line) - 1);
 }
 
@@ -466,10 +479,13 @@ static int add_trace_length(u32 *total, u32 addition)
     return 1;
 }
 
+/* A frozen exception is PreallocatedOutOfMemoryException.Instance, which every
+   throw that finds no room for a new one shares, so it records no trace, as
+   NativeAOT records none into it. */
 static void capture_stack_trace(netwasm_reference_t exception)
 {
     if (!stack_trace_initialized || exception == 0 ||
-        stack_trace_frame_top == 0) {
+        stack_trace_frame_top == 0 || exception < static_data_end) {
         return;
     }
     u32 length = 0;
@@ -672,14 +688,14 @@ static void enumerate_managed_roots(void)
 
 NETWASM_EXPORT("initialize")
 void initialize(
-    netwasm_address_t static_data_end,
+    netwasm_address_t static_data_limit,
     u32 required_type_capacity,
     u32 required_static_root_capacity)
 {
-    (void)static_data_end;
     if (initialized) {
         return;
     }
+    static_data_end = static_data_limit;
 
     /*
      * The compiler publishes only semantically live managed references and
@@ -1375,7 +1391,7 @@ netwasm_address_t value_frame_enter_mapped(
 
 /* Leaving a frame the fast path did not: one from an earlier chunk, after
    the frames above it crossed into later ones, or an address that is not an
-   active frame, which traps. The chunk must be one the arena passed through,
+   active frame, such as a frame already left, which traps. The chunk must be one the arena passed through,
    and the frame inside it. */
 static __attribute__((noinline)) void value_frame_leave_slow(uintptr_t bytes, ValueFrame *target)
 {
@@ -1395,15 +1411,18 @@ static __attribute__((noinline)) void value_frame_leave_slow(uintptr_t bytes, Va
 }
 
 /* Leaves a frame without references: the list returns to how it stood when
-   the frame was entered, and the arena to the frame. An active frame in the
-   current chunk lies below its cursor; anything else takes the slow path. */
+   the frame was entered, and the arena to the frame. A frame in the current
+   chunk leaves at once and forgets its chunk, so leaving it again takes the
+   slow path and traps; that store costs less than comparing the frame with
+   the cursor on every leave. Anything else takes the slow path. */
 NETWASM_EXPORT("value_frame_leave")
 void value_frame_leave(netwasm_address_t frame)
 {
     uintptr_t bytes = (uintptr_t)frame;
     ValueFrame *target = (ValueFrame *)(void *)(bytes - offsetof(ValueFrame, bytes));
-    if (target->chunk == value_frame_arena.current && (uintptr_t)target < value_frame_arena.cursor) {
+    if (target->chunk == value_frame_arena.current) {
         value_frame = target->previous;
+        target->chunk = NULL;
         value_frame_arena.cursor = (uintptr_t)target;
         return;
     }
@@ -2259,6 +2278,74 @@ netwasm_reference_t array_get_value(netwasm_reference_t array, u32 index,
     allocation_root = 0;
     return boxed;
 }
+
+/* CoreLib validates public indices and performs permitted primitive widening.
+   This leaf stores an already-normalized boxed value without allocation. Nullable
+   layout arguments are supplied by the compiler, never inferred from slot size.
+   Return 0 for success, 1 for an incompatible value. */
+#ifndef NETWASM_NO_ARRAY_SET_VALUE
+NETWASM_EXPORT("array_set_value")
+u32 array_set_value(
+    netwasm_reference_t array,
+    u32 index,
+    netwasm_reference_t value,
+    u32 nullable_underlying_type_id,
+    netwasm_address_t nullable_value_offset)
+{
+    if (array == 0) {
+        __builtin_trap();
+    }
+    u32 array_type_id = *(const u32 *)(uintptr_t)array;
+    if (array_type_id >= type_capacity ||
+        type_data_kinds[array_type_id] != NETWASM_OBJECT_DATA_ARRAY ||
+        index >= *(const u32 *)(uintptr_t)(array + NETWASM_ARRAY_LENGTH_OFFSET)) {
+        __builtin_trap();
+    }
+    u32 element_id = *(const u32 *)(uintptr_t)(array + NETWASM_ARRAY_ELEMENT_TYPE_ID_OFFSET);
+    if (element_id >= type_capacity || !type_descriptors[element_id].registered) {
+        __builtin_trap();
+    }
+    TypeDescriptor *element = &type_descriptors[element_id];
+    netwasm_reference_t data = *(const netwasm_reference_t *)(uintptr_t)(
+        array + NETWASM_ARRAY_DATA_POINTER_OFFSET);
+    if (!element->value_registered) {
+        if (value != 0 && !is_assignable(value, element_id)) {
+            return 1;
+        }
+        collector_store_reference(array, (netwasm_reference_t *)(uintptr_t)data + index, value);
+        return 0;
+    }
+    void *slot = (void *)(uintptr_t)(data + (netwasm_address_t)index * element->value_size);
+    if (value == 0) {
+        collector_clear_value_range(array, slot, 1, element->value_size);
+        return 0;
+    }
+    u32 value_type_id = *(const u32 *)(uintptr_t)value;
+    u32 required_type_id = nullable_underlying_type_id != 0 ? nullable_underlying_type_id : element_id;
+    if (value_type_id != required_type_id) {
+        return 1;
+    }
+    if (required_type_id >= type_capacity ||
+        !type_descriptors[required_type_id].registered ||
+        !type_descriptors[required_type_id].value_registered) {
+        __builtin_trap();
+    }
+    TypeDescriptor *underlying = &type_descriptors[required_type_id];
+    if (nullable_underlying_type_id != 0) {
+        if (nullable_value_offset == 0 || nullable_value_offset > element->value_size ||
+            underlying->value_size > element->value_size - nullable_value_offset) {
+            __builtin_trap();
+        }
+        collector_clear_value_range(array, slot, 1, element->value_size);
+        *(unsigned char *)slot = 1;
+        slot = (unsigned char *)slot + nullable_value_offset;
+    }
+    collector_move_value_range(array, slot,
+        (const void *)(uintptr_t)(value + underlying->boxed_payload_offset),
+        1, underlying->value_size);
+    return 0;
+}
+#endif
 
 NETWASM_EXPORT("array_copy")
 u32 array_copy(

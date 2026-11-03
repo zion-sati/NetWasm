@@ -24,12 +24,15 @@ public readonly record struct PackedSimdWideInstruction(
     int LaneBytes,
     bool FlipsSign);
 
+// FlipsSign: an unsigned 64-bit lane comparison, which Wasm makes as the signed
+// one of both operands with their sign bits flipped.
 public readonly record struct PackedSimdInstruction(
     string Name,
     uint Opcode,
     PackedSimdShape Shape,
     int LaneBytes,
     bool SignedLane,
+    bool FlipsSign,
     PackedSimdWideInstruction Wide);
 
 // Upstream's System.Runtime.Intrinsics.Wasm.PackedSimd overloads, each one

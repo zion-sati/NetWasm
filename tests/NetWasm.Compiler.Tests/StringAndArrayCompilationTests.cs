@@ -204,14 +204,16 @@ public sealed class StringAndArrayCompilationTests
         Assert.Equal(0, result);
     }
 
-    // The ordinal text profile rejects every culture comparison the same way, whichever
-    // type takes it, and a value outside the enumeration stays an argument error.
+    // NetWasm runs upstream's invariant globalization mode: every culture comparison, explicit or
+    // implicit and whichever type takes it, compares ordinally or ordinal-ignore-case as .NET does
+    // with InvariantGlobalization, and a value outside the enumeration stays an argument error.
+    // Hash codes are randomized per process, so the fixture compares them rather than adding them.
     [Theory]
     [InlineData(false, WasmTarget.Wasm32)]
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm32)]
     [InlineData(true, WasmTarget.Wasm64)]
-    public void CultureComparisonsAreUnsupportedEverywhere(bool optimize, WasmTarget target)
+    public void CultureComparisonsFollowInvariantGlobalization(bool optimize, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
@@ -219,6 +221,8 @@ public sealed class StringAndArrayCompilationTests
             $"CultureComparisonProfile_{optimize}_{target}",
             """
             using System;
+            using System.Collections;
+            using System.Collections.Generic;
             using System.Text;
 
             namespace CultureComparisonProfile;
@@ -228,67 +232,180 @@ public sealed class StringAndArrayCompilationTests
                 public static int Run(int input)
                 {
                     const string text = "abcABC";
-                    Action<StringComparison>[] calls =
+                    Func<StringComparison, int>[] calls =
                     [
-                        comparison => _ = text.Equals("ABCabc", comparison),
-                        comparison => _ = string.Equals(text, "x", comparison),
-                        comparison => _ = string.Compare(text, "x", comparison),
-                        comparison => _ = string.Compare(text, 1, "x", 0, 1, comparison),
-                        comparison => _ = text.GetHashCode(comparison),
-                        comparison => _ = string.GetHashCode(text.AsSpan(), comparison),
-                        comparison => _ = text.IndexOf("b", comparison),
-                        comparison => _ = text.IndexOf('b', comparison),
-                        comparison => _ = text.LastIndexOf("b", comparison),
-                        comparison => _ = text.LastIndexOf('b', comparison),
-                        comparison => _ = text.Contains("b", comparison),
-                        comparison => _ = text.Contains('b', comparison),
-                        comparison => _ = text.StartsWith("a", comparison),
-                        comparison => _ = text.StartsWith('a', comparison),
-                        comparison => _ = text.EndsWith("C", comparison),
-                        comparison => _ = text.EndsWith('C', comparison),
-                        comparison => _ = text.Replace("b", "x", comparison),
-                        comparison => _ = 'a'.Equals('A', comparison),
-                        comparison => _ = new Rune('a').Equals(new Rune('A'), comparison),
-                        comparison => _ = StringComparer.FromComparison(comparison),
-                        comparison => _ = text.AsSpan().Equals("x".AsSpan(), comparison),
-                        comparison => _ = text.AsSpan().CompareTo("x".AsSpan(), comparison),
-                        comparison => _ = text.AsSpan().IndexOf("b".AsSpan(), comparison),
-                        comparison => _ = text.AsSpan().LastIndexOf("b".AsSpan(), comparison),
-                        comparison => _ = text.AsSpan().Contains("b".AsSpan(), comparison),
-                        comparison => _ = text.AsSpan().StartsWith("a".AsSpan(), comparison),
-                        comparison => _ = text.AsSpan().EndsWith("C".AsSpan(), comparison),
+                        comparison => text.Equals("ABCabc", comparison) ? 1 : 0,
+                        comparison => string.Equals("été", "ÉTÉ", comparison) ? 1 : 0,
+                        comparison => Math.Sign(string.Compare(text, "x", comparison)),
+                        comparison => Math.Sign(string.Compare(text, 1, "B", 0, 1, comparison)),
+                        comparison => text.GetHashCode(comparison) == "ABCABC".GetHashCode(comparison) ? 1 : 0,
+                        comparison => string.GetHashCode(text.AsSpan(), comparison) == text.GetHashCode(comparison) ? 1 : 0,
+                        comparison => text.IndexOf("B", comparison),
+                        comparison => text.IndexOf('B', comparison),
+                        comparison => text.LastIndexOf("b", comparison),
+                        comparison => text.Contains("Bc", comparison) ? 1 : 0,
+                        comparison => text.Contains('C', comparison) ? 1 : 0,
+                        comparison => text.StartsWith("AB", comparison) ? 1 : 0,
+                        comparison => text.EndsWith("abc", comparison) ? 1 : 0,
+                        comparison => Hash(text.Replace("B", "x", comparison)),
+                        comparison => 'a'.Equals('A', comparison) ? 1 : 0,
+                        comparison => new Rune('a').Equals(new Rune('A'), comparison) ? 1 : 0,
+                        comparison => Math.Sign(StringComparer.FromComparison(comparison).Compare(text, "ABCabc")),
+                        comparison => StringComparer.FromComparison(comparison).Equals("été", "ÉTÉ") ? 1 : 0,
+                        comparison => text.AsSpan().Equals("ABCabc".AsSpan(), comparison) ? 1 : 0,
+                        comparison => Math.Sign(text.AsSpan().CompareTo("x".AsSpan(), comparison)),
+                        comparison => text.AsSpan().IndexOf("C".AsSpan(), comparison),
+                        comparison => text.AsSpan().LastIndexOf("a".AsSpan(), comparison),
+                        comparison => text.AsSpan().Contains("cA".AsSpan(), comparison) ? 1 : 0,
+                        comparison => text.AsSpan().StartsWith("aBc".AsSpan(), comparison) ? 1 : 0,
+                        comparison => text.AsSpan().EndsWith("bC".AsSpan(), comparison) ? 1 : 0,
                     ];
 
+                    var checksum = 17;
                     for (var call = 0; call < calls.Length; call++)
                     {
-                        for (var comparison = StringComparison.CurrentCulture;
-                            comparison <= StringComparison.InvariantCultureIgnoreCase;
-                            comparison++)
+                        for (var comparison = StringComparison.CurrentCulture; comparison <= StringComparison.OrdinalIgnoreCase; comparison++)
                         {
-                            try
-                            {
-                                calls[call](comparison);
-                                return 100 + call;
-                            }
-                            catch (PlatformNotSupportedException) { }
-                            catch (Exception) { return 200 + call; }
+                            checksum = unchecked(checksum * 31 + calls[call](comparison) + 2);
                         }
                         try
                         {
                             calls[call]((StringComparison)6);
-                            return 300 + call;
+                            return -100 - call;
                         }
                         catch (ArgumentException) { }
-                        catch (Exception) { return 400 + call; }
-                        try { calls[call](StringComparison.OrdinalIgnoreCase); }
-                        catch (Exception) { return 500 + call; }
+                    }
+
+                    // The overloads that take the current culture implicitly.
+                    checksum = unchecked(checksum * 31 + Math.Sign(string.Compare("abc", "ABD")));
+                    checksum = unchecked(checksum * 31 + Math.Sign(string.Compare("abc", "ABD", ignoreCase: true)));
+                    checksum = unchecked(checksum * 31 + Math.Sign("apple".CompareTo("Banana")));
+                    checksum = unchecked(checksum * 31 + Math.Sign(Comparer<string>.Default.Compare("a", "B")));
+                    checksum = unchecked(checksum * 31 + Math.Sign(Comparer.Default.Compare("a", "B")));
+                    checksum = unchecked(checksum * 31 + Math.Sign(StringComparer.CurrentCultureIgnoreCase.Compare("é", "É")));
+                    checksum = unchecked(checksum * 31 + (StringComparer.InvariantCulture.Equals("a", "A") ? 1 : 0));
+                    checksum = unchecked(checksum * 31 + ("hello".StartsWith("He") ? 1 : 0) + ("hello".EndsWith("LO") ? 2 : 0));
+                    checksum = unchecked(checksum * 31 + "hello".IndexOf("L") + "hello".LastIndexOf("l"));
+                    checksum = unchecked(checksum * 31 + Hash("Été straße".ToUpper()) + Hash("ÉTÉ STRASSE".ToLower()));
+                    checksum = unchecked(checksum * 31 + Hash(string.Join(",", Sorted(["b", "A", "a", "B", "é", "E"]))));
+                    return checksum + input;
+                }
+
+                private static string[] Sorted(string[] values)
+                {
+                    Array.Sort(values);
+                    return values;
+                }
+
+                private static int Hash(string value)
+                {
+                    var hash = 7;
+                    foreach (var character in value) hash = unchecked(hash * 31 + character);
+                    return hash;
+                }
+            }
+            """,
+            "CultureComparisonProfile.EntryPoint",
+            optimize,
+            target,
+            41,
+            []));
+
+        // As .NET 11 computes it with InvariantGlobalization.
+        Assert.Equal(1041728972, result);
+    }
+
+    // A span of a string views the string's own characters rather than a copy, and string
+    // members reject bad arguments with the exception type and parameter name .NET 11 reports.
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(false, WasmTarget.Wasm64)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void StringSpansViewTheStringAndArgumentErrorsNameTheParameter(bool optimize, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+        var result = executor.Execute(new CompilationScenario(
+            $"StringSpanView_{optimize}_{target}",
+            """
+            using System;
+            using System.Runtime.CompilerServices;
+            using System.Runtime.InteropServices;
+
+            namespace StringSpanView;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    var text = new string('x', input);
+                    ReadOnlySpan<char> converted = text;
+                    ref readonly var first = ref text.GetPinnableReference();
+                    if (!Unsafe.AreSame(ref MemoryMarshal.GetReference(converted), ref Unsafe.AsRef(in first)))
+                        return 1;
+                    if (!Unsafe.AreSame(ref MemoryMarshal.GetReference(text.AsSpan(3)), ref Unsafe.Add(ref Unsafe.AsRef(in first), 3)))
+                        return 2;
+                    if (!Unsafe.AreSame(ref MemoryMarshal.GetReference(((ReadOnlyMemory<char>)text.AsMemory(5)).Span), ref Unsafe.Add(ref Unsafe.AsRef(in first), 5)))
+                        return 3;
+
+                    string[] expected =
+                    [
+                        "ArgumentOutOfRangeException:startIndex",
+                        "ArgumentOutOfRangeException:length",
+                        "ArgumentOutOfRangeException:startIndex",
+                        "ArgumentOutOfRangeException:count",
+                        "ArgumentNullException:oldValue",
+                        "ArgumentException:oldValue",
+                        "ArgumentOutOfRangeException:count",
+                        "ArgumentNullException:value",
+                        "ArgumentOutOfRangeException:startIndex",
+                        "ArgumentOutOfRangeException:count",
+                        "ArgumentOutOfRangeException:totalWidth",
+                        "ArgumentOutOfRangeException:count",
+                        "ArgumentOutOfRangeException:length1",
+                        "ArgumentOutOfRangeException:startIndex",
+                        "ArgumentNullException:value",
+                    ];
+                    Action[] calls =
+                    [
+                        () => _ = "abc".Substring(-1),
+                        () => _ = "abc".Substring(2, 2),
+                        () => _ = "abc".IndexOf('a', -1),
+                        () => _ = "abc".IndexOf("a", 1, 5),
+                        () => _ = "abc".Replace(null!, "x"),
+                        () => _ = "abc".Replace("", "x"),
+                        () => _ = new string('x', -1),
+                        () => _ = string.Join(",", (string[])null!),
+                        () => _ = "abc".Insert(4, "x"),
+                        () => _ = "abc".Remove(1, 5),
+                        () => _ = "abc".PadLeft(-1),
+                        () => _ = "abc".Split(',', -1),
+                        () => _ = string.Compare("a", 0, "b", 0, -1),
+                        () => _ = "abc".LastIndexOf('c', 3),
+                        () => _ = "abc".StartsWith(null!),
+                    ];
+                    for (var call = 0; call < calls.Length; call++)
+                    {
+                        string reported;
+                        try
+                        {
+                            calls[call]();
+                            reported = "none";
+                        }
+                        catch (ArgumentException exception)
+                        {
+                            reported = exception.GetType().Name + ":" + exception.ParamName;
+                        }
+                        if (reported != expected[call])
+                            return 10 + call;
                     }
 
                     return input - input;
                 }
             }
             """,
-            "CultureComparisonProfile.EntryPoint",
+            "StringSpanView.EntryPoint",
             optimize,
             target,
             41,
@@ -520,12 +637,15 @@ public sealed class StringAndArrayCompilationTests
         Assert.Equal(53, ExecuteWithNode(result.ApplicationModule, assets.Directory, 41));
     }
 
+    // string.GetHashCode is upstream's per-process Marvin hash, so the fixture checks that a string,
+    // its copy and a span of it hash alike, and that dictionaries, which hash strings with
+    // upstream's non-randomized comparer, find a key through a span framed by other characters.
     [Theory]
     [InlineData(false, WasmTarget.Wasm32)]
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm32)]
     [InlineData(true, WasmTarget.Wasm64)]
-    public void OrdinalHashUsesBoundedPackedPairs(bool optimize, WasmTarget target)
+    public void OrdinalHashesAgreeForStringsSpansAndLookups(bool optimize, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
@@ -630,58 +750,29 @@ public sealed class StringAndArrayCompilationTests
 
                 private static bool Matches(string value)
                 {
-                    var expected = Expected(value);
-                    if (value.GetHashCode() != expected ||
-                        StringComparer.Ordinal.GetHashCode(value) != expected)
+                    var hash = value.GetHashCode();
+                    if (StringComparer.Ordinal.GetHashCode(value) != hash ||
+                        string.GetHashCode(value.AsSpan()) != hash ||
+                        new string(value.ToCharArray()).GetHashCode() != hash)
                         return false;
 
+                    var framed = "#" + value + "@";
+                    var span = framed.AsSpan(1, value.Length);
+                    if (string.GetHashCode(span) != hash)
+                        return false;
+
+                    var defaultDictionary = new Dictionary<string, int> { [value] = 13 };
                     var dictionary = new Dictionary<string, int>(StringComparer.Ordinal)
                     {
                         [value] = 17,
                     };
-                    var framed = "#" + value + "@";
-                    var alternate = dictionary.GetAlternateLookup<ReadOnlySpan<char>>();
-                    return alternate.TryGetValue(framed.AsSpan(1, value.Length), out var found) &&
+                    return defaultDictionary.GetAlternateLookup<ReadOnlySpan<char>>()
+                            .TryGetValue(span, out var defaultFound) &&
+                        defaultFound == 13 &&
+                        dictionary.GetAlternateLookup<ReadOnlySpan<char>>()
+                            .TryGetValue(span, out var found) &&
                         found == 17;
                 }
-
-                private static int Expected(string value)
-                {
-                    var hash1 = (5381u << 16) + 5381u;
-                    var hash2 = hash1;
-                    var index = 0;
-                    var remaining = value.Length;
-
-                    while (remaining >= 4)
-                    {
-                        hash1 = (RotateLeft(hash1, 5) + hash1) ^ ReadPair(value, index);
-                        hash2 = (RotateLeft(hash2, 5) + hash2) ^ ReadPair(value, index + 2);
-                        index += 4;
-                        remaining -= 4;
-                    }
-
-                    switch (remaining)
-                    {
-                        case 3:
-                            hash1 = (RotateLeft(hash1, 5) + hash1) ^ ReadPair(value, index);
-                            hash2 = (RotateLeft(hash2, 5) + hash2) ^ value[index + 2];
-                            break;
-                        case 2:
-                            hash2 = (RotateLeft(hash2, 5) + hash2) ^ ReadPair(value, index);
-                            break;
-                        case 1:
-                            hash2 = (RotateLeft(hash2, 5) + hash2) ^ value[index];
-                            break;
-                    }
-
-                    return unchecked((int)(hash1 + (hash2 * 1_566_083_941)));
-                }
-
-                private static uint ReadPair(string value, int index) =>
-                    value[index] | ((uint)value[index + 1] << 16);
-
-                private static uint RotateLeft(uint value, int offset) =>
-                    (value << offset) | (value >> (32 - offset));
             }
 
             public sealed class CountingComparer : IEqualityComparer<string>
@@ -739,19 +830,13 @@ public sealed class StringAndArrayCompilationTests
                     catch (System.ArgumentNullException) { passed++; }
                     try { _ = "abc".Replace("", "x"); }
                     catch (System.ArgumentException) { passed++; }
-                    try
-                    {
-                        _ = "a".StartsWith(
-                            "too long",
-                            System.StringComparison.CurrentCulture);
-                    }
-                    catch (System.PlatformNotSupportedException) { passed++; }
-                    try { _ = System.StringComparer.InvariantCulture; }
-                    catch (System.PlatformNotSupportedException) { passed++; }
+                    if (!"a".StartsWith("too long", System.StringComparison.CurrentCulture)) passed++;
+                    if (System.StringComparer.InvariantCulture.Equals("a", "a") &&
+                        !System.StringComparer.InvariantCulture.Equals("a", "A")) passed++;
                     try { _ = new string('x', -1); }
                     catch (System.ArgumentOutOfRangeException) { passed++; }
                     try { _ = new string('x', int.MaxValue); }
-                    catch (System.OutOfMemoryException) { passed++; }
+                    catch (System.OverflowException) { passed++; }
                     try
                     {
                         string? value = null;

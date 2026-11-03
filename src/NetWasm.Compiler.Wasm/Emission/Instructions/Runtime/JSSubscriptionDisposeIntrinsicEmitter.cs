@@ -1,5 +1,4 @@
 using NetWasm.Compiler.Wasm.Encoding;
-using System;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.Emission.Planning;
@@ -16,7 +15,12 @@ internal sealed class JSSubscriptionDisposeIntrinsicEmitter(
         var release = request.Instruction.Target.InteropImports.ReleaseSubscription;
         if (!release.IsPresent)
         {
-            throw new InvalidOperationException("host subscription support was not emitted");
+            // Without the host's release import no JavaScript import ran to give
+            // an object a handle, so there is none to release: a program that
+            // reaches Dispose without a JavaScript host keeps only its null check.
+            EmitNullCheck(code, request.Local(0, CliValueKind.ManagedReference),
+                request.Instruction.Context.ManagedThrowFunction);
+            return;
         }
         EmitDispose(request, code, release.Value);
     }

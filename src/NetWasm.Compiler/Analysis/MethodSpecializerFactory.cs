@@ -70,6 +70,7 @@ internal sealed class MethodSpecializerFactory(
                 methods,
                 methodInstances,
                 symbols),
+            new StringConstructorRewriter(calledMethods, types, methods, methodInstances, symbols),
             new CreateSpanCallRewriter(
                 calledMethods,
                 new ReadOnlySpanDataResolver()),
@@ -123,6 +124,8 @@ internal sealed class MethodSpecializerFactory(
             new NonReturningCallRewriter(calledMethods, methodBodies, intrinsics),
             new KnownSizeRewriter(calledMethods),
             new BitCastCallRewriter(calledMethods, types, methods, methodInstances, symbols),
+            new VectorElementReadRewriter(calledMethods, types, methods, methodInstances, symbols),
+            new ConstantStaticFieldRewriter(fields, typeIdentities, typeDefinitions, methods, methodBodies),
             ConstantBranchFoldingFactory.Create(_graphBuilders.Create()),
         ]);
     }

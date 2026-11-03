@@ -27,7 +27,8 @@ internal sealed class ManagedMethodInliner(
         MethodInstanceModel caller,
         CilMethodBody body,
         IReadOnlyDictionary<int, ImmutableArray<CliValueKind>> instructionEntryStacks,
-        bool nested = false)
+        bool nested = false,
+        bool smallOnly = false)
     {
         ArgumentNullException.ThrowIfNull(caller);
         ArgumentNullException.ThrowIfNull(body);
@@ -69,6 +70,7 @@ internal sealed class ManagedMethodInliner(
                 : _resolver.Resolve(new(caller, instruction)
                 {
                     Nested = nested,
+                    SmallOnly = smallOnly,
                     InLoop = loops.Any(loop => loop.Start <= instruction.Offset && instruction.Offset <= loop.End),
                 });
             if (plan is null ||

@@ -9,8 +9,6 @@ public sealed class KnownNonBugCorpusPartitionerTests
     private static readonly ImmutableDictionary<string, ImmutableArray<int>> ExpectedSkippedInputs =
         new Dictionary<string, ImmutableArray<int>>(StringComparer.Ordinal)
         {
-            [CorpusCaseTestData.FixedIntegerArithmetic] = [1377, 4864],
-            [CorpusCaseTestData.NativeArithmetic] = [703],
             [CorpusCaseTestData.UnsignedPrecision] = [40, 41],
             [CorpusCaseTestData.NativeFloating] =
                 [728, 729, 732, 733, 844, 845, 848, 849, 960, 961, 964, 965],
@@ -87,13 +85,13 @@ public sealed class KnownNonBugCorpusPartitionerTests
     [Fact]
     public void StaleOrWholeCaseRuleCannotHideARegression()
     {
-        var manifest = CorpusCaseTestData.Get(CorpusCaseTestData.FixedIntegerArithmetic);
+        var manifest = CorpusCaseTestData.Get(CorpusCaseTestData.UnsignedPrecision);
         var cell = new CorpusMatrixExpander().Expand(manifest.InputKind,
             new(manifest.MatrixProfile, Backend: manifest.ExecutionBackend))[0];
         Assert.Throws<InvalidOperationException>(() => KnownNonBugCorpusPartitioner.Partition(
-            manifest with { Inputs = manifest.Inputs.Where(input => input != 1377).ToImmutableArray() }, cell));
+            manifest with { Inputs = manifest.Inputs.Where(input => input != 40).ToImmutableArray() }, cell));
         Assert.Throws<InvalidOperationException>(() => KnownNonBugCorpusPartitioner.Partition(
-            manifest with { Inputs = [1377, 4864], Expectations = [] }, cell));
+            manifest with { Inputs = [40, 41], Expectations = [] }, cell));
     }
 
     [Fact]
@@ -111,12 +109,6 @@ public sealed class KnownNonBugCorpusPartitionerTests
     {
         var markers = new (Type Owner, string Method, string Reason)[]
         {
-            (typeof(IntegerArithmeticEdgeTests),
-                nameof(IntegerArithmeticEdgeTests.FixedUncheckedMinimumRemainderDesktopChoiceIsNotRequired),
-                KnownNonBugSkipReasons.UncheckedRemainder),
-            (typeof(IntegerArithmeticEdgeTests),
-                nameof(IntegerArithmeticEdgeTests.NativeUncheckedMinimumRemainderDesktopChoiceIsNotRequired),
-                KnownNonBugSkipReasons.UncheckedRemainder),
             (typeof(NumericConversionEdgeTests),
                 nameof(NumericConversionEdgeTests.UnsignedToSingleDesktopExactBitsAreNotRequired),
                 KnownNonBugSkipReasons.UnsignedSinglePrecision),

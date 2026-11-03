@@ -13,6 +13,9 @@ internal sealed record ArrayMetadataCachingPlan(
 
     public ImmutableDictionary<StructuredBlockId, ImmutableArray<ArrayReferenceSlot>> LoopEntries { get; init; } = [];
 
+    // The rank of each slot holding an array of rank two or more; the others hold SZ arrays.
+    public ImmutableDictionary<ArrayReferenceSlot, int> Ranks { get; init; } = [];
+
     // Arrays each loop checks for null on entry, keyed by its condition block.
     public ImmutableDictionary<StructuredBlockId, ImmutableArray<ArrayReferenceSlot>> EntryNullChecks { get; init; } = [];
 

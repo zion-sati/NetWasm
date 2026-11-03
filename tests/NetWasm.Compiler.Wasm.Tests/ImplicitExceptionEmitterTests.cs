@@ -11,19 +11,24 @@ using static NetWasm.Compiler.Wasm.Tests.EmitterTestSupport;
 
 public sealed class ImplicitExceptionEmitterTests
 {
+    // A check passes managed.throw its kind's tag; managed.throw throws the
+    // exception the kind's CoreLib getter returns.
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void SharedThrowEmitsReferenceCallAndUnreachable(bool memory64)
+    [InlineData(false, ManagedExceptionKind.NullReference)]
+    [InlineData(true, ManagedExceptionKind.NullReference)]
+    [InlineData(false, ManagedExceptionKind.ArrayTypeMismatch)]
+    [InlineData(false, ManagedExceptionKind.OutOfMemory)]
+    [InlineData(true, ManagedExceptionKind.OutOfMemory)]
+    public void ThrowPassesTheKindsTag(bool memory64, ManagedExceptionKind kind)
     {
         var layouts = new RecordingLayoutProvider(
             memory64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32);
         var writer = new RecordingInstructionWriter();
-        var emitter = new ImplicitExceptionEmitter(layouts, layouts);
+        var emitter = new ImplicitExceptionEmitter(layouts);
 
         emitter.Emit(
             writer,
-            ManagedExceptionKind.NullReference,
+            kind,
             OptionalFunctionIndex.At(27));
 
         var instructions = writer.ToInstructions();
@@ -31,7 +36,7 @@ public sealed class ImplicitExceptionEmitterTests
         Assert.Equal(
             memory64 ? WasmOpcodes.I64Constant : WasmOpcodes.I32Constant,
             instructions[0].Opcode);
-        Assert.Equal(300L, memory64
+        Assert.Equal(RuntimeExceptionGetters.Tag(kind), memory64
             ? instructions[0].Operand.Signed64Value
             : instructions[0].Operand.SignedValue);
         Assert.Equal(WasmOpcodes.Call, instructions[1].Opcode);
@@ -45,7 +50,7 @@ public sealed class ImplicitExceptionEmitterTests
     {
         var layouts = new RecordingLayoutProvider();
         var writer = new RecordingInstructionWriter();
-        var emitter = new ImplicitExceptionEmitter(layouts, layouts);
+        var emitter = new ImplicitExceptionEmitter(layouts);
 
         Assert.Throws<ArgumentNullException>(() => emitter.Emit(
             null!,

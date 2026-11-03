@@ -75,9 +75,9 @@ internal static class SimdVectorIntrinsicClassifier
             "WidenLower" when Unary(method) => RuntimeIntrinsic.SimdWidenLower,
             "WidenUpper" when Unary(method) => RuntimeIntrinsic.SimdWidenUpper,
             "Narrow" when Binary(method) => RuntimeIntrinsic.SimdNarrow,
-            // ConvertToInt32, ConvertToSingle, ConvertToDouble and the rest, with
-            // their Native variants.
-            var name when name.StartsWith("ConvertTo", StringComparison.Ordinal) && Unary(method) =>
+            "ConvertToDouble" or "ConvertToSingle" or "ConvertToInt32" or "ConvertToInt32Native" or
+                "ConvertToInt64" or "ConvertToInt64Native" or "ConvertToUInt32" or "ConvertToUInt32Native" or
+                "ConvertToUInt64" or "ConvertToUInt64Native" when Unary(method) =>
                 RuntimeIntrinsic.SimdConvert,
             "BitwiseAnd" when Binary(method) => RuntimeIntrinsic.SimdBitwiseAnd,
             "BitwiseOr" when Binary(method) => RuntimeIntrinsic.SimdBitwiseOr,
@@ -139,9 +139,14 @@ internal static class SimdVectorIntrinsicClassifier
                     [var vector, { CanonicalName: "primitive:i4" }, { Shape: CliTypeShape.GenericMethodParameter }] &&
                 IsVector(vector) && IsVector(method.Signature.ReturnSignatureType) =>
                 RuntimeIntrinsic.SimdWithElement,
-            // As<TFrom, TTo>, AsByte, AsVectorInt64, AsVector128 and the rest:
-            // the same 16 bytes viewed with another element type.
-            var name when name.StartsWith("As", StringComparison.Ordinal) && Unary(method) =>
+            // The same 16 bytes viewed with another element type. The names are
+            // listed: Asin, and whatever upstream adds, keeps its managed body.
+            "As" or "AsByte" or "AsSByte" or "AsInt16" or "AsUInt16" or "AsInt32" or "AsUInt32" or
+                "AsInt64" or "AsUInt64" or "AsNInt" or "AsNUInt" or "AsSingle" or "AsDouble" or
+                "AsVector" or "AsVector128" or "AsVectorByte" or "AsVectorSByte" or "AsVectorInt16" or
+                "AsVectorUInt16" or "AsVectorInt32" or "AsVectorUInt32" or "AsVectorInt64" or
+                "AsVectorUInt64" or "AsVectorNInt" or "AsVectorNUInt" or "AsVectorSingle" or
+                "AsVectorDouble" when Unary(method) =>
                 RuntimeIntrinsic.SimdReinterpret,
             "ToScalar" when method.GenericArity == 1 &&
                 method.Signature.ParameterSignatureTypes is [var vector] && IsVector(vector) &&

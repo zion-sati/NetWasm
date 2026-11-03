@@ -22,6 +22,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
     private readonly Dictionary<EntityKey, FieldLayout> _fields;
     private readonly Dictionary<string, FieldLayout> _constructedFields;
     private readonly IValueLayoutResolver _valueLayouts;
+    private readonly IExplicitValueLayoutResolver _explicitLayouts;
 
     public ManagedObjectLayoutBuilder(
         ITypeRepository typeRepository,
@@ -33,7 +34,8 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         IMetadataIdentityBaseTypeResolver identityBaseTypes,
         WasmTargetLayout target,
         ManagedTypeLayoutBuildState state,
-        IValueLayoutResolver valueLayouts)
+        IValueLayoutResolver valueLayouts,
+        IExplicitValueLayoutResolver explicitLayouts)
     {
         _typeRepository = typeRepository ?? throw new ArgumentNullException(nameof(typeRepository));
         _fieldsRepository = fields ?? throw new ArgumentNullException(nameof(fields));
@@ -49,6 +51,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         _fields = state.ValueLayouts.Fields;
         _constructedFields = state.ValueLayouts.ConstructedFields;
         _valueLayouts = valueLayouts ?? throw new ArgumentNullException(nameof(valueLayouts));
+        _explicitLayouts = explicitLayouts ?? throw new ArgumentNullException(nameof(explicitLayouts));
     }
 
     public ObjectLayout Build(EntityKey typeKey)
@@ -61,7 +64,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         {
             var identity = _identities.GetTypeIdentity(typeKey);
             var metadata = new ObjectLayout(
-                _state.NextTypeId++,
+                NewTypeId(null),
                 AlignObject(_target.ObjectHeaderSize),
                 []);
             _state.Objects.Add(typeKey, metadata);
@@ -70,11 +73,12 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         }
         if (type.IsValueType)
         {
-            if (_entityBaseTypes.GetBaseType(typeKey) is EntityKey valueBase)
-                Build(valueBase);
+            ObjectLayout? valueBaseLayout = _entityBaseTypes.GetBaseType(typeKey) is EntityKey valueBase
+                ? Build(valueBase)
+                : null;
 
             var identity = _identities.GetTypeIdentity(typeKey);
-            var boxed = CreateValueTypeObjectLayout(identity);
+            var boxed = CreateValueTypeObjectLayout(identity, valueBaseLayout);
             _state.Objects.Add(typeKey, boxed);
             _state.ObjectIdentities.Add(identity, boxed);
             PublishWellKnownLayout(typeKey, type, boxed);
@@ -86,7 +90,11 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         var offset = baseLayout?.Size ?? _target.ObjectHeaderSize;
         var referenceOffsets = baseLayout?.ReferenceOffsets.ToBuilder() ??
             ImmutableArray.CreateBuilder<int>();
-        foreach (var field in type.Fields
+        if (type.LayoutKind == CliTypeLayoutKind.Explicit)
+        {
+            offset = PlaceExplicitFields(_identities.GetTypeIdentity(typeKey), type, baseType, offset, referenceOffsets);
+        }
+        else foreach (var field in type.Fields
                      .Select(_fieldsRepository.GetField)
                      .Where(field => !field.IsStatic)
                      .OrderBy(field => field.Key.MetadataToken))
@@ -116,7 +124,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         }
 
         var layout = new ObjectLayout(
-            _state.NextTypeId++,
+            NewTypeId(baseLayout),
             AlignObject(offset),
             referenceOffsets.ToImmutable());
         _state.Objects.Add(typeKey, layout);
@@ -133,7 +141,7 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
             CliTypeShape.UnmanagedPointer)
         {
             var semanticIdentity = new ObjectLayout(
-                _state.NextTypeId++,
+                NewTypeId(null),
                 AlignObject(_target.ObjectHeaderSize),
                 []);
             _state.ConstructedObjects.Add(type, semanticIdentity);
@@ -150,14 +158,14 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
                 var rectangularReferences = array.ReferenceOffsets.ToBuilder();
                 rectangularReferences.Add(rectangular.ShapePointerOffset);
                 var rectangularIdentity = new ObjectLayout(
-                    _state.NextTypeId++,
+                    NewTypeId(array),
                     rectangular.ObjectSize,
                     rectangularReferences.ToImmutable());
                 _state.ConstructedObjects.Add(type, rectangularIdentity);
                 return rectangularIdentity;
             }
             var arrayIdentity = new ObjectLayout(
-                _state.NextTypeId++, array.Size, array.ReferenceOffsets);
+                NewTypeId(array), array.Size, array.ReferenceOffsets);
             _state.ConstructedObjects.Add(type, arrayIdentity);
             return arrayIdentity;
         }
@@ -165,13 +173,18 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         var definition = _typeDefinitions.ResolveTypeIdentity(type);
         if (type.IsValueType)
         {
-            if (_identityBaseTypes.GetBaseType(type) is CliTypeIdentity valueBase)
-                BuildBaseObjectLayout(valueBase);
-            var boxed = CreateValueTypeObjectLayout(type);
+            // A value type instantiation derives from System.ValueType.
+            var boxed = CreateValueTypeObjectLayout(type, BuildBaseObjectLayout(_identityBaseTypes.GetBaseType(type)!));
             _state.ConstructedObjects.Add(type, boxed);
             return boxed;
         }
 
+        // Only generic instantiations reach here, and .NET loads no generic type
+        // with explicit layout.
+        if (definition.LayoutKind == CliTypeLayoutKind.Explicit)
+        {
+            throw UnsupportedLayout(type, "generic explicit layout");
+        }
         var baseType = _identityBaseTypes.GetBaseType(type);
         ObjectLayout? baseLayout = baseType is null ? null : BuildBaseObjectLayout(baseType);
         var offset = baseLayout?.Size ?? _target.ObjectHeaderSize;
@@ -197,19 +210,19 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         }
 
         var layout = new ObjectLayout(
-            _state.NextTypeId++,
+            NewTypeId(baseLayout),
             AlignObject(offset),
             references.ToImmutable());
         _state.ConstructedObjects.Add(type, layout);
         return layout;
     }
 
-    private ObjectLayout CreateValueTypeObjectLayout(CliTypeIdentity type)
+    private ObjectLayout CreateValueTypeObjectLayout(CliTypeIdentity type, ObjectLayout? baseLayout)
     {
         if (!type.HasRuntimeStorage)
         {
             return new ObjectLayout(
-                _state.NextTypeId++,
+                NewTypeId(baseLayout),
                 AlignObject(_target.ObjectHeaderSize),
                 []);
         }
@@ -217,9 +230,16 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         var value = _valueLayouts.Resolve(type);
         var payloadOffset = Align(_target.ObjectHeaderSize, value.Alignment);
         return new ObjectLayout(
-            _state.NextTypeId++,
+            NewTypeId(baseLayout),
             AlignObject(payloadOffset + value.Size),
             [.. value.ReferenceOffsets.Select(offset => payloadOffset + offset)]);
+    }
+
+    private int NewTypeId(ObjectLayout? baseLayout)
+    {
+        var typeId = _state.NextTypeId++;
+        _state.BaseTypeIds.Add(typeId, baseLayout?.TypeId ?? 0);
+        return typeId;
     }
 
     private ObjectLayout BuildBaseObjectLayout(CliTypeIdentity type) =>
@@ -238,6 +258,42 @@ internal sealed class ManagedObjectLayoutBuilder : IManagedObjectLayoutBuilder
         }
         _state.ObjectsByName.Add(type.FullName, layout);
     }
+
+    // An explicit-layout class's offsets count from the end of its base's
+    // fields, as CoreCLR's do, and the overlaps they allow are a struct's: no
+    // reference may share bytes with anything but the same reference. As in
+    // CoreCLR, its base must lay out its own fields, unless it is object.
+    private int PlaceExplicitFields(
+        CliTypeIdentity type,
+        TypeDefinitionModel definition,
+        CliTypeIdentity? baseType,
+        int baseEnd,
+        ImmutableArray<int>.Builder references)
+    {
+        if (baseType is not null && _typeDefinitions.ResolveTypeIdentity(baseType) is
+            { LayoutKind: CliTypeLayoutKind.Auto, FullName: not "System.Object" })
+        {
+            throw UnsupportedLayout(type, $"explicit layout over the automatic layout of '{baseType}'");
+        }
+        var instanceFields = definition.Fields
+            .Select(_fieldsRepository.GetField)
+            .Where(field => !field.IsStatic)
+            .OrderBy(field => field.Key.MetadataToken)
+            .ToArray();
+        var plan = _explicitLayouts.Resolve(type, definition,
+            [.. instanceFields.Select(field => new ExplicitFieldStorage(field, _valueLayouts.Resolve(field.SignatureType)))],
+            _target);
+        var start = AlignObject(baseEnd);
+        for (var index = 0; index < instanceFields.Length; index++)
+        {
+            _fields.Add(instanceFields[index].Key, plan.Fields[index] with { Offset = start + plan.Fields[index].Offset });
+        }
+        references.AddRange(plan.Value.ReferenceOffsets.Select(reference => start + reference));
+        return start + plan.Value.Size;
+    }
+
+    private static CompilerException UnsupportedLayout(CliTypeIdentity type, string reason) =>
+        new(new CompilerDiagnostic(DiagnosticCode.UnsupportedMetadata, $"unsupported layout for '{type}': {reason}"));
 
     private int AlignObject(int value) => Align(value, _target.ObjectReferenceAlignment);
 

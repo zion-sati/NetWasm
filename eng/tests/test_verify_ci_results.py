@@ -27,6 +27,7 @@ class CiResultTests(unittest.TestCase):
             "verify-packages": "skipped",
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
+            "doomsharp": "skipped",
         })
 
     def test_ci_scope_accepts_only_ci_infrastructure_gate(self):
@@ -43,6 +44,7 @@ class CiResultTests(unittest.TestCase):
             "verify-packages": "skipped",
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
+            "doomsharp": "skipped",
         })
 
     def test_full_scope_accepts_every_heavy_gate(self):
@@ -59,6 +61,7 @@ class CiResultTests(unittest.TestCase):
             "verify-packages": "success",
             "runtime-pack-hosts": "success",
             "browser-hosts": "success",
+            "doomsharp": "success",
         })
 
     def test_reuse_scope_accepts_only_the_qualification_gate(self):
@@ -75,6 +78,7 @@ class CiResultTests(unittest.TestCase):
             "verify-packages": "skipped",
             "runtime-pack-hosts": "skipped",
             "browser-hosts": "skipped",
+            "doomsharp": "skipped",
         })
 
     def test_failed_impact_unknown_scope_and_missing_gate_fail(self):
@@ -96,6 +100,7 @@ class CiResultTests(unittest.TestCase):
                 "verify-packages": "success",
                 "runtime-pack-hosts": "failure",
                 "browser-hosts": "skipped",
+                "doomsharp": "skipped",
             })
 
     def test_failed_compiler_shards_fail_a_full_run(self):
@@ -113,6 +118,7 @@ class CiResultTests(unittest.TestCase):
                 "verify-packages": "success",
                 "runtime-pack-hosts": "success",
                 "browser-hosts": "success",
+                "doomsharp": "success",
             })
 
 

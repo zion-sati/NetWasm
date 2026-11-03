@@ -27,7 +27,21 @@ internal interface IElementwiseLoopVectorizer
 // computed once and broadcast. Iterations depend on one another only through an
 // array written at one offset and read or written at another; the same array
 // that way is not vectorized, and two arrays that way run the vector loop only
-// when they are different objects.
+// when they are different objects. A statement `x = x op value` folds such a
+// value into an integer local x with a wrapping addition or a bitwise
+// operation, each associative and commutative: the vector loop folds lanes into
+// a vector that starts at the operation's identity, x then takes the fold of its
+// lanes, and the loop folds what is left. A fold reads only arrays the loop does
+// not write. A copy of an element into a local, as foreach makes, is that
+// element where the body reads it, and the vector loop leaves it the last one.
+//
+// Roslyn's `do { x += p | 1; p = ref Unsafe.Add(ref p, 1); n--; } while (n != 0)`
+// walks a reference over n elements instead. Where the loop's only other entry
+// falls into its head and its body only folds and copies the element p
+// points to, a vector loop ahead of the head runs while n, unsigned, holds
+// `lanes` elements, advancing p and n alike; it leaves past the loop when n
+// reaches zero, and otherwise the loop runs what is left. A loop entered with
+// n below `lanes`, zero included, runs as before.
 internal sealed class ElementwiseLoopVectorizer(
     IVectorLoopMethodResolver methods,
     ICalledMethodResolver calledMethods,
@@ -47,8 +61,9 @@ internal sealed class ElementwiseLoopVectorizer(
     // A value the loop does not change, pushed by Code.
     private sealed record Invariant(ImmutableArray<CilInstruction> Code, CliValueKind Kind) : Node;
 
-    // Array[counter + Offset], of the element type Type.
-    private sealed record Element(CilInstruction Array, int Offset, CliTypeIdentity Type) : Node;
+    // Array[counter + Offset], of the element type Type; or, ByReference, the
+    // element Offset after the one the reference Array points to.
+    private sealed record Element(CilInstruction Array, int Offset, CliTypeIdentity Type, bool ByReference = false) : Node;
 
     private sealed record Unary(CilOperation Operation, Node Operand) : Node;
 
@@ -57,19 +72,31 @@ internal sealed class ElementwiseLoopVectorizer(
     // A shift by the constant Count.
     private sealed record Shift(CilOperation Operation, Node Value, int Count) : Node;
 
+    // A local's value before this iteration's fold of it.
+    private sealed record Accumulator(int Local) : Node;
+
+    // The walking reference, which only an element load may read.
+    private sealed record Reference(CilInstruction Load) : Node;
+
     private sealed record Store(CilInstruction Array, int Offset, CliTypeIdentity Type, Node Value);
+
+    // Local = Local Operation Value.
+    private sealed record Fold(int Local, CilOperation Operation, Node Value);
 
     private sealed record Loop(
         int Counter,
         CilInstruction[] End,
         List<Store> Stores,
+        List<Fold> Folds,
         Dictionary<int, Linear> Aliases,
+        Dictionary<int, Element> Copies,
         CliValueKind Kind);
 
     public CilMethodBody Rewrite(CilMethodBody body)
     {
         ArgumentNullException.ThrowIfNull(body);
-        if (!enabled || !body.Instructions.Any(static instruction => instruction.Operation == CilOperation.StoreArrayElement))
+        if (!enabled || !body.Instructions.Any(static instruction =>
+                instruction.Operation is CilOperation.StoreArrayElement or CilOperation.LoadArrayElement or CilOperation.LoadObject))
         {
             return body;
         }
@@ -90,13 +117,27 @@ internal sealed class ElementwiseLoopVectorizer(
             if (instructions[jump] is not { Operation: CilOperation.Branch, Operand: CilOperand.BranchTarget { Offset: var test } } ||
                 branches[test] != 1 ||
                 !indices.TryGetValue(test, out var condition) || condition <= jump + 4 ||
-                Match(instructions, jump, condition) is not { } loop)
+                Match(instructions, jump, condition, body.Locals) is not { } loop)
             {
                 continue;
             }
             replacements ??= [.. instructions.Select(static instruction => new List<CilInstruction> { instruction })];
             var prefix = Prefix(test, loop, locals, localTypes, out var loopDepth);
             replacements[jump] = [.. prefix, instructions[jump]];
+            depth = Math.Max(depth, loopDepth);
+        }
+        foreach (var counted in CountedWalks.Find(body, _calledMethods))
+        {
+            // The instruction ahead of a walk falls into it, so it is no element
+            // loop's entry jump, which the prefixes above replace.
+            var start = counted.Head;
+            if (MatchReference(counted, body.Locals) is not { } walk)
+            {
+                continue;
+            }
+            replacements ??= [.. instructions.Select(static instruction => new List<CilInstruction> { instruction })];
+            replacements[start - 1] = ReferencePrefix(
+                instructions[start - 1], walk, instructions[counted.Back + 1].Offset, locals, localTypes, out var loopDepth);
             depth = Math.Max(depth, loopDepth);
         }
         return replacements is null
@@ -109,7 +150,7 @@ internal sealed class ElementwiseLoopVectorizer(
             };
     }
 
-    private Loop? Match(ImmutableArray<CilInstruction> instructions, int jump, int condition)
+    private Loop? Match(ImmutableArray<CilInstruction> instructions, int jump, int condition, ImmutableArray<CliValueKind> locals)
     {
         if (instructions[condition] is not { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index { Value: var counter } })
         {
@@ -154,24 +195,133 @@ internal sealed class ElementwiseLoopVectorizer(
             return null;
         }
         var bound = instructions.AsSpan(condition + 1, branch - condition - 1).ToArray();
+        // A loop that only folds elements as they are is the reduction rewriter's,
+        // which folds narrower elements and minimums and maximums too.
         if (End(bound, instructions[branch].Operation, writtenLocals) is not { } end ||
-            Parse(body, counter, writtenLocals) is not var (stores, aliases) ||
-            stores.Count == 0)
+            Parse(body, counter, writtenLocals) is not var (stores, folds, aliases, copies) ||
+            stores.Count + folds.Count == 0 ||
+            stores.Count == 0 && folds.All(static fold => fold.Value is Element))
         {
             return null;
         }
 
-        // One lane type for every element the loop touches.
+        // One lane type for every element the loop touches; folds of integers
+        // into locals of that kind, of arrays the loop does not write.
         var kinds = stores.Select(static store => Lane(store.Type))
             .Concat(stores.SelectMany(static store => Elements(store.Value)).Select(static element => Lane(element.Type)))
+            .Concat(folds.SelectMany(static fold => Elements(fold.Value)).Select(static element => Lane(element.Type)))
             .Distinct()
             .ToArray();
+        // A loop that only folds 64-bit lanes does two elements a vector
+        // iteration, which the array unroller's four scalar ones outrun
+        // (StrengthReduction's SumLongsArray: 3.25 us unrolled, 4.54 as vectors).
         if (kinds is not [{ } kind] || kind == CliValueKind.Unknown ||
-            stores.Any(store => Kind(store.Value) != kind || !Supported(store.Value, kind)))
+            stores.Count == 0 && kind is CliValueKind.I8 ||
+            stores.Any(store => Kind(store.Value) != kind || !Supported(store.Value, kind)) ||
+            folds.Any(fold => kind is not (CliValueKind.I4 or CliValueKind.I8) || locals[fold.Local] != kind ||
+                Kind(fold.Value) is var value && value != kind && value != CliValueKind.Unknown ||
+                !Supported(fold.Value, kind) ||
+                Elements(fold.Value).Any(element => stores.Any(store => SameArray(store.Array, element.Array)))))
         {
             return null;
         }
-        return Hazards(stores) is null ? null : new Loop(counter, end, stores, aliases, kind);
+        return Hazards(stores) is null ||
+            copies.Values.Any(copy => Lane(copy.Type) != kind || stores.Any(store => SameArray(store.Array, copy.Array)))
+            ? null
+            : new Loop(counter, end, stores, folds, aliases, copies, kind);
+    }
+
+    // A loop that walks Reference over Count elements: Advance moves the
+    // reference one element on.
+    private sealed record Walk(
+        int Reference,
+        int Count,
+        CilInstruction Advance,
+        List<Fold> Folds,
+        Dictionary<int, Element> Copies,
+        CliValueKind Kind);
+
+    // A walk the vector loop can take: its body only folds and copies the
+    // element p points to, of 32-bit or 64-bit integers. It has no counter to
+    // index an array with, so every element it reads is one through p, which
+    // must read it as the type p walks.
+    private Walk? MatchReference(CountedWalk counted, ImmutableArray<CliValueKind> locals)
+    {
+        var (body, pointer, element) = (counted.Body, counted.Reference, counted.Element);
+        var written = body
+            .Select(static instruction => instruction is { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } }
+                ? local
+                : -1)
+            .Where(static local => local >= 0)
+            .ToHashSet();
+        if (Parse(body, -1, written, pointer) is not var (stores, folds, _, copies) || stores.Count != 0 || folds.Count == 0 ||
+            Lane(element) is var kind && kind is not (CliValueKind.I4 or CliValueKind.I8) ||
+            folds.SelectMany(static fold => Elements(fold.Value)).Concat(copies.Values)
+                .Any(found => found.Type.CanonicalName != element.CanonicalName) ||
+            folds.Any(fold => locals[fold.Local] != kind ||
+                Kind(fold.Value) is var value && value != kind && value != CliValueKind.Unknown || !Supported(fold.Value, kind)))
+        {
+            return null;
+        }
+        return new Walk(pointer, counted.Count, counted.Advance, folds, copies, kind);
+    }
+
+    // The instruction that falls into a walk's head, then the vector loop ahead
+    // of the head; `exit` follows the walk.
+    private List<CilInstruction> ReferencePrefix(
+        CilInstruction entry,
+        Walk walk,
+        int exit,
+        ImmutableArray<CliValueKind>.Builder locals,
+        ImmutableArray<CliTypeIdentity>.Builder localTypes,
+        out int depth)
+    {
+        var code = new VectorCode(_methods, walk.Kind, locals, localTypes, counter: null);
+        var prefix = code.Code;
+        prefix.Add(entry);
+        var lanes = code.Lanes;
+        void Count() => code.Add(CilOperation.LoadLocal, new CilOperand.Index(walk.Count));
+        void Advance(int elements)
+        {
+            code.Add(CilOperation.LoadLocal, new CilOperand.Index(walk.Reference));
+            code.Constant(elements);
+            prefix.Add(Copy(walk.Advance));
+        }
+
+        // Fewer than `lanes` elements, zero included, run as before.
+        Count();
+        code.Constant(lanes);
+        var skip = prefix.Count;
+        code.Add(CilOperation.BranchIfLessThanUnsigned);
+        foreach (var fold in walk.Folds) code.Hoist(fold.Value);
+        var folded = code.Identities(walk.Folds);
+
+        var loopStart = prefix.Count;
+        code.Fold(folded);
+        // An element copy keeps the last element, as the loop leaves it.
+        foreach (var (local, copy) in walk.Copies)
+        {
+            Advance(lanes - 1);
+            code.Add(CilOperation.LoadObject, new CilOperand.TypeIdentity(copy.Type));
+            code.Add(CilOperation.StoreLocal, new CilOperand.Index(local));
+        }
+        Advance(lanes);
+        code.Add(CilOperation.StoreLocal, new CilOperand.Index(walk.Reference));
+        Count();
+        code.Constant(lanes);
+        code.Add(CilOperation.Subtract);
+        code.Add(CilOperation.StoreLocal, new CilOperand.Index(walk.Count));
+        Count();
+        code.Constant(lanes);
+        code.Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, RenumberedInstructions.Local(loopStart));
+        code.Reduce(folded);
+        // Nothing left: the loop is done.
+        Count();
+        code.Add(CilOperation.BranchIfFalse, new CilOperand.BranchTarget(exit));
+        prefix[skip] = prefix[skip] with { Operand = RenumberedInstructions.Local(prefix.Count) };
+
+        depth = Depth([], walk.Folds);
+        return prefix;
     }
 
     // The instructions that push end: the bound of `i < bound`, or C + 1 for
@@ -210,12 +360,17 @@ internal sealed class ElementwiseLoopVectorizer(
         return depth == 1 ? [.. bound.Select(Copy)] : null;
     }
 
-    // The element stores and counter copies, from the body's instructions.
-    private (List<Store> Stores, Dictionary<int, Linear> Aliases)? Parse(CilInstruction[] body, int counter, HashSet<int> written)
+    // The element stores, folds, counter copies and element copies, from the
+    // body's instructions.
+    private (List<Store> Stores, List<Fold> Folds, Dictionary<int, Linear> Aliases, Dictionary<int, Element> Copies)? Parse(
+        CilInstruction[] body, int counter, HashSet<int> written, int reference = -1)
     {
         var stack = new List<Node>();
         var stores = new List<Store>();
+        var folds = new List<Fold>();
         var aliases = new Dictionary<int, Linear>();
+        var copies = new Dictionary<int, Element>();
+        var accumulated = new HashSet<int>();
         Node Pop()
         {
             var node = stack[^1];
@@ -234,14 +389,24 @@ internal sealed class ElementwiseLoopVectorizer(
                     {
                         stack.Add(new Linear(1, 0));
                     }
+                    else if (local == reference)
+                    {
+                        stack.Add(new Reference(instruction));
+                    }
                     else if (aliases.TryGetValue(local, out var alias))
                     {
                         stack.Add(alias);
                     }
+                    else if (copies.TryGetValue(local, out var copied))
+                    {
+                        stack.Add(copied);
+                    }
                     else if (written.Contains(local))
                     {
-                        // Read before this iteration writes it: the last iteration's value.
-                        return null;
+                        // Read before this iteration writes it: the last iteration's
+                        // value, which only the local's fold may read.
+                        accumulated.Add(local);
+                        stack.Add(new Accumulator(local));
                     }
                     else
                     {
@@ -274,6 +439,11 @@ internal sealed class ElementwiseLoopVectorizer(
                         stack.Add(new Element(array, offset, loaded));
                         break;
                     }
+                // *p, where p walks the elements.
+                case CilOperation.LoadObject when instruction.Operand is CilOperand.TypeIdentity { Value: var loaded }:
+                    if (stack.Count < 1 || Pop() is not Reference { Load: var load } || Lane(loaded) == CliValueKind.Unknown) return null;
+                    stack.Add(new Element(load, 0, loaded, ByReference: true));
+                    break;
                 case CilOperation.StoreArrayElement when instruction.Operand is CilOperand.TypeIdentity { Value: var stored }:
                     {
                         if (stack.Count < 3) return null;
@@ -288,10 +458,42 @@ internal sealed class ElementwiseLoopVectorizer(
                         break;
                     }
                 case CilOperation.StoreLocal when instruction.Operand is CilOperand.Index { Value: var local }:
-                    // k = i + c, which later index and value expressions read.
-                    if (stack.Count < 1 || local == counter || Pop() is not Linear { Scale: not 0 } copy) return null;
-                    aliases[local] = copy;
-                    break;
+                    {
+                        if (stack.Count < 1 || local == counter) return null;
+                        var value = Pop();
+                        var fresh = !folds.Any(fold => fold.Local == local) && !accumulated.Contains(local) &&
+                            !aliases.ContainsKey(local) && !copies.ContainsKey(local);
+                        // k = i + c, which later index and value expressions read.
+                        if (value is Linear { Scale: not 0 } copy && fresh)
+                        {
+                            aliases[local] = copy;
+                            break;
+                        }
+                        // s = a[i + c], as foreach copies an element.
+                        if (value is Element element && fresh)
+                        {
+                            copies[local] = element;
+                            break;
+                        }
+                        // x = x op value, once an iteration.
+                        if (value is Binary
+                            {
+                                Operation: CilOperation.Add or CilOperation.BitwiseOr or CilOperation.BitwiseXor or
+                                CilOperation.BitwiseAnd
+                            } fold &&
+                            (fold.Left, fold.Right) switch
+                            {
+                                (Accumulator { Local: var left }, var folded) when left == local => folded,
+                                (var folded, Accumulator { Local: var right }) when right == local => folded,
+                                _ => null,
+                            } is { } operand &&
+                            !Accumulators(operand).Any() && !aliases.ContainsKey(local) && !folds.Any(other => other.Local == local))
+                        {
+                            folds.Add(new Fold(local, fold.Operation, operand));
+                            break;
+                        }
+                        return null;
+                    }
                 case CilOperation.Add or CilOperation.Subtract or CilOperation.Multiply or CilOperation.Divide or
                     CilOperation.BitwiseAnd or CilOperation.BitwiseOr or CilOperation.BitwiseXor:
                     {
@@ -354,8 +556,31 @@ internal sealed class ElementwiseLoopVectorizer(
                     return null;
             }
         }
-        return stack.Count == 0 ? (stores, aliases) : null;
+        // A local's earlier value reaches nothing but its fold, and the walking
+        // reference nothing but element loads.
+        return stack.Count == 0 && !stores.Any(static store => Accumulators(store.Value).Any()) &&
+            !stores.Select(static store => store.Value).Concat(folds.Select(static fold => fold.Value)).Any(static value => References(value))
+            ? (stores, folds, aliases, copies)
+            : null;
     }
+
+    private static bool References(Node node) => node switch
+    {
+        Reference => true,
+        Unary unary => References(unary.Operand),
+        Binary binary => References(binary.Left) || References(binary.Right),
+        Shift shift => References(shift.Value),
+        _ => false,
+    };
+
+    private static IEnumerable<Accumulator> Accumulators(Node node) => node switch
+    {
+        Accumulator accumulator => [accumulator],
+        Unary unary => Accumulators(unary.Operand),
+        Binary binary => Accumulators(binary.Left).Concat(Accumulators(binary.Right)),
+        Shift shift => Accumulators(shift.Value),
+        _ => [],
+    };
 
     private static Node? Combine(CilOperation operation, Node left, Node right)
     {
@@ -443,32 +668,15 @@ internal sealed class ElementwiseLoopVectorizer(
         ImmutableArray<CliTypeIdentity>.Builder localTypes,
         out int depth)
     {
-        var prefix = new List<CilInstruction>();
-        void Add(CilOperation operation, CilOperand? operand = null) =>
-            prefix.Add(Instruction(operation, operand ?? new CilOperand.None()));
-        void Emit(IEnumerable<CilInstruction> code) { foreach (var instruction in code) prefix.Add(Copy(instruction)); }
-        void Constant(int value) => Add(CilOperation.LoadInt32, new CilOperand.ConstantI4(value));
-        void Call(MethodInstanceModel method) => Add(CilOperation.Call, new CilOperand.MethodInstance(method));
-        void Counter(int offset)
-        {
-            Add(CilOperation.LoadLocal, new CilOperand.Index(loop.Counter));
-            if (offset == 0) return;
-            Constant(offset);
-            Add(CilOperation.Add);
-        }
-        int NewLocal(CliTypeIdentity type)
-        {
-            locals.Add(type.StackKind);
-            localTypes.Add(type);
-            return locals.Count - 1;
-        }
-
-        var lane = LaneType(loop.Kind);
-        var lanes = 16 / Size(loop.Kind);
+        var code = new VectorCode(_methods, loop.Kind, locals, localTypes, loop.Counter);
+        var prefix = code.Code;
+        var lanes = code.Lanes;
         var testTarget = new CilOperand.BranchTarget(test);
         var stores = loop.Stores;
         var accesses = stores.Select(static store => (store.Array, store.Offset))
             .Concat(stores.SelectMany(static store => Elements(store.Value)).Select(static element => (element.Array, element.Offset)))
+            .Concat(loop.Folds.SelectMany(static fold => Elements(fold.Value)).Select(static element => (element.Array, element.Offset)))
+            .Concat(loop.Copies.Values.Select(static copy => (copy.Array, copy.Offset)))
             .DistinctBy(static access => (access.Array.Operation, access.Array.Operand, access.Offset))
             .ToArray();
         var arrays = accesses.Select(static access => access.Array)
@@ -477,52 +685,178 @@ internal sealed class ElementwiseLoopVectorizer(
 
         // i < end, the arrays non-null, every access at i and at end - 1 within
         // its array, and arrays that would depend on one another different.
-        Counter(0);
-        Emit(loop.End);
-        Add(CilOperation.BranchIfGreaterThanOrEqualSigned, testTarget);
+        code.Counter(0);
+        code.Emit(loop.End);
+        code.Add(CilOperation.BranchIfGreaterThanOrEqualSigned, testTarget);
         foreach (var array in arrays)
         {
             prefix.Add(Copy(array));
-            Add(CilOperation.BranchIfFalse, testTarget);
+            code.Add(CilOperation.BranchIfFalse, testTarget);
         }
         foreach (var (array, offset) in accesses)
         {
-            Counter(offset);
+            code.Counter(offset);
             prefix.Add(Copy(array));
-            Add(CilOperation.LoadArrayLength);
-            Add(CilOperation.ConvertInt32);
-            Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
-            Emit(loop.End);
-            Constant(offset - 1);
-            Add(CilOperation.Add);
+            code.Add(CilOperation.LoadArrayLength);
+            code.Add(CilOperation.ConvertInt32);
+            code.Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
+            code.Emit(loop.End);
+            code.Constant(offset - 1);
+            code.Add(CilOperation.Add);
             prefix.Add(Copy(array));
-            Add(CilOperation.LoadArrayLength);
-            Add(CilOperation.ConvertInt32);
-            Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
+            code.Add(CilOperation.LoadArrayLength);
+            code.Add(CilOperation.ConvertInt32);
+            code.Add(CilOperation.BranchIfGreaterThanOrEqualUnsigned, testTarget);
         }
         foreach (var (first, second) in Hazards(stores)!)
         {
             prefix.Add(Copy(first));
             prefix.Add(Copy(second));
-            Add(CilOperation.BranchIfEqual, testTarget);
+            code.Add(CilOperation.BranchIfEqual, testTarget);
         }
 
-        // Values the loop does not change, broadcast once; the lanes' own counter
-        // offsets 0, 1, 2 and 3 for a value that reads the counter.
-        var broadcasts = new Dictionary<string, int>();
-        var vectorType = _methods.Resolve(VectorLoopMethod.Broadcast, lane).Signature.ReturnSignatureType;
-        int Broadcast(ImmutableArray<CilInstruction> code)
+        foreach (var store in stores) code.Hoist(store.Value);
+        foreach (var fold in loop.Folds) code.Hoist(fold.Value);
+        var folded = code.Identities(loop.Folds);
+
+        // The vector loop, while `lanes` iterations remain.
+        var loopStart = prefix.Count;
+        code.Emit(loop.End);
+        code.Counter(0);
+        code.Add(CilOperation.Subtract);
+        code.Constant(lanes);
+        var exit = prefix.Count;
+        code.Add(CilOperation.BranchIfLessThanSigned, testTarget);
+        foreach (var store in stores)
+        {
+            code.Value(store.Value);
+            prefix.Add(Copy(store.Array));
+            code.Call(_methods.Resolve(VectorLoopMethod.ArrayData, store.Type));
+            code.Counter(store.Offset);
+            code.Add(CilOperation.ConvertNativeUInt);
+            code.Call(_methods.Resolve(VectorLoopMethod.Store, code.Lane));
+        }
+        code.Fold(folded);
+        // An element copy keeps the last iteration's element, as the loop leaves it.
+        foreach (var (local, copy) in loop.Copies)
+        {
+            prefix.Add(Copy(copy.Array));
+            code.Counter(copy.Offset + lanes - 1);
+            code.Add(CilOperation.LoadArrayElement, new CilOperand.TypeIdentity(copy.Type));
+            code.Add(CilOperation.StoreLocal, new CilOperand.Index(local));
+        }
+        // A counter copy keeps the last iteration's value, as the loop leaves it.
+        foreach (var (local, alias) in loop.Aliases)
+        {
+            code.Counter(lanes - 1);
+            if (alias.Scale != 1)
+            {
+                code.Constant(alias.Scale);
+                code.Add(CilOperation.Multiply);
+            }
+            if (alias.Offset != 0)
+            {
+                code.Constant(alias.Offset);
+                code.Add(CilOperation.Add);
+            }
+            code.Add(CilOperation.StoreLocal, new CilOperand.Index(local));
+        }
+        code.Counter(lanes);
+        code.Add(CilOperation.StoreLocal, new CilOperand.Index(loop.Counter));
+        code.Add(CilOperation.Branch, RenumberedInstructions.Local(loopStart));
+        // The vector loop leaves to the folds of each vector's lanes into its
+        // local, then to the loop's entry jump, which follows the prefix.
+        prefix[exit] = prefix[exit] with { Operand = RenumberedInstructions.Local(prefix.Count) };
+        code.Reduce(folded);
+
+        depth = Depth(loop.Stores, loop.Folds);
+        return prefix;
+    }
+
+    private static int Depth(List<Store> stores, List<Fold> folds) =>
+        stores.Select(static store => Depth(store.Value))
+            .Concat(folds.Select(static fold => Depth(fold.Value) + 1))
+            .Max() + 8;
+
+    // The vector code a prefix emits: its values the loop does not change,
+    // broadcast once, its folds' vectors, and each node's lanes.
+    private sealed class VectorCode
+    {
+        private readonly IVectorLoopMethodResolver _methods;
+        private readonly ImmutableArray<CliValueKind>.Builder _locals;
+        private readonly ImmutableArray<CliTypeIdentity>.Builder _localTypes;
+        private readonly int? _counter;
+        private readonly CliValueKind _kind;
+        private readonly Dictionary<string, int> _broadcasts = [];
+        private int? _iota;
+
+        internal VectorCode(
+            IVectorLoopMethodResolver methods,
+            CliValueKind kind,
+            ImmutableArray<CliValueKind>.Builder locals,
+            ImmutableArray<CliTypeIdentity>.Builder localTypes,
+            int? counter)
+        {
+            _methods = methods;
+            _kind = kind;
+            _locals = locals;
+            _localTypes = localTypes;
+            _counter = counter;
+            Lane = LaneType(kind);
+            Lanes = 16 / Size(kind);
+            VectorType = methods.Resolve(VectorLoopMethod.Broadcast, Lane).Signature.ReturnSignatureType;
+        }
+
+        internal List<CilInstruction> Code { get; } = [];
+
+        internal CliTypeIdentity Lane { get; }
+
+        internal int Lanes { get; }
+
+        internal CliTypeIdentity VectorType { get; }
+
+        internal void Add(CilOperation operation, CilOperand? operand = null) =>
+            Code.Add(Instruction(operation, operand ?? new CilOperand.None()));
+
+        internal void Emit(IEnumerable<CilInstruction> code)
+        {
+            foreach (var instruction in code) Code.Add(Copy(instruction));
+        }
+
+        internal void Constant(int value) => Add(CilOperation.LoadInt32, new CilOperand.ConstantI4(value));
+
+        internal void Call(MethodInstanceModel method) => Add(CilOperation.Call, new CilOperand.MethodInstance(method));
+
+        // The counter plus offset.
+        internal void Counter(int offset)
+        {
+            Add(CilOperation.LoadLocal, new CilOperand.Index(_counter!.Value));
+            if (offset == 0) return;
+            Constant(offset);
+            Add(CilOperation.Add);
+        }
+
+        internal int NewLocal(CliTypeIdentity type)
+        {
+            _locals.Add(type.StackKind);
+            _localTypes.Add(type);
+            return _locals.Count - 1;
+        }
+
+        internal int Broadcast(ImmutableArray<CilInstruction> code)
         {
             var key = string.Join(';', code.Select(static instruction => $"{instruction.Operation}:{instruction.Operand}"));
-            if (broadcasts.TryGetValue(key, out var existing)) return existing;
+            if (_broadcasts.TryGetValue(key, out var existing)) return existing;
             Emit(code);
-            Call(_methods.Resolve(VectorLoopMethod.Broadcast, lane));
-            var local = NewLocal(vectorType);
+            Call(_methods.Resolve(VectorLoopMethod.Broadcast, Lane));
+            var local = NewLocal(VectorType);
             Add(CilOperation.StoreLocal, new CilOperand.Index(local));
-            return broadcasts[key] = local;
+            return _broadcasts[key] = local;
         }
-        int? iota = null;
-        void Hoist(Node node)
+
+        // Broadcasts a node's values the loop does not change; the lanes' own
+        // counter offsets 0, 1, 2 and 3 for a value that reads the counter.
+        internal void Hoist(Node node)
         {
             switch (node)
             {
@@ -533,15 +867,15 @@ internal sealed class ElementwiseLoopVectorizer(
                     Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(value))]);
                     break;
                 case Linear linear:
-                    if (iota is null)
+                    if (_iota is null)
                     {
                         Constant(0);
                         Constant(1);
                         Constant(2);
                         Constant(3);
-                        Call(_methods.Resolve(VectorLoopMethod.CreateInt32, lane));
-                        iota = NewLocal(vectorType);
-                        Add(CilOperation.StoreLocal, new CilOperand.Index(iota.Value));
+                        Call(_methods.Resolve(VectorLoopMethod.CreateInt32, Lane));
+                        _iota = NewLocal(VectorType);
+                        Add(CilOperation.StoreLocal, new CilOperand.Index(_iota.Value));
                     }
                     if (linear.Scale != 1) Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(linear.Scale))]);
                     if (linear.Offset != 0) Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(linear.Offset))]);
@@ -558,26 +892,24 @@ internal sealed class ElementwiseLoopVectorizer(
                     break;
             }
         }
-        foreach (var store in stores) Hoist(store.Value);
 
-        // The vector loop, while `lanes` iterations remain.
-        var loopStart = prefix.Count;
-        Emit(loop.End);
-        Counter(0);
-        Add(CilOperation.Subtract);
-        Constant(lanes);
-        var exit = prefix.Count;
-        Add(CilOperation.BranchIfLessThanSigned, testTarget);
-        void Value(Node node)
+        // Pushes a node's lanes.
+        internal void Value(Node node)
         {
             switch (node)
             {
+                case Element { ByReference: true } element:
+                    Code.Add(Copy(element.Array));
+                    Constant(element.Offset);
+                    Add(CilOperation.ConvertNativeUInt);
+                    Call(_methods.Resolve(VectorLoopMethod.Load, Lane));
+                    break;
                 case Element element:
-                    prefix.Add(Copy(element.Array));
+                    Code.Add(Copy(element.Array));
                     Call(_methods.Resolve(VectorLoopMethod.ArrayData, element.Type));
                     Counter(element.Offset);
                     Add(CilOperation.ConvertNativeUInt);
-                    Call(_methods.Resolve(VectorLoopMethod.Load, lane));
+                    Call(_methods.Resolve(VectorLoopMethod.Load, Lane));
                     break;
                 case Invariant invariant:
                     Add(CilOperation.LoadLocal, new CilOperand.Index(Broadcast(invariant.Code)));
@@ -589,39 +921,30 @@ internal sealed class ElementwiseLoopVectorizer(
                 case Linear linear:
                     // scale * (i + lane) + offset.
                     Counter(0);
-                    Call(_methods.Resolve(VectorLoopMethod.Broadcast, lane));
-                    Add(CilOperation.LoadLocal, new CilOperand.Index(iota!.Value));
-                    Call(_methods.Resolve(new VectorLoopOperator("op_Addition"), lane));
+                    Call(_methods.Resolve(VectorLoopMethod.Broadcast, Lane));
+                    Add(CilOperation.LoadLocal, new CilOperand.Index(_iota!.Value));
+                    Call(_methods.Resolve(new VectorLoopOperator("op_Addition"), Lane));
                     if (linear.Scale != 1)
                     {
                         Add(CilOperation.LoadLocal, new CilOperand.Index(
                             Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(linear.Scale))])));
-                        Call(_methods.Resolve(new VectorLoopOperator("op_Multiply"), lane));
+                        Call(_methods.Resolve(new VectorLoopOperator("op_Multiply"), Lane));
                     }
                     if (linear.Offset != 0)
                     {
                         Add(CilOperation.LoadLocal, new CilOperand.Index(
                             Broadcast([Instruction(CilOperation.LoadInt32, new CilOperand.ConstantI4(linear.Offset))])));
-                        Call(_methods.Resolve(new VectorLoopOperator("op_Addition"), lane));
+                        Call(_methods.Resolve(new VectorLoopOperator("op_Addition"), Lane));
                     }
                     break;
                 case Unary unary:
                     Value(unary.Operand);
-                    Call(_methods.Resolve(new VectorLoopOperator(unary.Operation == CilOperation.Negate ? "op_UnaryNegation" : "op_OnesComplement"), lane));
+                    Call(_methods.Resolve(new VectorLoopOperator(unary.Operation == CilOperation.Negate ? "op_UnaryNegation" : "op_OnesComplement"), Lane));
                     break;
                 case Binary binary:
                     Value(binary.Left);
                     Value(binary.Right);
-                    Call(_methods.Resolve(new VectorLoopOperator(binary.Operation switch
-                    {
-                        CilOperation.Add => "op_Addition",
-                        CilOperation.Subtract => "op_Subtraction",
-                        CilOperation.Multiply => "op_Multiply",
-                        CilOperation.Divide => "op_Division",
-                        CilOperation.BitwiseAnd => "op_BitwiseAnd",
-                        CilOperation.BitwiseOr => "op_BitwiseOr",
-                        _ => "op_ExclusiveOr",
-                    }), lane));
+                    Call(_methods.Resolve(new VectorLoopOperator(Operator(binary.Operation)), Lane));
                     break;
                 default:
                     // The remaining node shifts a value.
@@ -633,44 +956,77 @@ internal sealed class ElementwiseLoopVectorizer(
                         CilOperation.ShiftLeft => "op_LeftShift",
                         CilOperation.ShiftRightSigned => "op_RightShift",
                         _ => "op_UnsignedRightShift",
-                    }), lane));
+                    }), Lane));
                     break;
             }
         }
-        foreach (var store in stores)
-        {
-            Value(store.Value);
-            prefix.Add(Copy(store.Array));
-            Call(_methods.Resolve(VectorLoopMethod.ArrayData, store.Type));
-            Counter(store.Offset);
-            Add(CilOperation.ConvertNativeUInt);
-            Call(_methods.Resolve(VectorLoopMethod.Store, lane));
-        }
-        // A counter copy keeps the last iteration's value, as the loop leaves it.
-        foreach (var (local, alias) in loop.Aliases)
-        {
-            Counter(lanes - 1);
-            if (alias.Scale != 1)
-            {
-                Constant(alias.Scale);
-                Add(CilOperation.Multiply);
-            }
-            if (alias.Offset != 0)
-            {
-                Constant(alias.Offset);
-                Add(CilOperation.Add);
-            }
-            Add(CilOperation.StoreLocal, new CilOperand.Index(local));
-        }
-        Counter(lanes);
-        Add(CilOperation.StoreLocal, new CilOperand.Index(loop.Counter));
-        Add(CilOperation.Branch, RenumberedInstructions.Local(loopStart));
-        // The vector loop leaves to the loop's entry jump, which follows the prefix.
-        prefix[exit] = prefix[exit] with { Operand = RenumberedInstructions.Local(prefix.Count) };
 
-        depth = loop.Stores.Max(static store => Depth(store.Value)) + 8;
-        return prefix;
+        // Each fold's vector, at its operation's identity: no bits for an
+        // addition, an or and an exclusive or, every bit for an and.
+        internal List<(Fold Fold, int Vector)> Identities(List<Fold> folds)
+        {
+            var folded = new List<(Fold Fold, int Vector)>();
+            foreach (var fold in folds)
+            {
+                Constant(fold.Operation == CilOperation.BitwiseAnd ? -1 : 0);
+                if (_kind == CliValueKind.I8) Add(CilOperation.ConvertInt64);
+                Call(_methods.Resolve(VectorLoopMethod.Broadcast, Lane));
+                var vector = NewLocal(VectorType);
+                Add(CilOperation.StoreLocal, new CilOperand.Index(vector));
+                folded.Add((fold, vector));
+            }
+            return folded;
+        }
+
+        // One vector iteration of each fold.
+        internal void Fold(List<(Fold Fold, int Vector)> folded)
+        {
+            foreach (var (fold, vector) in folded)
+            {
+                Add(CilOperation.LoadLocal, new CilOperand.Index(vector));
+                Value(fold.Value);
+                Call(_methods.Resolve(new VectorLoopOperator(Operator(fold.Operation)), Lane));
+                Add(CilOperation.StoreLocal, new CilOperand.Index(vector));
+            }
+        }
+
+        // Each vector's lanes folded into its local.
+        internal void Reduce(List<(Fold Fold, int Vector)> folded)
+        {
+            foreach (var (fold, vector) in folded)
+            {
+                Add(CilOperation.LoadLocal, new CilOperand.Index(fold.Local));
+                if (fold.Operation == CilOperation.Add)
+                {
+                    Add(CilOperation.LoadLocal, new CilOperand.Index(vector));
+                    Call(_methods.Resolve(VectorLoopMethod.Sum, Lane));
+                }
+                else
+                {
+                    for (var index = 0; index < Lanes; index++)
+                    {
+                        Add(CilOperation.LoadLocal, new CilOperand.Index(vector));
+                        Constant(index);
+                        Call(_methods.Resolve(VectorLoopMethod.GetElement, Lane));
+                        if (index > 0) Add(fold.Operation);
+                    }
+                }
+                Add(fold.Operation);
+                Add(CilOperation.StoreLocal, new CilOperand.Index(fold.Local));
+            }
+        }
     }
+
+    private static string Operator(CilOperation operation) => operation switch
+    {
+        CilOperation.Add => "op_Addition",
+        CilOperation.Subtract => "op_Subtraction",
+        CilOperation.Multiply => "op_Multiply",
+        CilOperation.Divide => "op_Division",
+        CilOperation.BitwiseAnd => "op_BitwiseAnd",
+        CilOperation.BitwiseOr => "op_BitwiseOr",
+        _ => "op_ExclusiveOr",
+    };
 
     private static IEnumerable<Element> Elements(Node node) => node switch
     {

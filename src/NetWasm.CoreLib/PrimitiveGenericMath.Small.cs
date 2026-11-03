@@ -729,15 +729,18 @@ public partial struct Char
         return (char)rune.Value;
     }
 
+    // From Char.cs.
     public bool Equals(char other, StringComparison comparisonType)
     {
-        string.CheckStringComparison(comparisonType);
-        return comparisonType switch
+        switch (comparisonType)
         {
-            StringComparison.Ordinal => this == other,
-            StringComparison.OrdinalIgnoreCase => ToUpperOrdinal(this) == ToUpperOrdinal(other),
-            _ => throw new PlatformNotSupportedException(),
-        };
+            case StringComparison.Ordinal:
+                return Equals(other);
+            default:
+                ReadOnlySpan<char> thisCharsSlice = [this];
+                ReadOnlySpan<char> otherCharsSlice = [other];
+                return thisCharsSlice.Equals(otherCharsSlice, comparisonType);
+        }
     }
 
     public TypeCode GetTypeCode() => TypeCode.Char;
@@ -783,23 +786,25 @@ public partial struct Char
 
     public static double GetNumericValue(string s, int index) => Globalization.CharUnicodeInfo.GetNumericValue(s, index);
 
-    public static bool IsAscii(char c) => c <= '\u007F';
+    public static bool IsAscii(char c) => (uint)c <= '\x007f';
     public static bool IsAsciiDigit(char c) => IsBetween(c, '0', '9');
-    public static bool IsAsciiHexDigit(char c) => IsAsciiHexDigitLower(c) || IsAsciiHexDigitUpper(c) || IsAsciiDigit(c);
-    public static bool IsAsciiHexDigitLower(char c) => IsBetween(c, 'a', 'f');
-    public static bool IsAsciiHexDigitUpper(char c) => IsBetween(c, 'A', 'F');
-    public static bool IsAsciiLetter(char c) => IsAsciiLetterLower(c) || IsAsciiLetterUpper(c);
+    public static bool IsAsciiHexDigit(char c) => HexConverter.IsHexChar(c);
+    public static bool IsAsciiHexDigitLower(char c) => HexConverter.IsHexLowerChar(c);
+    public static bool IsAsciiHexDigitUpper(char c) => HexConverter.IsHexUpperChar(c);
+    public static bool IsAsciiLetter(char c) => (uint)((c | 0x20) - 'a') <= 'z' - 'a';
     public static bool IsAsciiLetterLower(char c) => IsBetween(c, 'a', 'z');
-    public static bool IsAsciiLetterOrDigit(char c) => IsAsciiLetter(c) || IsAsciiDigit(c);
+    public static bool IsAsciiLetterOrDigit(char c) => IsAsciiLetter(c) | IsBetween(c, '0', '9');
     public static bool IsAsciiLetterUpper(char c) => IsBetween(c, 'A', 'Z');
-    public static bool IsBetween(char value, char minInclusive, char maxInclusive) =>
-        value >= minInclusive && value <= maxInclusive;
+    public static bool IsBetween(char c, char minInclusive, char maxInclusive) =>
+        (uint)(c - minInclusive) <= (uint)(maxInclusive - minInclusive);
 
-    public static bool IsControl(char c) => c <= '\u001F' || IsBetween(c, '\u007F', '\u009F');
+    // This works because 'c' can never be -1; see Rune.IsControl.
+    public static bool IsControl(char c) => (((uint)c + 1) & ~0x80u) <= 0x20u;
     public static bool IsControl(string s, int index) => IsControl(GetIndexedChar(s, index));
     public static bool IsDigit(char c) => GetUnicodeCategory(c) is Globalization.UnicodeCategory.DecimalDigitNumber;
     public static bool IsDigit(string s, int index) => IsDigit(GetIndexedChar(s, index));
-    public static bool IsHighSurrogate(char c) => IsBetween(c, '\uD800', '\uDBFF');
+    public static bool IsHighSurrogate(char c) =>
+        IsBetween(c, Globalization.CharUnicodeInfo.HIGH_SURROGATE_START, Globalization.CharUnicodeInfo.HIGH_SURROGATE_END);
     public static bool IsHighSurrogate(string s, int index) => IsHighSurrogate(GetIndexedChar(s, index));
     public static bool IsLetter(char c) => GetUnicodeCategory(c) is
         Globalization.UnicodeCategory.UppercaseLetter or
@@ -810,7 +815,8 @@ public partial struct Char
     public static bool IsLetter(string s, int index) => IsLetter(GetIndexedChar(s, index));
     public static bool IsLetterOrDigit(char c) => IsLetter(c) || IsDigit(c);
     public static bool IsLetterOrDigit(string s, int index) => IsLetterOrDigit(GetIndexedChar(s, index));
-    public static bool IsLowSurrogate(char c) => IsBetween(c, '\uDC00', '\uDFFF');
+    public static bool IsLowSurrogate(char c) =>
+        IsBetween(c, Globalization.CharUnicodeInfo.LOW_SURROGATE_START, Globalization.CharUnicodeInfo.LOW_SURROGATE_END);
     public static bool IsLowSurrogate(string s, int index) => IsLowSurrogate(GetIndexedChar(s, index));
     public static bool IsLower(char c) => GetUnicodeCategory(c) is Globalization.UnicodeCategory.LowercaseLetter;
     public static bool IsLower(string s, int index) => IsLower(GetIndexedChar(s, index));
@@ -833,10 +839,20 @@ public partial struct Char
         Globalization.UnicodeCategory.LineSeparator or
         Globalization.UnicodeCategory.ParagraphSeparator;
     public static bool IsSeparator(string s, int index) => IsSeparator(GetIndexedChar(s, index));
-    public static bool IsSurrogate(char c) => IsHighSurrogate(c) || IsLowSurrogate(c);
+    public static bool IsSurrogate(char c) =>
+        IsBetween(c, Globalization.CharUnicodeInfo.HIGH_SURROGATE_START, Globalization.CharUnicodeInfo.LOW_SURROGATE_END);
     public static bool IsSurrogate(string s, int index) => IsSurrogate(GetIndexedChar(s, index));
-    public static bool IsSurrogatePair(char highSurrogate, char lowSurrogate) =>
-        IsHighSurrogate(highSurrogate) && IsLowSurrogate(lowSurrogate);
+    public static bool IsSurrogatePair(char highSurrogate, char lowSurrogate)
+    {
+        // Since both the high and low surrogate ranges are exactly 0x400 elements
+        // wide, and since this is a power of two, we can perform a single comparison
+        // by baselining each value to the start of its respective range and taking
+        // the logical OR of them.
+
+        uint highSurrogateOffset = (uint)highSurrogate - Globalization.CharUnicodeInfo.HIGH_SURROGATE_START;
+        uint lowSurrogateOffset = (uint)lowSurrogate - Globalization.CharUnicodeInfo.LOW_SURROGATE_START;
+        return (highSurrogateOffset | lowSurrogateOffset) <= Globalization.CharUnicodeInfo.HIGH_SURROGATE_RANGE;
+    }
     public static bool IsSurrogatePair(string s, int index)
     {
         ArgumentNullException.ThrowIfNull(s);

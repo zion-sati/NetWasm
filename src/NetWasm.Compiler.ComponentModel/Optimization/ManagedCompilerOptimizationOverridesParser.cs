@@ -181,6 +181,42 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedLoopVectorization.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedPureCallReuse>
+        PureCallReuseValues =
+        new Dictionary<string, ManagedPureCallReuse>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedPureCallReuse.Auto,
+            ["Disabled"] = ManagedPureCallReuse.Disabled,
+            ["Enabled"] = ManagedPureCallReuse.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedFieldLoadReuse>
+        FieldLoadReuseValues =
+        new Dictionary<string, ManagedFieldLoadReuse>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedFieldLoadReuse.Auto,
+            ["Disabled"] = ManagedFieldLoadReuse.Disabled,
+            ["Enabled"] = ManagedFieldLoadReuse.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedConditionalStoreMerging>
+        ConditionalStoreMergingValues =
+        new Dictionary<string, ManagedConditionalStoreMerging>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedConditionalStoreMerging.Auto,
+            ["Disabled"] = ManagedConditionalStoreMerging.Disabled,
+            ["Enabled"] = ManagedConditionalStoreMerging.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedInlineArrayData>
+        InlineArrayDataValues =
+        new Dictionary<string, ManagedInlineArrayData>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedInlineArrayData.Auto,
+            ["Disabled"] = ManagedInlineArrayData.Disabled,
+            ["Enabled"] = ManagedInlineArrayData.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedLoopStoreForwarding>
         LoopStoreForwardingValues =
         new Dictionary<string, ManagedLoopStoreForwarding>(StringComparer.Ordinal)
@@ -241,7 +277,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? idempotentLoopCollapse = null,
         string? loopStoreForwarding = null,
         string? arrayLoopIdioms = null,
-        string? loopVectorization = null)
+        string? loopVectorization = null,
+        string? pureCallReuse = null,
+        string? fieldLoadReuse = null,
+        string? conditionalStoreMerging = null,
+        string? inlineArrayData = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -325,6 +365,26 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? vectorizationParsed
             : throw ComponentException.Invalid(
                 "Managed loop vectorization must be Auto, Disabled or Enabled.");
+        var pureCallsValue = PureCallReuseValues.TryGetValue(
+            pureCallReuse ?? "Auto", out var pureCallsParsed)
+            ? pureCallsParsed
+            : throw ComponentException.Invalid(
+                "Managed pure call reuse must be Auto, Disabled or Enabled.");
+        var fieldLoadsValue = FieldLoadReuseValues.TryGetValue(
+            fieldLoadReuse ?? "Auto", out var fieldLoadsParsed)
+            ? fieldLoadsParsed
+            : throw ComponentException.Invalid(
+                "Managed field load reuse must be Auto, Disabled or Enabled.");
+        var storeMergingValue = ConditionalStoreMergingValues.TryGetValue(
+            conditionalStoreMerging ?? "Auto", out var storeMergingParsed)
+            ? storeMergingParsed
+            : throw ComponentException.Invalid(
+                "Managed conditional store merging must be Auto, Disabled or Enabled.");
+        var arrayDataValue = InlineArrayDataValues.TryGetValue(
+            inlineArrayData ?? "Auto", out var arrayDataParsed)
+            ? arrayDataParsed
+            : throw ComponentException.Invalid(
+                "Managed inline array data must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -348,7 +408,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                idempotentLoopsValue == ManagedIdempotentLoopCollapse.Auto &&
                loopStoresValue == ManagedLoopStoreForwarding.Auto &&
                arrayLoopsValue == ManagedArrayLoopIdioms.Auto &&
-               vectorizationValue == ManagedLoopVectorization.Auto
+               vectorizationValue == ManagedLoopVectorization.Auto &&
+               pureCallsValue == ManagedPureCallReuse.Auto &&
+               fieldLoadsValue == ManagedFieldLoadReuse.Auto &&
+               storeMergingValue == ManagedConditionalStoreMerging.Auto &&
+               arrayDataValue == ManagedInlineArrayData.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -374,7 +438,11 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 IdempotentLoopCollapse: idempotentLoopsValue,
                 LoopStoreForwarding: loopStoresValue,
                 ArrayLoopIdioms: arrayLoopsValue,
-                LoopVectorization: vectorizationValue);
+                LoopVectorization: vectorizationValue,
+                PureCallReuse: pureCallsValue,
+                FieldLoadReuse: fieldLoadsValue,
+                ConditionalStoreMerging: storeMergingValue,
+                InlineArrayData: arrayDataValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

@@ -69,7 +69,7 @@ internal sealed class FieldInstructionEmitter(
             return;
         }
         var objectLocal = GetStackLocal(request.Context, slot, request.Stack[slot]);
-        EmitNullCheckIfRequired(code, objectLocal, receiverType, request.Context.ManagedThrowFunction);
+        EmitNullCheckIfRequired(request, code, objectLocal, receiverType);
         if (fieldType.StackKind == CliValueKind.ValueType)
         {
             var targetOffset = request.Context.ValueLayout.TemporaryOffsets[
@@ -186,7 +186,7 @@ internal sealed class FieldInstructionEmitter(
         var (layout, _, receiverType) = Resolve(request.Instruction);
         var slot = request.Stack.Count - 1;
         var objectLocal = GetStackLocal(request.Context, slot, request.Stack[slot]);
-        EmitNullCheckIfRequired(code, objectLocal, receiverType, request.Context.ManagedThrowFunction);
+        EmitNullCheckIfRequired(request, code, objectLocal, receiverType);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
         if (layout.Offset != 0)
         {
@@ -216,7 +216,7 @@ internal sealed class FieldInstructionEmitter(
             request.Context,
             objectSlot + 1,
             request.Stack[objectSlot + 1]);
-        EmitNullCheckIfRequired(code, objectLocal, receiverType, request.Context.ManagedThrowFunction);
+        EmitNullCheckIfRequired(request, code, objectLocal, receiverType);
         if (fieldType.StackKind == CliValueKind.ValueType)
         {
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
@@ -264,16 +264,21 @@ internal sealed class FieldInstructionEmitter(
                 : CliValueKind.ManagedReference);
     }
 
+    // An object reference is checked unless an earlier access to it already was.
     private void EmitNullCheckIfRequired(
+        InstructionEmissionRequest request,
         IWasmInstructionWriter code,
         int objectLocal,
-        CliValueKind receiverType,
-        OptionalFunctionIndex throwFunction)
+        CliValueKind receiverType)
     {
-        if (receiverType != CliValueKind.ManagedReference)
+        if (receiverType != CliValueKind.ManagedReference ||
+            request.Header.ArrayBoundsProof is { } proof &&
+            proof.Describes(request.Header.Instructions, request.Header.Locals, request.Header.LocalSignatureTypes) &&
+            proof.ProvesNonNull(request.Instruction.Offset) && proof.Contains(request.Instruction))
         {
             return;
         }
+        var throwFunction = request.Context.ManagedThrowFunction;
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(objectLocal))));
         addresses.Emit(code, AddressOperation.EqualZero);
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));

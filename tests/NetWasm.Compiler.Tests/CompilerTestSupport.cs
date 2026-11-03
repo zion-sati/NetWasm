@@ -254,8 +254,8 @@ internal static class CompilerTestSupport
             "const leftBytes=new Uint8Array(memory.buffer,leftAddress+payloadOffset,valueSize)," +
             "rightBytes=new Uint8Array(memory.buffer,rightAddress+payloadOffset,valueSize);" +
             "return leftBytes.every((value,index)=>value===rightBytes[index])?1:0;};" +
-            "const array=(length,type,elementType,size=4)=>{arrayElementReferences.set(type,!valueTypeSizes.has(elementType)||valueTypeReferences.get(elementType)===true);const data=raw(Math.max(4,length*size));" +
-            "const p=allocate(16,type);const v=new DataView(memory.buffer);" +
+            "const array=(length,type,elementType,size=4)=>{arrayElementReferences.set(type,!valueTypeSizes.has(elementType)||valueTypeReferences.get(elementType)===true);" +
+            "const p=allocate(16+Math.max(4,length*size),type),data=p+16;const v=new DataView(memory.buffer);" +
             "v.setInt32(p+4,length,true);v.setInt32(p+8,data,true);" +
             "v.setInt32(p+12,elementType,true);return p;};" +
             "const rectangularArray=(rank,dims,type,element,size,refs,bounded=false)=>{" +
@@ -315,6 +315,18 @@ internal static class CompilerTestSupport
             "const boxed=allocate(typeSizes.get(element),element),payload=valueTypePayloadOffsets.get(element);" +
             "new Uint8Array(memory.buffer,boxed+payload,size).set(new Uint8Array(memory.buffer,slot,size));" +
             "return boxed;};" +
+            "const arraySetValue=(array,index,value,underlying,payloadOffset)=>{" +
+            "const v=new DataView(memory.buffer),length=v.getInt32(array+4,true);" +
+            "if(index<0||index>=length)throw Error('array index out of range');" +
+            "const data=v.getInt32(array+8,true),element=v.getInt32(array+12,true),size=valueTypeSizes.get(element);" +
+            "if(size===undefined){if(value&&!isAssignable(value,element))return 1;v.setUint32(data+index*4,value,true);return 0;}" +
+            "let slot=data+index*size;if(!value){new Uint8Array(memory.buffer,slot,size).fill(0);return 0;}" +
+            "const required=underlying||element;if(v.getInt32(value,true)!==required)return 1;" +
+            "const copySize=valueTypeSizes.get(required),offset=valueTypePayloadOffsets.get(required);" +
+            "if(copySize===undefined||offset===undefined)throw Error('array value layout is missing');" +
+            "if(underlying){if(!payloadOffset||payloadOffset>size||copySize>size-payloadOffset)throw Error('nullable layout');" +
+            "new Uint8Array(memory.buffer,slot,size).fill(0);v.setUint8(slot,1);slot+=payloadOffset;}" +
+            "new Uint8Array(memory.buffer,slot,copySize).set(new Uint8Array(memory.buffer,value+offset,copySize));return 0;};" +
             "const beginThrow=exception=>{lastException=exception;" +
             "const v=new DataView(memory.buffer);" +
             "for(let frame=exceptionFrames.length;frame>filterSearchFloor;frame--){" +
@@ -359,7 +371,7 @@ internal static class CompilerTestSupport
             "array_get_lower_bound:(array,dimension)=>{const v=new DataView(memory.buffer);" +
             "if(typeSizes.get(v.getInt32(array,true))!==24)return 0;const flags=v.getInt32(array+16,true);" +
             "return flags>=0?0:v.getInt32(v.getInt32(array+20,true)+(flags&0x7fffffff)*8+dimension*4,true);}," +
-            "array_get_value:arrayGetValue," +
+            "array_get_value:arrayGetValue,array_set_value:arraySetValue," +
             "array_copy:arrayCopy,array_clear:arrayClear,array_clone:arrayClone," +
             "allocate_string:allocateString,get_type_object:getTypeObject," +
             "register_type_objects:(first,count,stride)=>{const v=new DataView(memory.buffer);" +
@@ -373,7 +385,7 @@ internal static class CompilerTestSupport
             "boxed_value_clone:boxedValueClone," +
             "runtime_helpers_equals:runtimeHelpersEquals," +
             "random_seed:()=>runtimeRandomState=BigInt.asUintN(64,runtimeRandomState+0x9e3779b97f4a7c15n)," +
-            "report_unobserved_task_exception:z," +
+            "report_unobserved_task_exception:z,report_unhandled_exception:()=>process.stderr.write('unhandled exception hint\\n')," +
             "is_assignable:isAssignable,end_catch:()=>{lastException=0;}," +
             "exception_frame_enter:(metadata,count)=>{" +
             "exceptionFrames.push({metadata,count,environment:0,targetClause:0});return exceptionFrames.length;}," +

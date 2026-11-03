@@ -77,6 +77,9 @@ internal sealed record MethodEmissionContext(
     // function has none, and its copies stay memory.copy.
     public int CopyDestinationTemporary { get; init; } = -1;
     public bool InlineSmallBlocks { get; init; }
+    // One-dimensional array elements are addressed at the inline offset every
+    // runtime keeps them at, without reading the array's data pointer.
+    public bool InlineArrayData { get; init; }
     public int CopySourceTemporary { get; init; } = -1;
 
     public ImmutableDictionary<int, int> AnchorLocals { get; init; } = [];

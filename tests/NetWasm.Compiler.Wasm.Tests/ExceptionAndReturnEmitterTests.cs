@@ -236,7 +236,7 @@ public sealed class ExceptionAndReturnEmitterTests
         var layouts = new RecordingLayoutProvider(target ?? WasmTargetLayout.Wasm32);
         var actualImports = imports ?? WasmRuntimeImports.CreateCatalog();
         var types = CreateArgumentSignatureTypes(program);
-        var exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        var exceptions = new ImplicitExceptionEmitter(layouts);
         var addresses = CreateAddressInstructions(layouts);
         return new[]
         {

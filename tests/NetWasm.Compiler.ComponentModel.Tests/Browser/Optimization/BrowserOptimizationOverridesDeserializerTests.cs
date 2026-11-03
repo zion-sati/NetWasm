@@ -35,7 +35,11 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
               "idempotentLoopCollapse":"Enabled",
               "loopStoreForwarding":"Disabled",
               "arrayLoopIdioms":"Enabled",
-              "loopVectorization":"Disabled"
+              "loopVectorization":"Disabled",
+              "pureCallReuse":"Enabled",
+              "fieldLoadReuse":"Enabled",
+              "conditionalStoreMerging":"Enabled",
+              "inlineArrayData":"Enabled"
             }
             """);
         Assert.Equal(new WasmOptimizationOverrides(
@@ -63,7 +67,11 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
             ManagedIdempotentLoopCollapse.Enabled,
             ManagedLoopStoreForwarding.Disabled,
             ManagedArrayLoopIdioms.Enabled,
-            ManagedLoopVectorization.Disabled), result);
+            ManagedLoopVectorization.Disabled,
+            ManagedPureCallReuse.Enabled,
+            ManagedFieldLoadReuse.Enabled,
+            ManagedConditionalStoreMerging.Enabled,
+            ManagedInlineArrayData.Enabled), result);
     }
 
     [Fact]

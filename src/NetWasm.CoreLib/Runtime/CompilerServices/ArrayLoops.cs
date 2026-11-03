@@ -19,6 +19,15 @@ namespace System.Runtime.CompilerServices
         internal static int Copy<T>(T[]? destination, T[]? source, int start, int end) =>
             throw new InvalidOperationException("The NetWasm compiler did not lower the array copy.");
 
+        // Fill and Copy where the compiler proved the arrays are not null and every index
+        // from start to end lies within them, start below end: they do every iteration and
+        // return end.
+        internal static int FillInBounds<T>(T[] array, int start, int end, T value) =>
+            throw new InvalidOperationException("The NetWasm compiler did not lower the array fill.");
+
+        internal static int CopyInBounds<T>(T[] destination, T[] source, int start, int end) =>
+            throw new InvalidOperationException("The NetWasm compiler did not lower the array copy.");
+
         // The bitwise exclusive or, or and and of the count integer elements
         // from data on, each widened as its type's sign says: 32-bit for
         // elements of up to four bytes, 64-bit for eight. The loop checked that

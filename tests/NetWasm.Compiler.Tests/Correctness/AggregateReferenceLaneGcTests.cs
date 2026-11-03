@@ -19,9 +19,11 @@ public sealed class AggregateReferenceLaneGcTests(CorrectnessTestRunner runner)
 
     // O3 keeps a constructed span and a struct holding an object in lane
     // locals rather than in their frame storage, so each array below is
-    // reachable only through a lane while the collection runs. A freed span
-    // target is reused by arrays filled with -1; a freed holder target clears
-    // its weak reference.
+    // reachable only through a lane while the collection runs. So does a span
+    // whose inlined Slice and indexer take its address, its reference a byref
+    // local into the array, and a span argument the method replaces. A freed
+    // span target is reused by arrays filled with -1; a freed holder target
+    // clears its weak reference.
     private const string Source = """
         using System;
         using System.Runtime.CompilerServices;
@@ -45,8 +47,47 @@ public sealed class AggregateReferenceLaneGcTests(CorrectnessTestRunner runner)
                     var start = seed + round;
                     if (Spans(start) != 64 * start + 2016) return 1;
                     if (References(start) != 2 * start + 3) return 2;
+                    if (Sliced(start) != 16 * start + 504) return 3;
+                    if (Replaced(default, start) != 16 * start + 504) return 4;
                 }
                 return 42;
+            }
+
+            // The span's Slice and indexer take its address.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Sliced(int seed)
+            {
+                ReadOnlySpan<int> span = Fill(seed, 64);
+                var sum = 0;
+                while (span.Length >= 8)
+                {
+                    if ((span.Length & 31) == 0)
+                    {
+                        if (!Collect()) return -1;
+                        Reuse();
+                    }
+                    sum += span[0] + span[7];
+                    span = span.Slice(8);
+                }
+                return sum;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Replaced(ReadOnlySpan<int> span, int seed)
+            {
+                span = Fill(seed, 64);
+                var sum = 0;
+                while (span.Length >= 8)
+                {
+                    if ((span.Length & 31) == 0)
+                    {
+                        if (!Collect()) return -1;
+                        Reuse();
+                    }
+                    sum += span[0] + span[7];
+                    span = span.Slice(8);
+                }
+                return sum;
             }
 
             [MethodImpl(MethodImplOptions.NoInlining)]

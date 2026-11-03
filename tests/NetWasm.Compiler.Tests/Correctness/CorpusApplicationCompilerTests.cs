@@ -78,7 +78,7 @@ public sealed class CorpusApplicationCompilerTests
 
     private static ICorpusApplicationCompiler CreateCompiler(Dependencies dependencies) =>
         Assert.IsAssignableFrom<ICorpusApplicationCompiler>(new CorpusApplicationCompiler(
-            new("repository", "dotnet", "sdk", "roslyn", "corelib", "references", "node", "oracle", "compiler.dll", TimeSpan.FromSeconds(7)),
+            new("repository", "dotnet", "sdk", "roslyn", "corelib", "references", "node", "oracle", "11.0.0", "compiler.dll", TimeSpan.FromSeconds(7)),
             dependencies, dependencies, dependencies, dependencies, dependencies));
 
     private static CorpusCompilation CreateCompilation()

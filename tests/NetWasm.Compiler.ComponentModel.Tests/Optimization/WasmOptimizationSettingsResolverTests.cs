@@ -63,6 +63,26 @@ public sealed class WasmOptimizationSettingsResolverTests
             ? LoopVectorizationPolicy.CountedLoops
             : LoopVectorizationPolicy.Disabled;
 
+    private static PureCallReusePolicy PureCallReuse(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? PureCallReusePolicy.Disabled
+            : PureCallReusePolicy.RepeatedArguments;
+
+    private static FieldLoadReusePolicy FieldLoadReuse(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? FieldLoadReusePolicy.Disabled
+            : FieldLoadReusePolicy.AvailableLoads;
+
+    private static ConditionalStoreMergingPolicy ConditionalStoreMerging(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? ConditionalStoreMergingPolicy.Disabled
+            : ConditionalStoreMergingPolicy.SameFieldArms;
+
+    private static InlineArrayDataPolicy InlineArrayData(FinalWasmOptimization preset) =>
+        preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+            ? InlineArrayDataPolicy.Disabled
+            : InlineArrayDataPolicy.Inline;
+
     private static bool WholeProgramDefault(FinalWasmOptimization preset) => preset switch
     {
         FinalWasmOptimization.None or FinalWasmOptimization.O0 or FinalWasmOptimization.O1 => false,
@@ -111,6 +131,14 @@ public sealed class WasmOptimizationSettingsResolverTests
                 ? ManagedArrayLoopIdioms.Enabled : ManagedArrayLoopIdioms.Disabled));
             var vectorization = resolver.Resolve(preset, new(LoopVectorization: enabled
                 ? ManagedLoopVectorization.Enabled : ManagedLoopVectorization.Disabled));
+            var pureCalls = resolver.Resolve(preset, new(PureCallReuse: enabled
+                ? ManagedPureCallReuse.Enabled : ManagedPureCallReuse.Disabled));
+            var fieldLoads = resolver.Resolve(preset, new(FieldLoadReuse: enabled
+                ? ManagedFieldLoadReuse.Enabled : ManagedFieldLoadReuse.Disabled));
+            var storeMerging = resolver.Resolve(preset, new(ConditionalStoreMerging: enabled
+                ? ManagedConditionalStoreMerging.Enabled : ManagedConditionalStoreMerging.Disabled));
+            var arrayData = resolver.Resolve(preset, new(InlineArrayData: enabled
+                ? ManagedInlineArrayData.Enabled : ManagedInlineArrayData.Disabled));
             Assert.Equal(baseline with
             {
                 ConstantArgumentPropagation = enabled ? ConstantArgumentPropagationPolicy.Conservative : ConstantArgumentPropagationPolicy.Disabled,
@@ -184,6 +212,26 @@ public sealed class WasmOptimizationSettingsResolverTests
                 LoopVectorization = enabled
                     ? LoopVectorizationPolicy.CountedLoops : LoopVectorizationPolicy.Disabled,
             }, vectorization);
+            Assert.Equal(baseline with
+            {
+                PureCallReuse = enabled
+                    ? PureCallReusePolicy.RepeatedArguments : PureCallReusePolicy.Disabled,
+            }, pureCalls);
+            Assert.Equal(baseline with
+            {
+                FieldLoadReuse = enabled
+                    ? FieldLoadReusePolicy.AvailableLoads : FieldLoadReusePolicy.Disabled,
+            }, fieldLoads);
+            Assert.Equal(baseline with
+            {
+                ConditionalStoreMerging = enabled
+                    ? ConditionalStoreMergingPolicy.SameFieldArms : ConditionalStoreMergingPolicy.Disabled,
+            }, storeMerging);
+            Assert.Equal(baseline with
+            {
+                InlineArrayData = enabled
+                    ? InlineArrayDataPolicy.Inline : InlineArrayDataPolicy.Disabled,
+            }, arrayData);
         }
     }
 
@@ -223,6 +271,14 @@ public sealed class WasmOptimizationSettingsResolverTests
             new(ArrayLoopIdioms: (ManagedArrayLoopIdioms)255)));
         Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
             new(LoopVectorization: (ManagedLoopVectorization)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(PureCallReuse: (ManagedPureCallReuse)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(FieldLoadReuse: (ManagedFieldLoadReuse)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(ConditionalStoreMerging: (ManagedConditionalStoreMerging)255)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => resolver.Resolve(FinalWasmOptimization.Oz,
+            new(InlineArrayData: (ManagedInlineArrayData)255)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
@@ -256,6 +312,14 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopVectorization: ManagedLoopVectorization.Enabled)));
         Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(PureCallReuse: ManagedPureCallReuse.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(FieldLoadReuse: ManagedFieldLoadReuse.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(ConditionalStoreMerging: ManagedConditionalStoreMerging.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
+            new(InlineArrayData: ManagedInlineArrayData.Enabled)));
+        Assert.Throws<ArgumentException>(() => resolver.Resolve(FinalWasmOptimization.None,
             new(LoopInvariantFieldHoisting: ManagedLoopInvariantFieldHoisting.NullChecks)));
         Assert.Equal(resolver.Resolve(FinalWasmOptimization.None), resolver.Resolve(FinalWasmOptimization.None,
             new(ConstantArgumentPropagation: ManagedConstantArgumentPropagation.Disabled,
@@ -273,7 +337,11 @@ public sealed class WasmOptimizationSettingsResolverTests
                 IdempotentLoopCollapse: ManagedIdempotentLoopCollapse.Disabled,
                 LoopStoreForwarding: ManagedLoopStoreForwarding.Disabled,
                 ArrayLoopIdioms: ManagedArrayLoopIdioms.Disabled,
-                LoopVectorization: ManagedLoopVectorization.Disabled)));
+                LoopVectorization: ManagedLoopVectorization.Disabled,
+                PureCallReuse: ManagedPureCallReuse.Disabled,
+                FieldLoadReuse: ManagedFieldLoadReuse.Disabled,
+                ConditionalStoreMerging: ManagedConditionalStoreMerging.Disabled,
+                InlineArrayData: ManagedInlineArrayData.Disabled)));
     }
 
     [Theory]
@@ -351,7 +419,11 @@ public sealed class WasmOptimizationSettingsResolverTests
             IdempotentLoopCollapse(preset),
             LoopStoreForwarding(preset),
             ArrayLoopIdioms(preset),
-            LoopVectorization(preset));
+            LoopVectorization(preset),
+            PureCallReuse(preset),
+            FieldLoadReuse(preset),
+            ConditionalStoreMerging(preset),
+            InlineArrayData(preset));
         var actual = resolver.Resolve(preset);
         Assert.Equal(expected, actual);
         Assert.Equal(preset, actual.BackendPreset);
@@ -438,7 +510,11 @@ public sealed class WasmOptimizationSettingsResolverTests
                     IdempotentLoopCollapse(preset),
                     LoopStoreForwarding(preset),
                     ArrayLoopIdioms(preset),
-                    LoopVectorization(preset)),
+                    LoopVectorization(preset),
+                    PureCallReuse(preset),
+                    FieldLoadReuse(preset),
+                    ConditionalStoreMerging(preset),
+                    InlineArrayData(preset)),
                 resolver.Resolve(preset, new(hint)));
         }
     }

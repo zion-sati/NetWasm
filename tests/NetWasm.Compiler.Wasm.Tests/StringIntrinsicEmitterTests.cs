@@ -14,7 +14,7 @@ public sealed class StringIntrinsicEmitterTests
         var layouts = new RecordingLayoutProvider();
         var emitter = new StringLengthIntrinsicEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             EmitterTestSupport.CreateAddressInstructions(layouts));
         var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.StringLength,
@@ -49,7 +49,7 @@ public sealed class StringIntrinsicEmitterTests
         var emitter = new StringCharacterAtIntrinsicEmitter(
             layouts,
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             EmitterTestSupport.CreateAddressInstructions(layouts));
         var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.StringCharacterAt,

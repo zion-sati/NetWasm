@@ -3,6 +3,9 @@ namespace NetWasm.Compiler.Cli;
 // The option summary csc prints for -help, grouped as csc groups its own.
 internal static class NwcHelp
 {
+    // Follows every command-line error.
+    internal const string Hint = "Use -help to list the options.";
+
     private static readonly string[] Lines =
     [
         "                             NetWasm Compiler Options",
@@ -72,7 +75,8 @@ internal static class NwcHelp
         "",
         "                        - MISCELLANEOUS -",
         "@<file>                       Read response file for more options",
-        "-help                         Display this usage message (Short form: -?)",
+        "-help                         Display this usage message (Short forms: -?, -h;",
+        "                              also --help)",
         "-nologo                       Suppress compiler copyright message",
     ];
 

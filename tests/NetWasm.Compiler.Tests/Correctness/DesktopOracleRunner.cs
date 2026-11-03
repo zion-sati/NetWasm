@@ -69,6 +69,9 @@ internal sealed class DesktopOracleRunner(
             var request = new QualifiedProcessRequest(
                 environment.DotNetPath,
                 [
+                "exec",
+                "--fx-version",
+                environment.DesktopOracleFrameworkVersion,
                 environment.DesktopOracleHostPath,
                 compilation.Desktop.AssemblyPath,
                 compilation.Fixture.EntryType,
@@ -155,6 +158,9 @@ internal sealed class DesktopOracleRunner(
         var process = processes.Run(new(
             environment.DotNetPath,
             [
+                "exec",
+                "--fx-version",
+                environment.DesktopOracleFrameworkVersion,
                 environment.DesktopOracleHostPath,
                 compilation.Desktop.AssemblyPath,
                 compilation.Fixture.EntryType,

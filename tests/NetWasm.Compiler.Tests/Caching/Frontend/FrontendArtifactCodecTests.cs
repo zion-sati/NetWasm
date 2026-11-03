@@ -52,6 +52,30 @@ public sealed class FrontendArtifactCodecTests
         Assert.Equal(payload.ToArray(), encoder.Encode(restored).ToArray());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoundTripPreservesStackTraceHiddenFlag(bool hidden)
+    {
+        var snapshot = CreateStressSnapshot();
+        var method = snapshot.Analysis.Method with
+        {
+            Definition = snapshot.Analysis.Method.Definition with { IsStackTraceHidden = hidden },
+        };
+        snapshot = snapshot with { Analysis = snapshot.Analysis with { Method = method } };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+        var restored = new FrontendArtifactDecoder().Decode(payload);
+
+        Assert.Equal(hidden, restored.Analysis.Method.Definition.IsStackTraceHidden);
+        Assert.True(method.HasEquivalentDescriptorFacts(restored.Analysis.Method));
+        Assert.False(method.HasEquivalentDescriptorFacts(method with
+        {
+            Definition = method.Definition with { IsStackTraceHidden = !hidden },
+        }));
+        Assert.Equal(payload.ToArray(), encoder.Encode(restored).ToArray());
+    }
+
     [Fact]
     public void DecoderRejectsPayloadWithoutInliningFlags()
     {

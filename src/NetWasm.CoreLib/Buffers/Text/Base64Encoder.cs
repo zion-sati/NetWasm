@@ -199,7 +199,7 @@ namespace System.Buffers.Text
         {
             char[] destination = new char[GetEncodedLength(source.Length)];
             EncodeToChars(source, destination, out _, out _);
-            return string.Create(destination);
+            return new string(destination);
         }
 
         /// <summary>

@@ -664,6 +664,19 @@ internal static class EmitterTestSupport
                 },
             };
         }
+        else if (intrinsic == RuntimeIntrinsic.ArraySetValue)
+        {
+            instruction = instruction with
+            {
+                Target = instruction.Target with
+                {
+                    RuntimeImportSelection = instruction.Target.RuntimeImportSelection with
+                    {
+                        IncludeArraySetValue = true,
+                    },
+                },
+            };
+        }
         var method = program.GetMethod(EntryKey);
         if (intrinsic == RuntimeIntrinsic.UnsafeAdd)
         {
@@ -686,7 +699,7 @@ internal static class EmitterTestSupport
         RecordingLayoutProvider layouts)
     {
         var runtimeImports = WasmRuntimeImports.CreateCatalog();
-        var exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        var exceptions = new ImplicitExceptionEmitter(layouts);
         var addresses = CreateAddressInstructions(layouts);
         var functionIndices = new OptionalFunctionIndexValidator();
         var resultHandles = new JavaScriptResultHandleCapturer(runtimeImports);

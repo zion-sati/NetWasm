@@ -16,7 +16,7 @@ public sealed class TypeNameCorpusTests(CorrectnessTestRunner runner)
             "TypeNameCorpus",
             "NetWasm.Correctness.TypeNames",
             Source,
-            [.. Enumerable.Range(0, 8)])
+            [.. Enumerable.Range(0, 9)])
         {
             Optimization = optimization,
             ExecuteWasm64 = true,
@@ -44,6 +44,7 @@ public sealed class TypeNameCorpusTests(CorrectnessTestRunner runner)
                     5 => Hash(Thrown()),
                     6 => Hash(typeof(Outer).ToString()),
                     7 => Hash(Generic<Point>()),
+                    8 => Hash(Arguments(typeof(Dictionary<char, Point>))),
                     _ => -1,
                 };
 
@@ -72,6 +73,16 @@ public sealed class TypeNameCorpusTests(CorrectnessTestRunner runner)
                 }
 
                 private static string Generic<T>() => typeof(T).Name + typeof(T).Namespace;
+
+                private static string Arguments(Type type)
+                {
+                    var names = "";
+                    foreach (var argument in type.GetGenericArguments())
+                    {
+                        names += argument.Name + ";";
+                    }
+                    return names;
+                }
 
                 private static int Hash(string text)
                 {

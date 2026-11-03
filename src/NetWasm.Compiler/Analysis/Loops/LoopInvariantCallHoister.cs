@@ -17,7 +17,8 @@ internal interface ILoopInvariantCallHoister
 // static floating function of floating arguments: deterministic, with no
 // effects and no exceptions, so one call, even ahead of a loop that runs no
 // iteration, gives every iteration's value. The arguments are constants,
-// arguments and locals the loop does not write, combined by arithmetic that
+// arguments and locals the loop does not write and whose address the method
+// never takes, combined by arithmetic that
 // cannot throw: no integer division. This runs before inlining, while the call
 // is still a call, so an inlined body cannot leave its branches in the loop and
 // the loop stays one straight-line body for the vectorizer.
@@ -43,6 +44,7 @@ internal sealed class LoopInvariantCallHoister(ICalledMethodResolver calledMetho
             .Concat(body.ExceptionRegions.SelectMany(static region => (int?[])
                 [region.TryOffset, region.HandlerOffset, region.FilterOffset]).OfType<int>())
             .ToHashSet();
+        var exposed = ExposedSlots.Of(instructions);
         var locals = body.Locals.ToBuilder();
         var localTypes = body.LocalSignatureTypes.ToBuilder();
         List<CilInstruction>[]? replacements = null;
@@ -73,6 +75,7 @@ internal sealed class LoopInvariantCallHoister(ICalledMethodResolver calledMetho
             }
             if (end < 0) continue;
             var written = Written(instructions, jump + 1, end);
+            written.UnionWith(exposed);
 
             List<CilInstruction>? prefix = null;
             for (var call = jump + 1; call < end; call++)

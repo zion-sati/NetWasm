@@ -1506,7 +1506,9 @@ namespace System.Threading.Tasks
                     // WhenAll consumes each child fault; its own task retains
                     // responsibility for reporting an ignored aggregate.
                     task.GetVoidResult(suppressThrowing: true);
-                    if (task._exception is AggregateException aggregate)
+                    // A task faulted with several exceptions holds them in its own aggregate; one
+                    // faulted with an AggregateException holds that exception, unflattened.
+                    if (task._exceptionIsAggregateContainer && task._exception is AggregateException aggregate)
                     {
                         foreach (var exception in aggregate.InnerExceptions)
                         {
@@ -1595,7 +1597,9 @@ namespace System.Threading.Tasks
                     // WhenAll consumes each child fault; its own task retains
                     // responsibility for reporting an ignored aggregate.
                     task.GetVoidResult(suppressThrowing: true);
-                    if (task._exception is AggregateException aggregate)
+                    // A task faulted with several exceptions holds them in its own aggregate; one
+                    // faulted with an AggregateException holds that exception, unflattened.
+                    if (task._exceptionIsAggregateContainer && task._exception is AggregateException aggregate)
                     {
                         foreach (var exception in aggregate.InnerExceptions)
                         {
@@ -2313,6 +2317,10 @@ namespace System.Threading.Tasks
         internal void SetCanceledForJavaScriptInterop() =>
             SetCanceled(new TaskCanceledException());
 
+        // A rejected JavaScript promise faults its task with a new JSException.
+        internal void SetExceptionForJavaScriptInterop() =>
+            SetException(new JSException());
+
         internal void GetVoidResult() => GetVoidResult(suppressThrowing: false);
 
         internal void GetVoidResult(bool suppressThrowing)
@@ -2344,6 +2352,29 @@ namespace System.Threading.Tasks
             return aggregateContainer && exception is AggregateException aggregate
                 ? aggregate
                 : new AggregateException(exception);
+        }
+
+        // Upstream's GetExceptions and ThrowIfExceptional: a faulted task's exceptions, or a
+        // new TaskCanceledException for a canceled one when asked, in the AggregateException
+        // that Result throws; awaiting rethrows the exceptions unwrapped instead.
+        private AggregateException? GetExceptions(bool includeTaskCanceledExceptions)
+        {
+            if (IsFaulted && _exception is not null)
+            {
+                return ObserveException(_exception, _exceptionIsAggregateContainer);
+            }
+            return includeTaskCanceledExceptions && IsCanceled
+                ? new AggregateException(new TaskCanceledException(this))
+                : null;
+        }
+
+        internal void ThrowIfExceptional(bool includeTaskCanceledExceptions)
+        {
+            var exception = GetExceptions(includeTaskCanceledExceptions);
+            if (exception is not null)
+            {
+                throw exception;
+            }
         }
 
         private void DispatchContinuation(bool forceAsynchronous = false)
@@ -2651,7 +2682,21 @@ namespace System.Threading.Tasks
         private Delegate? _function;
         private object? _functionState;
 
-        public T Result => GetResult();
+        public T Result
+        {
+            get
+            {
+                if (!IsCompleted)
+                {
+                    throw new PlatformNotSupportedException();
+                }
+                if (!IsCompletedSuccessfully)
+                {
+                    ThrowIfExceptional(includeTaskCanceledExceptions: true);
+                }
+                return _result;
+            }
+        }
 
         public static Task<T> FromResult(T result)
             => Task.FromResult(result);

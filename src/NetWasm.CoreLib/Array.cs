@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace System
@@ -762,47 +763,195 @@ namespace System
             return InternalGetValue(this, (int)offset);
         }
 
+        public object? GetValue(int index1, int index2) =>
+            GetValue(new[] { index1, index2 });
+
+        public object? GetValue(int index1, int index2, int index3) =>
+            GetValue(new[] { index1, index2, index3 });
+
         public object? GetValue(params int[] indices)
         {
-            if (indices is null) throw new ArgumentNullException();
-            if (indices.Length != 1) throw new PlatformNotSupportedException();
-            return GetValue(indices[0]);
+            ArgumentNullException.ThrowIfNull(indices);
+            if (indices.Length != Rank) throw new ArgumentException();
+            return InternalGetValue(this, FlattenedOffset(indices));
         }
 
-        public object? GetValue(long index) => GetValue(ToInt32(index));
+        public object? GetValue(long index) => GetValue(AssignmentIndex(index, nameof(index)));
+        public object? GetValue(long index1, long index2) =>
+            GetValue(AssignmentIndex(index1, nameof(index1)), AssignmentIndex(index2, nameof(index2)));
+        public object? GetValue(long index1, long index2, long index3) =>
+            GetValue(AssignmentIndex(index1, nameof(index1)), AssignmentIndex(index2, nameof(index2)),
+                AssignmentIndex(index3, nameof(index3)));
 
         public object? GetValue(params long[] indices)
         {
-            if (indices is null) throw new ArgumentNullException();
-            if (indices.Length != 1) throw new PlatformNotSupportedException();
-            return GetValue(indices[0]);
+            ArgumentNullException.ThrowIfNull(indices);
+            if (indices.Length != Rank) throw new ArgumentException();
+            var converted = new int[indices.Length];
+            for (var index = 0; index < indices.Length; index++)
+                converted[index] = AssignmentIndex(indices[index], "index");
+            return GetValue(converted);
         }
 
         public void SetValue(object? value, int index)
         {
-            if (this is object[] values)
-            {
-                values[index] = value!;
-                return;
-            }
-            throw new PlatformNotSupportedException();
+            if (Rank != 1) throw new ArgumentException();
+            SetValueAtOffset(value, CheckedOffset(index, 0));
         }
+
+        public void SetValue(object? value, int index1, int index2) =>
+            SetValue(value, new[] { index1, index2 });
+
+        public void SetValue(object? value, int index1, int index2, int index3) =>
+            SetValue(value, new[] { index1, index2, index3 });
 
         public void SetValue(object? value, params int[] indices)
         {
-            if (indices is null) throw new ArgumentNullException();
-            if (indices.Length != 1) throw new PlatformNotSupportedException();
-            SetValue(value, indices[0]);
+            ArgumentNullException.ThrowIfNull(indices);
+            if (indices.Length != Rank) throw new ArgumentException();
+            SetValueAtOffset(value, FlattenedOffset(indices));
         }
 
-        public void SetValue(object? value, long index) => SetValue(value, ToInt32(index));
+        public void SetValue(object? value, long index) =>
+            SetValue(value, AssignmentIndex(index, nameof(index)));
+        public void SetValue(object? value, long index1, long index2) =>
+            SetValue(value, AssignmentIndex(index1, nameof(index1)), AssignmentIndex(index2, nameof(index2)));
+        public void SetValue(object? value, long index1, long index2, long index3) =>
+            SetValue(value, AssignmentIndex(index1, nameof(index1)), AssignmentIndex(index2, nameof(index2)),
+                AssignmentIndex(index3, nameof(index3)));
 
         public void SetValue(object? value, params long[] indices)
         {
-            if (indices is null) throw new ArgumentNullException();
-            if (indices.Length != 1) throw new PlatformNotSupportedException();
-            SetValue(value, indices[0]);
+            ArgumentNullException.ThrowIfNull(indices);
+            if (indices.Length != Rank) throw new ArgumentException();
+            var converted = new int[indices.Length];
+            for (var index = 0; index < indices.Length; index++)
+                converted[index] = AssignmentIndex(indices[index], "index");
+            SetValue(value, converted);
         }
+
+        private static int AssignmentIndex(long index, string parameter)
+        {
+            if (index < int.MinValue || index > int.MaxValue)
+                throw new ArgumentOutOfRangeException(parameter);
+            return (int)index;
+        }
+
+        // Row-major offset of indices whose count the caller has matched to Rank.
+        private int FlattenedOffset(int[] indices)
+        {
+            var offset = 0;
+            for (var dimension = 0; dimension < indices.Length; dimension++)
+                offset = checked(offset * GetLength(dimension) + CheckedOffset(indices[dimension], dimension));
+            return offset;
+        }
+
+        private int CheckedOffset(int index, int dimension)
+        {
+            var offset = (long)index - GetLowerBound(dimension);
+            if (offset < 0 || offset >= GetLength(dimension)) throw new IndexOutOfRangeException();
+            return (int)offset;
+        }
+
+        private void SetValueAtOffset(object? value, int offset)
+        {
+            if (value is not null)
+                value = NormalizeAssignment(value, InternalElementType(this));
+            if (InternalSetValue(this, offset, value) != 0) throw new InvalidCastException();
+        }
+
+        // Adapted from upstream's InternalSetValue (Array.CoreCLR.cs): the runtime stores a value of
+        // the element's own type, so another enum or primitive value widens here to a true
+        // primitive element, as RuntimeHelpers.CanPrimitiveWiden allows; a primitive never becomes
+        // an enum.
+        private static object NormalizeAssignment(object value, Type target)
+        {
+            var source = value.GetType();
+            if (source == target) return value;
+            var nullable = Nullable.GetUnderlyingType(target);
+            if (nullable is not null)
+            {
+                if (source == nullable) return value;
+                throw new InvalidCastException();
+            }
+            if (!target.IsValueType)
+            {
+                if (target.IsInstanceOfType(value)) return value;
+                throw new InvalidCastException();
+            }
+            var sourceType = GetPrimitiveType(source);
+            var targetType = target.IsEnum ? CorElementType.ELEMENT_TYPE_CLASS : GetPrimitiveType(target);
+            if (!sourceType.IsPrimitiveType() || !targetType.IsPrimitiveType()) throw new InvalidCastException();
+            if (!RuntimeHelpers.CanPrimitiveWiden(sourceType, targetType)) throw new ArgumentException();
+            return Widen(value, sourceType, targetType);
+        }
+
+        // A primitive's element type, and an enum's underlying one, as upstream's
+        // GetPrimitiveCorElementType reads them; any other type answers ELEMENT_TYPE_CLASS.
+        private static CorElementType GetPrimitiveType(Type type) =>
+            type == typeof(nint) ? CorElementType.ELEMENT_TYPE_I
+            : type == typeof(nuint) ? CorElementType.ELEMENT_TYPE_U
+            : Type.GetTypeCode(type) switch
+            {
+                TypeCode.Boolean => CorElementType.ELEMENT_TYPE_BOOLEAN,
+                TypeCode.Char => CorElementType.ELEMENT_TYPE_CHAR,
+                TypeCode.SByte => CorElementType.ELEMENT_TYPE_I1,
+                TypeCode.Byte => CorElementType.ELEMENT_TYPE_U1,
+                TypeCode.Int16 => CorElementType.ELEMENT_TYPE_I2,
+                TypeCode.UInt16 => CorElementType.ELEMENT_TYPE_U2,
+                TypeCode.Int32 => CorElementType.ELEMENT_TYPE_I4,
+                TypeCode.UInt32 => CorElementType.ELEMENT_TYPE_U4,
+                TypeCode.Int64 => CorElementType.ELEMENT_TYPE_I8,
+                TypeCode.UInt64 => CorElementType.ELEMENT_TYPE_U8,
+                TypeCode.Single => CorElementType.ELEMENT_TYPE_R4,
+                TypeCode.Double => CorElementType.ELEMENT_TYPE_R8,
+                _ => CorElementType.ELEMENT_TYPE_CLASS,
+            };
+
+        // Upstream's InvokeUtils.PrimitiveWiden for a value CanPrimitiveWiden accepts. A bool,
+        // double, nint or nuint widens only to its own type, so it is already the target's.
+        private static object Widen(object value, CorElementType source, CorElementType target)
+        {
+            if (source is CorElementType.ELEMENT_TYPE_BOOLEAN or CorElementType.ELEMENT_TYPE_R8 or
+                CorElementType.ELEMENT_TYPE_I or CorElementType.ELEMENT_TYPE_U)
+                return value;
+            if (source == CorElementType.ELEMENT_TYPE_R4) return (double)(float)value;
+            // Every other source is an integer or char, which fits each target it widens to.
+            long integer = source switch
+            {
+                CorElementType.ELEMENT_TYPE_CHAR => (char)value,
+                CorElementType.ELEMENT_TYPE_I1 => (sbyte)value,
+                CorElementType.ELEMENT_TYPE_U1 => (byte)value,
+                CorElementType.ELEMENT_TYPE_I2 => (short)value,
+                CorElementType.ELEMENT_TYPE_U2 => (ushort)value,
+                CorElementType.ELEMENT_TYPE_I4 => (int)value,
+                CorElementType.ELEMENT_TYPE_U4 => (uint)value,
+                CorElementType.ELEMENT_TYPE_I8 => (long)value,
+                _ => unchecked((long)(ulong)value),
+            };
+            var unsigned = source == CorElementType.ELEMENT_TYPE_U8;
+            // Each arm boxes its own type; without the casts the switch would convert them all to double.
+            return target switch
+            {
+                CorElementType.ELEMENT_TYPE_CHAR => (object)(char)integer,
+                CorElementType.ELEMENT_TYPE_I1 => (object)(sbyte)integer,
+                CorElementType.ELEMENT_TYPE_U1 => (object)(byte)integer,
+                CorElementType.ELEMENT_TYPE_I2 => (object)(short)integer,
+                CorElementType.ELEMENT_TYPE_U2 => (object)(ushort)integer,
+                CorElementType.ELEMENT_TYPE_I4 => (object)(int)integer,
+                CorElementType.ELEMENT_TYPE_U4 => (object)(uint)integer,
+                CorElementType.ELEMENT_TYPE_I8 => (object)integer,
+                CorElementType.ELEMENT_TYPE_U8 => (object)unchecked((ulong)integer),
+                CorElementType.ELEMENT_TYPE_R4 => (object)(unsigned ? (float)unchecked((ulong)integer) : (float)integer),
+                _ => (object)(unsigned ? (double)unchecked((ulong)integer) : (double)integer),
+            };
+        }
+
+        // Compiler intrinsics: the array's element type, and the runtime's store of a value of the
+        // element's own type, which returns nonzero for any other value.
+        private static Type InternalElementType(Array array) => throw new PlatformNotSupportedException();
+        private static int InternalSetValue(Array array, int offset, object? value) =>
+            throw new PlatformNotSupportedException();
 
         public void CopyTo(Array array, int index)
         {

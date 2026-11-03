@@ -20,7 +20,7 @@ public sealed class ProgramTests
         var result = Program.Run(["-nologo", "App.dll"], console);
 
         Assert.Equal(1, result);
-        Assert.Equal(["error NW1000: no output file was specified (-out)"], console.Lines);
+        Assert.Equal(["error NW1000: no output file was specified (-out)", "Use -help to list the options."], console.Lines);
     }
 
     [Fact]

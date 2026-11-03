@@ -359,7 +359,7 @@ public sealed class EnumIntrinsicEmitterTests
             new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
-                new ImplicitExceptionEmitter(layouts, layouts)));
+                new ImplicitExceptionEmitter(layouts)));
         var code = new RecordingInstructionWriter();
 
         ((IEnumTypeCodeEmitter)emitter).EmitTypeCode(code, 0, 1, 2, OptionalFunctionIndex.At(7));
@@ -402,7 +402,7 @@ public sealed class EnumIntrinsicEmitterTests
             new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
-                new ImplicitExceptionEmitter(layouts, layouts)),
+                new ImplicitExceptionEmitter(layouts)),
             new EnumValuePairEmitter(layouts),
             references,
             layouts);
@@ -417,7 +417,7 @@ public sealed class EnumIntrinsicEmitterTests
             new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
-                new ImplicitExceptionEmitter(layouts, layouts)),
+                new ImplicitExceptionEmitter(layouts)),
             layouts,
             layouts);
     }
@@ -431,10 +431,10 @@ public sealed class EnumIntrinsicEmitterTests
             new EnumStorageResolver(layouts, layouts, layouts),
             new EnumNullCheckEmitter(
                 references,
-                new ImplicitExceptionEmitter(layouts, layouts)),
+                new ImplicitExceptionEmitter(layouts)),
             new EnumValuePairEmitter(layouts),
             references,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             layouts);
     }
 

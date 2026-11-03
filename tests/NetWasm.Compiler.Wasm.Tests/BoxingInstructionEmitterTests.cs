@@ -197,7 +197,7 @@ public sealed class BoxingInstructionEmitterTests
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var addresses = new AddressInstructionEmitter(layouts);
         var runtimeImports = WasmRuntimeImports.CreateCatalog();
-        var exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        var exceptions = new ImplicitExceptionEmitter(layouts);
         var types = CreateTypeOperands(new FakeProgram());
         var unboxes = new BoxedValueUnboxEmitter(
             layouts,
@@ -240,11 +240,11 @@ public sealed class BoxingInstructionEmitterTests
             new AddressInstructionEmitter(layouts),
             layouts,
             CreateTypeOperands(new FakeProgram()),
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new BoxedValueTypeValidator(
                 layouts,
                 new EmptyEnumStorageResolver(),
-                new ImplicitExceptionEmitter(layouts, layouts)),
+                new ImplicitExceptionEmitter(layouts)),
             new ValueFrameAddressEmitter(layouts));
     }
 

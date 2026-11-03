@@ -20,7 +20,7 @@ public sealed class ArrayLengthAdapterTests
         CliValueKind lengthType)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
-        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts);
         var adapter = CreateAdapter(layouts, exceptions);
         var request = CreateInstructionRequest(
             CilOperation.NewArray,
@@ -44,7 +44,7 @@ public sealed class ArrayLengthAdapterTests
     public void AdaptRangeChecksAndNarrowsWasm64NativeLength()
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm64);
-        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts);
         var adapter = CreateAdapter(layouts, exceptions);
         var request = CreateInstructionRequest(
             CilOperation.NewArray,
@@ -63,7 +63,7 @@ public sealed class ArrayLengthAdapterTests
     public void AdaptRejectsATypeOutsideItsValidatedContract()
     {
         var layouts = new RecordingLayoutProvider();
-        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts);
         var adapter = CreateAdapter(layouts, exceptions);
         var request = CreateInstructionRequest(
             CilOperation.NewArray,

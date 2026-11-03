@@ -1382,7 +1382,24 @@ PY
   # A solution publishes every publishable project (issue #143): the library
   # publishes as a .NET class library, staging nothing, and the page stages
   # its deployment without the library's assembly, which its module holds. A
-  # library with IsPublishable=false is skipped.
+  # library with IsPublishable=false is skipped, and so are a page and a
+  # console application with IsPublishable=false (issue #163): NetWasm's
+  # publish hooks, which MSBuild runs even when IsPublishable skips Publish,
+  # do nothing for them.
+  create_consumer SettingsPage --host page
+  create_consumer QuietConsole
+  for unpublished in SettingsPage QuietConsole; do
+    python3 - "$consumer_root/$unpublished/$unpublished.csproj" <<'PY'
+import sys
+from pathlib import Path
+
+project = Path(sys.argv[1])
+text = project.read_text(encoding="utf-8")
+assert text.count("</PropertyGroup>") >= 1
+text = text.replace("</PropertyGroup>", "  <IsPublishable>false</IsPublishable>\n  </PropertyGroup>", 1)
+project.write_text(text, encoding="utf-8")
+PY
+  done
   solution_root="$consumer_root/page-solution"
   mkdir -p "$solution_root"
   cp "$app_root/global.json" "$solution_root/global.json"
@@ -1390,14 +1407,28 @@ PY
 <Solution>
   <Project Path="../PageModule/PageModule.csproj" />
   <Project Path="../PageExports/PageExports.csproj" />
+  <Project Path="../SettingsPage/SettingsPage.csproj" />
+  <Project Path="../QuietConsole/QuietConsole.csproj" />
 </Solution>
 EOF
+  assert_unpublished() {
+    local name
+    for name in SettingsPage QuietConsole; do
+      if [[ -d "$consumer_root/$name/bin/Release/netwasm0.1/publish" ]] &&
+          find "$consumer_root/$name/bin/Release/netwasm0.1/publish" -type f | grep -q .; then
+        echo "$name, which sets IsPublishable=false, published files" >&2
+        exit 1
+      fi
+    done
+  }
   for publishable in true false; do
-    rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin"
+    rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin" \
+      "$consumer_root/SettingsPage/bin" "$consumer_root/QuietConsole/bin"
     (cd "$solution_root" && run_log "$work_root/page-solution-publish-$publishable.log" \
       dotnet publish PageSolution.slnx -c Release --disable-build-servers --nologo \
         -p:PageExportsPublishable=$publishable)
     require_file "$page_publish/PageModule.mjs"
+    assert_unpublished
     if find "$consumer_root/PageModule/bin/Release/netwasm0.1/publish" \( -name '*.dll' -o -name '*.pdb' \) | grep -q .; then
       echo "The page's publish holds managed assemblies" >&2
       exit 1
@@ -1408,7 +1439,23 @@ EOF
       exit 1
     fi
   done
-  rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin"
+  # Publishing one alone does nothing and succeeds, as for any .NET project
+  # with IsPublishable=false, including for the browser and with --no-build
+  # after a build; IsPublishable=true publishes it on purpose.
+  for unpublished in SettingsPage QuietConsole; do
+    (cd "$consumer_root/$unpublished" && run_log "$work_root/$unpublished-publish.log" \
+      dotnet publish "$unpublished.csproj" -c Release --disable-build-servers --nologo)
+    (cd "$consumer_root/$unpublished" && run_log "$work_root/$unpublished-build.log" \
+      dotnet build "$unpublished.csproj" -c Release --disable-build-servers --nologo)
+    (cd "$consumer_root/$unpublished" && run_log "$work_root/$unpublished-publish-no-build.log" \
+      dotnet publish "$unpublished.csproj" -c Release --no-build --disable-build-servers --nologo \
+        -p:NetWasmPublishTarget=browser)
+  done
+  assert_unpublished
+  (cd "$consumer_root/SettingsPage" && run_log "$work_root/SettingsPage-publish-on-purpose.log" \
+    dotnet publish SettingsPage.csproj -c Release --disable-build-servers --nologo -p:IsPublishable=true)
+  require_file "$consumer_root/SettingsPage/bin/Release/netwasm0.1/publish/browser/SettingsPage.mjs"
+  rm -rf "$consumer_root/PageModule/bin" "$consumer_root/PageExports/bin" "$consumer_root/SettingsPage/bin"
   (cd "$consumer_root/PageModule" && run_log "$work_root/page-module-publish-again.log" \
     dotnet publish PageModule.csproj -c Release --disable-build-servers --nologo)
   require_file "$page_publish/PageModule.mjs"
@@ -1461,6 +1508,8 @@ with open(log_path, "w", encoding="utf-8") as log:
 PY
   }
   serve_with_dotnet_run "$consumer_root/PageModule" "browser/PageModule.mjs" "$work_root/page-module-run.log"
+  # A page that sets IsPublishable=false still runs: run stages it on purpose.
+  serve_with_dotnet_run "$consumer_root/SettingsPage" "browser/SettingsPage.mjs" "$work_root/settings-page-run.log"
   serve_with_dotnet_run "$consumer_root/WitWorker" "browser/WitWorker.worker-client.mjs" "$work_root/wit-worker-run.log"
   if (cd "$exports_root" && dotnet run --disable-build-servers > "$work_root/library-run.log" 2>&1); then
     echo "dotnet run on a library succeeded" >&2

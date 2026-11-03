@@ -9,7 +9,9 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 // null, end is clamped to each array's length; when start then lies in
 // [0, end) the work runs on the byte count from start's elements and the
 // result is end, and otherwise the result is start, so the loop's next
-// iteration throws as it would have.
+// iteration throws as it would have. Their InBounds forms, where the compiler
+// proved that range within the arrays, run the work and return end, so with
+// constant bounds the byte count is a constant too.
 internal static class ArrayLoopEmitter
 {
     public static void Emit(
@@ -23,6 +25,13 @@ internal static class ArrayLoopEmitter
     {
         var target = request.Target;
         var result = request.Local(0, CliValueKind.I4);
+        if (request.Intrinsic is RuntimeIntrinsic.ArrayLoopFillInBounds or RuntimeIntrinsic.ArrayLoopCopyInBounds)
+        {
+            work();
+            Get(code, end);
+            Set(code, result);
+            return;
+        }
         for (var index = 0; index < arrays.Length; index++)
         {
             Get(code, arrays[index]);
@@ -70,9 +79,10 @@ internal static class ArrayLoopEmitter
         int array,
         int start,
         int elementSize,
-        int local)
+        int local,
+        bool inlineData)
     {
-        ManagedMemoryEmitter.EmitArrayElementAddress(code, target, array, start, elementSize);
+        ManagedMemoryEmitter.EmitArrayElementAddress(code, target, array, start, inlineData, elementSize);
         Set(code, local);
     }
 

@@ -41,6 +41,7 @@ internal sealed record CompileCliOptions(
         "managedallocationelimination", "managedlooprotation", "managedarraystorecheckelimination",
         "manageddispatcherelimination", "managedemptyfinallyremoval", "managedstructscalarreplacement", "managedallocationscalarreplacement",
         "managedidempotentloopcollapse", "managedloopstoreforwarding", "managedarrayloopidioms", "managedloopvectorization",
+        "managedpurecallreuse", "managedfieldloadreuse", "managedconditionalstoremerging", "managedinlinearraydata",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public FinalWasmOptimization Optimization { get; init; } = FinalWasmOptimization.Oz;
@@ -87,6 +88,10 @@ internal sealed record CompileCliOptions(
     public string? ManagedLoopStoreForwarding { get; init; }
     public string? ManagedArrayLoopIdioms { get; init; }
     public string? ManagedLoopVectorization { get; init; }
+    public string? ManagedPureCallReuse { get; init; }
+    public string? ManagedFieldLoadReuse { get; init; }
+    public string? ManagedConditionalStoreMerging { get; init; }
+    public string? ManagedInlineArrayData { get; init; }
 
     public static CompileCliOptions Parse(NwcArguments arguments)
     {
@@ -168,6 +173,10 @@ internal sealed record CompileCliOptions(
             ManagedLoopStoreForwarding = options.Single("managedloopstoreforwarding"),
             ManagedArrayLoopIdioms = options.Single("managedarrayloopidioms"),
             ManagedLoopVectorization = options.Single("managedloopvectorization"),
+            ManagedPureCallReuse = options.Single("managedpurecallreuse"),
+            ManagedFieldLoadReuse = options.Single("managedfieldloadreuse"),
+            ManagedConditionalStoreMerging = options.Single("managedconditionalstoremerging"),
+            ManagedInlineArrayData = options.Single("managedinlinearraydata"),
         };
     }
 
@@ -178,7 +187,7 @@ internal sealed record CompileCliOptions(
         {
             (null, null, null) => null,
             ({ } executable, { } script, { } component) =>
-                new(executable, ["--disable-warning=ExperimentalWarning", script, component]),
+                ExternalToolCommand.ForWasmTools(executable, script, component),
             _ => throw CliOptionException.Create(
                 "-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together"),
         };

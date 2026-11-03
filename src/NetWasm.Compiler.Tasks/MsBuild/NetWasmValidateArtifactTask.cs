@@ -39,6 +39,11 @@ public sealed class NetWasmValidateArtifactTask : CompilerArtifactManifestTaskBa
             SetResolvedArtifacts(_validator.Validate(new(request, ArtifactManifestPath)));
             return true;
         }
+        catch (StaleCompilerArtifactManifestException stale)
+        {
+            Log.LogError($"NWSDK003: NetWasm artifact manifest is stale because {stale.Reason}; rebuild the application.");
+            return false;
+        }
         catch (Exception)
         {
             Log.LogError("NWSDK003: NetWasm artifact manifest is missing, invalid, or stale; rebuild the application.");

@@ -26,5 +26,9 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? idempotentLoopCollapse = null,
         string? loopStoreForwarding = null,
         string? arrayLoopIdioms = null,
-        string? loopVectorization = null);
+        string? loopVectorization = null,
+        string? pureCallReuse = null,
+        string? fieldLoadReuse = null,
+        string? conditionalStoreMerging = null,
+        string? inlineArrayData = null);
 }

@@ -111,7 +111,7 @@ public sealed class CorpusCompilerRequestFactoryTests
         CreateEnvironment(), new StubRegistry(ImmutableDictionary<string, string>.Empty.Add("System.Runtime", "NetWasm.CoreLib")));
 
     private static CompilerCorrectnessEnvironment CreateEnvironment() =>
-        new("repository", "dotnet", "sdk", "roslyn", "corelib.dll", "references", "node", "oracle", "compiler", TimeSpan.FromSeconds(1));
+        new("repository", "dotnet", "sdk", "roslyn", "corelib.dll", "references", "node", "oracle", "11.0.0", "compiler", TimeSpan.FromSeconds(1));
 
     private static CorpusCompilation CreateCompilation()
     {

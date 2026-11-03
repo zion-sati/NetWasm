@@ -54,6 +54,13 @@ public sealed record WasmTargetLayout
     public int ObjectReferenceAlignment { get; }
     public int ObjectHeaderSize { get; }
     public static int SemanticLengthSize => sizeof(int);
+
+    // Where a one-dimensional array's elements start: after its header, length,
+    // data pointer and element type id, at the 16 bytes the runtime aligns
+    // inline elements to.
+    public int ArrayInlineDataOffset => Align(
+        Align(Align(ObjectHeaderSize + SemanticLengthSize, AddressSize) + AddressSize + sizeof(int), AddressSize),
+        16);
     public bool UsesMemory64 => Target == WasmTarget.Wasm64;
 
     public static WasmTargetLayout For(WasmTarget target) => target switch

@@ -23,7 +23,6 @@ internal sealed class ObjectConstructionEmitter(
     IImplicitExceptionEmitter exceptions,
     IRootPublicationEmitter roots,
     INativeIntegerConstructionEmitter nativeIntegerConstructions,
-    IStringConstructionEmitter strings,
     IStaticInitializationEmitter initialization) :
     InstructionCommandProvider
 {
@@ -51,8 +50,8 @@ internal sealed class ObjectConstructionEmitter(
         var argumentBase = request.Stack.Count - signature.ParameterTypes.Length;
         if (symbols.Format(constructor.DeclaringType) == "System.String")
         {
-            strings.Emit(request, code, signature, argumentBase);
-            return;
+            throw new InvalidOperationException(
+                "A string constructor reached emission; StringConstructorRewriter calls String.Ctor instead.");
         }
         if (typeClassifier.IsDelegateType(constructor.DeclaringType))
         {
