@@ -4,8 +4,8 @@ using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
-// ArrayLoops.Copy<T>(destination, source, start, end) copies the elements'
-// bytes as NativeMemory.Copy does, which is right when both are one array.
+// ArrayLoops.Copy<T>(destination, source, start, end) and CopyInBounds copy the
+// elements' bytes as NativeMemory.Copy does, which is right when both are one array.
 internal sealed class ArrayLoopCopyIntrinsicEmitter(
     IRuntimeObjectLayout objects,
     IValueLayoutProvider values) : IRuntimeIntrinsicEmitter
@@ -24,8 +24,8 @@ internal sealed class ArrayLoopCopyIntrinsicEmitter(
         var byteCount = request.Local(2, CliValueKind.NativeInt);
         ArrayLoopEmitter.Emit(request, code, objects, [destination, source], start, end, () =>
         {
-            ArrayLoopEmitter.ElementAddress(code, target, destination, start, size, destinationAddress);
-            ArrayLoopEmitter.ElementAddress(code, target, source, start, size, sourceAddress);
+            ArrayLoopEmitter.ElementAddress(code, target, destination, start, size, destinationAddress, request.Instruction.Context.InlineArrayData);
+            ArrayLoopEmitter.ElementAddress(code, target, source, start, size, sourceAddress, request.Instruction.Context.InlineArrayData);
             ArrayLoopEmitter.ByteCount(code, target, start, end, size, byteCount);
             SmallBlockEmitter.EmitCopy(code, target, inline: true, destinationAddress, sourceAddress, byteCount);
         });

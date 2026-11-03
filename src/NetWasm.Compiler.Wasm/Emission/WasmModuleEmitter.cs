@@ -105,7 +105,7 @@ internal sealed class WasmModuleEmitter(
         var orderedConstructedMethods = plan.OrderedConstructedMethods;
         var delegateInvokes = plan.DelegateInvokes;
         var delegateInvokeTarget = new DelegateInvokeTarget(
-            request.DelegateBindings, moduleData);
+            request.DelegateBindings, moduleData, request.InlineArrayData);
         var imports = _moduleImports.Collect(new(
             request,
             plan.RuntimeImports,
@@ -133,7 +133,9 @@ internal sealed class WasmModuleEmitter(
         _managedThrowFunctions.Append(
             functions,
             plan.FunctionIndices.ManagedThrowFunctionIndex,
-            plan.FunctionIndices.ManagedRethrowFunctionIndex);
+            plan.FunctionIndices.ManagedRethrowFunctionIndex,
+            orderedMethods,
+            functionIndices);
         _delegateFunctions.Append(
             functions,
             delegateInvokes,
@@ -267,6 +269,13 @@ internal sealed class WasmModuleEmitter(
         {
             runtimeFeatures = [.. runtimeFeatures
                 .Append(NetWasmRuntimeFeatureIds.WeakHandles)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+        if (plan.RuntimeImportSelection.IncludeArraySetValue)
+        {
+            runtimeFeatures = [.. runtimeFeatures
+                .Append(NetWasmRuntimeFeatureIds.ArraySetValue)
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)];
         }

@@ -310,6 +310,24 @@ jobs:
       timeout-minutes: 120
       artifact-prefix: gc-stress-${{ matrix.collector }}-timings
 
+  # The same differential classes on the linked runtime with NetWasmGC, every
+  # fixture that names no preset compiled at O3, so the speed preset's whole
+  # optimization pipeline meets the corpus and .NET 11's results.
+  speed-preset:
+    name: Corpus at O3 (netwasm)
+    if: contains(github.event.release.tag_name || inputs.tag, '-preview.')
+    uses: ./.github/workflows/compiler-tests.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+      shards: '[1, 2, 3, 4]'
+      timings: eng/compiler-test-full-durations.json
+      classes: eng/compiler-gc-stress-classes.txt
+      corpus-backend: linked
+      collector: netwasm
+      optimization: O3
+      timeout-minutes: 120
+      artifact-prefix: speed-preset-timings
+
   # The full suite's merged coverage must meet eng/coverage-baseline.json. The
   # badge it writes is attached to the release for the README.
   coverage:
@@ -347,15 +365,16 @@ jobs:
           retention-days: 90
 
   aggregate:
-    needs: [build, host-tools, full-suite, gc-stress, coverage]
+    needs: [build, host-tools, full-suite, gc-stress, speed-preset, coverage]
     if: >-
       ${{ always() && needs.build.result == 'success' &&
           ((needs.build.outputs.mode == 'build' && needs.host-tools.result == 'success' &&
             needs.full-suite.result == 'success' && needs.gc-stress.result == 'success' &&
-            needs.coverage.result == 'success') ||
+            needs.speed-preset.result == 'success' && needs.coverage.result == 'success') ||
            (needs.build.outputs.mode != 'build' && needs.host-tools.result == 'skipped' &&
             contains(fromJSON('["success", "skipped"]'), needs.full-suite.result) &&
             contains(fromJSON('["success", "skipped"]'), needs.gc-stress.result) &&
+            contains(fromJSON('["success", "skipped"]'), needs.speed-preset.result) &&
             contains(fromJSON('["success", "skipped"]'), needs.coverage.result))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -71,6 +71,7 @@ public sealed class CompilerCliTests
                 string.Empty,
                 "error NW1000: unrecognized option '-unknown'",
                 "error NW1000: cannot read response file 'missing.rsp': Could not find file 'missing.rsp'.",
+                "Use -help to list the options.",
             ],
             console.Lines[1..]);
     }
@@ -78,6 +79,8 @@ public sealed class CompilerCliTests
     [Theory]
     [InlineData("-help")]
     [InlineData("/?")]
+    [InlineData("-h")]
+    [InlineData("--help")]
     public void HelpSummarizesTheOptionsWithoutRunningTheCommand(string help)
     {
         var console = new RecordingConsole();

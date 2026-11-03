@@ -18,7 +18,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 27;
+    private const ushort SchemaVersion = 28;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -281,6 +281,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 var preservesBaseOverrides = ReadBoolean();
                 var isAggressiveInlining = ReadBoolean();
                 var isNoInlining = ReadBoolean();
+                var isStackTraceHidden = ReadBoolean();
                 var jsImport = ReadNullableClass(() =>
                     new InteropImportDeclaration(ReadString(), ReadNullableString())
                     {
@@ -330,6 +331,7 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                     PreservesBaseOverrides = preservesBaseOverrides,
                     IsAggressiveInlining = isAggressiveInlining,
                     IsNoInlining = isNoInlining,
+                    IsStackTraceHidden = isStackTraceHidden,
                     JSImport = jsImport,
                     JSExport = jsExport,
                     WitImport = witImport,

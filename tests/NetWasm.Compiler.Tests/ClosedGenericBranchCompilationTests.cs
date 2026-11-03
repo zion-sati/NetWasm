@@ -37,7 +37,9 @@ public sealed class ClosedGenericBranchCompilationTests
             assembly, [assets.CoreLib], "CharacterSpanFixture.EntryPoint", "Run", [], Target: target));
         var methods = result.Program.Methods.Values.Concat(result.Program.ConstructedMethods.Values);
 
-        Assert.DoesNotContain(methods, body => body.Method.Definition.Name == "AppendCustomInvariant");
+        // Only the branch for other element types formats, through an interpolated string.
+        Assert.DoesNotContain(methods, body =>
+            body.Method.DeclaringType.FullName == "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler");
         Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory, 0, target, result.StaticDataEnd));
     }
 

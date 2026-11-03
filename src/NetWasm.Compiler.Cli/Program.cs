@@ -29,6 +29,10 @@ internal static class Program
         catch (CompilerException exception)
         {
             logger.Report(exception.Diagnostic);
+            if (exception.Diagnostic.Code == DiagnosticCode.InvalidCommandLine)
+            {
+                console.WriteLine(NwcHelp.Hint);
+            }
         }
 #pragma warning disable CA1031 // Any other failure is reported as a diagnostic, as csc does.
         catch (Exception exception)

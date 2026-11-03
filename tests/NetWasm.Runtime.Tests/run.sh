@@ -158,6 +158,13 @@ cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
   -o "$output_dir/nullable_array_readback_hooks_contract"
 "$output_dir/nullable_array_readback_hooks_contract"
 echo "Nullable array readback and collector lifetime contract PASS"
+cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \
+  -I"$workspace_dir/src/NetWasm.Runtime/collector" \
+  "${netwasm_gc_sources[@]}" "$script_dir/array_set_value_contract.c" \
+  -o "$output_dir/array_set_value_contract"
+"$output_dir/array_set_value_contract"
+echo "Array boxed-value storage and collector lifetime contract PASS"
 
 cc -std=c11 -O1 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
   "${frame_linker_flags[@]}" -I"$workspace_dir/src/NetWasm.Runtime" \

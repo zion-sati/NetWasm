@@ -605,6 +605,8 @@ public sealed record MethodDefinitionModel(
     public bool PreservesBaseOverrides { get; init; }
     public bool IsAggressiveInlining { get; init; }
     public bool IsNoInlining { get; init; }
+    // StackTraceHiddenAttribute on the method or its declaring type.
+    public bool IsStackTraceHidden { get; init; }
     public InteropImportDeclaration? JSImport { get; init; }
     public InteropExportDeclaration? JSExport { get; init; }
     public WitImportDeclaration? WitImport { get; init; }
@@ -671,6 +673,7 @@ public sealed record MethodInstanceModel(
             Definition.IsAbstract == other.Definition.IsAbstract &
             Definition.IsAggressiveInlining == other.Definition.IsAggressiveInlining &
             Definition.IsNoInlining == other.Definition.IsNoInlining &
+            Definition.IsStackTraceHidden == other.Definition.IsStackTraceHidden &
             Definition.UnsafeAccessor == other.Definition.UnsafeAccessor &
             Definition.NativeImport == other.Definition.NativeImport &
             (Definition.NativeCallback is null
@@ -821,6 +824,7 @@ public enum RuntimeIntrinsic
     StringSetCharacterUnchecked,
     StringGetRawDataReference,
     StringEqualsOrdinal,
+    StringAllocate,
     GcCollect,
     WeakHandleCreate,
     WeakHandleGet,
@@ -870,6 +874,8 @@ public enum RuntimeIntrinsic
     NativeMemoryFill,
     ArrayLoopFill,
     ArrayLoopCopy,
+    ArrayLoopFillInBounds,
+    ArrayLoopCopyInBounds,
     ArrayLoopXor,
     ArrayLoopOr,
     ArrayLoopAnd,
@@ -981,6 +987,9 @@ public enum RuntimeIntrinsic
     NumericsToVector128,
     NumericsFromVector128,
     ObjectContainsReferences,
+    ArrayElementType,
+    ArraySetValue,
+    PreallocatedOutOfMemoryException,
 }
 
 public static class RuntimeIntrinsicKinds

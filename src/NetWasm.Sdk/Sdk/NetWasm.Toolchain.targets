@@ -141,7 +141,7 @@
   </Target>
 
   <Target Name="NetWasmSdkResolveBuildEnvironment"
-          BeforeTargets="CoreCompile;Publish;Run"
+          BeforeTargets="CoreCompile;Run"
           DependsOnTargets="ResolvePackageAssets"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(NetWasmRequiresHostTools)' == 'true' OR '@(NetWasmWit)' != '') AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK034"
@@ -213,8 +213,15 @@
     </PropertyGroup>
   </Target>
 
+  <!-- NetWasmSdkResolveBuildEnvironment before Publish only for a project that publishes: MSBuild runs a
+       BeforeTargets hook even when IsPublishable skips Publish (#163). -->
+  <Target Name="_NetWasmResolveBuildEnvironmentBeforePublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmSdkResolveBuildEnvironment"
+          Condition="'$(IsPublishable)' == 'true'" />
+
   <Target Name="NetWasmSdkPrepareWitWorkerPackage"
-          BeforeTargets="NetWasmWriteCompilationIdentity;NetWasmWritePackagingIdentity;CoreCompile;Publish"
+          BeforeTargets="NetWasmWriteCompilationIdentity;NetWasmWritePackagingIdentity;CoreCompile"
           DependsOnTargets="NetWasmSdkResolveBuildEnvironment"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'wit' AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK072"
@@ -234,6 +241,13 @@
       <_NetWasmRuntimeWitPath>$(_NetWasmResolvedWitWorkerPackagePath)</_NetWasmRuntimeWitPath>
     </PropertyGroup>
   </Target>
+
+  <!-- NetWasmSdkPrepareWitWorkerPackage before Publish only for a project that publishes: MSBuild runs a
+       BeforeTargets hook even when IsPublishable skips Publish (#163). -->
+  <Target Name="_NetWasmPrepareWitWorkerPackageBeforePublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmSdkPrepareWitWorkerPackage"
+          Condition="'$(IsPublishable)' == 'true'" />
 
   <!-- Both calling languages consume this source contract. Component-local
        IDs and reactor placement belong to the separate publish adapter. -->
@@ -451,7 +465,7 @@
 
   <Target Name="NetWasmSdkPublishReferencedWorkers"
           AfterTargets="NetWasmSdkPublishJsModule;NetWasmSdkPublishBrowser"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(_NetWasmWorkerReference)' != '' AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(_NetWasmWorkerReference)' != '' AND '$(DesignTimeBuild)' != 'true' AND '$(IsPublishable)' == 'true'">
     <PropertyGroup>
       <_NetWasmWorkerCallerPublishDir Condition="'$(_NetWasmWorkerKind)' == 'jsexport'">$(NetWasmWorkerPublishDir)</_NetWasmWorkerCallerPublishDir>
       <_NetWasmWorkerCallerPublishDir Condition="'$(_NetWasmWorkerKind)' == '' AND '$(NetWasmPublishTargetNormalized)' == 'browser'">$(NetWasmBrowserPublishDir)</_NetWasmWorkerCallerPublishDir>
@@ -460,7 +474,7 @@
            Text="Publish a worker caller for the browser using NetWasmPublishTarget=browser." />
     <MSBuild Projects="@(_NetWasmWorkerReference)"
              Targets="Publish"
-             Properties="Configuration=$(Configuration);NetWasmWorkerPublishDir=$(_NetWasmWorkerCallerPublishDir)/workers/%(_NetWasmWorkerReference.Filename);_NetWasmCallerRuntimeDirectory=$(_NetWasmWorkerCallerPublishDir)"
+             Properties="Configuration=$(Configuration);IsPublishable=true;NetWasmWorkerPublishDir=$(_NetWasmWorkerCallerPublishDir)/workers/%(_NetWasmWorkerReference.Filename);_NetWasmCallerRuntimeDirectory=$(_NetWasmWorkerCallerPublishDir)"
              RemoveProperties="PublishDir;OutputType;NetWasmRawWasm;NetWasmWorkerClientNamespace;NetWasmWorkerClientClass" />
   </Target>
 
@@ -507,7 +521,7 @@
   </ItemGroup>
 
   <Target Name="NetWasmSdkValidateLifecycleTarget"
-          BeforeTargets="CoreCompile;Publish;Run"
+          BeforeTargets="CoreCompile;Run"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NetWasmRequiresHostTools)' == 'true'">
     <Error Code="NWSDK004"
            Condition="'$(NetWasmPublishTargetNormalized)' != 'portable' AND '$(NetWasmPublishTargetNormalized)' != 'browser'"
@@ -526,6 +540,13 @@
            Text="NetWasmCompilerWitPath must identify the selected compiler WIT contract." />
   </Target>
 
+  <!-- NetWasmSdkValidateLifecycleTarget before Publish only for a project that publishes: MSBuild runs a
+       BeforeTargets hook even when IsPublishable skips Publish (#163). -->
+  <Target Name="_NetWasmValidateLifecycleTargetBeforePublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmSdkValidateLifecycleTarget"
+          Condition="'$(IsPublishable)' == 'true'" />
+
   <!-- A central component task/target is deliberately injected by the parent
        layer.  Keeping this seam explicit prevents the SDK from embedding
        compiler or runtime policy and makes a missing contract loud. -->
@@ -539,7 +560,7 @@
 
   <Target Name="NetWasmSdkComponentize"
           AfterTargets="NetWasmCompileCoreModule"
-          BeforeTargets="Publish;Run"
+          BeforeTargets="Run"
           DependsOnTargets="NetWasmSdkResolveBuildEnvironment;NetWasmSdkBuildComponentDeployment;NetWasmSdkBuildRawDeployment"
           Inputs="@(NetWasmComponentInput)"
           Outputs="$(NetWasmOutputPath)"
@@ -560,6 +581,13 @@
            Condition="'$(NetWasmRawWasm)' != 'true' AND ('$(NetWasmComponentManifestPath)' == '' OR !Exists('$(NetWasmComponentManifestPath)'))"
            Text="The central componentization target completed without producing the component manifest." />
   </Target>
+
+  <!-- NetWasmSdkComponentize before Publish only for a project that publishes: MSBuild runs a
+       BeforeTargets hook even when IsPublishable skips Publish (#163). -->
+  <Target Name="_NetWasmComponentizeBeforePublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmSdkComponentize"
+          Condition="'$(IsPublishable)' == 'true'" />
 
   <!-- WASI exposes the complete command line. Main(string[]) removes argv[0],
        while Environment.GetCommandLineArgs retains it. Keep that program slot
@@ -825,7 +853,7 @@
   </Target>
 
   <Target Name="NetWasmSdkValidateFinalArtifactForNoBuild"
-          BeforeTargets="Publish;Run"
+          BeforeTargets="Run"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NoBuild)' == 'true'">
     <Error Code="NWSDK013"
            Condition="!Exists('$(NetWasmOutputPath)')"
@@ -838,10 +866,17 @@
            Text="No-build JSExport worker publish requires matching raw adapter, raw binding manifest, interop manifest, and runtime layout artifacts." />
   </Target>
 
+  <!-- NetWasmSdkValidateFinalArtifactForNoBuild before Publish only for a project that publishes: MSBuild runs a
+       BeforeTargets hook even when IsPublishable skips Publish (#163). -->
+  <Target Name="_NetWasmValidateFinalArtifactBeforePublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmSdkValidateFinalArtifactForNoBuild"
+          Condition="'$(IsPublishable)' == 'true'" />
+
   <Target Name="NetWasmSdkPublishPortable"
           BeforeTargets="Publish"
           DependsOnTargets="NetWasmSdkPrepareLocalDeployment;NetWasmSdkValidateFinalArtifactForNoBuild"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'portable'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'portable' AND '$(IsPublishable)' == 'true'">
     <ItemGroup>
       <_NetWasmPortableDeploymentFile Include="$(NetWasmDeploymentRoot)/**/*" />
     </ItemGroup>
@@ -853,7 +888,7 @@
   <Target Name="NetWasmSdkPublishBrowser"
           BeforeTargets="Publish"
           DependsOnTargets="NetWasmSdkPrepareLocalDeployment;NetWasmSdkValidateFinalArtifactForNoBuild"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser' AND '$(IsPublishable)' == 'true'">
     <Error Code="NWSDK015"
            Condition="'$(NetWasmNodePath)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmNodePath)')) OR !Exists('$(NetWasmNodePath)')"
            Text="Browser publish requires a validated system Node executable." />
@@ -985,7 +1020,7 @@
   <Target Name="NetWasmSdkPublishJsModule"
           BeforeTargets="Publish"
           DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmPrepareRawAdapterArtifact;_NetWasmValidateJavaScriptItems"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'jsexport' AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'jsexport' AND '$(DesignTimeBuild)' != 'true' AND '$(IsPublishable)' == 'true'">
     <Error Code="NWSDK048"
            Condition="'$(NetWasmWorkerPublishDir)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmWorkerPublishDir)'))"
            Text="NetWasmWorkerPublishDir must be an absolute output directory." />
@@ -1212,7 +1247,7 @@
   <Target Name="NetWasmSdkPublishWitWorker"
           BeforeTargets="Publish"
           DependsOnTargets="NetWasmSdkGetWitWorkerContract;NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmValidateJavaScriptItems"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'wit' AND '$(DesignTimeBuild)' != 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'wit' AND '$(DesignTimeBuild)' != 'true' AND '$(IsPublishable)' == 'true'">
     <Error Code="NWSDK067"
            Condition="'$(NetWasmWorkerPublishDir)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmWorkerPublishDir)'))"
            Text="WIT worker publish requires an absolute NetWasmWorkerPublishDir." />
@@ -1427,7 +1462,7 @@
 
   <Target Name="_NetWasmRequireRunPage"
           AfterTargets="Publish"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmRunStaging)' == 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmRunStaging)' == 'true' AND '$(IsPublishable)' == 'true'">
     <Error Code="NWSDK052"
            Condition="!Exists('$(PublishDir)index.html')"
            Text="dotnet run serves the page this project publishes, but it publishes no index.html. Add the page, such as &lt;Content Include=&quot;index.html&quot; CopyToPublishDirectory=&quot;PreserveNewest&quot; /&gt;, or run the project whose page uses this one." />

@@ -262,9 +262,18 @@ public sealed class ManagedLayoutTests
         var bitmap = layouts.DataSegments.Single(
             candidate => candidate.Address == descriptor.BitmapAddress);
         Assert.Equal(0b10100u, BinaryPrimitives.ReadUInt32LittleEndian(bitmap.Data.AsSpan()));
+        // The image also freezes the OutOfMemoryException thrown when not even
+        // a new one fits, and its reference fields are roots as Root is.
+        var outOfMemory = CompilerTestSupport.CreateExceptionObjects(layouts)
+            .GetExceptionObject(ManagedExceptionKind.OutOfMemory);
+        var outOfMemoryLayout = typeLayouts.GetObjectLayout(
+            typeFinder.FindType("System.OutOfMemoryException").Key);
         Assert.Equal(
-            staticFields.GetStaticFieldLayout(nodeFields["Root"].Key).Address,
-            Assert.Single(layouts.StaticRootAddresses));
+            [
+                staticFields.GetStaticFieldLayout(nodeFields["Root"].Key).Address,
+                .. outOfMemoryLayout.ReferenceOffsets.Select(offset => outOfMemory + offset),
+            ],
+            layouts.StaticRootAddresses.ToArray());
 
     }
 

@@ -135,7 +135,7 @@ internal sealed record CorpusFixture(
         "The fixture exercises NetWasm.CoreLib or runtime-specific behavior.";
 
     public FinalWasmOptimization Optimization { get; init; } =
-        FinalWasmOptimization.Oz;
+        TestOptimization.Default;
 
 
     public string EntryType => $"{Namespace}.EntryPoint";

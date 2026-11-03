@@ -21,6 +21,8 @@ const walk = directory => readdirSync(directory, { withFileTypes: true }).flatMa
 });
 const compiler = resolve(root, 'tests/NetWasm.Testing.CompilerHost/bin/Release/net10.0/NetWasm.Testing.CompilerHost.dll');
 const desktop = resolve(root, 'tests/NetWasm.Testing.OracleHost/bin/Release/net10.0/NetWasm.Testing.OracleHost.dll');
+// The oracle host runs on the pinned .NET 11 runtime, whose behaviour NetWasm follows.
+const oracleFramework = json(resolve(root, 'eng/csharp15-toolchain.json')).desktopOracleFrameworkVersion;
 const engine = resolve(root, 'tests/NetWasm.Compiler.Tests/Correctness/netwasm-oracle.mjs');
 const corelib = resolve(root, 'src/NetWasm.CoreLib/bin/Release/net10.0/NetWasm.CoreLib.dll');
 const cells = [], commands = [], inputs = [];
@@ -89,7 +91,7 @@ try {
       const identity = record(assembly), localReferences = family.contracts ? [resolve(bin, 'Generator.Contracts.dll')] : [];
       localReferences.forEach(record);
       const args = family.desktop === 'stdout' ? [assembly, ...family.values.map(String)] :
-        [desktop, assembly, family.type, 'Run', '@' + inputPath, 'false', ...(family.desktopReferences ?? []).map(name => resolve(bin, name))];
+        ['exec', '--fx-version', oracleFramework, desktop, assembly, family.type, 'Run', '@' + inputPath, 'false', ...(family.desktopReferences ?? []).map(name => resolve(bin, name))];
       const oracle = run('dotnet', args, key + '-desktop');
       const observed = oracle.ok ? (family.desktop === 'stdout'
         ? readFileSync(oracle.path, 'utf8').trim().split(/\r?\n/).map(value => ({ Kind: 'value', Value: Number(value) })) : json(oracle.path)) : [];

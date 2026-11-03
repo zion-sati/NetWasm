@@ -8,35 +8,9 @@ using System.Numerics;
 
 namespace System;
 
-internal enum PrimitiveIntegralConversionKind
-{
-    Checked,
-    Saturating,
-    Truncating,
-}
-
 internal static class PrimitiveIntegralConversions
 {
     internal delegate bool PartialParser<T>(string value, out T result);
-
-    internal static bool IsBuiltInNumber<TOther>() =>
-        typeof(TOther) == typeof(byte) ||
-        typeof(TOther) == typeof(sbyte) ||
-        typeof(TOther) == typeof(short) ||
-        typeof(TOther) == typeof(ushort) ||
-        typeof(TOther) == typeof(int) ||
-        typeof(TOther) == typeof(uint) ||
-        typeof(TOther) == typeof(long) ||
-        typeof(TOther) == typeof(ulong) ||
-        typeof(TOther) == typeof(nint) ||
-        typeof(TOther) == typeof(nuint) ||
-        typeof(TOther) == typeof(char) ||
-        typeof(TOther) == typeof(Half) ||
-        typeof(TOther) == typeof(float) ||
-        typeof(TOther) == typeof(double) ||
-        typeof(TOther) == typeof(decimal) ||
-        typeof(TOther) == typeof(Int128) ||
-        typeof(TOther) == typeof(UInt128);
 
     internal static bool TryParsePartial<T>(string? value, Globalization.NumberStyles style, PartialParser<T> parser, out T result, out int consumed)
     {
@@ -105,98 +79,6 @@ internal static class PrimitiveIntegralConversions
         return false;
     }
 
-    internal static bool TryConvert<T>(T value, int bits, bool signed,
-        PrimitiveIntegralConversionKind kind, out ulong result)
-    {
-        var boxed = (object?)value;
-        if (boxed is float single) return TryConvertFloating(single, bits, signed, kind, out result);
-        if (boxed is double @double) return TryConvertFloating(@double, bits, signed, kind, out result);
-        if (boxed is Half half) return TryConvertFloating((float)half, bits, signed, kind, out result);
-        if (boxed is decimal money) return TryConvertDecimal(money, bits, signed, kind, out result);
-
-        var sourceSigned = true;
-        Int128 signedValue = default;
-        UInt128 unsignedValue = default;
-        switch (boxed)
-        {
-            case sbyte v: signedValue = v; break;
-            case byte v: sourceSigned = false; unsignedValue = v; break;
-            case short v: signedValue = v; break;
-            case ushort v: sourceSigned = false; unsignedValue = v; break;
-            case char v: sourceSigned = false; unsignedValue = v; break;
-            case int v: signedValue = v; break;
-            case uint v: sourceSigned = false; unsignedValue = v; break;
-            case long v: signedValue = v; break;
-            case ulong v: sourceSigned = false; unsignedValue = v; break;
-            case nint v: signedValue = v; break;
-            case nuint v: sourceSigned = false; unsignedValue = v; break;
-            case Int128 v: signedValue = v; break;
-            case UInt128 v: sourceSigned = false; unsignedValue = v; break;
-            default: result = 0; return false;
-        }
-
-        var mask = bits == 64 ? ulong.MaxValue : (1UL << bits) - 1;
-        if (kind == PrimitiveIntegralConversionKind.Truncating)
-        {
-            result = (sourceSigned ? unchecked((ulong)signedValue) : unchecked((ulong)unsignedValue)) & mask;
-            return true;
-        }
-
-        var signedMinimum = -(Int128.One << (bits - 1));
-        var signedMaximum = (Int128.One << (bits - 1)) - 1;
-        var unsignedMaximum = (UInt128.One << bits) - 1;
-        if (signed)
-        {
-            if (sourceSigned)
-            {
-                if (signedValue < signedMinimum || signedValue > signedMaximum)
-                {
-                    if (kind == PrimitiveIntegralConversionKind.Checked) { result = 0; return false; }
-                    result = (ulong)(signedValue < signedMinimum ? signedMinimum : signedMaximum) & mask;
-                    return true;
-                }
-                result = unchecked((ulong)signedValue) & mask;
-                return true;
-            }
-
-            if (unsignedValue > (UInt128)signedMaximum)
-            {
-                if (kind == PrimitiveIntegralConversionKind.Checked) { result = 0; return false; }
-                result = (ulong)signedMaximum;
-                return true;
-            }
-            result = (ulong)unsignedValue & mask;
-            return true;
-        }
-
-        if (sourceSigned)
-        {
-            if (signedValue < 0)
-            {
-                if (kind == PrimitiveIntegralConversionKind.Checked) { result = 0; return false; }
-                result = kind == PrimitiveIntegralConversionKind.Saturating ? 0 : unchecked((ulong)signedValue) & mask;
-                return true;
-            }
-            if ((UInt128)signedValue > unsignedMaximum)
-            {
-                if (kind == PrimitiveIntegralConversionKind.Checked) { result = 0; return false; }
-                result = (ulong)unsignedMaximum;
-                return true;
-            }
-            result = (ulong)signedValue & mask;
-            return true;
-        }
-
-        if (unsignedValue > unsignedMaximum)
-        {
-            if (kind == PrimitiveIntegralConversionKind.Checked) { result = 0; return false; }
-            result = (ulong)unsignedMaximum;
-            return true;
-        }
-        result = (ulong)unsignedValue & mask;
-        return true;
-    }
-
     internal static int Log10Signed(long value) => value < 0 ? throw new ArgumentOutOfRangeException() : Log10((ulong)value);
 
     internal static int Log10(ulong value)
@@ -223,85 +105,6 @@ internal static class PrimitiveIntegralConversions
         conversionType == typeof(decimal) ? ((IConvertible)value).ToDecimal(provider) :
         conversionType == typeof(object) ? value : throw new InvalidCastException();
 
-    private static bool TryConvertFloating(double value, int bits, bool signed,
-        PrimitiveIntegralConversionKind kind, out ulong result)
-    {
-        var mask = bits == 64 ? ulong.MaxValue : (1UL << bits) - 1;
-        if (double.IsNaN(value)) { result = 0; return kind != PrimitiveIntegralConversionKind.Checked; }
-        double minimum = signed ? bits switch
-        {
-            8 => sbyte.MinValue,
-            16 => short.MinValue,
-            32 => int.MinValue,
-            _ => -9.223372036854776E18,
-        } : 0d;
-        double maximum = signed ? bits switch
-        {
-            8 => sbyte.MaxValue,
-            16 => short.MaxValue,
-            32 => int.MaxValue,
-            _ => 9.223372036854776E18,
-        } : bits switch
-        {
-            8 => byte.MaxValue,
-            16 => ushort.MaxValue,
-            32 => uint.MaxValue,
-            _ => 1.8446744073709552E19,
-        };
-        var truncated = Math.Truncate(value);
-        if (kind == PrimitiveIntegralConversionKind.Checked && (double.IsInfinity(value) || truncated < minimum || truncated > maximum)) { result = 0; return false; }
-        if (kind == PrimitiveIntegralConversionKind.Saturating)
-        {
-            if (double.IsNegativeInfinity(value) || truncated < minimum) truncated = minimum;
-            if (double.IsPositiveInfinity(value) || truncated > maximum) truncated = maximum;
-        }
-        if (kind == PrimitiveIntegralConversionKind.Truncating && (truncated < minimum || truncated > maximum))
-        {
-            var modulus = bits == 64 ? 18446744073709551616d : 1UL << bits;
-            truncated %= modulus;
-            if (truncated < 0) truncated += modulus;
-        }
-        // A negative value here is in range for a signed target; converting it to
-        // ulong directly saturates to zero, so it goes through long.
-        result = (truncated < 0 ? unchecked((ulong)(long)truncated) : unchecked((ulong)truncated)) & mask;
-        return true;
-    }
-
-    private static bool TryConvertDecimal(decimal value, int bits, bool signed,
-        PrimitiveIntegralConversionKind kind, out ulong result)
-    {
-        var truncated = decimal.Truncate(value);
-        decimal minimum = signed ? bits switch
-        {
-            8 => sbyte.MinValue,
-            16 => short.MinValue,
-            32 => int.MinValue,
-            _ => long.MinValue,
-        } : 0m;
-        decimal maximum = signed ? bits switch
-        {
-            8 => sbyte.MaxValue,
-            16 => short.MaxValue,
-            32 => int.MaxValue,
-            _ => long.MaxValue,
-        } : bits switch
-        {
-            8 => byte.MaxValue,
-            16 => ushort.MaxValue,
-            32 => uint.MaxValue,
-            _ => ulong.MaxValue,
-        };
-        if (kind == PrimitiveIntegralConversionKind.Checked && (truncated < minimum || truncated > maximum)) { result = 0; return false; }
-        if (kind == PrimitiveIntegralConversionKind.Saturating) truncated = truncated < minimum ? minimum : truncated > maximum ? maximum : truncated;
-        if (kind == PrimitiveIntegralConversionKind.Truncating && (truncated < minimum || truncated > maximum))
-        {
-            var modulus = bits == 64 ? 18446744073709551616m : (decimal)(1UL << bits);
-            truncated %= modulus;
-            if (truncated < 0) truncated += modulus;
-        }
-        result = signed ? unchecked((ulong)(long)truncated) : (ulong)truncated;
-        return true;
-    }
 }
 
 internal static class PrimitiveScalarContracts
@@ -314,11 +117,11 @@ internal static class PrimitiveScalarContracts
             characters[index] = (char)value[index];
         }
 
-        return string.Create(characters);
+        return new string(characters);
     }
 
     internal static string? Format(ReadOnlySpan<char> format) =>
-        format.Length == 0 ? null : string.Create(format.ToArray());
+        format.Length == 0 ? null : new string(format);
 
     internal static bool TryFormat(string text, Span<char> destination, out int charsWritten)
     {
@@ -427,11 +230,19 @@ public readonly partial struct IntPtr
     public string ToString(IFormatProvider? provider) => Size == 8 ? ((long)_value).ToString(provider) : ((int)_value).ToString(provider);
     public static nint Add(nint value, int offset) => new IntPtr(value._value + offset)._value;
     public static nint Subtract(nint value, int offset) => new IntPtr(value._value - offset)._value;
+    // Upstream picks the width with TARGET_64BIT; one CoreLib serves both
+    // targets here, and each folds nint.Size.
     public static nint BigMul(nint left, nint right, out nint low)
     {
-        var product = (Int128)left._value * right._value;
-        low = new IntPtr((long)product)._value;
-        return new IntPtr((long)(product >> 64))._value;
+        if (nint.Size == 8)
+        {
+            long high = Math.BigMul((long)left, (long)right, out long lower);
+            low = (nint)lower;
+            return (nint)high;
+        }
+        long result = Math.BigMul((int)left, (int)right);
+        low = (int)result;
+        return (int)(result >>> 32);
     }
     public static nint Log10(nint value) => (nint)PrimitiveIntegralConversions.Log10Signed((long)value._value);
     public static nint Parse(ReadOnlySpan<byte> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(PrimitiveScalarContracts.Utf8ToString(value), style, provider);
@@ -463,9 +274,15 @@ public readonly partial struct UIntPtr
     public static nuint Subtract(nuint value, int offset) => new UIntPtr(value._value - (nuint)offset)._value;
     public static nuint BigMul(nuint left, nuint right, out nuint low)
     {
-        var product = (UInt128)left._value * right._value;
-        low = new UIntPtr((ulong)product)._value;
-        return new UIntPtr((ulong)(product >> 64))._value;
+        if (nint.Size == 8)
+        {
+            ulong high = Math.BigMul((ulong)left, (ulong)right, out ulong lower);
+            low = (nuint)lower;
+            return (nuint)high;
+        }
+        ulong result = Math.BigMul((uint)left, (uint)right);
+        low = (uint)result;
+        return (uint)(result >>> 32);
     }
     public static nuint Log10(nuint value) => (nuint)PrimitiveIntegralConversions.Log10((ulong)value._value);
     public static nuint Parse(ReadOnlySpan<byte> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(PrimitiveScalarContracts.Utf8ToString(value), style, provider);
@@ -693,10 +510,10 @@ public partial struct UInt64
 
 public partial struct Single
 {
-    public string ToString(IFormatProvider? provider) => ToString();
+    public string ToString(IFormatProvider? provider) => provider is null ? ToString() : Number.FormatFloat(this, null, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
-        Number.FormatSingle(this, format);
+        Number.FormatFloat(this, format, provider);
 
     public bool TryFormat(
         Span<char> destination,
@@ -788,8 +605,46 @@ public partial struct Single
     public static float ClampNative(float value, float min, float max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
     public static float MaxNative(float left, float right) => left > right ? left : right;
     public static float MinNative(float left, float right) => left < right ? left : right;
-    public static float MaxNumber(float left, float right) => left != right ? !IsNaN(right) ? right < left ? left : right : left : IsNegative(right) ? left : right;
-    public static float MinNumber(float left, float right) => left != right ? !IsNaN(right) ? left < right ? left : right : left : IsNegative(left) ? left : right;
+    public static float MaxNumber(float x, float y)
+    {
+        // This matches the IEEE 754:2019 `maximumNumber` function
+        //
+        // It does not propagate NaN inputs back to the caller and
+        // otherwise returns the larger of the inputs. It
+        // treats +0 as larger than -0 as per the specification.
+
+        if (x != y)
+        {
+            if (!IsNaN(y))
+            {
+                return y < x ? x : y;
+            }
+
+            return x;
+        }
+
+        return IsNegative(y) ? x : y;
+    }
+    public static float MinNumber(float x, float y)
+    {
+        // This matches the IEEE 754:2019 `minimumNumber` function
+        //
+        // It does not propagate NaN inputs back to the caller and
+        // otherwise returns the larger of the inputs. It
+        // treats +0 as larger than -0 as per the specification.
+
+        if (x != y)
+        {
+            if (!IsNaN(y))
+            {
+                return x < y ? x : y;
+            }
+
+            return x;
+        }
+
+        return IsNegative(x) ? x : y;
+    }
 
     public static bool operator ==(float left, float right) => left == right;
     public static bool operator !=(float left, float right) => left != right;
@@ -831,10 +686,10 @@ public partial struct Single
 
 public partial struct Double
 {
-    public string ToString(IFormatProvider? provider) => ToString();
+    public string ToString(IFormatProvider? provider) => provider is null ? ToString() : Number.FormatFloat(this, null, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
-        Number.FormatDouble(this, format);
+        Number.FormatFloat(this, format, provider);
 
     public bool TryFormat(
         Span<char> destination,
@@ -924,8 +779,46 @@ public partial struct Double
     public static double ClampNative(double value, double min, double max) => min > max ? throw new ArgumentException() : MinNative(MaxNative(value, min), max);
     public static double MaxNative(double left, double right) => left > right ? left : right;
     public static double MinNative(double left, double right) => left < right ? left : right;
-    public static double MaxNumber(double left, double right) => left != right ? !IsNaN(right) ? right < left ? left : right : left : IsNegative(right) ? left : right;
-    public static double MinNumber(double left, double right) => left != right ? !IsNaN(right) ? left < right ? left : right : left : IsNegative(left) ? left : right;
+    public static double MaxNumber(double x, double y)
+    {
+        // This matches the IEEE 754:2019 `maximumNumber` function
+        //
+        // It does not propagate NaN inputs back to the caller and
+        // otherwise returns the larger of the inputs. It
+        // treats +0 as larger than -0 as per the specification.
+
+        if (x != y)
+        {
+            if (!IsNaN(y))
+            {
+                return y < x ? x : y;
+            }
+
+            return x;
+        }
+
+        return IsNegative(y) ? x : y;
+    }
+    public static double MinNumber(double x, double y)
+    {
+        // This matches the IEEE 754:2019 `minimumNumber` function
+        //
+        // It does not propagate NaN inputs back to the caller and
+        // otherwise returns the larger of the inputs. It
+        // treats +0 as larger than -0 as per the specification.
+
+        if (x != y)
+        {
+            if (!IsNaN(y))
+            {
+                return x < y ? x : y;
+            }
+
+            return x;
+        }
+
+        return IsNegative(x) ? x : y;
+    }
     public static double Lerp(double value1, double value2, double amount) => MultiplyAddEstimate(value1, 1D - amount, value2 * amount);
     public static double LogP1(double value) => Math.Log(1D + value);
     public static double Log2P1(double value) => Math.Log2(1D + value);
@@ -994,6 +887,50 @@ public partial struct Single
     internal const int TrailingSignificandLength = 23;
     internal const int SignificandLength = TrailingSignificandLength + 1;
 
+    internal byte BiasedExponent
+    {
+        get
+        {
+            uint bits = BitConverter.SingleToUInt32Bits(this);
+            return ExtractBiasedExponentFromBits(bits);
+        }
+    }
+
+    internal sbyte Exponent
+    {
+        get
+        {
+            return (sbyte)(BiasedExponent - ExponentBias);
+        }
+    }
+
+    internal uint Significand
+    {
+        get
+        {
+            return TrailingSignificand | ((BiasedExponent != 0) ? (1U << BiasedExponentShift) : 0U);
+        }
+    }
+
+    internal uint TrailingSignificand
+    {
+        get
+        {
+            uint bits = BitConverter.SingleToUInt32Bits(this);
+            return ExtractTrailingSignificandFromBits(bits);
+        }
+    }
+
+    internal static byte ExtractBiasedExponentFromBits(uint bits)
+    {
+        return (byte)((bits >> BiasedExponentShift) & ShiftedBiasedExponentMask);
+    }
+
+    internal static uint ExtractTrailingSignificandFromBits(uint bits)
+    {
+        return bits & TrailingSignificandMask;
+    }
+
     internal static float CreateSingle(bool sign, byte exponent, uint significand) =>
         BitConverter.UInt32BitsToSingle((sign ? SignMask : 0U) |
             ((uint)exponent << BiasedExponentShift) | (significand & TrailingSignificandMask));
@@ -1058,6 +995,50 @@ public partial struct Double
     internal const int ExponentBias = 1023;
     internal const int TrailingSignificandLength = 52;
     internal const int SignificandLength = TrailingSignificandLength + 1;
+
+    internal ushort BiasedExponent
+    {
+        get
+        {
+            ulong bits = BitConverter.DoubleToUInt64Bits(this);
+            return ExtractBiasedExponentFromBits(bits);
+        }
+    }
+
+    internal short Exponent
+    {
+        get
+        {
+            return (short)(BiasedExponent - ExponentBias);
+        }
+    }
+
+    internal ulong Significand
+    {
+        get
+        {
+            return TrailingSignificand | ((BiasedExponent != 0) ? (1UL << BiasedExponentShift) : 0UL);
+        }
+    }
+
+    internal ulong TrailingSignificand
+    {
+        get
+        {
+            ulong bits = BitConverter.DoubleToUInt64Bits(this);
+            return ExtractTrailingSignificandFromBits(bits);
+        }
+    }
+
+    internal static ushort ExtractBiasedExponentFromBits(ulong bits)
+    {
+        return (ushort)((bits >> BiasedExponentShift) & ShiftedBiasedExponentMask);
+    }
+
+    internal static ulong ExtractTrailingSignificandFromBits(ulong bits)
+    {
+        return bits & TrailingSignificandMask;
+    }
 
     internal static double CreateDouble(bool sign, ushort exponent, ulong significand) =>
         BitConverter.UInt64BitsToDouble((sign ? SignMask : 0UL) +
@@ -1248,14 +1229,41 @@ public readonly partial struct IntPtr
         Size == 8 ? ((long)_value).TryFormat(destination, out charsWritten, format, provider) : ((int)_value).TryFormat(destination, out charsWritten, format, provider);
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Size == 8 ? ((long)_value).TryFormat(destination, out bytesWritten, format, provider) : ((int)_value).TryFormat(destination, out bytesWritten, format, provider);
-    public static nint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
-    public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result) => TryParse(value, out result);
-    public static nint Parse(string value, IFormatProvider? provider) => Parse(value);
-    public static bool TryParse(string? value, IFormatProvider? provider, out nint result) => TryParse(value, out result);
-    public static nint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value.ToString());
-    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out nint result) => TryParse(value.ToString(), out result);
-    public static nint Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(value.ToString(), style, provider);
-    public static bool TryParse(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result) => TryParse(value.ToString(), style, provider, out result);
+    // As upstream, through the fixed-width type of the target's width.
+    public static nint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Size == 8
+        ? (nint)long.Parse(value, style, provider)
+        : int.Parse(value, style, provider);
+    public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
+    {
+        if (Size == 8)
+        {
+            var parsedWide = long.TryParse(value, style, provider, out var wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        var parsedNarrow = int.TryParse(value, style, provider, out var narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+    public static nint Parse(string value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
+    public static bool TryParse(string? value, IFormatProvider? provider, out nint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
+    public static nint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
+    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out nint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
+    public static nint Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Size == 8
+        ? (nint)long.Parse(value, style, provider)
+        : int.Parse(value, style, provider);
+    public static bool TryParse(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nint result)
+    {
+        if (Size == 8)
+        {
+            var parsedWide = long.TryParse(value, style, provider, out var wideValue);
+            result = (nint)wideValue;
+            return parsedWide;
+        }
+        var parsedNarrow = int.TryParse(value, style, provider, out var narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
 
     static nint Numerics.INumberBase<nint>.One => One;
     static nint Numerics.INumberBase<nint>.Zero => Zero;
@@ -1426,14 +1434,41 @@ public readonly partial struct UIntPtr
         Size == 8 ? ((ulong)_value).TryFormat(destination, out charsWritten, format, provider) : ((uint)_value).TryFormat(destination, out charsWritten, format, provider);
     public bool TryFormat(Span<byte> destination, out int bytesWritten, ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
         Size == 8 ? ((ulong)_value).TryFormat(destination, out bytesWritten, format, provider) : ((uint)_value).TryFormat(destination, out bytesWritten, format, provider);
-    public static nuint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Parse(value, style);
-    public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result) => TryParse(value, out result);
-    public static nuint Parse(string value, IFormatProvider? provider) => Parse(value);
-    public static bool TryParse(string? value, IFormatProvider? provider, out nuint result) => TryParse(value, out result);
-    public static nuint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value.ToString());
-    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out nuint result) => TryParse(value.ToString(), out result);
-    public static nuint Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Parse(value.ToString(), style, provider);
-    public static bool TryParse(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result) => TryParse(value.ToString(), style, provider, out result);
+    // As upstream, through the fixed-width type of the target's width.
+    public static nuint Parse(string value, Globalization.NumberStyles style, IFormatProvider? provider) => Size == 8
+        ? (nuint)ulong.Parse(value, style, provider)
+        : uint.Parse(value, style, provider);
+    public static bool TryParse(string? value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
+    {
+        if (Size == 8)
+        {
+            var parsedWide = ulong.TryParse(value, style, provider, out var wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        var parsedNarrow = uint.TryParse(value, style, provider, out var narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
+    public static nuint Parse(string value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
+    public static bool TryParse(string? value, IFormatProvider? provider, out nuint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
+    public static nuint Parse(ReadOnlySpan<char> value, IFormatProvider? provider) => Parse(value, Globalization.NumberStyles.Integer, provider);
+    public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider, out nuint result) => TryParse(value, Globalization.NumberStyles.Integer, provider, out result);
+    public static nuint Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) => Size == 8
+        ? (nuint)ulong.Parse(value, style, provider)
+        : uint.Parse(value, style, provider);
+    public static bool TryParse(ReadOnlySpan<char> value, Globalization.NumberStyles style, IFormatProvider? provider, out nuint result)
+    {
+        if (Size == 8)
+        {
+            var parsedWide = ulong.TryParse(value, style, provider, out var wideValue);
+            result = (nuint)wideValue;
+            return parsedWide;
+        }
+        var parsedNarrow = uint.TryParse(value, style, provider, out var narrowValue);
+        result = narrowValue;
+        return parsedNarrow;
+    }
 
     static nuint Numerics.INumberBase<nuint>.One => One;
     static nuint Numerics.INumberBase<nuint>.Zero => Zero;

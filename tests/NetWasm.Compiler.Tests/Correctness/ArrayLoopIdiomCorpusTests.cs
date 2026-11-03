@@ -10,6 +10,8 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // iterations in bulk. Every element type and every size the fill's chunks and
 // loop handle match desktop, and so do the loops that throw part way: the
 // elements stored before the throw, the exception and the counter a catch sees.
+// Loops over local arrays of constant lengths run without checks where the
+// lengths hold every iteration, and keep them where they do not.
 public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """
@@ -56,6 +58,11 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
                         22 => FillLongConstants(size),
                         23 => FillFloatConstants(size),
                         24 => FillDoubleConstants(size),
+                        25 => FillKnown(size),
+                        26 => FillKnownPrefix(size),
+                        27 => FillKnownLength(size),
+                        28 => FillKnownPastEnd(size),
+                        29 => CopyKnown(size),
                         _ => FillOneElement(size, size + 11),
                     });
                 }
@@ -173,6 +180,58 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
 
             // Every iteration stores the same element, not the counter's, so the
             // loop stays; an empty array throws on the first.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillKnown(int size)
+            {
+                var array = new char[16];
+                var value = (char)(' ' + size % 7);
+                for (var j = 0; j < 16; j++) array[j] = value;
+                return Hash(array);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillKnownPrefix(int size)
+            {
+                var array = new int[20];
+                for (var j = 3; j < 17; j++) array[j] = size;
+                return Hash(array);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillKnownLength(int size)
+            {
+                var array = new long[12];
+                long value = size;
+                for (var j = 0; j < array.Length; j++) array[j] = value;
+                return Hash(array);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FillKnownPastEnd(int size)
+            {
+                var array = new int[8];
+                var j = 0;
+                try
+                {
+                    for (j = 0; j < 10; j++) array[j] = size;
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    return Mix(j + 7000, Hash(array));
+                }
+                return Hash(array);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int CopyKnown(int size)
+            {
+                var source = new int[16];
+                var destination = new int[16];
+                for (var index = 0; index < source.Length; index++) source[index] = index * size;
+                for (var j = 0; j < 16; j++) destination[j] = source[j];
+                return Hash(destination);
+            }
+
             [MethodImpl(MethodImplOptions.NoInlining)]
             private static int FillOneElement(int size, int value)
             {
@@ -358,7 +417,7 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
             "ArrayLoopIdiomCorpus",
             "NetWasm.Correctness.ArrayLoopIdioms",
             Source,
-            [.. Enumerable.Range(0, 26)])
+            [.. Enumerable.Range(0, 31)])
         {
             Optimization = FinalWasmOptimization.O3,
             ExecuteWasm64 = true,
@@ -379,12 +438,13 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
 
         string[] loops =
         [
-            "CopyChars", "CopyDoubles", "CopyInts", "CopyNull", "CopySame", "CopyThrowing", "FillBools", "FillBytes",
-            "FillChars", "FillDoubleConstants", "FillDoubles", "FillEnums", "FillFloatConstants", "FillFloats", "FillFrom",
-            "FillInclusive", "FillInts", "FillLongConstants", "FillLongs", "FillNativeInts", "FillNull", "FillPrefix",
-            "FillShorts", "FillThrowing",
+            "CopyChars", "CopyDoubles", "CopyInts", "CopyKnown", "CopyNull", "CopySame", "CopyThrowing", "FillBools",
+            "FillBytes", "FillChars", "FillDoubleConstants", "FillDoubles", "FillEnums", "FillFloatConstants", "FillFloats",
+            "FillFrom", "FillInclusive", "FillInts", "FillKnown", "FillKnownLength", "FillKnownPastEnd", "FillKnownPrefix",
+            "FillLongConstants", "FillLongs", "FillNativeInts", "FillNull", "FillPrefix", "FillShorts", "FillThrowing",
         ];
         Assert.Equal(loops, Bulk(bulk));
+        Assert.Equal(["CopyKnown", "FillInclusive", "FillKnown", "FillKnownLength", "FillKnownPrefix"], Bulk(bulk, "InBounds"));
         Assert.Empty(Bulk(kept));
         foreach (var input in (int[])[1, 11, 20])
         {
@@ -394,14 +454,14 @@ public sealed class ArrayLoopIdiomCorpusTests(CorrectnessTestRunner runner)
         }
     }
 
-    // The EntryPoint methods that call ArrayLoops.
-    private static string[] Bulk(CompilationResult result) =>
+    // The EntryPoint methods that call ArrayLoops, or the helpers whose names end so.
+    private static string[] Bulk(CompilationResult result, string suffix = "") =>
         [.. result.Program.Methods.Values
-            .Where(static method => method.Method.DeclaringType.FullName == "NetWasm.Correctness.ArrayLoopIdioms.EntryPoint" &&
-                method.Body.Instructions.Any(static instruction => instruction.Operand is CilOperand.MethodInstance
+            .Where(method => method.Method.DeclaringType.FullName == "NetWasm.Correctness.ArrayLoopIdioms.EntryPoint" &&
+                method.Body.Instructions.Any(instruction => instruction.Operand is CilOperand.MethodInstance
                 {
                     Value.DeclaringType.FullName: "System.Runtime.CompilerServices.ArrayLoops",
-                }))
+                } call && call.Value.Definition.Name.EndsWith(suffix, StringComparison.Ordinal)))
             .Select(static method => method.Method.Definition.Name)
             .Order()];
 

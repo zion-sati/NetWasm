@@ -231,12 +231,12 @@ namespace System
 
         public bool TryFormat(Span<char> destination, out int charsWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null) =>
-            TryCopy(FormatInvariant(format.Length == 0 ? null : string.Create(format.ToArray())), destination, out charsWritten);
+            TryCopy(FormatInvariant(format.Length == 0 ? null : new string(format)), destination, out charsWritten);
 
         public bool TryFormat(Span<byte> destination, out int bytesWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : string.Create(format.ToArray()));
+            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
             if (destination.Length < text.Length)
             {
                 bytesWritten = 0;
@@ -265,7 +265,7 @@ namespace System
         }
 
         public static DateTimeOffset Parse(ReadOnlySpan<char> value, IFormatProvider? formatProvider) =>
-            Parse(string.Create(value.ToArray()));
+            Parse(new string(value));
         public static DateTimeOffset Parse(ReadOnlySpan<char> value, IFormatProvider? formatProvider = null,
             System.Globalization.DateTimeStyles styles = System.Globalization.DateTimeStyles.None)
         {
@@ -306,7 +306,7 @@ namespace System
         }
 
         public static bool TryParse(ReadOnlySpan<char> value, out DateTimeOffset result) =>
-            TryParse(string.Create(value.ToArray()), out result);
+            TryParse(new string(value), out result);
         public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? formatProvider, out DateTimeOffset result) =>
             TryParse(value, out result);
         public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? formatProvider,
@@ -436,15 +436,15 @@ namespace System
 
         public static DateTimeOffset ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
             IFormatProvider? formatProvider = null) =>
-            ParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), formatProvider);
+            ParseExact(new string(value), new string(format), formatProvider);
 
         public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
             IFormatProvider? formatProvider, out DateTimeOffset result) =>
-            TryParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), formatProvider, out result);
+            TryParseExact(new string(value), new string(format), formatProvider, out result);
 
         public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
             IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles, out DateTimeOffset result) =>
-            TryParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), formatProvider, styles, out result);
+            TryParseExact(new string(value), new string(format), formatProvider, styles, out result);
 
         public static DateTimeOffset ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
             IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles = System.Globalization.DateTimeStyles.None) =>
@@ -478,7 +478,7 @@ namespace System
             IFormatProvider? formatProvider, System.Globalization.DateTimeStyles styles, out DateTimeOffset result)
         {
             ValidateStyles(styles);
-            return TryParseExact(string.Create(value.ToArray()), formats, formatProvider, styles, out result);
+            return TryParseExact(new string(value), formats, formatProvider, styles, out result);
         }
 
         public static implicit operator DateTimeOffset(DateTime value) => new(value);

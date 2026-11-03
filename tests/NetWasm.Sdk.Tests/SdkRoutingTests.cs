@@ -248,7 +248,98 @@ public sealed class SdkRoutingTests
         Assert.Contains("NetWasmWriteCompilationIdentity", beforeTargets);
         Assert.Contains("NetWasmWritePackagingIdentity", beforeTargets);
         Assert.Contains("CoreCompile", beforeTargets);
-        Assert.Contains("Publish", beforeTargets);
+        var beforePublish = Assert.Single(targets.Descendants(), element =>
+            element.Name.LocalName == "Target"
+            && (string?)element.Attribute("Name") == "_NetWasmPrepareWitWorkerPackageBeforePublish");
+        Assert.Equal("Publish", (string?)beforePublish.Attribute("BeforeTargets"));
+        Assert.Equal("NetWasmSdkPrepareWitWorkerPackage", (string?)beforePublish.Attribute("DependsOnTargets"));
+    }
+
+    // MSBuild runs a target's BeforeTargets and AfterTargets hooks even when the
+    // target's condition skips it, and Publish is skipped unless IsPublishable is
+    // true. So a NetWasm target hooked to Publish, or to a NetWasm target that a
+    // project that does not publish skips, runs only when the project publishes,
+    // unless it checks nothing but the project's own properties and items, which a
+    // valid project passes whether it publishes or not (#163).
+    [Fact]
+    public void PublishHooksRunOnlyForAProjectThatPublishes()
+    {
+        string[] propertyChecks =
+        [
+            "NetWasmSdkValidateSdkVersion",
+            "NetWasmSdkValidateHostToolsHost",
+            "NetWasmSdkValidateJavaScriptHosts",
+            "NetWasmSdkRejectRenamedJavaScriptModuleItem",
+            "NetWasmSdkRejectRemovedOutputType",
+            "NetWasmSdkValidateWorkerOutput",
+        ];
+        var targets = SdkTargetFiles()
+            .SelectMany(static file => XDocument.Load(file).Descendants().Where(static element => element.Name.LocalName == "Target"))
+            .ToArray();
+        var skipped = targets.Where(PublishesOnly).Select(Name).Append("Publish").ToHashSet(StringComparer.Ordinal);
+
+        var unguarded = targets
+            .Where(target => Hooks(target).Any(skipped.Contains) && !PublishesOnly(target) && !propertyChecks.Contains(Name(target)))
+            .Select(Name)
+            .ToArray();
+
+        Assert.Empty(unguarded);
+        Assert.All(propertyChecks, check => Assert.Contains(targets, target =>
+            Name(target) == check && Hooks(target).Contains("Publish")));
+
+        static string Name(XElement target) => (string)target.Attribute("Name")!;
+        static bool PublishesOnly(XElement target) =>
+            ((string?)target.Attribute("Condition") ?? string.Empty).Contains("'$(IsPublishable)' == 'true'", StringComparison.Ordinal);
+        static IEnumerable<string> Hooks(XElement target) =>
+            HookAttributes.SelectMany(attribute =>
+                ((string?)target.Attribute(attribute) ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    // NetWasm publishes a referenced worker into its caller's output on purpose, so a
+    // worker that sets IsPublishable=false, as one its caller publishes would, is
+    // still published (#163).
+    [Fact]
+    public void ProjectsNetWasmPublishesItselfArePublishedWhateverTheirIsPublishable()
+    {
+        var calls = SdkTargetFiles()
+            .SelectMany(static file => XDocument.Load(file).Descendants())
+            .Where(static element => element.Name.LocalName == "MSBuild"
+                && ((string?)element.Attribute("Targets") ?? string.Empty).Split(';').Contains("Publish"))
+            .ToArray();
+
+        Assert.NotEmpty(calls);
+        Assert.All(calls, static call =>
+            Assert.Contains(";IsPublishable=true;", $";{(string?)call.Attribute("Properties")};", StringComparison.Ordinal));
+    }
+
+    // A project with IsPublishable=false publishes nothing and succeeds, as any .NET
+    // project does, though NetWasm's publish targets hook Publish (#163).
+    [Theory]
+    [InlineData("Exe")]
+    [InlineData("JsModule")]
+    public void PublishingAProjectThatDoesNotPublishSucceedsWithoutOutput(string outputType)
+    {
+        using var project = EvaluationProject.Create($"""
+            <TargetFramework>netwasm0.1</TargetFramework>
+            <OutputType>{outputType}</OutputType>
+            <IsPublishable>false</IsPublishable>
+            """, includeCompilerTargets: true);
+
+        var (exitCode, output) = project.RunTarget("Publish");
+
+        Assert.True(exitCode == 0, output);
+        Assert.DoesNotContain("NWSDK", output, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(project.ProjectDirectory, "bin")), output);
+    }
+
+    private static readonly string[] HookAttributes = ["BeforeTargets", "AfterTargets"];
+
+    private static IEnumerable<string> SdkTargetFiles()
+    {
+        var source = Path.Combine(RepositoryRoot(), "src");
+        return Directory.EnumerateFiles(source, "*.targets", SearchOption.AllDirectories)
+            .Where(static file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -840,6 +931,10 @@ public sealed class SdkRoutingTests
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopStoreForwarding"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedArrayLoopIdioms"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedLoopVectorization"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedPureCallReuse"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedFieldLoadReuse"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedConditionalStoreMerging"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedInlineArrayData"));
     }
 
     [Theory]
@@ -872,6 +967,10 @@ public sealed class SdkRoutingTests
     [InlineData("NetWasmManagedLoopStoreForwarding")]
     [InlineData("NetWasmManagedArrayLoopIdioms")]
     [InlineData("NetWasmManagedLoopVectorization")]
+    [InlineData("NetWasmManagedPureCallReuse")]
+    [InlineData("NetWasmManagedFieldLoadReuse")]
+    [InlineData("NetWasmManagedConditionalStoreMerging")]
+    [InlineData("NetWasmManagedInlineArrayData")]
     public void PreservesExplicitCompilerReductionSelections(string property)
     {
         using var project = EvaluationProject.Create(
@@ -927,6 +1026,10 @@ public sealed class SdkRoutingTests
                      "$(NetWasmManagedLoopStoreForwarding)",
                      "$(NetWasmManagedArrayLoopIdioms)",
                      "$(NetWasmManagedLoopVectorization)",
+                     "$(NetWasmManagedPureCallReuse)",
+                     "$(NetWasmManagedFieldLoadReuse)",
+                     "$(NetWasmManagedConditionalStoreMerging)",
+                     "$(NetWasmManagedInlineArrayData)",
                  })
         {
             Assert.Contains(value, frontendIdentityContract, StringComparison.Ordinal);
@@ -963,6 +1066,10 @@ public sealed class SdkRoutingTests
         Assert.Equal("$(NetWasmManagedLoopStoreForwarding)", (string?)compilation.Attribute("ManagedLoopStoreForwarding"));
         Assert.Equal("$(NetWasmManagedArrayLoopIdioms)", (string?)compilation.Attribute("ManagedArrayLoopIdioms"));
         Assert.Equal("$(NetWasmManagedLoopVectorization)", (string?)compilation.Attribute("ManagedLoopVectorization"));
+        Assert.Equal("$(NetWasmManagedPureCallReuse)", (string?)compilation.Attribute("ManagedPureCallReuse"));
+        Assert.Equal("$(NetWasmManagedFieldLoadReuse)", (string?)compilation.Attribute("ManagedFieldLoadReuse"));
+        Assert.Equal("$(NetWasmManagedConditionalStoreMerging)", (string?)compilation.Attribute("ManagedConditionalStoreMerging"));
+        Assert.Equal("$(NetWasmManagedInlineArrayData)", (string?)compilation.Attribute("ManagedInlineArrayData"));
         foreach (var value in new[]
                  {
                      "$(_NetWasmCanonicalOptimization)",
@@ -1276,6 +1383,10 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopStoreForwarding=$(NetWasmManagedLoopStoreForwarding)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedArrayLoopIdioms=$(NetWasmManagedArrayLoopIdioms)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopVectorization=$(NetWasmManagedLoopVectorization)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedPureCallReuse=$(NetWasmManagedPureCallReuse)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedFieldLoadReuse=$(NetWasmManagedFieldLoadReuse)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedConditionalStoreMerging=$(NetWasmManagedConditionalStoreMerging)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedInlineArrayData=$(NetWasmManagedInlineArrayData)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />

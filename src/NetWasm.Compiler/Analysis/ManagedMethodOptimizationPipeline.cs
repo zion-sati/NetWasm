@@ -27,13 +27,18 @@ internal sealed class ManagedMethodOptimizationPipeline(
     IIdempotentLoopCollapser idempotentLoops,
     IArrayLoopIdiomRewriter arrayLoops,
     IReductionLoopRewriter reductionLoops,
+    IPureCallReuser pureCalls,
     ILoopInvariantCallHoister invariantCalls,
     IElementwiseLoopVectorizer vectorizer,
     ILoopStoreForwarder loopStores,
+    IConditionalStoreMerger storeMerging,
+    IFieldLoadReuser fieldLoads,
     IBeforeFieldInitEntryInitializer entryInitialization,
     IEmptyFinallyRemover emptyFinallies,
     IStructLocalScalarReplacer structLocals,
-    Allocations.INonEscapingAllocationReplacer objects) : IManagedMethodOptimizer
+    Allocations.INonEscapingAllocationReplacer objects,
+    IWalkLoopUnroller walks,
+    IConstantTripLoopUnroller constantTrips) : IManagedMethodOptimizer
 {
     private readonly IManagedMethodOptimizer _staticDataViews = staticDataViews ??
         throw new ArgumentNullException(nameof(staticDataViews));
@@ -63,10 +68,16 @@ internal sealed class ManagedMethodOptimizationPipeline(
     private readonly IArrayLoopIdiomRewriter _arrayLoops = arrayLoops ?? throw new ArgumentNullException(nameof(arrayLoops));
     private readonly IReductionLoopRewriter _reductionLoops = reductionLoops ??
         throw new ArgumentNullException(nameof(reductionLoops));
+    private readonly IPureCallReuser _pureCalls = pureCalls ?? throw new ArgumentNullException(nameof(pureCalls));
     private readonly ILoopInvariantCallHoister _invariantCalls = invariantCalls ??
         throw new ArgumentNullException(nameof(invariantCalls));
     private readonly IElementwiseLoopVectorizer _vectorizer = vectorizer ?? throw new ArgumentNullException(nameof(vectorizer));
+    private readonly IWalkLoopUnroller _walks = walks ?? throw new ArgumentNullException(nameof(walks));
+    private readonly IConstantTripLoopUnroller _constantTrips = constantTrips ??
+        throw new ArgumentNullException(nameof(constantTrips));
     private readonly ILoopStoreForwarder _loopStores = loopStores ?? throw new ArgumentNullException(nameof(loopStores));
+    private readonly IConditionalStoreMerger _storeMerging = storeMerging ?? throw new ArgumentNullException(nameof(storeMerging));
+    private readonly IFieldLoadReuser _fieldLoads = fieldLoads ?? throw new ArgumentNullException(nameof(fieldLoads));
     private readonly IBeforeFieldInitEntryInitializer _entryInitialization = entryInitialization ??
         throw new ArgumentNullException(nameof(entryInitialization));
     private readonly IEmptyFinallyRemover _emptyFinallies = emptyFinallies ??
@@ -79,7 +90,13 @@ internal sealed class ManagedMethodOptimizationPipeline(
     // Inlined callees bring their own calls, so a few rounds reach helpers of
     // helpers. Each round revalidates the body and re-enters static data view
     // elimination, which recognizes producers only while they are still calls.
-    internal const int MaximumInliningDepth = 3;
+    // Upstream code reaches its smallest helpers through longer chains of
+    // AggressiveInlining calls, as ordinal ignore-case search does to the getters
+    // of CharUnicodeInfo's tables six calls down, so the rounds past the general
+    // depth go on inlining small callees that do not allocate; .NET's JIT inlines
+    // twenty levels deep. The rounds stop as soon as one inlines nothing.
+    internal const int GeneralInliningDepth = 3;
+    internal const int MaximumInliningDepth = 8;
 
     public CilMethodBody Optimize(ManagedMethodBody method)
     {
@@ -94,8 +111,9 @@ internal sealed class ManagedMethodOptimizationPipeline(
             // A loop that folds span elements is found while the indexer is a
             // call, before inlining and accessor canonicalization replace it,
             // and a pure call of values a loop does not change leaves the loop
-            // before inlining puts its body there.
-            var reduced = _reductionLoops.Rewrite(_invariantCalls.Rewrite(optimized));
+            // before inlining puts its body there, after a repeat of a pure call
+            // takes the first call's result.
+            var reduced = _reductionLoops.Rewrite(_invariantCalls.Rewrite(_pureCalls.Rewrite(optimized)));
             if (!ReferenceEquals(reduced, optimized))
             {
                 optimized = reduced;
@@ -118,7 +136,8 @@ internal sealed class ManagedMethodOptimizationPipeline(
                 method.Method,
                 optimized,
                 entryStacks,
-                nested: depth > 0);
+                nested: depth > 0,
+                smallOnly: depth >= GeneralInliningDepth);
             if (ReferenceEquals(inlined, optimized))
             {
                 settled = true;
@@ -141,11 +160,15 @@ internal sealed class ManagedMethodOptimizationPipeline(
         // to run, struct locals used field by field, reads and writes through a
         // local's address, counted loops that only repeat their first iteration,
         // array fill and copy loops whose iterations run in bulk first, element
-        // loops whose iterations run as vectors first, loop reloads of an element
-        // the loop itself stores, and span reads that RVA data answers. The entry checks go in before
-        // the array passes, whose proofs then describe the final instructions.
+        // loops whose iterations run as vectors first, walks over n elements that
+        // run four at a time first, for loops over a few constant values that
+        // run once per value in a row, loop reloads of an element
+        // the loop itself stores, stores to one field on both arms of an if,
+        // field reads of values an earlier read found, and span reads that RVA
+        // data answers. The entry checks go in before the array passes, whose
+        // proofs then describe the final instructions.
         return _repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
-            _rvaSpans.Rewrite(_loopStores.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
-                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))));
+            _rvaSpans.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
+                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))));
     }
 }

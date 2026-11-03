@@ -10,7 +10,6 @@ namespace NetWasm.Compiler.Analysis;
 internal sealed class ImplicitExceptionDiscovery(
     IMethodRepository methods,
     ISymbolFormatter symbols,
-    IStringConstructionExceptionRequirementProvider stringConstruction,
     IRuntimeIntrinsicExceptionRequirementProvider runtimeIntrinsics) :
     IImplicitExceptionDiscovery
 {
@@ -21,24 +20,6 @@ internal sealed class ImplicitExceptionDiscovery(
         switch (instruction.Operation)
         {
             case CilOperation.NewObject:
-                var constructor = instruction.Operand switch
-                {
-                    CilOperand.Entity target => methods.GetMethod(target.Key),
-                    CilOperand.MethodInstance target => target.Value.Definition,
-                    _ => null,
-                };
-                if (constructor is not null &&
-                    symbols.Format(constructor.DeclaringType) == "System.String")
-                {
-                    requirements.AddRange(stringConstruction.Discover(constructor));
-                }
-                else
-                {
-                    requirements.Add(new(
-                        ManagedExceptionKind.OutOfMemory,
-                        "System.OutOfMemoryException"));
-                }
-                break;
             case CilOperation.Box:
                 requirements.Add(new(ManagedExceptionKind.OutOfMemory, "System.OutOfMemoryException"));
                 break;
@@ -130,8 +111,8 @@ internal sealed class ImplicitExceptionDiscovery(
             case CilOperation.Remainder:
             case CilOperation.RemainderUnsigned:
                 requirements.Add(new(ManagedExceptionKind.DivideByZero, "System.DivideByZeroException"));
-                if (instruction.Operation != CilOperation.Remainder &&
-                    instruction.Operation != CilOperation.RemainderUnsigned)
+                // Only a signed MinValue / -1 or MinValue % -1 overflows.
+                if (instruction.Operation is CilOperation.Divide or CilOperation.Remainder)
                 {
                     requirements.Add(new(ManagedExceptionKind.Overflow, "System.OverflowException"));
                 }

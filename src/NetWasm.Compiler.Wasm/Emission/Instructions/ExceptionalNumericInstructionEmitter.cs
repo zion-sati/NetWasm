@@ -128,6 +128,11 @@ internal sealed class ExceptionalNumericInstructionEmitter(
             return;
         }
         EmitIntegerZeroGuard(request, code, left + 1);
+        // Wasm defines MinValue % -1 as 0; .NET throws as it does for the quotient.
+        if (!unsigned)
+        {
+            EmitSignedDivisionOverflowGuard(request, code, left, type);
+        }
         EmitBinary(
             request, code, unsigned
                 ? WasmInstruction.NoOperand(WasmOpcodes.I32RemainderUnsigned)

@@ -148,11 +148,30 @@ public static class EntryPoint
 
         try
         {
-            GC.RemoveMemoryPressure(1);
+            GC.AddMemoryPressure(0);
             return 18;
         }
-        catch (PlatformNotSupportedException)
+        catch (ArgumentOutOfRangeException exception) when (
+            exception.ParamName == "bytesAllocated")
         {
+        }
+
+        // Reported pressure is accounted as Mono accounts it; pressure past its budget runs a
+        // collection, and removing it never does.
+        var beforePressure = GC.CollectionCount(0);
+        GC.AddMemoryPressure(1);
+        GC.RemoveMemoryPressure(1);
+        if (GC.CollectionCount(0) != beforePressure)
+        {
+            return 20;
+        }
+        for (var step = 0; step < 4; step++)
+        {
+            GC.AddMemoryPressure(4 * 1024 * 1024);
+        }
+        if (GC.CollectionCount(0) == beforePressure)
+        {
+            return 21;
         }
 
         try
@@ -194,9 +213,10 @@ public static class EntryPoint
         {
         }
 
+        GC.Collect(1);
         try
         {
-            GC.Collect(1);
+            GC.Collect(-1);
             return 7;
         }
         catch (ArgumentOutOfRangeException)

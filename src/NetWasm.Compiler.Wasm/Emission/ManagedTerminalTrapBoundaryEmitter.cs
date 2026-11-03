@@ -12,7 +12,8 @@ internal sealed class ManagedTerminalTrapBoundaryEmitter(
         IWasmInstructionWriter code,
         CliValueKind resultType,
         int resultLocal,
-        Action emitBody)
+        Action emitBody,
+        int? unhandledExceptionReporter = null)
     {
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(emitBody);
@@ -32,6 +33,14 @@ internal sealed class ManagedTerminalTrapBoundaryEmitter(
         WriteBranch(code, 1);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Drop));
+        // Without structured diagnostics nothing names the exception, so the runtime says how
+        // to get its type, message and stack trace before the trap.
+        if (unhandledExceptionReporter is { } reporter)
+        {
+            code.Write(WasmInstruction.WithOperand(
+                WasmOpcodes.Call,
+                WasmInstructionOperand.Unsigned((uint)reporter)));
+        }
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.Unreachable));
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
     }

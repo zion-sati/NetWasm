@@ -14,7 +14,8 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed record DelegateInvokeTarget(
     ImmutableArray<ManagedDelegateBinding> Bindings,
-    ModuleDataPlan ModuleData);
+    ModuleDataPlan ModuleData,
+    bool InlineArrayData = false);
 
 internal sealed class DelegateInvokeFunctionEmitter(
     ITargetLayout layouts,
@@ -69,22 +70,24 @@ internal sealed class DelegateInvokeFunctionEmitter(
         var resultType = !returnsValue && invoke.Signature.ReturnType != CliValueKind.Void
             ? invoke.Signature.ReturnType
             : CliValueKind.I4;
-        WasmLocalDeclarationWriter.Write(
-            output.Bytes,
-            [
-                resultType,
-                CliValueKind.ManagedAddress,
-                CliValueKind.ManagedReference,
-                CliValueKind.I4,
-                CliValueKind.I4,
-                CliValueKind.ManagedReference,
-                CliValueKind.ManagedAddress,
-                // The method id, read once when targets are searched.
-                .. targets.Select(invoke, targetProgram.Bindings).Length > SequentialTargets
-                    ? [CliValueKind.I4]
-                    : ImmutableArray<CliValueKind>.Empty,
-            ],
-            layouts.Target);
+        List<CliValueKind> locals =
+        [
+            resultType,
+            CliValueKind.ManagedAddress,
+            CliValueKind.ManagedReference,
+            CliValueKind.I4,
+            CliValueKind.I4,
+            CliValueKind.ManagedReference,
+            CliValueKind.ManagedAddress,
+        ];
+        // The method id, read once when targets are searched. A list rather than an
+        // ImmutableArray spread: NativeAOT-LLVM, which compiles this compiler for the
+        // browser, crashes on that (https://github.com/dotnet/runtimelab/issues/3329).
+        if (targets.Select(invoke, targetProgram.Bindings).Length > SequentialTargets)
+        {
+            locals.Add(CliValueKind.I4);
+        }
+        WasmLocalDeclarationWriter.Write(output.Bytes, locals, layouts.Target);
 
         EmitDelegateInvokeHelperCore(
             code,
@@ -189,6 +192,7 @@ internal sealed class DelegateInvokeFunctionEmitter(
             layouts.Target,
             invocationListLocal,
             invocationIndexLocal,
+            targetProgram.InlineArrayData,
             layouts.Target.ObjectReferenceSize);
         EmitReferenceLoad(code, 0);
         WriteLocalSet(code, currentDelegateLocal);

@@ -75,8 +75,8 @@ internal sealed class JavaScriptAsyncBindingResolver(
             .Select(_methodRepository.GetMethod)
             .ToArray();
         var setException = commonMethods.Single(candidate =>
-            candidate.Name == "SetException" &&
-            candidate.Signature.ParameterSignatureTypes.Length == 1);
+            candidate.Name == "SetExceptionForJavaScriptInterop" &&
+            candidate.Signature.ParameterSignatureTypes.IsEmpty);
         var setCanceled = commonMethods.Single(candidate =>
             candidate.Name == "SetCanceledForJavaScriptInterop" &&
             candidate.Signature.ParameterSignatureTypes.IsEmpty);

@@ -13,7 +13,7 @@ public sealed class RoslynCorpusCompilerTests
         {
             var processes = new UnexpectedProcesses();
             var environment = new CompilerCorrectnessEnvironment(
-                "unused", "unused", "sdk", "unused", "unused", "unused", "unused", "unused", "unused",
+                "unused", "unused", "sdk", "unused", "unused", "unused", "unused", "unused", "11.0.0", "unused",
                 TimeSpan.FromSeconds(1));
             var compiler = Assert.IsAssignableFrom<IRoslynCorpusCompiler>(new RoslynCorpusCompiler(
                 environment, processes, CorrectnessTestAssets.CreateOracleModes(), new CorpusSourceNamesVerifier(),

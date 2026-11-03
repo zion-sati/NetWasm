@@ -120,7 +120,7 @@ public sealed class DelegateCloneIntrinsicEmitterTests
         layouts,
         layouts,
         imports,
-        new ImplicitExceptionEmitter(layouts, layouts));
+        new ImplicitExceptionEmitter(layouts));
 
     private static RuntimeIntrinsicEmissionRequest CreateRequest(
         WasmTargetLayout target,

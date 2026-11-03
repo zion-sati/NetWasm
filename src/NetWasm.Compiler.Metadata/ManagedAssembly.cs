@@ -224,6 +224,7 @@ public sealed class ManagedAssembly : IDisposable
                     });
             }
 
+            var typeStackTraceHidden = HasStackTraceHiddenAttribute(definition.GetCustomAttributes());
             foreach (var methodHandle in definition.GetMethods())
             {
                 var method = Reader.GetMethodDefinition(methodHandle);
@@ -265,6 +266,8 @@ public sealed class ManagedAssembly : IDisposable
                         PreservesBaseOverrides = HasPreserveBaseOverridesAttribute(method),
                         IsAggressiveInlining = (method.ImplAttributes & MethodImplAttributes.AggressiveInlining) != 0,
                         IsNoInlining = (method.ImplAttributes & MethodImplAttributes.NoInlining) != 0,
+                        IsStackTraceHidden = typeStackTraceHidden ||
+                            HasStackTraceHiddenAttribute(method.GetCustomAttributes()),
                         IsDelegateAsynchronousCall =
                             (method.ImplAttributes & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Runtime &&
                             methodName is "BeginInvoke" or "EndInvoke",
@@ -454,6 +457,12 @@ public sealed class ManagedAssembly : IDisposable
             .Select(handle => Reader.GetCustomAttribute(handle))
             .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
                 "System.Runtime.CompilerServices.PreserveBaseOverridesAttribute");
+
+    private bool HasStackTraceHiddenAttribute(CustomAttributeHandleCollection attributes) =>
+        attributes
+            .Select(handle => Reader.GetCustomAttribute(handle))
+            .Any(attribute => GetAttributeTypeName(attribute.Constructor) ==
+                "System.Diagnostics.StackTraceHiddenAttribute");
 
     private bool HasFlagsAttribute(TypeDefinition definition) =>
         definition.GetCustomAttributes()

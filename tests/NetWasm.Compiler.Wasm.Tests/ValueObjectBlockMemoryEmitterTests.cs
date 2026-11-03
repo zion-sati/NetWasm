@@ -241,6 +241,42 @@ public sealed class ValueObjectBlockMemoryEmitterTests
         Assert.Equal(WasmOpcodes.I32Constant, GetCodeBytes(request)[0]);
     }
 
+    // Where the target inlines small blocks, cpblk and initblk run the
+    // small-block cascade, which a constant length folds to its inline
+    // chunks, and still fall back to memory.copy and memory.fill past 128
+    // bytes; elsewhere they are those instructions alone.
+    [Theory]
+    [InlineData(CilOperation.CopyBlock, false)]
+    [InlineData(CilOperation.CopyBlock, true)]
+    [InlineData(CilOperation.InitializeBlock, false)]
+    [InlineData(CilOperation.InitializeBlock, true)]
+    public void BlocksRunTheSmallBlockCascadeWhereTheTargetInlinesSmallBlocks(CilOperation operation, bool memory64)
+    {
+        CliValueKind[] stack = operation == CilOperation.CopyBlock
+            ? [CliValueKind.ManagedAddress, CliValueKind.ManagedAddress, CliValueKind.I4]
+            : [CliValueKind.ManagedAddress, CliValueKind.I4, CliValueKind.I4];
+        var request = CreateRequest(operation, stack);
+        var inlining = CreateRequest(operation, stack);
+        var inlined = inlining with { Target = inlining.Target with { InlineSmallBlockOperations = true } };
+        RegisterInstructionWriter(inlined, new RecordingInstructionWriter());
+        var emitter = (IInstructionCommandProvider)CreateEmitter(memory64 ? WasmTargetLayout.Wasm64 : null);
+
+        Emit(emitter, request);
+        Emit(emitter, inlined);
+
+        var bulk = operation == CilOperation.CopyBlock
+            ? WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)
+            : WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0);
+        var plain = ((RecordingInstructionWriter)GetCodeWriter(request)).ToInstructions();
+        var cascade = ((RecordingInstructionWriter)GetCodeWriter(inlined)).ToInstructions();
+        Assert.Single(plain, instruction => instruction.Operand == bulk);
+        Assert.DoesNotContain(plain, instruction => instruction.Opcode is WasmOpcodes.If or WasmOpcodes.SimdPrefixed);
+        Assert.Single(cascade, instruction => instruction.Operand == bulk);
+        Assert.Contains(cascade, instruction => instruction.Opcode == WasmOpcodes.If);
+        Assert.Contains(cascade, instruction => instruction.Opcode == WasmOpcodes.SimdPrefixed);
+        Assert.Empty(inlined.Stack);
+    }
+
     [Fact]
     public void Memory64BlockLengthWidensI32()
     {

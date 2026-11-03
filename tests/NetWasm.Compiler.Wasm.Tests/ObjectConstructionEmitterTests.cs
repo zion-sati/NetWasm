@@ -189,8 +189,10 @@ public sealed class ObjectConstructionEmitterTests
         Assert.Contains("has no entity operand", exception.Message);
     }
 
+    // StringConstructorRewriter turns every string newobj into a call to String.Ctor, so
+    // one that reaches emission is a compiler fault, not an object to allocate.
     [Fact]
-    public void StringConstructorAllocatesAndReplacesItsArguments()
+    public void StringConstructorThatReachesEmissionIsRejected()
     {
         var program = new FakeProgram();
         var layouts = new RecordingLayoutProvider();
@@ -215,49 +217,12 @@ public sealed class ObjectConstructionEmitterTests
             [CliValueKind.I4, CliValueKind.I4],
             new CilOperand.MethodInstance(instance));
 
-        Emit(
+        var exception = Assert.Throws<InvalidOperationException>(() => Emit(
             (IInstructionCommandProvider)CreateEmitter(layouts, (_, _, _) => { }),
             request,
-            CreateFunctionIndexResolver(program));
+            CreateFunctionIndexResolver(program)));
 
-        Assert.Equal([CliValueKind.ManagedReference], request.Stack);
-        Assert.Contains(WasmOpcodes.Call, GetCodeBytes(request));
-    }
-
-    [Fact]
-    public void StringNamedConstructorDelegatesToStringConstructionPolicy()
-    {
-        var program = new FakeProgram();
-        var layouts = new RecordingLayoutProvider();
-        var signature = MethodSignatureModel.Create(CliValueKind.Void, CliValueKind.I4);
-        var constructor = new MethodDefinitionModel(
-            ConstructorKey,
-            StringTypeKey,
-            ".ctor",
-            false,
-            signature,
-            1);
-        var instance = new MethodInstanceModel(
-            constructor,
-            CliTypeIdentity.Named(Assembly, "System", "String", isValueType: false),
-            [CliTypeIdentity.Primitive("i4", CliValueKind.I4)],
-            signature);
-        var request = CreateInstructionRequest(
-            CilOperation.NewObject,
-            [CliValueKind.I4],
-            new CilOperand.MethodInstance(instance));
-        var strings = new RecordingStringConstructionEmitter();
-
-        Emit(
-            (IInstructionCommandProvider)CreateEmitter(
-                layouts,
-                (_, _, _) => { },
-                strings: strings),
-            request,
-            CreateConstructedResolver(program, instance));
-
-        Assert.True(strings.Called);
-        Assert.Equal([CliValueKind.ManagedReference], request.Stack);
+        Assert.Contains("StringConstructorRewriter", exception.Message);
     }
 
     [Theory]
@@ -466,32 +431,18 @@ public sealed class ObjectConstructionEmitterTests
         RecordingLayoutProvider layouts,
         Action<InstructionEmissionRequest, IWasmInstructionWriter, bool> safepoint,
         ITypeClassifier? typeClassifier = null,
-        ICilTypeIdentityResolver? types = null,
-        IStringConstructionEmitter? strings = null)
+        ICilTypeIdentityResolver? types = null)
     {
         var program = new FakeProgram();
         IAddressInstructionEmitter addresses = new AddressInstructionEmitter(layouts);
-        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        IImplicitExceptionEmitter exceptions = new ImplicitExceptionEmitter(layouts);
         IRootPublicationEmitter roots = new RecordingRootPublicationEmitter(safepoint);
-        strings ??= new StringConstructionEmitter(
-            program,
-            program,
-            layouts,
-            addresses,
-            layouts,
-            layouts,
-            layouts,
-            layouts,
-            WasmRuntimeImports.CreateCatalog(),
-            exceptions,
-            new StringConstructionPlanResolver());
         var conversions = new NativeIntegerConversionEmitter(layouts);
         return new ObjectConstructionEmitter(program, program, typeClassifier ?? program, layouts, addresses, layouts, layouts, layouts, types ?? CreateTypeIdentities(program),
             WasmRuntimeImports.CreateCatalog(),
             exceptions,
             roots,
             new NativeIntegerConstructionEmitter(layouts, conversions),
-            strings,
             new StaticInitializationEmitter(program, program, addresses));
     }
 
@@ -538,22 +489,6 @@ public sealed class ObjectConstructionEmitterTests
     private sealed class ValueTypeResolver(CliTypeIdentity type) : ICilTypeIdentityResolver
     {
         public CliTypeIdentity Resolve(EntityKey key) => type;
-    }
-
-    private sealed class RecordingStringConstructionEmitter : IStringConstructionEmitter
-    {
-        internal bool Called { get; private set; }
-
-        public void Emit(
-            InstructionEmissionRequest request,
-            IWasmInstructionWriter code,
-            MethodSignatureModel signature,
-            int argumentBase)
-        {
-            Called = true;
-            request.Stack.RemoveRange(argumentBase, signature.ParameterTypes.Length);
-            request.Stack.Add(CliValueKind.ManagedReference);
-        }
     }
 
     private sealed class RecordingFunctionIndexResolver : IFunctionIndexResolver

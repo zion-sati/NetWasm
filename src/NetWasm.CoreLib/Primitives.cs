@@ -5,6 +5,8 @@
 //
 // NetWasm retains the supported observable contracts while omitting generic
 // math, globalization/provider, UTF-8/span formatting and runtime-only hooks.
+using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace System
@@ -89,7 +91,7 @@ namespace System
         }
 
         public static string Format(Type enumType, object value, string format) =>
-            InternalFormat(enumType, value, format);
+            InternalFormat(ValidateEnumType(enumType), value, format);
 
         public static string? GetName(Type enumType, object value)
         {
@@ -101,7 +103,7 @@ namespace System
                 TypeCode.UInt16 or TypeCode.Int32 or TypeCode.UInt32 or TypeCode.Int64 or
                 TypeCode.UInt64 or TypeCode.Char))
                 throw new ArgumentException("Value must be an enum or an integer type.", nameof(value));
-            return EnumAlgorithms.GetName(InternalGetMetadata(enumType), ToUInt64(value, code));
+            return EnumAlgorithms.GetName(InternalGetMetadata(ValidateEnumType(enumType)), ToUInt64(value, code));
         }
 
         // Adapted from upstream Enum.ToUInt64: signed values preserve their bits;
@@ -123,17 +125,18 @@ namespace System
         public static string? GetName<TEnum>(TEnum value) where TEnum : struct, Enum =>
             InternalGetName(value);
 
-        public static string[] GetNames(Type enumType) => InternalGetNames(enumType);
+        public static string[] GetNames(Type enumType) => InternalGetNames(ValidateEnumType(enumType));
 
         public static string[] GetNames<TEnum>() where TEnum : struct, Enum =>
             InternalGetNames<TEnum>();
 
-        public static Type GetUnderlyingType(Type enumType) => InternalGetUnderlyingType(enumType);
+        public static Type GetUnderlyingType(Type enumType) =>
+            InternalGetUnderlyingType(ValidateEnumType(enumType));
 
-        public static Array GetValues(Type enumType) => InternalGetValues(enumType, false);
+        public static Array GetValues(Type enumType) => InternalGetValues(ValidateEnumType(enumType), false);
 
         public static Array GetValuesAsUnderlyingType(Type enumType) =>
-            InternalGetValues(enumType, true);
+            InternalGetValues(ValidateEnumType(enumType), true);
 
         public static Array GetValuesAsUnderlyingType<TEnum>() where TEnum : struct, Enum =>
             InternalGetValuesAsUnderlyingType<TEnum>();
@@ -180,7 +183,7 @@ namespace System
         public static object Parse(Type enumType, string value, bool ignoreCase)
         {
             var raw = EnumAlgorithms.Parse(
-                InternalGetMetadata(enumType), value, ignoreCase);
+                InternalGetMetadata(ValidateEnumType(enumType)), value, ignoreCase);
             return InternalToObject(enumType, raw);
         }
 
@@ -195,36 +198,37 @@ namespace System
 
         public static TEnum Parse<TEnum>(string value, bool ignoreCase) where TEnum : struct
         {
+            ThrowIfNotEnum<TEnum>(nameof(TEnum));
             var raw = EnumAlgorithms.Parse(InternalGetMetadata<TEnum>(), value, ignoreCase);
             return Runtime.CompilerServices.Unsafe.As<ulong, TEnum>(ref raw);
         }
 
         public static object ToObject(Type enumType, byte value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, short value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, int value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, long value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, object value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, sbyte value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, ushort value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, uint value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static object ToObject(Type enumType, ulong value) =>
-            InternalToObject(enumType, value);
+            InternalToObject(ValidateEnumType(enumType), value);
 
         public static bool TryFormat<TEnum>(
             TEnum value,
@@ -232,6 +236,8 @@ namespace System
             out int charsWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>)) where TEnum : struct
         {
+            // Upstream throws from typeof(TEnum).GetEnumUnderlyingType(), for enumType.
+            ThrowIfNotEnum<TEnum>("enumType");
             var metadata = InternalGetMetadata<TEnum>();
             var view = new EnumMetadataView(metadata);
             var raw = GetRawValue(ref value, view.UnderlyingTypeCode);
@@ -269,7 +275,7 @@ namespace System
             bool ignoreCase,
             out object? result)
         {
-            var metadata = InternalGetMetadata(enumType);
+            var metadata = InternalGetMetadata(ValidateEnumType(enumType));
             if (!EnumAlgorithms.TryParse(metadata, value, ignoreCase, out var raw))
             {
                 result = null;
@@ -308,6 +314,8 @@ namespace System
             bool ignoreCase,
             out TEnum result) where TEnum : struct
         {
+            // Not a parse failure, so it throws rather than returning false, as upstream does.
+            ThrowIfNotEnum<TEnum>(nameof(TEnum));
             if (!EnumAlgorithms.TryParse(
                     InternalGetMetadata<TEnum>(), value, ignoreCase, out var raw))
             {
@@ -317,6 +325,27 @@ namespace System
 
             result = Runtime.CompilerServices.Unsafe.As<ulong, TEnum>(ref raw);
             return true;
+        }
+
+        // Upstream's ValidateRuntimeType: a Type that names no enum is rejected
+        // before its enum metadata, which it lacks, is read.
+        private static Type ValidateEnumType(Type enumType)
+        {
+            ArgumentNullException.ThrowIfNull(enumType);
+            if (!enumType.IsEnum)
+            {
+                throw new ArgumentException(SR.Arg_MustBeEnum, nameof(enumType));
+            }
+            return enumType;
+        }
+
+        // Members whose TEnum is constrained only to a struct, so it may name no enum.
+        private static void ThrowIfNotEnum<TEnum>(string parameterName) where TEnum : struct
+        {
+            if (!typeof(TEnum).IsEnum)
+            {
+                throw new ArgumentException(SR.Arg_MustBeEnum, parameterName);
+            }
         }
 
         private static ulong GetRawValue<TEnum>(ref TEnum value, int typeCode)
@@ -665,7 +694,10 @@ namespace System
         public const byte MinValue = (byte)0;
         public const byte MaxValue = (byte)255;
         public bool Equals(byte other) => this == other;
-        public int CompareTo(byte other) => Number.Compare((ulong)this, other);
+        public int CompareTo(byte value)
+        {
+            return this - value;
+        }
         public int CompareTo(object? value) => CompareObject(value);
         public override bool Equals(object? value) => value is byte other && Equals(other);
         public override int GetHashCode() => this;
@@ -748,28 +780,66 @@ namespace System
             return true;
         }
         public bool TryWriteLittleEndian(Span<byte> destination, out int bytesWritten) => TryWriteBigEndian(destination, out bytesWritten);
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out byte value)
+        static bool Numerics.IBinaryInteger<byte>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out byte value)
         {
-            if (source.IsEmpty) { value = 0; return true; }
-            if (!isUnsigned && (source[0] & 0x80) != 0) { value = 0; return false; }
-            for (var index = 0; index < source.Length - 1; index++)
+            byte result = default;
+
+            if (source.Length != 0)
             {
-                if (source[index] != 0) { value = 0; return false; }
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[0]))
+                {
+                    // When we are signed and the sign bit is set we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(byte)) && (source[..^sizeof(byte)].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                // We only have 1-byte so read it directly
+                result = source[source.Length - sizeof(byte)];
             }
 
-            value = source[source.Length - 1];
+            value = result;
             return true;
         }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out byte value)
+        static bool Numerics.IBinaryInteger<byte>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out byte value)
         {
-            if (source.IsEmpty) { value = 0; return true; }
-            if (!isUnsigned && (source[source.Length - 1] & 0x80) != 0) { value = 0; return false; }
-            for (var index = 1; index < source.Length; index++)
+            byte result = default;
+
+            if (source.Length != 0)
             {
-                if (source[index] != 0) { value = 0; return false; }
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[^1]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(byte)) && (source[sizeof(byte)..].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                // We only have 1-byte so read it directly
+                result = source[0];
             }
 
-            value = source[0];
+            value = result;
             return true;
         }
         public static byte Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) =>
@@ -840,7 +910,10 @@ namespace System
         public const sbyte MinValue = (sbyte)-128;
         public const sbyte MaxValue = (sbyte)127;
         public bool Equals(sbyte other) => this == other;
-        public int CompareTo(sbyte other) => Number.Compare((long)this, other);
+        public int CompareTo(sbyte value)
+        {
+            return this - value;
+        }
         public int CompareTo(object? value) => CompareObject(value);
         public override bool Equals(object? value) => value is sbyte other && Equals(other);
         public override int GetHashCode() => this;
@@ -884,13 +957,17 @@ namespace System
             minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
         public static sbyte CopySign(sbyte value, sbyte sign)
         {
-            if (value == MinValue)
+            // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
+            int signMask = (value ^ sign) >> 31;
+            sbyte result = (sbyte)((value ^ signMask) - signMask);
+
+            if ((sign >= 0) && (result < 0))
             {
-                return sign < 0 ? MinValue : throw new OverflowException();
+                // value was sbyte.MinValue and a non-negative result was requested, which is unrepresentable.
+                Math.ThrowNegateTwosCompOverflow();
             }
 
-            var magnitude = value < 0 ? (sbyte)-value : value;
-            return sign < 0 ? (sbyte)-magnitude : magnitude;
+            return result;
         }
         public static sbyte Max(sbyte left, sbyte right) => left >= right ? left : right;
         public static sbyte Min(sbyte left, sbyte right) => left <= right ? left : right;
@@ -912,18 +989,82 @@ namespace System
         public static bool IsRealNumber(sbyte value) => true;
         public static bool IsSubnormal(sbyte value) => false;
         public static bool IsZero(sbyte value) => value == 0;
-        public static sbyte MaxMagnitude(sbyte left, sbyte right)
+        public static sbyte MaxMagnitude(sbyte x, sbyte y)
         {
-            var leftMagnitude = Magnitude(left);
-            var rightMagnitude = Magnitude(right);
-            return leftMagnitude > rightMagnitude ? left : leftMagnitude < rightMagnitude ? right : IsNegative(left) ? right : left;
+            sbyte absX = x;
+
+            if (absX < 0)
+            {
+                absX = (sbyte)(-absX);
+
+                if (absX < 0)
+                {
+                    return x;
+                }
+            }
+
+            sbyte absY = y;
+
+            if (absY < 0)
+            {
+                absY = (sbyte)(-absY);
+
+                if (absY < 0)
+                {
+                    return y;
+                }
+            }
+
+            if (absX > absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? y : x;
+            }
+
+            return y;
         }
         public static sbyte MaxMagnitudeNumber(sbyte left, sbyte right) => MaxMagnitude(left, right);
-        public static sbyte MinMagnitude(sbyte left, sbyte right)
+        public static sbyte MinMagnitude(sbyte x, sbyte y)
         {
-            var leftMagnitude = Magnitude(left);
-            var rightMagnitude = Magnitude(right);
-            return leftMagnitude < rightMagnitude ? left : leftMagnitude > rightMagnitude ? right : IsNegative(left) ? left : right;
+            sbyte absX = x;
+
+            if (absX < 0)
+            {
+                absX = (sbyte)(-absX);
+
+                if (absX < 0)
+                {
+                    return y;
+                }
+            }
+
+            sbyte absY = y;
+
+            if (absY < 0)
+            {
+                absY = (sbyte)(-absY);
+
+                if (absY < 0)
+                {
+                    return x;
+                }
+            }
+
+            if (absX < absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? x : y;
+            }
+
+            return y;
         }
         public static sbyte MinMagnitudeNumber(sbyte left, sbyte right) => MinMagnitude(left, right);
         private static int Magnitude(sbyte value) => value == MinValue ? 128 : value < 0 ? -value : value;
@@ -949,72 +1090,106 @@ namespace System
             return true;
         }
         public bool TryWriteLittleEndian(Span<byte> destination, out int bytesWritten) => TryWriteBigEndian(destination, out bytesWritten);
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out sbyte value)
+        static bool Numerics.IBinaryInteger<sbyte>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out sbyte value)
         {
-            if (source.IsEmpty) { value = 0; return true; }
+            sbyte result = default;
 
-            var signExtension = (source[0] & 0x80) != 0;
-            isUnsigned |= !signExtension;
-            if (isUnsigned && signExtension)
+            if (source.Length != 0)
             {
-                value = 0;
-                return false;
-            }
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[0]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
 
-            if (source.Length > 1)
-            {
-                var extension = signExtension ? (byte)0xFF : (byte)0x00;
-                if (isUnsigned == ((source[^1] & 0x80) != 0))
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && IsNegative(sign))
                 {
-                    value = 0;
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
                     return false;
                 }
 
-                for (var index = 0; index < source.Length - 1; index++)
+                if (source.Length > sizeof(sbyte))
                 {
-                    if (source[index] != extension)
+                    if (source[..^sizeof(sbyte)].ContainsAnyExcept((byte)sign))
                     {
-                        value = 0;
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == IsNegative((sbyte)source[^sizeof(sbyte)]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
                         return false;
                     }
                 }
+
+                // We only have 1-byte so read it directly
+                result = (sbyte)source[source.Length - sizeof(sbyte)];
             }
 
-            value = (sbyte)source[source.Length - 1];
+            value = result;
             return true;
         }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out sbyte value)
+        static bool Numerics.IBinaryInteger<sbyte>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out sbyte value)
         {
-            if (source.IsEmpty) { value = 0; return true; }
+            sbyte result = default;
 
-            var signExtension = (source[source.Length - 1] & 0x80) != 0;
-            isUnsigned |= !signExtension;
-            if (isUnsigned && signExtension)
+            if (source.Length != 0)
             {
-                value = 0;
-                return false;
-            }
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[^1]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
 
-            if (source.Length > 1)
-            {
-                var extension = signExtension ? (byte)0xFF : (byte)0x00;
-                if (isUnsigned == ((source[0] & 0x80) != 0))
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && IsNegative(sign))
                 {
-                    value = 0;
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
                     return false;
                 }
 
-                for (var index = 1; index < source.Length; index++)
+                if (source.Length > sizeof(sbyte))
                 {
-                    if (source[index] != extension)
+                    if (source[sizeof(sbyte)..].ContainsAnyExcept((byte)sign))
                     {
-                        value = 0;
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == IsNegative((sbyte)source[sizeof(sbyte) - 1]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
                         return false;
                     }
                 }
+
+                // We only have 1-byte so read it directly
+                result = (sbyte)source[0];
             }
 
-            value = (sbyte)source[0];
+            value = result;
             return true;
         }
         public static sbyte Parse(ReadOnlySpan<char> value, Globalization.NumberStyles style = System.Globalization.NumberStyles.Integer, IFormatProvider? provider = null) =>
@@ -1085,7 +1260,10 @@ namespace System
         public const short MinValue = (short)-32768;
         public const short MaxValue = (short)32767;
         public bool Equals(short other) => this == other;
-        public int CompareTo(short other) => Number.Compare((long)this, other);
+        public int CompareTo(short value)
+        {
+            return this - value;
+        }
         public int CompareTo(object? value) => CompareObject(value);
         public override bool Equals(object? value) => value is short other && Equals(other);
         public override int GetHashCode() => this;
@@ -1121,7 +1299,20 @@ namespace System
         public static short Abs(short value) => value == MinValue ? throw new OverflowException() : value < 0 ? (short)-value : value;
         public static short Clamp(short value, short minimum, short maximum) =>
             minimum > maximum ? throw new ArgumentException() : value < minimum ? minimum : value > maximum ? maximum : value;
-        public static short CopySign(short value, short sign) => sign < 0 ? (Abs(value) == MinValue ? MinValue : (short)-Abs(value)) : Abs(value);
+        public static short CopySign(short value, short sign)
+        {
+            // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
+            int signMask = (value ^ sign) >> 31;
+            short result = (short)((value ^ signMask) - signMask);
+
+            if ((sign >= 0) && (result < 0))
+            {
+                // value was short.MinValue and a non-negative result was requested, which is unrepresentable.
+                Math.ThrowNegateTwosCompOverflow();
+            }
+
+            return result;
+        }
         public static short Max(short left, short right) => left >= right ? left : right;
         public static short Min(short left, short right) => left <= right ? left : right;
         public static int Sign(short value) => value < 0 ? -1 : value > 0 ? 1 : 0;
@@ -1142,9 +1333,83 @@ namespace System
         public static bool IsRealNumber(short value) => true;
         public static bool IsSubnormal(short value) => false;
         public static bool IsZero(short value) => value == 0;
-        public static short MaxMagnitude(short left, short right) => Abs(left) >= Abs(right) ? left : right;
+        public static short MaxMagnitude(short x, short y)
+        {
+            short absX = x;
+
+            if (absX < 0)
+            {
+                absX = (short)(-absX);
+
+                if (absX < 0)
+                {
+                    return x;
+                }
+            }
+
+            short absY = y;
+
+            if (absY < 0)
+            {
+                absY = (short)(-absY);
+
+                if (absY < 0)
+                {
+                    return y;
+                }
+            }
+
+            if (absX > absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? y : x;
+            }
+
+            return y;
+        }
         public static short MaxMagnitudeNumber(short left, short right) => MaxMagnitude(left, right);
-        public static short MinMagnitude(short left, short right) => Abs(left) <= Abs(right) ? left : right;
+        public static short MinMagnitude(short x, short y)
+        {
+            short absX = x;
+
+            if (absX < 0)
+            {
+                absX = (short)(-absX);
+
+                if (absX < 0)
+                {
+                    return y;
+                }
+            }
+
+            short absY = y;
+
+            if (absY < 0)
+            {
+                absY = (short)(-absY);
+
+                if (absY < 0)
+                {
+                    return x;
+                }
+            }
+
+            if (absX < absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? x : y;
+            }
+
+            return y;
+        }
         public static short MinMagnitudeNumber(short left, short right) => MinMagnitude(left, right);
         public static short Log2(short value)
         {
@@ -1186,33 +1451,132 @@ namespace System
             bytesWritten = 2;
             return true;
         }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out short value)
+        static bool Numerics.IBinaryInteger<short>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out short value)
         {
-            if (source.Length == 0) { value = 0; return true; }
-            var count = source.Length;
-            var start = count > 2 ? count - 2 : 0;
-            byte sign = (byte)(isUnsigned ? 0 : (source[0] & 0x80) != 0 ? 0xff : 0);
-            for (var i = 0; i < start; i++) if (source[i] != sign) { value = 0; return false; }
-            var used = source.Slice(start);
-            ulong bits = 0;
-            for (var i = 0; i < used.Length; i++) bits = (bits << 8) | used[i];
-            if (isUnsigned && (used.Length == 2 && (bits & (1UL << 15)) != 0)) { value = 0; return false; }
-            if (!isUnsigned && used.Length < 2 && (used[0] & 0x80) != 0) bits |= ~0UL << (used.Length * 8);
-            value = (short)bits;
+            short result = default;
+
+            if (source.Length != 0)
+            {
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[0]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
+
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && sbyte.IsNegative(sign) && (source.Length >= sizeof(short)))
+                {
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length > sizeof(short))
+                {
+                    if (source[..^sizeof(short)].ContainsAnyExcept((byte)sign))
+                    {
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == sbyte.IsNegative((sbyte)source[^sizeof(short)]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+                }
+
+                if (source.Length >= sizeof(short))
+                {
+                    // We have at least 2 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadInt16BigEndian(source.Slice(source.Length - sizeof(short)));
+                }
+                else if (isUnsigned)
+                {
+                    // We only have 1-byte so read it directly
+                    result = source[0];
+                }
+                else
+                {
+                    // We only have 1-byte so read it directly with sign extension
+                    result = (sbyte)source[0];
+                }
+            }
+
+            value = result;
             return true;
         }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out short value)
+        static bool Numerics.IBinaryInteger<short>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out short value)
         {
-            if (source.Length == 0) { value = 0; return true; }
-            var count = source.Length;
-            var usedLength = count > 2 ? 2 : count;
-            byte sign = (byte)(isUnsigned ? 0 : (source[count - 1] & 0x80) != 0 ? 0xff : 0);
-            for (var i = usedLength; i < count; i++) if (source[i] != sign) { value = 0; return false; }
-            ulong bits = 0;
-            for (var i = usedLength - 1; i >= 0; i--) bits = (bits << 8) | source[i];
-            if (isUnsigned && (usedLength == 2 && (bits & (1UL << 15)) != 0)) { value = 0; return false; }
-            if (!isUnsigned && usedLength < 2 && (source[usedLength - 1] & 0x80) != 0) bits |= ~0UL << (usedLength * 8);
-            value = (short)bits;
+            short result = default;
+
+            if (source.Length != 0)
+            {
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[^1]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
+
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && sbyte.IsNegative(sign) && (source.Length >= sizeof(short)))
+                {
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length > sizeof(short))
+                {
+                    if (source[sizeof(short)..].ContainsAnyExcept((byte)sign))
+                    {
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == sbyte.IsNegative((sbyte)source[sizeof(short) - 1]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+                }
+
+                if (source.Length >= sizeof(short))
+                {
+                    // We have at least 2 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadInt16LittleEndian(source);
+                }
+                else if (isUnsigned)
+                {
+                    // We only have 1-byte so read it directly
+                    result = source[0];
+                }
+                else
+                {
+                    // We only have 1-byte so read it directly with sign extension
+                    result = (sbyte)source[0];
+                }
+            }
+
+            value = result;
             return true;
         }
         static short Numerics.INumberBase<short>.One => One;
@@ -1326,7 +1690,10 @@ namespace System
         public const ushort MinValue = (ushort)0;
         public const ushort MaxValue = (ushort)65535;
         public bool Equals(ushort other) => this == other;
-        public int CompareTo(ushort other) => Number.Compare((ulong)this, other);
+        public int CompareTo(ushort value)
+        {
+            return (int)this - (int)value;
+        }
         public int CompareTo(object? value) => CompareObject(value);
         public override bool Equals(object? value) => value is ushort other && Equals(other);
         public override int GetHashCode() => this;
@@ -1397,8 +1764,84 @@ namespace System
         public int GetShortestBitLength() => this == 0 ? 0 : 16 - LeadingZeroCount(this);
         public bool TryWriteBigEndian(Span<byte> destination, out int bytesWritten) { if (destination.Length < 2) { bytesWritten = 0; return false; } destination[0] = (byte)(this >> 8); destination[1] = (byte)this; bytesWritten = 2; return true; }
         public bool TryWriteLittleEndian(Span<byte> destination, out int bytesWritten) { if (destination.Length < 2) { bytesWritten = 0; return false; } destination[0] = (byte)this; destination[1] = (byte)(this >> 8); bytesWritten = 2; return true; }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out ushort value) { if (source.Length != 2) { value = 0; return false; } value = (ushort)((source[0] << 8) | source[1]); return true; }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out ushort value) { if (source.Length != 2) { value = 0; return false; } value = (ushort)(source[0] | (source[1] << 8)); return true; }
+        static bool Numerics.IBinaryInteger<ushort>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out ushort value)
+        {
+            ushort result = default;
+
+            if (source.Length != 0)
+            {
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[0]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(ushort)) && (source[..^sizeof(ushort)].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(ushort))
+                {
+                    // We have at least 2 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadUInt16BigEndian(source.Slice(source.Length - sizeof(ushort)));
+                }
+                else
+                {
+                    // We only have 1-byte so read it directly
+                    result = source[0];
+                }
+            }
+
+            value = result;
+            return true;
+        }
+        static bool Numerics.IBinaryInteger<ushort>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out ushort value)
+        {
+            ushort result = default;
+
+            if (source.Length != 0)
+            {
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[^1]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(ushort)) && (source[sizeof(ushort)..].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(ushort))
+                {
+                    // We have at least 2 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadUInt16LittleEndian(source);
+                }
+                else
+                {
+                    // We only have 1-byte so read it directly
+                    result = source[0];
+                }
+            }
+
+            value = result;
+            return true;
+        }
         static ushort Numerics.INumberBase<ushort>.One => One;
         static ushort Numerics.INumberBase<ushort>.Zero => Zero;
         static int Numerics.INumberBase<ushort>.Radix => Radix;
@@ -1549,7 +1992,20 @@ namespace System
         public static int Radix => 2;
         public static int Abs(int value) => value == MinValue ? throw new OverflowException() : value < 0 ? -value : value;
         public static int Clamp(int value, int min, int max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
-        public static int CopySign(int value, int sign) => sign < 0 ? (Abs(value) == MinValue ? MinValue : -Abs(value)) : Abs(value);
+        public static int CopySign(int value, int sign)
+        {
+            // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
+            int signMask = (value ^ sign) >> 31;
+            int result = (value ^ signMask) - signMask;
+
+            if ((sign >= 0) && (result < 0))
+            {
+                // value was int.MinValue and a non-negative result was requested, which is unrepresentable.
+                Math.ThrowNegateTwosCompOverflow();
+            }
+
+            return result;
+        }
         public static int Max(int left, int right) => left >= right ? left : right;
         public static int Min(int left, int right) => left <= right ? left : right;
         public static int Sign(int value) => value < 0 ? -1 : value > 0 ? 1 : 0;
@@ -1570,9 +2026,83 @@ namespace System
         public static bool IsRealNumber(int value) => true;
         public static bool IsSubnormal(int value) => false;
         public static bool IsZero(int value) => value == 0;
-        public static int MaxMagnitude(int left, int right) => Abs(left) >= Abs(right) ? left : right;
+        public static int MaxMagnitude(int x, int y)
+        {
+            int absX = x;
+
+            if (absX < 0)
+            {
+                absX = -absX;
+
+                if (absX < 0)
+                {
+                    return x;
+                }
+            }
+
+            int absY = y;
+
+            if (absY < 0)
+            {
+                absY = -absY;
+
+                if (absY < 0)
+                {
+                    return y;
+                }
+            }
+
+            if (absX > absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? y : x;
+            }
+
+            return y;
+        }
         public static int MaxMagnitudeNumber(int left, int right) => MaxMagnitude(left, right);
-        public static int MinMagnitude(int left, int right) => Abs(left) <= Abs(right) ? left : right;
+        public static int MinMagnitude(int x, int y)
+        {
+            int absX = x;
+
+            if (absX < 0)
+            {
+                absX = -absX;
+
+                if (absX < 0)
+                {
+                    return y;
+                }
+            }
+
+            int absY = y;
+
+            if (absY < 0)
+            {
+                absY = -absY;
+
+                if (absY < 0)
+                {
+                    return x;
+                }
+            }
+
+            if (absX < absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? x : y;
+            }
+
+            return y;
+        }
         public static int MinMagnitudeNumber(int left, int right) => MinMagnitude(left, right);
         public static int Log2(int value) => value < 0
             ? throw new ArgumentOutOfRangeException()
@@ -1588,8 +2118,153 @@ namespace System
         public int GetShortestBitLength() => this == 0 ? 0 : (this >= 0 ? 32 - LeadingZeroCount(this) : 33 - LeadingZeroCount(~this));
         public bool TryWriteBigEndian(Span<byte> destination, out int bytesWritten) { if (destination.Length < 4) { bytesWritten = 0; return false; } uint bits = (uint)this; for (var i = 0; i < 4; i++) destination[3 - i] = (byte)(bits >> (i * 8)); bytesWritten = 4; return true; }
         public bool TryWriteLittleEndian(Span<byte> destination, out int bytesWritten) { if (destination.Length < 4) { bytesWritten = 0; return false; } uint bits = (uint)this; for (var i = 0; i < 4; i++) destination[i] = (byte)(bits >> (i * 8)); bytesWritten = 4; return true; }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out int value) { if (source.Length != 4) { value = 0; return false; } uint bits = (uint)((source[0] << 24) | (source[1] << 16) | (source[2] << 8) | source[3]); if (isUnsigned && (bits & 0x80000000) != 0) { value = 0; return false; } value = (int)bits; return true; }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out int value) { if (source.Length != 4) { value = 0; return false; } uint bits = (uint)(source[0] | (source[1] << 8) | (source[2] << 16) | (source[3] << 24)); if (isUnsigned && (bits & 0x80000000) != 0) { value = 0; return false; } value = (int)bits; return true; }
+        static bool Numerics.IBinaryInteger<int>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out int value)
+        {
+            int result = default;
+
+            if (source.Length != 0)
+            {
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[0]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
+
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && sbyte.IsNegative(sign) && (source.Length >= sizeof(int)))
+                {
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length > sizeof(int))
+                {
+                    if (source[..^sizeof(int)].ContainsAnyExcept((byte)sign))
+                    {
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == sbyte.IsNegative((sbyte)source[^sizeof(int)]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+                }
+
+                if (source.Length >= sizeof(int))
+                {
+                    // We have at least 4 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadInt32BigEndian(source.Slice(source.Length - sizeof(int)));
+                }
+                else
+                {
+                    // We have between 1 and 3 bytes, so construct the relevant value directly
+                    // since the data is in Big Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        result <<= 8;
+                        result |= source[i];
+                    }
+
+                    if (!isUnsigned)
+                    {
+                        result |= ((1 << ((sizeof(int) * 8) - 1)) >> (((sizeof(int) - source.Length) * 8) - 1));
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
+        static bool Numerics.IBinaryInteger<int>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out int value)
+        {
+            int result = default;
+
+            if (source.Length != 0)
+            {
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[^1]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
+
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && sbyte.IsNegative(sign) && (source.Length >= sizeof(int)))
+                {
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length > sizeof(int))
+                {
+                    if (source[sizeof(int)..].ContainsAnyExcept((byte)sign))
+                    {
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == sbyte.IsNegative((sbyte)source[sizeof(int) - 1]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+                }
+
+                if (source.Length >= sizeof(int))
+                {
+                    // We have at least 4 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadInt32LittleEndian(source);
+                }
+                else
+                {
+                    // We have between 1 and 3 bytes, so construct the relevant value directly
+                    // since the data is in Little Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part, then reverse endianness to
+                    // ensure the order is correct. This is more efficient than iterating in reverse
+                    // due to current JIT limitations
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        result <<= 8;
+                        result |= source[i];
+                    }
+
+                    result <<= ((sizeof(int) - source.Length) * 8);
+                    result = BinaryPrimitives.ReverseEndianness(result);
+
+                    if (!isUnsigned)
+                    {
+                        result |= ((1 << ((sizeof(int) * 8) - 1)) >> (((sizeof(int) - source.Length) * 8) - 1));
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
         static int Numerics.INumberBase<int>.One => One;
         static int Numerics.INumberBase<int>.Zero => Zero;
         static int Numerics.INumberBase<int>.Radix => Radix;
@@ -1768,8 +2443,101 @@ namespace System
         public int GetShortestBitLength() => this == 0 ? 0 : 32 - (int)LeadingZeroCount(this);
         public bool TryWriteBigEndian(Span<byte> d, out int n) { if (d.Length < 4) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 4; i++) d[4 - 1 - i] = (byte)(bits >> (i * 8)); n = 4; return true; }
         public bool TryWriteLittleEndian(Span<byte> d, out int n) { if (d.Length < 4) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 4; i++) d[i] = (byte)(bits >> (i * 8)); n = 4; return true; }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> s, bool u, out uint value) { if (s.Length != 4) { value = 0; return false; } ulong bits = 0; for (var i = 0; i < 4; i++) bits = (bits << 8) | s[i]; if (u && false) { value = 0; return false; } value = (uint)bits; return true; }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> s, bool u, out uint value) { if (s.Length != 4) { value = 0; return false; } ulong bits = 0; for (var i = 4 - 1; i >= 0; i--) bits = (bits << 8) | s[i]; value = (uint)bits; return true; }
+        static bool Numerics.IBinaryInteger<uint>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out uint value)
+        {
+            uint result = default;
+
+            if (source.Length != 0)
+            {
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[0]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(uint)) && (source[..^sizeof(uint)].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(uint))
+                {
+                    // We have at least 4 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadUInt32BigEndian(source.Slice(source.Length - sizeof(uint)));
+                }
+                else
+                {
+                    // We have between 1 and 3 bytes, so construct the relevant value directly
+                    // since the data is in Big Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        result <<= 8;
+                        result |= source[i];
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
+        static bool Numerics.IBinaryInteger<uint>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out uint value)
+        {
+            uint result = default;
+
+            if (source.Length != 0)
+            {
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[^1]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(uint)) && (source[sizeof(uint)..].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(uint))
+                {
+                    // We have at least 4 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadUInt32LittleEndian(source);
+                }
+                else
+                {
+                    // We have between 1 and 3 bytes, so construct the relevant value directly
+                    // since the data is in Little Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part, then reverse endianness to
+                    // ensure the order is correct. This is more efficient than iterating in reverse
+                    // due to current JIT limitations
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        uint part = source[i];
+                        part <<= (i * 8);
+                        result |= part;
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
         static uint Numerics.INumberBase<uint>.One => One;
         static uint Numerics.INumberBase<uint>.Zero => Zero;
         static int Numerics.INumberBase<uint>.Radix => Radix;
@@ -1903,7 +2671,20 @@ namespace System
         public static long Abs(long value) => value == MinValue ? throw new OverflowException() : value < 0 ? (long)-value : value;
         public static long Clamp(long value, long min, long max) => min > max ? throw new ArgumentException() : value < min ? min : value > max ? max : value;
         public static long NegativeOne => (long)(-1);
-        public static long CopySign(long value, long sign) => sign < 0 ? (Abs(value) == MinValue ? MinValue : (long)-Abs(value)) : Abs(value);
+        public static long CopySign(long value, long sign)
+        {
+            // signMask is all-bits-set when value and sign differ in sign, in which case value needs to be negated.
+            long signMask = (value ^ sign) >> 63;
+            long result = (value ^ signMask) - signMask;
+
+            if ((sign >= 0) && (result < 0))
+            {
+                // value was long.MinValue and a non-negative result was requested, which is unrepresentable.
+                Math.ThrowNegateTwosCompOverflow();
+            }
+
+            return result;
+        }
         public static long Max(long l, long r) => l >= r ? l : r;
         public static long Min(long l, long r) => l <= r ? l : r;
         public static int Sign(long value) => value < 0 ? -1 : value > 0 ? 1 : 0;
@@ -1924,9 +2705,83 @@ namespace System
         public static bool IsRealNumber(long v) => true;
         public static bool IsSubnormal(long v) => false;
         public static bool IsZero(long v) => v == 0;
-        public static long MaxMagnitude(long l, long r) => Abs(l) >= Abs(r) ? l : r;
+        public static long MaxMagnitude(long x, long y)
+        {
+            long absX = x;
+
+            if (absX < 0)
+            {
+                absX = -absX;
+
+                if (absX < 0)
+                {
+                    return x;
+                }
+            }
+
+            long absY = y;
+
+            if (absY < 0)
+            {
+                absY = -absY;
+
+                if (absY < 0)
+                {
+                    return y;
+                }
+            }
+
+            if (absX > absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? y : x;
+            }
+
+            return y;
+        }
         public static long MaxMagnitudeNumber(long l, long r) => MaxMagnitude(l, r);
-        public static long MinMagnitude(long l, long r) => Abs(l) <= Abs(r) ? l : r;
+        public static long MinMagnitude(long x, long y)
+        {
+            long absX = x;
+
+            if (absX < 0)
+            {
+                absX = -absX;
+
+                if (absX < 0)
+                {
+                    return y;
+                }
+            }
+
+            long absY = y;
+
+            if (absY < 0)
+            {
+                absY = -absY;
+
+                if (absY < 0)
+                {
+                    return x;
+                }
+            }
+
+            if (absX < absY)
+            {
+                return x;
+            }
+
+            if (absX == absY)
+            {
+                return IsNegative(x) ? x : y;
+            }
+
+            return y;
+        }
         public static long MinMagnitudeNumber(long l, long r) => MinMagnitude(l, r);
         public static long Log2(long value) => value < 0
             ? throw new ArgumentOutOfRangeException()
@@ -1942,8 +2797,153 @@ namespace System
         public int GetShortestBitLength() => this == 0 ? 0 : (this >= 0 ? 64 - (int)LeadingZeroCount(this) : 65 - (int)LeadingZeroCount((long)~(ulong)this));
         public bool TryWriteBigEndian(Span<byte> d, out int n) { if (d.Length < 8) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 8; i++) d[8 - 1 - i] = (byte)(bits >> (i * 8)); n = 8; return true; }
         public bool TryWriteLittleEndian(Span<byte> d, out int n) { if (d.Length < 8) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 8; i++) d[i] = (byte)(bits >> (i * 8)); n = 8; return true; }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> s, bool u, out long value) { if (s.Length != 8) { value = 0; return false; } ulong bits = 0; for (var i = 0; i < 8; i++) bits = (bits << 8) | s[i]; if (u && (bits & (1UL << 63)) != 0) { value = 0; return false; } value = (long)bits; return true; }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> s, bool u, out long value) { if (s.Length != 8) { value = 0; return false; } ulong bits = 0; for (var i = 8 - 1; i >= 0; i--) bits = (bits << 8) | s[i]; if (u && (bits & (1UL << 63)) != 0) { value = 0; return false; } value = (long)bits; return true; }
+        static bool Numerics.IBinaryInteger<long>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out long value)
+        {
+            long result = default;
+
+            if (source.Length != 0)
+            {
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[0]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
+
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && sbyte.IsNegative(sign) && (source.Length >= sizeof(long)))
+                {
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length > sizeof(long))
+                {
+                    if (source[..^sizeof(long)].ContainsAnyExcept((byte)sign))
+                    {
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == sbyte.IsNegative((sbyte)source[^sizeof(long)]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+                }
+
+                if (source.Length >= sizeof(long))
+                {
+                    // We have at least 8 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadInt64BigEndian(source.Slice(source.Length - sizeof(long)));
+                }
+                else
+                {
+                    // We have between 1 and 7 bytes, so construct the relevant value directly
+                    // since the data is in Big Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        result <<= 8;
+                        result |= source[i];
+                    }
+
+                    if (!isUnsigned)
+                    {
+                        result |= ((1L << ((sizeof(long) * 8) - 1)) >> (((sizeof(long) - source.Length) * 8) - 1));
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
+        static bool Numerics.IBinaryInteger<long>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out long value)
+        {
+            long result = default;
+
+            if (source.Length != 0)
+            {
+                // Propagate the most significant bit so we have `0` or `-1`
+                sbyte sign = (sbyte)(source[^1]);
+                sign >>= 31;
+                Debug.Assert((sign == 0) || (sign == -1));
+
+                // We need to also track if the input data is unsigned
+                isUnsigned |= (sign == 0);
+
+                if (isUnsigned && sbyte.IsNegative(sign) && (source.Length >= sizeof(long)))
+                {
+                    // When we are unsigned and the most significant bit is set, we are a large positive
+                    // and therefore definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length > sizeof(long))
+                {
+                    if (source[sizeof(long)..].ContainsAnyExcept((byte)sign))
+                    {
+                        // When we are unsigned and have any non-zero leading data or signed with any non-set leading
+                        // data, we are a large positive/negative, respectively, and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+
+                    if (isUnsigned == sbyte.IsNegative((sbyte)source[sizeof(long) - 1]))
+                    {
+                        // When the most significant bit of the value being set/clear matches whether we are unsigned
+                        // or signed then we are a large positive/negative and therefore definitely out of range
+
+                        value = result;
+                        return false;
+                    }
+                }
+
+                if (source.Length >= sizeof(long))
+                {
+                    // We have at least 8 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadInt64LittleEndian(source);
+                }
+                else
+                {
+                    // We have between 1 and 7 bytes, so construct the relevant value directly
+                    // since the data is in Little Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part, then reverse endianness to
+                    // ensure the order is correct. This is more efficient than iterating in reverse
+                    // due to current JIT limitations
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        result <<= 8;
+                        result |= source[i];
+                    }
+
+                    result <<= ((sizeof(long) - source.Length) * 8);
+                    result = BinaryPrimitives.ReverseEndianness(result);
+
+                    if (!isUnsigned)
+                    {
+                        result |= ((1L << ((sizeof(long) * 8) - 1)) >> (((sizeof(long) - source.Length) * 8) - 1));
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
         static long Numerics.INumberBase<long>.One => One;
         static long Numerics.INumberBase<long>.Zero => Zero;
         static int Numerics.INumberBase<long>.Radix => Radix;
@@ -2103,8 +3103,101 @@ namespace System
         public int GetShortestBitLength() => this == 0 ? 0 : 64 - (int)LeadingZeroCount(this);
         public bool TryWriteBigEndian(Span<byte> d, out int n) { if (d.Length < 8) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 8; i++) d[8 - 1 - i] = (byte)(bits >> (i * 8)); n = 8; return true; }
         public bool TryWriteLittleEndian(Span<byte> d, out int n) { if (d.Length < 8) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 8; i++) d[i] = (byte)(bits >> (i * 8)); n = 8; return true; }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> s, bool u, out ulong value) { if (s.Length != 8) { value = 0; return false; } ulong bits = 0; for (var i = 0; i < 8; i++) bits = (bits << 8) | s[i]; if (u && false) { value = 0; return false; } value = (ulong)bits; return true; }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> s, bool u, out ulong value) { if (s.Length != 8) { value = 0; return false; } ulong bits = 0; for (var i = 8 - 1; i >= 0; i--) bits = (bits << 8) | s[i]; if (u && (bits & (1UL << 63)) != 0) { value = 0; return false; } value = (ulong)bits; return true; }
+        static bool Numerics.IBinaryInteger<ulong>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out ulong value)
+        {
+            ulong result = default;
+
+            if (source.Length != 0)
+            {
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[0]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(ulong)) && (source[..^sizeof(ulong)].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(ulong))
+                {
+                    // We have at least 8 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadUInt64BigEndian(source.Slice(source.Length - sizeof(ulong)));
+                }
+                else
+                {
+                    // We have between 1 and 7 bytes, so construct the relevant value directly
+                    // since the data is in Big Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        result <<= 8;
+                        result |= source[i];
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
+        static bool Numerics.IBinaryInteger<ulong>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out ulong value)
+        {
+            ulong result = default;
+
+            if (source.Length != 0)
+            {
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[^1]))
+                {
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(ulong)) && (source[sizeof(ulong)..].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(ulong))
+                {
+                    // We have at least 8 bytes, so just read the ones we need directly
+                    result = BinaryPrimitives.ReadUInt64LittleEndian(source);
+                }
+                else
+                {
+                    // We have between 1 and 7 bytes, so construct the relevant value directly
+                    // since the data is in Little Endian format, we can just read the bytes and
+                    // shift left by 8-bits for each subsequent part, then reverse endianness to
+                    // ensure the order is correct. This is more efficient than iterating in reverse
+                    // due to current JIT limitations
+
+                    for (int i = 0; i < source.Length; i++)
+                    {
+                        ulong part = source[i];
+                        part <<= (i * 8);
+                        result |= part;
+                    }
+                }
+            }
+
+            value = result;
+            return true;
+        }
         static ulong Numerics.INumberBase<ulong>.One => One;
         static ulong Numerics.INumberBase<ulong>.Zero => Zero;
         static int Numerics.INumberBase<ulong>.Radix => Radix;
@@ -2199,7 +3292,10 @@ namespace System
         public const char MinValue = '\0';
         public const char MaxValue = '\uFFFF';
         public bool Equals(char other) => this == other;
-        public int CompareTo(char other) => Number.Compare((ulong)this, other);
+        public int CompareTo(char value)
+        {
+            return this - value;
+        }
         public int CompareTo(object? value)
         {
             if (value == null) return 1;
@@ -2263,35 +3359,82 @@ namespace System
         public int GetShortestBitLength() => this == 0 ? 0 : 16 - (int)LeadingZeroCount(this);
         public bool TryWriteBigEndian(Span<byte> d, out int n) { if (d.Length < 2) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 2; i++) d[2 - 1 - i] = (byte)(bits >> (i * 8)); n = 2; return true; }
         public bool TryWriteLittleEndian(Span<byte> d, out int n) { if (d.Length < 2) { n = 0; return false; } ulong bits = (ulong)this; for (var i = 0; i < 2; i++) d[i] = (byte)(bits >> (i * 8)); n = 2; return true; }
-        public static bool TryReadBigEndian(ReadOnlySpan<byte> s, bool u, out char value)
+        static bool Numerics.IBinaryInteger<char>.TryReadBigEndian(ReadOnlySpan<byte> source, bool isUnsigned, out char value)
         {
-            if (s.IsEmpty) { value = '\0'; return true; }
-            if (!u && (s[0] & 0x80) != 0) { value = '\0'; return false; }
-            if (s.Length > 2)
+            char result = default;
+
+            if (source.Length != 0)
             {
-                for (var i = 0; i < s.Length - 2; i++)
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[0]))
                 {
-                    if (s[i] != 0) { value = '\0'; return false; }
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(char)) && (source[..^sizeof(char)].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(char))
+                {
+                    // We have at least 2 bytes, so just read the ones we need directly
+                    result = (char)BinaryPrimitives.ReadUInt16BigEndian(source.Slice(source.Length - sizeof(char)));
+                }
+                else
+                {
+                    // We only have 1-byte so read it directly
+                    result = (char)source[0];
                 }
             }
 
-            var start = s.Length > 2 ? s.Length - 2 : 0;
-            value = s.Length == 1 ? (char)s[0] : (char)((s[start] << 8) | s[start + 1]);
+            value = result;
             return true;
         }
-        public static bool TryReadLittleEndian(ReadOnlySpan<byte> s, bool u, out char value)
+        static bool Numerics.IBinaryInteger<char>.TryReadLittleEndian(ReadOnlySpan<byte> source, bool isUnsigned, out char value)
         {
-            if (s.IsEmpty) { value = '\0'; return true; }
-            if (!u && (s[s.Length - 1] & 0x80) != 0) { value = '\0'; return false; }
-            if (s.Length > 2)
+            char result = default;
+
+            if (source.Length != 0)
             {
-                for (var i = 2; i < s.Length; i++)
+                if (!isUnsigned && sbyte.IsNegative((sbyte)source[^1]))
                 {
-                    if (s[i] != 0) { value = '\0'; return false; }
+                    // When we are signed and the sign bit is set, we are negative and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if ((source.Length > sizeof(char)) && (source[sizeof(char)..].ContainsAnyExcept((byte)0x00)))
+                {
+                    // When we have any non-zero leading data, we are a large positive and therefore
+                    // definitely out of range
+
+                    value = result;
+                    return false;
+                }
+
+                if (source.Length >= sizeof(char))
+                {
+                    // We have at least 2 bytes, so just read the ones we need directly
+                    result = (char)BinaryPrimitives.ReadUInt16LittleEndian(source);
+                }
+                else
+                {
+                    // We only have 1-byte so read it directly
+                    result = (char)source[0];
                 }
             }
 
-            value = s.Length == 1 ? (char)s[0] : (char)(s[0] | (s[1] << 8));
+            value = result;
             return true;
         }
         static char Numerics.INumberBase<char>.One => One;
@@ -2441,7 +3584,7 @@ namespace System
             return unchecked((int)bits);
         }
         public override string ToString() => Number.FormatSingle(this);
-        public string ToString(string? format) => Number.FormatSingle(this, format);
+        public string ToString(string? format) => ToString(format, null);
         public static float Parse(string value)
         {
             if (value == null) throw new ArgumentNullException();
@@ -2473,36 +3616,88 @@ namespace System
         public static bool IsEvenInteger(float v) => IsFinite(v) && Math.Truncate(v) == v && v % 2 == 0;
         public static bool IsImaginaryNumber(float v) => false;
         public static bool IsNegativeInfinity(float v) => v == NegativeInfinity;
-        public static bool IsNormal(float v) => IsFinite(v) && v != 0;
+        public static bool IsNormal(float f)
+        {
+            uint bits = BitConverter.SingleToUInt32Bits(Abs(f));
+            return (bits - SmallestNormalBits) < (PositiveInfinityBits - SmallestNormalBits);
+        }
         public static bool IsInteger(float v) => IsFinite(v) && Math.Truncate(v) == v;
         public static bool IsOddInteger(float v) => IsInteger(v) && v % 2 != 0;
         public static bool IsPositive(float v) => !IsNegative(v) && !IsNaN(v);
         public static bool IsPositiveInfinity(float v) => v == PositiveInfinity;
         public static bool IsRealNumber(float v) => !IsNaN(v);
-        public static bool IsSubnormal(float v) => false;
+        public static bool IsSubnormal(float f)
+        {
+            uint bits = BitConverter.SingleToUInt32Bits(Abs(f));
+            return (bits - 1) < MaxTrailingSignificand;
+        }
         public static bool IsZero(float v) => v == 0;
-        public static float MaxMagnitude(float l, float r) => Math.Abs(l) >= Math.Abs(r) ? l : r;
-        public static float MaxMagnitudeNumber(float l, float r) => MaxMagnitude(l, r);
-        public static float MinMagnitude(float l, float r) => Math.Abs(l) <= Math.Abs(r) ? l : r;
-        public static float MinMagnitudeNumber(float l, float r) => MinMagnitude(l, r);
-        public static float Acos(float v) => (float)Math.Acos(v);
+        public static float MaxMagnitude(float x, float y) => MathF.MaxMagnitude(x, y);
+        public static float MaxMagnitudeNumber(float x, float y)
+        {
+            // This matches the IEEE 754:2019 `maximumMagnitudeNumber` function
+            //
+            // It does not propagate NaN inputs back to the caller and
+            // otherwise returns the input with a larger magnitude.
+            // It treats +0 as larger than -0 as per the specification.
+
+            float ax = Abs(x);
+            float ay = Abs(y);
+
+            if ((ax > ay) || IsNaN(ay))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return IsNegative(x) ? y : x;
+            }
+
+            return y;
+        }
+        public static float MinMagnitude(float x, float y) => MathF.MinMagnitude(x, y);
+        public static float MinMagnitudeNumber(float x, float y)
+        {
+            // This matches the IEEE 754:2019 `minimumMagnitudeNumber` function
+            //
+            // It does not propagate NaN inputs back to the caller and
+            // otherwise returns the input with a larger magnitude.
+            // It treats +0 as larger than -0 as per the specification.
+
+            float ax = Abs(x);
+            float ay = Abs(y);
+
+            if ((ax < ay) || IsNaN(ay))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return IsNegative(x) ? x : y;
+            }
+
+            return y;
+        }
+        public static float Acos(float x) => MathF.Acos(x);
         public static float AcosPi(float v) => Acos(v) / Pi;
-        public static float Asin(float v) => (float)Math.Asin(v);
+        public static float Asin(float x) => MathF.Asin(x);
         public static float AsinPi(float v) => Asin(v) / Pi;
-        public static float Atan(float v) => (float)Math.Atan(v);
+        public static float Atan(float x) => MathF.Atan(x);
         public static float AtanPi(float v) => Atan(v) / Pi;
-        public static float Atan2(float y, float x) => (float)Math.Atan2(y, x);
+        public static float Atan2(float y, float x) => MathF.Atan2(y, x);
         public static float Atan2Pi(float y, float x) => Atan2(y, x) / Pi;
         public static float Cos(float v) => MathF.Cos(v);
         public static float Sin(float v) => MathF.Sin(v);
         public static (float Sin, float Cos) SinCos(float v) => MathF.SinCos(v);
         public static float Tan(float v) => MathF.Tan(v);
-        public static float Acosh(float v) => (float)Math.Acosh(v);
-        public static float Asinh(float v) => (float)Math.Asinh(v);
-        public static float Atanh(float v) => (float)Math.Atanh(v);
-        public static float Cosh(float v) => (float)Math.Cosh(v);
-        public static float Sinh(float v) => (float)Math.Sinh(v);
-        public static float Tanh(float v) => (float)Math.Tanh(v);
+        public static float Acosh(float x) => MathF.Acosh(x);
+        public static float Asinh(float x) => MathF.Asinh(x);
+        public static float Atanh(float x) => MathF.Atanh(x);
+        public static float Cosh(float x) => MathF.Cosh(x);
+        public static float Sinh(float x) => MathF.Sinh(x);
+        public static float Tanh(float x) => MathF.Tanh(x);
         public static float Exp(float v) => MathF.Exp(v);
         // Upstream computes MathF.Pow(2, x) and MathF.Pow(10, x), and desktop answers
         // vary with the platform's powf. The double exp2, rounded once, is faster here and
@@ -2510,32 +3705,119 @@ namespace System
         public static float Exp2(float v) => (float)double.Exp2(v);
         public static float Exp10(float v) => (float)double.Exp2(3.321928094887362 * v);
         public static float Log(float v) => MathF.Log(v);
-        public static float Log(float v, float b) => (float)Math.Log(v, b);
+        public static float Log(float x, float newBase) => MathF.Log(x, newBase);
         public static float Log2(float v) => MathF.Log2(v);
-        public static float Log10(float v) => (float)Math.Log10(v);
+        public static float Log10(float x) => MathF.Log10(x);
         public static float Pow(float x, float y) => MathF.Pow(x, y);
-        public static float Cbrt(float v) => (float)Math.Cbrt(v);
-        public static float Hypot(float x, float y) => (float)Math.Sqrt((double)x * x + (double)y * y);
-        public static float RootN(float x, int n) => (float)Math.Pow(x, 1.0 / n);
-        public static float Sqrt(float v) => (float)Math.Sqrt(v);
-        public static float BitDecrement(float v) => (float)Math.BitDecrement(v);
-        public static float BitIncrement(float v) => (float)Math.BitIncrement(v);
-        public static float FusedMultiplyAdd(float l, float r, float a) => (float)Math.FusedMultiplyAdd(l, r, a);
-        public static float Ieee754Remainder(float l, float r) => (float)Math.IEEERemainder(l, r);
+        public static float Cbrt(float x) => MathF.Cbrt(x);
+        public static float Sqrt(float x) => MathF.Sqrt(x);
+        public static float BitDecrement(float x) => MathF.BitDecrement(x);
+        public static float BitIncrement(float x) => MathF.BitIncrement(x);
+        public static float FusedMultiplyAdd(float left, float right, float addend) => MathF.FusedMultiplyAdd(left, right, addend);
+        public static float Ieee754Remainder(float left, float right) => MathF.IEEERemainder(left, right);
         public static int ILogB(float v) => Math.ILogB(v);
-        public static float ScaleB(float v, int n) => (float)Math.ScaleB(v, n);
+        public static float ScaleB(float x, int n) => MathF.ScaleB(x, n);
         public static float Round(float v, int d, MidpointRounding m) => (float)Math.Round(v, d, m);
-        public static float Ceiling(float v) => (float)Math.Ceiling(v);
-        public static float Floor(float v) => (float)Math.Floor(v);
-        public static float Truncate(float v) => (float)Math.Truncate(v);
-        public int GetExponentByteCount() => 1;
-        public int GetExponentShortestBitLength() => 1;
-        public int GetSignificandBitLength() => 24;
-        public int GetSignificandByteCount() => 4;
-        public bool TryWriteExponentBigEndian(Span<byte> d, out int n) { if (d.Length < 1) { n = 0; return false; } d[0] = 0; n = 1; return true; }
-        public bool TryWriteExponentLittleEndian(Span<byte> d, out int n) => TryWriteExponentBigEndian(d, out n);
-        public bool TryWriteSignificandBigEndian(Span<byte> d, out int n) { if (d.Length < 4) { n = 0; return false; } for (var i = 0; i < 4; i++) d[4 - 1 - i] = 0; n = 4; return true; }
-        public bool TryWriteSignificandLittleEndian(Span<byte> d, out int n) => TryWriteSignificandBigEndian(d, out n);
+        public static float Ceiling(float x) => MathF.Ceiling(x);
+        public static float Floor(float x) => MathF.Floor(x);
+        public static float Truncate(float x) => MathF.Truncate(x);
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetExponentByteCount()" />
+        int Numerics.IFloatingPoint<float>.GetExponentByteCount() => sizeof(sbyte);
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetExponentShortestBitLength()" />
+        int Numerics.IFloatingPoint<float>.GetExponentShortestBitLength()
+        {
+            sbyte exponent = Exponent;
+
+            if (exponent >= 0)
+            {
+                return (sizeof(sbyte) * 8) - sbyte.LeadingZeroCount(exponent);
+            }
+            else
+            {
+                return (sizeof(sbyte) * 8) + 1 - sbyte.LeadingZeroCount((sbyte)(~exponent));
+            }
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetSignificandByteCount()" />
+        int Numerics.IFloatingPoint<float>.GetSignificandByteCount() => sizeof(uint);
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetSignificandBitLength()" />
+        int Numerics.IFloatingPoint<float>.GetSignificandBitLength() => 24;
+
+        internal bool TryWriteExponentBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (destination.Length >= sizeof(sbyte))
+            {
+                destination[0] = (byte)Exponent;
+                bytesWritten = sizeof(sbyte);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteExponentBigEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<float>.TryWriteExponentBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteExponentBigEndian(destination, out bytesWritten);
+        }
+
+        internal bool TryWriteExponentLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (destination.Length >= sizeof(sbyte))
+            {
+                destination[0] = (byte)Exponent;
+                bytesWritten = sizeof(sbyte);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteExponentLittleEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<float>.TryWriteExponentLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteExponentLittleEndian(destination, out bytesWritten);
+        }
+
+        internal bool TryWriteSignificandBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (BinaryPrimitives.TryWriteUInt32BigEndian(destination, Significand))
+            {
+                bytesWritten = sizeof(uint);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteSignificandBigEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<float>.TryWriteSignificandBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteSignificandBigEndian(destination, out bytesWritten);
+        }
+
+        internal bool TryWriteSignificandLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (BinaryPrimitives.TryWriteUInt32LittleEndian(destination, Significand))
+            {
+                bytesWritten = sizeof(uint);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteSignificandLittleEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<float>.TryWriteSignificandLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteSignificandLittleEndian(destination, out bytesWritten);
+        }
         public static float Parse(string v, Globalization.NumberStyles s, IFormatProvider? p)
         {
             if (v == null) throw new ArgumentNullException();
@@ -2584,8 +3866,6 @@ namespace System
         static bool Numerics.INumberBase<float>.IsRealNumber(float v) => IsRealNumber(v);
         static bool Numerics.INumberBase<float>.IsSubnormal(float v) => IsSubnormal(v);
         static bool Numerics.INumberBase<float>.IsZero(float v) => IsZero(v);
-        static float Numerics.INumber<float>.MaxNumber(float l, float r) => Max(l, r);
-        static float Numerics.INumber<float>.MinNumber(float l, float r) => Min(l, r);
         static float Numerics.IFloatingPointIeee754<float>.Epsilon => Epsilon;
         static float Numerics.IFloatingPointIeee754<float>.NaN => NaN;
         static float Numerics.IFloatingPointIeee754<float>.NegativeInfinity => NegativeInfinity;
@@ -2668,7 +3948,7 @@ namespace System
             return unchecked((int)bits) ^ (int)(bits >> 32);
         }
         public override string ToString() => Number.FormatDouble(this);
-        public string ToString(string? format) => Number.FormatDouble(this, format);
+        public string ToString(string? format) => ToString(format, null);
         public static double Parse(string value)
         {
             if (value == null) throw new ArgumentNullException();
@@ -2699,18 +3979,70 @@ namespace System
         public static bool IsEvenInteger(double v) => IsFinite(v) && Math.Truncate(v) == v && v % 2 == 0;
         public static bool IsImaginaryNumber(double v) => false;
         public static bool IsNegativeInfinity(double v) => v == NegativeInfinity;
-        public static bool IsNormal(double v) => IsFinite(v) && v != 0;
+        public static bool IsNormal(double d)
+        {
+            ulong bits = BitConverter.DoubleToUInt64Bits(Abs(d));
+            return (bits - SmallestNormalBits) < (PositiveInfinityBits - SmallestNormalBits);
+        }
         public static bool IsInteger(double v) => IsFinite(v) && Math.Truncate(v) == v;
         public static bool IsOddInteger(double v) => IsInteger(v) && v % 2 != 0;
         public static bool IsPositive(double v) => !IsNegative(v) && !IsNaN(v);
         public static bool IsPositiveInfinity(double v) => v == PositiveInfinity;
         public static bool IsRealNumber(double v) => !IsNaN(v);
-        public static bool IsSubnormal(double v) => false;
+        public static bool IsSubnormal(double d)
+        {
+            ulong bits = BitConverter.DoubleToUInt64Bits(Abs(d));
+            return (bits - 1) < MaxTrailingSignificand;
+        }
         public static bool IsZero(double v) => v == 0;
-        public static double MaxMagnitude(double l, double r) => Math.Abs(l) >= Math.Abs(r) ? l : r;
-        public static double MaxMagnitudeNumber(double l, double r) => MaxMagnitude(l, r);
-        public static double MinMagnitude(double l, double r) => Math.Abs(l) <= Math.Abs(r) ? l : r;
-        public static double MinMagnitudeNumber(double l, double r) => MinMagnitude(l, r);
+        public static double MaxMagnitude(double x, double y) => Math.MaxMagnitude(x, y);
+        public static double MaxMagnitudeNumber(double x, double y)
+        {
+            // This matches the IEEE 754:2019 `maximumMagnitudeNumber` function
+            //
+            // It does not propagate NaN inputs back to the caller and
+            // otherwise returns the input with a larger magnitude.
+            // It treats +0 as larger than -0 as per the specification.
+
+            double ax = Abs(x);
+            double ay = Abs(y);
+
+            if ((ax > ay) || IsNaN(ay))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return IsNegative(x) ? y : x;
+            }
+
+            return y;
+        }
+        public static double MinMagnitude(double x, double y) => Math.MinMagnitude(x, y);
+        public static double MinMagnitudeNumber(double x, double y)
+        {
+            // This matches the IEEE 754:2019 `minimumMagnitudeNumber` function
+            //
+            // It does not propagate NaN inputs back to the caller and
+            // otherwise returns the input with a larger magnitude.
+            // It treats +0 as larger than -0 as per the specification.
+
+            double ax = Abs(x);
+            double ay = Abs(y);
+
+            if ((ax < ay) || IsNaN(ay))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return IsNegative(x) ? x : y;
+            }
+
+            return y;
+        }
         public static double Acos(double v) => (double)Math.Acos(v);
         public static double AcosPi(double v) => Acos(v) / Pi;
         public static double Asin(double v) => (double)Math.Asin(v);
@@ -2738,11 +4070,9 @@ namespace System
         public static double Log10(double v) => (double)Math.Log10(v);
         public static double Pow(double x, double y) => (double)Math.Pow(x, y);
         public static double Cbrt(double v) => (double)Math.Cbrt(v);
-        public static double Hypot(double x, double y) => (double)Math.Sqrt((double)x * x + (double)y * y);
-        public static double RootN(double x, int n) => (double)Math.Pow(x, 1.0 / n);
         public static double Sqrt(double v) => (double)Math.Sqrt(v);
-        public static double BitDecrement(double v) => Math.BitDecrement(v);
-        public static double BitIncrement(double v) => Math.BitIncrement(v);
+        public static double BitDecrement(double x) => Math.BitDecrement(x);
+        public static double BitIncrement(double x) => Math.BitIncrement(x);
         public static double FusedMultiplyAdd(double l, double r, double a) => (double)Math.FusedMultiplyAdd(l, r, a);
         public static double Ieee754Remainder(double l, double r) => (double)Math.IEEERemainder(l, r);
         public static int ILogB(double v) => Math.ILogB(v);
@@ -2751,14 +4081,101 @@ namespace System
         public static double Ceiling(double v) => (double)Math.Ceiling(v);
         public static double Floor(double v) => (double)Math.Floor(v);
         public static double Truncate(double v) => (double)Math.Truncate(v);
-        public int GetExponentByteCount() => 1;
-        public int GetExponentShortestBitLength() => 1;
-        public int GetSignificandBitLength() => 53;
-        public int GetSignificandByteCount() => 8;
-        public bool TryWriteExponentBigEndian(Span<byte> d, out int n) { if (d.Length < 1) { n = 0; return false; } d[0] = 0; n = 1; return true; }
-        public bool TryWriteExponentLittleEndian(Span<byte> d, out int n) => TryWriteExponentBigEndian(d, out n);
-        public bool TryWriteSignificandBigEndian(Span<byte> d, out int n) { if (d.Length < 8) { n = 0; return false; } for (var i = 0; i < 8; i++) d[8 - 1 - i] = 0; n = 8; return true; }
-        public bool TryWriteSignificandLittleEndian(Span<byte> d, out int n) => TryWriteSignificandBigEndian(d, out n);
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetExponentByteCount()" />
+        int Numerics.IFloatingPoint<double>.GetExponentByteCount() => sizeof(short);
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetExponentShortestBitLength()" />
+        int Numerics.IFloatingPoint<double>.GetExponentShortestBitLength()
+        {
+            short exponent = Exponent;
+
+            if (exponent >= 0)
+            {
+                return (sizeof(short) * 8) - short.LeadingZeroCount(exponent);
+            }
+            else
+            {
+                return (sizeof(short) * 8) + 1 - short.LeadingZeroCount((short)(~exponent));
+            }
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetSignificandByteCount()" />
+        int Numerics.IFloatingPoint<double>.GetSignificandByteCount() => sizeof(ulong);
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.GetSignificandBitLength()" />
+        int Numerics.IFloatingPoint<double>.GetSignificandBitLength() => 53;
+
+        internal bool TryWriteExponentBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (BinaryPrimitives.TryWriteInt16BigEndian(destination, Exponent))
+            {
+                bytesWritten = sizeof(short);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteExponentBigEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<double>.TryWriteExponentBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteExponentBigEndian(destination, out bytesWritten);
+        }
+
+        internal bool TryWriteExponentLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (BinaryPrimitives.TryWriteInt16LittleEndian(destination, Exponent))
+            {
+                bytesWritten = sizeof(short);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteExponentLittleEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<double>.TryWriteExponentLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteExponentLittleEndian(destination, out bytesWritten);
+        }
+
+        internal bool TryWriteSignificandBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (BinaryPrimitives.TryWriteUInt64BigEndian(destination, Significand))
+            {
+                bytesWritten = sizeof(ulong);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteSignificandBigEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<double>.TryWriteSignificandBigEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteSignificandBigEndian(destination, out bytesWritten);
+        }
+
+        internal bool TryWriteSignificandLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            if (BinaryPrimitives.TryWriteUInt64LittleEndian(destination, Significand))
+            {
+                bytesWritten = sizeof(ulong);
+                return true;
+            }
+
+            bytesWritten = 0;
+            return false;
+        }
+
+        /// <inheritdoc cref="IFloatingPoint{TSelf}.TryWriteSignificandLittleEndian(Span{byte}, out int)" />
+        bool Numerics.IFloatingPoint<double>.TryWriteSignificandLittleEndian(Span<byte> destination, out int bytesWritten)
+        {
+            return TryWriteSignificandLittleEndian(destination, out bytesWritten);
+        }
         public static double Parse(string v, Globalization.NumberStyles s, IFormatProvider? p)
         {
             if (v == null) throw new ArgumentNullException();
@@ -2807,8 +4224,6 @@ namespace System
         static bool Numerics.INumberBase<double>.IsRealNumber(double v) => IsRealNumber(v);
         static bool Numerics.INumberBase<double>.IsSubnormal(double v) => IsSubnormal(v);
         static bool Numerics.INumberBase<double>.IsZero(double v) => IsZero(v);
-        static double Numerics.INumber<double>.MaxNumber(double l, double r) => Max(l, r);
-        static double Numerics.INumber<double>.MinNumber(double l, double r) => Min(l, r);
         static double Numerics.IFloatingPointIeee754<double>.Epsilon => Epsilon;
         static double Numerics.IFloatingPointIeee754<double>.NaN => NaN;
         static double Numerics.IFloatingPointIeee754<double>.NegativeInfinity => NegativeInfinity;

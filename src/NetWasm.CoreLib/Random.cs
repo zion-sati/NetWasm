@@ -698,7 +698,7 @@ namespace System
 
             var characters = new char[length];
             GetItems(choices, characters.AsSpan());
-            return string.Create(characters);
+            return new string(characters);
         }
 
         /// <summary>Creates a string filled with random hexadecimal characters.</summary>

@@ -35,6 +35,10 @@ on:
         description: NETWASM_CORPUS_COLLECTOR, the linked runtime's collector; empty is Compact.
         type: string
         default: ''
+      optimization:
+        description: NETWASM_TEST_OPTIMIZATION, the preset of every fixture and scenario that names none; empty is Oz.
+        type: string
+        default: ''
       gc-stress:
         description: Collect before every allocation on the linked runtime (NETWASM_CORPUS_GC_STRESS).
         type: boolean
@@ -176,6 +180,7 @@ jobs:
           CORPUS_BACKEND: ${{ inputs.corpus-backend }}
           CORPUS_COLLECTOR: ${{ inputs.collector }}
           GC_STRESS: ${{ inputs.gc-stress }}
+          TEST_OPTIMIZATION: ${{ inputs.optimization }}
           TEST_CLASSES: ${{ inputs.classes }}
           COVERAGE: ${{ inputs.coverage }}
           NETWASM_CORPUS_RECEIPTS: ${{ runner.temp }}/compiler-qualification/linked-receipts
@@ -193,6 +198,9 @@ jobs:
           fi
           if [[ -n "$CORPUS_COLLECTOR" ]]; then
             export NETWASM_CORPUS_COLLECTOR="$CORPUS_COLLECTOR"
+          fi
+          if [[ -n "$TEST_OPTIMIZATION" ]]; then
+            export NETWASM_TEST_OPTIMIZATION="$TEST_OPTIMIZATION"
           fi
           if [[ "$GC_STRESS" == true ]]; then
             export NETWASM_CORPUS_GC_STRESS=1

@@ -33,7 +33,7 @@ internal sealed class EnumGetNamesEmitter(
         var entry = Find(enumType);
         var result = request.Local(0, CliValueKind.ManagedReference);
         var temporary = request.Instruction.Context.NumericTemporaryI4;
-        EmitArray(code, result, temporary, entry);
+        EmitArray(code, result, temporary, entry, request.Instruction.Context.InlineArrayData);
     }
 
     private void EmitTypeBased(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
@@ -57,7 +57,7 @@ internal sealed class EnumGetNamesEmitter(
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.If,
                 WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            EmitArray(code, result, temporary, entry);
+            EmitArray(code, result, temporary, entry, request.Instruction.Context.InlineArrayData);
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         }
         code.Write(WasmInstruction.WithOperand(
@@ -72,7 +72,8 @@ internal sealed class EnumGetNamesEmitter(
         IWasmInstructionWriter code,
         int result,
         int temporary,
-        EnumMetadataLayout entry)
+        EnumMetadataLayout entry,
+        bool inlineData)
     {
         WriteI32(code, entry.Members.Length);
         WriteI32(code, typeLayouts.GetObjectLayout(CliTypeIdentity.SzArray(
@@ -92,7 +93,7 @@ internal sealed class EnumGetNamesEmitter(
                 WasmOpcodes.LocalSet,
                 WasmInstructionOperand.Unsigned((uint)temporary)));
             ManagedMemoryEmitter.EmitArrayElementAddress(
-                code, layouts.Target, result, temporary, layouts.Target.ObjectReferenceSize);
+                code, layouts.Target, result, temporary, inlineData, layouts.Target.ObjectReferenceSize);
             addresses.Emit(code, entry.Members[index].NameLayout.Address);
             ManagedMemoryEmitter.EmitStoreBySize(
                 code, layouts.Target, 0, layouts.Target.ObjectReferenceSize);

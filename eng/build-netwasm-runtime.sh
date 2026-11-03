@@ -148,8 +148,10 @@ const includeStructuredCommandDiagnostics = layout.runtimeFeatures === undefined
   layout.runtimeFeatures.includes("structured-command-diagnostics");
 const includeFinalization = layout.runtimeFeatures === undefined ||
   layout.runtimeFeatures.includes("finalization");
+const includeArraySetValue = layout.runtimeFeatures === undefined ||
+  layout.runtimeFeatures.includes("array-set-value");
 process.stdout.write(
-  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}`);
+  `${layout.target}\n${runtimeGlobalBase}\n${includeEphemerons ? 1 : 0}\n${includeStructuredCommandDiagnostics ? 1 : 0}\n${includeFinalization ? 1 : 0}\n${includeArraySetValue ? 1 : 0}`);
 NODE
 )"
 runtime_target="${runtime_layout_values%%$'\n'*}"
@@ -159,11 +161,14 @@ runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_ephemerons="${runtime_layout_values%%$'\n'*}"
 runtime_layout_values="${runtime_layout_values#*$'\n'}"
 include_structured_command_diagnostics="${runtime_layout_values%%$'\n'*}"
-include_finalization="${runtime_layout_values#*$'\n'}"
+runtime_layout_values="${runtime_layout_values#*$'\n'}"
+include_finalization="${runtime_layout_values%%$'\n'*}"
+include_array_set_value="${runtime_layout_values#*$'\n'}"
 [[ "$runtime_target" = "$target" && "$runtime_global_base" =~ ^[0-9]+$ &&
    "$include_ephemerons" =~ ^[01]$ &&
    "$include_structured_command_diagnostics" =~ ^[01]$ &&
-   "$include_finalization" =~ ^[01]$ ]] || {
+   "$include_finalization" =~ ^[01]$ &&
+   "$include_array_set_value" =~ ^[01]$ ]] || {
     echo "runtime layout contract validation failed" >&2
     exit 1
 }
@@ -231,6 +236,9 @@ if [[ "$collector" = bump ]]; then
 fi
 if [[ "$include_finalization" = 0 ]]; then
     defines+=(-DNETWASM_NO_FINALIZATION)
+fi
+if [[ "$include_array_set_value" = 0 ]]; then
+    defines+=(-DNETWASM_NO_ARRAY_SET_VALUE)
 fi
 
 optimization=("$native_optimization" -flto)

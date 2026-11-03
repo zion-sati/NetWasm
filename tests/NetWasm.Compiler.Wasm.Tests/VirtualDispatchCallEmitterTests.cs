@@ -722,7 +722,7 @@ public sealed class VirtualDispatchCallEmitterTests
         layouts,
         new VirtualDispatchEmissionPlanBuilder(),
         intrinsics ?? new FakeIntrinsics(),
-        new ImplicitExceptionEmitter(layouts, layouts),
+        new ImplicitExceptionEmitter(layouts),
         enumEquals ?? new RecordingEnumEqualsEmitter(),
         enumHashCode ?? new RecordingEnumHashCodeEmitter(),
         enumCompareTo ?? new RecordingEnumCompareToEmitter(),

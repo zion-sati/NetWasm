@@ -80,10 +80,10 @@ internal sealed class CompilerArtifactManifestTaskRequestBuilder : ICompilerArti
         }
 
         var project = Path.GetFullPath(projectDirectory);
-        var root = Path.GetFullPath(generatedSourceRoot, project);
+        var root = ArtifactPath.Resolve(generatedSourceRoot, project);
         var source = item.GetMetadata("FullPath");
         source = string.IsNullOrWhiteSpace(source) ? item.ItemSpec : source;
-        var fullSource = Path.GetFullPath(source, project);
+        var fullSource = ArtifactPath.Resolve(source, project);
         var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar)
             ? root
             : root + Path.DirectorySeparatorChar;

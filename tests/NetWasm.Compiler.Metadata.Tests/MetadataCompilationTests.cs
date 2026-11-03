@@ -359,22 +359,24 @@ public sealed class MetadataCompilationTests
             .ToArray();
         var requiredMembers = new[]
         {
-            ".cctor", ".ctor", "AddLength", "BuildReplacement", "CompareOrdinal",
+            ".cctor", ".ctor", "CompareOrdinal",
             "Concat", "Concat", "Concat", "Concat", "Contains", "Copy",
-            "CountMatches", "Create", "EndsWith", "Equals", "Equals", "Equals",
+            "Create", "EndsWith", "Equals", "Equals", "Equals",
             "Format", "Format", "Format", "Format", "GetHashCode",
             "IndexOf", "IndexOf", "IndexOf", "IndexOf",
-            "IndexOf", "IndexOf", "Insert", "IsNullOrEmpty", "IsWhiteSpace",
-            "Join", "LastIndexOf", "MatchesAt", "PadLeft", "PadLeft", "PadRight",
+            "IndexOf", "IndexOf", "Insert", "IsNullOrEmpty",
+            "Join", "LastIndexOf", "PadLeft", "PadLeft", "PadRight",
             "PadRight", "Remove", "Remove", "Replace", "Replace",
-            "SetCharUnchecked", "Split", "StartsWith", "Substring", "Substring",
-            "ToCharArray", "Trim", "Trim", "TrimEnd", "TrimStart", "TrimWhiteSpace",
-            "ValidateComparison", "ValidateRange", "get_Chars", "get_Length",
+            "Split", "StartsWith", "Substring", "Substring",
+            "ToCharArray", "Trim", "Trim", "TrimEnd", "TrimStart",
+            "get_Chars", "get_Length",
             "op_Equality", "op_Inequality",
         };
         Assert.All(requiredMembers, member => Assert.Contains(member, members));
-        Assert.Equal(15, members.Count(member => member == "Format"));
-        Assert.Equal(15, members.Count(member => member == "Concat"));
+        // Upstream's fifteen public overloads and its private CompositeFormat helper.
+        Assert.Equal(16, members.Count(member => member == "Format"));
+        // Upstream's fifteen public overloads and its internal span helper.
+        Assert.Equal(16, members.Count(member => member == "Concat"));
         Assert.Contains("ToLower", members);
         Assert.Contains("ToUpper", members);
         Assert.Contains("Normalize", members);

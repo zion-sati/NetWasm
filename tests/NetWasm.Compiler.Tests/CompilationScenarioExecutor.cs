@@ -33,7 +33,7 @@ internal sealed record CompilationScenario(
     internal bool EmitStackTrace { get; init; }
     internal bool EmitPortablePdb { get; init; }
     internal FinalWasmOptimization Optimization { get; init; } =
-        FinalWasmOptimization.Oz;
+        TestOptimization.Default;
     internal bool LoadStackTraceSymbols { get; init; } = true;
     internal int EntryInvocationCount { get; init; } = 1;
     internal string? DiagnosticTracePath { get; init; }

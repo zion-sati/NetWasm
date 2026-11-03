@@ -10,5 +10,6 @@ internal interface IManagedTerminalTrapBoundaryEmitter
         IWasmInstructionWriter code,
         CliValueKind resultType,
         int resultLocal,
-        Action emitBody);
+        Action emitBody,
+        int? unhandledExceptionReporter = null);
 }

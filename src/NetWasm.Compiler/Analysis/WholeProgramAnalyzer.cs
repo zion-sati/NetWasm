@@ -40,12 +40,14 @@ internal sealed class ReachabilityClosureBuilder(
     IMemberDescriptorPlanner memberDescriptors,
     IObjectArrayDelegateAdapterPlanner objectArrayDelegateAdapters,
     IMemberExecutionPlanner memberExecutions,
-    IBaseTypeResolver baseTypes,
     IFinalizerResolver finalizerResolver,
     INullableTypeResolver nullableTypes,
     IMethodInitializationTriggerClassifier initializationTriggers,
-    IIntrinsicAddressBodyPlanner intrinsicAddressBodies) : IReachabilityClosureBuilder
+    IIntrinsicAddressBodyPlanner intrinsicAddressBodies,
+    IRuntimeTypeFactsClosurePlanner typeFactsClosure) : IReachabilityClosureBuilder
 {
+    private readonly IRuntimeTypeFactsClosurePlanner _typeFactsClosure =
+        typeFactsClosure ?? throw new ArgumentNullException(nameof(typeFactsClosure));
     private readonly IIntrinsicAddressBodyPlanner _intrinsicAddressBodies =
         intrinsicAddressBodies ?? throw new ArgumentNullException(nameof(intrinsicAddressBodies));
     private readonly IReachabilityClosureObserver _closureObserver =
@@ -81,8 +83,6 @@ internal sealed class ReachabilityClosureBuilder(
         throw new ArgumentNullException(nameof(objectArrayDelegateAdapters));
     private readonly IMemberExecutionPlanner _memberExecutions = memberExecutions ??
         throw new ArgumentNullException(nameof(memberExecutions));
-    private readonly IBaseTypeResolver _baseTypes =
-        baseTypes ?? throw new ArgumentNullException(nameof(baseTypes));
     private readonly IFinalizerResolver _finalizerResolver =
         finalizerResolver ?? throw new ArgumentNullException(nameof(finalizerResolver));
     private readonly INullableTypeResolver _nullableTypes = nullableTypes ??
@@ -1034,58 +1034,13 @@ internal sealed class ReachabilityClosureBuilder(
 
         void AddTypeFactsClosure()
         {
-            var pendingFacts = new Queue<CliTypeIdentity>();
-            var visitedFacts = new HashSet<CliTypeIdentity>();
-            foreach (var type in types.ToArray())
+            var required = _typeFactsClosure.Plan(
+                [.. types.Select(_typeIdentities.GetTypeIdentity), .. constructedTypes],
+                state.RequiresGenericArguments);
+            foreach (var type in required)
             {
-                EnqueueFacts(_typeIdentities.GetTypeIdentity(type));
-            }
-            foreach (var type in constructedTypes.ToArray())
-            {
-                EnqueueFacts(type);
-            }
-            while (pendingFacts.TryDequeue(out var type))
-            {
-                if (!CanExpandRuntimeHierarchy(type))
-                {
-                    continue;
-                }
-                var baseType = _baseTypes.Resolve(type);
-                if (baseType is null || !CanExpandRuntimeHierarchy(baseType))
-                {
-                    continue;
-                }
-                AddRuntimeType(baseType);
-                AddConstructedType(baseType);
-                EnqueueFacts(baseType);
-            }
-
-            void EnqueueFacts(CliTypeIdentity type)
-            {
-                if (!visitedFacts.Add(type))
-                {
-                    return;
-                }
-                pendingFacts.Enqueue(type);
-                if (type.Shape != CliTypeShape.GenericInstantiation &&
-                    type.ElementType is not null)
-                {
-                    EnqueueFacts(type.ElementType);
-                }
-                foreach (var argument in type.TypeArguments)
-                {
-                    EnqueueFacts(argument);
-                }
-            }
-
-            bool CanExpandRuntimeHierarchy(CliTypeIdentity type)
-            {
-                if (type.ContainsGenericParameters)
-                {
-                    return false;
-                }
-                return type.Shape != CliTypeShape.Named ||
-                    _typeDefinitions.ResolveTypeIdentity(type).GenericArity == 0;
+                AddRuntimeType(type);
+                AddConstructedType(type, retainElementModifierIdentity: state.RequiresGenericArguments);
             }
         }
 
@@ -1133,6 +1088,8 @@ internal sealed class ReachabilityClosureBuilder(
                 new CliGenericContext(typeArguments, []));
 
 
+        // managed.throw calls the kind's CoreLib getter for a failed check's
+        // exception.
         void AddImplicit(ManagedExceptionKind kind, string typeName)
         {
             if (implicitExceptions.Add(kind))
@@ -1140,6 +1097,9 @@ internal sealed class ReachabilityClosureBuilder(
                 var type = _typeFinder.FindType(typeName);
                 types.Add(type.Key);
                 AddAllocatedType(_typeIdentities.GetTypeIdentity(type.Key));
+                Enqueue(_typeFinder.FindType(RuntimeExceptionGetters.TypeName).Methods
+                    .Select(_methodRepository.GetMethod)
+                    .Single(method => method.Name == RuntimeExceptionGetters.MethodName(kind)));
             }
         }
 

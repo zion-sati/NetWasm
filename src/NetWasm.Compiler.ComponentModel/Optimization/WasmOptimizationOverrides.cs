@@ -40,4 +40,12 @@ public sealed record WasmOptimizationOverrides(
     ManagedArrayLoopIdioms ArrayLoopIdioms =
         ManagedArrayLoopIdioms.Auto,
     ManagedLoopVectorization LoopVectorization =
-        ManagedLoopVectorization.Auto);
+        ManagedLoopVectorization.Auto,
+    ManagedPureCallReuse PureCallReuse =
+        ManagedPureCallReuse.Auto,
+    ManagedFieldLoadReuse FieldLoadReuse =
+        ManagedFieldLoadReuse.Auto,
+    ManagedConditionalStoreMerging ConditionalStoreMerging =
+        ManagedConditionalStoreMerging.Auto,
+    ManagedInlineArrayData InlineArrayData =
+        ManagedInlineArrayData.Auto);

@@ -31,3 +31,4 @@ dotnet netwasm-wit-bindgen \
 ```
 
 Omit `--world` when the WIT document contains exactly one world.
+`netwasm-wit-bindgen --help` lists every option.

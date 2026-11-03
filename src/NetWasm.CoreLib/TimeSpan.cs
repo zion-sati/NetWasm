@@ -192,14 +192,14 @@ namespace System
         public bool TryFormat(Span<char> destination, out int charsWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : string.Create(format.ToArray()));
+            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
             return TryCopy(text, destination, out charsWritten);
         }
 
         public bool TryFormat(Span<byte> destination, out int bytesWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? formatProvider = null)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : string.Create(format.ToArray()));
+            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
             if (destination.Length < text.Length)
             {
                 bytesWritten = 0;
@@ -218,7 +218,7 @@ namespace System
 
         public static TimeSpan Parse(string value, IFormatProvider? formatProvider) => Parse(value);
         public static TimeSpan Parse(ReadOnlySpan<char> value, IFormatProvider? formatProvider = null) =>
-            Parse(string.Create(value.ToArray()));
+            Parse(new string(value));
 
         public static TimeSpan ParseExact(string value, string format, IFormatProvider? formatProvider) =>
             ParseExact(value, format, formatProvider, System.Globalization.TimeSpanStyles.None);
@@ -250,14 +250,14 @@ namespace System
             IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles = System.Globalization.TimeSpanStyles.None)
         {
             ValidateStyles(styles);
-            return ParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), formatProvider, styles);
+            return ParseExact(new string(value), new string(format), formatProvider, styles);
         }
 
         public static TimeSpan ParseExact(ReadOnlySpan<char> value, string[] formats,
             IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles = System.Globalization.TimeSpanStyles.None)
         {
             ValidateStyles(styles);
-            return ParseExact(string.Create(value.ToArray()), formats, formatProvider, styles);
+            return ParseExact(new string(value), formats, formatProvider, styles);
         }
 
         public static bool TryParse(string? value, out TimeSpan result)
@@ -280,7 +280,7 @@ namespace System
         public static bool TryParse(string? value, IFormatProvider? formatProvider, out TimeSpan result) =>
             TryParse(value, out result);
         public static bool TryParse(ReadOnlySpan<char> value, out TimeSpan result) =>
-            TryParse(string.Create(value.ToArray()), out result);
+            TryParse(new string(value), out result);
         public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? formatProvider, out TimeSpan result) =>
             TryParse(value, out result);
 
@@ -327,7 +327,7 @@ namespace System
             IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles, out TimeSpan result)
         {
             ValidateStyles(styles);
-            return TryParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), formatProvider, styles, out result);
+            return TryParseExact(new string(value), new string(format), formatProvider, styles, out result);
         }
 
         public static bool TryParseExact(ReadOnlySpan<char> value, string?[]? formats,
@@ -338,7 +338,7 @@ namespace System
             IFormatProvider? formatProvider, System.Globalization.TimeSpanStyles styles, out TimeSpan result)
         {
             ValidateStyles(styles);
-            return TryParseExact(string.Create(value.ToArray()), formats, formatProvider, styles, out result);
+            return TryParseExact(new string(value), formats, formatProvider, styles, out result);
         }
 
         public static TimeSpan operator +(TimeSpan value) => value;

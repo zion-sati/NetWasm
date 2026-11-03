@@ -68,7 +68,8 @@ internal sealed class ManagedMethodEmitter(
         LoopRotationPolicy loopRotation = LoopRotationPolicy.Disabled,
         bool eliminateArrayStoreChecks = false,
         OptionalFunctionIndex managedThrowFunction = default,
-        bool inlineSmallBlocks = false)
+        bool inlineSmallBlocks = false,
+        bool inlineArrayData = false)
     {
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(structured);
@@ -145,6 +146,7 @@ internal sealed class ManagedMethodEmitter(
             ValueFrameReferences = references,
             LoopRotation = loopRotation,
             InlineSmallBlocks = inlineSmallBlocks,
+            InlineArrayData = inlineArrayData,
             ExactArrayStores = arrayStoreChecks.Plan(emissionStructure, eliminateArrayStoreChecks),
         };
         if (placement is not null)

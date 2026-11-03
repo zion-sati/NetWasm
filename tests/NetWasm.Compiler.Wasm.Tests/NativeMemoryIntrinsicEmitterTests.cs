@@ -11,19 +11,19 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 
 public sealed class NativeMemoryIntrinsicEmitterTests
 {
-    // At the speed presets small copies run inline: past 64 bytes the copy is
+    // At the speed presets small copies run inline: past 128 bytes the copy is
     // memory.copy, and below it every case loads all of its chunks before it
     // stores any, so overlapping blocks copy as memmove does.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void InlineCopiesLoadEveryChunkBeforeStoringAndFallBackPastSixtyFourBytes(bool memory64)
+    public void InlineCopiesLoadEveryChunkBeforeStoringAndFallBackPast128Bytes(bool memory64)
     {
         var instructions = EmitInline(RuntimeIntrinsic.NativeMemoryCopy, memory64,
             [CliValueKind.NativeInt, CliValueKind.NativeInt, CliValueKind.NativeInt]);
 
         Assert.Equal(WasmOpcodes.If, instructions[3].Opcode);
-        Assert.Equal(65, memory64 ? instructions[1].Operand.Signed64Value : instructions[1].Operand.SignedValue);
+        Assert.Equal(129, memory64 ? instructions[1].Operand.Signed64Value : instructions[1].Operand.SignedValue);
         Assert.Contains(instructions, instruction => instruction.Opcode == WasmOpcodes.Prefixed &&
             instruction.Operand.Alignment == WasmOpcodes.MemoryCopy);
         Assert.Contains(instructions, instruction => IsVector(instruction, WasmSimdOpcodes.V128Store));
@@ -44,7 +44,7 @@ public sealed class NativeMemoryIntrinsicEmitterTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void InlineFillsStoreTheRepeatedValueAndFallBackPastSixtyFourBytes(bool memory64)
+    public void InlineFillsStoreTheRepeatedValueAndFallBackPast128Bytes(bool memory64)
     {
         var instructions = EmitInline(RuntimeIntrinsic.NativeMemoryFill, memory64,
             [CliValueKind.NativeInt, CliValueKind.NativeInt, CliValueKind.I4]);
@@ -57,15 +57,19 @@ public sealed class NativeMemoryIntrinsicEmitterTests
     }
 
     // Known-size value copies inline the same way, in exact chunks widest
-    // first with every load before any store; they stay memory.copy past 64
-    // bytes, outside the speed presets, or where the method has no scratch.
+    // first with every load before any store, up to 128 bytes; they stay
+    // memory.copy past that, outside the speed presets, or where the method
+    // has no scratch.
     [Theory]
-    [InlineData(29, true, true, true)]
-    [InlineData(29, false, true, false)]
-    [InlineData(29, true, false, false)]
-    [InlineData(65, true, true, false)]
-    public void KnownSizeCopiesLoadEveryChunkBeforeStoring(int size, bool inline, bool scratch, bool inlined)
+    [InlineData(29, true, true, "28,24,16,0")]
+    [InlineData(29, false, true, "")]
+    [InlineData(29, true, false, "")]
+    [InlineData(65, true, true, "64,48,32,16,0")]
+    [InlineData(128, true, true, "112,96,80,64,48,32,16,0")]
+    [InlineData(129, true, true, "")]
+    public void KnownSizeCopiesLoadEveryChunkBeforeStoring(int size, bool inline, bool scratch, string storeOffsets)
     {
+        var inlined = storeOffsets.Length > 0;
         var context = CreateMethodEmissionContext() with
         {
             InlineSmallBlocks = inline,
@@ -85,7 +89,7 @@ public sealed class NativeMemoryIntrinsicEmitterTests
             return;
         }
         Assert.True(instructions.FindLastIndex(IsLoad) < instructions.FindIndex(IsStore));
-        Assert.Equal([28U, 24U, 16U, 0U], instructions.Where(IsStore).Select(store =>
+        Assert.Equal(storeOffsets.Split(',').Select(uint.Parse), instructions.Where(IsStore).Select(store =>
             store.Opcode == WasmOpcodes.SimdPrefixed ? store.Operand.Third : store.Operand.Offset));
     }
 

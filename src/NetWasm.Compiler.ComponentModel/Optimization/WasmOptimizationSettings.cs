@@ -40,4 +40,8 @@ public sealed record WasmOptimizationSettings(
     IdempotentLoopCollapsePolicy IdempotentLoopCollapse = IdempotentLoopCollapsePolicy.Disabled,
     LoopStoreForwardingPolicy LoopStoreForwarding = LoopStoreForwardingPolicy.Disabled,
     ArrayLoopIdiomPolicy ArrayLoopIdioms = ArrayLoopIdiomPolicy.Disabled,
-    LoopVectorizationPolicy LoopVectorization = LoopVectorizationPolicy.Disabled);
+    LoopVectorizationPolicy LoopVectorization = LoopVectorizationPolicy.Disabled,
+    PureCallReusePolicy PureCallReuse = PureCallReusePolicy.Disabled,
+    FieldLoadReusePolicy FieldLoadReuse = FieldLoadReusePolicy.Disabled,
+    ConditionalStoreMergingPolicy ConditionalStoreMerging = ConditionalStoreMergingPolicy.Disabled,
+    InlineArrayDataPolicy InlineArrayData = InlineArrayDataPolicy.Disabled);

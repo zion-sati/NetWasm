@@ -22,16 +22,16 @@ public sealed class BoundedArrayCompilationTests(CorrectnessTestRunner runner) :
             // D03 retains ARRAY identity in NetWasm where CoreCLR normalizes
             // zero-bound rank-one construction to SZARRAY.
             DesktopEntryMethod = "RunDesktop",
-            Inputs = [.. Enumerable.Range(0, 28)],
-            Expectations = [.. Enumerable.Range(0, 28).Select(input => input switch
+            Inputs = [.. Enumerable.Range(0, Cases)],
+            Expectations = [.. Enumerable.Range(0, Cases).Select(input => input switch
             {
                 5 => new CorpusCaseExpectation(input, null, "System.OverflowException"),
                 6 or 24 or 25 or 27 => new CorpusCaseExpectation(input, null, "System.ArgumentOutOfRangeException"),
                 26 => new CorpusCaseExpectation(input, null, "System.ArgumentException"),
                 7 => new CorpusCaseExpectation(input, null, "System.OutOfMemoryException"),
-                8 or 9 or 10 or 13 or 18 or 19 or 21 => new CorpusCaseExpectation(input, null, "System.IndexOutOfRangeException"),
+                8 or 9 or 10 or 13 or 18 or 19 or 21 or 29 or 30 => new CorpusCaseExpectation(input, null, "System.IndexOutOfRangeException"),
                 20 => new CorpusCaseExpectation(input, null, "System.ArrayTypeMismatchException"),
-                12 => new CorpusCaseExpectation(input, null, "System.NullReferenceException"),
+                12 or 32 => new CorpusCaseExpectation(input, null, "System.NullReferenceException"),
                 _ => new CorpusCaseExpectation(input, 42, null),
             })],
             ExecutionBackend = CorpusExecutionBackend.Linked,
@@ -43,6 +43,10 @@ public sealed class BoundedArrayCompilationTests(CorrectnessTestRunner runner) :
         };
         Run(manifest, cell, new FixtureBuilder());
     }
+
+    // Inputs from Loops on run nested loops over a bounded rank-two array.
+    private const int Loops = 28;
+    private const int Cases = 33;
 
     private sealed class FixtureBuilder : IEmittedAssemblyBuilder
     {
@@ -59,7 +63,10 @@ public sealed class BoundedArrayCompilationTests(CorrectnessTestRunner runner) :
             var payload = payloadBuilder.CreateType()!;
             var type = module.DefineType("BoundedArrayContract.EntryPoint",
                 TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed);
-            var methods = Enumerable.Range(0, 28).Select(input => DefineCase(module, type, payload, input)).ToArray();
+            var sum = DefineSum(module, type);
+            var methods = Enumerable.Range(0, Cases).Select(input => input >= Loops
+                ? DefineLoopCase(module, type, sum, input)
+                : DefineCase(module, type, payload, input)).ToArray();
             DefineDispatcher(type, "Run", methods);
             methods[14] = DefineCase(module, type, payload, 14, desktop: true);
             methods[15] = DefineCase(module, type, payload, 15, desktop: true);
@@ -344,6 +351,119 @@ public sealed class BoundedArrayCompilationTests(CorrectnessTestRunner runner) :
             code.MarkLabel(failed);
             Constant(code, -1);
             code.Emit(OpCodes.Ret);
+        }
+
+        // Sum(a, i0, i1, j0, j1) stores 10 * i + j at a[i, j] for i from i0 to
+        // i1 and j from j0 to j1, and adds up what it reads back.
+        private static MethodBuilder DefineSum(ModuleBuilder module, TypeBuilder type)
+        {
+            var arrayType = typeof(int).MakeArrayType(2);
+            var method = type.DefineMethod("Sum", MethodAttributes.Public | MethodAttributes.Static, typeof(int),
+                [arrayType, typeof(int), typeof(int), typeof(int), typeof(int)]);
+            var code = method.GetILGenerator();
+            var sum = code.DeclareLocal(typeof(int));
+            var i = code.DeclareLocal(typeof(int));
+            var j = code.DeclareLocal(typeof(int));
+            var (outerBody, outerCondition, innerBody, innerCondition) =
+                (code.DefineLabel(), code.DefineLabel(), code.DefineLabel(), code.DefineLabel());
+            Constant(code, 0);
+            code.Emit(OpCodes.Stloc, sum);
+            code.Emit(OpCodes.Ldarg_1);
+            code.Emit(OpCodes.Stloc, i);
+            code.Emit(OpCodes.Br, outerCondition);
+            code.MarkLabel(outerBody);
+            code.Emit(OpCodes.Ldarg_3);
+            code.Emit(OpCodes.Stloc, j);
+            code.Emit(OpCodes.Br, innerCondition);
+            code.MarkLabel(innerBody);
+            code.Emit(OpCodes.Ldarg_0);
+            code.Emit(OpCodes.Ldloc, i);
+            code.Emit(OpCodes.Ldloc, j);
+            code.Emit(OpCodes.Ldloc, i);
+            Constant(code, 10);
+            code.Emit(OpCodes.Mul);
+            code.Emit(OpCodes.Ldloc, j);
+            code.Emit(OpCodes.Add);
+            code.Emit(OpCodes.Call, ArrayMethod(module, arrayType, "Set", typeof(void), 3));
+            code.Emit(OpCodes.Ldloc, sum);
+            code.Emit(OpCodes.Ldarg_0);
+            code.Emit(OpCodes.Ldloc, i);
+            code.Emit(OpCodes.Ldloc, j);
+            code.Emit(OpCodes.Call, ArrayMethod(module, arrayType, "Get", typeof(int), 2));
+            code.Emit(OpCodes.Add);
+            code.Emit(OpCodes.Stloc, sum);
+            Increment(code, j);
+            code.MarkLabel(innerCondition);
+            code.Emit(OpCodes.Ldloc, j);
+            code.Emit(OpCodes.Ldarg, 4);
+            code.Emit(OpCodes.Ble, innerBody);
+            Increment(code, i);
+            code.MarkLabel(outerCondition);
+            code.Emit(OpCodes.Ldloc, i);
+            code.Emit(OpCodes.Ldarg_2);
+            code.Emit(OpCodes.Ble, outerBody);
+            code.Emit(OpCodes.Ldloc, sum);
+            code.Emit(OpCodes.Ret);
+            return method;
+        }
+
+        // The array has bounds -2 to 0 and 5 to 8: the whole array, one past
+        // its second dimension's upper bound, one below its first dimension's
+        // lower bound, then a null array no iteration reads and one an
+        // iteration does.
+        private static MethodBuilder DefineLoopCase(ModuleBuilder module, TypeBuilder type, MethodBuilder sum, int input)
+        {
+            var arrayType = typeof(int).MakeArrayType(2);
+            var method = type.DefineMethod("Case" + input, MethodAttributes.Public | MethodAttributes.Static, typeof(int), []);
+            var code = method.GetILGenerator();
+            var array = code.DeclareLocal(arrayType);
+            var failed = code.DefineLabel();
+            if (input < 31)
+            {
+                foreach (var dimension in new[] { -2, 3, 5, 4 }) Constant(code, dimension);
+                code.Emit(OpCodes.Newobj, ArrayMethod(module, arrayType, ".ctor", typeof(void), 4));
+            }
+            else
+            {
+                code.Emit(OpCodes.Ldnull);
+            }
+            code.Emit(OpCodes.Stloc, array);
+            code.Emit(OpCodes.Ldloc, array);
+            var (i0, i1, j0, j1) = input switch
+            {
+                28 => (-2, 0, 5, 8),
+                29 => (-2, 0, 5, 9),
+                30 => (-3, 0, 5, 8),
+                31 => (0, -1, 0, -1),
+                _ => (0, 0, 0, 0),
+            };
+            foreach (var bound in new[] { i0, i1, j0, j1 }) Constant(code, bound);
+            code.Emit(OpCodes.Call, sum);
+            Constant(code, input == 28 ? -42 : 0);
+            code.Emit(OpCodes.Bne_Un, failed);
+            if (input == 28)
+            {
+                code.Emit(OpCodes.Ldloc, array);
+                Constant(code, -1);
+                Constant(code, 6);
+                code.Emit(OpCodes.Call, ArrayMethod(module, arrayType, "Get", typeof(int), 2));
+                Constant(code, -4);
+                code.Emit(OpCodes.Bne_Un, failed);
+            }
+            Constant(code, 42);
+            code.Emit(OpCodes.Ret);
+            code.MarkLabel(failed);
+            Constant(code, -1);
+            code.Emit(OpCodes.Ret);
+            return method;
+        }
+
+        private static void Increment(ILGenerator code, LocalBuilder local)
+        {
+            code.Emit(OpCodes.Ldloc, local);
+            Constant(code, 1);
+            code.Emit(OpCodes.Add);
+            code.Emit(OpCodes.Stloc, local);
         }
 
         private static void Dimension(ILGenerator code, LocalBuilder array, string name, int dimension)

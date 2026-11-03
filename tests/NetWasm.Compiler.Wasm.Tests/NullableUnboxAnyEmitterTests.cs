@@ -63,7 +63,7 @@ public sealed class NullableUnboxAnyEmitterTests
                 new AddressInstructionEmitter(layouts),
                 layouts,
                 layouts,
-                new ImplicitExceptionEmitter(layouts, layouts)),
+                new ImplicitExceptionEmitter(layouts)),
         }.Cast<INullableUnboxAnyEmitter>().Single();
         emitter.Emit(request, GetCodeWriter(request), nullableType, underlyingType);
     }

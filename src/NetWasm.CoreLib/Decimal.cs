@@ -1394,7 +1394,8 @@ namespace System
                 var digits = ToDigits(coefficient);
                 var scale = value.Scale;
                 var integerDigits = digits.Length - scale;
-                if (value.IsNegativeValue)
+                // A negative zero formats as zero, as upstream's NumberToString does.
+                if (value.IsNegativeValue && value != 0m)
                 {
                     builder.Append('-');
                 }

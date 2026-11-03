@@ -130,8 +130,11 @@ for (const { environment, earlyAllocation } of startupCases) {
   assert.equal(valueReads, 1);
   instance.exports.report_unobserved_task_exception();
   instance.exports.report_unobserved_task_exception();
+  instance.exports.report_unhandled_exception();
   assert.equal(stderrReads, 1);
   assert.equal(output.join(''),
-    'NetWasm: an unobserved managed Task exception was finalized\n'.repeat(2));
+    'NetWasm: an unobserved managed Task exception was finalized\n'.repeat(2) +
+    'NetWasm: unhandled exception. Build with NetWasmStructuredDiagnostics set to true ' +
+    'to report its type, message and stack trace.\n');
 }
 console.log(JSON.stringify({ target, collectionMode, passed: startupCases.length, failed: 0 }));

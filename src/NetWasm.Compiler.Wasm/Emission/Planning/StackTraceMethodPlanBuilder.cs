@@ -13,6 +13,12 @@ internal sealed class StackTraceMethodPlanBuilder(
     IExceptionFieldLayoutResolver exceptionFields,
     ITypeLayoutProvider typeLayouts) : IStackTraceMethodPlanBuilder
 {
+    // .NET's StackTrace.ShowInStackTrace: a method marked StackTraceHidden, or
+    // whose type is, and an AggressiveInlining method record no frame, so a trace
+    // starts where a throw helper was called.
+    private static bool Shown(MethodDefinitionModel method) =>
+        !method.IsStackTraceHidden && !method.IsAggressiveInlining;
+
     public StackTraceMethodPlan Build(
         bool enabled,
         ImmutableArray<EntityKey> directMethods,
@@ -31,14 +37,18 @@ internal sealed class StackTraceMethodPlanBuilder(
         var methodSymbols = ImmutableArray.CreateBuilder<WasmStackTraceSymbol>();
         var methodNames = new Dictionary<EntityKey, string>();
         var id = 1;
-        foreach (var method in directMethods)
+        var shownMethods = directMethods.Where(method => Shown(methods.GetMethod(method))).ToImmutableArray();
+        var shownConstructed = constructedMethods
+            .Where(method => Shown(methods.GetMethod(method.DefinitionKey)))
+            .ToImmutableArray();
+        foreach (var method in shownMethods)
         {
             direct.Add(method, id);
             var name = symbols.Format(methods.GetMethod(method));
             methodNames.Add(method, name);
             methodSymbols.Add(new(id++, name));
         }
-        foreach (var method in constructedMethods)
+        foreach (var method in shownConstructed)
         {
             constructed.Add(method.Name, id);
             methodSymbols.Add(new(id++, method.Name));
@@ -46,11 +56,11 @@ internal sealed class StackTraceMethodPlanBuilder(
         var locationIds = ImmutableDictionary.CreateBuilder<
             int,
             ImmutableArray<StackTraceLocationSymbol>>();
-        foreach (var method in directMethods)
+        foreach (var method in shownMethods)
         {
             AddLocations(method, direct[method], methodNames[method]);
         }
-        foreach (var method in constructedMethods)
+        foreach (var method in shownConstructed)
         {
             AddLocations(method.DefinitionKey, constructed[method.Name], method.Name);
         }

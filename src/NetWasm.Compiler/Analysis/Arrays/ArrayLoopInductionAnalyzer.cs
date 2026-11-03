@@ -35,33 +35,34 @@ internal sealed class ArrayLoopInductionAnalyzer(
                 var code = guard.Instructions.Where(i => i.Operation != CilOperation.Nop).ToArray();
                 // index + c < length, as in `for (i = 0; i + 1 < a.Length; i++)`.
                 var lookahead = 0;
-                if (code.Length == 7 &&
+                if (code.Length is 7 or 5 &&
                     code[1] is { Operation: CilOperation.LoadInt32, Operand: CilOperand.ConstantI4 { Value: > 0 } added } &&
                     code[2].Operation == CilOperation.Add)
                 {
                     lookahead = added.Value;
                     code = [code[0], .. code[3..]];
                 }
-                if (code.Length != 5 ||
+                // The bound is an array's length, or an int local, as a span's
+                // length is once its struct is split.
+                var arrayBound = code is [{ Operation: CilOperation.LoadLocal }, { Operation: CilOperation.LoadLocal },
+                { Operation: CilOperation.LoadArrayLength }, { Operation: CilOperation.ConvertInt32 }, _];
+                if (!arrayBound && code is not [{ Operation: CilOperation.LoadLocal }, { Operation: CilOperation.LoadLocal }, _] ||
                     code[0].Operation != CilOperation.LoadLocal ||
-                    code[1].Operation != CilOperation.LoadLocal ||
-                    code[2].Operation != CilOperation.LoadArrayLength ||
-                    code[3].Operation != CilOperation.ConvertInt32 ||
-                    code[4].Operation is not (CilOperation.BranchIfLessThanSigned or
+                    code[^1].Operation is not (CilOperation.BranchIfLessThanSigned or
                         CilOperation.BranchIfLessThanUnsigned or
                         CilOperation.BranchIfGreaterThanOrEqualSigned or
                         CilOperation.BranchIfGreaterThanOrEqualUnsigned) ||
-                    code[4].Operand is not CilOperand.BranchTarget branch ||
+                    code[^1].Operand is not CilOperand.BranchTarget branch ||
                     !controlFlow.EntryStacks.TryGetValue(guardIndex, out var entry) || !entry.IsEmpty)
                     continue;
                 var index = ((CilOperand.Index)code[0].Operand).Value;
-                var array = ((CilOperand.Index)code[1].Operand).Value;
+                var bound = ((CilOperand.Index)code[1].Operand).Value;
                 if (body.Locals[index] != CliValueKind.I4 ||
-                    body.LocalSignatureTypes[array].Shape != CliTypeShape.SzArray)
+                    (arrayBound ? body.LocalSignatureTypes[bound].Shape != CliTypeShape.SzArray : body.Locals[bound] != CliValueKind.I4))
                     continue;
                 var taken = graph.GetBlockAtOffset(branch.Offset).Index;
-                var fallthrough = graph.GetBlockAtOffset(code[4].NextOffset).Index;
-                var bodyEntry = code[4].Operation is CilOperation.BranchIfLessThanSigned or
+                var fallthrough = graph.GetBlockAtOffset(code[^1].NextOffset).Index;
+                var bodyEntry = code[^1].Operation is CilOperation.BranchIfLessThanSigned or
                     CilOperation.BranchIfLessThanUnsigned ? taken : fallthrough;
                 var exit = bodyEntry == taken ? fallthrough : taken;
                 if (bodyEntry == guardIndex || !loop.Contains(bodyEntry) ||
@@ -73,9 +74,9 @@ internal sealed class ArrayLoopInductionAnalyzer(
                     continue;
                 if (body.Instructions.Any(i =>
                         i.Operation == CilOperation.LoadLocalAddress &&
-                        i.Operand is CilOperand.Index exposed && (exposed.Value == index || exposed.Value == array)) ||
+                        i.Operand is CilOperand.Index exposed && (exposed.Value == index || exposed.Value == bound)) ||
                     loop.SelectMany(b => graph.GetBlock(b).Instructions).Any(i =>
-                        i.Operation == CilOperation.StoreLocal && i.Operand is CilOperand.Index stored && stored.Value == array))
+                        i.Operation == CilOperation.StoreLocal && i.Operand is CilOperand.Index stored && stored.Value == bound))
                     continue;
 
                 var writes = graph.Blocks.SelectMany(b => b.Instructions.Select((i, position) =>
@@ -112,10 +113,11 @@ internal sealed class ArrayLoopInductionAnalyzer(
                     graph.Successors[increment.Block.Index][0] != guardIndex ||
                     (tail.Length != 0 && (tail.Length != 1 || tail[0].Operation != CilOperation.Branch)))
                     continue;
-                result.Add(new(index, array, guardIndex, bodyEntry,
+                result.Add(new(index, arrayBound ? bound : -1, guardIndex, bodyEntry,
                     increment.Instruction.Offset, loop)
                 {
                     Lookahead = lookahead,
+                    LengthLocal = arrayBound ? -1 : bound,
                 });
             }
         }

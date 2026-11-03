@@ -263,6 +263,10 @@ namespace System
     {
         public ArgumentNullException() => HResult = HResults.E_POINTER;
         public ArgumentNullException(string? paramName) : base(null, paramName) => HResult = HResults.E_POINTER;
+
+        [DoesNotReturn]
+        internal static void Throw(string? paramName) =>
+            throw new ArgumentNullException(paramName);
         public ArgumentNullException(string? paramName, string? message) : base(message, paramName) => HResult = HResults.E_POINTER;
         public ArgumentNullException(string? paramName, Exception? innerException) : base(null, paramName, innerException) => HResult = HResults.E_POINTER;
 

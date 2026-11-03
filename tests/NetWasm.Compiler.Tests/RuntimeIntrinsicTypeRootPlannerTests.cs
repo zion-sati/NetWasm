@@ -7,8 +7,10 @@ namespace NetWasm.Compiler.Tests;
 
 public sealed class RuntimeIntrinsicTypeRootPlannerTests
 {
-    [Fact]
-    public void NullableInspectionRetainsUnderlyingMetadataWithoutAllocations()
+    [Theory]
+    [InlineData(RuntimeIntrinsic.NullableGetUnderlyingType)]
+    [InlineData(RuntimeIntrinsic.ArraySetValue)]
+    public void NullableInspectionRetainsUnderlyingMetadataWithoutAllocations(RuntimeIntrinsic intrinsic)
     {
         var fixture = new Fixture();
         var underlying = fixture.Enum("State");
@@ -21,7 +23,7 @@ public sealed class RuntimeIntrinsicTypeRootPlannerTests
         var planner = fixture.CreatePlanner();
 
         var noDemand = planner.Plan([fixture.Method(null)], [nullable, unrelated]);
-        var plan = planner.Plan([fixture.Method(RuntimeIntrinsic.NullableGetUnderlyingType)],
+        var plan = planner.Plan([fixture.Method(intrinsic)],
             [unrelated, nullable, nullable]);
 
         Assert.Same(RuntimeIntrinsicTypeRootPlan.Empty, noDemand);

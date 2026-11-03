@@ -137,6 +137,43 @@ public sealed class CompilerArtifactManifestTaskRequestBuilderTests
         var source = Assert.Single(request.Inputs, static item => item.Kind == "Source");
         Assert.Equal("Program.cs", source.Path);
     }
+    // A generated source named by its real path stays generated when the project is named through
+    // a symbolic link, as MSBuild and the operating system can name them in one build.
+    [Fact]
+    public void BuilderExcludesGeneratedSourcesWhenTheProjectIsNamedThroughALink()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"netwasm-generated-{Guid.NewGuid():N}");
+        var project = Directory.CreateDirectory(Path.Combine(root, "project")).FullName;
+        Directory.CreateDirectory(Path.Combine(project, "obj"));
+        var link = Path.Combine(root, "link");
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, project);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                Assert.Skip($"Symbolic links are not available here: {exception.Message}");
+            }
+
+            var input = new CompilerArtifactManifestTaskInput(
+                "manifest.json", link, "profile", "wasm32", "none", "sdk", "compiler",
+                "abi", "runtime", "app.dll", [],
+                [new TaskItem(Path.Combine(link, "Program.cs")), new TaskItem(Path.Combine(project, "obj", "Attributes.cs"))],
+                null, [], "obj", WitInputs: []);
+
+            var request = new CompilerArtifactManifestTaskRequestBuilder().Build(input);
+
+            var source = Assert.Single(request.Inputs, static item => item.Kind == "Source");
+            Assert.Equal(Path.Combine(link, "Program.cs"), source.Path);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class ItemWithoutFullPath(string path) : ITaskItem
     {
         private readonly TaskItem _item = new(path);

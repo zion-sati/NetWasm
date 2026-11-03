@@ -33,6 +33,7 @@ internal sealed class ArrayMetadataCachingPlanner(
         }
 
         var candidates = new HashSet<ArrayReferenceSlot>();
+        var ranks = new Dictionary<ArrayReferenceSlot, int>();
         foreach (var instruction in method.Header.Instructions)
         {
             if (instruction.Operation is not (CilOperation.LoadLocal or CilOperation.LoadArgument))
@@ -48,6 +49,11 @@ internal sealed class ArrayMetadataCachingPlanner(
             if (type.Shape == CliTypeShape.SzArray)
             {
                 candidates.Add(slot);
+            }
+            else if (type is { Shape: CliTypeShape.Array, ArrayRank: >= 2 })
+            {
+                candidates.Add(slot);
+                ranks[slot] = type.ArrayRank;
             }
         }
         foreach (var instruction in method.Header.Instructions)
@@ -107,6 +113,7 @@ internal sealed class ArrayMetadataCachingPlanner(
             [.. selected.OrderBy(slot => slot.IsArgument).ThenBy(slot => slot.Index)],
             selectedAccesses)
         {
+            Ranks = ranks.Where(pair => selected.Contains(pair.Key)).ToImmutableDictionary(),
             // Candidates are never stored inside a loop, so the snapshot an
             // enclosing loop's entry takes holds for every loop inside it.
             LoopEntries = loopEntries.Where(pair => !nestedLoops.Contains(pair.Key)).ToImmutableDictionary(
@@ -227,6 +234,16 @@ internal sealed class ArrayMetadataCachingPlanner(
                 RecordAccess(3);
                 Consume(origins, 3, false);
                 return;
+            // The array, then an index for each dimension.
+            case CilOperation.LoadRectangularArrayElement:
+            case CilOperation.LoadRectangularArrayElementAddress:
+                RecordAccess(Rank() + 1);
+                Consume(origins, Rank() + 1, true);
+                return;
+            case CilOperation.StoreRectangularArrayElement:
+                RecordAccess(Rank() + 2);
+                Consume(origins, Rank() + 2, false);
+                return;
             case CilOperation.Pop:
             case CilOperation.StoreStaticField:
                 Consume(origins, 1, false);
@@ -260,6 +277,8 @@ internal sealed class ArrayMetadataCachingPlanner(
                 origins.Clear();
                 return;
         }
+
+        int Rank() => ((CilOperand.TypeIdentity)instruction.Operand).Value.ArrayRank;
 
         void RecordAccess(int consumed)
         {

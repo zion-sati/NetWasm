@@ -483,7 +483,7 @@ public sealed class EnumIntrinsicBranchTests
             entry with { EnumType = selected },
         ];
         var emitter = As<IRuntimeIntrinsicEmitter>(new EnumGetMetadataIntrinsicEmitter(
-            metadata, metadata, new AddressInstructionEmitter(metadata.Layouts)));
+            metadata, metadata, new ImplicitExceptionEmitter(metadata.Layouts), new AddressInstructionEmitter(metadata.Layouts)));
         var request = Request("InternalGetMetadata", RuntimeIntrinsic.EnumGetMetadata, CliValueKind.NativeInt,
             generic ? [] : [CliValueKind.ManagedReference], generic ? [] : [CliValueKind.ManagedReference],
             generic ? [selected] : [], target: target);
@@ -514,21 +514,24 @@ public sealed class EnumIntrinsicBranchTests
             instruction.Operand.UnsignedValue == request.Local(0, CliValueKind.NativeInt));
     }
 
+    // Enum.Parse<TEnum> constrains TEnum only to a struct, so it may name no
+    // enum: the metadata load becomes the ArgumentException a Type naming
+    // none gets.
     [Fact]
-    public void GetMetadataRejectsAnUnavailableExactGenericIdentity()
+    public void GetMetadataThrowsForAGenericArgumentWithoutEnumMetadata()
     {
         var metadata = new EnumMetadataFixture(CliTypeIdentity.Primitive("i4", CliValueKind.I4));
         var definition = CliTypeIdentity.Named(TestAssembly, "Tests", "Outer`1+Code", true, CliValueKind.I4);
         var missing = CliTypeIdentity.GenericInstantiation(definition, [CliTypeIdentity.FromStackKind(CliValueKind.I4)]);
         var emitter = As<IRuntimeIntrinsicEmitter>(new EnumGetMetadataIntrinsicEmitter(
-            metadata, metadata, new AddressInstructionEmitter(metadata.Layouts)));
+            metadata, metadata, new ImplicitExceptionEmitter(metadata.Layouts), new AddressInstructionEmitter(metadata.Layouts)));
         var request = Request("InternalGetMetadata", RuntimeIntrinsic.EnumGetMetadata,
             CliValueKind.NativeInt, [], [], [missing]);
         var code = new RecordingInstructionWriter();
 
-        Assert.Throws<InvalidOperationException>(() => emitter.Emit(request, code));
+        emitter.Emit(request, code);
 
-        Assert.Empty(code.ToInstructions());
+        Assert.NotEmpty(code.ToInstructions());
         Assert.Empty(metadata.TypeValidations);
     }
 
@@ -862,7 +865,7 @@ public sealed class EnumIntrinsicBranchTests
                 metadata.Layouts,
                 metadata.Layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 new AddressInstructionEmitter(metadata.Layouts),
                 metadata.Layouts,
                 metadata)
@@ -892,7 +895,7 @@ public sealed class EnumIntrinsicBranchTests
                 metadata.Layouts,
                 metadata.Layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 new AddressInstructionEmitter(metadata.Layouts),
                 metadata.Layouts,
                 metadata)
@@ -962,7 +965,7 @@ public sealed class EnumIntrinsicBranchTests
                 metadata.Layouts,
                 metadata.Layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 new AddressInstructionEmitter(metadata.Layouts),
                 metadata.Layouts,
                 metadata)
@@ -1001,7 +1004,7 @@ public sealed class EnumIntrinsicBranchTests
                 metadata.Layouts,
                 metadata.Layouts,
                 WasmRuntimeImports.CreateCatalog(),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 new AddressInstructionEmitter(metadata.Layouts),
                 metadata.Layouts,
                 metadata)
@@ -1030,7 +1033,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1091,7 +1094,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1118,7 +1121,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1141,7 +1144,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1178,7 +1181,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1200,7 +1203,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1238,7 +1241,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1266,7 +1269,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1288,7 +1291,7 @@ public sealed class EnumIntrinsicBranchTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             new EnumConvertEmitter(
                     new FixedStorageResolver(metadata, underlying),
-                    new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                    new ImplicitExceptionEmitter(metadata.Layouts),
                     metadata.Layouts)
                 .EmitConvert(request, new RecordingInstructionWriter()));
 
@@ -1310,7 +1313,7 @@ public sealed class EnumIntrinsicBranchTests
 
         new EnumConvertEmitter(
                 new FixedStorageResolver(metadata, metadata.Underlying),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts)
             .EmitConvert(request, code);
 
@@ -1476,7 +1479,7 @@ public sealed class EnumIntrinsicBranchTests
             new FixedStorageResolver(metadata, underlying),
             new NoOpNullCheckEmitter(),
             new EnumValuePairEmitter(metadata.Layouts),
-            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+            new ImplicitExceptionEmitter(metadata.Layouts),
             metadata.Layouts);
         var code = new RecordingInstructionWriter();
 
@@ -1502,7 +1505,7 @@ public sealed class EnumIntrinsicBranchTests
             new FixedStorageResolver(metadata, underlying),
             new NoOpNullCheckEmitter(),
             new EnumValuePairEmitter(metadata.Layouts),
-            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+            new ImplicitExceptionEmitter(metadata.Layouts),
             metadata.Layouts);
         var code = new RecordingInstructionWriter();
 
@@ -1528,7 +1531,7 @@ public sealed class EnumIntrinsicBranchTests
             new FixedStorageResolver(metadata, underlying),
             new NoOpNullCheckEmitter(),
             new EnumValuePairEmitter(metadata.Layouts),
-            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+            new ImplicitExceptionEmitter(metadata.Layouts),
             metadata.Layouts);
 
         var exception = Assert.Throws<InvalidOperationException>(() => emitter.EmitHasFlag(
@@ -1557,7 +1560,7 @@ public sealed class EnumIntrinsicBranchTests
             new FixedStorageResolver(metadata, underlying),
             new NoOpNullCheckEmitter(),
             new EnumValuePairEmitter(metadata.Layouts),
-            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+            new ImplicitExceptionEmitter(metadata.Layouts),
             metadata.Layouts);
 
         var exception = Assert.Throws<InvalidOperationException>(() => emitter.EmitHasFlag(
@@ -1601,7 +1604,7 @@ public sealed class EnumIntrinsicBranchTests
             metadata.Layouts,
             new AddressInstructionEmitter(metadata.Layouts),
             CreateTypeArgumentValidator(metadata),
-            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts));
+            new ImplicitExceptionEmitter(metadata.Layouts));
 
     private static EnumGetUnderlyingTypeEmitter CreateGetUnderlyingTypeEmitter(
         EnumMetadataFixture metadata) => new(
@@ -1628,9 +1631,9 @@ public sealed class EnumIntrinsicBranchTests
             metadata,
             new TypeObjectIdReader(
                 new ReferenceComparisonEmitter(metadata.Layouts),
-                new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts),
+                new ImplicitExceptionEmitter(metadata.Layouts),
                 metadata.Layouts),
-            new ImplicitExceptionEmitter(metadata.Layouts, metadata.Layouts));
+            new ImplicitExceptionEmitter(metadata.Layouts));
 
     private static EnumValueBoxEmitter CreateEnumValueBoxEmitter(
         EnumMetadataFixture metadata) => new EnumValueBoxEmitter(

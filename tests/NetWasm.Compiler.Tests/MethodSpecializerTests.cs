@@ -1596,6 +1596,134 @@ public sealed class MethodSpecializerTests
         Assert.Equal(constrainedType, resolved.DeclaringType);
     }
 
+    [Fact]
+    public void StringConstructorRuleCallsTheCtorOfTheSameParameters()
+    {
+        var (constructor, ctors, rule) = StringConstructorRule("System.String");
+        var rewritten = Rewrite(rule, Body(new CilInstruction(
+            0, 5, CilOperation.NewObject, new CilOperand.MethodInstance(constructor))));
+
+        Assert.Equal(CilOperation.Call, rewritten.Instructions[0].Operation);
+        var call = Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[0].Operand);
+        Assert.Equal(ctors[0], call.Value.Definition);
+    }
+
+    [Fact]
+    public void StringConstructorRuleLeavesOtherConstructorsAlone()
+    {
+        var (constructor, _, rule) = StringConstructorRule("Fixtures.Other");
+        var body = Body(new CilInstruction(
+            0, 5, CilOperation.NewObject, new CilOperand.MethodInstance(constructor)));
+
+        Assert.Same(body, Rewrite(rule, body));
+    }
+
+    // A lane of a vector argument reads the argument's value, typed by the
+    // signature of the body's instance or, without one, of its method.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void VectorLaneRuleReadsAVectorArgumentsValue(bool instance)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var int32 = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var vector = CliTypeIdentity.GenericInstantiation(
+            CliTypeIdentity.Named(assembly, "System.Runtime.Intrinsics", "Vector128`1", isValueType: true), [int32]);
+        var getItem = new MethodDefinitionModel(new EntityKey(assembly, 50), new EntityKey(assembly, 41), "get_Item", false,
+            MethodSignatureModel.Create(int32, int32), 0);
+        var getElement = new MethodDefinitionModel(new EntityKey(assembly, 51), new EntityKey(assembly, 42), "GetElement", true,
+            MethodSignatureModel.Create(int32, vector, int32), 0)
+        {
+            GenericArity = 1,
+        };
+        var indexer = new MethodInstanceModel(getItem, vector, [], getItem.Signature);
+        var rule = new VectorElementReadRewriter(
+            new FixedCalledMethodResolver(indexer),
+            new FixedTypeFinder(new TypeDefinitionModel(new EntityKey(assembly, 42), "System.Runtime.Intrinsics", "Vector128", false, [], [getElement.Key])),
+            new MapMethodRepository(getElement),
+            new FixedMethodInstanceResolver(getElement, CliTypeIdentity.Named(assembly, "System.Runtime.Intrinsics", "Vector128", isValueType: false)),
+            new FixedSymbolFormatter("System.Runtime.Intrinsics.Vector128"));
+        var lane = new MethodDefinitionModel(new EntityKey(assembly, 1), new EntityKey(assembly, 2), "Lane", true,
+            MethodSignatureModel.Create(int32, vector, int32), 1);
+        var body = new CilMethodBody(lane, 2, [],
+        [
+            new(0, 1, CilOperation.LoadArgumentAddress, new CilOperand.Index(0)),
+            new(1, 2, CilOperation.LoadArgument, new CilOperand.Index(1)),
+            new(2, 3, CilOperation.Call, new CilOperand.MethodInstance(indexer)),
+            new(3, 4, CilOperation.Return, new CilOperand.None()),
+        ])
+        {
+            MethodInstance = instance
+                ? new MethodInstanceModel(lane, CliTypeIdentity.Named(assembly, "Fixtures", "Owner", isValueType: false), [], lane.Signature)
+                : null,
+        };
+
+        var rewritten = Rewrite(rule, body);
+
+        Assert.Equal(CilOperation.LoadArgument, rewritten.Instructions[0].Operation);
+        Assert.Equal(getElement, Assert.IsType<CilOperand.MethodInstance>(rewritten.Instructions[2].Operand).Value.Definition);
+    }
+
+    [Fact]
+    public void StringConstructorRuleLeavesANewObjectItCannotResolveAlone()
+    {
+        var (_, _, rule) = StringConstructorRule("System.String");
+        var body = Body(new CilInstruction(0, 5, CilOperation.NewObject, new CilOperand.None()));
+
+        Assert.Same(body, Rewrite(rule, body));
+    }
+
+    [Fact]
+    public void StringConstructorRuleRejectsAConstructorWithoutACtor()
+    {
+        var (constructor, _, rule) = StringConstructorRule("System.String");
+        var unmatched = constructor with
+        {
+            Definition = constructor.Definition with
+            {
+                Key = new EntityKey(new AssemblyIdentity("in-memory"), 39),
+                Signature = MethodSignatureModel.Create(
+                    CliTypeIdentity.Primitive("void", CliValueKind.Void),
+                    CliTypeIdentity.Primitive("i8", CliValueKind.I8)),
+            },
+        };
+
+        var error = Assert.Throws<CompilerException>(() => Rewrite(rule, Body(new CilInstruction(
+            0, 5, CilOperation.NewObject, new CilOperand.MethodInstance(unmatched)))));
+
+        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
+    }
+
+    // A string type whose Ctor methods take (char, int) and char[], and its (char, int)
+    // constructor, which the rule resolves through the type's own methods.
+    private static (MethodInstanceModel Constructor, MethodDefinitionModel[] Ctors, StringConstructorRewriter Rule)
+        StringConstructorRule(string declaringType)
+    {
+        var assembly = new AssemblyIdentity("in-memory");
+        var stringType = new EntityKey(assembly, 40);
+        var character = CliTypeIdentity.Primitive("char", CliValueKind.I4);
+        var integer = CliTypeIdentity.Primitive("i4", CliValueKind.I4);
+        var text = CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, isValueType: false);
+        var voidType = CliTypeIdentity.Primitive("void", CliValueKind.Void);
+        var constructor = new MethodDefinitionModel(
+            new EntityKey(assembly, 30), stringType, ".ctor", false,
+            MethodSignatureModel.Create(voidType, character, integer), 0);
+        MethodDefinitionModel[] ctors =
+        [
+            new(new EntityKey(assembly, 31), stringType, "Ctor", true,
+                MethodSignatureModel.Create(text, character, integer), 0),
+            new(new EntityKey(assembly, 32), stringType, "Ctor", true,
+                MethodSignatureModel.Create(text, CliTypeIdentity.SzArray(character)), 0),
+        ];
+        var rule = new StringConstructorRewriter(
+            new CalledMethodResolver(new UnusedMethodRepository(), new UnusedMethodInstanceResolver(), new FixedSymbolFormatter(declaringType)),
+            new FixedTypeFinder(new TypeDefinitionModel(stringType, "System", "String", false, [], [.. ctors.Select(ctor => ctor.Key)])),
+            new MapMethodRepository([constructor, .. ctors]),
+            new FixedMethodInstanceResolver(ctors[0], text),
+            new FixedSymbolFormatter(declaringType));
+        return (new MethodInstanceModel(constructor, text, [], constructor.Signature), ctors, rule);
+    }
+
     private static CilMethodBody Body(params CilInstruction[] instructions) =>
         new(
             new MethodDefinitionModel(

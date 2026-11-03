@@ -67,7 +67,7 @@ public sealed class BoxedValueTypeValidatorTests
         var validator = new BoxedValueTypeValidator(
             layouts,
             new StorageResolver(storages),
-            new ImplicitExceptionEmitter(exceptionLayouts, exceptionLayouts));
+            new ImplicitExceptionEmitter(exceptionLayouts));
         var writer = new RecordingInstructionWriter();
 
         ((IBoxedValueTypeValidator)validator).Validate(writer, 3, targetType, OptionalFunctionIndex.At(7));

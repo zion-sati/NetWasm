@@ -49,6 +49,64 @@ public sealed class ArrayMetadataCachingPlannerTests
         Assert.Same(ArrayMetadataCachingPlan.Empty, plan);
     }
 
+    // Arrays of rank two or more are cached with their rank, for every
+    // element load and store, whatever the number of indexes.
+    [Fact]
+    public void RectangularArraysRecordTheirRankAndEveryAccess()
+    {
+        var assembly = new AssemblyIdentity("array-metadata-tests");
+        var definition = new MethodDefinitionModel(new(assembly, 0x06000001), new(assembly, 0x02000001),
+            "Body", true, MethodSignatureModel.Create(CliValueKind.I4), 1);
+        var scalar = CliTypeIdentity.FromStackKind(CliValueKind.I4);
+        var (grid, cube) = (CliTypeIdentity.Array(scalar, 2), CliTypeIdentity.Array(scalar, 3));
+        var steps = new[]
+        {
+            Step(CilOperation.LoadLocal, new CilOperand.Index(0)),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(0), CliValueKind.ManagedReference),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(1), CliValueKind.ManagedReference, CliValueKind.I4),
+            Step(CilOperation.LoadRectangularArrayElement, new CilOperand.TypeIdentity(grid),
+                CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4),
+            Step(CilOperation.LoadLocal, new CilOperand.Index(1), CliValueKind.I4),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(0), CliValueKind.I4, CliValueKind.ManagedReference),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(1), CliValueKind.I4, CliValueKind.ManagedReference,
+                CliValueKind.I4),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(2), CliValueKind.I4, CliValueKind.ManagedReference,
+                CliValueKind.I4, CliValueKind.I4),
+            Step(CilOperation.LoadRectangularArrayElementAddress, new CilOperand.TypeIdentity(cube), CliValueKind.I4,
+                CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4, CliValueKind.I4),
+            Step(CilOperation.Pop, new CilOperand.None(), CliValueKind.I4, CliValueKind.ManagedAddress),
+            Step(CilOperation.StoreLocal, new CilOperand.Index(2), CliValueKind.I4),
+            Step(CilOperation.LoadLocal, new CilOperand.Index(0)),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(1), CliValueKind.ManagedReference),
+            Step(CilOperation.LoadInt32, new CilOperand.ConstantI4(0), CliValueKind.ManagedReference, CliValueKind.I4),
+            Step(CilOperation.LoadLocal, new CilOperand.Index(2), CliValueKind.ManagedReference, CliValueKind.I4,
+                CliValueKind.I4),
+            Step(CilOperation.StoreRectangularArrayElement, new CilOperand.TypeIdentity(grid),
+                CliValueKind.ManagedReference, CliValueKind.I4, CliValueKind.I4, CliValueKind.I4),
+        };
+        var instructions = steps.Select((step, index) =>
+            new CilInstruction(index, index + 1, step.Operation, step.Operand)).ToImmutableArray();
+        var method = new StructuredMethod(
+            new(definition, null, 6, [CliValueKind.ManagedReference, CliValueKind.ManagedReference, CliValueKind.I4],
+                [grid, cube, scalar], instructions),
+            new(0),
+            ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty
+                .Add(new(0), new(new(0), 0, instructions, [], new StructuredFallthroughExit(null)) { EndOffset = steps.Length }),
+            new([new StructuredLoop(new(new(0), StructuredBlockRole.Owner), true,
+                StructuredSequence.Empty, StructuredSequence.Empty, StructuredSequence.Empty)]),
+            [], [],
+            steps.Select((step, index) => KeyValuePair.Create(index, step.Stack)).ToImmutableDictionary());
+
+        var plan = new ArrayMetadataCachingPlanner(new Arguments()).Plan(method, true);
+
+        var (gridSlot, cubeSlot) = (new ArrayReferenceSlot(false, 0), new ArrayReferenceSlot(false, 1));
+        Assert.Equal([gridSlot, cubeSlot], plan.Slots.ToArray());
+        Assert.Equal(2, plan.Ranks[gridSlot]);
+        Assert.Equal(3, plan.Ranks[cubeSlot]);
+        Assert.Equal([(3, gridSlot), (8, cubeSlot), (15, gridSlot)],
+            plan.Accesses.OrderBy(pair => pair.Key).Select(pair => (pair.Key, pair.Value)));
+    }
+
     [Fact]
     public void AssignmentDoesNotTurnAnUnknownStackReferenceIntoACachedOrigin()
     {

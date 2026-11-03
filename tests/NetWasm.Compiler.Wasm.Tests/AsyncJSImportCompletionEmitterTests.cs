@@ -112,36 +112,16 @@ public sealed class AsyncJSImportCompletionEmitterTests
         Assert.Equal([CliValueKind.I4, CliValueKind.I4], type.Parameters.ToArray());
     }
 
-    [Fact]
-    public void RejectEmitterStoresTheJavaScriptExceptionAndReleasesTheHandle()
+    // A rejection faults the task through SetExceptionForJavaScriptInterop, which
+    // makes a new JSException each time, so the emitter passes no exception.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RejectEmitterFaultsTheTaskAndReleasesTheHandle(bool wasm64)
     {
         var imports = WasmRuntimeImports.CreateCatalog();
-        var layouts = new RecordingLayoutProvider();
-        var binding = CreateBinding(CliValueKind.I4);
         var emitter = new AsyncJSImportRejectEmitter(
-            layouts,
-            layouts,
-            imports,
-            new GeneratedFunctionWriterFactory());
-
-        var body = ((IAsyncJSImportRejectEmitter)emitter).Emit(
-            binding,
-            CreateFunctionIndices());
-
-        Assert.Contains(
-            Call(imports.Resolve(RuntimeImportSymbol.HandleRelease)),
-            Calls(body));
-        Assert.Contains(WasmOpcodes.I32Constant, body);
-    }
-
-    [Fact]
-    public void RejectEmitterUsesAWideExceptionReferenceForMemory64()
-    {
-        var imports = WasmRuntimeImports.CreateCatalog();
-        var layouts = new RecordingLayoutProvider(WasmTargetLayout.Wasm64);
-        var emitter = new AsyncJSImportRejectEmitter(
-            layouts,
-            layouts,
+            new RecordingLayoutProvider(wasm64 ? WasmTargetLayout.Wasm64 : WasmTargetLayout.Wasm32),
             imports,
             new GeneratedFunctionWriterFactory());
 
@@ -149,7 +129,21 @@ public sealed class AsyncJSImportCompletionEmitterTests
             CreateBinding(CliValueKind.I4),
             CreateFunctionIndices());
 
-        Assert.Contains(WasmOpcodes.I64Constant, body);
+        Assert.EndsWith(
+            Convert.ToHexString([
+                WasmOpcodes.LocalGet, 0,
+                WasmOpcodes.Call, (byte)imports.Resolve(RuntimeImportSymbol.HandleGet),
+                WasmOpcodes.LocalSet, 1,
+                WasmOpcodes.LocalGet, 1,
+                WasmOpcodes.Call, 30,
+                WasmOpcodes.LocalGet, 0,
+                WasmOpcodes.Call, (byte)imports.Resolve(RuntimeImportSymbol.HandleRelease),
+                WasmOpcodes.End,
+            ]),
+            Convert.ToHexString(body),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(WasmOpcodes.I32Constant, body);
+        Assert.DoesNotContain(WasmOpcodes.I64Constant, body);
     }
 
     [Fact]

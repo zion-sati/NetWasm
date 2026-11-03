@@ -81,7 +81,7 @@ public sealed class TypeTestInstructionEmitterTests
             layouts,
             CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new NullableTypeResolver());
         var underlying = ValueType();
         var nullable = CliTypeIdentity.GenericInstantiation(
@@ -191,18 +191,65 @@ public sealed class TypeTestInstructionEmitterTests
         Assert.Contains(WasmOpcodes.Else, code);
     }
 
+    // A class's allocated subtypes have scattered ids among those of the
+    // subtypes it never allocates; the interval of ids the layout compiler
+    // numbers for its subtypes covers them all with one range check, and a
+    // match outside it, as a covariant array is, keeps its own.
+    [Fact]
+    public void MatchingIdsInTheTargetsSubtypeIntervalBecomeOneRangeCheck()
+    {
+        var types = Types([12, 15, 21, 30, 39]);
+        types[ValueType()] = 10;
+        var request = WithSite(CreateRequest(CilOperation.IsInstance), CreateCaller(), [.. types.Keys.Where(type => types[type] != 10)]);
+
+        AsTypeTest(CreateEmitter(new IdentifiedTypes(types, new() { [ValueType()] = 40 }))).Test(
+            request,
+            GetCodeWriter(request),
+            returnNullOnFailure: true);
+
+        var code = GetCodeBytes(request).ToArray();
+        Assert.Single(code, WasmOpcodes.I32LessThanUnsigned);
+        Assert.DoesNotContain(WasmOpcodes.I32Equal, code);
+        Assert.DoesNotContain(WasmOpcodes.I32Or, code);
+        Assert.DoesNotContain(WasmOpcodes.Else, code);
+    }
+
+    [Fact]
+    public void MatchesOutsideTheTargetsSubtypeIntervalKeepTheirOwnRuns()
+    {
+        var types = Types([12, 30, 70]);
+        types[ValueType()] = 10;
+        var request = WithSite(CreateRequest(CilOperation.IsInstance), CreateCaller(), [.. types.Keys.Where(type => types[type] != 10)]);
+
+        AsTypeTest(CreateEmitter(new IdentifiedTypes(types, new() { [ValueType()] = 40 }))).Test(
+            request,
+            GetCodeWriter(request),
+            returnNullOnFailure: true);
+
+        var code = GetCodeBytes(request).ToArray();
+        Assert.Single(code, WasmOpcodes.I32LessThanUnsigned);
+        Assert.Single(code, WasmOpcodes.I32Equal);
+        Assert.Single(code, WasmOpcodes.I32Or);
+    }
+
     private static Dictionary<CliTypeIdentity, int> Types(IEnumerable<int> ids) =>
         ids.ToDictionary(id => CliTypeIdentity.Named(Assembly, "Tests", $"Type{id}", false), id => id);
 
-    // Gives each type its own id, as a linked program does.
-    private sealed class IdentifiedTypes(Dictionary<CliTypeIdentity, int> ids) : ITypeLayoutProvider
+    // Gives each type its own id, and the types given one the last id of their
+    // subtypes, as a linked program does.
+    private sealed class IdentifiedTypes(
+        Dictionary<CliTypeIdentity, int> ids,
+        Dictionary<CliTypeIdentity, int>? lastSubtypeIds = null) : ITypeLayoutProvider
     {
-        public ObjectLayout GetObjectLayout(CliTypeIdentity type) => new(ids[type], 16, []);
+        public ObjectLayout GetObjectLayout(CliTypeIdentity type) => new(ids[type], 16, [])
+        {
+            LastSubtypeId = lastSubtypeIds?.GetValueOrDefault(type) ?? 0,
+        };
 
         public bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout)
         {
-            layout = GetObjectLayout(type);
-            return true;
+            layout = ids.ContainsKey(type) ? GetObjectLayout(type) : default;
+            return ids.ContainsKey(type);
         }
 
         public ObjectLayout GetObjectLayout(EntityKey type) => throw new NotSupportedException();
@@ -220,7 +267,7 @@ public sealed class TypeTestInstructionEmitterTests
         return new TypeTestInstructionEmitter(layouts, new AddressInstructionEmitter(layouts), typeLayouts ?? layouts,
             CreateTypeOperands(new FakeProgram()),
             WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new NullableTypeResolver());
     }
 

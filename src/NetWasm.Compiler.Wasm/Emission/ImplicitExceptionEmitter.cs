@@ -5,9 +5,9 @@ using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission;
 
-internal sealed class ImplicitExceptionEmitter(
-    ITargetLayout layouts,
-    IManagedExceptionObjectProvider exceptions) : IImplicitExceptionEmitter
+// A failed check passes managed.throw its exception kind's tag, and managed.throw
+// throws the exception CoreLib's getter for the kind returns.
+internal sealed class ImplicitExceptionEmitter(ITargetLayout layouts) : IImplicitExceptionEmitter
 {
     public void Emit(
         IWasmInstructionWriter code,
@@ -16,7 +16,7 @@ internal sealed class ImplicitExceptionEmitter(
     {
         ArgumentNullException.ThrowIfNull(code);
         var functionIndex = throwFunctionIndex.Value;
-        var exception = exceptions.GetExceptionObject(kind);
+        var exception = RuntimeExceptionGetters.Tag(kind);
         if (layouts.Target.UsesMemory64)
         {
             code.Write(WasmInstruction.WithOperand(

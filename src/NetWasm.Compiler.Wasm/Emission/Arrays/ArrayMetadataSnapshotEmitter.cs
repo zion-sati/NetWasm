@@ -10,6 +10,7 @@ namespace NetWasm.Compiler.Wasm.Emission.Arrays;
 internal sealed class ArrayMetadataSnapshotEmitter(
     ITargetLayout layouts,
     IRuntimeObjectLayout objects,
+    IRectangularArrayLayoutProvider rectangularLayouts,
     IAddressInstructionEmitter addresses,
     IImplicitExceptionEmitter exceptions) : IArrayMetadataSnapshotEmitter
 {
@@ -48,6 +49,11 @@ internal sealed class ArrayMetadataSnapshotEmitter(
     {
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(context);
+        if (context.ArrayMetadata.RectangularSlots.TryGetValue(slot, out var rectangular))
+        {
+            Emit(code, Reference(context, slot), rectangular);
+            return;
+        }
         if (!context.ArrayMetadata.Slots.TryGetValue(slot, out var snapshot)) return;
         var reference = Reference(context, slot);
         // Preparation must not throw, even for an unused null argument or a zero-trip loop.
@@ -64,6 +70,43 @@ internal sealed class ArrayMetadataSnapshotEmitter(
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load,
             WasmInstructionOperand.Memory(2, (uint)objects.ArrayLengthOffset)));
         Set(code, snapshot.Length);
+        Get(code, reference);
+        ManagedMemoryEmitter.EmitArrayData(code, layouts.Target, context.InlineArrayData);
+        Set(code, snapshot.Data);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
+    }
+
+    // An array's shape and data never change once it is allocated.
+    private void Emit(IWasmInstructionWriter code, int reference, RectangularArraySnapshotLocals snapshot)
+    {
+        var shape = rectangularLayouts.Provide();
+        foreach (var dimension in snapshot.Dimensions)
+        {
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+            Set(code, dimension.LowerBound);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(0)));
+            Set(code, dimension.Length);
+        }
+        addresses.Emit(code, 0);
+        Set(code, snapshot.Data);
+        Get(code, reference);
+        addresses.Emit(code, AddressOperation.EqualZero);
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32EqualZero));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.If,
+            WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
+        for (var dimension = 0; dimension < snapshot.Dimensions.Length; dimension++)
+        {
+            Get(code, reference);
+            ManagedMemoryEmitter.EmitReferenceLoad(code, layouts.Target, shape.ShapePointerOffset);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(
+                2, (uint)shape.LowerBoundOffset(snapshot.Dimensions.Length, dimension))));
+            Set(code, snapshot.Dimensions[dimension].LowerBound);
+            Get(code, reference);
+            ManagedMemoryEmitter.EmitReferenceLoad(code, layouts.Target, shape.ShapePointerOffset);
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Load, WasmInstructionOperand.Memory(
+                2, (uint)(dimension * shape.DimensionSize + shape.DimensionLengthOffset))));
+            Set(code, snapshot.Dimensions[dimension].Length);
+        }
         Get(code, reference);
         ManagedMemoryEmitter.EmitReferenceLoad(code, layouts.Target, objects.ArrayDataPointerOffset);
         Set(code, snapshot.Data);

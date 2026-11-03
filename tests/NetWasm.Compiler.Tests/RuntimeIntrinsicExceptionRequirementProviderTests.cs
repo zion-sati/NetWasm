@@ -125,6 +125,9 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
             RuntimeIntrinsic.EnumEquals or
             RuntimeIntrinsic.EnumGetHashCode or
             RuntimeIntrinsic.EnumGetTypeCode => [ManagedExceptionKind.NullReference],
+            RuntimeIntrinsic.ArrayElementType => [ManagedExceptionKind.OutOfMemory],
+            // The frozen OutOfMemoryException it returns is built only when required.
+            RuntimeIntrinsic.PreallocatedOutOfMemoryException => [ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.NullableGetUnderlyingType => [ManagedExceptionKind.ArgumentNull],
             RuntimeIntrinsic.ArrayGetLength or RuntimeIntrinsic.ArrayGetLowerBound or
             RuntimeIntrinsic.StringCharacterAt =>
@@ -151,6 +154,8 @@ public sealed class RuntimeIntrinsicExceptionRequirementProviderTests
                 [ManagedExceptionKind.NullReference, ManagedExceptionKind.Argument],
             RuntimeIntrinsic.IntegerDivRem =>
                 [ManagedExceptionKind.DivideByZero, ManagedExceptionKind.Overflow],
+            RuntimeIntrinsic.StringAllocate =>
+                [ManagedExceptionKind.Overflow, ManagedExceptionKind.OutOfMemory],
             RuntimeIntrinsic.EnumGetNames or
             RuntimeIntrinsic.EnumGetName or
             RuntimeIntrinsic.EnumGetValues or

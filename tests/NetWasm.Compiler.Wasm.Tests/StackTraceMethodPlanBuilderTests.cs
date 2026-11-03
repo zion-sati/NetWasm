@@ -58,6 +58,37 @@ public sealed class StackTraceMethodPlanBuilderTests
         Assert.Equal("_stackTrace", fields.RequestedField);
     }
 
+    // .NET's StackTrace.ShowInStackTrace leaves out a method marked
+    // StackTraceHidden, or whose type is, and an AggressiveInlining method.
+    [Fact]
+    public void HiddenMethodsRecordNoFrames()
+    {
+        var program = new FakeProgram();
+        var shown = EmitterTestSupport.EntryKey;
+        var entry = program.GetMethod(shown);
+        var hidden = new EntityKey(shown.Assembly, 0x06000101);
+        var inlined = new EntityKey(shown.Assembly, 0x06000102);
+        var genericHidden = new EntityKey(shown.Assembly, 0x06000103);
+        var methods = new MethodTable(new()
+        {
+            [shown] = entry,
+            [hidden] = entry with { Key = hidden, Name = "Throw", IsStackTraceHidden = true },
+            [inlined] = entry with { Key = inlined, Name = "Inlined", IsAggressiveInlining = true },
+            [genericHidden] = entry with { Key = genericHidden, Name = "ThrowFor", IsStackTraceHidden = true },
+        });
+
+        var plan = Create(methods, program, new FixedExceptionFieldLayoutResolver(29), new RecordingLayoutProvider()).Build(
+            true,
+            [hidden, shown, inlined],
+            [new("Example.Helpers.ThrowFor<System.Int32>()", genericHidden), new("Example.Generic<System.Int32>.Run()", shown)],
+            ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>.Empty);
+
+        Assert.Equal([shown], plan.DirectMethodIds.Keys);
+        Assert.Equal(1, plan.DirectMethodIds[shown]);
+        Assert.Equal(["Example.Generic<System.Int32>.Run()"], plan.ConstructedMethodIds.Keys);
+        Assert.Equal([1, 2], plan.Symbols.Select(static symbol => symbol.Id));
+    }
+
     [Fact]
     public void RejectsEnabledPlanWithoutReachableExceptionField()
     {
@@ -84,6 +115,11 @@ public sealed class StackTraceMethodPlanBuilderTests
         IStackTraceMethodPlanBuilder> Create =
         static (methods, symbols, fields, layouts) =>
             new StackTraceMethodPlanBuilder(methods, symbols, fields, layouts);
+
+    private sealed class MethodTable(Dictionary<EntityKey, MethodDefinitionModel> methods) : IMethodRepository
+    {
+        public MethodDefinitionModel GetMethod(EntityKey key) => methods[key];
+    }
 
     private sealed class FixedExceptionFieldLayoutResolver(int? offset) :
         IExceptionFieldLayoutResolver

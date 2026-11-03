@@ -71,46 +71,49 @@ internal sealed class ValueObjectBlockMemoryEmitter(
         request.Stack[slot] = CliValueKind.NativeInt;
     }
 
+    // cpblk and initblk copy and fill through the small-block cascade, so a
+    // constant length, as Unsafe.CopyBlock's and InitBlock's usually are, folds
+    // to its inline chunks where the target inlines small blocks.
     private void EmitCopyBlock(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var destination = request.Stack.Count - 3;
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-            request.Context,
-            destination,
-            request.Stack[destination])))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-            request.Context,
-            destination + 1,
-            request.Stack[destination + 1])))));
-        EmitBlockLength(request, code, destination + 2);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedTriple(WasmOpcodes.MemoryCopy, 0, 0)));
+        SmallBlockEmitter.EmitCopy(
+            code,
+            layouts.Target,
+            request.Target.InlineSmallBlockOperations,
+            GetStackLocal(request.Context, destination, request.Stack[destination]),
+            GetStackLocal(request.Context, destination + 1, request.Stack[destination + 1]),
+            BlockLength(request, code, destination + 2));
         request.Stack.RemoveRange(destination, 3);
     }
 
     private void EmitInitializeBlock(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
         var destination = request.Stack.Count - 3;
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-            request.Context,
-            destination,
-            request.Stack[destination])))));
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(
-            request.Context,
-            destination + 1,
-            CliValueKind.I4)))));
-        EmitBlockLength(request, code, destination + 2);
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.Prefixed, WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
+        SmallBlockEmitter.EmitFill(
+            code,
+            layouts.Target,
+            request.Target.InlineSmallBlockOperations,
+            GetStackLocal(request.Context, destination, request.Stack[destination]),
+            GetStackLocal(request.Context, destination + 1, CliValueKind.I4),
+            BlockLength(request, code, destination + 2));
         request.Stack.RemoveRange(destination, 3);
     }
 
-    private void EmitBlockLength(InstructionEmissionRequest request, IWasmInstructionWriter code, int slot)
+    // The local holding the length at the target's address width: wasm64
+    // widens a 32-bit length into the numeric temporary.
+    private int BlockLength(InstructionEmissionRequest request, IWasmInstructionWriter code, int slot)
     {
         var type = request.Stack[slot];
-        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(GetStackLocal(request.Context, slot, type)))));
-        if (layouts.Target.UsesMemory64 && type == CliValueKind.I4)
+        var local = GetStackLocal(request.Context, slot, type);
+        if (!layouts.Target.UsesMemory64 || type != CliValueKind.I4)
         {
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+            return local;
         }
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)local)));
+        code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));
+        code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)request.Context.NumericTemporaryI8)));
+        return request.Context.NumericTemporaryI8;
     }
 
     private void EmitDefaultValue(InstructionEmissionRequest request, IWasmInstructionWriter code)

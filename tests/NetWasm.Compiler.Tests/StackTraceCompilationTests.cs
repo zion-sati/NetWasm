@@ -8,6 +8,7 @@ public sealed class StackTraceCompilationTests
 {
     private const string Source = """
         using System;
+        using System.Diagnostics;
 
         public static class EntryPoint
         {
@@ -30,6 +31,20 @@ public sealed class StackTraceCompilationTests
                     return error is null
                         ? -20
                         : HasStackTrace(error) ? 0 : -21;
+                }
+
+                if (enabled == 4)
+                {
+                    // A trace starts at the method whose check failed, or that
+                    // called a StackTraceHidden helper, as on desktop.
+                    var implicitTrace = Capture(ThrowImplicitly).StackTrace;
+                    var helperTrace = Capture(CallsHiddenHelper).StackTrace;
+                    var typeTrace = Capture(CallsHiddenType).StackTrace;
+                    return implicitTrace is null || helperTrace is null || typeTrace is null ? -40
+                        : !FirstFrame(implicitTrace).Contains("ThrowImplicitly") || implicitTrace.Contains("RuntimeExceptionHelpers") ? -41
+                        : !FirstFrame(helperTrace).Contains("CallsHiddenHelper") || helperTrace.Contains("HiddenHelper.") ? -42
+                        : !FirstFrame(typeTrace).Contains("CallsHiddenType") || typeTrace.Contains("HiddenType.Fail") || typeTrace.Contains("HiddenType.Throw") ? -43
+                        : 0;
                 }
 
                 if (enabled == 3)
@@ -127,6 +142,27 @@ public sealed class StackTraceCompilationTests
                 return count;
             }
 
+            private static string FirstFrame(string trace) =>
+                trace.Split('\n')[0];
+
+            private static void CallsHiddenHelper() => HiddenHelper.Fail();
+
+            private static void CallsHiddenType() => HiddenType.Fail();
+
+            private static class HiddenHelper
+            {
+                [StackTraceHidden]
+                public static void Fail() => throw new InvalidOperationException();
+            }
+
+            [StackTraceHidden]
+            private static class HiddenType
+            {
+                public static void Fail() => Throw();
+
+                private static void Throw() => throw new InvalidOperationException();
+            }
+
             private static bool HasStackTrace(Exception error) =>
                 error is not null && error.StackTrace is not null;
 
@@ -214,6 +250,30 @@ public sealed class StackTraceCompilationTests
             false,
             WasmTarget.Wasm32,
             2,
+            [])
+        {
+            EmitStackTrace = true,
+        });
+
+        Assert.Equal(0, result);
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void InstrumentedBuildHidesThrowHelperFrames(bool optimize, WasmTarget target)
+    {
+        using var assets = TestAssets.Create();
+        ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
+
+        var result = executor.Execute(new CompilationScenario(
+            "StackTraceHidden",
+            Source,
+            "EntryPoint",
+            optimize,
+            target,
+            4,
             [])
         {
             EmitStackTrace = true,
@@ -351,7 +411,7 @@ public sealed class StackTraceCompilationTests
 
                 public static int Observe()
                 {
-                    try { return _pending!.Result; }
+                    try { return _pending!.GetAwaiter().GetResult(); }
                     catch (InvalidOperationException error)
                     {
                         return error.StackTrace is not null &&
@@ -424,7 +484,7 @@ public sealed class StackTraceCompilationTests
                         {
                             ExceptionDispatchInfo.Throw(error);
                         }
-                        return Task.FromException<int>(error).Result;
+                        return Task.FromException<int>(error).GetAwaiter().GetResult();
                     }
                     catch (InvalidOperationException error)
                     {

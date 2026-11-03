@@ -4,8 +4,8 @@ using NetWasm.Compiler.Wasm.Encoding;
 
 namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
-// ArrayLoops.Fill<T>(array, start, end, value): one-byte elements fill as
-// NativeMemory.Fill does; wider ones store vectors of the value.
+// ArrayLoops.Fill<T>(array, start, end, value) and FillInBounds: one-byte
+// elements fill as NativeMemory.Fill does; wider ones store vectors of the value.
 internal sealed class ArrayLoopFillIntrinsicEmitter(
     IRuntimeObjectLayout objects,
     IValueLayoutProvider values) : IRuntimeIntrinsicEmitter
@@ -24,7 +24,7 @@ internal sealed class ArrayLoopFillIntrinsicEmitter(
         var byteCount = request.Local(1, CliValueKind.NativeInt);
         ArrayLoopEmitter.Emit(request, code, objects, [array], start, end, () =>
         {
-            ArrayLoopEmitter.ElementAddress(code, target, array, start, size, destination);
+            ArrayLoopEmitter.ElementAddress(code, target, array, start, size, destination, request.Instruction.Context.InlineArrayData);
             ArrayLoopEmitter.ByteCount(code, target, start, end, size, byteCount);
             if (size == 1)
             {

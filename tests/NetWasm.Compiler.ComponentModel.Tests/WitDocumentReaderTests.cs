@@ -166,7 +166,26 @@ public sealed class WitDocumentReaderTests
         var exception = Assert.Throws<CompilerException>(() => reader.Read("bad.wit"));
 
         Assert.Equal("NW1009", exception.Diagnostic.Id);
-        Assert.Equal("invalid WIT input: bad syntax", exception.Diagnostic.Message);
+        // The parser's lines stay, since it marks a column on the line below.
+        Assert.Equal("invalid WIT input: bad\nsyntax", exception.Diagnostic.Message);
+    }
+
+    [Fact]
+    public void MissingImportedPackageSaysWhereTheToolLooks()
+    {
+        var reader = new WitDocumentReader(new StubTools(
+            "app.wit", 1, string.Empty,
+            "error: package 'wasi:http@0.2.11' not found. known packages:\r\n    demo:app@1.0.0\r\n"));
+
+        var exception = Assert.Throws<CompilerException>(() => reader.Read("app.wit"));
+
+        Assert.Equal("NW1009", exception.Diagnostic.Id);
+        Assert.StartsWith(
+            "invalid WIT input: error: package 'wasi:http@0.2.11' not found. known packages:\n    demo:app@1.0.0\n",
+            exception.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("deps/wasi-http", exception.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("docs/wit-bindings.md#path-and-dependency-rules", exception.Diagnostic.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]

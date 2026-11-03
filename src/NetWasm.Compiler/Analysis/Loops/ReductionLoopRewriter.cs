@@ -221,7 +221,11 @@ internal sealed class ReductionLoopRewriter(
         CilInstruction? truncation)
     {
         var width = PrimitiveElements.Size(element) == 8 ? "64" : "32";
+        // The one conversion of the element, if it has one. A chain of them,
+        // as (long)(sbyte) of a long element, narrows before it widens, which
+        // only the bitwise folds commute with.
         var conversion = widening is [var single] ? single.Operation : (CilOperation?)null;
+        var chained = widening.Count > 1;
         var signed = element.CanonicalName is "primitive:i1" or "primitive:i2" or "primitive:i4" or "primitive:i8";
         var narrow = PrimitiveElements.Size(element) is 1 or 2;
         var integer = element.CanonicalName != "primitive:bool";
@@ -249,8 +253,8 @@ internal sealed class ReductionLoopRewriter(
                     DeclaringType.FullName: "System.Math",
                     Signature.ParameterSignatureTypes: [var left, var right],
                 } &&
-                left.CanonicalName == right.CanonicalName &&
-                Ordered(element, left.CanonicalName, widening.Count == 0 ? null : conversion, signed, narrow, extended):
+                left.CanonicalName == right.CanonicalName && !chained &&
+                Ordered(element, left.CanonicalName, conversion, signed, narrow, extended):
                 // IL loads an eight-byte element as signed whatever its sign, so
                 // the comparison's type says how to order it.
                 return (definition.Name + width, PrimitiveElements.Size(element) == 8 ? left : element, widening.ToImmutable());

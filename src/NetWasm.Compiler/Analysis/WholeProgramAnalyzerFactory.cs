@@ -268,14 +268,14 @@ internal sealed class WholeProgramAnalyzerFactory(
                 methodInstances,
                 symbols,
                 nullableTypes),
-            baseTypes,
             new FinalizerResolver(
                 typeDefinitions,
                 methodRepository,
                 baseTypes),
             nullableTypes,
             new MethodInitializationTriggerClassifier(typeRepository),
-            new IntrinsicAddressBodyPlanner(intrinsics));
+            new IntrinsicAddressBodyPlanner(intrinsics),
+            new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions));
         var reducers = ImmutableArray.CreateBuilder<IReachableProgramReducer>();
         if (optimizationSettings.ConstantArgumentPropagation == ConstantArgumentPropagationPolicy.Conservative)
         {

@@ -56,8 +56,6 @@ internal static class AnalysisServiceCollectionExtensions
             RuntimeIntrinsicRegistryFactory>();
         services.AddSingleton<IImplicitExceptionDiscoveryFactory,
             ImplicitExceptionDiscoveryFactory>();
-        services.AddSingleton<IStringConstructionExceptionRequirementProvider,
-            StringConstructionExceptionRequirementProvider>();
         services.AddSingleton<IReachableProgramBuilderFactory,
             ReachableProgramBuilderFactory>();
         services.AddSingleton<IAllocationCapabilityAnalyzerFactory,

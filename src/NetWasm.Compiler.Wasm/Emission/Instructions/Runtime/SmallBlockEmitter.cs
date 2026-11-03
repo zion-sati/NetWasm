@@ -9,12 +9,15 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 
 // Wasmtime runs memory.copy and memory.fill out of line, which costs far more
 // than the few stores a small block needs. Where the target inlines them,
-// blocks of up to 64 bytes are copied and filled inline instead; a constant
-// size folds to its own case. A copy loads every chunk before it stores any,
-// so overlapping blocks stay correct.
+// blocks of up to 128 bytes are copied and filled inline instead, at most
+// eight vector stores; a constant size folds to its own case. A copy loads
+// every chunk before it stores any, so overlapping blocks stay correct.
 internal static class SmallBlockEmitter
 {
-    private const int InlineLimit = 64;
+    private const int InlineLimit = 128;
+
+    // Every preset zeroes a known size inline, so it stops sooner.
+    private const int KnownSizeZeroLimit = 64;
 
     public static void EmitCopy(
         IWasmInstructionWriter code,
@@ -32,6 +35,7 @@ internal static class SmallBlockEmitter
 
         var cases = new (long Minimum, int Width, Func<int, long[]> Offsets)[]
         {
+            (65, 16, _ => [0, 16, 32, 48, -64, -48, -32, -16]),
             (33, 16, _ => [0, 16, -32, -16]),
             (16, 16, _ => [0, -16]),
             (8, 8, _ => [0, -8]),
@@ -72,6 +76,7 @@ internal static class SmallBlockEmitter
 
         var cases = new (long Minimum, int Width, long[] Offsets)[]
         {
+            (65, 16, [0, 16, 32, 48, -64, -48, -32, -16]),
             (33, 16, [0, 16, -32, -16]),
             (16, 16, [0, -16]),
             (8, 8, [0, -8]),
@@ -92,11 +97,11 @@ internal static class SmallBlockEmitter
     }
 
     // Zeroes a block whose size the compiler knows, as initobj and default(T)
-    // do: up to the inline limit, a store of 16, 8, 4, 2 or 1 bytes for each
-    // part, which a small struct needs only a few of.
+    // do: up to 64 bytes, a store of 16, 8, 4, 2 or 1 bytes for each part,
+    // which a small struct needs only a few of.
     public static bool TryEmitKnownSizeZero(IWasmInstructionWriter code, int destination, int size)
     {
-        if (size > InlineLimit)
+        if (size > KnownSizeZeroLimit)
         {
             return false;
         }
@@ -128,7 +133,7 @@ internal static class SmallBlockEmitter
     // Fills byteCount bytes at the destination, a whole number of elements of
     // elementSize bytes (2, 4 or 8), with the vector of elements that `pattern`
     // pushes. Chunks overlap at the end, as EmitFill's do; each starts a whole
-    // number of elements in, so the elements line up. Over 64 bytes a loop
+    // number of elements in, so the elements line up. Over 128 bytes a loop
     // stores 16 bytes at a time and one more store ends at the last byte. The
     // destination and byteCount locals are left changed.
     public static void EmitPatternFill(
@@ -141,6 +146,7 @@ internal static class SmallBlockEmitter
     {
         var cases = new (long Minimum, int Width, long[] Offsets)[]
         {
+            (65, 16, [0, 16, 32, 48, -64, -48, -32, -16]),
             (33, 16, [0, 16, -32, -16]),
             (16, 16, [0, -16]),
             (8, 8, [0, -8]),
@@ -268,7 +274,7 @@ internal static class SmallBlockEmitter
             WasmInstructionOperand.PrefixedPair(WasmOpcodes.MemoryFill, 0)));
     }
 
-    // if (n > 64) bulk; else if (n >= minimum0) case0; else if ... ; n == 0 stores nothing.
+    // if (n > 128) bulk; else if (n >= minimum0) case0; else if ... ; n == 0 stores nothing.
     private static void EmitCascade(
         IWasmInstructionWriter code,
         WasmTargetLayout target,

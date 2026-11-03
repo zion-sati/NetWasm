@@ -30,7 +30,7 @@ internal sealed class ArrayIndexAdapter(
         var sourceLocal = GetStackLocal(request.Context, stackSlot, sourceType);
         var proof = request.Header.ArrayBoundsProof is { } candidate &&
             candidate.Describes(request.Header.Instructions, request.Header.Locals, request.Header.LocalSignatureTypes) &&
-            candidate.Instructions.Any(instruction => ReferenceEquals(instruction, request.Instruction))
+            candidate.Contains(request.Instruction)
             ? candidate
             : null;
         if (sourceType == CliValueKind.I4 && proof is not null && proof.AccessOffsets.Contains(request.Instruction.Offset))

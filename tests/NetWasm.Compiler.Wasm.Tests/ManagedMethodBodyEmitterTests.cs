@@ -350,7 +350,7 @@ public sealed class ManagedMethodBodyEmitterTests
         var layouts = new RecordingLayoutProvider();
         var imports = WasmRuntimeImports.CreateCatalog();
         var types = CreateArgumentSignatureTypes(program);
-        var exceptions = new ImplicitExceptionEmitter(layouts, layouts);
+        var exceptions = new ImplicitExceptionEmitter(layouts);
         var exceptionPayloadBlocks = new ExceptionPayloadBlockEmitter(layouts);
         var frameEntry = CreateMethodFrameEntry(program, layouts, imports);
         var frameExit = CreateMethodFrameExit(imports);
@@ -383,7 +383,7 @@ public sealed class ManagedMethodBodyEmitterTests
                 new GeneratedFunctionWriterFactory(),
                 new InstructionCountingWriterFactory(), new TerminalBranchValueFramePlanner(),
                 new ArrayMetadataCachingPlanner(types),
-                new ArrayMetadataSnapshotEmitter(layouts, layouts, addresses, new ImplicitExceptionEmitter(layouts, layouts)),
+                new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), addresses, new ImplicitExceptionEmitter(layouts)),
                 new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),
                 new ScalarCallLifetimePlanner(new ControlFlowGraphBuilderFactory().Create(),
                     new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer())),
@@ -401,7 +401,7 @@ public sealed class ManagedMethodBodyEmitterTests
                     new StructuredConditionValueEmitter(layouts),
                     new ControlFlowDispatcherEmitter(
                         new DispatcherBranchTablePlanner()),
-                    new ArrayMetadataSnapshotEmitter(layouts, layouts, addresses, new ImplicitExceptionEmitter(layouts, layouts))),
+                    new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), addresses, new ImplicitExceptionEmitter(layouts))),
                 new StructuredLeaveEmitter(),
                 new BranchComparisonEmitter(
                     layouts,
@@ -507,7 +507,8 @@ StructuredMethod structured,
             LoopRotationPolicy loopRotation = LoopRotationPolicy.Disabled,
             bool eliminateArrayStoreChecks = false,
 OptionalFunctionIndex managedThrowFunction = default,
-            bool inlineSmallBlocks = false)
+            bool inlineSmallBlocks = false,
+            bool inlineArrayData = false)
         {
             Method = method;
             HoistArrayNullChecks = hoistArrayNullChecks;

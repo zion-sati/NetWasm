@@ -516,7 +516,6 @@ public sealed class WholeProgramAnalyzerCompositionTests
             return new ImplicitExceptionDiscovery(
                 methods,
                 symbols,
-                new StringConstructionExceptionRequirementProvider(),
                 new RuntimeIntrinsicExceptionRequirementProvider(intrinsics));
         }
     }

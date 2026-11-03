@@ -38,5 +38,6 @@ internal interface IManagedMethodEmitter
         LoopRotationPolicy loopRotation = LoopRotationPolicy.Disabled,
         bool eliminateArrayStoreChecks = false,
         OptionalFunctionIndex managedThrowFunction = default,
-        bool inlineSmallBlocks = false);
+        bool inlineSmallBlocks = false,
+        bool inlineArrayData = false);
 }

@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace System
@@ -357,11 +358,16 @@ namespace System
             out int bytesConsumed)
             => TryParsePartialUtf8Core(utf8Text, style, out result, out bytesConsumed);
 
-        public string ToString(string? format, IFormatProvider? provider) => FormatCore(this, format);
+        // A format or a provider takes upstream's layout with the provider's NumberFormatInfo;
+        // with neither, the general form is written without that machinery.
+        public string ToString(string? format, IFormatProvider? provider) =>
+            string.IsNullOrEmpty(format) && provider is null
+                ? ToString()
+                : Number.FormatDecimal(this, format, NumberFormatInfo.GetInstance(provider));
 
-        public string ToString(string? format) => FormatCore(this, format);
+        public string ToString(string? format) => ToString(format, null);
 
-        public string ToString(IFormatProvider? provider) => FormatCore(this, format: null);
+        public string ToString(IFormatProvider? provider) => ToString(null, provider);
 
         public bool TryFormat(
             Span<char> destination,
@@ -369,8 +375,12 @@ namespace System
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>),
             IFormatProvider? provider = null)
         {
+            if (!format.IsEmpty || provider is not null)
+            {
+                return Number.TryFormatDecimal(this, format, NumberFormatInfo.GetInstance(provider), destination, out charsWritten);
+            }
             var builder = new ValueStringBuilder(destination);
-            AppendFormatCore(ref builder, this, format);
+            DecimalMath.AppendFormat(ref builder, this);
             return builder.TryCopyTo(destination, out charsWritten);
         }
 
@@ -380,54 +390,382 @@ namespace System
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>),
             IFormatProvider? provider = null)
         {
+            if (!format.IsEmpty || provider is not null)
+            {
+                return Number.TryFormatDecimal(this, format, NumberFormatInfo.GetInstance(provider), utf8Destination, out bytesWritten);
+            }
             Span<char> buffer = stackalloc char[64];
             var builder = new ValueStringBuilder(buffer);
-            AppendFormatCore(ref builder, this, format);
+            DecimalMath.AppendFormat(ref builder, this);
             var success = Number.TryCopyUtf8(builder.AsSpan(), utf8Destination, out bytesWritten);
             builder.Dispose();
             return success;
         }
 
-        static bool INumberBase<decimal>.TryConvertFromChecked<TOther>(
-            TOther value,
-            [MaybeNullWhen(false)] out decimal result)
+        /// <inheritdoc cref="INumberBase{TSelf}.CreateChecked{TOther}(TOther)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal CreateChecked<TOther>(TOther value)
+            where TOther : INumberBase<TOther>
         {
-            return TryConvertFromChecked(value, out result);
+            decimal result;
+
+            if (typeof(TOther) == typeof(decimal))
+            {
+                result = (decimal)(object)value;
+            }
+            else if (!TryConvertFromChecked(value, out result) && !TOther.TryConvertToChecked(value, out result))
+            {
+                ThrowHelper.ThrowNotSupportedException();
+            }
+
+            return result;
         }
 
-        static bool INumberBase<decimal>.TryConvertFromSaturating<TOther>(
-            TOther value,
-            [MaybeNullWhen(false)] out decimal result)
+        /// <inheritdoc cref="INumberBase{TSelf}.CreateSaturating{TOther}(TOther)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal CreateSaturating<TOther>(TOther value)
+            where TOther : INumberBase<TOther>
+        {
+            decimal result;
+
+            if (typeof(TOther) == typeof(decimal))
+            {
+                result = (decimal)(object)value;
+            }
+            else if (!TryConvertFrom(value, out result) && !TOther.TryConvertToSaturating(value, out result))
+            {
+                ThrowHelper.ThrowNotSupportedException();
+            }
+
+            return result;
+        }
+
+        /// <inheritdoc cref="INumberBase{TSelf}.CreateTruncating{TOther}(TOther)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static decimal CreateTruncating<TOther>(TOther value)
+            where TOther : INumberBase<TOther>
+        {
+            decimal result;
+
+            if (typeof(TOther) == typeof(decimal))
+            {
+                result = (decimal)(object)value;
+            }
+            else if (!TryConvertFrom(value, out result) && !TOther.TryConvertToTruncating(value, out result))
+            {
+                ThrowHelper.ThrowNotSupportedException();
+            }
+
+            return result;
+        }
+
+        /// <inheritdoc cref="INumberBase{TSelf}.TryConvertFromChecked{TOther}(TOther, out TSelf)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool INumberBase<decimal>.TryConvertFromChecked<TOther>(TOther value, out decimal result) => TryConvertFromChecked(value, out result);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool TryConvertFromChecked<TOther>(TOther value, out decimal result)
+            where TOther : INumberBase<TOther>
+        {
+            // In order to reduce overall code duplication and improve the inlinabilty of these
+            // methods for the corelib types we have `ConvertFrom` handle the same sign and
+            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
+            // between signed and unsigned types, the one that handles unsigned will also
+            // handle `Decimal`.
+            //
+            // That is, `ConvertFrom` for `decimal` will handle the other unsigned types and
+            // `ConvertTo` will handle the signed types
+
+            if (typeof(TOther) == typeof(byte))
+            {
+                byte actualValue = (byte)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(char))
+            {
+                char actualValue = (char)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(ushort))
+            {
+                ushort actualValue = (ushort)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(uint))
+            {
+                uint actualValue = (uint)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(ulong))
+            {
+                ulong actualValue = (ulong)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(UInt128))
+            {
+                UInt128 actualValue = (UInt128)(object)value;
+                result = checked((decimal)actualValue);
+                return true;
+            }
+            else if (typeof(TOther) == typeof(nuint))
+            {
+                nuint actualValue = (nuint)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else
+            {
+                result = default;
+                return false;
+            }
+        }
+
+        /// <inheritdoc cref="INumberBase{TSelf}.TryConvertFromSaturating{TOther}(TOther, out TSelf)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool INumberBase<decimal>.TryConvertFromSaturating<TOther>(TOther value, out decimal result)
         {
             return TryConvertFrom(value, out result);
         }
 
-        static bool INumberBase<decimal>.TryConvertFromTruncating<TOther>(
-            TOther value,
-            [MaybeNullWhen(false)] out decimal result)
+        /// <inheritdoc cref="INumberBase{TSelf}.TryConvertFromTruncating{TOther}(TOther, out TSelf)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool INumberBase<decimal>.TryConvertFromTruncating<TOther>(TOther value, out decimal result)
         {
             return TryConvertFrom(value, out result);
         }
 
-        static bool INumberBase<decimal>.TryConvertToChecked<TOther>(
-            decimal value,
-            [MaybeNullWhen(false)] out TOther result)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool TryConvertFrom<TOther>(TOther value, out decimal result)
+            where TOther : INumberBase<TOther>
         {
-            return TryConvertToChecked(value, out result);
+            // In order to reduce overall code duplication and improve the inlinabilty of these
+            // methods for the corelib types we have `ConvertFrom` handle the same sign and
+            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
+            // between signed and unsigned types, the one that handles unsigned will also
+            // handle `Decimal`.
+            //
+            // That is, `ConvertFrom` for `decimal` will handle the other unsigned types and
+            // `ConvertTo` will handle the signed types
+
+            if (typeof(TOther) == typeof(byte))
+            {
+                byte actualValue = (byte)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(char))
+            {
+                char actualValue = (char)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(ushort))
+            {
+                ushort actualValue = (ushort)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(uint))
+            {
+                uint actualValue = (uint)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(ulong))
+            {
+                ulong actualValue = (ulong)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(UInt128))
+            {
+                UInt128 actualValue = (UInt128)(object)value;
+                result = actualValue.Upper > uint.MaxValue ? MaxValue : (decimal)actualValue;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(nuint))
+            {
+                nuint actualValue = (nuint)(object)value;
+                result = actualValue;
+                return true;
+            }
+            else
+            {
+                result = default;
+                return false;
+            }
         }
 
-        static bool INumberBase<decimal>.TryConvertToSaturating<TOther>(
-            decimal value,
-            [MaybeNullWhen(false)] out TOther result)
+        /// <inheritdoc cref="INumberBase{TSelf}.TryConvertToChecked{TOther}(TSelf, out TOther)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool INumberBase<decimal>.TryConvertToChecked<TOther>(decimal value, [MaybeNullWhen(false)] out TOther result)
+        {
+            // In order to reduce overall code duplication and improve the inlinabilty of these
+            // methods for the corelib types we have `ConvertFrom` handle the same sign and
+            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
+            // between signed and unsigned types, the one that handles unsigned will also
+            // handle `Decimal`.
+            //
+            // That is, `ConvertFrom` for `decimal` will handle the other unsigned types and
+            // `ConvertTo` will handle the signed types
+
+            if (typeof(TOther) == typeof(double))
+            {
+                double actualResult = checked((double)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(Half))
+            {
+                Half actualResult = checked((Half)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(short))
+            {
+                short actualResult = checked((short)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(int))
+            {
+                int actualResult = checked((int)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(long))
+            {
+                long actualResult = checked((long)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(Int128))
+            {
+                Int128 actualResult = checked((Int128)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(nint))
+            {
+                nint actualResult = checked((nint)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(sbyte))
+            {
+                sbyte actualResult = checked((sbyte)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(float))
+            {
+                float actualResult = checked((float)value);
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else
+            {
+                result = default;
+                return false;
+            }
+        }
+
+        /// <inheritdoc cref="INumberBase{TSelf}.TryConvertToSaturating{TOther}(TSelf, out TOther)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool INumberBase<decimal>.TryConvertToSaturating<TOther>(decimal value, [MaybeNullWhen(false)] out TOther result)
         {
             return TryConvertTo(value, out result);
         }
 
-        static bool INumberBase<decimal>.TryConvertToTruncating<TOther>(
-            decimal value,
-            [MaybeNullWhen(false)] out TOther result)
+        /// <inheritdoc cref="INumberBase{TSelf}.TryConvertToTruncating{TOther}(TSelf, out TOther)" />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool INumberBase<decimal>.TryConvertToTruncating<TOther>(decimal value, [MaybeNullWhen(false)] out TOther result)
         {
             return TryConvertTo(value, out result);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool TryConvertTo<TOther>(decimal value, [MaybeNullWhen(false)] out TOther result)
+            where TOther : INumberBase<TOther>
+        {
+            // In order to reduce overall code duplication and improve the inlinabilty of these
+            // methods for the corelib types we have `ConvertFrom` handle the same sign and
+            // `ConvertTo` handle the opposite sign. However, since there is an uneven split
+            // between signed and unsigned types, the one that handles unsigned will also
+            // handle `Decimal`.
+            //
+            // That is, `ConvertFrom` for `decimal` will handle the other unsigned types and
+            // `ConvertTo` will handle the signed types
+
+            if (typeof(TOther) == typeof(double))
+            {
+                double actualResult = (double)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(Half))
+            {
+                Half actualResult = (Half)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(short))
+            {
+                short actualResult = (value >= short.MaxValue) ? short.MaxValue :
+                                     (value <= short.MinValue) ? short.MinValue : (short)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(int))
+            {
+                int actualResult = (value >= int.MaxValue) ? int.MaxValue :
+                                   (value <= int.MinValue) ? int.MinValue : (int)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(long))
+            {
+                long actualResult = (value >= long.MaxValue) ? long.MaxValue :
+                                    (value <= long.MinValue) ? long.MinValue : (long)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(Int128))
+            {
+                Int128 actualResult = (Int128)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(nint))
+            {
+                nint actualResult = (value >= nint.MaxValue) ? nint.MaxValue :
+                                    (value <= nint.MinValue) ? nint.MinValue : (nint)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(sbyte))
+            {
+                sbyte actualResult = (value >= sbyte.MaxValue) ? sbyte.MaxValue :
+                                     (value <= sbyte.MinValue) ? sbyte.MinValue : (sbyte)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else if (typeof(TOther) == typeof(float))
+            {
+                float actualResult = (float)value;
+                result = (TOther)(object)actualResult;
+                return true;
+            }
+            else
+            {
+                result = default;
+                return false;
+            }
         }
 
         static bool INumberBase<decimal>.TryParse(
@@ -441,501 +779,6 @@ namespace System
             NumberStyles style,
             IFormatProvider? provider,
             [MaybeNullWhen(false)] out decimal result) => TryParseCore(s, style, out result);
-
-        public static decimal CreateChecked<TOther>(TOther value)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(decimal))
-            {
-                return (decimal)(object)value;
-            }
-            if (TryConvertFromChecked(value, out var result) || TOther.TryConvertToChecked(value, out result))
-            {
-                return result;
-            }
-            throw new NotSupportedException();
-        }
-
-        public static decimal CreateSaturating<TOther>(TOther value)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(decimal))
-            {
-                return (decimal)(object)value;
-            }
-            if (TryConvertFrom(value, out var result) || TOther.TryConvertToSaturating(value, out result))
-            {
-                return result;
-            }
-            throw new NotSupportedException();
-        }
-
-        public static decimal CreateTruncating<TOther>(TOther value)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(decimal))
-            {
-                return (decimal)(object)value;
-            }
-            if (TryConvertFrom(value, out var result) || TOther.TryConvertToTruncating(value, out result))
-            {
-                return result;
-            }
-            throw new NotSupportedException();
-        }
-
-        private static bool TryConvertFromChecked<TOther>(
-            TOther value,
-            out decimal result)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(byte))
-            {
-                result = new decimal((uint)(byte)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(sbyte))
-            {
-                result = new decimal((int)(sbyte)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(char))
-            {
-                result = new decimal((uint)(char)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(short))
-            {
-                result = new decimal((int)(short)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(ushort))
-            {
-                result = new decimal((uint)(ushort)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(int))
-            {
-                result = new decimal((int)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(uint))
-            {
-                result = new decimal((uint)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(long))
-            {
-                result = new decimal((long)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(ulong))
-            {
-                result = new decimal((ulong)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Int128))
-            {
-                result = (decimal)(Int128)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(UInt128))
-            {
-                result = (decimal)(UInt128)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(nint))
-            {
-                result = new decimal((long)(nint)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(nuint))
-            {
-                result = new decimal((ulong)(nuint)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Half))
-            {
-                result = (decimal)(Half)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(float))
-            {
-                result = (decimal)(float)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(double))
-            {
-                result = (decimal)(double)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal32))
-            {
-                result = (decimal)(Decimal32)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal64))
-            {
-                result = (decimal)(Decimal64)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal128))
-            {
-                var actual = (Decimal128)(object)value;
-                result = actual > (Decimal128)MaxValue ? MaxValue : actual < (Decimal128)MinValue ? MinValue : (decimal)actual;
-                return true;
-            }
-
-            result = default;
-            return false;
-        }
-
-        private static bool TryConvertFrom<TOther>(TOther value, out decimal result)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(byte))
-            {
-                result = new decimal((uint)(byte)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(sbyte))
-            {
-                result = new decimal((int)(sbyte)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(char))
-            {
-                result = new decimal((uint)(char)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(short))
-            {
-                result = new decimal((int)(short)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(ushort))
-            {
-                result = new decimal((uint)(ushort)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(int))
-            {
-                result = new decimal((int)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(uint))
-            {
-                result = new decimal((uint)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(long))
-            {
-                result = new decimal((long)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(ulong))
-            {
-                result = new decimal((ulong)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Int128))
-            {
-                var actual = (Int128)(object)value;
-                result = actual > (Int128)MaxValue ? MaxValue : actual < (Int128)MinValue ? MinValue : (decimal)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(UInt128))
-            {
-                var actual = (UInt128)(object)value;
-                result = actual.Upper > uint.MaxValue ? MaxValue : (decimal)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(nint))
-            {
-                result = new decimal((long)(nint)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(nuint))
-            {
-                result = new decimal((ulong)(nuint)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Half))
-            {
-                result = FromFloatingSaturating((double)(float)(Half)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(float))
-            {
-                result = FromFloatingSaturating((float)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(double))
-            {
-                result = FromFloatingSaturating((double)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal32))
-            {
-                result = FromFloatingSaturating((double)(Decimal32)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal64))
-            {
-                result = FromFloatingSaturating((double)(Decimal64)(object)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal128))
-            {
-                result = (decimal)(Decimal128)(object)value;
-                return true;
-            }
-
-            result = default;
-            return false;
-        }
-
-        private static decimal FromFloatingSaturating(double value)
-        {
-            if (double.IsNaN(value))
-            {
-                return Zero;
-            }
-            try
-            {
-                return (decimal)value;
-            }
-            catch (OverflowException)
-            {
-                return value < 0 ? MinValue : MaxValue;
-            }
-        }
-
-        private static bool TryConvertToChecked<TOther>(
-            decimal value,
-            [MaybeNullWhen(false)] out TOther result)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(byte))
-            {
-                result = (TOther)(object)checked((byte)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(double))
-            {
-                result = (TOther)(object)checked((double)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Half))
-            {
-                result = (TOther)(object)checked((Half)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(char))
-            {
-                result = (TOther)(object)checked((char)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(short))
-            {
-                result = (TOther)(object)checked((short)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(ushort))
-            {
-                result = (TOther)(object)checked((ushort)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(int))
-            {
-                result = (TOther)(object)checked((int)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(long))
-            {
-                result = (TOther)(object)checked((long)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(uint))
-            {
-                result = (TOther)(object)checked((uint)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(ulong))
-            {
-                result = (TOther)(object)checked((ulong)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Int128))
-            {
-                result = (TOther)(object)checked((Int128)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(nint))
-            {
-                result = (TOther)(object)checked((nint)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(nuint))
-            {
-                result = (TOther)(object)checked((nuint)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(sbyte))
-            {
-                result = (TOther)(object)checked((sbyte)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(float))
-            {
-                result = (TOther)(object)checked((float)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal32))
-            {
-                result = (TOther)(object)(Decimal32)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal64))
-            {
-                result = (TOther)(object)(Decimal64)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal128))
-            {
-                result = (TOther)(object)(Decimal128)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(decimal))
-            {
-                result = (TOther)(object)value;
-                return true;
-            }
-
-            result = default;
-            return false;
-        }
-
-        private static bool TryConvertTo<TOther>(
-            decimal value,
-            [MaybeNullWhen(false)] out TOther result)
-            where TOther : INumberBase<TOther>
-        {
-            if (typeof(TOther) == typeof(double))
-            {
-                result = (TOther)(object)(double)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(byte))
-            {
-                var actual = value >= byte.MaxValue ? byte.MaxValue : value <= byte.MinValue ? byte.MinValue : (byte)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(char))
-            {
-                var actual = value >= char.MaxValue ? char.MaxValue : value <= char.MinValue ? char.MinValue : (char)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Half))
-            {
-                result = (TOther)(object)(Half)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(short))
-            {
-                var actual = value >= short.MaxValue ? short.MaxValue : value <= short.MinValue ? short.MinValue : (short)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(ushort))
-            {
-                var actual = value >= ushort.MaxValue ? ushort.MaxValue : value <= ushort.MinValue ? ushort.MinValue : (ushort)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(uint))
-            {
-                var actual = value >= uint.MaxValue ? uint.MaxValue : value <= uint.MinValue ? uint.MinValue : (uint)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(ulong))
-            {
-                var actual = value >= ulong.MaxValue ? ulong.MaxValue : value <= ulong.MinValue ? ulong.MinValue : (ulong)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(int))
-            {
-                var actual = value >= int.MaxValue ? int.MaxValue : value <= int.MinValue ? int.MinValue : (int)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(long))
-            {
-                var actual = value >= long.MaxValue ? long.MaxValue : value <= long.MinValue ? long.MinValue : (long)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Int128))
-            {
-                result = (TOther)(object)(Int128)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(nint))
-            {
-                var actual = value >= nint.MaxValue ? nint.MaxValue : value <= nint.MinValue ? nint.MinValue : (nint)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(nuint))
-            {
-                var actual = value >= (decimal)(ulong)nuint.MaxValue ? nuint.MaxValue : value <= 0 ? nuint.MinValue : (nuint)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(sbyte))
-            {
-                var actual = value >= sbyte.MaxValue ? sbyte.MaxValue : value <= sbyte.MinValue ? sbyte.MinValue : (sbyte)value;
-                result = (TOther)(object)actual;
-                return true;
-            }
-            if (typeof(TOther) == typeof(float))
-            {
-                result = (TOther)(object)(float)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(decimal))
-            {
-                result = (TOther)(object)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(UInt128))
-            {
-                result = (TOther)(object)(value <= 0 ? UInt128.MinValue : (UInt128)value);
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal32))
-            {
-                result = (TOther)(object)(Decimal32)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal64))
-            {
-                result = (TOther)(object)(Decimal64)value;
-                return true;
-            }
-            if (typeof(TOther) == typeof(Decimal128))
-            {
-                result = (TOther)(object)(Decimal128)value;
-                return true;
-            }
-
-            result = default;
-            return false;
-        }
 
         private static decimal ParseCore(string text, NumberStyles style) =>
             ParseCore(text.AsSpan(), style);
@@ -1189,203 +1032,6 @@ namespace System
             {
                 throw new ArgumentException();
             }
-        }
-
-        private static string FormatCore(decimal value, string? format)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendFormatCore(ref builder, value, format.AsSpan());
-            return builder.ToString();
-        }
-
-        private static void AppendFormatCore(
-            scoped ref ValueStringBuilder builder,
-            decimal value,
-            scoped ReadOnlySpan<char> format)
-        {
-            if (format.Length == 0 || format[0] is 'G' or 'g')
-            {
-                DecimalMath.AppendFormat(ref builder, value);
-                return;
-            }
-
-            var symbol = Number.ParseInvariantFormatSpecifier(format, out var parsedPrecision);
-            if (symbol == '\0')
-            {
-                var digits = DecimalMath.ToDigits(DecimalMath.Coefficient(value));
-                Number.AppendCustomInvariant(
-                    ref builder,
-                    digits,
-                    digits.Length - value.Scale,
-                    value.IsNegativeValue,
-                    Number.NumberBufferKind.Decimal,
-                    format);
-                return;
-            }
-            var hasPrecision = parsedPrecision >= 0;
-            var precision = hasPrecision ? parsedPrecision : 0;
-            switch (symbol)
-            {
-                case 'F' or 'f': AppendFixed(ref builder, value, hasPrecision ? precision : 2, group: false); break;
-                case 'N' or 'n': AppendFixed(ref builder, value, hasPrecision ? precision : 2, group: true); break;
-                case 'C' or 'c': AppendCurrency(ref builder, value, hasPrecision ? precision : 2); break;
-                case 'P' or 'p': AppendPercent(ref builder, value, hasPrecision ? precision : 2); break;
-                case 'E' or 'e': AppendScientific(ref builder, value, hasPrecision ? precision : 6, symbol == 'e'); break;
-                default: throw new FormatException();
-            }
-        }
-
-        private static decimal MultiplyByHundred(decimal value) => Multiply(value, new decimal(100));
-
-        private static string FormatCurrency(decimal value, int precision)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendCurrency(ref builder, value, precision);
-            return builder.ToString();
-        }
-
-        private static void AppendCurrency(scoped ref ValueStringBuilder builder, decimal value, int precision)
-        {
-            if (value.IsNegativeValue)
-            {
-                builder.Append('-');
-                builder.Append('$');
-                AppendFixed(ref builder, Abs(value), precision, group: true);
-            }
-            else
-            {
-                builder.Append('$');
-                AppendFixed(ref builder, value, precision, group: true);
-            }
-        }
-
-        private static string FormatPercent(decimal value, int precision)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendPercent(ref builder, value, precision);
-            return builder.ToString();
-        }
-
-        private static void AppendPercent(scoped ref ValueStringBuilder builder, decimal value, int precision)
-        {
-            AppendFixed(ref builder, MultiplyByHundred(value), precision, group: true);
-            builder.Append('%');
-        }
-
-        private static string FormatFixed(decimal value, int precision, bool group)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendFixed(ref builder, value, precision, group);
-            return builder.ToString();
-        }
-
-        private static void AppendFixed(scoped ref ValueStringBuilder builder, decimal value, int precision, bool group)
-        {
-            var rounded = DecimalMath.Round(value, precision, MidpointRounding.ToEven);
-            var digits = DecimalMath.ToDigits(DecimalMath.Coefficient(rounded));
-            var sourceIntegerDigits = digits.Length - rounded.Scale;
-            var integerDigits = sourceIntegerDigits > 0 ? sourceIntegerDigits : 1;
-            if (rounded.IsNegativeValue)
-            {
-                builder.Append('-');
-            }
-            for (var index = 0; index < integerDigits; index++)
-            {
-                if (group && index != 0 && (integerDigits - index) % 3 == 0)
-                {
-                    builder.Append(',');
-                }
-                builder.Append(sourceIntegerDigits > 0 && index < sourceIntegerDigits
-                    ? digits[index]
-                    : '0');
-            }
-            if (precision != 0)
-            {
-                builder.Append('.');
-                for (var index = 0; index < precision; index++)
-                {
-                    var sourceIndex = sourceIntegerDigits + index;
-                    builder.Append(sourceIndex >= 0 && sourceIndex < digits.Length
-                        ? digits[sourceIndex]
-                        : '0');
-                }
-            }
-        }
-
-        private static string FormatScientific(decimal value, int precision, bool lowerExponent)
-        {
-            var builder = new ValueStringBuilder(32);
-            AppendScientific(ref builder, value, precision, lowerExponent);
-            return builder.ToString();
-        }
-
-        private static void AppendScientific(
-            scoped ref ValueStringBuilder builder,
-            decimal value,
-            int precision,
-            bool lowerExponent)
-        {
-            var digits = DecimalMath.ToDigits(DecimalMath.Coefficient(value));
-            var negative = value.IsNegativeValue;
-            var exponent = value.IsZero ? 0 : digits.Length - value.Scale - 1;
-            var significantCount = precision + 1;
-            var significant = new char[significantCount];
-            for (var index = 0; index < significantCount; index++)
-            {
-                significant[index] = index < digits.Length ? digits[index] : '0';
-            }
-            if (digits.Length > significantCount && digits[significantCount] >= '5')
-            {
-                var index = significantCount - 1;
-                while (index >= 0 && significant[index] == '9')
-                {
-                    significant[index--] = '0';
-                }
-                if (index < 0)
-                {
-                    significant[0] = '1';
-                    exponent++;
-                }
-                else
-                {
-                    significant[index]++;
-                }
-            }
-
-            var exponentMagnitude = exponent < 0 ? -exponent : exponent;
-            const int exponentDigits = 3;
-            if (negative)
-            {
-                builder.Append('-');
-            }
-            builder.Append(significant[0]);
-            if (precision != 0)
-            {
-                builder.Append('.');
-                for (var index = 1; index < significant.Length; index++)
-                {
-                    builder.Append(significant[index]);
-                }
-            }
-            builder.Append(lowerExponent ? 'e' : 'E');
-            builder.Append(exponent < 0 ? '-' : '+');
-            Span<char> exponentBuffer = stackalloc char[exponentDigits];
-            for (var index = exponentDigits - 1; index >= 0; index--)
-            {
-                exponentBuffer[index] = (char)('0' + exponentMagnitude % 10);
-                exponentMagnitude /= 10;
-            }
-            builder.Append(exponentBuffer);
-        }
-
-        private static string SpanToString(ReadOnlySpan<char> value)
-        {
-            var result = new char[value.Length];
-            for (var index = 0; index < value.Length; index++)
-            {
-                result[index] = value[index];
-            }
-            return string.Create(result);
         }
 
         private static decimal ParseUtf8Core(ReadOnlySpan<byte> value, NumberStyles style)

@@ -98,6 +98,8 @@ public sealed record WasmEmissionRequest(
     public bool EliminateArrayStoreChecks { get; init; }
     public bool EnableScalarCallPreservation { get; init; }
     public bool InlineSmallBlockOperations { get; init; }
+    // One-dimensional array elements are addressed at their inline offset.
+    public bool InlineArrayData { get; init; }
 
     public ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>>
         SourceLocations

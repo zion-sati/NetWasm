@@ -18,7 +18,7 @@ public sealed class AllocationResultValidatorTests
         var code = new RecordingInstructionWriter();
         var validator = ThroughContract(new AllocationResultValidator(
             CreateAddressInstructions(layouts),
-            new ImplicitExceptionEmitter(layouts, layouts)));
+            new ImplicitExceptionEmitter(layouts)));
 
         validator.Validate(code, 5, OptionalFunctionIndex.At(7));
 

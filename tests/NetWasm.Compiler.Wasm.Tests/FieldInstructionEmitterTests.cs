@@ -60,6 +60,33 @@ public sealed class FieldInstructionEmitterTests
         Assert.NotEmpty(GetCodeBytes(request));
     }
 
+    // A field access whose object an earlier access checked reads it unchecked,
+    // unless the proof describes another snapshot of the body.
+    [Theory]
+    [InlineData(CilOperation.LoadField, 1, false)]
+    [InlineData(CilOperation.StoreField, 2, false)]
+    [InlineData(CilOperation.LoadField, 1, true)]
+    public void AccessSkipsOnlyTheNullCheckAnEarlierAccessProved(CilOperation operation, int stackSize, bool stale)
+    {
+        var request = CreateRequest(operation, stackSize);
+        var writer = (RecordingInstructionWriter)GetCodeWriter(request);
+        var header = request.Header with { Instructions = [request.Instruction] };
+        header = header with
+        {
+            ArrayBoundsProof = new(header.Instructions, header.Locals, header.LocalSignatureTypes, [])
+            {
+                NonNullOffsets = [request.Instruction.Offset],
+            },
+        };
+        if (stale) header = header with { Instructions = [request.Instruction with { OriginalOffset = 123 }] };
+        request = request with { Header = header };
+
+        AsProvider(CreateEmitter()).Commands.Single(command => command.Operation == operation)
+            .Emit(request, writer, CreateFunctionIndexResolver());
+
+        Assert.Equal(stale, writer.ToInstructions().Any(instruction => instruction.Opcode == WasmOpcodes.If));
+    }
+
     [Fact]
     public void StoreConsumesReceiverAndValue()
     {

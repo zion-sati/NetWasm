@@ -15,7 +15,7 @@ public sealed class InteropIntrinsicEmitterTests
         var layouts = new RecordingLayoutProvider();
         var emitter = new JSObjectDisposeIntrinsicEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             EmitterTestSupport.CreateAddressInstructions(layouts));
         var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.JSObjectDispose,
@@ -35,7 +35,7 @@ public sealed class InteropIntrinsicEmitterTests
         var layouts = new RecordingLayoutProvider();
         var emitter = new JSSubscriptionDisposeIntrinsicEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             EmitterTestSupport.CreateAddressInstructions(layouts));
         var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.JSSubscriptionDispose,
@@ -49,40 +49,58 @@ public sealed class InteropIntrinsicEmitterTests
         Assert.NotEmpty(EmitterTestSupport.GetCodeBytes(originalInstruction));
     }
 
+    // Without the host's release import no object has a handle, so the
+    // emitted code is the null check alone, shorter than a release.
     [Fact]
-    public void ObjectDisposalRequiresAReleaseHandleImport()
+    public void ObjectDisposalWithoutAReleaseHandleImportOnlyChecksForNull()
     {
         var layouts = new RecordingLayoutProvider();
         var emitter = new JSObjectDisposeIntrinsicEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             EmitterTestSupport.CreateAddressInstructions(layouts));
-        var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
+        var withoutImport = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.JSObjectDispose,
             [CliValueKind.ManagedReference]);
+        var withImport = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
+            RuntimeIntrinsic.JSObjectDispose,
+            [CliValueKind.ManagedReference]);
+        var withoutCode = EmitterTestSupport.GetCodeWriter(withoutImport.Instruction);
+        var withCode = EmitterTestSupport.GetCodeWriter(withImport.Instruction);
 
-        Assert.Throws<InvalidOperationException>(() => EmitThroughCapability(
-            emitter,
-            request,
-            EmitterTestSupport.GetCodeWriter(request.Instruction)));
+        EmitThroughCapability(emitter, withoutImport, withoutCode);
+        EmitThroughCapability(emitter, WithInteropImports(withImport, releaseHandle: 41), withCode);
+
+        var without = EmitterTestSupport.GetCodeBytes(withoutImport.Instruction);
+        Assert.NotEmpty(without);
+        Assert.True(without.Length < EmitterTestSupport.GetCodeBytes(withImport.Instruction).Length);
     }
 
+    // Without the host's release import no object has a handle, so the
+    // emitted code is the null check alone, shorter than a release.
     [Fact]
-    public void SubscriptionDisposalRequiresAReleaseSubscriptionImport()
+    public void SubscriptionDisposalWithoutAReleaseSubscriptionImportOnlyChecksForNull()
     {
         var layouts = new RecordingLayoutProvider();
         var emitter = new JSSubscriptionDisposeIntrinsicEmitter(
             layouts,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             EmitterTestSupport.CreateAddressInstructions(layouts));
-        var request = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
+        var withoutImport = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
             RuntimeIntrinsic.JSSubscriptionDispose,
             [CliValueKind.ManagedReference]);
+        var withImport = EmitterTestSupport.CreateRuntimeIntrinsicRequest(
+            RuntimeIntrinsic.JSSubscriptionDispose,
+            [CliValueKind.ManagedReference]);
+        var withoutCode = EmitterTestSupport.GetCodeWriter(withoutImport.Instruction);
+        var withCode = EmitterTestSupport.GetCodeWriter(withImport.Instruction);
 
-        Assert.Throws<InvalidOperationException>(() => EmitThroughCapability(
-            emitter,
-            request,
-            EmitterTestSupport.GetCodeWriter(request.Instruction)));
+        EmitThroughCapability(emitter, withoutImport, withoutCode);
+        EmitThroughCapability(emitter, WithInteropImports(withImport, releaseSubscription: 42), withCode);
+
+        var without = EmitterTestSupport.GetCodeBytes(withoutImport.Instruction);
+        Assert.NotEmpty(without);
+        Assert.True(without.Length < EmitterTestSupport.GetCodeBytes(withImport.Instruction).Length);
     }
 
     private static void EmitThroughCapability(

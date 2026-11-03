@@ -89,6 +89,10 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedLoopStoreForwarding { get; set; } = "Auto";
     public string ManagedArrayLoopIdioms { get; set; } = "Auto";
     public string ManagedLoopVectorization { get; set; } = "Auto";
+    public string ManagedPureCallReuse { get; set; } = "Auto";
+    public string ManagedFieldLoadReuse { get; set; } = "Auto";
+    public string ManagedConditionalStoreMerging { get; set; } = "Auto";
+    public string ManagedInlineArrayData { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -207,6 +211,10 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("loopstoreforwarding", ManagedLoopStoreForwarding),
                      ("arrayloopidioms", ManagedArrayLoopIdioms),
                      ("loopvectorization", ManagedLoopVectorization),
+                     ("purecallreuse", ManagedPureCallReuse),
+                     ("fieldloadreuse", ManagedFieldLoadReuse),
+                     ("conditionalstoremerging", ManagedConditionalStoreMerging),
+                     ("inlinearraydata", ManagedInlineArrayData),
                  })
         {
             if (value is not ("" or "Auto"))

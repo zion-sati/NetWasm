@@ -2,9 +2,9 @@ using NetWasm.Compiler.ComponentModel;
 
 namespace NetWasm.Compiler.Tests.Correctness;
 
-// At the speed presets value copies of up to 64 bytes run as inline chunks
+// At the speed presets value copies of up to 128 bytes run as inline chunks
 // rather than memory.copy: every byte of every size around the chunk widths
-// must survive each path a value is copied through. Copies between partially
+// and that limit must survive each path a value is copied through. Copies between partially
 // overlapping instances are unspecified (desktop's JIT copies them chunk by
 // chunk), so the emitter tests pin their memmove order instead.
 public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
@@ -15,7 +15,7 @@ public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
             "StructCopyCorpus",
             "NetWasm.Correctness.StructCopies",
             Source,
-            [0, 1, 2, 3])
+            [0, 1, 2, 3, 4])
         {
             ExecuteWasm64 = true,
             ExecuteOptimizedWasm = true,
@@ -40,6 +40,10 @@ public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
             [StructLayout(LayoutKind.Explicit, Size = 63)] public struct S63 { [FieldOffset(0)] public byte A; }
             [StructLayout(LayoutKind.Explicit, Size = 64)] public struct S64 { [FieldOffset(0)] public byte A; }
             [StructLayout(LayoutKind.Explicit, Size = 65)] public struct S65 { [FieldOffset(0)] public byte A; }
+            [StructLayout(LayoutKind.Explicit, Size = 96)] public struct S96 { [FieldOffset(0)] public byte A; }
+            [StructLayout(LayoutKind.Explicit, Size = 127)] public struct S127 { [FieldOffset(0)] public byte A; }
+            [StructLayout(LayoutKind.Explicit, Size = 128)] public struct S128 { [FieldOffset(0)] public byte A; }
+            [StructLayout(LayoutKind.Explicit, Size = 129)] public struct S129 { [FieldOffset(0)] public byte A; }
 
             public sealed class Holder<T> where T : struct { public T Value; public int After = 0x5A5A5A5A; }
 
@@ -52,7 +56,8 @@ public sealed class StructCopyCorpusTests(CorrectnessTestRunner runner)
                     0 => Paths<S3>(1) ^ Paths<S7>(2) ^ Paths<S12>(3),
                     1 => Paths<S17>(4) ^ Paths<S24>(5) ^ Paths<S29>(6),
                     2 => Paths<S33>(7) ^ Paths<S48>(8),
-                    _ => Paths<S63>(9) ^ Paths<S64>(10) ^ Paths<S65>(11),
+                    3 => Paths<S63>(9) ^ Paths<S64>(10) ^ Paths<S65>(11),
+                    _ => Paths<S96>(12) ^ Paths<S127>(13) ^ Paths<S128>(14) ^ Paths<S129>(15),
                 };
 
                 private static int Paths<T>(byte seed) where T : struct

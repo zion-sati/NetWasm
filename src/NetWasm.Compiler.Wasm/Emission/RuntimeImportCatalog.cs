@@ -91,6 +91,8 @@ internal enum RuntimeImportSymbol
     RegisterTypeObjects,
     TypeObjectCache,
     ObjectContainsReferences,
+    ArraySetValue,
+    ReportUnhandledException,
 }
 
 internal readonly record struct RuntimeImportBinding(
@@ -171,5 +173,7 @@ internal sealed class RuntimeImportCatalog : IRuntimeImportResolver
             profile,
             profile == WasmModuleProfile.CoreApplication,
             IncludeFinalization: true,
-            IncludeRandomSeed: true);
+            IncludeRandomSeed: true,
+            IncludeArraySetValue: true,
+            IncludeUnhandledExceptionHint: true);
 }

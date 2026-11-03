@@ -6,7 +6,6 @@ namespace NetWasm.Compiler.Wasm.Emission.GeneratedFunctions;
 
 internal sealed class AsyncJSImportRejectEmitter(
     ITargetLayout layouts,
-    IManagedExceptionObjectProvider exceptionObjects,
     IRuntimeImportResolver runtimeImports,
     IGeneratedFunctionWriterFactory writers) : IAsyncJSImportRejectEmitter
 {
@@ -33,9 +32,6 @@ internal sealed class AsyncJSImportRejectEmitter(
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.LocalGet,
             WasmInstructionOperand.Unsigned((uint)taskLocal)));
-        EmitReferenceConstant(
-            code,
-            exceptionObjects.GetExceptionObject(ManagedExceptionKind.JSException));
         code.Instructions.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Call,
             WasmInstructionOperand.Unsigned((uint)functionIndices.Resolve(
@@ -49,17 +45,5 @@ internal sealed class AsyncJSImportRejectEmitter(
                 RuntimeImportSymbol.HandleRelease))));
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         return code.Snapshots.Read();
-    }
-
-    private void EmitReferenceConstant(GeneratedFunctionWriterLease code, int value)
-    {
-        var instruction = layouts.Target.UsesMemory64
-            ? WasmInstruction.WithOperand(
-                WasmOpcodes.I64Constant,
-                WasmInstructionOperand.Signed64(value))
-            : WasmInstruction.WithOperand(
-                WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(value));
-        code.Instructions.Write(instruction);
     }
 }

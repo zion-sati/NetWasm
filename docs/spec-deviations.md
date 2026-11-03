@@ -50,7 +50,6 @@ API contract does not require the more specific desktop result.
 
 | Area | NetWasm behavior | Specification or boundary |
 | --- | --- | --- |
-| Unchecked signed minimum `% -1` | May produce zero or throw; desktop exception identity is not required. | C# 12.13.3-4 and ECMA-335 III.3.55 permit this latitude. |
 | `ulong` to `float` | May use intermediate precision, so exact desktop result bits are not promised. | C# 10.2.3 and ECMA-335 I.12.1.3. |
 | wasm64 `nuint` to `float` | May use intermediate precision, so exact desktop result bits are not promised. | C# 10.2.3 and ECMA-335 I.12.1.3. |
 | `MathF.Round` for already-integral large values | Does not promise CoreCLR's adjacent-bit result from its staged-scaling implementation. | The API result, rather than CoreCLR's internal algorithm, is the contract. |

@@ -30,9 +30,10 @@ internal sealed record NwcArguments(ImmutableArray<NwcOption> Options, Immutable
 // absolute path stays an input. Option names are case-insensitive.
 internal static class NwcArgumentReader
 {
-    // The options every command takes, besides its own.
+    // The options every command takes, besides its own. -h and --help ask for
+    // help as other .NET command lines do; csc knows only -help and -?.
     public static readonly FrozenSet<string> CommonOptions =
-        new[] { "nologo", "help", "?" }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { "nologo", "help", "?", "h", "-help" }.ToFrozenSet(StringComparer.Ordinal);
 
     public static NwcArguments Read(
         IReadOnlyList<string> arguments,

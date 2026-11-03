@@ -203,6 +203,11 @@ public sealed class WholeProgramAnalyzerDirectTests
         Assert.NotEmpty(fixture.ProgramBuilder.Snapshot.DispatchDeclarations);
         Assert.Contains(ManagedExceptionKind.Argument,
             fixture.ProgramBuilder.Snapshot.ImplicitExceptions);
+        // managed.throw calls the kind's CoreLib getter, so it is reached.
+        Assert.Contains(
+            ExceptionGetters.Methods.Single(method =>
+                method.Name == RuntimeExceptionGetters.MethodName(ManagedExceptionKind.Argument)).Key,
+            fixture.ProgramBuilder.Snapshot.MethodInstances.Values.Select(instance => instance.Definition.Key));
         Assert.Contains(fixture.DelegateType,
             fixture.ProgramBuilder.Snapshot.AllocatedTypes);
         Assert.Equal(
@@ -682,13 +687,13 @@ public sealed class WholeProgramAnalyzerDirectTests
     [InlineData(20)]
     [InlineData(21)]
     [InlineData(22)]
-    [InlineData(23)]
     [InlineData(24)]
     [InlineData(25)]
     [InlineData(26)]
     [InlineData(27)]
     [InlineData(28)]
     [InlineData(29)]
+    [InlineData(30)]
     public void ClosureBuilderValidatesEveryInjectedCapability(int missing)
     {
         var fixture = new ClosureFixture();
@@ -1278,13 +1283,13 @@ public sealed class WholeProgramAnalyzerDirectTests
                     ? null!
                     : new EmptyObjectArrayDelegateAdapterPlanner(),
                 missing == 25 ? null! : new FixedMemberExecutionPlanner(MemberExecution),
-                missing == 23 ? null! : baseTypes,
                 missing == 26
                     ? null!
                     : new FinalizerResolver(typeDefinitions, methods, baseTypes),
                 missing == 27 ? null! : new TestNullableTypeResolver(NullableTypes),
                 missing == 28 ? null! : new MethodInitializationTriggerClassifier(typeRepository),
-                missing == 29 ? null! : new NoIntrinsicAddressBodyPlanner());
+                missing == 29 ? null! : new NoIntrinsicAddressBodyPlanner(),
+                missing == 30 ? null! : new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions));
 
             MethodInstanceModel Descriptor(
                 int token,
@@ -1409,7 +1414,7 @@ public sealed class WholeProgramAnalyzerDirectTests
         IMethodRepository
     {
         private readonly ImmutableDictionary<EntityKey, MethodDefinitionModel> _methods =
-            definitions.ToImmutableDictionary(method => method.Key);
+            definitions.Concat(ExceptionGetters.Methods).ToImmutableDictionary(method => method.Key);
 
         public MethodDefinitionModel GetMethod(EntityKey key) => _methods[key];
     }
@@ -1417,12 +1422,38 @@ public sealed class WholeProgramAnalyzerDirectTests
     private sealed class FixedTypeFinder : ITypeFinder
     {
         public TypeDefinitionModel FindType(string fullName) => new(
-            new EntityKey(new AssemblyIdentity("runtime"), fullName.GetHashCode()),
+            Key(fullName),
             fullName.Contains('.') ? fullName[..fullName.LastIndexOf('.')] : "",
             fullName.Contains('.') ? fullName[(fullName.LastIndexOf('.') + 1)..] : fullName,
             false,
             [],
-            []);
+            fullName == RuntimeExceptionGetters.TypeName
+                ? [.. ExceptionGetters.Methods.Select(static method => method.Key)]
+                : []);
+
+        public static EntityKey Key(string fullName) =>
+            new(new AssemblyIdentity("runtime"), fullName.GetHashCode());
+    }
+
+    // CoreLib's getter of each failed check's exception, which managed.throw
+    // calls, so a closure with an implicit exception reaches it.
+    private static class ExceptionGetters
+    {
+        public static readonly EntityKey TypeKey = FixedTypeFinder.Key(RuntimeExceptionGetters.TypeName);
+
+        public static readonly CliTypeIdentity Type = CliTypeIdentity.Named(
+            new AssemblyIdentity("runtime"), "System", "RuntimeExceptionHelpers", isValueType: false);
+
+        public static readonly ImmutableArray<MethodDefinitionModel> Methods =
+        [
+            .. Enum.GetValues<ManagedExceptionKind>().Select(static kind => new MethodDefinitionModel(
+                FixedTypeFinder.Key($"{RuntimeExceptionGetters.TypeName}::{RuntimeExceptionGetters.MethodName(kind)}"),
+                TypeKey,
+                RuntimeExceptionGetters.MethodName(kind),
+                true,
+                MethodSignatureModel.Create(CliValueKind.ManagedReference),
+                1)),
+        ];
     }
 
     private sealed class FixedTypeDefinitionResolver(
@@ -1536,8 +1567,10 @@ public sealed class WholeProgramAnalyzerDirectTests
                 ? delegateDefinitionType
                 : definition.DeclaringType == declaringTypeKey
                     ? declaringType
-                    : throw new InvalidOperationException(
-                        "The in-memory method declaring type is unknown.");
+                    : definition.DeclaringType == ExceptionGetters.TypeKey
+                        ? ExceptionGetters.Type
+                        : throw new InvalidOperationException(
+                            "The in-memory method declaring type is unknown.");
             var context = genericContext?.Normalize() ?? CliGenericContext.Empty;
             return new(
                 definition,

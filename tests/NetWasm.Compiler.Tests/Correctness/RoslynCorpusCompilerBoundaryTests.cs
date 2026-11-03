@@ -115,7 +115,7 @@ public sealed class RoslynCorpusCompilerBoundaryTests
             Directory.CreateDirectory(References);
             File.WriteAllBytes(Path.Combine(References, "reference.dll"), [1]);
             return Assert.IsAssignableFrom<IRoslynCorpusCompiler>(new RoslynCorpusCompiler(new("unused", "dotnet", "sdk-version", "csc.dll", "corelib.dll", References,
-                "unused", "unused", "unused", TimeSpan.FromSeconds(1)), processes,
+                "unused", "unused", "11.0.0", "unused", TimeSpan.FromSeconds(1)), processes,
                 CorrectnessTestAssets.CreateOracleModes(), new CorpusSourceNamesVerifier(),
                 new CorpusSourceArtifactWriter(new CorpusSourceNamesVerifier())));
         }

@@ -91,6 +91,10 @@
     <NetWasmManagedLoopStoreForwarding Condition="'$(NetWasmManagedLoopStoreForwarding)' == ''">Auto</NetWasmManagedLoopStoreForwarding>
     <NetWasmManagedArrayLoopIdioms Condition="'$(NetWasmManagedArrayLoopIdioms)' == ''">Auto</NetWasmManagedArrayLoopIdioms>
     <NetWasmManagedLoopVectorization Condition="'$(NetWasmManagedLoopVectorization)' == ''">Auto</NetWasmManagedLoopVectorization>
+    <NetWasmManagedPureCallReuse Condition="'$(NetWasmManagedPureCallReuse)' == ''">Auto</NetWasmManagedPureCallReuse>
+    <NetWasmManagedFieldLoadReuse Condition="'$(NetWasmManagedFieldLoadReuse)' == ''">Auto</NetWasmManagedFieldLoadReuse>
+    <NetWasmManagedConditionalStoreMerging Condition="'$(NetWasmManagedConditionalStoreMerging)' == ''">Auto</NetWasmManagedConditionalStoreMerging>
+    <NetWasmManagedInlineArrayData Condition="'$(NetWasmManagedInlineArrayData)' == ''">Auto</NetWasmManagedInlineArrayData>
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
@@ -218,6 +222,10 @@
       <_NetWasmCompilationIdentityLine Include="managedLoopStoreForwarding=$(NetWasmManagedLoopStoreForwarding)" />
       <_NetWasmCompilationIdentityLine Include="managedArrayLoopIdioms=$(NetWasmManagedArrayLoopIdioms)" />
       <_NetWasmCompilationIdentityLine Include="managedLoopVectorization=$(NetWasmManagedLoopVectorization)" />
+      <_NetWasmCompilationIdentityLine Include="managedPureCallReuse=$(NetWasmManagedPureCallReuse)" />
+      <_NetWasmCompilationIdentityLine Include="managedFieldLoadReuse=$(NetWasmManagedFieldLoadReuse)" />
+      <_NetWasmCompilationIdentityLine Include="managedConditionalStoreMerging=$(NetWasmManagedConditionalStoreMerging)" />
+      <_NetWasmCompilationIdentityLine Include="managedInlineArrayData=$(NetWasmManagedInlineArrayData)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
       <!-- Modules the project's native archives may import from: each declared
            NetWasmImportModule and each registered JavaScript module. -->
@@ -329,6 +337,10 @@
                         ManagedLoopStoreForwarding="$(NetWasmManagedLoopStoreForwarding)"
                         ManagedArrayLoopIdioms="$(NetWasmManagedArrayLoopIdioms)"
                         ManagedLoopVectorization="$(NetWasmManagedLoopVectorization)"
+                        ManagedPureCallReuse="$(NetWasmManagedPureCallReuse)"
+                        ManagedFieldLoadReuse="$(NetWasmManagedFieldLoadReuse)"
+                        ManagedConditionalStoreMerging="$(NetWasmManagedConditionalStoreMerging)"
+                        ManagedInlineArrayData="$(NetWasmManagedInlineArrayData)"
                         NoLogo="$(NoLogo)"
                         ExceptionTypeMapPath="$(NetWasmExceptionTypeMapPath)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)" />
@@ -525,7 +537,6 @@
 
   <Target Name="NetWasmValidateCompilerArtifacts"
           DependsOnTargets="NetWasmWriteCompilationIdentity"
-          BeforeTargets="Publish"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmSemanticBuildId)' == ''">
     <ItemGroup>
       <_NetWasmValidationManagedLinkReference Include="@(ReferenceCopyLocalPaths)"
@@ -559,10 +570,17 @@
     </ItemGroup>
   </Target>
 
+  <!-- NetWasmValidateCompilerArtifacts before Publish only for a project that publishes: MSBuild runs a
+       BeforeTargets hook even when IsPublishable skips Publish (#163). -->
+  <Target Name="_NetWasmValidateCompilerArtifactsBeforePublish"
+          BeforeTargets="Publish"
+          DependsOnTargets="NetWasmValidateCompilerArtifacts"
+          Condition="'$(IsPublishable)' == 'true'" />
+
   <Target Name="NetWasmCopyArtifactsToPublish"
           BeforeTargets="Publish"
           DependsOnTargets="NetWasmValidateCompilerArtifacts"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmPublishCompilerArtifacts)' == 'true'">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmPublishCompilerArtifacts)' == 'true' AND '$(IsPublishable)' == 'true'">
     <ItemGroup>
       <_NetWasmPublishArtifact Include="@(NetWasmArtifact)"
                                Condition="'%(NetWasmArtifact.CopyToPublishDirectory)' != 'Never'" />

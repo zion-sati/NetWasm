@@ -51,6 +51,24 @@ public sealed class ManagedTerminalTrapBoundaryEmitterTests
         }
     }
 
+    [Fact]
+    public void BoundaryCallsTheUnhandledExceptionReporterBeforeTrapping()
+    {
+        var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(WasmTarget.Wasm32));
+        var emitter = new ManagedTerminalTrapBoundaryEmitter(
+            layouts, new ExceptionPayloadBlockEmitter(layouts));
+        var buffer = new WasmBinaryBuffer();
+        var code = new WasmInstructionWriter(new WasmBinaryWriter(buffer));
+
+        ((IManagedTerminalTrapBoundaryEmitter)emitter).Emit(code, CliValueKind.Void, resultLocal: 0,
+            () => code.Write(WasmInstruction.NoOperand(0x01)), unhandledExceptionReporter: 7);
+
+        Assert.True(new WasmBinarySnapshotReader(buffer).Read().AsSpan().EndsWith(new byte[]
+        {
+            WasmOpcodes.Drop, WasmOpcodes.Call, 7, WasmOpcodes.Unreachable, WasmOpcodes.End,
+        }));
+    }
+
     [Theory]
     [InlineData(CliValueKind.ValueType)]
     [InlineData((CliValueKind)(-1))]

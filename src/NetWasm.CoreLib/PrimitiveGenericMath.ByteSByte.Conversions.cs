@@ -78,17 +78,6 @@ public partial struct Byte
     private static bool TryConvertFromChecked<TOther>(TOther value, out byte result)
     where TOther : INumberBase<TOther>
     {
-        if (PrimitiveIntegralConversions.IsBuiltInNumber<TOther>())
-        {
-            if (!PrimitiveIntegralConversions.TryConvert(value, 8, signed: false, PrimitiveIntegralConversionKind.Checked, out var converted))
-            {
-                throw new OverflowException();
-            }
-
-            result = (byte)converted;
-            return true;
-        }
-
         // In order to reduce overall code duplication and improve the inlinabilty of these
         // methods for the corelib types we have `ConvertFrom` handle the same sign and
         // `ConvertTo` handle the opposite sign. However, since there is an uneven split
@@ -155,13 +144,6 @@ public partial struct Byte
     private static bool TryConvertFromSaturating<TOther>(TOther value, out byte result)
     where TOther : INumberBase<TOther>
     {
-        if (PrimitiveIntegralConversions.IsBuiltInNumber<TOther>())
-        {
-            _ = PrimitiveIntegralConversions.TryConvert(value, 8, signed: false, PrimitiveIntegralConversionKind.Saturating, out var converted);
-            result = (byte)converted;
-            return true;
-        }
-
         // In order to reduce overall code duplication and improve the inlinabilty of these
         // methods for the corelib types we have `ConvertFrom` handle the same sign and
         // `ConvertTo` handle the opposite sign. However, since there is an uneven split
@@ -229,13 +211,6 @@ public partial struct Byte
     private static bool TryConvertFromTruncating<TOther>(TOther value, out byte result)
     where TOther : INumberBase<TOther>
     {
-        if (PrimitiveIntegralConversions.IsBuiltInNumber<TOther>())
-        {
-            _ = PrimitiveIntegralConversions.TryConvert(value, 8, signed: false, PrimitiveIntegralConversionKind.Truncating, out var converted);
-            result = (byte)converted;
-            return true;
-        }
-
         // In order to reduce overall code duplication and improve the inlinabilty of these
         // methods for the corelib types we have `ConvertFrom` handle the same sign and
         // `ConvertTo` handle the opposite sign. However, since there is an uneven split
@@ -585,17 +560,6 @@ public partial struct SByte
     private static bool TryConvertFromChecked<TOther>(TOther value, out sbyte result)
     where TOther : INumberBase<TOther>
     {
-        if (PrimitiveIntegralConversions.IsBuiltInNumber<TOther>())
-        {
-            if (!PrimitiveIntegralConversions.TryConvert(value, 8, signed: true, PrimitiveIntegralConversionKind.Checked, out var converted))
-            {
-                throw new OverflowException();
-            }
-
-            result = (sbyte)converted;
-            return true;
-        }
-
         // In order to reduce overall code duplication and improve the inlinabilty of these
         // methods for the corelib types we have `ConvertFrom` handle the same sign and
         // `ConvertTo` handle the opposite sign. However, since there is an uneven split
@@ -668,13 +632,6 @@ public partial struct SByte
     private static bool TryConvertFromSaturating<TOther>(TOther value, out sbyte result)
     where TOther : INumberBase<TOther>
     {
-        if (PrimitiveIntegralConversions.IsBuiltInNumber<TOther>())
-        {
-            _ = PrimitiveIntegralConversions.TryConvert(value, 8, signed: true, PrimitiveIntegralConversionKind.Saturating, out var converted);
-            result = (sbyte)converted;
-            return true;
-        }
-
         // In order to reduce overall code duplication and improve the inlinabilty of these
         // methods for the corelib types we have `ConvertFrom` handle the same sign and
         // `ConvertTo` handle the opposite sign. However, since there is an uneven split
@@ -763,13 +720,6 @@ public partial struct SByte
     private static bool TryConvertFromTruncating<TOther>(TOther value, out sbyte result)
     where TOther : INumberBase<TOther>
     {
-        if (PrimitiveIntegralConversions.IsBuiltInNumber<TOther>())
-        {
-            _ = PrimitiveIntegralConversions.TryConvert(value, 8, signed: true, PrimitiveIntegralConversionKind.Truncating, out var converted);
-            result = (sbyte)converted;
-            return true;
-        }
-
         // In order to reduce overall code duplication and improve the inlinabilty of these
         // methods for the corelib types we have `ConvertFrom` handle the same sign and
         // `ConvertTo` handle the opposite sign. However, since there is an uneven split

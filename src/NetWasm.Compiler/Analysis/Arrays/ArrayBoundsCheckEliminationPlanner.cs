@@ -32,17 +32,20 @@ internal sealed class ArrayBoundsCheckEliminationPlanner(
                 if (blockIndex == loop.GuardBlock ||
                     !dominators[blockIndex].Contains(loop.BodyEntryBlock)) continue;
                 var origins = new List<Origin>();
+                var copies = new Dictionary<int, Origin>();
                 foreach (var instruction in graph.GetBlock(blockIndex).Instructions)
                 {
                     if (instruction.Offset == loop.IncrementOffset) break;
                     if (!controlFlow.InstructionEntryStacks.TryGetValue(instruction.Offset, out var stack))
                     {
                         origins.Clear();
+                        copies.Clear();
                         continue;
                     }
                     if (origins.Count != stack.Length)
                     {
                         origins.Clear();
+                        copies.Clear();
                         origins.AddRange(Enumerable.Repeat(Origin.Unknown, stack.Length));
                     }
                     var consumed = instruction.Operation switch
@@ -52,13 +55,25 @@ internal sealed class ArrayBoundsCheckEliminationPlanner(
                         CilOperation.StoreArrayElement or CilOperation.StoreArrayElementReference => 3,
                         _ => 0,
                     };
+                    // `if ((uint)index >= (uint)length) throw`, a span indexer's
+                    // check: index + k for k up to the lookahead is below the
+                    // bound and not negative, so the branch always goes one way.
+                    if (loop.LengthLocal >= 0 &&
+                        instruction.Operation is CilOperation.BranchIfLessThanUnsigned or CilOperation.BranchIfLessThanSigned or
+                            CilOperation.BranchIfGreaterThanOrEqualUnsigned or CilOperation.BranchIfGreaterThanOrEqualSigned &&
+                        origins.Count >= 2 &&
+                        origins[^2] is { Local: var compared, Offset: var added, Constant: false, Length: false } &&
+                        compared == loop.IndexLocal && added >= 0 && added <= loop.Lookahead &&
+                        origins[^1] == Origin.FromLocal(loop.LengthLocal) &&
+                        stack[^1] == CliValueKind.I4 && stack[^2] == CliValueKind.I4)
+                        accesses.Add(instruction.Offset);
                     if (consumed != 0 && origins.Count >= consumed &&
                         origins[^consumed] == Origin.FromLocal(loop.ArrayLocal) &&
                         origins[^(consumed - 1)] is { Local: var index, Offset: var offset, Constant: false, Length: false } &&
                         index == loop.IndexLocal && offset >= 0 && offset <= loop.Lookahead &&
                         stack[stack.Length - consumed + 1] == CliValueKind.I4)
                         accesses.Add(instruction.Offset);
-                    Track(instruction, origins);
+                    Track(instruction, origins, copies);
                 }
             }
         }
@@ -112,7 +127,7 @@ internal sealed class ArrayBoundsCheckEliminationPlanner(
                 {
                     accesses.Add(instruction.Offset);
                 }
-                Track(instruction, origins);
+                Track(instruction, origins, []);
             }
         }
     }
@@ -125,18 +140,26 @@ internal sealed class ArrayBoundsCheckEliminationPlanner(
         public static Origin FromLocal(int local) => new(local, 0, false);
     }
 
-    private static void Track(CilInstruction instruction, List<Origin> origins)
+    // Copies maps a local to the origin of the value last stored in it, as an
+    // inlined call's spilled argument copies index + 1, until either local is
+    // stored; it is emptied wherever the stack's origins are lost.
+    private static void Track(CilInstruction instruction, List<Origin> origins, Dictionary<int, Origin> copies)
     {
         switch (instruction.Operation)
         {
             case CilOperation.LoadLocal:
-                origins.Add(Origin.FromLocal(((CilOperand.Index)instruction.Operand).Value));
+                var loaded = ((CilOperand.Index)instruction.Operand).Value;
+                origins.Add(copies.TryGetValue(loaded, out var copied) ? copied : Origin.FromLocal(loaded));
                 return;
             case CilOperation.StoreLocal:
+                var value = origins[^1];
                 Consume(origins, 1, false);
                 var local = ((CilOperand.Index)instruction.Operand).Value;
                 for (var i = 0; i < origins.Count; i++)
                     if (origins[i].Local == local) origins[i] = Origin.Unknown;
+                foreach (var (copy, origin) in copies.ToArray())
+                    if (copy == local || origin.Local == local) copies.Remove(copy);
+                if (value is { Local: { } source, Constant: false, Length: false } && source != local) copies[local] = value;
                 return;
             case CilOperation.LoadInt32 when instruction.Operand is CilOperand.ConstantI4 constant:
                 origins.Add(new(null, constant.Value, true));
@@ -206,6 +229,7 @@ internal sealed class ArrayBoundsCheckEliminationPlanner(
             default:
                 // No cross-call or cross-block expression provenance is inferred.
                 origins.Clear();
+                copies.Clear();
                 return;
         }
     }

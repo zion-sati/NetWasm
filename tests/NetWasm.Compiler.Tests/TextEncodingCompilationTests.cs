@@ -1,4 +1,5 @@
 using NetWasm.TestInfrastructure;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Tests;
@@ -203,12 +204,17 @@ public sealed class TextEncodingCompilationTests
         Assert.Equal(37, observed);
     }
 
+    // At O3 the decoder's table getters inline down to their RVA fields, whose
+    // addresses meet the table locals' other paths at merges.
     [Theory]
-    [InlineData(false, WasmTarget.Wasm32)]
-    [InlineData(false, WasmTarget.Wasm64)]
-    [InlineData(true, WasmTarget.Wasm32)]
-    [InlineData(true, WasmTarget.Wasm64)]
-    public void CompilerExecutesBase64AndHexadecimalRoundTrips(bool optimize, WasmTarget target)
+    [InlineData(false, WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(false, WasmTarget.Wasm64, FinalWasmOptimization.Oz)]
+    [InlineData(true, WasmTarget.Wasm32, FinalWasmOptimization.Oz)]
+    [InlineData(true, WasmTarget.Wasm64, FinalWasmOptimization.Oz)]
+    [InlineData(true, WasmTarget.Wasm32, FinalWasmOptimization.O3)]
+    [InlineData(true, WasmTarget.Wasm64, FinalWasmOptimization.O3)]
+    public void CompilerExecutesBase64AndHexadecimalRoundTrips(
+        bool optimize, WasmTarget target, FinalWasmOptimization optimization)
     {
         using var assets = TestAssets.Create();
         ICompilationScenarioExecutor executor = new CompilationScenarioExecutor(assets);
@@ -230,11 +236,37 @@ public sealed class TextEncodingCompilationTests
                             && Run(3) == 10
                             && Run(4) == 5
                             && Run(5) == 1
+                            && Run(6) == 5
+                            && Run(7) == 343
+                            && Run(8) == 135
+                            && Run(9) == 304
                                 ? 0
                                 : 1;
                     }
 
                     byte[] source = [0, 1, 2, 254, 255];
+
+                    // Whitespace, invalid data and the URL alphabet take the decoder's other paths.
+                    if (input == 6)
+                    {
+                        return System.Convert.FromBase64String(" AAEC\n/v8= ").Length;
+                    }
+
+                    if (input is 7 or 8)
+                    {
+                        var decodeStatus = System.Buffers.Text.Base64.DecodeFromUtf8(
+                            input == 7 ? "AAEC*v8="u8 : " AA EC\r\n/v8 ="u8,
+                            new byte[8],
+                            out var read,
+                            out var produced);
+                        return (int)decodeStatus * 100 + read * 10 + produced;
+                    }
+
+                    if (input == 9)
+                    {
+                        var url = System.Buffers.Text.Base64Url.DecodeFromChars("AAEC_v8".AsSpan());
+                        return url.Length * 10 + url[3];
+                    }
 
                     if (input == 1)
                     {
@@ -282,7 +314,10 @@ public sealed class TextEncodingCompilationTests
             optimize,
             target,
             0,
-            []));
+            [])
+        {
+            Optimization = optimization,
+        });
 
         Assert.Equal(0, observed);
     }

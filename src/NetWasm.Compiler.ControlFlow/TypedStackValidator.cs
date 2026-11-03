@@ -9,7 +9,11 @@ namespace NetWasm.Compiler.ControlFlow;
 public sealed record ValidatedControlFlowGraph(
     ControlFlowGraph Graph,
     ImmutableDictionary<int, ImmutableArray<CliValueKind>> EntryStacks,
-    ImmutableDictionary<int, ImmutableArray<CliValueKind>> InstructionEntryStacks);
+    ImmutableDictionary<int, ImmutableArray<CliValueKind>> InstructionEntryStacks)
+{
+    // The deepest evaluation stack any instruction leaves.
+    public int MaximumStackDepth { get; init; }
+}
 
 public sealed class TypedStackValidator(
     ITypeRepository types,
@@ -36,6 +40,7 @@ public sealed class TypedStackValidator(
         };
         var pending = new Queue<int>();
         var instructionEntryStacks = new Dictionary<int, ImmutableArray<CliValueKind>>();
+        var maximumDepth = 0;
         pending.Enqueue(graph.Entry.Index);
         foreach (var region in graph.MethodBody.ExceptionRegions)
         {
@@ -53,6 +58,7 @@ public sealed class TypedStackValidator(
             {
                 instructionEntryStacks.Add(instruction.Offset, [.. stack]);
                 Apply(graph.MethodBody, instruction, stack);
+                maximumDepth = Math.Max(maximumDepth, stack.Count);
                 if (stack.Count > graph.MethodBody.MaxStack)
                 {
                     throw Invalid(graph.MethodBody, instruction, "evaluation stack exceeds maxstack");
@@ -80,7 +86,10 @@ public sealed class TypedStackValidator(
         return new ValidatedControlFlowGraph(
             graph,
             entryStacks.ToImmutableDictionary(),
-            instructionEntryStacks.ToImmutableDictionary());
+            instructionEntryStacks.ToImmutableDictionary())
+        {
+            MaximumStackDepth = maximumDepth,
+        };
 
         void Seed(int offset, ImmutableArray<CliValueKind> stack)
         {

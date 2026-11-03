@@ -119,6 +119,19 @@ public sealed class SimdVectorIntrinsicClassifierTests
         { Vector128, "AsVector2", true, 0, Vector2, [Vector2], null },
         { Vector128, "AsVector2", true, 0, Vector2, [Floats, Floats], null },
         { "System.Numerics.Vector", "AsVector128", true, 0, Floats, [Vector2], null },
+        // A reinterpret is one of the As names, not any name that starts with As:
+        // Asin computes, and keeps its managed body.
+        { Vector128, "As", true, 2, Floats, [Vector], RuntimeIntrinsic.SimdReinterpret },
+        { Vector128, "AsByte", true, 1, Vector128Of(CliTypeIdentity.Primitive("u1", CliValueKind.I4)), [Vector], RuntimeIntrinsic.SimdReinterpret },
+        { Vector128, "AsVector", true, 1, VectorOf(Int32), [Vector], RuntimeIntrinsic.SimdReinterpret },
+        { Vector128, "AsVector128", true, 1, Vector, [VectorOf(Int32)], RuntimeIntrinsic.SimdReinterpret },
+        { "System.Numerics.Vector", "AsVectorSingle", true, 1, VectorOf(Single), [VectorOf(Int32)], RuntimeIntrinsic.SimdReinterpret },
+        { Vector128, "Asin", true, 0, Floats, [Floats], null },
+        { Vector128, "Asinh", true, 0, Floats, [Floats], null },
+        { "System.Numerics.Vector", "Asin", true, 0, VectorOf(Single), [VectorOf(Single)], null },
+        { Vector128, "AsHalf", true, 1, Floats, [Vector], null },
+        { Vector128, "ConvertToInt32Native", true, 0, Vector, [Floats], RuntimeIntrinsic.SimdConvert },
+        { Vector128, "ConvertToHalf", true, 0, Floats, [Floats], null },
         // Vector<T> moves as a v128 as Vector128<T> does.
         { "System.Numerics.Vector", "Add", true, 0, VectorOf(Int32), [VectorOf(Int32), VectorOf(Int32)], RuntimeIntrinsic.SimdAdd },
     };

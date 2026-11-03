@@ -125,7 +125,7 @@ public sealed class DesktopOracleRunnerTests
             QualifiedProcessRequest request,
             CancellationToken cancellationToken = default)
         {
-            var inputPath = request.Arguments[4][1..];
+            var inputPath = request.Arguments.Single(argument => argument.StartsWith('@'))[1..];
             var inputs = JsonSerializer.Deserialize<int[]>(File.ReadAllText(inputPath))!;
             BatchLengths.Add(inputs.Length);
             if (inputs.Length == OracleInputBatching.MaxInputsPerProcess)

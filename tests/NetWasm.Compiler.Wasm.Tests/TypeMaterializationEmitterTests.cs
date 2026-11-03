@@ -273,7 +273,7 @@ public sealed class TypeMaterializationEmitterTests
             layouts,
             layouts,
             imports,
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             roots,
             new CilTypeOperandResolver(new NoTypeIdentities()));
     }

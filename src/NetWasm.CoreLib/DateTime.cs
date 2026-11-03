@@ -443,13 +443,13 @@ namespace System
 
         public bool TryFormat(Span<char> destination, out int charsWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null) =>
-            TryCopy(FormatInvariant(format.Length == 0 ? null : string.Create(format.ToArray())),
+            TryCopy(FormatInvariant(format.Length == 0 ? null : new string(format)),
                 destination, out charsWritten);
 
         public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten,
             ReadOnlySpan<char> format = default(System.ReadOnlySpan<char>), IFormatProvider? provider = null)
         {
-            var text = FormatInvariant(format.Length == 0 ? null : string.Create(format.ToArray()));
+            var text = FormatInvariant(format.Length == 0 ? null : new string(format));
             if (utf8Destination.Length < text.Length)
             {
                 bytesWritten = 0;
@@ -484,11 +484,11 @@ namespace System
         }
 
         public static DateTime Parse(ReadOnlySpan<char> value, IFormatProvider? provider) =>
-            Parse(string.Create(value.ToArray()), provider);
+            Parse(new string(value), provider);
 
         public static DateTime Parse(ReadOnlySpan<char> value, IFormatProvider? provider = null,
             System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None) =>
-            Parse(string.Create(value.ToArray()), provider, style);
+            Parse(new string(value), provider, style);
 
         public static bool TryParse(string? value, out DateTime result)
         {
@@ -573,14 +573,14 @@ namespace System
         }
 
         public static bool TryParse(ReadOnlySpan<char> value, out DateTime result) =>
-            TryParse(string.Create(value.ToArray()), out result);
+            TryParse(new string(value), out result);
 
         public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider,
             out DateTime result) => TryParse(value, provider, System.Globalization.DateTimeStyles.None, out result);
 
         public static bool TryParse(ReadOnlySpan<char> value, IFormatProvider? provider,
             System.Globalization.DateTimeStyles style, out DateTime result) =>
-            TryParse(string.Create(value.ToArray()), provider, style, out result);
+            TryParse(new string(value), provider, style, out result);
 
         public static DateTime ParseExact(string value, string format, IFormatProvider? provider) =>
             ParseExact(value, format, provider, System.Globalization.DateTimeStyles.None);
@@ -605,12 +605,12 @@ namespace System
         public static DateTime ParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
             IFormatProvider? provider,
             System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None) =>
-            ParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), provider, style);
+            ParseExact(new string(value), new string(format), provider, style);
 
         public static DateTime ParseExact(ReadOnlySpan<char> value, string[] formats,
             IFormatProvider? provider,
             System.Globalization.DateTimeStyles style = System.Globalization.DateTimeStyles.None) =>
-            ParseExact(string.Create(value.ToArray()), formats, provider, style);
+            ParseExact(new string(value), formats, provider, style);
 
         public static bool TryParseExact(string? value, string? format, IFormatProvider? provider,
             System.Globalization.DateTimeStyles style, out DateTime result)
@@ -708,11 +708,11 @@ namespace System
 
         public static bool TryParseExact(ReadOnlySpan<char> value, ReadOnlySpan<char> format,
             IFormatProvider? provider, System.Globalization.DateTimeStyles style, out DateTime result) =>
-            TryParseExact(string.Create(value.ToArray()), string.Create(format.ToArray()), provider, style, out result);
+            TryParseExact(new string(value), new string(format), provider, style, out result);
 
         public static bool TryParseExact(ReadOnlySpan<char> value, string?[]? formats,
             IFormatProvider? provider, System.Globalization.DateTimeStyles style, out DateTime result) =>
-            TryParseExact(string.Create(value.ToArray()), formats, provider, style, out result);
+            TryParseExact(new string(value), formats, provider, style, out result);
 
         public static DateTime operator +(DateTime value, TimeSpan span) => value.Add(span);
         public static DateTime operator -(DateTime value, TimeSpan span) => value.Subtract(span);

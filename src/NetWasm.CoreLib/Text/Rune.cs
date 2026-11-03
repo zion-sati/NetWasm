@@ -10,6 +10,15 @@ public readonly partial struct Rune : IComparable, IComparable<Rune>, IEquatable
 {
     private readonly int _value;
 
+    internal const int MaxUtf16CharsPerRune = 2; // supplementary plane code points are encoded as 2 UTF-16 code units
+
+    internal ReadOnlySpan<char> AsSpan(Span<char> buffer)
+    {
+        Diagnostics.Debug.Assert(buffer.Length >= MaxUtf16CharsPerRune);
+        int charsWritten = EncodeToUtf16(buffer);
+        return buffer.Slice(0, charsWritten);
+    }
+
     public Rune(char value)
     {
         if (IsSurrogate(value)) throw new ArgumentOutOfRangeException();

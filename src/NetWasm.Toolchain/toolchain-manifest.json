@@ -133,7 +133,7 @@
       "id": "wasm-tools.command",
       "version": "1",
       "relativePath": "tools/wasm-tools/run-wasm-tools.mjs",
-      "sha256": "b78a821f582843a994a448599cd7c0893a8748bf5eb0e747bb592370144c68e6"
+      "sha256": "bf31c7608ada8955a6d01ec940187824818268f1fce212e5b36615cddd78039f"
     },
     {
       "id": "wasm-tools.module",

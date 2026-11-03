@@ -9,10 +9,13 @@ namespace NetWasm.Compiler.Analysis.Arrays;
 
 internal sealed class ArrayLoopUnrollingPlanner(
     IArrayLoopInductionAnalyzer induction,
+    IRuntimeIntrinsicRegistry intrinsics,
     int expandedBodyBudget) : IArrayLoopUnrollingPlanner
 {
     private readonly IArrayLoopInductionAnalyzer _induction = induction ??
         throw new ArgumentNullException(nameof(induction));
+    private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
+        throw new ArgumentNullException(nameof(intrinsics));
 
     public ImmutableArray<ArrayLoopUnrollingPlan> Plan(ValidatedControlFlowGraph controlFlow)
     {
@@ -29,7 +32,7 @@ internal sealed class ArrayLoopUnrollingPlanner(
             if (!controlFlow.EntryStacks[body.Index].IsEmpty) continue;
             var code = body.Instructions.Where(instruction => instruction.Operation != CilOperation.Nop).ToImmutableArray();
             if (code[^1].Operation == CilOperation.Branch) code = code.RemoveAt(code.Length - 1);
-            if (code.Any(instruction => !IsNumericBodyInstruction(instruction.Operation))) continue;
+            if (code.Any(instruction => !IsNumericBodyInstruction(instruction))) continue;
             var payload = code[..^4];
             var indexReads = payload.Count(instruction => instruction.Operation == CilOperation.LoadLocal &&
                 instruction.Operand is CilOperand.Index index && index.Value == loop.IndexLocal);
@@ -42,7 +45,10 @@ internal sealed class ArrayLoopUnrollingPlanner(
             // CFG predecessors already prove the target of an unconditional branch.
             if (entries.Length == 0 || entries.Any(instruction => instruction.Operation != CilOperation.Branch)) continue;
             plans.Add(new(loop.IndexLocal, loop.ArrayLocal, guard.StartOffset,
-                [.. entries.Select(instruction => instruction.Offset)], code, factor));
+                [.. entries.Select(instruction => instruction.Offset)], code, factor)
+            {
+                LengthLocal = loop.LengthLocal,
+            });
 
             long ExpandedCost(int count) => (long)payload.Length * count +
                 2L * indexReads * (count - 1) + 4;
@@ -68,7 +74,16 @@ internal sealed class ArrayLoopUnrollingPlanner(
         CilOperation.LoadArrayElementAddress, CilOperation.LoadField,
     }.ToFrozenSet();
 
-    private static bool IsNumericBodyInstruction(CilOperation operation) =>
-        operation is >= CilOperation.ConvertInt32 and <= CilOperation.ConvertNumeric ||
-        NumericBodyOperations.Contains(operation);
+    // A span element is read or written through the address Unsafe.Add
+    // computes, which, as As and AsRef, reads and writes nothing itself.
+    private bool IsNumericBodyInstruction(CilInstruction instruction) => instruction.Operation switch
+    {
+        >= CilOperation.ConvertInt32 and <= CilOperation.ConvertNumeric => true,
+        CilOperation.LoadObject or CilOperation.StoreObject =>
+            CilOperands.Type(instruction.Operand).Shape == CliTypeShape.Primitive,
+        CilOperation.Call => _intrinsics.TryGetIntrinsic(CilOperands.MethodKey(instruction.Operand), out var intrinsic) &&
+            intrinsic is RuntimeIntrinsic.UnsafeAdd or RuntimeIntrinsic.UnsafeAddByteOffset or RuntimeIntrinsic.UnsafeAs or
+                RuntimeIntrinsic.UnsafeAsRef or RuntimeIntrinsic.UnsafeAsRefManaged,
+        _ => NumericBodyOperations.Contains(instruction.Operation),
+    };
 }

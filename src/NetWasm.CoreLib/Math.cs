@@ -561,13 +561,28 @@ namespace System
             return IsNegative(right) ? left : right;
         }
 
-        public static double MaxMagnitude(double left, double right)
+        public static double MaxMagnitude(double x, double y)
         {
-            var absoluteLeft = Abs(left);
-            var absoluteRight = Abs(right);
-            if (absoluteLeft > absoluteRight || IsNaN(absoluteLeft)) return left;
-            if (absoluteLeft == absoluteRight) return IsNegative(left) ? right : left;
-            return right;
+            // This matches the IEEE 754:2019 `maximumMagnitude` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the input with a greater magnitude.
+            // It treats +0 as greater than -0 as per the specification.
+
+            double ax = Abs(x);
+            double ay = Abs(y);
+
+            if ((ax > ay) || double.IsNaN(ax))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return double.IsNegative(x) ? y : x;
+            }
+
+            return y;
         }
 
         public static byte Min(byte left, byte right) => left <= right ? left : right;
@@ -594,13 +609,28 @@ namespace System
             return IsNegative(left) ? left : right;
         }
 
-        public static double MinMagnitude(double left, double right)
+        public static double MinMagnitude(double x, double y)
         {
-            var absoluteLeft = Abs(left);
-            var absoluteRight = Abs(right);
-            if (absoluteLeft < absoluteRight || IsNaN(absoluteLeft)) return left;
-            if (absoluteLeft == absoluteRight) return IsNegative(left) ? left : right;
-            return right;
+            // This matches the IEEE 754:2019 `minimumMagnitude` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the input with a lesser magnitude.
+            // It treats +0 as greater than -0 as per the specification.
+
+            double ax = Abs(x);
+            double ay = Abs(y);
+
+            if ((ax < ay) || double.IsNaN(ax))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return double.IsNegative(x) ? x : y;
+            }
+
+            return y;
         }
 
         public static double ReciprocalEstimate(double value) => 1 / value;
@@ -627,34 +657,47 @@ namespace System
             return Number.RoundToDecimalDigits(value, digits, mode);
         }
 
-        public static double ScaleB(double value, int n)
+        // Upstream's managed scalbln: Math's SCALEB_C1, SCALEB_C2 and SCALEB_C3 as literals.
+        public static double ScaleB(double x, int n)
         {
-            if (value == 0 || IsNaN(value) || IsInfinity(value) || n == 0) return value;
-            var scaled = value;
+            // Implementation based on https://git.musl-libc.org/cgit/musl/tree/src/math/scalbln.c
+            //
+            // Performs the calculation x * 2^n efficiently. It constructs a double from 2^n by building
+            // the correct biased exponent. If n is greater than the maximum exponent (1023) or less than
+            // the minimum exponent (-1022), adjust x and n to compute correct result.
+
+            double y = x;
             if (n > 1023)
             {
-                scaled *= 8.98846567431158E+307;
+                y *= 8.98846567431158E+307; // 0x1p1023
                 n -= 1023;
                 if (n > 1023)
                 {
-                    scaled *= 8.98846567431158E+307;
+                    y *= 8.98846567431158E+307;
                     n -= 1023;
-                    if (n > 1023) n = 1023;
+                    if (n > 1023)
+                    {
+                        n = 1023;
+                    }
                 }
             }
             else if (n < -1022)
             {
-                scaled *= 2.2250738585072014E-308 * 9007199254740992;
-                n += 969;
+                y *= 2.2250738585072014E-308 * 9007199254740992; // 0x1p-1022 * 0x1p53
+                n += 1022 - 53;
                 if (n < -1022)
                 {
-                    scaled *= 2.2250738585072014E-308 * 9007199254740992;
-                    n += 969;
-                    if (n < -1022) n = -1022;
+                    y *= 2.2250738585072014E-308 * 9007199254740992;
+                    n += 1022 - 53;
+                    if (n < -1022)
+                    {
+                        n = -1022;
+                    }
                 }
             }
-            var power = BitConverter.UInt64BitsToDouble((ulong)(0x3ff + n) << 52);
-            return scaled * power;
+
+            double u = BitConverter.Int64BitsToDouble(((long)(0x3ff + n) << 52));
+            return y * u;
         }
 
         public static int Sign(short value) => value < 0 ? -1 : value > 0 ? 1 : 0;
@@ -774,7 +817,6 @@ namespace System
         public static float Sqrt(float value) => (float)Math.Sqrt(value);
 
         public static float Acos(float value) => (float)Math.Acos(value);
-        public static float Acosh(float value) => (float)Math.Acosh(value);
         public static float Asin(float value) => (float)Math.Asin(value);
         public static float Asinh(float value) => (float)Math.Asinh(value);
         public static float Atan(float value) => (float)Math.Atan(value);
@@ -797,7 +839,6 @@ namespace System
             bits = (bits & 0x80000000U) != 0 ? bits - 1 : bits + 1;
             return BitConverter.UInt32BitsToSingle(bits);
         }
-        public static float Cbrt(float value) => (float)Math.Cbrt(value);
         public static float CopySign(float value, float sign) =>
             BitConverter.UInt32BitsToSingle(
                 (BitConverter.SingleToUInt32Bits(value) & 0x7FFFFFFFU) |
@@ -823,7 +864,6 @@ namespace System
         }
         public static int ILogB(float value) => Math.ILogB(value);
         public static float Log(float value, float newBase) => (float)Math.Log(value, newBase);
-        public static float Log10(float value) => (float)Math.Log10(value);
 
         public static float Min(float left, float right)
         {
@@ -837,22 +877,52 @@ namespace System
             return IsNegative(right) ? left : right;
         }
 
-        public static float MaxMagnitude(float left, float right)
+        public static float MaxMagnitude(float x, float y)
         {
-            var absoluteLeft = Abs(left);
-            var absoluteRight = Abs(right);
-            if (absoluteLeft > absoluteRight || float.IsNaN(absoluteLeft)) return left;
-            if (absoluteLeft == absoluteRight) return IsNegative(left) ? right : left;
-            return right;
+            // This matches the IEEE 754:2019 `maximumMagnitude` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the input with a greater magnitude.
+            // It treats +0 as greater than -0 as per the specification.
+
+            float ax = Abs(x);
+            float ay = Abs(y);
+
+            if ((ax > ay) || float.IsNaN(ax))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return float.IsNegative(x) ? y : x;
+            }
+
+            return y;
         }
 
-        public static float MinMagnitude(float left, float right)
+        public static float MinMagnitude(float x, float y)
         {
-            var absoluteLeft = Abs(left);
-            var absoluteRight = Abs(right);
-            if (absoluteLeft < absoluteRight || float.IsNaN(absoluteLeft)) return left;
-            if (absoluteLeft == absoluteRight) return IsNegative(left) ? left : right;
-            return right;
+            // This matches the IEEE 754:2019 `minimumMagnitude` function
+            //
+            // It propagates NaN inputs back to the caller and
+            // otherwise returns the input with a lesser magnitude.
+            // It treats +0 as greater than -0 as per the specification.
+
+            float ax = Abs(x);
+            float ay = Abs(y);
+
+            if ((ax < ay) || float.IsNaN(ax))
+            {
+                return x;
+            }
+
+            if (ax == ay)
+            {
+                return float.IsNegative(x) ? x : y;
+            }
+
+            return y;
         }
 
         public static float ReciprocalEstimate(float value) => 1 / value;
@@ -876,7 +946,48 @@ namespace System
             }
             return Number.RoundToDecimalDigits(value, digits, mode);
         }
-        public static float ScaleB(float value, int n) => (float)Math.ScaleB(value, n);
+        // Upstream's managed scalblnf: MathF's SCALEB_C1, SCALEB_C2 and SCALEB_C3 as literals.
+        public static float ScaleB(float x, int n)
+        {
+            // Implementation based on https://git.musl-libc.org/cgit/musl/tree/src/math/scalblnf.c
+            //
+            // Performs the calculation x * 2^n efficiently. It constructs a float from 2^n by building
+            // the correct biased exponent. If n is greater than the maximum exponent (127) or less than
+            // the minimum exponent (-126), adjust x and n to compute correct result.
+
+            float y = x;
+            if (n > 127)
+            {
+                y *= 1.7014118E+38f; // 0x1p127f
+                n -= 127;
+                if (n > 127)
+                {
+                    y *= 1.7014118E+38f;
+                    n -= 127;
+                    if (n > 127)
+                    {
+                        n = 127;
+                    }
+                }
+            }
+            else if (n < -126)
+            {
+                y *= 1.1754944E-38f * 16777216f; // 0x1p-126f * 0x1p24f
+                n += 126 - 24;
+                if (n < -126)
+                {
+                    y *= 1.1754944E-38f * 16777216f;
+                    n += 126 - 24;
+                    if (n < -126)
+                    {
+                        n = -126;
+                    }
+                }
+            }
+
+            float u = BitConverter.Int32BitsToSingle(((int)(0x7f + n) << 23));
+            return y * u;
+        }
 
         public static float Sinh(float value) => (float)Math.Sinh(value);
         public static float Tanh(float value) => (float)Math.Tanh(value);

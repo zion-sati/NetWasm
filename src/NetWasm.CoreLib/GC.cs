@@ -183,19 +183,118 @@ public static partial class GC
             "Completed-collection memory snapshots are not available in the NetWasm collector.");
     }
 
-    public static void AddMemoryPressure(long bytesAllocated) =>
-        throw new PlatformNotSupportedException(
-            "GC memory-pressure accounting is not available in the NetWasm collector.");
+    public static void AddMemoryPressure(long bytesAllocated)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytesAllocated);
+        if (IntPtr.Size == 4)
+        {
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(bytesAllocated, int.MaxValue);
+        }
+        MemoryPressure.Add((ulong)bytesAllocated);
+    }
 
     public static void RemoveMemoryPressure(long bytesAllocated)
     {
-        if (bytesAllocated <= 0)
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytesAllocated);
+        if (IntPtr.Size == 4)
         {
-            throw new ArgumentOutOfRangeException(nameof(bytesAllocated));
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(bytesAllocated, int.MaxValue);
+        }
+        MemoryPressure.Remove((ulong)bytesAllocated);
+    }
+
+    // Mono's memory-pressure heuristic (sgen-gc.c, sgen_add_memory_pressure): pressure added since
+    // the last collection runs one once it passes a budget of at least 4 MB, which grows with how
+    // little earlier pressure was removed and with a third of the heap. As in Mono, the check reads
+    // the slot's total before the addition. Every NetWasm collection is a full one, and NetWasm keeps
+    // no collection durations, so Mono's limit on the share of time spent collecting does not apply.
+    // The state lives here so that only a program that reports pressure initializes it.
+    private static class MemoryPressure
+    {
+        private const int Count = 4;
+        private const ulong MaxRatio = 10;
+        private const ulong MinBudget = 4 * 1024 * 1024;
+        private static readonly ulong[] s_adds = new ulong[Count];
+        private static readonly ulong[] s_removes = new ulong[Count];
+        private static long s_collectionCount;
+        private static long s_iteration;
+
+        public static void Add(ulong bytesAllocated)
+        {
+            CheckCounts();
+            var slot = (int)(s_iteration % Count);
+            var previous = s_adds[slot];
+            s_adds[slot] = previous + bytesAllocated;
+            if (ShouldCollect(previous))
+            {
+                GCCollectionRuntime.Collect();
+                CheckCounts();
+            }
         }
 
-        throw new PlatformNotSupportedException(
-            "GC memory-pressure accounting is not available in the NetWasm collector.");
+        public static void Remove(ulong bytesRemoved)
+        {
+            CheckCounts();
+            s_removes[(int)(s_iteration % Count)] += bytesRemoved;
+        }
+
+        // Starts a new accounting slot after each collection.
+        private static void CheckCounts()
+        {
+            var collections = GCMetricRuntime.Read(CollectionCountMetric);
+            if (s_collectionCount != collections)
+            {
+                s_collectionCount = collections;
+                s_iteration++;
+                var slot = (int)(s_iteration % Count);
+                s_adds[slot] = 0;
+                s_removes[slot] = 0;
+            }
+        }
+
+        private static bool ShouldCollect(ulong newMemoryValue)
+        {
+            if (newMemoryValue < MinBudget)
+            {
+                return false;
+            }
+
+            ulong added = 0;
+            ulong removed = 0;
+            for (var index = 0; index < Count; index++)
+            {
+                added += s_adds[index];
+                removed += s_removes[index];
+            }
+            var slot = (int)(s_iteration % Count);
+            added -= s_adds[slot];
+            removed -= s_removes[slot];
+
+            var budget = MinBudget;
+            if (s_iteration >= Count)
+            {
+                // The budget scales with the ratio of earlier additions to removals, in fixed point.
+                if (added >= removed * MaxRatio)
+                {
+                    budget = MinBudget * MaxRatio;
+                }
+                else if (added > removed)
+                {
+                    budget = added * 1024 / removed * budget / 1024;
+                }
+            }
+
+            if (newMemoryValue < budget)
+            {
+                return false;
+            }
+            var heapOverThree = (ulong)GCMetricRuntime.Read(HeapSizeMetric) / 3;
+            if (budget < heapOverThree)
+            {
+                budget = heapOverThree;
+            }
+            return newMemoryValue >= budget;
+        }
     }
 
     public static long GetAllocatedBytesForCurrentThread() =>
@@ -266,13 +365,10 @@ public static partial class GC
         throw new PlatformNotSupportedException(
             "No-GC-region callbacks are not available in the NetWasm collector.");
 
-    private static void ValidateGeneration(int generation)
-    {
-        if (generation != 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(generation));
-        }
-    }
+    // As upstream, any non-negative generation is valid; every NetWasm collection covers
+    // every generation, so an older one runs and counts the ordinary collection.
+    private static void ValidateGeneration(int generation) =>
+        ArgumentOutOfRangeException.ThrowIfNegative(generation);
 
     private static void ValidateCollectionMode(GCCollectionMode mode)
     {

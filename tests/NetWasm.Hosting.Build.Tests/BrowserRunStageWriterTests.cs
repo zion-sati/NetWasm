@@ -31,6 +31,8 @@ public sealed class BrowserRunStageWriterTests
                 ["Defines"] = "A;B,C 100%",
                 ["PublishDir"] = "ignored/",
                 ["nobuild"] = "false",
+                // A project that does not publish itself still runs (#163).
+                ["IsPublishable"] = "false",
             }),
             output));
 
@@ -41,6 +43,7 @@ public sealed class BrowserRunStageWriterTests
             "msbuild", Path.Combine(directory.Path, "App.csproj"), "-t:Publish", "-nologo", "-v:q",
             "-p:Configuration=Release",
             "-p:Defines=A%3BB%2CC 100%25",
+            "-p:IsPublishable=true",
             "-p:NoBuild=true",
             $"-p:PublishDir={site}{Path.DirectorySeparatorChar}",
             $"-p:NetWasmBrowserPublishDir={Path.Combine(site, "wwwroot/app")}",

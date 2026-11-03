@@ -181,7 +181,7 @@ namespace System.Runtime.InteropServices.WebAssembly
                     characters[outputIndex++] = (char)(0xdc00 + (scalar & 0x3ff));
                 }
             }
-            return string.Create(characters);
+            return new string(characters);
         }
 
         public static byte ReadByte(nuint address, nuint offset) =>

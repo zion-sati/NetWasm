@@ -232,7 +232,12 @@ internal sealed class SynchronousJSExportEmitter(
                 code.Instructions,
                 resultKind,
                 resultLocal,
-                EmitBody);
+                EmitBody,
+                initialization.RuntimeImportSelection.Includes(RuntimeImportSymbol.ReportUnhandledException)
+                    ? runtimeImports.Resolve(
+                        RuntimeImportSymbol.ReportUnhandledException,
+                        initialization.RuntimeImportSelection)
+                    : null);
         }
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.Return));
         code.Instructions.Write(WasmInstruction.NoOperand(WasmOpcodes.End));

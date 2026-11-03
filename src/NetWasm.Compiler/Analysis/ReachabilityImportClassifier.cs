@@ -126,15 +126,13 @@ internal sealed class ReachabilityImportClassifier(
                 }
                 if ((payload & EnumMetadataPayload.Names) != 0)
                 {
-                    var stringDefinition = typeFinder.FindType("System.String");
-                    var stringType = CliTypeIdentity.Named(
-                        stringDefinition.Key.Assembly,
-                        stringDefinition.Namespace,
-                        stringDefinition.Name,
-                        isValueType: false);
-                    types.Add(stringDefinition.Key);
-                    allocatedTypes.Add(stringType);
+                    AddAllocatedString();
                 }
+            }
+            // Every string comes from FastAllocateString, so it is what allocates them.
+            if (intrinsic == RuntimeIntrinsic.StringAllocate)
+            {
+                AddAllocatedString();
             }
             if (intrinsic is RuntimeIntrinsic.EnumCompareTo or
                 RuntimeIntrinsic.EnumToObject)
@@ -265,6 +263,17 @@ internal sealed class ReachabilityImportClassifier(
         {
             Conversions = exportConversions,
         };
+
+        void AddAllocatedString()
+        {
+            var stringDefinition = typeFinder.FindType("System.String");
+            types.Add(stringDefinition.Key);
+            allocatedTypes.Add(CliTypeIdentity.Named(
+                stringDefinition.Key.Assembly,
+                stringDefinition.Namespace,
+                stringDefinition.Name,
+                isValueType: false));
+        }
     }
 
     // The values an import passes, each with the conversion it needs: its arguments

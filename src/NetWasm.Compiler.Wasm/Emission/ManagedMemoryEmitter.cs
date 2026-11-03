@@ -29,12 +29,11 @@ internal static class ManagedMemoryEmitter
         WasmTargetLayout target,
         int arrayLocal,
         int indexLocal,
+        bool inlineData,
         int elementSize = sizeof(int))
     {
         WriteLocalGet(code, arrayLocal);
-        EmitReferenceLoad(code, target, WasmTargetLayout.Align(
-            target.ObjectHeaderSize + WasmTargetLayout.SemanticLengthSize,
-            target.AddressSize));
+        EmitArrayData(code, target, inlineData);
         WriteLocalGet(code, indexLocal);
         if (target.UsesMemory64)
         {
@@ -42,6 +41,21 @@ internal static class ManagedMemoryEmitter
         }
         EmitAddressConstant(code, target, elementSize);
         EmitAddressMultiply(code, target);
+        EmitAddressAdd(code, target);
+    }
+
+    // The address of the elements of the one-dimensional array on the stack:
+    // its inline offset, after the array's fields, where every runtime keeps
+    // them, or else the data pointer the array also keeps.
+    public static void EmitArrayData(IWasmInstructionWriter code, WasmTargetLayout target, bool inlineData)
+    {
+        if (!inlineData)
+        {
+            EmitReferenceLoad(code, target, WasmTargetLayout.Align(
+                target.ObjectHeaderSize + WasmTargetLayout.SemanticLengthSize, target.AddressSize));
+            return;
+        }
+        EmitAddressConstant(code, target, target.ArrayInlineDataOffset);
         EmitAddressAdd(code, target);
     }
 

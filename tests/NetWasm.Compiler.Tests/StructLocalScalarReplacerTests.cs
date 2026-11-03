@@ -9,9 +9,10 @@ namespace NetWasm.Compiler.Tests;
 // The struct-local shapes CIL allows that C# reaches only through inlining
 // and Unsafe: an address dropped, stores the field's type converts, accesses
 // through a field or whole value of another type, a struct of declared size,
-// whole copies in and out of a loop that splits its locals, and the structs
-// whose layout or fields keep them whole. StructScalarReplacementCompilationTests
-// covers the shapes C# writes, against desktop .NET.
+// whole copies in and out of a loop that splits its locals, a byref field, a
+// struct argument, and the structs whose layout or fields keep them whole.
+// StructScalarReplacementCompilationTests and SpanArgumentSplitCompilationTests
+// cover the shapes C# writes, against desktop .NET.
 public sealed class StructLocalScalarReplacerTests
 {
     private static readonly AssemblyIdentity Assembly = new("fixture");
@@ -27,6 +28,8 @@ public sealed class StructLocalScalarReplacerTests
     internal static readonly Struct Other = new("Other", 2, ("X", Int32));
     private static readonly Struct Mixed = new("Mixed", 3, ("F", Single), ("D", Double), ("S", SByte), ("N", NativeInt), ("R", Object));
     private static readonly Struct Sized = new("Sized", 4, ("A", Int32)) { DeclaredSize = 16 };
+    // A span's shape: a byref and a length.
+    private static readonly Struct Span = new("Span", 9, ("Reference", CliTypeIdentity.ManagedByReference(Int32)), ("Length", Int32));
 
     public static TheoryData<string> SplitShapes() =>
     [
@@ -35,6 +38,7 @@ public sealed class StructLocalScalarReplacerTests
         "element copy never read", "element copy copied to another split local", "element copy read whole outside its loop",
         "copy to a whole local outside the loop", "copy from a whole local outside the loop", "copy between whole locals",
         "two whole loads outside the loop", "mixed struct cleared", "reference field read through its address",
+        "byref field stored and read", "struct with a byref field cleared",
     ];
 
     [Theory]
@@ -171,6 +175,13 @@ public sealed class StructLocalScalarReplacerTests
         "mixed struct cleared" => Body([Mixed.Type], code => code
             .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Mixed.Type))
             .Read(0, Mixed, 3).Op(CilOperation.ConvertInt32).Return()),
+        "byref field stored and read" => Body([Span.Type], code => code
+            .Local(CilOperation.LoadLocalAddress, 0).Local(CilOperation.LoadArgument, 1)
+            .Op(CilOperation.StoreField, Field(Span, 0))
+            .Read(0, Span, 0).Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(Int32)).Return()),
+        "struct with a byref field cleared" => Body([Span.Type], code => code
+            .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Span.Type))
+            .Read(0, Span, 1).Return()),
         "reference field read through its address" => Body([Mixed.Type], code => code
             .Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.LoadFieldAddress, Field(Mixed, 4))
             .Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(Object)).Op(CilOperation.Pop)
@@ -234,9 +245,79 @@ public sealed class StructLocalScalarReplacerTests
             .Read(0, Pair, 0).Return()),
     };
 
+    // static int Run(Pair pair, ref Pair element), whose pair the code reads
+    // through its address: a span argument's Slice and Length, inlined.
+    [Fact]
+    public void StructArgumentSplitsIntoLocalsCopiedOnEntry()
+    {
+        var body = ArgumentBody([], code => code
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0)).Op(CilOperation.LoadField, Field(Pair, 0))
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0)).Op(CilOperation.LoadField, Field(Pair, 1))
+            .Op(CilOperation.Add).Return());
+
+        var rewritten = Replacer().Rewrite(body);
+
+        Validate(rewritten);
+        Assert.Equal(CilOperation.LoadArgumentAddress, rewritten.Instructions[0].Operation);
+        Assert.Single(rewritten.Instructions, instruction => instruction.Operation == CilOperation.LoadArgumentAddress);
+        Assert.DoesNotContain(rewritten.Instructions, instruction => instruction.Operation == CilOperation.LoadLocalAddress);
+    }
+
+    // A loop back to the first instruction runs the entry copy once.
+    [Fact]
+    public void BranchToTheFirstInstructionSkipsTheEntryCopy()
+    {
+        var body = ArgumentBody([], code => code
+            .Label("top")
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0)).Op(CilOperation.LoadField, Field(Pair, 0))
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0)).Op(CilOperation.LoadInt32, 0)
+            .Op(CilOperation.StoreField, Field(Pair, 0))
+            .Branch(CilOperation.BranchIfTrue, "top")
+            .Op(CilOperation.LoadInt32, 0).Return());
+
+        var rewritten = Replacer().Rewrite(body);
+
+        Validate(rewritten);
+        var target = rewritten.Instructions.Select(instruction => instruction.Operand)
+            .OfType<CilOperand.BranchTarget>().Single().Offset;
+        Assert.Contains(rewritten.Instructions[..target], instruction => instruction.Operation == CilOperation.LoadArgumentAddress);
+        Assert.DoesNotContain(rewritten.Instructions[target..], instruction =>
+            instruction.Operation is CilOperation.LoadArgumentAddress or CilOperation.LoadLocalAddress);
+    }
+
+    // starg replaces the argument: a store to its local.
+    [Fact]
+    public void StoreToAStructArgumentSplits()
+    {
+        var body = ArgumentBody([], code => code
+            .Local(CilOperation.LoadArgument, 1).Op(CilOperation.LoadObject, new CilOperand.TypeIdentity(Pair.Type))
+            .Local(CilOperation.StoreArgument, 0)
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0)).Op(CilOperation.LoadField, Field(Pair, 1))
+            .Return());
+
+        var rewritten = Replacer().Rewrite(body);
+
+        Validate(rewritten);
+        Assert.DoesNotContain(rewritten.Instructions, instruction => instruction.Operation == CilOperation.StoreArgument);
+        Assert.Single(rewritten.Instructions, instruction => instruction.Operation == CilOperation.LoadArgumentAddress);
+    }
+
+    // An argument whose address escapes keeps its storage and needs no copy.
+    [Fact]
+    public void StructArgumentWhoseAddressEscapesIsUnchanged()
+    {
+        var body = ArgumentBody([], code => code
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0))
+            .Op(CilOperation.InitializeObject, new CilOperand.TypeIdentity(Other.Type))
+            .Op(CilOperation.LoadArgumentAddress, new CilOperand.Index(0)).Op(CilOperation.LoadField, Field(Pair, 0))
+            .Return());
+
+        Assert.Same(body, Replacer().Rewrite(body));
+    }
+
     private static StructLocalScalarReplacer Replacer(params Struct[] structs)
     {
-        var program = new Program([Pair, Other, Mixed, Sized, .. structs]);
+        var program = new Program([Pair, Other, Mixed, Sized, Span, .. structs]);
         return new(new ControlFlowGraphBuilderFactory().Create(), Validator(program),
             new ControlFlowNaturalLoopAnalyzer(new ControlFlowDominanceAnalyzer()), program, program, enabled: true);
     }
@@ -253,6 +334,16 @@ public sealed class StructLocalScalarReplacerTests
         var signature = MethodSignatureModel.Create(Int32, CliTypeIdentity.SzArray(Pair.Type),
             CliTypeIdentity.ManagedByReference(Pair.Type));
         var method = new MethodDefinitionModel(new(Assembly, 0x06000001), new(Assembly, 0x02000100), "Run", true, signature, 1);
+        return new(method, 8, [.. locals.Select(local => local.StackKind)], write(new CilBuilder()).Build())
+        {
+            LocalSignatureTypes = [.. locals],
+        };
+    }
+
+    private static CilMethodBody ArgumentBody(CliTypeIdentity[] locals, Func<CilBuilder, CilBuilder> write)
+    {
+        var signature = MethodSignatureModel.Create(Int32, Pair.Type, CliTypeIdentity.ManagedByReference(Pair.Type));
+        var method = new MethodDefinitionModel(new(Assembly, 0x06000002), new(Assembly, 0x02000100), "Run", true, signature, 1);
         return new(method, 8, [.. locals.Select(local => local.StackKind)], write(new CilBuilder()).Build())
         {
             LocalSignatureTypes = [.. locals],

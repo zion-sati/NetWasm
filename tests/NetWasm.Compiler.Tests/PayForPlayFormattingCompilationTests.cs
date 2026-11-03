@@ -55,7 +55,7 @@ public sealed class PayForPlayFormattingCompilationTests
     {
         var reached = ReachedMethods("(input + 0.5f).ToString(\"0.00\")");
 
-        Assert.Contains(reached, method => method.EndsWith("::NumberToStringFormatInvariant", StringComparison.Ordinal));
+        Assert.Contains(reached, method => method.EndsWith("::NumberToStringFormat", StringComparison.Ordinal));
     }
 
     private static readonly string[] FloatingFormatting =

@@ -378,8 +378,11 @@ var allocateArray = (
   size = memory64 ? 8 : 4) => {
   arrayElementReferences.set(type,
     !valueTypeSizes.has(elementType) || valueTypeReferences.get(elementType) === true);
-  var data = raw(Math.max(4, length * size));
-  var pointer = allocate(memory64 ? 32 : 16, type);
+  // The elements follow the array's fields, as the runtime keeps them, so
+  // compiled code finds them without reading the data pointer.
+  var header = memory64 ? 32 : 16;
+  var pointer = allocate(header + Math.max(4, length * size), type);
+  var data = plus(pointer, header);
   var view = createRefreshableDataView(memory);
   view.setInt32(asNumber(plus(pointer, memory64 ? 8 : 4)), length, true);
   if (memory64) {
@@ -835,6 +838,31 @@ var runtimeValues = {
       new Uint8Array(memory.buffer, asNumber(slot), valueSize));
     return boxed;
   },
+  array_set_value(array, index, value, underlying, payloadOffset) {
+    const view = createRefreshableDataView(memory);
+    const address = asNumber(array);
+    const element = view.getInt32(address + (memory64 ? 24 : 12), true);
+    const data = memory64 ? view.getBigUint64(address + 16, true) : view.getUint32(address + 8, true);
+    const size = valueTypeSizes.get(element);
+    if (size === undefined) {
+      if (value && !isAssignable(value, element)) return 1;
+      const slot = asNumber(plus(data, index * (memory64 ? 8 : 4)));
+      if (memory64) view.setBigUint64(slot, value, true); else view.setUint32(slot, value, true);
+      return 0;
+    }
+    const slot = asNumber(plus(data, index * size));
+    if (!value) { new Uint8Array(memory.buffer, slot, size).fill(0); return 0; }
+    const required = underlying || element;
+    if (view.getInt32(asNumber(value), true) !== required) return 1;
+    const valueSize = valueTypeSizes.get(required);
+    if (underlying) {
+      new Uint8Array(memory.buffer, slot, size).fill(0);
+      view.setUint8(slot, 1);
+    }
+    new Uint8Array(memory.buffer, slot + asNumber(payloadOffset), valueSize).set(
+      new Uint8Array(memory.buffer, asNumber(plus(value, valueTypePayloadOffsets.get(required))), valueSize));
+    return 0;
+  },
   array_copy: copyArray,
   array_clear: clearArray,
   array_clone: cloneArray,
@@ -935,6 +963,7 @@ var runtimeValues = {
     return runtimeRandomState;
   },
   report_unobserved_task_exception: zero,
+  report_unhandled_exception: zero,
   is_assignable: isAssignable,
   end_catch() { lastException = 0; },
   exception_frame_enter(metadata, count) {

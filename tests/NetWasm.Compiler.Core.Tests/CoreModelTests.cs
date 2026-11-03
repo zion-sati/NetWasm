@@ -25,7 +25,6 @@ public sealed class CoreModelTests
         Assert.Equal(expectedSize, layout.ObjectSize);
         Assert.Equal(8, layout.DimensionSize);
         Assert.Equal(0, layout.DimensionLengthOffset);
-        Assert.Equal(4, layout.DimensionStrideOffset);
     }
 
     private static readonly AssemblyIdentity Assembly = new("Fixture");

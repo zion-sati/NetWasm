@@ -19,10 +19,18 @@ internal sealed class GetArrayDataReferenceIntrinsicEmitter(
         exceptions.Emit(code, ManagedExceptionKind.NullReference, request.Instruction.Context.ManagedThrowFunction);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
-        ManagedMemoryEmitter.EmitReferenceLoad(
-            code,
-            layouts.Target,
-            objects.ArrayDataPointerOffset);
+        // GetArrayDataReference<T>(T[]) takes a one-dimensional array, whose
+        // elements are inline; the Array overload may take a rectangular one,
+        // whose elements follow its shape, so it reads the data pointer every
+        // array keeps.
+        if (request.Method.Definition.GenericArity == 1)
+        {
+            ManagedMemoryEmitter.EmitArrayData(code, layouts.Target, request.Instruction.Context.InlineArrayData);
+        }
+        else
+        {
+            ManagedMemoryEmitter.EmitReferenceLoad(code, layouts.Target, objects.ArrayDataPointerOffset);
+        }
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalSet, WasmInstructionOperand.Unsigned((uint)(request.Local(0, CliValueKind.ManagedAddress)))));
     }
 }

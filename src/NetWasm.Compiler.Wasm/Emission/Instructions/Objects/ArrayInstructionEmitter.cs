@@ -124,11 +124,10 @@ internal sealed class ArrayInstructionEmitter(
 
     private void EmitArrayData(IWasmInstructionWriter code, int arrayLocal)
     {
+        // An initializer may fill a rectangular array, whose elements follow
+        // its shape, so it reads the data pointer every array keeps.
         code.Write(WasmInstruction.WithOperand(WasmOpcodes.LocalGet, WasmInstructionOperand.Unsigned((uint)(arrayLocal))));
-        ManagedMemoryEmitter.EmitReferenceLoad(
-            code,
-            layouts.Target,
-            objects.ArrayDataPointerOffset);
+        ManagedMemoryEmitter.EmitReferenceLoad(code, layouts.Target, objects.ArrayDataPointerOffset);
     }
 
     private void EmitLength(InstructionEmissionRequest request, IWasmInstructionWriter code)

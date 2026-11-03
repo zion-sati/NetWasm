@@ -8,6 +8,7 @@ namespace NetWasm.Compiler.Wasm.Emission.Instructions.Runtime;
 internal sealed class EnumGetMetadataIntrinsicEmitter(
     IEnumMetadataSource metadata,
     IEnumTypeArgumentValidator typeArguments,
+    IImplicitExceptionEmitter exceptions,
     IAddressInstructionEmitter addresses) : IRuntimeIntrinsicEmitter
 {
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
@@ -16,7 +17,14 @@ internal sealed class EnumGetMetadataIntrinsicEmitter(
         {
             var enumType = request.Method.MethodArguments[0];
             var entry = metadata.EnumMetadata
-                .Single(candidate => candidate.EnumType.Equals(enumType));
+                .SingleOrDefault(candidate => candidate.EnumType.Equals(enumType));
+            // Enum.Parse<TEnum> and its siblings constrain TEnum only to a struct,
+            // so it may name no enum: that throws, as a Type naming none does.
+            if (entry.TypeId == 0)
+            {
+                exceptions.Emit(code, ManagedExceptionKind.Argument, request.Instruction.Context.ManagedThrowFunction);
+                return;
+            }
 
             addresses.Emit(code, entry.Address);
             SetResult(request, code);

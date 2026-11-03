@@ -1,9 +1,5 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/MemoryExtensions.Globalization.cs.
-// NetWasm compares culture-sensitively nowhere yet: the culture comparison cases throw
-// PlatformNotSupportedException, as NetWasm's string does, and the casing methods case as
-// upstream's invariant globalization mode does, which NetWasm always runs.
 
 using System.Diagnostics;
 using System.Globalization;
@@ -65,11 +61,11 @@ namespace System
             {
                 case StringComparison.CurrentCulture:
                 case StringComparison.CurrentCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CultureInfo.CurrentCulture.CompareInfo.Compare(span, other, string.GetCaseCompareOfComparisonCulture(comparisonType)) == 0;
 
                 case StringComparison.InvariantCulture:
                 case StringComparison.InvariantCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CompareInfo.Invariant.Compare(span, other, string.GetCaseCompareOfComparisonCulture(comparisonType)) == 0;
 
                 case StringComparison.Ordinal:
                     return EqualsOrdinal(span, other);
@@ -115,11 +111,11 @@ namespace System
             {
                 case StringComparison.CurrentCulture:
                 case StringComparison.CurrentCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CultureInfo.CurrentCulture.CompareInfo.Compare(span, other, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.InvariantCulture:
                 case StringComparison.InvariantCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CompareInfo.Invariant.Compare(span, other, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.Ordinal:
                     if (span.Length == 0 || other.Length == 0)
@@ -151,11 +147,11 @@ namespace System
             {
                 case StringComparison.CurrentCulture:
                 case StringComparison.CurrentCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CultureInfo.CurrentCulture.CompareInfo.IndexOf(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.InvariantCulture:
                 case StringComparison.InvariantCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CompareInfo.Invariant.IndexOf(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 default:
                     Debug.Assert(comparisonType == StringComparison.OrdinalIgnoreCase);
@@ -202,11 +198,11 @@ namespace System
             {
                 case StringComparison.CurrentCulture:
                 case StringComparison.CurrentCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CultureInfo.CurrentCulture.CompareInfo.LastIndexOf(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.InvariantCulture:
                 case StringComparison.InvariantCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CompareInfo.Invariant.LastIndexOf(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 default:
                     Debug.Assert(comparisonType == StringComparison.OrdinalIgnoreCase);
@@ -245,11 +241,16 @@ namespace System
             if (source.Overlaps(destination))
                 ThrowHelper.ThrowInvalidOperationException(ExceptionResource.InvalidOperation_SpanOverlappedOperation);
 
+            culture ??= CultureInfo.CurrentCulture;
+
             // Assuming that changing case does not affect length
             if (destination.Length < source.Length)
                 return -1;
 
-            InvariantModeCasing.ToLower(source, destination);
+            if (GlobalizationMode.Invariant)
+                InvariantModeCasing.ToLower(source, destination);
+            else
+                culture.TextInfo.ChangeCaseToLower(source, destination);
             return source.Length;
         }
 
@@ -270,7 +271,10 @@ namespace System
             if (destination.Length < source.Length)
                 return -1;
 
-            InvariantModeCasing.ToLower(source, destination);
+            if (GlobalizationMode.Invariant)
+                InvariantModeCasing.ToLower(source, destination);
+            else
+                TextInfo.Invariant.ChangeCaseToLower(source, destination);
             return source.Length;
         }
 
@@ -289,11 +293,16 @@ namespace System
             if (source.Overlaps(destination))
                 ThrowHelper.ThrowInvalidOperationException(ExceptionResource.InvalidOperation_SpanOverlappedOperation);
 
+            culture ??= CultureInfo.CurrentCulture;
+
             // Assuming that changing case does not affect length
             if (destination.Length < source.Length)
                 return -1;
 
-            InvariantModeCasing.ToUpper(source, destination);
+            if (GlobalizationMode.Invariant)
+                InvariantModeCasing.ToUpper(source, destination);
+            else
+                culture.TextInfo.ChangeCaseToUpper(source, destination);
             return source.Length;
         }
 
@@ -314,7 +323,10 @@ namespace System
             if (destination.Length < source.Length)
                 return -1;
 
-            InvariantModeCasing.ToUpper(source, destination);
+            if (GlobalizationMode.Invariant)
+                InvariantModeCasing.ToUpper(source, destination);
+            else
+                TextInfo.Invariant.ChangeCaseToUpper(source, destination);
             return source.Length;
         }
 
@@ -355,11 +367,11 @@ namespace System
             {
                 case StringComparison.CurrentCulture:
                 case StringComparison.CurrentCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CultureInfo.CurrentCulture.CompareInfo.IsSuffix(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.InvariantCulture:
                 case StringComparison.InvariantCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CompareInfo.Invariant.IsSuffix(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.Ordinal:
                     return span.EndsWith(value);
@@ -393,11 +405,11 @@ namespace System
             {
                 case StringComparison.CurrentCulture:
                 case StringComparison.CurrentCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CultureInfo.CurrentCulture.CompareInfo.IsPrefix(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.InvariantCulture:
                 case StringComparison.InvariantCultureIgnoreCase:
-                    throw new PlatformNotSupportedException();
+                    return CompareInfo.Invariant.IsPrefix(span, value, string.GetCaseCompareOfComparisonCulture(comparisonType));
 
                 case StringComparison.Ordinal:
                     return span.StartsWith(value);

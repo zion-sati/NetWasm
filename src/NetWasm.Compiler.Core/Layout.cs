@@ -7,7 +7,13 @@ namespace NetWasm.Compiler.Core;
 public readonly record struct ObjectLayout(
     int TypeId,
     int Size,
-    ImmutableArray<int> ReferenceOffsets);
+    ImmutableArray<int> ReferenceOffsets)
+{
+    // The layout compiler numbers the types in preorder of their base types, so
+    // the ids from TypeId through LastSubtypeId are this type and the types
+    // derived from it. Zero where no numbering gave the layout one.
+    public int LastSubtypeId { get; init; }
+}
 public readonly record struct ValueLayout(
     CliTypeIdentity Type,
     int Size,
@@ -158,8 +164,7 @@ public readonly record struct RectangularArrayLayout(
     int ShapePointerOffset,
     int ObjectSize,
     int DimensionSize,
-    int DimensionLengthOffset,
-    int DimensionStrideOffset)
+    int DimensionLengthOffset)
 {
     public static RectangularArrayLayout Create(
         WasmTargetLayout target,
@@ -179,8 +184,7 @@ public readonly record struct RectangularArrayLayout(
                 shapePointerOffset + target.ObjectReferenceSize,
                 target.ObjectReferenceAlignment),
             sizeof(int) * 2,
-            0,
-            sizeof(int));
+            0);
     }
 
     // The shape holds each dimension's length and stride, then the lower
@@ -258,6 +262,7 @@ public static class RuntimeAbi
     public const string RuntimeArrayRank = "array_rank";
     public const string RuntimeArrayGetLength = "array_get_length";
     public const string RuntimeArrayGetLowerBound = "array_get_lower_bound";
+    public const string RuntimeArraySetValue = "array_set_value";
     public const string RuntimeArrayGetValue = "array_get_value";
     public const string RuntimeArrayCopy = "array_copy";
     public const string RuntimeArrayClear = "array_clear";
@@ -303,6 +308,7 @@ public static class RuntimeAbi
     public const string RuntimeSuppressFinalize = "suppress_finalize";
     public const string RuntimeReRegisterForFinalize = "reregister_for_finalize";
     public const string RuntimeReportUnobservedTaskException = "report_unobserved_task_exception";
+    public const string RuntimeReportUnhandledException = "report_unhandled_exception";
     public const string RuntimeReportTerminalException = "report_terminal_exception_v2";
     public const string RuntimeCaptureManagedException = "capture_managed_exception_v1";
     public const string RuntimeRaiseTerminalException = "raise_terminal_exception";

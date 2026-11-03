@@ -14,11 +14,20 @@ namespace NetWasm.Compiler.Tests.Correctness;
 // form must not change: one array read at another offset than it is written
 // (here the same array twice), loops that leave their arrays or meet a null array
 // part way, which a catch observes, and a counter copy read after the loop.
+// Folds of such expressions into integer locals, beside stores or alone, run as
+// vectors too, and so does a foreach copy of an element read after the loop; a
+// fold of an array the loop writes, a floating fold, which is not associative,
+// and a loop that only folds longs, which the unroller runs faster, stay one
+// iteration at a time. Loops that walk a reference over
+// n elements, as StrengthReduction's strength-reduced loops do, fold as
+// vectors too, from an array's first element, its middle or a span, with an
+// element copy read after the loop.
 public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner runner)
 {
     private const string Source = """
         using System;
         using System.Runtime.CompilerServices;
+        using System.Runtime.InteropServices;
 
         namespace NetWasm.Correctness.ElementwiseLoops;
 
@@ -45,6 +54,17 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                         11 => Bounded(),
                         12 => CopyAfterLoop(Ints(size, 4)),
                         14 => Shapes(Ints(size, 5), Floats(size, 2.5f), Doubles(size, 1.5), size + 1),
+                        15 => Folds(Ints(size, 3), Ints(size, 7)),
+                        16 => (int)LongFolds(Longs(size, 5), Longs(size, 11)),
+                        17 => FoldAndStore(Ints(size, 3)),
+                        18 => FoldReadsWritten(Ints(size, 3)),
+                        19 => ElementCopy(Ints(size, 9)),
+                        20 => (int)FloatFold(Floats(size, 0.5f)),
+                        21 => WalkInts(Ints(size, 3)),
+                        22 => (int)WalkLongs(Longs(size, 5)),
+                        23 => WalkCopy(Ints(size, 9)),
+                        24 => WalkFromMiddle(Ints(size + 3, 2)),
+                        25 => WalkSpan(Ints(size, 7)),
                         _ => Offsets(Ints(size + 4, 9), Ints(size + 4, 2), size),
                     });
                 }
@@ -256,6 +276,167 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                 return Sum(c);
             }
 
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Folds(int[] p, int[] q)
+            {
+                int sum = 0, x = 11, o = 0, a = -1;
+                for (var i = 0; i < p.Length; i++)
+                {
+                    sum += p[i] * q[i];
+                    x ^= p[i] + 5;
+                    o = (q[i] >> 3) | o;
+                    a &= p[i] | 0x100;
+                }
+                return Mix(Mix(Mix(sum, x), o), a);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static long LongFolds(long[] p, long[] q)
+            {
+                var sum = 7L;
+                for (var i = 0; i < p.Length; i++) sum += p[i] * q[i] - 1L;
+                return sum ^ (sum >> 32);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FoldAndStore(int[] p)
+            {
+                var r = new int[p.Length];
+                var sum = 3;
+                for (var i = 0; i < p.Length; i++)
+                {
+                    r[i] = p[i] * 2;
+                    sum += p[i] + 1;
+                }
+                return Mix(Sum(r), sum);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int FoldReadsWritten(int[] p)
+            {
+                var sum = 0;
+                for (var i = 0; i < p.Length; i++)
+                {
+                    p[i] = p[i] + 1;
+                    sum += p[i] * 3;
+                }
+                return Mix(Sum(p), sum);
+            }
+
+            // StrengthReduction's shape: foreach copies each element.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int ElementCopy(int[] values)
+            {
+                int result = 0, s = -5;
+                for (var i = 0; i < values.Length; i++)
+                {
+                    s = values[i];
+                    result += s | 1;
+                }
+                return Mix(result, s);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static float FloatFold(float[] values)
+            {
+                var sum = 0.1f;
+                for (var i = 0; i < values.Length; i++) sum += values[i] * 3.5f;
+                return sum * 1000f;
+            }
+
+            // StrengthReduction's SumIntsStrengthReducedWithArray.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int WalkInts(int[] input)
+            {
+                var result = 0;
+                var length = (uint)input.Length;
+                if (length > 0)
+                {
+                    ref var p = ref input[0];
+                    do
+                    {
+                        result += p | 1;
+                        p = ref Unsafe.Add(ref p, 1);
+                        length--;
+                    } while (length != 0);
+                }
+                return result;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static long WalkLongs(long[] input)
+            {
+                long sum = 5, mask = -1;
+                var length = (uint)input.Length;
+                if (length > 0)
+                {
+                    ref var p = ref input[0];
+                    do
+                    {
+                        length--;
+                        sum += (p ^ 3L) * 7L;
+                        mask &= p | 0x10L;
+                        p = ref Unsafe.Add(ref p, 1);
+                    } while (length != 0);
+                }
+                return sum ^ mask;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int WalkCopy(int[] input)
+            {
+                int result = 0, s = -3;
+                var length = input.Length;
+                if (length > 0)
+                {
+                    ref var p = ref input[0];
+                    do
+                    {
+                        s = p;
+                        result ^= s & 0xFF;
+                        p = ref Unsafe.Add(ref p, 1);
+                        length--;
+                    } while (length != 0);
+                }
+                return Mix(result, s);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int WalkFromMiddle(int[] input)
+            {
+                var result = 1;
+                var length = (uint)(input.Length - 3);
+                if (length > 0)
+                {
+                    ref var p = ref input[3];
+                    do
+                    {
+                        result += p << 2;
+                        p = ref Unsafe.Add(ref p, 1);
+                        length--;
+                    } while (length != 0);
+                }
+                return result;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int WalkSpan(ReadOnlySpan<int> input)
+            {
+                var result = 0;
+                var length = (uint)input.Length;
+                if (length > 0)
+                {
+                    ref var p = ref MemoryMarshal.GetReference(input);
+                    do
+                    {
+                        result += p - 9;
+                        p = ref Unsafe.Add(ref p, 1);
+                        length--;
+                    } while (length != 0);
+                }
+                return result;
+            }
+
             private static int Sum(int[] values)
             {
                 var total = 0;
@@ -317,7 +498,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
             "ElementwiseLoopVectorizerCorpus",
             "NetWasm.Correctness.ElementwiseLoops",
             Source,
-            [.. Enumerable.Range(0, 15)])
+            [.. Enumerable.Range(0, 26)])
         {
             Optimization = FinalWasmOptimization.O3,
             ExecuteWasm64 = true,
@@ -340,13 +521,14 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
         // expressions of the counter.
         string[] loops =
         [
-            "Bounded", "CopyAfterLoop", "Counters", "Floats", "InPlace", "Integers", "Ints", "LateStart", "Longs",
-            "NullArray", "Offsets", "PastTheEnd", "Shapes", "Stencil", "StencilInto", "UInts", "Unsigned",
+            "Bounded", "CopyAfterLoop", "Counters", "ElementCopy", "Floats", "FoldAndStore", "Folds", "InPlace", "Integers",
+            "Ints", "LateStart", "Longs", "NullArray", "Offsets", "PastTheEnd", "Shapes", "Stencil",
+            "StencilInto", "UInts", "Unsigned", "WalkCopy", "WalkFromMiddle", "WalkInts", "WalkLongs", "WalkSpan",
         ];
         var actual = string.Join(", ", Vectorized(vectorized));
         Assert.True(string.Join(", ", loops) == actual, "vectorized: " + actual);
         Assert.Empty(Vectorized(scalar));
-        foreach (var input in (int[])[0, 5, 6, 8, 14])
+        foreach (var input in (int[])[0, 5, 6, 8, 14, 15, 18, 19, 21, 23, 25])
         {
             Assert.Equal(
                 CompilerTestSupport.ExecuteWithStandardWasiNode(scalar.ApplicationModule, assets.Directory, input, target, scalar.StaticDataEnd),
@@ -354,7 +536,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
         }
     }
 
-    // The EntryPoint methods that store a Vector128 into an array.
+    // The EntryPoint methods that store a Vector128 into an array, or load one to fold.
     private static string[] Vectorized(CompilationResult result) =>
         [.. result.Program.Methods.Values
             .Where(static method => method.Method.DeclaringType.FullName == "NetWasm.Correctness.ElementwiseLoops.EntryPoint" &&
@@ -363,7 +545,7 @@ public sealed class ElementwiseLoopVectorizerCorpusTests(CorrectnessTestRunner r
                     Value:
                     {
                         DeclaringType.FullName: "System.Runtime.Intrinsics.Vector128",
-                        Definition.Name: "StoreUnsafe",
+                        Definition.Name: "StoreUnsafe" or "Sum" or "GetElement",
                     },
                 }))
             .Select(static method => method.Method.Definition.Name)

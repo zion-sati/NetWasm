@@ -98,7 +98,7 @@ internal sealed class ManagedMethodOptimizerFactory(
                 settings.ArrayBoundsCheckElimination == ArrayBoundsCheckEliminationPolicy.Conservative),
             new ArrayLoopUnroller(graphBuilder, stackValidator,
                 // Bound expanded CIL work, not a presumed native cache capacity.
-                new ArrayLoopUnrollingPlanner(induction, expandedBodyBudget: 128),
+                new ArrayLoopUnrollingPlanner(induction, intrinsics, expandedBodyBudget: 128),
                 settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
             new RepeatedArrayAccessEliminator(graphBuilder, stackValidator,
                 new RepeatedArrayAccessPlanner(dominance),
@@ -116,11 +116,14 @@ internal sealed class ManagedMethodOptimizerFactory(
                 settings.IdempotentLoopCollapse == IdempotentLoopCollapsePolicy.CountedLoops),
             new ArrayLoopIdiomRewriter(arrayLoopMethods, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
             new ReductionLoopRewriter(calledMethods, arrayLoopMethods, spanLengths, settings.ArrayLoopIdioms == ArrayLoopIdiomPolicy.Bulk),
+            new PureCallReuser(calledMethods, settings.PureCallReuse == PureCallReusePolicy.RepeatedArguments),
             new LoopInvariantCallHoister(calledMethods, settings.LoopVectorization == LoopVectorizationPolicy.CountedLoops),
             new ElementwiseLoopVectorizer(vectorLoopMethods, calledMethods,
                 settings.LoopVectorization == LoopVectorizationPolicy.CountedLoops),
             new LoopStoreForwarder(graphBuilder, stackValidator, new ControlFlowNaturalLoopAnalyzer(dominance), intrinsics,
                 settings.LoopStoreForwarding == LoopStoreForwardingPolicy.Elements),
+            new ConditionalStoreMerger(fields, settings.ConditionalStoreMerging == ConditionalStoreMergingPolicy.SameFieldArms),
+            new FieldLoadReuser(graphBuilder, calledMethods, fields, settings.FieldLoadReuse == FieldLoadReusePolicy.AvailableLoads),
             new BeforeFieldInitEntryInitializer(graphBuilder, dominance, types, methods, fields,
                 settings.StaticInitializationHoisting == StaticInitializationHoistingPolicy.MethodEntry),
             new EmptyFinallyRemover(settings.EmptyFinallyRemoval == EmptyFinallyRemovalPolicy.EmptyHandlers),
@@ -130,6 +133,8 @@ internal sealed class ManagedMethodOptimizerFactory(
             new Allocations.NonEscapingAllocationReplacer(graphBuilder, stackValidator, methodBodies, calledMethods, fields,
                 finalizers, new MethodInitializationTriggerClassifier(types),
                 new StackValueConsumerFinder(new StackEffectResolver(calledMethods)),
-                settings.AllocationScalarReplacement == AllocationScalarReplacementPolicy.NonEscapingObjects));
+                settings.AllocationScalarReplacement == AllocationScalarReplacementPolicy.NonEscapingObjects),
+            new WalkLoopUnroller(calledMethods, settings.LoopUnrolling == LoopUnrollingPolicy.Bounded),
+            new ConstantTripLoopUnroller(settings.LoopUnrolling == LoopUnrollingPolicy.Bounded));
     }
 }

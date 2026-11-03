@@ -3,6 +3,9 @@ using System.Text;
 
 namespace System.Runtime.InteropServices.ConsoleServices;
 
+// Floating-point and decimal values are written with a null provider. FormatProvider is always
+// the current culture here, and the no-provider form writes the same text, so console output does
+// not make the provider-driven formatter reachable.
 internal sealed class ConsoleTextWriter : TextWriter
 {
     private readonly IPlatformOutputStream _output;
@@ -32,6 +35,12 @@ internal sealed class ConsoleTextWriter : TextWriter
             WriteBytes(Encoding.UTF8.GetBytes(value));
         }
     }
+
+    public override void Write(float value) => Write(value.ToString());
+
+    public override void Write(double value) => Write(value.ToString());
+
+    public override void Write(decimal value) => Write(value.ToString());
 
     public override void WriteLine(int value) =>
         Write(value.ToString(FormatProvider) + NewLine);

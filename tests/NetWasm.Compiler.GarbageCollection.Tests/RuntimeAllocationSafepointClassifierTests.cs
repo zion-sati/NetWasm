@@ -29,6 +29,7 @@ public sealed class RuntimeAllocationSafepointClassifierTests
     [InlineData("System.GCCollectionRuntime", "Collect")]
     [InlineData("System.GCFinalizerRuntime", "WaitForPending")]
     // Issue 144 and its class: clones and conversions the runtime allocates.
+    [InlineData("System.Array", "InternalElementType")]
     [InlineData("System.Array", "InternalClone")]
     [InlineData("System.Array", "InternalCloneRange")]
     [InlineData("System.Array", "InternalCopy")]

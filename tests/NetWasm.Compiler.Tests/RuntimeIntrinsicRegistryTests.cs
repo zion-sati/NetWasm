@@ -456,6 +456,8 @@ public sealed class RuntimeIntrinsicRegistryTests
     [InlineData("InternalCloneRange", RuntimeIntrinsic.ArrayCloneRange)]
     [InlineData("GetLowerBound", RuntimeIntrinsic.ArrayGetLowerBound)]
     [InlineData("InternalGetValue", RuntimeIntrinsic.ArrayGetValue)]
+    [InlineData("InternalSetValue", RuntimeIntrinsic.ArraySetValue)]
+    [InlineData("InternalElementType", RuntimeIntrinsic.ArrayElementType)]
     public void RegistryRecognizesNonGenericArrayRuntimeContracts(
         string methodName,
         RuntimeIntrinsic expected)

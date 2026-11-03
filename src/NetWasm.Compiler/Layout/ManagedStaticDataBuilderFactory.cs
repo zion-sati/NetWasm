@@ -108,6 +108,7 @@ internal sealed class ManagedStaticDataBuilderFactory(
                 state),
             new ExceptionObjectBuilder(
                 typeFinder,
+                fields,
                 program,
                 types,
                 types.Target,

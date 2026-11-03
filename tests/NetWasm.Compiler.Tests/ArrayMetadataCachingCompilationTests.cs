@@ -67,7 +67,123 @@ public sealed class ArrayMetadataCachingCompilationTests
                 }
                 try { Length(null); return 13; }
                 catch (NullReferenceException) { }
+                if (Rectangular() != 0) return 14;
                 return 42;
+            }
+
+            // Arrays of rank two and three, cached and not, fail as desktop does.
+            private static int Rectangular()
+            {
+                if (Add(null, null, 0) != 0) return 1;
+                var grid = new int[3, 4];
+                var other = new int[3, 4];
+                if (Add(grid, other, 3) != 0 || Fill(grid) != 30) return 2;
+                if (Add(other, grid, 3) != 30 || other[2, 3] != 5) return 3;
+                try { Add(grid, null, 1); return 4; }
+                catch (NullReferenceException) { if (grid[0, 0] != 0) return 5; }
+                try { Add(grid, new int[3, 3], 3); return 6; }
+                catch (IndexOutOfRangeException) { }
+                try { Add(grid, new int[2, 4], 3); return 7; }
+                catch (IndexOutOfRangeException) { if (grid[1, 3] != 4) return 8; }
+                if (Cube(new int[2, 3, 4]) != 276) return 9;
+                if (Reassign() != 15) return 10;
+                if (Exposed(new int[1, 1]) != 6) return 11;
+                try { StoreReference(new string[1, 2]); return 12; }
+                catch (ArrayTypeMismatchException) { }
+                if (Collect(new string[2, 2]) != 4) return 13;
+                return 0;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Add(int[,] left, int[,] right, int rows)
+            {
+                var sum = 0;
+                for (var i = 0; i < rows; i++)
+                {
+                    for (var j = 0; j < 4; j++)
+                    {
+                        left[i, j] += right[i, j];
+                        sum += left[i, j];
+                    }
+                }
+                return sum;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Fill(int[,] grid)
+            {
+                var sum = 0;
+                for (var i = 0; i < grid.GetLength(0); i++)
+                {
+                    for (var j = 0; j < grid.GetLength(1); j++) sum += grid[i, j] = i + j;
+                }
+                return sum;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Cube(int[,,] cube)
+            {
+                var sum = 0;
+                for (var i = 0; i < 2; i++)
+                    for (var j = 0; j < 3; j++)
+                        for (var k = 0; k < 4; k++)
+                            cube[i, j, k] = i * 12 + j * 4 + k;
+                for (var k = 3; k >= 0; k--)
+                    for (var j = 0; j < 3; j++)
+                        for (var i = 0; i < 2; i++)
+                            sum += cube[i, j, k];
+                return sum;
+            }
+
+            // A local assigned between loops: each loop sees its own array.
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Reassign()
+            {
+                var grid = new int[1, 2];
+                var sum = 0;
+                for (var j = 0; j < 2; j++) grid[0, j] = j + 1;
+                for (var j = 0; j < 2; j++) sum += grid[0, j];
+                grid = new int[2, 3];
+                for (var i = 0; i < 2; i++)
+                    for (var j = 0; j < 3; j++) sum += grid[i, j] + (i == 1 ? 4 : 0);
+                return sum;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Exposed(int[,] grid)
+            {
+                Replace(ref grid);
+                var sum = 0;
+                for (var i = 0; i < 2; i++) sum += grid[i, i];
+                return sum;
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void Replace(ref int[,] grid) => grid = new int[,] { { 2, 0 }, { 0, 4 } };
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void StoreReference(object[,] values)
+            {
+                for (var j = 0; j < 2; j++) Touch(ref values[0, j]);
+            }
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static void Touch(ref object value) => value = new object();
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            private static int Collect(string[,] values)
+            {
+                var sum = 0;
+                for (var i = 0; i < 2; i++)
+                {
+                    for (var j = 0; j < 2; j++)
+                    {
+                        values[i, j] = new string('x', 1);
+                        GC.Collect();
+                        sum += values[i, j].Length;
+                    }
+                }
+                return sum;
             }
 
             [MethodImpl(MethodImplOptions.NoInlining)]

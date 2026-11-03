@@ -71,8 +71,6 @@ internal static class WitBindingToolchain
             new Sha256ArtifactDigestVerifier());
         var wasmTools = new WasmToolsToolchainPathResolver(assets)
             .Resolve(node, compatibility);
-        return new ExternalToolCommand(
-            node.AbsolutePath,
-            [wasmTools.CommandPath, wasmTools.ModulePath]);
+        return ExternalToolCommand.ForWasmTools(node.AbsolutePath, wasmTools.CommandPath, wasmTools.ModulePath);
     }
 }

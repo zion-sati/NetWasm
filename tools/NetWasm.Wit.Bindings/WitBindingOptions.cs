@@ -36,7 +36,7 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
         {
             if (index + 1 >= arguments.Length)
             {
-                throw WitBindingException.Invalid(
+                throw WitBindingException.Usage(
                     $"missing value for option '{arguments[index]}'");
             }
 
@@ -57,14 +57,14 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
                     @namespace = SetOnce(@namespace, value, option);
                     if (!IsNamespace(@namespace))
                     {
-                        throw WitBindingException.Invalid(
+                        throw WitBindingException.Usage(
                             $"'{value}' is not a C# namespace");
                     }
                     break;
                 case "--accessibility":
                     if (accessibilitySpecified)
                     {
-                        throw WitBindingException.Invalid(
+                        throw WitBindingException.Usage(
                             $"option '{option}' was specified more than once");
                     }
 
@@ -72,22 +72,22 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
                     {
                         "public" => WitBindingAccessibility.Public,
                         "internal" => WitBindingAccessibility.Internal,
-                        _ => throw WitBindingException.Invalid(
+                        _ => throw WitBindingException.Usage(
                             $"unsupported binding accessibility '{value}'"),
                     };
                     accessibilitySpecified = true;
                     break;
                 default:
-                    throw WitBindingException.Invalid(
+                    throw WitBindingException.Usage(
                         $"unknown wit-bindgen option '{option}'");
             }
         }
 
         return new WitBindingOptions(
-            wit ?? throw WitBindingException.Invalid(
+            wit ?? throw WitBindingException.Usage(
                 "missing required option '--wit'"),
             world,
-            output ?? throw WitBindingException.Invalid(
+            output ?? throw WitBindingException.Usage(
                 "missing required option '--output'"),
             accessibility,
             @namespace);
@@ -103,6 +103,6 @@ internal sealed class WitBindingOptionsReader : IWitBindingOptionsReader
     private static string SetOnce(string? current, string value, string option) =>
         current is null
             ? value
-            : throw WitBindingException.Invalid(
+            : throw WitBindingException.Usage(
                 $"option '{option}' was specified more than once");
 }

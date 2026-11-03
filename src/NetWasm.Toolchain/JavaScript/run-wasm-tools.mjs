@@ -107,6 +107,37 @@ export function withDirectoryListing(imports, preopenedPaths, getMemory) {
   };
 }
 
+// wasm-tools reports the guest paths that arguments were mounted at, such as
+// /netwasm/paths/0/world.wit, so its diagnostics name the host directories again.
+export function restoreHostPaths(text, mounts) {
+  return text.replace(/\/netwasm\/paths\/(\d+)(?![\d])/g, (guestRoot) => mounts[guestRoot] ?? guestRoot);
+}
+
+// Collects what the guest writes to standard error, so that its paths can be
+// restored before it reaches the host.
+export function withCapturedStandardError(imports, getMemory, chunks) {
+  const preview1 = imports.wasi_snapshot_preview1;
+  return {
+    ...imports,
+    wasi_snapshot_preview1: {
+      ...preview1,
+      fd_write(fd, iovs, iovsLength, writtenPointer) {
+        if (fd !== 2) return preview1.fd_write(fd, iovs, iovsLength, writtenPointer);
+        const view = new DataView(getMemory().buffer);
+        let written = 0;
+        for (let index = 0; index < iovsLength; index++) {
+          const base = view.getUint32(iovs + index * 8, true);
+          const length = view.getUint32(iovs + index * 8 + 4, true);
+          chunks.push(new Uint8Array(getMemory().buffer, base, length).slice());
+          written += length;
+        }
+        view.setUint32(writtenPointer, written, true);
+        return errno.success;
+      },
+    },
+  };
+}
+
 function readStatus(entryPath) {
   try {
     const status = lstatSync(entryPath, { bigint: true });
@@ -134,10 +165,20 @@ async function main([modulePath, ...requestedArguments]) {
   });
   const module = await WebAssembly.compile(await readFile(modulePath));
   let instance;
-  const imports = withDirectoryListing(wasi.getImportObject(), Object.values(preopens),
-    () => instance.exports.memory);
+  const standardError = [];
+  const imports = withCapturedStandardError(
+    withDirectoryListing(wasi.getImportObject(), Object.values(preopens), () => instance.exports.memory),
+    () => instance.exports.memory,
+    standardError);
   instance = await WebAssembly.instantiate(module, imports);
-  const exitCode = wasi.start(instance);
+  let exitCode;
+  try {
+    exitCode = wasi.start(instance);
+  } finally {
+    if (standardError.length !== 0) {
+      process.stderr.write(restoreHostPaths(Buffer.concat(standardError).toString("utf8"), preopens));
+    }
+  }
   if (!Number.isSafeInteger(exitCode) || exitCode < 0 || exitCode > 255) {
     throw new Error("The NetWasm wasm-tools runner received an invalid exit code.");
   }

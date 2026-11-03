@@ -56,18 +56,23 @@ internal sealed class WasmModulePlanner(
              request.ModuleProfile == WasmModuleProfile.CoreApplication) &&
              request.RequestedExports.Count != 0;
         var finalization = _finalizationPlans.Build(methodEmissions);
-        var runtimeImportSelection = new RuntimeImportSelection(
-            request.ModuleProfile,
+        var includeTerminalExceptionReporter =
             request.EntryPointProfile == WasmEntryPointProfile.Process &&
             request.StructuredDiagnostics ||
-            hasInteropTerminalBoundary,
+            hasInteropTerminalBoundary;
+        var runtimeImportSelection = new RuntimeImportSelection(
+            request.ModuleProfile,
+            includeTerminalExceptionReporter,
             request.EmitStackTrace,
             request.RequestedExports.Values.Any(request.JavaScriptAsyncBindings.ContainsKey),
             RequiresEphemeronHandles(methodEmissions),
             request.StructuredDiagnostics || hasInteropTerminalBoundary,
             finalization.RequiresRuntime,
             RequiresWeakHandles(methodEmissions),
-            RequiresRandomSeed(methodEmissions));
+            RequiresIntrinsic(methodEmissions, RuntimeIntrinsic.RandomSeed),
+            RequiresIntrinsic(methodEmissions, RuntimeIntrinsic.ArraySetValue),
+            // A process that reports no exceptions traps on an unhandled one after the hint.
+            request.EntryPointProfile == WasmEntryPointProfile.Process && !includeTerminalExceptionReporter);
         var selectedRuntimeImports = runtimeImports.Resolve(runtimeImportSelection);
         var runtimeImportCount = selectedRuntimeImports.Length;
         var interopImports = interopImportPlanner.Build(request, runtimeImportCount);
@@ -257,10 +262,10 @@ internal sealed class WasmModulePlanner(
                 RuntimeIntrinsic.WeakHandleSet or
                 RuntimeIntrinsic.WeakHandleRelease);
 
-    private bool RequiresRandomSeed(
-        ImmutableArray<StructuredMethodEmission> methodEmissions) =>
-        CalledIntrinsics(methodEmissions)
-            .Any(static intrinsic => intrinsic == RuntimeIntrinsic.RandomSeed);
+    private bool RequiresIntrinsic(
+        ImmutableArray<StructuredMethodEmission> methodEmissions,
+        RuntimeIntrinsic required) =>
+        CalledIntrinsics(methodEmissions).Any(intrinsic => intrinsic == required);
 
     private IEnumerable<RuntimeIntrinsic> CalledIntrinsics(
         ImmutableArray<StructuredMethodEmission> methodEmissions)

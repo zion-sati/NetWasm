@@ -10,7 +10,7 @@ public sealed class LinkedCorpusBuildExecutorTests
         var process = new RecordingProcess();
         var environment = new CompilerCorrectnessEnvironment(
             Path.GetFullPath("repository"), "dotnet", "sdk", "roslyn", "corelib",
-            "references", "oracle.mjs", "oracle.dll", "compiler.dll", TimeSpan.FromSeconds(1));
+            "references", "oracle.mjs", "oracle.dll", "11.0.0", "compiler.dll", TimeSpan.FromSeconds(1));
         var services = new ServiceCollection()
             .AddSingleton(environment)
             .AddSingleton<IQualifiedProcessRunner>(process);

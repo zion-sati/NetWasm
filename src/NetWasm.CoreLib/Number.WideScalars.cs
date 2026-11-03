@@ -11,17 +11,6 @@ namespace System
 {
     internal static partial class Number
     {
-        // The flag is private in the desktop implementation.  The scalar ports
-        // use it to distinguish strict parsing from TryParsePartial.
-        internal const NumberStyles AllowTrailingInvalidCharacters = (NumberStyles)0x4000_0000;
-
-        internal enum ParsingStatus
-        {
-            OK,
-            Failed,
-            Overflow,
-        }
-
 
         internal static TNumber ParseBinaryInteger<TChar, TNumber>(ReadOnlySpan<TChar> text, NumberStyles style, object? provider)
             where TChar : unmanaged
@@ -483,9 +472,13 @@ namespace System
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
             => FormatShortestFloating<TNumber>(TNumber.FloatToBits(value));
 
+        // A format or a provider takes upstream's layout with the provider's NumberFormatInfo;
+        // with neither, the shortest round-trip form is written without that machinery.
         internal static string FormatFloat<TNumber>(TNumber value, string? format, object? provider)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-            => FormatFloating<TNumber>(TNumber.FloatToBits(value), format);
+            => string.IsNullOrEmpty(format) && provider is null
+                ? FormatShortestFloating<TNumber>(TNumber.FloatToBits(value))
+                : FormatFloat(value, format, NumberFormatInfo.GetInstance((IFormatProvider?)provider));
 
         // TryFormat with no format, as FormatFloat(value) writes it.
         internal static bool TryFormatShortestFloat<TNumber>(TNumber value, Span<char> destination, out int charsWritten)
@@ -498,18 +491,20 @@ namespace System
 
         internal static bool TryFormatFloat<TNumber>(TNumber value, ReadOnlySpan<char> format, object? provider, Span<char> destination, out int charsWritten)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            var builder = new ValueStringBuilder(destination);
-            AppendFloating<TNumber>(ref builder, TNumber.FloatToBits(value), format);
-            return builder.TryCopyTo(destination, out charsWritten);
-        }
+            => format.IsEmpty && provider is null
+                ? TryFormatShortestFloat(value, destination, out charsWritten)
+                : TryFormatFloat(value, format, NumberFormatInfo.GetInstance((IFormatProvider?)provider), destination, out charsWritten);
 
         internal static bool TryFormatFloat<TNumber>(TNumber value, ReadOnlySpan<char> format, object? provider, Span<byte> destination, out int bytesWritten)
             where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
         {
+            if (!format.IsEmpty || provider is not null)
+            {
+                return TryFormatFloat(value, format, NumberFormatInfo.GetInstance((IFormatProvider?)provider), destination, out bytesWritten);
+            }
             Span<char> buffer = stackalloc char[64];
             var builder = new ValueStringBuilder(buffer);
-            AppendFloating<TNumber>(ref builder, TNumber.FloatToBits(value), format);
+            AppendShortestFloating<TNumber>(ref builder, TNumber.FloatToBits(value));
             var success = TryCopyUtf8(builder.AsSpan(), destination, out bytesWritten);
             builder.Dispose();
             return success;
@@ -750,7 +745,7 @@ namespace System
         {
             if (text.IsEmpty)
             {
-                return string.Create([]);
+                return new string([]);
             }
 
             var bytes = MemoryMarshal.Cast<TChar, byte>(text);
@@ -764,7 +759,7 @@ namespace System
             {
                 for (var i = 0; i < bytes.Length; i++) chars[i] = (char)bytes[i];
             }
-            return string.Create(chars);
+            return new string(chars);
         }
 
         private static bool TryCopy(string value, Span<char> destination, out int written)

@@ -56,7 +56,11 @@ internal sealed class CompileCliCommand(
             options.ManagedIdempotentLoopCollapse,
             options.ManagedLoopStoreForwarding,
             options.ManagedArrayLoopIdioms,
-            options.ManagedLoopVectorization);
+            options.ManagedLoopVectorization,
+            options.ManagedPureCallReuse,
+            options.ManagedFieldLoadReuse,
+            options.ManagedConditionalStoreMerging,
+            options.ManagedInlineArrayData);
         var entryPoint = options.Target == NwcTarget.Exe ? _entryPoints.Read(options.Input) : null;
         using var session = _sessions.Create(options.WasmTools);
         var compilation = session.Compile(new CompilerOptions(

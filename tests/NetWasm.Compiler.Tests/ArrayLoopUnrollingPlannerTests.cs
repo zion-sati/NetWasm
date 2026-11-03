@@ -20,7 +20,7 @@ public sealed class ArrayLoopUnrollingPlannerTests
         var proofs = fixture.Analyzer.Analyze(fixture.Flow);
         Assert.Single(proofs);
 
-        Assert.Empty(new ArrayLoopUnrollingPlanner(new FrozenInduction(proofs), 512).Plan(fixture.Flow));
+        Assert.Empty(Planner(new FrozenInduction(proofs), 512).Plan(fixture.Flow));
     }
 
     [Theory]
@@ -29,7 +29,7 @@ public sealed class ArrayLoopUnrollingPlannerTests
     {
         var payload = Payload(operation);
         var fixture = WithPayload(payload);
-        var planner = new ArrayLoopUnrollingPlanner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), 512);
+        var planner = Planner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), 512);
 
         var plan = Assert.Single(planner.Plan(fixture.Flow));
 
@@ -40,13 +40,51 @@ public sealed class ArrayLoopUnrollingPlannerTests
         Assert.Equal(4, Assert.Single(plan.EntryBranches));
     }
 
+    // A span element's address, as Unsafe.Add computes it, and a primitive
+    // read or written through it; another call, or a struct read, stays.
+    [Theory]
+    [InlineData(RuntimeIntrinsic.UnsafeAdd, true)]
+    [InlineData(RuntimeIntrinsic.UnsafeAddByteOffset, true)]
+    [InlineData(RuntimeIntrinsic.UnsafeAs, true)]
+    [InlineData(RuntimeIntrinsic.NativeMemoryCopy, false)]
+    public void AdmitsAddressIntrinsicsOnly(RuntimeIntrinsic intrinsic, bool admitted)
+    {
+        var method = new EntityKey(new AssemblyIdentity("fixture"), 0x06000042);
+        var fixture = WithPayload([
+            new(0, 1, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)),
+            new(1, 2, CilOperation.Call, new CilOperand.Entity(method)),
+            new(2, 3, CilOperation.Pop, new CilOperand.None()),
+        ]);
+        var planner = new ArrayLoopUnrollingPlanner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)),
+            new Intrinsics(method, intrinsic), 512);
+
+        Assert.Equal(admitted, !planner.Plan(fixture.Flow).IsEmpty);
+    }
+
+    [Theory]
+    [InlineData(CilOperation.LoadObject, true, true)]
+    [InlineData(CilOperation.StoreObject, true, true)]
+    [InlineData(CilOperation.LoadObject, false, false)]
+    public void AdmitsPrimitiveIndirectAccessesOnly(CilOperation operation, bool primitive, bool admitted)
+    {
+        var type = new CilOperand.TypeIdentity(primitive
+            ? CliTypeIdentity.FromStackKind(CliValueKind.I4)
+            : CliTypeIdentity.Named(new AssemblyIdentity("fixture"), "Fixture", "Pair", isValueType: true));
+        var address = new CilInstruction(0, 1, CilOperation.LoadArgument, new CilOperand.Index(0));
+        var fixture = WithPayload(operation == CilOperation.LoadObject
+            ? [address, new(1, 2, operation, type), new(2, 3, CilOperation.Pop, new CilOperand.None())]
+            : [address, new(1, 2, CilOperation.LoadInt32, new CilOperand.ConstantI4(1)), new(2, 3, operation, type)]);
+
+        Assert.Equal(admitted, !Planner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), 512).Plan(fixture.Flow).IsEmpty);
+    }
+
     [Fact]
     public void LeavesLoopsWithALookaheadGuardAlone()
     {
         var fixture = WithPayload(Payload(CilOperation.Add));
         var proofs = fixture.Analyzer.Analyze(fixture.Flow).Select(proof => proof with { Lookahead = 1 }).ToImmutableArray();
 
-        Assert.Empty(new ArrayLoopUnrollingPlanner(new FrozenInduction(proofs), 512).Plan(fixture.Flow));
+        Assert.Empty(Planner(new FrozenInduction(proofs), 512).Plan(fixture.Flow));
     }
 
     [Fact]
@@ -54,9 +92,22 @@ public sealed class ArrayLoopUnrollingPlannerTests
     {
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
         var induction = new FrozenInduction([]);
-        Assert.Throws<ArgumentNullException>(() => new ArrayLoopUnrollingPlanner(null!, 0));
-        Assert.Throws<ArgumentNullException>(() => new ArrayLoopUnrollingPlanner(induction, 0).Plan(null!));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new ArrayLoopUnrollingPlanner(induction, -1).Plan(fixture.Flow));
+        Assert.Throws<ArgumentNullException>(() => Planner(null!, 0));
+        Assert.Throws<ArgumentNullException>(() => new ArrayLoopUnrollingPlanner(induction, null!, 0));
+        Assert.Throws<ArgumentNullException>(() => Planner(induction, 0).Plan(null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Planner(induction, -1).Plan(fixture.Flow));
+    }
+
+    private static ArrayLoopUnrollingPlanner Planner(IArrayLoopInductionAnalyzer induction, int budget) =>
+        new(induction, new Intrinsics(default, default), budget);
+
+    private sealed class Intrinsics(EntityKey method, RuntimeIntrinsic value) : IRuntimeIntrinsicRegistry
+    {
+        public bool TryGetIntrinsic(EntityKey key, out RuntimeIntrinsic intrinsic)
+        {
+            intrinsic = value;
+            return key == method && method != default;
+        }
     }
 
     public static TheoryData<CilOperation> NumericOperations()
@@ -136,7 +187,7 @@ public sealed class ArrayLoopUnrollingPlannerTests
     public void SelectsFactorWithinExpandedBodyBudget(int budget, int factor)
     {
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
-        var planner = new ArrayLoopUnrollingPlanner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), budget);
+        var planner = Planner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), budget);
 
         var plan = Assert.Single(planner.Plan(fixture.Flow));
 
@@ -155,7 +206,7 @@ public sealed class ArrayLoopUnrollingPlannerTests
     public void LeavesOversizedLoopUnchanged(int budget)
     {
         var fixture = ArrayLoopInductionAnalyzerTests.Create(0, 1);
-        Assert.Empty(new ArrayLoopUnrollingPlanner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), budget)
+        Assert.Empty(Planner(new FrozenInduction(fixture.Analyzer.Analyze(fixture.Flow)), budget)
             .Plan(fixture.Flow));
     }
 

@@ -21,7 +21,7 @@ internal sealed class ArrayElementAddressEmitter(
             proof.Instructions == request.Header.Instructions && proof.Locals == request.Header.Locals &&
             proof.LocalSignatureTypes == request.Header.LocalSignatureTypes &&
             proof.AccessOffsets.Contains(request.Instruction.Offset) &&
-            proof.Instructions.Any(instruction => ReferenceEquals(instruction, request.Instruction)) &&
+            proof.Contains(request.Instruction) &&
             proof.IndexOffsets.TryGetValue(request.Instruction.Offset, out var expression) &&
             !request.Context.ValueLayout.SpilledScalarLocals.Contains(expression.BaseLocal) &&
             request.Header.Locals[expression.BaseLocal] == CliValueKind.I4 &&
@@ -32,7 +32,8 @@ internal sealed class ArrayElementAddressEmitter(
         }
         if (!request.Context.ArrayMetadata.Plan.Accesses.TryGetValue(request.Instruction.Offset, out var slot))
         {
-            ManagedMemoryEmitter.EmitArrayElementAddress(code, layouts.Target, arrayLocal, indexLocal, elementSize);
+            ManagedMemoryEmitter.EmitArrayElementAddress(code, layouts.Target, arrayLocal, indexLocal,
+                request.Context.InlineArrayData, elementSize);
         }
         else
         {

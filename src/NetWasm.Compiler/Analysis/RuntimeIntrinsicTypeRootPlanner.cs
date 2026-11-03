@@ -30,7 +30,7 @@ internal sealed class RuntimeIntrinsicTypeRootPlanner(
                 method.Definition.Key, out var intrinsic) ? intrinsic : (RuntimeIntrinsic?)null))
             .ToArray();
         var inspectNullable = demands.Any(demand =>
-            demand.Intrinsic == RuntimeIntrinsic.NullableGetUnderlyingType);
+            demand.Intrinsic is RuntimeIntrinsic.NullableGetUnderlyingType or RuntimeIntrinsic.ArraySetValue);
         var enumNames = demands.Any(demand => demand.Intrinsic == RuntimeIntrinsic.EnumGetNames);
         var boxEnums = demands.Any(demand => demand.Intrinsic == RuntimeIntrinsic.EnumToObject);
         var boxArrayElements = demands.Any(demand =>

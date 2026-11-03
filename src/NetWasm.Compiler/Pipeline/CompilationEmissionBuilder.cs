@@ -216,6 +216,9 @@ internal sealed class CompilationEmissionBuilder(
             InlineSmallBlockOperations =
                 preparation.OptimizationSettings.SmallBlockOperations ==
                 SmallBlockOperationPolicy.Inline,
+            InlineArrayData =
+                preparation.OptimizationSettings.InlineArrayData ==
+                InlineArrayDataPolicy.Inline,
             SourceLocations = _stackTraceSourceLocations.Read(metadata, options),
         };
         var emission = emitter.Emit(request);

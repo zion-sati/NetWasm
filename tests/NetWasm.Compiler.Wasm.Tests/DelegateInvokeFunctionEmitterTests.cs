@@ -251,7 +251,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
             ManagedThrowFunctionIndex = OptionalFunctionIndex.At(EmitterTestSupport.ManagedThrowFunction),
         };
         var emitter = new DelegateInvokeFunctionEmitter(layouts, layouts, layouts, WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new ManagedMethodFunctionTypeResolver(),
             new DelegateInvocationTargetSelector(),
             new GeneratedFunctionWriterFactory(),
@@ -403,7 +403,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
             values ?? layouts,
             layouts,
             WasmRuntimeImports.CreateCatalog(),
-            new ImplicitExceptionEmitter(layouts, layouts),
+            new ImplicitExceptionEmitter(layouts),
             new ManagedMethodFunctionTypeResolver(),
             new DelegateInvocationTargetSelector(),
             writers ?? new GeneratedFunctionWriterFactory(),

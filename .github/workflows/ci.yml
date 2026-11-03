@@ -112,6 +112,7 @@ jobs:
             eng/tests/test_create_compiler_test_shard_filter.py \
             eng/tests/test_merge_compiler_test_timings.py \
             eng/tests/test_publish_release_packages.py \
+            eng/tests/test_qualify_doomsharp.py \
             eng/tests/test_release_train.py \
             eng/tests/test_resolve_release.py \
             eng/tests/test_verify_release_ci.py \
@@ -687,6 +688,56 @@ jobs:
             "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}" \
             --skip-tunit-consumer
 
+  # DoomSharp's render benchmark at every optimization preset with each
+  # collector, built from the candidate packages: every build must render the
+  # pixel checksum desktop .NET renders.
+  doomsharp:
+    needs: [impact, verify-packages]
+    if: needs.impact.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    name: DoomSharp / every preset
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Read the DoomSharp pin
+        id: pin
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          pin = json.loads(Path('eng/doomsharp.json').read_text())
+          print(f"repository={pin['repository']}")
+          print(f"commit={pin['commit']}")
+          PY
+      - name: Check out DoomSharp
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ steps.pin.outputs.repository }}
+          ref: ${{ steps.pin.outputs.commit }}
+          path: doomsharp
+          persist-credentials: false
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+      - name: Download candidate packages
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: runtime-pack-candidate
+          path: ${{ runner.temp }}/packages
+      - name: Download matching native host package
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: host-tools-linux-x64
+          path: ${{ runner.temp }}/packages
+      - name: Build and run DoomSharp at every preset
+        shell: bash
+        run: |
+          python3 -B eng/qualify-doomsharp.py doomsharp \
+            "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}"
+
   browser-hosts:
     needs: [impact, verify-packages]
     if: needs.impact.outputs.scope == 'full'
@@ -779,7 +830,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [impact, docs, ci-infrastructure, test, compiler, javascript-contracts, timings, package, host-tools, verify-packages, runtime-pack-hosts, browser-hosts]
+    needs: [impact, docs, ci-infrastructure, test, compiler, javascript-contracts, timings, package, host-tools, verify-packages, runtime-pack-hosts, browser-hosts, doomsharp]
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -800,6 +851,7 @@ jobs:
           VERIFY_PACKAGES_RESULT: ${{ needs.verify-packages.result }}
           RUNTIME_PACK_HOSTS_RESULT: ${{ needs.runtime-pack-hosts.result }}
           BROWSER_HOSTS_RESULT: ${{ needs.browser-hosts.result }}
+          DOOMSHARP_RESULT: ${{ needs.doomsharp.result }}
         run: |
           python3 eng/verify-ci-results.py \
             --scope "$SCOPE" \
@@ -814,7 +866,8 @@ jobs:
             --host-tools "$HOST_TOOLS_RESULT" \
             --verify-packages "$VERIFY_PACKAGES_RESULT" \
             --runtime-pack-hosts "$RUNTIME_PACK_HOSTS_RESULT" \
-            --browser-hosts "$BROWSER_HOSTS_RESULT"
+            --browser-hosts "$BROWSER_HOSTS_RESULT" \
+            --doomsharp "$DOOMSHARP_RESULT"
       - name: Create exact-tree qualification receipt
         if: github.event_name == 'pull_request' && needs.impact.outputs.scope == 'full'
         shell: bash

@@ -169,7 +169,7 @@ namespace System.Text
 
             var result = new char[Length];
             CopyTo(0, result, 0, result.Length);
-            return string.Create(result);
+            return new string(result);
         }
 
         public string ToString(int startIndex, int length)
@@ -181,7 +181,7 @@ namespace System.Text
             }
             var result = new char[length];
             CopyTo(startIndex, result, 0, length);
-            return string.Create(result);
+            return new string(result);
         }
 
         public StringBuilder Clear()
@@ -256,7 +256,7 @@ namespace System.Text
             {
                 source[index] = value[startIndex + index];
             }
-            Append(string.Create(source));
+            Append(new string(source));
             return this;
         }
 
@@ -496,7 +496,7 @@ namespace System.Text
 
         public StringBuilder Insert(int index, char[]? value)
         {
-            return value is null ? Insert(index, (string?)null) : Insert(index, string.Create(value), 1);
+            return value is null ? Insert(index, (string?)null) : Insert(index, new string(value), 1);
         }
 
         public StringBuilder Insert(int index, char[]? value, int startIndex, int charCount)
@@ -515,10 +515,10 @@ namespace System.Text
             {
                 text[offset] = value[startIndex + offset];
             }
-            return Insert(index, string.Create(text), 1);
+            return Insert(index, new string(text), 1);
         }
 
-        public StringBuilder Insert(int index, ReadOnlySpan<char> value) => Insert(index, string.Create(value.ToArray()), 1);
+        public StringBuilder Insert(int index, ReadOnlySpan<char> value) => Insert(index, new string(value), 1);
 
         public StringBuilder Insert(int index, object? value) => value is null ? Insert(index, (string?)null) : Insert(index, value.ToString(), 1);
         public StringBuilder Insert(int index, bool value) => Insert(index, value.ToString(), 1);
@@ -607,10 +607,10 @@ namespace System.Text
         }
 
         public StringBuilder Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue) =>
-            Replace(string.Create(oldValue.ToArray()), string.Create(newValue.ToArray()));
+            Replace(new string(oldValue), new string(newValue));
 
         public StringBuilder Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue, int startIndex, int count) =>
-            Replace(string.Create(oldValue.ToArray()), string.Create(newValue.ToArray()), startIndex, count);
+            Replace(new string(oldValue), new string(newValue), startIndex, count);
 
         public StringBuilderRuneEnumerator EnumerateRunes() => new(this);
 
