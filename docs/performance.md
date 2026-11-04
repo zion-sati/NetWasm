@@ -13,21 +13,21 @@ Median time of 15 runs in milliseconds, with the fastest and slowest run:
 
 | Workload | NetWasm, NetWasmGC | NetWasm, Compact | Mono AOT | Desktop .NET 11 JIT | Desktop .NET 11 NativeAOT |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Full transaction | **29.7** (29.5–31.8) | 44.0 (43.0–45.7) | 56.6 (56.3–60.4) | 50.1 (49.2–53.4) | 32.1 (31.9–33.4) |
-| Retained object graph | **4.9** (4.8–5.2) | 12.4 (12.3–12.9) | 14.4 (14.3–15.2) | 9.7 (9.6–10.3) | 7.5 (7.4–8.1) |
-| UI churn | **7.8** (7.8–8.1) | 21.1 (21.1–21.5) | 26.9 (26.8–27.1) | 8.6 (8.5–8.7) | 6.6 (6.5–6.8) |
+| Full transaction | **28.5** (28.3–31.3) | 42.0 (41.8–46.9) | 56.6 (56.3–57.7) | 49.7 (49.1–56.7) | 32.6 (32.2–34.4) |
+| Retained object graph | **4.8** (4.8–5.0) | 12.5 (12.4–12.9) | 14.4 (14.3–15.0) | 9.8 (9.6–10.0) | 7.6 (7.5–7.8) |
+| UI churn | **7.7** (7.6–8.0) | 21.2 (21.0–21.6) | 27.4 (27.0–28.5) | 8.7 (8.6–9.2) | 6.7 (6.6–7.1) |
 
-NetWasm with NetWasmGC takes 48%, 66% and 71% less time than Mono AOT on the
-three workloads and 41%, 49% and 9% less than the desktop JIT. It also takes 8%
-less than desktop NativeAOT on the full transaction and 34% less on the object
+NetWasm with NetWasmGC takes 50%, 66% and 72% less time than Mono AOT on the
+three workloads and 43%, 51% and 11% less than the desktop JIT. It also takes 13%
+less than desktop NativeAOT on the full transaction and 37% less on the object
 graph. Compact, the size-first default, takes less time than Mono AOT on all
 three workloads.
 
 | Wasm build | Program size (Brotli 11) | Peak linear memory: transaction, graph, churn |
 | --- | ---: | ---: |
-| NetWasm, NetWasmGC | 84,299–190,175 B (20,772–41,846 B) | 20.9, 15.7 and 7.3 MiB |
-| NetWasm, Compact | 79,737–185,451 B (19,272–40,095 B) | 17.4, 11.8 and 1.7 MiB |
-| Mono AOT | 7,761,543–7,848,447 B (1,581,589–1,593,880 B) | 50, 50 and 50 MiB |
+| NetWasm, NetWasmGC | 88,382–205,251 B (21,469–44,811 B) | 20.9, 15.7 and 7.3 MiB |
+| NetWasm, Compact | 83,810–200,452 B (19,711–43,192 B) | 17.4, 11.8 and 1.7 MiB |
+| Mono AOT | 7,761,543–7,848,447 B (1,579,905–1,597,487 B) | 50, 50 and 50 MiB |
 
 Mono reserves 50 MiB of linear memory when it starts, so its peak on every
 workload is that reservation rather than its live data. Desktop .NET runs
@@ -53,15 +53,15 @@ with the fastest and slowest run:
 
 | Workload | NetWasm, NetWasmGC | NetWasm, Compact | Mono AOT | Desktop .NET 11 JIT | Desktop .NET 11 NativeAOT |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Preallocated transaction | **15.5** (15.5–16.5) | 15.6 (15.5–17.9) | 22.5 (22.2–24.5) | 11.2 (11.0–11.8) | 7.6 (7.6–7.9) |
-| n-body | **52.6** (52.5–52.7) | 52.6 (52.5–53.1) | 53.2 (53.2–54.9) | 64.4 (64.3–64.9) | 62.8 (62.7–62.8) |
-| Quicksort | **53.6** (53.3–56.0) | 53.6 (53.3–56.4) | 57.8 (57.6–58.5) | 48.5 (48.3–50.5) | 48.3 (48.0–50.0) |
-| CRC-32 | **47.4** (47.3–48.8) | 47.4 (47.3–49.4) | 47.4 (47.4–49.4) | 46.9 (46.9–49.4) | 46.9 (46.8–48.8) |
+| Preallocated transaction | **13.7** (13.6–15.5) | 14.0 (13.8–14.9) | 22.8 (22.4–25.0) | 11.2 (11.1–11.7) | 7.7 (7.6–8.3) |
+| n-body | **52.7** (52.5–53.4) | 52.8 (52.5–54.6) | 53.3 (53.2–55.5) | 63.6 (63.5–65.7) | 62.8 (62.8–64.3) |
+| Quicksort | **53.9** (53.8–55.4) | 53.4 (53.2–56.8) | 57.9 (57.7–60.8) | 48.8 (48.5–49.5) | 48.4 (48.0–49.5) |
+| CRC-32 | **47.4** (47.3–47.5) | 47.4 (47.3–48.9) | 47.4 (47.3–50.1) | 46.9 (46.9–47.4) | 47.0 (46.9–48.4) |
 
-Without allocation, NetWasm takes 31% less time than Mono AOT on the
+Without allocation, NetWasm takes 40% less time than Mono AOT on the
 transaction's library work and 7% less on the quicksort, and matches it on
 n-body and CRC-32. Desktop .NET runs the preallocated transaction
-and the quicksort faster than either Wasm build, and every build is within 1.2%
+and the quicksort faster than either Wasm build, and every build is within 1.0%
 on CRC-32. So much of NetWasm's lead over desktop .NET on the allocating
 workloads comes from allocation and collection.
 
@@ -72,29 +72,36 @@ so that difference reflects .NET 11 rather than Wasm outrunning native code.
 ## Micro-benchmarks
 
 dotnet/performance's runtime micro-benchmarks, with its `System.Numerics`
-vector, `System.Runtime.Intrinsics` and `System.Memory` benchmarks, compiled
-from the same source for each runtime: 2,202 cases that all three run.
-Geometric mean of NetWasm's time over the other runtime's, lower is faster:
+vector, `System.Runtime.Intrinsics` and `System.Memory` benchmarks, and
+NetWasm's own workloads, compiled from the same source for each runtime: 2,213
+cases that all three run. NetWasm's workloads are a search for the largest prime
+below 10,000,000 by trial division, with a remainder test and with a single
+division, and the timed regions of the three allocation workloads above, called
+repeatedly in one process. Geometric mean of NetWasm's time over the other
+runtime's, lower is faster:
 
 | Family | Cases | NetWasm / Mono AOT | NetWasm / desktop .NET 11 JIT |
 | --- | ---: | ---: | ---: |
-| Runtime | 384 | 0.56 | 0.85 |
-| Math | 96 | 0.85 | 1.41 |
-| `System.Memory` spans | 364 | 0.59 | 2.34 |
-| `System.Numerics` vectors | 770 | 0.39 | 3.18 |
-| `System.Runtime.Intrinsics` | 588 | 0.35 | 3.28 |
-| All | 2,202 | 0.45 | 2.34 |
+| NetWasm workloads | 5 | 0.48 | 0.72 |
+| Runtime | 384 | 0.43 | 0.78 |
+| Math | 96 | 0.81 | 1.34 |
+| `System.Memory` spans | 370 | 0.53 | 2.02 |
+| `System.Numerics` vectors | 770 | 0.38 | 3.08 |
+| `System.Runtime.Intrinsics` | 588 | 0.34 | 3.26 |
+| All | 2,213 | 0.41 | 2.20 |
+
+Five cases never use what they compute, and Mono AOT's LLVM removes their work
+and times an empty loop. They are left out of the NetWasm / Mono AOT means;
+counting them, the overall ratio is 0.43.
 
 [Micro-benchmark results](micro-benchmarks.md) lists every case. The three
 runtimes ran interleaved: the cases went in chunks of 50, each chunk ran on
 every runtime one after another with the order rotating from chunk to chunk and
 round to round, and each runtime kept its fastest of two rounds. NetWasm ran at
 `O3` with NetWasmGC, Mono AOT as configured below, and the desktop JIT with
-tiering off, so it runs optimized code from the start. Six more cases search
-spans with `InvariantCulture` comparisons, which NetWasm's ordinal text profile
-does not support. The benchmarks are dotnet/performance at commit
-`ceb046992aa203f881d7c8a29d50a105805ecb42`, with BenchmarkDotNet replaced by a
-plain timing loop that every runtime shares.
+tiering off, so it runs optimized code from the start. The benchmarks are
+dotnet/performance at commit `ceb046992aa203f881d7c8a29d50a105805ecb42`, with
+BenchmarkDotNet replaced by a plain timing loop that every runtime shares.
 
 ## What was measured
 
@@ -118,7 +125,7 @@ small Wasmtime host that follows every memory's growth.
 
 ## Versions and settings
 
-- **NetWasm:** 0.10.7, `NetWasmOptimization=O3`, with `NetWasmGarbageCollector`
+- **NetWasm:** 0.10.8, `NetWasmOptimization=O3`, with `NetWasmGarbageCollector`
   set to `NetWasm` or `Compact`. The figures are the lower median of two
   15-run cohorts.
 - **Mono AOT:** .NET 11 RC3 (SDK 11.0.100-rc.3.26522.148) with the
@@ -146,7 +153,7 @@ restores the released NetWasm packages from NuGet.org:
 
 ```sh
 python3 compiler-qualification/runtime-performance/collectors.py \
-  --feed <empty-directory> 0.10.7 --output <new-directory> \
+  --feed <empty-directory> 0.10.8 --output <new-directory> \
   --collectors NetWasm Compact \
   --mono-aot <dotnet-root> <wasi-sdk-root> \
   --desktop jit aot
