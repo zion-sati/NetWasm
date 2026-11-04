@@ -290,6 +290,8 @@ internal sealed class FrontendArtifactCacheIdentityBuilder(
                 frontendOptimization.PureCallReuse,
                 frontendOptimization.FieldLoadReuse,
                 frontendOptimization.ConditionalStoreMerging,
+                frontendOptimization.QuotientReuse,
+                frontendOptimization.IntegerCheckElimination,
                 HashOptionalInput(options.WitPath),
                 string.Join('\n', options.Exports.OrderBy(static value => value.Name, StringComparer.Ordinal).Select(static value => $"{value.Name}|{value.TypeName}|{value.MethodName}")),
                 string.Join('\n', aliases.OrderBy(static value => value.Key, StringComparer.Ordinal).Select(static value => $"{value.Key}={value.Value}")),

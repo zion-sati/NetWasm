@@ -276,7 +276,7 @@ public sealed partial class SdkToolchainContractTests
     [InlineData("10.0.302", "osx-arm64", "osx-arm64", "dotnet.microsoft.com/download")]
     [InlineData("10.0.300-preview.7.25380.1", "win-x64", "win-x64", "dotnet.microsoft.com/download")]
     [InlineData("10.0.303", "linux-x64", "linux-x64", null)]
-    [InlineData("10.0.401", "rhel.9-x64", "linux-x64", null)]
+    [InlineData("10.0.403", "rhel.9-x64", "linux-x64", null)]
     [InlineData("11.0.100-rc.3.26522.148", "osx-arm64", "osx-arm64", null)]
     public void SdkVersionValidationStopsSdksThatCannotRestoreTheFramework(
         string sdkVersion, string sdkRid, string portableRid, string? advice)

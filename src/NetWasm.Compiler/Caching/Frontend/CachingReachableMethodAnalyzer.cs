@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Analysis;
 using System;
 using NetWasm.Compiler.Core;
@@ -55,6 +56,8 @@ internal sealed class CachingReachableMethodAnalyzerFactory(
         IMethodRepository methods,
         IMethodSpecializer specializer,
         IManagedMethodOptimizer optimizer,
+        ICalledMethodResolver calledMethods,
+        IntegerCheckEliminationPolicy integerChecks,
         IImplicitExceptionDiscovery exceptionDiscovery,
         IReachabilityInstructionAnalyzer instructionAnalyzer) =>
         new CachingReachableMethodAnalyzer(
@@ -65,6 +68,8 @@ internal sealed class CachingReachableMethodAnalyzerFactory(
                 methods,
                 specializer,
                 optimizer,
+                calledMethods,
+                integerChecks,
                 exceptionDiscovery,
                 instructionAnalyzer),
             _restorer,

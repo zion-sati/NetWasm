@@ -16,7 +16,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 28;
+    private const ushort SchemaVersion = 29;
 
     public ImmutableArray<byte> Encode(FrontendArtifactSnapshot snapshot)
     {
@@ -577,7 +577,41 @@ internal sealed class FrontendArtifactEncoder : IFrontendArtifactEncoder
                 pair => writer.Write(pair.Key.Value),
                 pair => WriteExceptionGroup(pair.Value));
             WriteStackMap(method.InstructionEntryStacks);
+            // The proofs that let the emitter leave checks out, while they still
+            // describe the header's instructions, so a cached method emits as the
+            // method it was cached from.
+            var header = method.Header;
+            WriteNullable(
+                header.ArrayBoundsProof is { } bounds &&
+                    bounds.Describes(header.Instructions, header.Locals, header.LocalSignatureTypes) ? bounds : null,
+                WriteArrayBoundsProof);
+            WriteNullable(
+                header.IntegerCheckProof is { } divisions && divisions.Instructions == header.Instructions ? divisions : null,
+                WriteIntegerCheckProof);
         }
+
+        private void WriteArrayBoundsProof(ArrayBoundsProof proof)
+        {
+            WriteOffsets(proof.AccessOffsets);
+            WriteDictionary(
+                proof.IndexOffsets.OrderBy(static pair => pair.Key),
+                pair => writer.Write(pair.Key),
+                pair =>
+                {
+                    writer.Write(pair.Value.BaseLocal);
+                    writer.Write(pair.Value.ElementOffset);
+                });
+            WriteOffsets(proof.NonNullOffsets);
+        }
+
+        private void WriteIntegerCheckProof(IntegerCheckProof proof)
+        {
+            WriteOffsets(proof.NonZeroDivisors);
+            WriteOffsets(proof.NonOverflowing);
+        }
+
+        private void WriteOffsets(ImmutableHashSet<int> offsets) =>
+            WriteArray<int>([.. offsets.Order()], writer.Write);
 
         private void WriteBlock(StructuredBlockDefinition block)
         {

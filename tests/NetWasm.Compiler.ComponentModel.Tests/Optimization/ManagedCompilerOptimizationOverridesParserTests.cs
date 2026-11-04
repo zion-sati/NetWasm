@@ -10,7 +10,7 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
         get
         {
             var data = new TheoryData<int, string?>();
-            for (var feature = 0; feature < 22; feature++)
+            for (var feature = 0; feature < 24; feature++)
                 foreach (var value in new string?[] { null, "Auto", "Disabled", "Enabled", "enabled", "", "2" })
                     data.Add(feature, value);
             return data;
@@ -44,7 +44,9 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
             pureCallReuse: feature == 18 ? value : null,
             fieldLoadReuse: feature == 19 ? value : null,
             conditionalStoreMerging: feature == 20 ? value : null,
-            inlineArrayData: feature == 21 ? value : null);
+            inlineArrayData: feature == 21 ? value : null,
+            quotientReuse: feature == 22 ? value : null,
+            integerCheckElimination: feature == 23 ? value : null);
         if (value is null or "Auto")
         {
             Assert.Null(Parse());
@@ -100,8 +102,12 @@ public sealed class ManagedCompilerOptimizationOverridesParserTests
                 ? ManagedFieldLoadReuse.Enabled : ManagedFieldLoadReuse.Disabled),
             20 => new WasmOptimizationOverrides(ConditionalStoreMerging: enabled
                 ? ManagedConditionalStoreMerging.Enabled : ManagedConditionalStoreMerging.Disabled),
-            _ => new WasmOptimizationOverrides(InlineArrayData: enabled
+            21 => new WasmOptimizationOverrides(InlineArrayData: enabled
                 ? ManagedInlineArrayData.Enabled : ManagedInlineArrayData.Disabled),
+            22 => new WasmOptimizationOverrides(QuotientReuse: enabled
+                ? ManagedQuotientReuse.Enabled : ManagedQuotientReuse.Disabled),
+            _ => new WasmOptimizationOverrides(IntegerCheckElimination: enabled
+                ? ManagedIntegerCheckElimination.Enabled : ManagedIntegerCheckElimination.Disabled),
         };
         Assert.Equal(expected, Parse());
     }

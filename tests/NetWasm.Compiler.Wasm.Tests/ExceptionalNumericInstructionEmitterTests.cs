@@ -284,6 +284,46 @@ public sealed class ExceptionalNumericInstructionEmitterTests
         Assert.Contains(ManagedExceptionKind.DivideByZero, exceptions.Kinds);
     }
 
+    // A division keeps each check its integer check proof does not rule out.
+    [Theory]
+    [InlineData(CilOperation.Divide, false, false, true, true)]
+    [InlineData(CilOperation.Divide, true, false, false, true)]
+    [InlineData(CilOperation.Remainder, false, true, true, false)]
+    [InlineData(CilOperation.Remainder, true, true, false, false)]
+    [InlineData(CilOperation.DivideUnsigned, true, false, false, false)]
+    public void ProvenDivisionsLeaveOutTheirChecks(
+        CilOperation operation, bool nonZero, bool nonOverflowing, bool zeroCheck, bool overflowCheck)
+    {
+        var exceptions = new RecordingImplicitExceptionEmitter();
+        var request = CreateInstructionRequest(operation, [CliValueKind.I4, CliValueKind.I4],
+            nonZero: nonZero, nonOverflowing: nonOverflowing);
+
+        Emit(CreateEmitter(exceptions: exceptions), request);
+
+        Assert.Equal(zeroCheck, exceptions.Kinds.Contains(ManagedExceptionKind.DivideByZero));
+        Assert.Equal(overflowCheck, exceptions.Kinds.Contains(ManagedExceptionKind.Overflow));
+    }
+
+    // Checked arithmetic that cannot overflow is the operation itself.
+    [Theory]
+    [InlineData(CilOperation.AddChecked, CliValueKind.I4, WasmOpcodes.I32Add)]
+    [InlineData(CilOperation.AddCheckedUnsigned, CliValueKind.I8, WasmOpcodes.I64Add)]
+    [InlineData(CilOperation.SubtractChecked, CliValueKind.I8, WasmOpcodes.I64Subtract)]
+    [InlineData(CilOperation.SubtractCheckedUnsigned, CliValueKind.I4, WasmOpcodes.I32Subtract)]
+    [InlineData(CilOperation.MultiplyChecked, CliValueKind.I4, WasmOpcodes.I32Multiply)]
+    [InlineData(CilOperation.MultiplyCheckedUnsigned, CliValueKind.I8, WasmOpcodes.I64Multiply)]
+    public void ProvenCheckedArithmeticIsThePlainOperation(CilOperation operation, CliValueKind type, byte opcode)
+    {
+        var checkedBinary = new RecordingCheckedBinaryEmitter();
+        var request = CreateInstructionRequest(operation, [type, type], nonOverflowing: true);
+
+        Emit(CreateEmitter(checkedBinary: checkedBinary), request);
+
+        Assert.Equal(0, checkedBinary.CallCount);
+        Assert.Equal([type], request.Stack);
+        Assert.Contains(opcode, GetCodeBytes(request));
+    }
+
     private static IInstructionCommandProvider CreateEmitter(
         WasmTarget target = WasmTarget.Wasm32,
         ICheckedBinaryEmitter? checkedBinary = null,

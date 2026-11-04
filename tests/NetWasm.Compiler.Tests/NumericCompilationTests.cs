@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
@@ -418,12 +419,15 @@ public sealed class NumericCompilationTests
             }
             """);
 
+        // The remainder follows a division of the same values, which would
+        // otherwise give it its quotient; the remainder itself is under test.
         var result = NetWasmCompiler.Compile(new CompilerOptions(
             assembly,
             [assets.CoreLib],
             "NumericOperationsFixture.EntryPoint",
             "Run",
-            []));
+            [],
+            OptimizationOverrides: new WasmOptimizationOverrides(QuotientReuse: ManagedQuotientReuse.Disabled)));
         var operations = result.Program.Methods.Values
             .SelectMany(method => method.Body.Instructions)
             .Select(instruction => instruction.Operation)

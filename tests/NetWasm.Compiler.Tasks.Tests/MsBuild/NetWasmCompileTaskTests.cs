@@ -43,6 +43,8 @@ public sealed class NetWasmCompileTaskTests
         task.ManagedFieldLoadReuse = "Enabled";
         task.ManagedConditionalStoreMerging = "Enabled";
         task.ManagedInlineArrayData = "Enabled";
+        task.ManagedQuotientReuse = "Enabled";
+        task.ManagedIntegerCheckElimination = "Enabled";
 
         Assert.Equal(
             [
@@ -60,6 +62,8 @@ public sealed class NetWasmCompileTaskTests
                 "-managedfieldloadreuse:Enabled",
                 "-managedconditionalstoremerging:Enabled",
                 "-managedinlinearraydata:Enabled",
+                "-managedquotientreuse:Enabled",
+                "-managedintegercheckelimination:Enabled",
             ],
             Lines(task.ResponseFileCommands));
     }

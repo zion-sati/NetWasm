@@ -24,19 +24,6 @@ public sealed record ArrayBoundsProof(
     // Whether the access cannot fail its null check.
     public bool ProvesNonNull(int offset) => AccessOffsets.Contains(offset) || NonNullOffsets.Contains(offset);
 
-    // Whether the instruction is one of this snapshot's own, found by its offset
-    // in the offset-ordered instructions.
-    public bool Contains(CilInstruction instruction)
-    {
-        var (low, high) = (0, Instructions.Length - 1);
-        while (low <= high)
-        {
-            var middle = low + (high - low) / 2;
-            var offset = Instructions[middle].Offset;
-            if (offset == instruction.Offset) return ReferenceEquals(Instructions[middle], instruction);
-            if (offset < instruction.Offset) low = middle + 1;
-            else high = middle - 1;
-        }
-        return false;
-    }
+    // Whether the instruction is one of this snapshot's own.
+    public bool Contains(CilInstruction instruction) => InstructionSnapshots.Contains(Instructions, instruction);
 }

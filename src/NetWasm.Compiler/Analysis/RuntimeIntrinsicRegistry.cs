@@ -42,8 +42,6 @@ public sealed class RuntimeIntrinsicRegistry : IRuntimeIntrinsicRegistry
                 ("System.Array", "InternalCloneRange") => RuntimeIntrinsic.ArrayCloneRange,
                 ("System.String", "get_Chars") when IsStringCharacterAt(method) =>
                     RuntimeIntrinsic.StringCharacterAt,
-                ("System.String", "SetCharUnchecked") =>
-                    RuntimeIntrinsic.StringSetCharacterUnchecked,
                 ("System.String", "GetRawStringData") =>
                     RuntimeIntrinsic.StringGetRawDataReference,
                 ("System.String", "EqualsHelper") when IsStringEqualsHelper(method) =>

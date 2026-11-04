@@ -93,6 +93,8 @@ public sealed class NetWasmCompileTask : ToolTask
     public string ManagedFieldLoadReuse { get; set; } = "Auto";
     public string ManagedConditionalStoreMerging { get; set; } = "Auto";
     public string ManagedInlineArrayData { get; set; } = "Auto";
+    public string ManagedQuotientReuse { get; set; } = "Auto";
+    public string ManagedIntegerCheckElimination { get; set; } = "Auto";
 
     protected override string ToolName => "nwc";
 
@@ -215,6 +217,8 @@ public sealed class NetWasmCompileTask : ToolTask
                      ("fieldloadreuse", ManagedFieldLoadReuse),
                      ("conditionalstoremerging", ManagedConditionalStoreMerging),
                      ("inlinearraydata", ManagedInlineArrayData),
+                     ("quotientreuse", ManagedQuotientReuse),
+                     ("integercheckelimination", ManagedIntegerCheckElimination),
                  })
         {
             if (value is not ("" or "Auto"))

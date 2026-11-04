@@ -58,6 +58,7 @@ internal sealed class StructuredMethodDraftAdapter(
                 source.Instructions)
             {
                 ArrayBoundsProof = source.ExceptionRegions.IsEmpty ? source.ArrayBoundsProof : null,
+                IntegerCheckProof = source.IntegerCheckProof,
             },
             new(method.ValidatedGraph.Graph.Entry.Index),
             definitions,

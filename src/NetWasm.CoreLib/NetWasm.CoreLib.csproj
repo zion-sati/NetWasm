@@ -112,6 +112,7 @@
     <Compile Include="Globalization/SortKey.cs" />
     <Compile Include="Globalization/SortVersion.cs" />
     <Compile Include="Globalization/TextInfo.cs" />
+    <Compile Include="Globalization/TextInfo.NetWasm.cs" />
     <Compile Include="Globalization/DateTimeFormatInfo.cs" />
     <Compile Include="Globalization/IdnMapping.cs" />
     <Compile Include="Globalization/StrongBidiCategory.cs" />
@@ -529,6 +530,7 @@
     <Compile Include="MidpointRounding.cs" />
     <Compile Include="Decimal.GenericMath.cs" />
     <Compile Include="Nullable.cs" />
+    <Compile Include="NullableBool.cs" />
     <Compile Include="ValueTuple.cs" />
     <Compile Include="Tuple.cs" />
     <Compile Include="TupleExtensions.LowArity.cs" />

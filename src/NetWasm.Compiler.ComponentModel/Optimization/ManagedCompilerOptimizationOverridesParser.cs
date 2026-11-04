@@ -217,6 +217,24 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ["Enabled"] = ManagedInlineArrayData.Enabled,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    private static readonly FrozenDictionary<string, ManagedQuotientReuse>
+        QuotientReuseValues =
+        new Dictionary<string, ManagedQuotientReuse>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedQuotientReuse.Auto,
+            ["Disabled"] = ManagedQuotientReuse.Disabled,
+            ["Enabled"] = ManagedQuotientReuse.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    private static readonly FrozenDictionary<string, ManagedIntegerCheckElimination>
+        IntegerCheckEliminationValues =
+        new Dictionary<string, ManagedIntegerCheckElimination>(StringComparer.Ordinal)
+        {
+            ["Auto"] = ManagedIntegerCheckElimination.Auto,
+            ["Disabled"] = ManagedIntegerCheckElimination.Disabled,
+            ["Enabled"] = ManagedIntegerCheckElimination.Enabled,
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
     private static readonly FrozenDictionary<string, ManagedLoopStoreForwarding>
         LoopStoreForwardingValues =
         new Dictionary<string, ManagedLoopStoreForwarding>(StringComparer.Ordinal)
@@ -281,7 +299,9 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
         string? pureCallReuse = null,
         string? fieldLoadReuse = null,
         string? conditionalStoreMerging = null,
-        string? inlineArrayData = null)
+        string? inlineArrayData = null,
+        string? quotientReuse = null,
+        string? integerCheckElimination = null)
     {
         var fieldHoisting = ParseFieldHoisting(loopInvariantFieldHoisting);
         var staticDataViews = ParseStaticDataViews(staticDataViewElimination);
@@ -385,6 +405,16 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
             ? arrayDataParsed
             : throw ComponentException.Invalid(
                 "Managed inline array data must be Auto, Disabled or Enabled.");
+        var quotientsValue = QuotientReuseValues.TryGetValue(
+            quotientReuse ?? "Auto", out var quotientsParsed)
+            ? quotientsParsed
+            : throw ComponentException.Invalid(
+                "Managed quotient reuse must be Auto, Disabled or Enabled.");
+        var integerChecksValue = IntegerCheckEliminationValues.TryGetValue(
+            integerCheckElimination ?? "Auto", out var integerChecksParsed)
+            ? integerChecksParsed
+            : throw ComponentException.Invalid(
+                "Managed integer check elimination must be Auto, Disabled or Enabled.");
         return fieldHoisting == ManagedLoopInvariantFieldHoisting.Auto &&
                staticDataViews == ManagedStaticDataViewElimination.Auto &&
                valuePromotion == ManagedAddressTakenValuePromotion.Auto &&
@@ -412,7 +442,9 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                pureCallsValue == ManagedPureCallReuse.Auto &&
                fieldLoadsValue == ManagedFieldLoadReuse.Auto &&
                storeMergingValue == ManagedConditionalStoreMerging.Auto &&
-               arrayDataValue == ManagedInlineArrayData.Auto
+               arrayDataValue == ManagedInlineArrayData.Auto &&
+               quotientsValue == ManagedQuotientReuse.Auto &&
+               integerChecksValue == ManagedIntegerCheckElimination.Auto
             ? null
             : new(
                 LoopInvariantFieldHoisting: fieldHoisting,
@@ -442,7 +474,9 @@ public sealed class ManagedCompilerOptimizationOverridesParser :
                 PureCallReuse: pureCallsValue,
                 FieldLoadReuse: fieldLoadsValue,
                 ConditionalStoreMerging: storeMergingValue,
-                InlineArrayData: arrayDataValue);
+                InlineArrayData: arrayDataValue,
+                QuotientReuse: quotientsValue,
+                IntegerCheckElimination: integerChecksValue);
     }
 
     private static ManagedLoopInvariantFieldHoisting ParseFieldHoisting(string? value) =>

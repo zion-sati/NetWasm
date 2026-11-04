@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
+using Slot = (bool IsArgument, int Index);
 
 namespace NetWasm.Compiler.Analysis.Arrays;
 
@@ -210,7 +211,6 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
         _ => null,
     };
 
-    private readonly record struct Slot(bool IsArgument, int Index);
 
     // A local or argument plus a constant offset, or a constant.
     private readonly record struct Origin(Slot? Slot, int Offset, bool Constant)

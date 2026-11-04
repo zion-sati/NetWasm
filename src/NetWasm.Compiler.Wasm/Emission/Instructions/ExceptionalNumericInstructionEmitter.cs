@@ -33,6 +33,20 @@ internal sealed class ExceptionalNumericInstructionEmitter(
 
     private void EmitCheckedBinary(InstructionEmissionRequest request, IWasmInstructionWriter code)
     {
+        // Operands whose ranges keep the result in range need only the operation.
+        if (request.Header.IntegerCheckProof?.ProvesNoOverflow(request.Header.Instructions, request.Instruction) == true)
+        {
+            var (i32, i64) = request.Instruction.Operation switch
+            {
+                CilOperation.AddChecked or CilOperation.AddCheckedUnsigned => (WasmOpcodes.I32Add, WasmOpcodes.I64Add),
+                CilOperation.SubtractChecked or CilOperation.SubtractCheckedUnsigned =>
+                    (WasmOpcodes.I32Subtract, WasmOpcodes.I64Subtract),
+                _ => (WasmOpcodes.I32Multiply, WasmOpcodes.I64Multiply),
+            };
+            EmitBinary(request, code, WasmInstruction.NoOperand(i32), WasmInstruction.NoOperand(i64),
+                WasmInstruction.NoOperand(WasmOpcodes.F32Add), WasmInstruction.NoOperand(WasmOpcodes.F64Add));
+            return;
+        }
         var left = request.Stack.Count - 2;
         var type = NumericStackTypes.GetCompatible(
             request.Stack[left], request.Stack[left + 1]);
@@ -100,11 +114,7 @@ internal sealed class ExceptionalNumericInstructionEmitter(
                 WasmInstruction.NoOperand(WasmOpcodes.F64Divide));
             return;
         }
-        EmitIntegerZeroGuard(request, code, left + 1);
-        if (!unsigned)
-        {
-            EmitSignedDivisionOverflowGuard(request, code, left, type);
-        }
+        EmitDivisionGuards(request, code, left, type, unsigned);
         EmitBinary(
             request, code, unsigned
                 ? WasmInstruction.NoOperand(WasmOpcodes.I32DivideUnsigned)
@@ -127,12 +137,8 @@ internal sealed class ExceptionalNumericInstructionEmitter(
             EmitFloatingRemainder(request, code, type);
             return;
         }
-        EmitIntegerZeroGuard(request, code, left + 1);
         // Wasm defines MinValue % -1 as 0; .NET throws as it does for the quotient.
-        if (!unsigned)
-        {
-            EmitSignedDivisionOverflowGuard(request, code, left, type);
-        }
+        EmitDivisionGuards(request, code, left, type, unsigned);
         EmitBinary(
             request, code, unsigned
                 ? WasmInstruction.NoOperand(WasmOpcodes.I32RemainderUnsigned)
@@ -182,6 +188,22 @@ internal sealed class ExceptionalNumericInstructionEmitter(
             operationType == CliValueKind.NativeInt && source == CliValueKind.I4)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Signed));
+        }
+    }
+
+    // The checks a division's operands could fail, but those the body's
+    // division proof rules out.
+    private void EmitDivisionGuards(
+        InstructionEmissionRequest request, IWasmInstructionWriter code, int left, CliValueKind type, bool unsigned)
+    {
+        var proof = request.Header.IntegerCheckProof;
+        if (proof?.ProvesNonZeroDivisor(request.Header.Instructions, request.Instruction) != true)
+        {
+            EmitIntegerZeroGuard(request, code, left + 1);
+        }
+        if (!unsigned && proof?.ProvesNoOverflow(request.Header.Instructions, request.Instruction) != true)
+        {
+            EmitSignedDivisionOverflowGuard(request, code, left, type);
         }
     }
 

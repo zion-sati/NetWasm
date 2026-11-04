@@ -935,6 +935,8 @@ public sealed class SdkRoutingTests
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedFieldLoadReuse"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedConditionalStoreMerging"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedInlineArrayData"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedQuotientReuse"));
+        Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedIntegerCheckElimination"));
     }
 
     [Theory]
@@ -971,6 +973,8 @@ public sealed class SdkRoutingTests
     [InlineData("NetWasmManagedFieldLoadReuse")]
     [InlineData("NetWasmManagedConditionalStoreMerging")]
     [InlineData("NetWasmManagedInlineArrayData")]
+    [InlineData("NetWasmManagedQuotientReuse")]
+    [InlineData("NetWasmManagedIntegerCheckElimination")]
     public void PreservesExplicitCompilerReductionSelections(string property)
     {
         using var project = EvaluationProject.Create(
@@ -1030,6 +1034,8 @@ public sealed class SdkRoutingTests
                      "$(NetWasmManagedFieldLoadReuse)",
                      "$(NetWasmManagedConditionalStoreMerging)",
                      "$(NetWasmManagedInlineArrayData)",
+                     "$(NetWasmManagedQuotientReuse)",
+                     "$(NetWasmManagedIntegerCheckElimination)",
                  })
         {
             Assert.Contains(value, frontendIdentityContract, StringComparison.Ordinal);
@@ -1070,6 +1076,8 @@ public sealed class SdkRoutingTests
         Assert.Equal("$(NetWasmManagedFieldLoadReuse)", (string?)compilation.Attribute("ManagedFieldLoadReuse"));
         Assert.Equal("$(NetWasmManagedConditionalStoreMerging)", (string?)compilation.Attribute("ManagedConditionalStoreMerging"));
         Assert.Equal("$(NetWasmManagedInlineArrayData)", (string?)compilation.Attribute("ManagedInlineArrayData"));
+        Assert.Equal("$(NetWasmManagedQuotientReuse)", (string?)compilation.Attribute("ManagedQuotientReuse"));
+        Assert.Equal("$(NetWasmManagedIntegerCheckElimination)", (string?)compilation.Attribute("ManagedIntegerCheckElimination"));
         foreach (var value in new[]
                  {
                      "$(_NetWasmCanonicalOptimization)",
@@ -1387,6 +1395,8 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedFieldLoadReuse=$(NetWasmManagedFieldLoadReuse)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedConditionalStoreMerging=$(NetWasmManagedConditionalStoreMerging)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedInlineArrayData=$(NetWasmManagedInlineArrayData)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedQuotientReuse=$(NetWasmManagedQuotientReuse)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedIntegerCheckElimination=$(NetWasmManagedIntegerCheckElimination)" />
                     <Message Importance="High" Text="__NETWASM_PROP___NetWasmCanonicalOptimization=$(_NetWasmCanonicalOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmRefPackageVersion=$(NetWasmRefPackageVersion)" />
                     <Message Importance="High" Text="__NETWASM_ITEM__NetWasmSdkProfile=@(NetWasmSdkProfile->'%(Identity)|%(CanonicalFolder)', '{ItemSeparator}')" />

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.Core;
 using NetWasm.TestInfrastructure;
 
@@ -52,6 +53,37 @@ public sealed class NetWasmCompilerTests
         Assert.Single(first.Program.ModuleInitializers);
         Assert.Equal(first.ApplicationModule, repeated.ApplicationModule);
         Assert.Contains("entry=none", File.ReadAllText(trace));
+    }
+
+    // A rebuild that takes CoreLib's methods from the frontend cache emits the
+    // module the first build did: the cache keeps the proofs that their array
+    // accesses and divisions, as number formatting's by 10, cannot fail.
+    [Fact]
+    public void ACachedRebuildEmitsTheModuleTheFirstBuildDid()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("CachedProofs", """
+            using System;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input)
+                {
+                    var values = new int[input + 8];
+                    for (var i = 0; i < values.Length; i++) values[i] = (i * 37) % 11;
+                    Array.Sort(values);
+                    return string.Join(",", values).Length + (input * 12345).ToString().Length;
+                }
+            }
+            """);
+        var options = new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Optimization: FinalWasmOptimization.O3, EnableFrontendCache: true,
+            IntermediateOutputPath: Path.Combine(assets.Directory, "obj"));
+
+        var first = NetWasmCompiler.Compile(options);
+        var cached = NetWasmCompiler.Compile(options);
+
+        Assert.Equal(first.ApplicationModule, cached.ApplicationModule);
     }
 
     [Fact]

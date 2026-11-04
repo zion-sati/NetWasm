@@ -806,6 +806,9 @@ public partial struct Char
     public static bool IsHighSurrogate(char c) =>
         IsBetween(c, Globalization.CharUnicodeInfo.HIGH_SURROGATE_START, Globalization.CharUnicodeInfo.HIGH_SURROGATE_END);
     public static bool IsHighSurrogate(string s, int index) => IsHighSurrogate(GetIndexedChar(s, index));
+    // Upstream's: whether the category is one of the letter categories.
+    internal static bool CheckLetter(UnicodeCategory uc) =>
+        (uint)(uc - UnicodeCategory.UppercaseLetter) <= (uint)(UnicodeCategory.OtherLetter - UnicodeCategory.UppercaseLetter);
     public static bool IsLetter(char c) => GetUnicodeCategory(c) is
         Globalization.UnicodeCategory.UppercaseLetter or
         Globalization.UnicodeCategory.LowercaseLetter or
@@ -885,7 +888,7 @@ public partial struct Char
         }
         return Globalization.CharUnicodeInfo.ToLower(c);
     }
-    public static char ToLowerOrdinal(char c) => ToLowerInvariant(c);
+    public static char ToLowerOrdinal(char c) => Globalization.TextInfo.ToLowerOrdinal(c);
     public static string ToString(char c) => new(c, 1);
     public static char ToUpper(char c) => ToUpperInvariant(c);
     public static char ToUpperInvariant(char c)
@@ -896,10 +899,32 @@ public partial struct Char
         }
         return Globalization.CharUnicodeInfo.ToUpper(c);
     }
-    public static char ToUpperOrdinal(char c) => ToUpperInvariant(c);
+    public static char ToUpperOrdinal(char c) => Globalization.TextInfo.ToUpperOrdinal(c);
 
     public static Globalization.UnicodeCategory GetUnicodeCategory(char c) =>
         Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+    public static Globalization.UnicodeCategory GetUnicodeCategory(string s, int index) =>
+        Globalization.CharUnicodeInfo.GetUnicodeCategory(s, index);
+
+    public static char ToUpper(char c, Globalization.CultureInfo culture)
+    {
+        if (culture == null)
+        {
+            ThrowHelper.ThrowArgumentNullException(ExceptionArgument.culture);
+        }
+
+        return culture.TextInfo.ToUpper(c);
+    }
+
+    public static char ToLower(char c, Globalization.CultureInfo culture)
+    {
+        if (culture == null)
+        {
+            ThrowHelper.ThrowArgumentNullException(ExceptionArgument.culture);
+        }
+
+        return culture.TextInfo.ToLower(c);
+    }
 
     char IConvertible.ToChar(IFormatProvider? provider) => this;
     bool IConvertible.ToBoolean(IFormatProvider? provider) => throw new InvalidCastException();

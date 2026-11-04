@@ -39,7 +39,9 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
               "pureCallReuse":"Enabled",
               "fieldLoadReuse":"Enabled",
               "conditionalStoreMerging":"Enabled",
-              "inlineArrayData":"Enabled"
+              "inlineArrayData":"Enabled",
+              "quotientReuse":"Disabled",
+              "integerCheckElimination":"Enabled"
             }
             """);
         Assert.Equal(new WasmOptimizationOverrides(
@@ -71,7 +73,9 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
             ManagedPureCallReuse.Enabled,
             ManagedFieldLoadReuse.Enabled,
             ManagedConditionalStoreMerging.Enabled,
-            ManagedInlineArrayData.Enabled), result);
+            ManagedInlineArrayData.Enabled,
+            ManagedQuotientReuse.Disabled,
+            ManagedIntegerCheckElimination.Enabled), result);
     }
 
     [Fact]

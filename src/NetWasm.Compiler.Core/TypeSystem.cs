@@ -821,7 +821,6 @@ public enum RuntimeIntrinsic
     ArrayClone,
     ArrayCloneRange,
     StringCharacterAt,
-    StringSetCharacterUnchecked,
     StringGetRawDataReference,
     StringEqualsOrdinal,
     StringAllocate,

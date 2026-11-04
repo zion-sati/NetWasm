@@ -449,6 +449,24 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             ManagedInlineArrayData.Enabled => InlineArrayDataPolicy.Inline,
             _ => throw new ArgumentOutOfRangeException(nameof(options)),
         };
+        var quotientsOverride = options?.QuotientReuse ?? ManagedQuotientReuse.Auto;
+        var quotients = quotientsOverride switch
+        {
+            ManagedQuotientReuse.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? QuotientReusePolicy.Disabled : QuotientReusePolicy.AvailableQuotients,
+            ManagedQuotientReuse.Disabled => QuotientReusePolicy.Disabled,
+            ManagedQuotientReuse.Enabled => QuotientReusePolicy.AvailableQuotients,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
+        var integerChecksOverride = options?.IntegerCheckElimination ?? ManagedIntegerCheckElimination.Auto;
+        var integerChecks = integerChecksOverride switch
+        {
+            ManagedIntegerCheckElimination.Auto => preset is FinalWasmOptimization.None or FinalWasmOptimization.O0
+                ? IntegerCheckEliminationPolicy.Disabled : IntegerCheckEliminationPolicy.ProvenRanges,
+            ManagedIntegerCheckElimination.Disabled => IntegerCheckEliminationPolicy.Disabled,
+            ManagedIntegerCheckElimination.Enabled => IntegerCheckEliminationPolicy.ProvenRanges,
+            _ => throw new ArgumentOutOfRangeException(nameof(options)),
+        };
 
         if (preset == FinalWasmOptimization.None &&
             (hint != ManagedInliningHints.Auto ||
@@ -479,6 +497,8 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
              fieldLoadsOverride == ManagedFieldLoadReuse.Enabled ||
              storeMergingOverride == ManagedConditionalStoreMerging.Enabled ||
              arrayDataOverride == ManagedInlineArrayData.Enabled ||
+             quotientsOverride == ManagedQuotientReuse.Enabled ||
+             integerChecksOverride == ManagedIntegerCheckElimination.Enabled ||
              branchPrefixDuplicationOverride ==
                 ManagedBranchPrefixDuplication.Enabled))
         {
@@ -526,6 +546,8 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             pureCalls,
             fieldLoads,
             storeMerging,
-            arrayData);
+            arrayData,
+            quotients,
+            integerChecks);
     }
 }

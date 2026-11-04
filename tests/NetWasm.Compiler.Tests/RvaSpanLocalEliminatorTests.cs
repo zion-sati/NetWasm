@@ -6,8 +6,9 @@ namespace NetWasm.Compiler.Tests;
 
 // A span local assigned once from RVA data has its length read as a constant.
 // One whose assignment a protected region, handler or filter covers keeps it, as
-// does one read at a branch target, where another path brings its address, or
-// in code its assignment does not dominate.
+// does one read at a branch target, where another path brings its address, in
+// code its assignment does not dominate, or through its address by anything but
+// a load of one of the span's own fields.
 public sealed class RvaSpanLocalEliminatorTests
 {
     private static readonly AssemblyIdentity Assembly = new("fixture");
@@ -24,6 +25,11 @@ public sealed class RvaSpanLocalEliminatorTests
     internal static readonly FieldInstanceModel Length = new(
         new(new(Assembly, 0x04000002), new(Assembly, 0x02000003), "_length", Int32, false), Span, Int32);
 
+    // A field of the same name on another struct.
+    private static readonly FieldInstanceModel Other = new(
+        new(new(Assembly, 0x04000003), new(Assembly, 0x02000004), "_length", Int32, false),
+        CliTypeIdentity.Named(Assembly, "Fixture", "Other", isValueType: true), Int32);
+
     public static TheoryData<string, bool> Shapes() => new()
     {
         { "length read", true },
@@ -32,6 +38,9 @@ public sealed class RvaSpanLocalEliminatorTests
         { "assigned in a protected region", false },
         { "assigned in a handler", false },
         { "assigned in a filter", false },
+        { "address popped", false },
+        { "address read by a field load without a field", false },
+        { "address read by another type's field", false },
     };
 
     [Theory]
@@ -62,6 +71,11 @@ public sealed class RvaSpanLocalEliminatorTests
             .Op(CilOperation.LoadField, new CilOperand.FieldInstance(Length)).Op(CilOperation.Pop).Return()
             .Branch(CilOperation.Branch, "load")),
         "length read in unreachable code" => Body(code => code.Assign().Return().ReadLength().Return()),
+        "address popped" => Body(code => code.Assign().Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.Pop).Return()),
+        "address read by a field load without a field" => Body(code => code.Assign().Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.LoadField, new CilOperand.None()).Op(CilOperation.Pop).Return()),
+        "address read by another type's field" => Body(code => code.Assign().Local(CilOperation.LoadLocalAddress, 0)
+            .Op(CilOperation.LoadField, new CilOperand.FieldInstance(Other)).Op(CilOperation.Pop).Return()),
         "assigned in a protected region" => Body(code => code.Assign().ReadLength().Return()) with
         {
             ExceptionRegions = [new(CilExceptionRegionKind.Finally, 0, 2, 2, 1, null, null)],

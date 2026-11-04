@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -13,6 +14,8 @@ internal interface IReachableMethodAnalyzerFactory
         IMethodRepository methods,
         IMethodSpecializer specializer,
         IManagedMethodOptimizer optimizer,
+        ICalledMethodResolver calledMethods,
+        IntegerCheckEliminationPolicy integerChecks,
         IImplicitExceptionDiscovery exceptionDiscovery,
         IReachabilityInstructionAnalyzer instructionAnalyzer);
 }

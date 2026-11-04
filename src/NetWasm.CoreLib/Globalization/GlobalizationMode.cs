@@ -8,5 +8,8 @@ namespace System.Globalization
     internal static class GlobalizationMode
     {
         internal static bool Invariant => true;
+
+        // Upstream's value outside Windows, where NLS does not exist.
+        internal static bool UseNls => false;
     }
 }

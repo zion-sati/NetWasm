@@ -95,6 +95,8 @@
     <NetWasmManagedFieldLoadReuse Condition="'$(NetWasmManagedFieldLoadReuse)' == ''">Auto</NetWasmManagedFieldLoadReuse>
     <NetWasmManagedConditionalStoreMerging Condition="'$(NetWasmManagedConditionalStoreMerging)' == ''">Auto</NetWasmManagedConditionalStoreMerging>
     <NetWasmManagedInlineArrayData Condition="'$(NetWasmManagedInlineArrayData)' == ''">Auto</NetWasmManagedInlineArrayData>
+    <NetWasmManagedQuotientReuse Condition="'$(NetWasmManagedQuotientReuse)' == ''">Auto</NetWasmManagedQuotientReuse>
+    <NetWasmManagedIntegerCheckElimination Condition="'$(NetWasmManagedIntegerCheckElimination)' == ''">Auto</NetWasmManagedIntegerCheckElimination>
     <_NetWasmCanonicalOptimization Condition="'$(_NetWasmCanonicalOptimization)' == ''">$(NetWasmOptimization)</_NetWasmCanonicalOptimization>
     <NetWasmTarget Condition="'$(NetWasmTarget)' == ''">wasm32</NetWasmTarget>
     <NetWasmIntermediateOutputPath Condition="'$(NetWasmIntermediateOutputPath)' == ''">$(IntermediateOutputPath)netwasm\$(NetWasmTarget)\</NetWasmIntermediateOutputPath>
@@ -226,6 +228,8 @@
       <_NetWasmCompilationIdentityLine Include="managedFieldLoadReuse=$(NetWasmManagedFieldLoadReuse)" />
       <_NetWasmCompilationIdentityLine Include="managedConditionalStoreMerging=$(NetWasmManagedConditionalStoreMerging)" />
       <_NetWasmCompilationIdentityLine Include="managedInlineArrayData=$(NetWasmManagedInlineArrayData)" />
+      <_NetWasmCompilationIdentityLine Include="managedQuotientReuse=$(NetWasmManagedQuotientReuse)" />
+      <_NetWasmCompilationIdentityLine Include="managedIntegerCheckElimination=$(NetWasmManagedIntegerCheckElimination)" />
       <_NetWasmCompilationIdentityLine Include="pathMap=$(PathMap)" />
       <!-- Modules the project's native archives may import from: each declared
            NetWasmImportModule and each registered JavaScript module. -->
@@ -341,6 +345,8 @@
                         ManagedFieldLoadReuse="$(NetWasmManagedFieldLoadReuse)"
                         ManagedConditionalStoreMerging="$(NetWasmManagedConditionalStoreMerging)"
                         ManagedInlineArrayData="$(NetWasmManagedInlineArrayData)"
+                        ManagedQuotientReuse="$(NetWasmManagedQuotientReuse)"
+                        ManagedIntegerCheckElimination="$(NetWasmManagedIntegerCheckElimination)"
                         NoLogo="$(NoLogo)"
                         ExceptionTypeMapPath="$(NetWasmExceptionTypeMapPath)"
                         StackTraceSymbolsPath="$(NetWasmStackTraceSymbolsPath)" />

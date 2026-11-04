@@ -43,6 +43,8 @@ public sealed class FrontendArtifactCacheActorTests
     [InlineData(18)]
     [InlineData(19)]
     [InlineData(20)]
+    [InlineData(21)]
+    [InlineData(22)]
     public void BodyAffectingOverridesGetIndependentCacheNamespaces(int feature)
     {
         var builder = new FrontendArtifactCacheIdentityBuilder(
@@ -74,7 +76,9 @@ public sealed class FrontendArtifactCacheActorTests
             17 => new WasmOptimizationOverrides(LoopVectorization: ManagedLoopVectorization.Disabled),
             18 => new WasmOptimizationOverrides(PureCallReuse: ManagedPureCallReuse.Disabled),
             19 => new WasmOptimizationOverrides(FieldLoadReuse: ManagedFieldLoadReuse.Disabled),
-            _ => new WasmOptimizationOverrides(ConditionalStoreMerging: ManagedConditionalStoreMerging.Disabled),
+            20 => new WasmOptimizationOverrides(ConditionalStoreMerging: ManagedConditionalStoreMerging.Disabled),
+            21 => new WasmOptimizationOverrides(QuotientReuse: ManagedQuotientReuse.Disabled),
+            _ => new WasmOptimizationOverrides(IntegerCheckElimination: ManagedIntegerCheckElimination.Disabled),
         };
 
         var enabledContext = builder.Build(options);
@@ -1644,7 +1648,7 @@ public sealed class FrontendArtifactCacheActorTests
             new RecordingRecorder());
 
         var analyzer = factory.Create(
-            null!, null!, null!, null!, null!, null!, null!, null!);
+            null!, null!, null!, null!, null!, null!, null!, IntegerCheckEliminationPolicy.Disabled, null!, null!);
 
         Assert.Same(artifact.Analysis,
             analyzer.Analyze(new(artifact.Analysis.Method)));
@@ -1741,6 +1745,8 @@ public sealed class FrontendArtifactCacheActorTests
             IMethodRepository methods,
             IMethodSpecializer specializer,
             IManagedMethodOptimizer optimizer,
+            ICalledMethodResolver calledMethods,
+            IntegerCheckEliminationPolicy integerChecks,
             IImplicitExceptionDiscovery exceptionDiscovery,
             IReachabilityInstructionAnalyzer instructionAnalyzer) => analyzer;
     }

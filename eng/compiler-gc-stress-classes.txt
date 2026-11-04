@@ -177,6 +177,7 @@ NetWasm.Compiler.Tests.Correctness.TaskSchedulerAwaitTests
 NetWasm.Compiler.Tests.Correctness.TaskSchedulerContinuationTests
 NetWasm.Compiler.Tests.Correctness.TaskSchedulerEventTests
 NetWasm.Compiler.Tests.Correctness.TaskSchedulerTests
+NetWasm.Compiler.Tests.Correctness.TextInfoCorpusTests
 NetWasm.Compiler.Tests.Correctness.ThreadLocalTests
 NetWasm.Compiler.Tests.Correctness.TypeInitializationTriggerCorpusTests
 NetWasm.Compiler.Tests.Correctness.TypeNameCorpusTests
