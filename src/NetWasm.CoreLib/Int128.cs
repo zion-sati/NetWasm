@@ -102,7 +102,7 @@ namespace System
 
         public string ToString(IFormatProvider? provider)
         {
-            return Number.FormatInt128(this, null, provider);
+            return Number.FormatInt128WithoutFormat(this, provider);
         }
 
         public string ToString([StringSyntax(StringSyntaxAttribute.NumericFormat)] string? format)

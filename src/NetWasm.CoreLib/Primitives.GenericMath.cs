@@ -144,7 +144,8 @@ internal static class PrimitiveScalarContracts
 
 public partial struct Int16
 {
-    public string ToString(IFormatProvider? provider) => Number.FormatInt32(this, 0, null, provider);
+    // Number's format-free entry point: what the default format writes, without the format string parser.
+    public string ToString(IFormatProvider? provider) => Number.FormatInt32WithoutFormat(this, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatInt32(this, 0x0000FFFF, format, provider);
@@ -405,7 +406,8 @@ public partial struct UInt64
 public partial struct Int32
 {
 
-    public string ToString(IFormatProvider? provider) => Number.FormatInt32(this, 0, null, provider);
+    // Number's format-free entry point: what the default format writes, without the format string parser.
+    public string ToString(IFormatProvider? provider) => Number.FormatInt32WithoutFormat(this, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatInt32(this, ~0, format, provider);
@@ -446,7 +448,8 @@ public partial struct UInt32
 
 public partial struct Int64
 {
-    public string ToString(IFormatProvider? provider) => Number.FormatInt64(this, null, provider);
+    // Number's format-free entry point: what the default format writes, without the format string parser.
+    public string ToString(IFormatProvider? provider) => Number.FormatInt64WithoutFormat(this, provider);
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatInt64(this, format, provider);
@@ -510,7 +513,8 @@ public partial struct UInt64
 
 public partial struct Single
 {
-    public string ToString(IFormatProvider? provider) => provider is null ? ToString() : Number.FormatFloat(this, null, provider);
+    // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
+    public string ToString(IFormatProvider? provider) => ToString();
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatFloat(this, format, provider);
@@ -686,7 +690,8 @@ public partial struct Single
 
 public partial struct Double
 {
-    public string ToString(IFormatProvider? provider) => provider is null ? ToString() : Number.FormatFloat(this, null, provider);
+    // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
+    public string ToString(IFormatProvider? provider) => ToString();
 
     public string ToString(string? format, IFormatProvider? provider) =>
         Number.FormatFloat(this, format, provider);

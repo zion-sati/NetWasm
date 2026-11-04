@@ -1049,6 +1049,14 @@ namespace System
 
         public override string ToString() => DecimalMath.Format(this);
 
+        // What ToString() writes, into a destination, for Number.TryFormatWithoutFormat.
+        internal static bool TryFormatWithoutFormat(decimal value, Span<char> destination, out int charsWritten)
+        {
+            var builder = new Text.ValueStringBuilder(destination);
+            DecimalMath.AppendFormat(ref builder, value);
+            return builder.TryCopyTo(destination, out charsWritten);
+        }
+
         private bool IsNegativeValue => _flags < 0;
 
         private bool IsZero => (_lo64 | _hi32) == 0;

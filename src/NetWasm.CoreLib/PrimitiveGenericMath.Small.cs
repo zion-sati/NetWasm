@@ -614,7 +614,8 @@ public partial struct Byte
 
 public partial struct SByte
 {
-    public string ToString(IFormatProvider? provider) => Number.FormatInt32(this, 0, null, provider);
+    // Number's format-free entry point: what the default format writes, without the format string parser.
+    public string ToString(IFormatProvider? provider) => Number.FormatInt32WithoutFormat(this, provider);
 
     public string ToString(string? format, IFormatProvider? provider) => Number.FormatInt32(this, 0x000000FF, format, provider);
 

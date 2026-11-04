@@ -105,7 +105,7 @@ namespace System
 
         public string ToString(IFormatProvider? provider)
         {
-            return Number.FormatUInt128(this, null, provider);
+            return Number.UInt128ToDecStr(this, digits: -1);
         }
 
         public string ToString([StringSyntax(StringSyntaxAttribute.NumericFormat)] string? format)

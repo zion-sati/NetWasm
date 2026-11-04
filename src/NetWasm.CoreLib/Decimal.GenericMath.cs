@@ -367,7 +367,8 @@ namespace System
 
         public string ToString(string? format) => ToString(format, null);
 
-        public string ToString(IFormatProvider? provider) => ToString(null, provider);
+        // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
+        public string ToString(IFormatProvider? provider) => ToString();
 
         public bool TryFormat(
             Span<char> destination,

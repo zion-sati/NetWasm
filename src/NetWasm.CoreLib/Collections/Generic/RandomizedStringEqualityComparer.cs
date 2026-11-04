@@ -106,8 +106,8 @@ namespace System.Collections.Generic
                 ReadOnlySpan<char> span) =>
                 span.ToString();
 
-            public override bool Equals(string? x, string? y) =>
-                string.Equals(x, y, StringComparison.OrdinalIgnoreCase);
+            // The ordinal comparison directly, as NonRandomizedStringEqualityComparer does.
+            public override bool Equals(string? x, string? y) => string.EqualsOrdinalIgnoreCase(x, y);
 
             bool IAlternateEqualityComparer<ReadOnlySpan<char>, string?>.Equals(
                 ReadOnlySpan<char> alternate,

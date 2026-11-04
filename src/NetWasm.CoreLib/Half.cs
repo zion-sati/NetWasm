@@ -521,7 +521,8 @@ namespace System
         /// </summary>
         public string ToString(IFormatProvider? provider)
         {
-            return Number.FormatFloat(this, null, provider);
+            // Without a format a provider changes nothing: NetWasm's NumberFormatInfo is the invariant one.
+            return Number.FormatFloat(this);
         }
 
         /// <summary>
