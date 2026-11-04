@@ -31,6 +31,10 @@ public sealed partial class CompareInfo
 
     internal CompareInfo() { }
 
+    // Upstream's CompareInfo.Nls.cs handle, which only NLS's casing and sorting take; NetWasm runs the
+    // invariant globalization mode only.
+    internal static IntPtr NlsGetSortHandle(string cultureName) => throw new PlatformNotSupportedException();
+
     public string Name => string.Empty;
 
     public static CompareInfo GetCompareInfo(int culture)

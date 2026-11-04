@@ -27,20 +27,11 @@ internal sealed record CompilerCorrectnessEnvironment(
             ?? throw new InvalidOperationException("dotnet root is unavailable");
         var compiler = Path.Combine(
             dotnetRoot, "sdk", sdkVersion, "Roslyn", "bincore", "csc.dll");
-        var referenceRoot = Path.Combine(
-            dotnetRoot, "packs", "Microsoft.NETCore.App.Ref");
-        var referenceDirectory = Directory.EnumerateDirectories(referenceRoot)
-            .Select(path => new
-            {
-                Path = path,
-                Version = Version.TryParse(Path.GetFileName(path), out var version)
-                    ? version
-                    : new Version(),
-            })
-            .Where(item => item.Version.Major == 10)
-            .OrderByDescending(item => item.Version)
-            .Select(item => Path.Combine(item.Path, "ref", "net10.0"))
-            .First(Directory.Exists);
+        // The desktop side compiles against the reference pack of the framework it runs on.
+        var oracleFrameworkVersion = ReadDesktopOracleFrameworkVersion(repositoryRoot);
+        var referenceDirectory = Path.Combine(
+            dotnetRoot, "packs", "Microsoft.NETCore.App.Ref", oracleFrameworkVersion, "ref",
+            $"net{oracleFrameworkVersion.Split('.')[0]}.0");
         var configuration = ResolveBuildConfiguration(
             AppContext.BaseDirectory,
             Environment.GetEnvironmentVariable(BuildConfigurationEnvironmentVariable));
@@ -55,7 +46,7 @@ internal sealed record CompilerCorrectnessEnvironment(
             Path.Combine(AppContext.BaseDirectory, "Correctness", "netwasm-oracle.mjs"),
             Path.Combine(repositoryRoot, "tests", "NetWasm.Testing.OracleHost",
                 "bin", configuration, "net10.0", "NetWasm.Testing.OracleHost.dll"),
-            ReadDesktopOracleFrameworkVersion(repositoryRoot),
+            oracleFrameworkVersion,
             Path.Combine(repositoryRoot, "tests", "NetWasm.Testing.CompilerHost",
                 "bin", configuration, "net10.0", "NetWasm.Testing.CompilerHost.dll"),
             TimeSpan.FromMinutes(10));

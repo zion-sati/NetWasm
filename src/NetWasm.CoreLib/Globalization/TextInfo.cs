@@ -1,15 +1,15 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
-// Ported from dotnet/runtime commit 811225a482702af7ecc35d817966bc70b88a3a23.
-// NetWasm adaptations: NetWasm runs upstream's invariant globalization mode only, so casing is
-// invariant-mode casing (NetWasm's invariant char and string casing over the pinned Unicode
-// tables) and the culture data is the invariant CultureData stand-in. Upstream's ICU/NLS casing
-// paths and span helpers are not ported. IDeserializationCallback throws PNSE, as upstream's does.
+// Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/Globalization/TextInfo.cs
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
+using System.Text.Unicode;
 
 namespace System.Globalization
 {
@@ -25,13 +25,15 @@ namespace System.Globalization
         private readonly string _cultureName;
         private readonly CultureData _cultureData;
 
+        private bool HasEmptyCultureName { get { return _cultureName.Length == 0; } }
+
         // // Name of the text info we're using (ie: _cultureData.TextInfoName)
         private readonly string _textInfoName;
 
-        private string? _listSeparator;
+        private NullableBool _isAsciiCasingSameAsInvariant;
 
         // Invariant text info
-        internal static readonly TextInfo Invariant = new TextInfo(CultureData.Invariant, readOnly: true);
+        internal static readonly TextInfo Invariant = new TextInfo(CultureData.Invariant, readOnly: true) { _isAsciiCasingSameAsInvariant = NullableBool.True };
 
         internal TextInfo(CultureData cultureData)
         {
@@ -39,31 +41,17 @@ namespace System.Globalization
             _cultureData = cultureData;
             _cultureName = _cultureData.CultureName;
             _textInfoName = _cultureData.TextInfoName;
+
+            if (GlobalizationMode.UseNls)
+            {
+                _sortHandle = CompareInfo.NlsGetSortHandle(_textInfoName);
+            }
         }
 
         private TextInfo(CultureData cultureData, bool readOnly)
             : this(cultureData)
         {
             SetReadOnlyState(readOnly);
-        }
-
-        // Upstream's invariant casing: NetWasm runs the invariant mode only.
-        internal void ChangeCaseToLower(ReadOnlySpan<char> source, Span<char> destination) =>
-            InvariantModeCasing.ToLower(source, destination);
-
-        internal void ChangeCaseToUpper(ReadOnlySpan<char> source, Span<char> destination) =>
-            InvariantModeCasing.ToUpper(source, destination);
-
-        internal static string ToLowerInvariant(string str)
-        {
-            ArgumentNullException.ThrowIfNull(str);
-            return InvariantModeCasing.ToLower(str);
-        }
-
-        internal static string ToUpperInvariant(string str)
-        {
-            ArgumentNullException.ThrowIfNull(str);
-            return InvariantModeCasing.ToUpper(str);
         }
 
         void IDeserializationCallback.OnDeserialization(object? sender)
@@ -88,13 +76,10 @@ namespace System.Globalization
 
         public object Clone()
         {
-            TextInfo clone = Copy();
-            clone.SetReadOnlyState(false);
-            return clone;
+            object o = MemberwiseClone();
+            ((TextInfo)o).SetReadOnlyState(false);
+            return o;
         }
-
-        // MemberwiseClone, field by field.
-        private TextInfo Copy() => new TextInfo(_cultureData) { _isReadOnly = _isReadOnly, _listSeparator = _listSeparator };
 
         /// <summary>
         /// Create a cloned readonly instance or return the input one if it is
@@ -109,7 +94,7 @@ namespace System.Globalization
                 return textInfo;
             }
 
-            TextInfo clonedTextInfo = textInfo.Copy();
+            TextInfo clonedTextInfo = (TextInfo)(textInfo.MemberwiseClone());
             clonedTextInfo.SetReadOnlyState(true);
             return clonedTextInfo;
         }
@@ -132,13 +117,13 @@ namespace System.Globalization
         /// </summary>
         public string ListSeparator
         {
-            get => _listSeparator ??= _cultureData.ListSeparator;
+            get => field ??= _cultureData.ListSeparator;
             set
             {
                 ArgumentNullException.ThrowIfNull(value);
 
                 VerifyWritable();
-                _listSeparator = value;
+                field = value;
             }
         }
 
@@ -146,15 +131,287 @@ namespace System.Globalization
         /// Converts the character or string to lower case.  Certain locales
         /// have different casing semantics from the file systems in Win32.
         /// </summary>
-        public char ToLower(char c) => char.ToLowerInvariant(c);
+        public char ToLower(char c)
+        {
+            if (GlobalizationMode.Invariant)
+            {
+                return InvariantModeCasing.ToLower(c);
+            }
+
+            if (UnicodeUtility.IsAsciiCodePoint(c) && IsAsciiCasingSameAsInvariant)
+            {
+                return ToLowerAsciiInvariant(c);
+            }
+
+            return ChangeCase(c, toUpper: false);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static char ToLowerInvariant(char c)
+        {
+            if (UnicodeUtility.IsAsciiCodePoint(c))
+            {
+                return ToLowerAsciiInvariant(c);
+            }
+
+            if (GlobalizationMode.Invariant)
+            {
+                return InvariantModeCasing.ToLower(c);
+            }
+
+            return Invariant.ChangeCase(c, toUpper: false);
+        }
 
         public string ToLower(string str)
         {
             ArgumentNullException.ThrowIfNull(str);
-            return InvariantModeCasing.ToLower(str);
+            return ChangeCaseCommon<ToLowerConversion>(this, str);
         }
 
-        internal static string ToLowerAsciiInvariant(string s)
+        internal static string ToLowerInvariant(string str)
+        {
+            ArgumentNullException.ThrowIfNull(str);
+            return ChangeCaseCommon<ToLowerConversion>(null, str);
+        }
+
+        internal void ToLower(ReadOnlySpan<char> source, Span<char> destination)
+        {
+            ChangeCaseCommon<ToLowerConversion>(this, source, destination);
+        }
+
+        private unsafe char ChangeCase(char c, bool toUpper)
+        {
+            Debug.Assert(!GlobalizationMode.Invariant);
+            char dst = default;
+            ChangeCaseCore(&c, 1, &dst, 1, toUpper);
+            return dst;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static char ToUpperOrdinal(char c)
+        {
+            if (GlobalizationMode.Invariant)
+            {
+                return InvariantModeCasing.ToUpper(c);
+            }
+
+            if (GlobalizationMode.UseNls)
+            {
+                return char.IsAscii(c)
+                    ? ToUpperAsciiInvariant(c)
+                    : Invariant.ChangeCase(c, toUpper: true);
+            }
+
+            return OrdinalCasing.ToUpper(c);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static char ToLowerOrdinal(char c)
+        {
+            if (GlobalizationMode.Invariant)
+            {
+                return char.IsAscii(c)
+                    ? ToLowerAsciiInvariant(c)
+                    : PreserveOrdinalLowerCasingClass(c, InvariantModeCasing.ToLower(c));
+            }
+
+            if (GlobalizationMode.UseNls)
+            {
+                return char.IsAscii(c)
+                    ? ToLowerAsciiInvariant(c)
+                    : PreserveOrdinalLowerCasingClass(c, Invariant.ChangeCase(c, toUpper: false));
+            }
+
+            return OrdinalCasing.ToLower(c);
+        }
+
+        // Ordinal lower casing must never move a character out of its ordinal upper-casing class, otherwise it
+        // would stop being consistent with OrdinalIgnoreCase (for example the Kelvin, Ohm and Angstrom signs). The
+        // ICU ordinal table encodes this directly, but invariant and NLS simple lowering do not, so keep the original
+        // character whenever its simple lower mapping would change its ordinal upper-casing form.
+        private static char PreserveOrdinalLowerCasingClass(char c, char lower) =>
+            lower == c || ToUpperOrdinal(lower) == ToUpperOrdinal(c) ? lower : c;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ChangeCaseToLower(ReadOnlySpan<char> source, Span<char> destination)
+        {
+            Debug.Assert(destination.Length >= source.Length);
+            ChangeCaseCommon<ToLowerConversion>(this, source, destination);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ChangeCaseToUpper(ReadOnlySpan<char> source, Span<char> destination)
+        {
+            Debug.Assert(destination.Length >= source.Length);
+            ChangeCaseCommon<ToUpperConversion>(this, source, destination);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe void ChangeCaseCommon<TConversion>(TextInfo? instance, ReadOnlySpan<char> source, Span<char> destination) where TConversion : struct
+        {
+            Debug.Assert(typeof(TConversion) == typeof(ToUpperConversion) || typeof(TConversion) == typeof(ToLowerConversion));
+
+            if (source.IsEmpty)
+            {
+                return;
+            }
+
+            bool toUpper = typeof(TConversion) == typeof(ToUpperConversion); // JIT will treat this as a constant in release builds
+            int charsConsumed = 0;
+
+            // instance being null indicates the invariant culture where IsAsciiCasingSameAsInvariant is always true.
+            if (instance == null || instance.IsAsciiCasingSameAsInvariant)
+            {
+                OperationStatus operationStatus = toUpper
+                    ? Ascii.ToUpper(source, destination, out charsConsumed)
+                    : Ascii.ToLower(source, destination, out charsConsumed);
+
+                if (operationStatus != OperationStatus.InvalidData)
+                {
+                    Debug.Assert(operationStatus == OperationStatus.Done);
+                    return;
+                }
+            }
+
+            if (GlobalizationMode.Invariant)
+            {
+                if (toUpper)
+                {
+                    InvariantModeCasing.ToUpper(source, destination);
+                }
+                else
+                {
+                    InvariantModeCasing.ToLower(source, destination);
+                }
+                return;
+            }
+
+            // instance being null means it's Invariant
+            instance ??= Invariant;
+
+            fixed (char* pSource = &MemoryMarshal.GetReference(source))
+            fixed (char* pDestination = &MemoryMarshal.GetReference(destination))
+            {
+                instance.ChangeCaseCore(pSource + charsConsumed, source.Length - charsConsumed,
+                    pDestination + charsConsumed, destination.Length - charsConsumed, toUpper);
+            }
+        }
+
+        private static unsafe string ChangeCaseCommon<TConversion>(TextInfo? instance, string source) where TConversion : struct
+        {
+            Debug.Assert(typeof(TConversion) == typeof(ToUpperConversion) || typeof(TConversion) == typeof(ToLowerConversion));
+            bool toUpper = typeof(TConversion) == typeof(ToUpperConversion); // JIT will treat this as a constant in release builds
+
+            Debug.Assert(source != null);
+
+            // If the string is empty, we're done.
+            if (source.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            fixed (char* pSource = source)
+            {
+                nuint currIdx = 0; // in chars
+
+                // If this culture's casing for ASCII is the same as invariant, try to take
+                // a fast path that'll work in managed code and ASCII rather than calling out
+                // to the OS for culture-aware casing.
+                //
+                // instance being null indicates the invariant culture where IsAsciiCasingSameAsInvariant is always true.
+                if (instance == null || instance.IsAsciiCasingSameAsInvariant)
+                {
+                    // Read 2 chars (one 32-bit integer) at a time
+
+                    if (source.Length >= 2)
+                    {
+                        nuint lastIndexWhereCanReadTwoChars = (uint)source.Length - 2;
+                        do
+                        {
+                            // See the comments in ChangeCaseCommon<TConversion>(ROS<char>, Span<char>) for a full explanation of the below code.
+
+                            uint tempValue = Unsafe.ReadUnaligned<uint>(pSource + currIdx);
+                            if (!Utf16Utility.AllCharsInUInt32AreAscii(tempValue))
+                            {
+                                goto NotAscii;
+                            }
+                            if ((toUpper) ? Utf16Utility.UInt32ContainsAnyLowercaseAsciiChar(tempValue) : Utf16Utility.UInt32ContainsAnyUppercaseAsciiChar(tempValue))
+                            {
+                                goto AsciiMustChangeCase;
+                            }
+
+                            currIdx += 2;
+                        } while (currIdx <= lastIndexWhereCanReadTwoChars);
+                    }
+
+                    // If there's a single character left to convert, do it now.
+                    if ((source.Length & 1) != 0)
+                    {
+                        uint tempValue = pSource[currIdx];
+                        if (tempValue > 0x7Fu)
+                        {
+                            goto NotAscii;
+                        }
+                        if ((toUpper) ? ((tempValue - 'a') <= (uint)('z' - 'a')) : ((tempValue - 'A') <= (uint)('Z' - 'A')))
+                        {
+                            goto AsciiMustChangeCase;
+                        }
+                    }
+
+                    // We got through all characters without finding anything that needed to change - done!
+                    return source;
+
+                AsciiMustChangeCase:
+                    {
+                        // We reached ASCII data that requires a case change.
+                        // This will necessarily allocate a new string, but let's try to stay within the managed (non-localization tables)
+                        // conversion code path if we can.
+
+                        string result = string.FastAllocateString(source.Length); // changing case uses simple folding: doesn't change UTF-16 code unit count
+
+                        // copy existing known-good data into the result
+                        Span<char> resultSpan = new Span<char>(ref result.GetRawStringData(), result.Length);
+                        source.AsSpan(0, (int)currIdx).CopyTo(resultSpan);
+
+                        // and re-run the fast span-based logic over the remainder of the data
+                        ChangeCaseCommon<TConversion>(instance, source.AsSpan((int)currIdx), resultSpan.Slice((int)currIdx));
+                        return result;
+                    }
+                }
+
+            NotAscii:
+                {
+                    if (GlobalizationMode.Invariant)
+                    {
+                        return toUpper ? InvariantModeCasing.ToUpper(source) : InvariantModeCasing.ToLower(source);
+                    }
+
+                    // We reached non-ASCII data *or* the requested culture doesn't map ASCII data the same way as the invariant culture.
+                    // In either case we need to fall back to the localization tables.
+
+                    string result = string.FastAllocateString(source.Length); // changing case uses simple folding: doesn't change UTF-16 code unit count
+
+                    if (currIdx > 0)
+                    {
+                        // copy existing known-good data into the result
+                        Span<char> resultSpan = new Span<char>(ref result.GetRawStringData(), result.Length);
+                        source.AsSpan(0, (int)currIdx).CopyTo(resultSpan);
+                    }
+
+                    // instance being null means it's Invariant
+                    instance ??= Invariant;
+
+                    // and run the culture-aware logic over the remainder of the data
+                    fixed (char* pResult = result)
+                    {
+                        instance.ChangeCaseCore(pSource + currIdx, source.Length - (int)currIdx, pResult + currIdx, result.Length - (int)currIdx, toUpper);
+                    }
+                    return result;
+                }
+            }
+        }
+
+        internal static unsafe string ToLowerAsciiInvariant(string s)
         {
             if (s.Length == 0)
             {
@@ -167,15 +424,28 @@ namespace System.Globalization
                 return s;
             }
 
-            char[] result = s.ToCharArray();
-            for (; i < result.Length; i++)
+            fixed (char* pSource = s)
             {
-                result[i] = ToLowerAsciiInvariant(result[i]);
-            }
+                string result = string.FastAllocateString(s.Length);
+                fixed (char* pResult = result)
+                {
+                    s.AsSpan(0, i).CopyTo(new Span<char>(pResult, result.Length));
 
-            return new string(result);
+                    pResult[i] = (char)(pSource[i] | 0x20);
+                    i++;
+
+                    while (i < s.Length)
+                    {
+                        pResult[i] = ToLowerAsciiInvariant(pSource[i]);
+                        i++;
+                    }
+                }
+
+                return result;
+            }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static char ToLowerAsciiInvariant(char c)
         {
             if (char.IsAsciiLetterUpper(c))
@@ -190,12 +460,128 @@ namespace System.Globalization
         /// Converts the character or string to upper case.  Certain locales
         /// have different casing semantics from the file systems in Win32.
         /// </summary>
-        public char ToUpper(char c) => char.ToUpperInvariant(c);
+        public char ToUpper(char c)
+        {
+            if (GlobalizationMode.Invariant)
+            {
+                return InvariantModeCasing.ToUpper(c);
+            }
+
+            if (UnicodeUtility.IsAsciiCodePoint(c) && IsAsciiCasingSameAsInvariant)
+            {
+                return ToUpperAsciiInvariant(c);
+            }
+
+            return ChangeCase(c, toUpper: true);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static char ToUpperInvariant(char c)
+        {
+            if (UnicodeUtility.IsAsciiCodePoint(c))
+            {
+                return ToUpperAsciiInvariant(c);
+            }
+
+            if (GlobalizationMode.Invariant)
+            {
+                return InvariantModeCasing.ToUpper(c);
+            }
+
+            return Invariant.ChangeCase(c, toUpper: true);
+        }
 
         public string ToUpper(string str)
         {
             ArgumentNullException.ThrowIfNull(str);
-            return InvariantModeCasing.ToUpper(str);
+            return ChangeCaseCommon<ToUpperConversion>(this, str);
+        }
+
+        internal static string ToUpperInvariant(string str)
+        {
+            ArgumentNullException.ThrowIfNull(str);
+            return ChangeCaseCommon<ToUpperConversion>(null, str);
+        }
+
+        internal void ToUpper(ReadOnlySpan<char> source, Span<char> destination)
+        {
+            ChangeCaseCommon<ToUpperConversion>(this, source, destination);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static char ToUpperAsciiInvariant(char c)
+        {
+            if (char.IsAsciiLetterLower(c))
+            {
+                c = (char)(c & 0x5F); // = low 7 bits of ~0x20
+            }
+            return c;
+        }
+
+        /// <summary>
+        /// Converts the specified rune to lowercase.
+        /// </summary>
+        /// <param name="value">The rune to convert to lowercase.</param>
+        /// <returns>The specified rune converted to lowercase.</returns>
+        public unsafe Rune ToLower(Rune value)
+        {
+            // Convert rune to span
+            ReadOnlySpan<char> valueChars = value.AsSpan(stackalloc char[Rune.MaxUtf16CharsPerRune]);
+
+            // Change span to lower and convert to rune
+            if (valueChars.Length == 2)
+            {
+                Span<char> lowerChars = ['\0', '\0'];
+                ToLower(valueChars, lowerChars);
+                return new Rune(lowerChars[0], lowerChars[1]);
+            }
+
+            char lowerChar = ToLower(valueChars[0]);
+            return new Rune(lowerChar);
+        }
+
+        /// <summary>
+        /// Converts the specified rune to uppercase.
+        /// </summary>
+        /// <param name="value">The rune to convert to uppercase.</param>
+        /// <returns>The specified rune converted to uppercase.</returns>
+        public unsafe Rune ToUpper(Rune value)
+        {
+            // Convert rune to span
+            ReadOnlySpan<char> valueChars = value.AsSpan(stackalloc char[Rune.MaxUtf16CharsPerRune]);
+
+            // Change span to upper and convert to rune
+            if (valueChars.Length == 2)
+            {
+                Span<char> upperChars = ['\0', '\0'];
+                ToUpper(valueChars, upperChars);
+                return new Rune(upperChars[0], upperChars[1]);
+            }
+
+            char upperChar = ToUpper(valueChars[0]);
+            return new Rune(upperChar);
+        }
+
+        private bool IsAsciiCasingSameAsInvariant
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                if (_isAsciiCasingSameAsInvariant == NullableBool.Undefined)
+                {
+                    PopulateIsAsciiCasingSameAsInvariant();
+                }
+
+                Debug.Assert(_isAsciiCasingSameAsInvariant == NullableBool.True || _isAsciiCasingSameAsInvariant == NullableBool.False);
+                return _isAsciiCasingSameAsInvariant == NullableBool.True;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void PopulateIsAsciiCasingSameAsInvariant()
+        {
+            bool compareResult = CultureInfo.GetCultureInfo(_textInfoName).CompareInfo.Compare("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", CompareOptions.IgnoreCase) == 0;
+            _isAsciiCasingSameAsInvariant = compareResult ? NullableBool.True : NullableBool.False;
         }
 
         /// <summary>
@@ -245,8 +631,8 @@ namespace System.Globalization
 
             for (int i = 0; i < str.Length; i++)
             {
-                UnicodeCategory charType = GetUnicodeCategoryInternal(str, i, out int charLen);
-                if (IsLetterCategory(charType))
+                UnicodeCategory charType = CharUnicodeInfo.GetUnicodeCategoryInternal(str, i, out int charLen);
+                if (char.CheckLetter(charType))
                 {
                     // Special case to check for Dutch specific titlecasing with "IJ" characters
                     // at the beginning of a word
@@ -272,7 +658,7 @@ namespace System.Globalization
                     // Use a loop to find all of the other letters following this letter.
                     while (i < str.Length)
                     {
-                        charType = GetUnicodeCategoryInternal(str, i, out charLen);
+                        charType = CharUnicodeInfo.GetUnicodeCategoryInternal(str, i, out charLen);
                         if (IsLetterCategory(charType))
                         {
                             if (charType == UnicodeCategory.LowercaseLetter)
@@ -339,20 +725,6 @@ namespace System.Globalization
             return result.ToString();
         }
 
-        // CharUnicodeInfo.GetUnicodeCategoryInternal: the category of the code point at index, and
-        // whether it took a surrogate pair.
-        private static UnicodeCategory GetUnicodeCategoryInternal(string value, int index, out int charLength)
-        {
-            if (char.IsHighSurrogate(value[index]) && index + 1 < value.Length && char.IsLowSurrogate(value[index + 1]))
-            {
-                charLength = 2;
-                return CharUnicodeInfo.GetUnicodeCategory(char.ConvertToUtf32(value[index], value[index + 1]));
-            }
-
-            charLength = 1;
-            return CharUnicodeInfo.GetUnicodeCategory(value[index]);
-        }
-
         private static int AddNonLetter(ref StringBuilder result, ref string input, int inputIndex, int charLen)
         {
             Debug.Assert(charLen == 1 || charLen == 2, "[TextInfo.AddNonLetter] CharUnicodeInfo.InternalGetUnicodeCategory returned an unexpected charLen!");
@@ -369,14 +741,26 @@ namespace System.Globalization
             return inputIndex;
         }
 
-        private static int AddTitlecaseLetter(ref StringBuilder result, ref string input, int inputIndex, int charLen)
+        private int AddTitlecaseLetter(ref StringBuilder result, ref string input, int inputIndex, int charLen)
         {
             Debug.Assert(charLen == 1 || charLen == 2, "[TextInfo.AddTitlecaseLetter] CharUnicodeInfo.InternalGetUnicodeCategory returned an unexpected charLen!");
 
             if (charLen == 2)
             {
                 // for surrogate pairs do a ToUpper operation on the substring
-                result.Append(input.Substring(inputIndex, 2).ToUpperInvariant());
+                ReadOnlySpan<char> src = input.AsSpan(inputIndex, 2);
+                if (GlobalizationMode.Invariant)
+                {
+                    SurrogateCasing.ToUpper(src[0], src[1], out char h, out char l);
+                    result.Append(h);
+                    result.Append(l);
+                }
+                else
+                {
+                    Span<char> dst = ['\0', '\0'];
+                    ChangeCaseToUpper(src, dst);
+                    result.Append(dst);
+                }
                 inputIndex++;
             }
             else
@@ -405,11 +789,28 @@ namespace System.Globalization
                         result.Append((char)0x01F2);
                         break;
                     default:
-                        result.Append(char.ToUpperInvariant(input[inputIndex]));
+                        result.Append(GlobalizationMode.Invariant ? InvariantModeCasing.ToUpper(input[inputIndex]) : ToUpper(input[inputIndex]));
                         break;
                 }
             }
             return inputIndex;
+        }
+
+        private unsafe void ChangeCaseCore(char* src, int srcLen, char* dstBuffer, int dstBufferCapacity, bool bToUpper)
+        {
+            if (GlobalizationMode.UseNls)
+            {
+                NlsChangeCase(src, srcLen, dstBuffer, dstBufferCapacity, bToUpper);
+                return;
+            }
+#if TARGET_MACCATALYST || TARGET_IOS || TARGET_TVOS
+            if (GlobalizationMode.Hybrid)
+            {
+                ChangeCaseNative(src, srcLen, dstBuffer, dstBufferCapacity, bToUpper);
+                return;
+            }
+#endif
+            IcuChangeCase(src, srcLen, dstBuffer, dstBufferCapacity, bToUpper);
         }
 
         // Used in ToTitleCase():
@@ -460,5 +861,11 @@ namespace System.Globalization
                  || uc == UnicodeCategory.ModifierLetter
                  || uc == UnicodeCategory.OtherLetter;
         }
+
+        // A dummy struct that is used for 'ToUpper' in generic parameters
+        private readonly struct ToUpperConversion { }
+
+        // A dummy struct that is used for 'ToLower' in generic parameters
+        private readonly struct ToLowerConversion { }
     }
 }

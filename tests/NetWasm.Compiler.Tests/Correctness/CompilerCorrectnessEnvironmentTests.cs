@@ -68,6 +68,10 @@ public sealed class CompilerCorrectnessEnvironmentTests
         Assert.True(File.Exists(environment.RoslynCompilerPath));
         Assert.True(File.Exists(environment.CoreLibPath));
         Assert.True(Directory.Exists(environment.DesktopReferenceDirectory));
+        Assert.Equal(
+            Path.Combine(Path.GetDirectoryName(environment.DotNetPath)!, "packs", "Microsoft.NETCore.App.Ref",
+                environment.DesktopOracleFrameworkVersion, "ref", "net11.0"),
+            environment.DesktopReferenceDirectory);
         Assert.True(File.Exists(environment.NodeRunnerPath));
         Assert.Equal("10.0.403", environment.SdkVersion);
         Assert.StartsWith("11.0.", environment.DesktopOracleFrameworkVersion, StringComparison.Ordinal);

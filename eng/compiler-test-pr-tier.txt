@@ -183,6 +183,7 @@ NetWasm.Compiler.Tests.Correctness.StjSourceGenerationAcceptanceTests
 NetWasm.Compiler.Tests.Correctness.StringCompareSplitCorpusTests
 NetWasm.Compiler.Tests.Correctness.StructElementCopyRootingTests
 NetWasm.Compiler.Tests.Correctness.TaskExceptionShapeCorpusTests
+NetWasm.Compiler.Tests.Correctness.TextInfoCorpusTests
 NetWasm.Compiler.Tests.Correctness.TimeZoneInfoFacadeQualification.TimeZoneInfoFacadeAcceptanceTests
 NetWasm.Compiler.Tests.Correctness.TypeInitializationTriggerCorpusTests
 NetWasm.Compiler.Tests.Correctness.TypeNameCorpusTests
@@ -236,6 +237,7 @@ NetWasm.Compiler.Tests.IntegerFoldsTests
 NetWasm.Compiler.Tests.IntegerRangeTests
 NetWasm.Compiler.Tests.IntrinsicAddressBodyPlannerTests
 NetWasm.Compiler.Tests.IntrinsicMethodGroupCompilationTests
+NetWasm.Compiler.Tests.InvariantCasingSweepCompilationTests
 NetWasm.Compiler.Tests.IrreducibleLoopNestedProtectedRegionCompilationTests
 NetWasm.Compiler.Tests.IteratorCompilationTests
 NetWasm.Compiler.Tests.JavaScriptDisposeWithoutHostCompilationTests
