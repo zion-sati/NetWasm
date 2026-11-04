@@ -440,6 +440,7 @@
     <Compile Include="Number.Utf8Support.cs" />
     <Compile Include="Number.BinaryParseAndFormatContracts.cs" />
     <Compile Include="Number.WideScalars.cs" />
+    <Compile Include="Number.WithoutFormat.cs" />
     <Compile Include="Number.DecimalIeee754.Contracts.cs" />
     <Compile Include="Number.DecimalIeee754.Support.cs" />
     <Compile Include="Number.DecimalIeee754.cs" />

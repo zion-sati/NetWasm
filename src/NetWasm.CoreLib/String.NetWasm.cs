@@ -37,6 +37,23 @@ namespace System
             return new string(characters);
         }
 
+        // Upstream Equals(a, b, StringComparison.OrdinalIgnoreCase) without the comparison switch, whose
+        // culture-aware branches would make CultureInfo reachable from every case-insensitive dictionary.
+        internal static bool EqualsOrdinalIgnoreCase(string? a, string? b)
+        {
+            if (ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            if (a is null || b is null || a.Length != b.Length)
+            {
+                return false;
+            }
+
+            return EqualsOrdinalIgnoreCaseNoLengthCheck(a, b);
+        }
+
         public static readonly string Empty = "";
 
         public int Length

@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // Copied from dotnet/runtime 474ed963699fc29809015392738a15231aaae2de src/libraries/System.Private.CoreLib/src/System/MemoryExtensions.cs
+// NetWasm: TryWriteInterpolatedStringHandler's holes without a format write the primitive numbers
+// through Number.TryFormatWithoutFormat, which reaches no format string parser.
 
 using System.Buffers;
 using System.Collections;
@@ -6147,6 +6149,20 @@ namespace System
                 if (value is null)
                 {
                     return true;
+                }
+
+                // NetWasm: a number without a format takes Number's format-free entry point, which writes
+                // what TryFormat writes for an empty format. NetWasm decides what is reachable before it
+                // inlines, so the empty format above would not keep the format string parser out.
+                if (Number.FormatsWithoutFormat<T>())
+                {
+                    if (Number.TryFormatWithoutFormat(value, _provider, _destination.Slice(_pos), out int written))
+                    {
+                        _pos += written;
+                        return true;
+                    }
+
+                    return Fail();
                 }
 
                 // Check first for IFormattable, even though we'll prefer to use ISpanFormattable, as the latter

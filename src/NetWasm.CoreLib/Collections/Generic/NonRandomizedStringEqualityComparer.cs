@@ -89,8 +89,9 @@ namespace System.Collections.Generic
             {
             }
 
-            public override bool Equals(string? x, string? y) =>
-                string.Equals(x, y, StringComparison.OrdinalIgnoreCase);
+            // The ordinal comparison directly: string.Equals(x, y, comparisonType) also binds the culture-aware
+            // branches, which would make CultureInfo reachable from any case-insensitive dictionary.
+            public override bool Equals(string? x, string? y) => string.EqualsOrdinalIgnoreCase(x, y);
 
             public override int GetHashCode(string? obj)
             {

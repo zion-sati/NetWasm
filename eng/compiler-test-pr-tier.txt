@@ -19,6 +19,7 @@ NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactCacheActorTests
 NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactCodecTests
 NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactEligibilityClassifierTests
 NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactSnapshotTests
+NetWasm.Compiler.Tests.CaseInsensitiveCollectionPayForPlayCompilationTests
 NetWasm.Compiler.Tests.CoincidingOverloadCompilationTests
 NetWasm.Compiler.Tests.CommandWorldAwaitCompilationTests
 NetWasm.Compiler.Tests.CompilerArchitectureTests

@@ -15,10 +15,10 @@ public sealed class PayForPlayFormattingCompilationTests
 {
     private static readonly string[] FormatStringMachinery =
     [
-        "NumberToStringFormatInvariant",
-        "ParseInvariantFormatSpecifier",
-        "FindInvariantFormatSection",
-        "FormatInvariantExponent",
+        "NumberToStringFormat",
+        "ParseFormatSpecifier",
+        "FindSection",
+        "FormatExponent",
     ];
 
     [Theory]
@@ -48,6 +48,98 @@ public sealed class PayForPlayFormattingCompilationTests
         Assert.DoesNotContain(reached, method => FormatStringMachinery.Any(name =>
             method.EndsWith("::" + name, StringComparison.Ordinal)));
         Assert.DoesNotContain(reached, method => method.Contains("CultureData", StringComparison.Ordinal));
+    }
+
+    // Every number written without a format, through ToString(IFormatProvider) or a hole without one in
+    // any interpolated string handler, takes Number's format-free entry points: the format string parser
+    // and formatter stay out of programs that never pass a format.
+    [Theory]
+    [InlineData("(input - 7).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("((short)(input - 7)).ToString((System.IFormatProvider?)null)")]
+    [InlineData("((sbyte)(input - 7)).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("((long)input - 7).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("((nint)input - 7).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("((System.Int128)input - 7).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("((System.UInt128)input).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("(input + 0.5f).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("((System.Half)(input + 0.5f)).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("(input + 0.5m).ToString(System.Globalization.CultureInfo.InvariantCulture)")]
+    [InlineData("$\"{input + 0.5m} {(long)input} {(nint)input} {(System.Int128)input} {(byte)input} {(System.Half)input}\"")]
+    [InlineData("(new char[96].AsSpan().TryWrite($\"{(long)input}|{input + 0.5}|{input + 0.5m}|{(nuint)input}|{(System.UInt128)input}\", out var written) ? written : -1).ToString()")]
+    [InlineData("(System.Text.Unicode.Utf8.TryWrite(new byte[96], $\"{(long)input}|{input + 0.5f}|{input + 0.5m}|{(short)input}\", out var written) ? written : -1).ToString()")]
+    [InlineData("new System.Text.StringBuilder().Append($\"{(short)input}|{input + 0.5}|{input + 0.5m}\").ToString()")]
+    public void NumbersWithoutAFormatReachNoFormatStringMachinery(string expression)
+    {
+        var reached = ReachedMethods(expression);
+
+        Assert.DoesNotContain(reached, method => FormatStringMachinery.Any(name =>
+            method.EndsWith("::" + name, StringComparison.Ordinal)));
+        Assert.DoesNotContain(reached, method => method.Contains("CultureData", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm32)]
+    [InlineData(true, WasmTarget.Wasm64)]
+    public void NumbersWithoutAFormatMatchDesktop(bool optimize, WasmTarget target)
+    {
+        (string Expression, IFormattable Value)[] values =
+        [
+            ("int.MinValue", int.MinValue), ("-1", -1), ("0", 0), ("int.MaxValue", int.MaxValue),
+            ("short.MinValue", short.MinValue), ("(short)-7", (short)-7), ("sbyte.MinValue", sbyte.MinValue),
+            ("(byte)255", (byte)255), ("ushort.MaxValue", ushort.MaxValue), ("uint.MaxValue", uint.MaxValue),
+            ("long.MinValue", long.MinValue), ("long.MaxValue", long.MaxValue), ("ulong.MaxValue", ulong.MaxValue),
+            ("(nint)(-42)", (nint)(-42)), ("(nuint)42", (nuint)42),
+            ("System.Int128.MinValue", Int128.MinValue), ("System.Int128.MaxValue", Int128.MaxValue),
+            ("System.UInt128.MaxValue", UInt128.MaxValue),
+            ("-1.5f", -1.5f), ("float.NaN", float.NaN), ("float.NegativeInfinity", float.NegativeInfinity), ("-0.0f", -0.0f),
+            ("-1.5", -1.5), ("double.Epsilon", double.Epsilon), ("1e21", 1e21),
+            ("(System.Half)(-1.5f)", (Half)(-1.5f)), ("System.Half.MaxValue", Half.MaxValue),
+            ("-1.5m", -1.5m), ("decimal.MaxValue", decimal.MaxValue), ("0.0001m", 0.0001m), ("-0.00m", -0.00m),
+        ];
+        var checks = new StringBuilder();
+        var count = 0;
+        foreach (var (expression, value) in values)
+        {
+            var text = value.ToString(null, CultureInfo.InvariantCulture);
+            var aligned = string.Format(CultureInfo.InvariantCulture, "[{0,6}][{0,-6}]", value);
+            Check($"({expression}).ToString(System.Globalization.CultureInfo.InvariantCulture)", text);
+            Check($"Default({expression})", text);
+            Check($"Aligned({expression})", aligned);
+            Check($"SpanWrite({expression})", text);
+            Check($"Utf8Write({expression})", text);
+            Check($"Builder({expression})", text);
+        }
+        const string Helpers = """
+            static string Default<T>(T value) => $"{value}";
+
+            static string Aligned<T>(T value) => $"[{value,6}][{value,-6}]";
+
+            static string SpanWrite<T>(T value)
+            {
+                Span<char> buffer = stackalloc char[64];
+                return buffer.TryWrite($"{value}", out var written) ? buffer.Slice(0, written).ToString() : "-";
+            }
+
+            static string Utf8Write<T>(T value)
+            {
+                Span<byte> buffer = stackalloc byte[64];
+                return System.Text.Unicode.Utf8.TryWrite(buffer, $"{value}", out var written)
+                    ? System.Text.Encoding.UTF8.GetString(buffer.Slice(0, written))
+                    : "-";
+            }
+
+            static string Builder<T>(T value) => new System.Text.StringBuilder().Append($"{value}").ToString();
+            """;
+
+        Assert.Equal(count, Execute(checks.ToString(), count, optimize, target, helpers: Helpers));
+
+        void Check(string expression, string expected)
+        {
+            count++;
+            checks.AppendLine(CultureInfo.InvariantCulture,
+                $$"""if ({{expression}} != {{Quote(expected)}}) return -{{count}};""");
+        }
     }
 
     [Fact]
@@ -177,6 +269,7 @@ public sealed class PayForPlayFormattingCompilationTests
                 string.Format(CultureInfo.InvariantCulture, "{0,3}|{1:F1}|{2}|{3,-4}|", 42, 42 + 0.25, null, "ab"),
             ["SpanWrite(input)"] = "True:[  42]:False:0:<[42:X]>",
             ["Utf8Write(input)"] = "True:8:\u00e942 |2A",
+            ["Utf8Custom(input)"] = "<[42:]> [s:]|[42:X]",
         };
         foreach (var (expression, value) in expected)
         {
@@ -224,6 +317,13 @@ public sealed class PayForPlayFormattingCompilationTests
                 var tooSmall = buffer.Slice(0, 3).TryWrite($"[{input,4}]", out var none);
                 var custom = buffer.TryWrite(new Bracketing(), $"<{input:X}>", out var customWritten);
                 return $"{fits}:{text}:{tooSmall}:{none}:{(custom ? buffer.Slice(0, customWritten).ToString() : "-")}";
+            }
+
+            static string Utf8Custom(int input)
+            {
+                Span<byte> buffer = stackalloc byte[32];
+                var fits = System.Text.Unicode.Utf8.TryWrite(buffer, new Bracketing(), $"<{input}> {"s"}|{input:X}", out var written);
+                return fits ? System.Text.Encoding.UTF8.GetString(buffer.Slice(0, written)) : "-";
             }
 
             static string Utf8Write(int input)

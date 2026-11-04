@@ -112,17 +112,18 @@ namespace System.Runtime.CompilerServices
                 return;
             }
 
-            // A float or double hole writes its shortest round-trip form, as
-            // ToString() does, so it does not reach the format string machinery.
-            if (typeof(T) == typeof(float))
+            // A number without a format takes Number's format-free entry point, which writes what
+            // TryFormat writes for an empty format: NetWasm decides what is reachable before it
+            // inlines, so the empty format alone would not keep the format string parser out.
+            if (Number.FormatsWithoutFormat<T>())
             {
-                AppendShortestFloat((float)(object)value);
-                return;
-            }
+                int written;
+                while (!Number.TryFormatWithoutFormat(value, _provider, _chars.Slice(_pos), out written))
+                {
+                    Grow();
+                }
 
-            if (typeof(T) == typeof(double))
-            {
-                AppendShortestFloat((double)(object)value);
+                _pos += written;
                 return;
             }
 
@@ -153,18 +154,6 @@ namespace System.Runtime.CompilerServices
             {
                 AppendLiteral(s);
             }
-        }
-
-        private void AppendShortestFloat<TNumber>(TNumber value)
-            where TNumber : unmanaged, IBinaryFloatParseAndFormatInfo<TNumber>
-        {
-            int charsWritten;
-            while (!Number.TryFormatShortestFloat(value, _chars.Slice(_pos), out charsWritten))
-            {
-                Grow();
-            }
-
-            _pos += charsWritten;
         }
 
         public void AppendFormatted<T>(T value, string? format)
@@ -348,6 +337,8 @@ namespace System.Runtime.CompilerServices
         internal static string FormatHole<T>(T value, string? format, IFormatProvider? provider)
         {
             if (TryFormatCustom(value, format, provider, out var custom)) return custom;
+            // A string is its own text; the type test folds, so a string hole binds no IFormattable.ToString.
+            if (typeof(T) == typeof(string)) return (string?)(object?)value ?? string.Empty;
             if (value is IFormattable)
             {
                 return ((IFormattable)value).ToString(format, provider) ?? string.Empty;
