@@ -114,7 +114,7 @@ internal sealed class RepeatedArrayAccessPlanner(IControlFlowDominanceAnalyzer d
                 if (Stored(instruction) is { } stored)
                 {
                     checkedReferences.Remove(stored);
-                    checkedPairs.RemoveWhere(pair => pair.Array == stored || pair.Index.Slot == stored);
+                    checkedPairs.RemoveWhere(pair => pair.Array == stored || Nullable.Equals(pair.Index.Slot, stored));
                 }
                 Track(instruction, origins);
             }
