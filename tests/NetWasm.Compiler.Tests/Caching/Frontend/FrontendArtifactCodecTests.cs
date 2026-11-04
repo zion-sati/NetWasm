@@ -85,6 +85,57 @@ public sealed class FrontendArtifactCodecTests
         Assert.Throws<InvalidDataException>(() => new FrontendArtifactDecoder().Decode([.. payload]));
     }
 
+    // A cached method keeps the proofs that its checks cannot fail while they
+    // describe its instructions, so it emits as the method it was cached from;
+    // a proof of other instructions is left out, as the emitter would ignore it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void RoundTripKeepsTheProofsThatDescribeTheMethod(bool describes)
+    {
+        var snapshot = CreateStressSnapshot();
+        var header = snapshot.StructuredMethod.Header;
+        var instructions = describes ? header.Instructions : [.. header.Instructions];
+        snapshot = snapshot with
+        {
+            StructuredMethod = snapshot.StructuredMethod with
+            {
+                Header = header with
+                {
+                    ArrayBoundsProof = new(instructions, header.Locals, header.LocalSignatureTypes, [3, 1])
+                    {
+                        IndexOffsets = ImmutableDictionary<int, ArrayIndexOffset>.Empty.Add(3, new(2, 1)).Add(1, new(0, 4)),
+                        NonNullOffsets = [5],
+                    },
+                    IntegerCheckProof = new(instructions, [2], [4, 0]),
+                },
+            },
+        };
+        var encoder = new FrontendArtifactEncoder();
+        var payload = encoder.Encode(snapshot);
+
+        var restored = new FrontendArtifactDecoder().Decode(payload);
+
+        var restoredHeader = restored.StructuredMethod.Header;
+        if (!describes)
+        {
+            Assert.Null(restoredHeader.ArrayBoundsProof);
+            Assert.Null(restoredHeader.IntegerCheckProof);
+            return;
+        }
+        var bounds = Assert.IsType<ArrayBoundsProof>(restoredHeader.ArrayBoundsProof);
+        Assert.True(bounds.Describes(restoredHeader.Instructions, restoredHeader.Locals, restoredHeader.LocalSignatureTypes));
+        Assert.True(bounds.AccessOffsets.SetEquals([1, 3]));
+        Assert.Equal(new ArrayIndexOffset(2, 1), bounds.IndexOffsets[3]);
+        Assert.Equal(new ArrayIndexOffset(0, 4), bounds.IndexOffsets[1]);
+        Assert.True(bounds.NonNullOffsets.SetEquals([5]));
+        var integers = Assert.IsType<IntegerCheckProof>(restoredHeader.IntegerCheckProof);
+        Assert.True(integers.Instructions == restoredHeader.Instructions);
+        Assert.True(integers.NonZeroDivisors.SetEquals([2]));
+        Assert.True(integers.NonOverflowing.SetEquals([0, 4]));
+        Assert.Equal(payload.ToArray(), encoder.Encode(restored).ToArray());
+    }
+
     // A cached body keeps the locals it pins, which stay roots while they hold
     // what a fixed statement pinned.
     [Fact]

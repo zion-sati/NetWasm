@@ -27,7 +27,6 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
         services.AddSingleton<ArrayCloneIntrinsicEmitter>();
         services.AddSingleton<ArrayCloneRangeIntrinsicEmitter>();
         services.AddSingleton<StringCharacterAtIntrinsicEmitter>();
-        services.AddSingleton<StringSetCharacterUncheckedIntrinsicEmitter>();
         services.AddSingleton<StringGetRawDataReferenceIntrinsicEmitter>();
         services.AddSingleton<StringEqualsOrdinalIntrinsicEmitter>();
         services.AddSingleton<StringAllocateIntrinsicEmitter>();
@@ -184,8 +183,6 @@ internal static class RuntimeIntrinsicServiceCollectionExtensions
             services, RuntimeIntrinsic.ArrayCloneRange);
         AddRegistration<StringCharacterAtIntrinsicEmitter>(
             services, RuntimeIntrinsic.StringCharacterAt);
-        AddRegistration<StringSetCharacterUncheckedIntrinsicEmitter>(
-            services, RuntimeIntrinsic.StringSetCharacterUnchecked);
         AddRegistration<StringGetRawDataReferenceIntrinsicEmitter>(
             services, RuntimeIntrinsic.StringGetRawDataReference);
         AddRegistration<StringEqualsOrdinalIntrinsicEmitter>(

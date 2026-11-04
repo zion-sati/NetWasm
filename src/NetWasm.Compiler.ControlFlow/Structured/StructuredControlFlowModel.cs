@@ -18,6 +18,8 @@ public sealed record StructuredMethodHeader(
     ImmutableArray<CilInstruction> Instructions)
 {
     public ArrayBoundsProof? ArrayBoundsProof { get; init; }
+
+    public IntegerCheckProof? IntegerCheckProof { get; init; }
 }
 
 public sealed record StructuredMethod(

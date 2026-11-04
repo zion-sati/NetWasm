@@ -191,7 +191,9 @@ internal sealed class NumericConversionInstructionEmitter(
             : conversion.BitWidth;
         var slot = request.Stack.Count - 1;
         var source = request.Stack[slot];
-        if (conversion.Checked)
+        // A value whose range its target always holds needs no check.
+        if (conversion.Checked &&
+            request.Header.IntegerCheckProof?.ProvesNoOverflow(request.Header.Instructions, request.Instruction) != true)
         {
             EmitBoundsCheck(
                 request, code, slot,

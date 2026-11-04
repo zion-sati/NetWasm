@@ -195,6 +195,8 @@ public sealed record CilMethodBody(
 {
     public ArrayBoundsProof? ArrayBoundsProof { get; init; }
 
+    public IntegerCheckProof? IntegerCheckProof { get; init; }
+
     public MethodInstanceModel? MethodInstance { get; init; }
 
     public ImmutableArray<CliTypeIdentity> LocalSignatureTypes { get; init; } =

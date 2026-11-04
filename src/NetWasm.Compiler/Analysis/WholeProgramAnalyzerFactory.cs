@@ -188,6 +188,8 @@ internal sealed class WholeProgramAnalyzerFactory(
             methodRepository,
             specializer,
             optimizer,
+            calls,
+            optimizationSettings.IntegerCheckElimination,
             exceptionDiscoveries.Create(methodRepository, symbols, intrinsics),
             instructionAnalyzer));
         }

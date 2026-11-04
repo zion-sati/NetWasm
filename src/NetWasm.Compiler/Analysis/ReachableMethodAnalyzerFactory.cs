@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata;
@@ -27,6 +28,8 @@ internal sealed class ReachableMethodAnalyzerFactory(
         IMethodRepository methods,
         IMethodSpecializer specializer,
         IManagedMethodOptimizer optimizer,
+        ICalledMethodResolver calledMethods,
+        IntegerCheckEliminationPolicy integerChecks,
         IImplicitExceptionDiscovery exceptionDiscovery,
         IReachabilityInstructionAnalyzer instructionAnalyzer) =>
         new DiagnosticReachableMethodAnalyzer(
@@ -37,6 +40,10 @@ internal sealed class ReachableMethodAnalyzerFactory(
             methods,
             specializer,
             optimizer,
+            // A body a whole-program reduction rewrote finds its integer check proof again.
+            new IntegerCheckEliminator(graphBuilders.Create(), stackValidators.Create(types, fields, methods),
+                new IntegerRangeAnalysis(new StackEffectResolver(calledMethods)),
+                integerChecks == IntegerCheckEliminationPolicy.ProvenRanges),
             exceptionDiscovery,
             stackValidators,
             graphBuilders.Create(),

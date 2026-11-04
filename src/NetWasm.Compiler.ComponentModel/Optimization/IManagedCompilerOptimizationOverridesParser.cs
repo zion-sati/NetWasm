@@ -30,5 +30,7 @@ public interface IManagedCompilerOptimizationOverridesParser
         string? pureCallReuse = null,
         string? fieldLoadReuse = null,
         string? conditionalStoreMerging = null,
-        string? inlineArrayData = null);
+        string? inlineArrayData = null,
+        string? quotientReuse = null,
+        string? integerCheckElimination = null);
 }

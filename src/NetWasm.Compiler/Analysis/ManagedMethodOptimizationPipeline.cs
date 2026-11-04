@@ -33,6 +33,8 @@ internal sealed class ManagedMethodOptimizationPipeline(
     ILoopStoreForwarder loopStores,
     IConditionalStoreMerger storeMerging,
     IFieldLoadReuser fieldLoads,
+    IQuotientReuser quotients,
+    IIntegerCheckEliminator integerChecks,
     IBeforeFieldInitEntryInitializer entryInitialization,
     IEmptyFinallyRemover emptyFinallies,
     IStructLocalScalarReplacer structLocals,
@@ -78,6 +80,8 @@ internal sealed class ManagedMethodOptimizationPipeline(
     private readonly ILoopStoreForwarder _loopStores = loopStores ?? throw new ArgumentNullException(nameof(loopStores));
     private readonly IConditionalStoreMerger _storeMerging = storeMerging ?? throw new ArgumentNullException(nameof(storeMerging));
     private readonly IFieldLoadReuser _fieldLoads = fieldLoads ?? throw new ArgumentNullException(nameof(fieldLoads));
+    private readonly IQuotientReuser _quotients = quotients ?? throw new ArgumentNullException(nameof(quotients));
+    private readonly IIntegerCheckEliminator _integerChecks = integerChecks ?? throw new ArgumentNullException(nameof(integerChecks));
     private readonly IBeforeFieldInitEntryInitializer _entryInitialization = entryInitialization ??
         throw new ArgumentNullException(nameof(entryInitialization));
     private readonly IEmptyFinallyRemover _emptyFinallies = emptyFinallies ??
@@ -164,11 +168,12 @@ internal sealed class ManagedMethodOptimizationPipeline(
         // run four at a time first, for loops over a few constant values that
         // run once per value in a row, loop reloads of an element
         // the loop itself stores, stores to one field on both arms of an if,
-        // field reads of values an earlier read found, and span reads that RVA
-        // data answers. The entry checks go in before the array passes, whose
-        // proofs then describe the final instructions.
-        return _repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
-            _rvaSpans.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
-                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))));
+        // field reads of values an earlier read found, remainders of values a
+        // division divided, and span reads that RVA data answers. The entry
+        // checks go in before the array passes, whose proofs then describe the
+        // final instructions, as the integer check proof does.
+        return _integerChecks.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
+            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
+                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))));
     }
 }

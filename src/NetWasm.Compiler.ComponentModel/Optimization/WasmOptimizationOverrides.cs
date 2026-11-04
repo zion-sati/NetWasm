@@ -48,4 +48,8 @@ public sealed record WasmOptimizationOverrides(
     ManagedConditionalStoreMerging ConditionalStoreMerging =
         ManagedConditionalStoreMerging.Auto,
     ManagedInlineArrayData InlineArrayData =
-        ManagedInlineArrayData.Auto);
+        ManagedInlineArrayData.Auto,
+    ManagedQuotientReuse QuotientReuse =
+        ManagedQuotientReuse.Auto,
+    ManagedIntegerCheckElimination IntegerCheckElimination =
+        ManagedIntegerCheckElimination.Auto);

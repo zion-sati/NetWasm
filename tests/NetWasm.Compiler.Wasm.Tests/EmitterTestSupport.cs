@@ -541,18 +541,32 @@ internal static class EmitterTestSupport
         };
     }
 
+    // With nonZero or nonOverflowing, the header holds the instruction and an
+    // integer check proof that rules out that check for it.
     internal static InstructionEmissionRequest CreateInstructionRequest(
         CilOperation operation,
         IEnumerable<CliValueKind>? stack = null,
         CilOperand? operand = null,
         MethodEmissionContext? context = null,
-        int maxStack = 3)
+        int maxStack = 3,
+        bool nonZero = false,
+        bool nonOverflowing = false)
     {
         var program = new FakeProgram();
         var writer = new RecordingInstructionWriter();
+        var instruction = I(0, operation, operand);
+        var proven = nonZero || nonOverflowing;
+        var header = Header(new CilMethodBody(program.GetMethod(EntryKey), maxStack, [], proven ? [instruction] : []));
+        if (proven)
+        {
+            header = header with
+            {
+                IntegerCheckProof = new(header.Instructions, nonZero ? [0] : [], nonOverflowing ? [0] : []),
+            };
+        }
         var request = new InstructionEmissionRequest(
-            Header(new CilMethodBody(program.GetMethod(EntryKey), maxStack, [], [])),
-            I(0, operation, operand),
+            header,
+            instruction,
             stack is null ? [] : [.. stack],
             context ?? CreateMethodEmissionContext(maxStack),
             CreateInstructionModuleTarget(program));

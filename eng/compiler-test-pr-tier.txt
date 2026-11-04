@@ -231,7 +231,9 @@ NetWasm.Compiler.Tests.HostInteropCompilationTests
 NetWasm.Compiler.Tests.IConvertibleTypeCodeCompilationTests
 NetWasm.Compiler.Tests.IdempotentLoopCollapseCompilationTests
 NetWasm.Compiler.Tests.InlineArrayDataCompilationTests
+NetWasm.Compiler.Tests.IntegerCheckCompilationTests
 NetWasm.Compiler.Tests.IntegerFoldsTests
+NetWasm.Compiler.Tests.IntegerRangeTests
 NetWasm.Compiler.Tests.IntrinsicAddressBodyPlannerTests
 NetWasm.Compiler.Tests.IntrinsicMethodGroupCompilationTests
 NetWasm.Compiler.Tests.IrreducibleLoopNestedProtectedRegionCompilationTests
@@ -245,9 +247,11 @@ NetWasm.Compiler.Tests.Legality.ConstantStaticFieldLegalityTests
 NetWasm.Compiler.Tests.Legality.ConstantTripLoopUnrollingLegalityTests
 NetWasm.Compiler.Tests.Legality.DeepInliningLegalityTests
 NetWasm.Compiler.Tests.Legality.FieldLoadReuseLegalityTests
+NetWasm.Compiler.Tests.Legality.IntegerCheckLegalityTests
 NetWasm.Compiler.Tests.Legality.KnownLengthArrayLoopLegalityTests
 NetWasm.Compiler.Tests.Legality.LoopVectorizationLegalityTests
 NetWasm.Compiler.Tests.Legality.PureCallReuseLegalityTests
+NetWasm.Compiler.Tests.Legality.QuotientReuseLegalityTests
 NetWasm.Compiler.Tests.Legality.ReferenceWalkLegalityTests
 NetWasm.Compiler.Tests.Legality.RepeatedArrayAccessLegalityTests
 NetWasm.Compiler.Tests.Legality.SmallBlockLegalityTests
@@ -286,6 +290,7 @@ NetWasm.Compiler.Tests.PlatformWorldCallRewriterTests
 NetWasm.Compiler.Tests.PrimitiveCompilationTests
 NetWasm.Compiler.Tests.PrimitiveDifferentialCompilationTests
 NetWasm.Compiler.Tests.PureCallReuserTests
+NetWasm.Compiler.Tests.QuotientReuseCompilationTests
 NetWasm.Compiler.Tests.ReachabilityMarkersTests
 NetWasm.Compiler.Tests.RectangularArrayCompilationTests
 NetWasm.Compiler.Tests.RepeatedArrayAccessPlannerTests

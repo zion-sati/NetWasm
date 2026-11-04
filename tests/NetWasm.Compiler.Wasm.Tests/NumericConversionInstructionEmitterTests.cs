@@ -148,6 +148,24 @@ public sealed class NumericConversionInstructionEmitterTests
         Assert.Contains(WasmOpcodes.I64ExtendI32Signed, GetCodeBytes(request));
     }
 
+    // A value whose range its target holds converts without the check.
+    [Fact]
+    public void ProvenCheckedNarrowingLeavesOutItsCheck()
+    {
+        var layouts = new RecordingLayoutProvider();
+        var request = CreateInstructionRequest(
+            CilOperation.ConvertNumeric,
+            [CliValueKind.I8],
+            new CilOperand.NumericConversion(8, false, true, false, false),
+            nonOverflowing: true);
+
+        CreateEmitter(layouts).Emit(request);
+
+        Assert.Equal([CliValueKind.I4], request.Stack);
+        Assert.False(ContainsManagedThrow(GetCodeBytes(request)));
+        Assert.Contains(WasmOpcodes.I32Extend8Signed, GetCodeBytes(request));
+    }
+
     [Fact]
     public void CheckedNarrowingEmitsManagedOverflowPath()
     {

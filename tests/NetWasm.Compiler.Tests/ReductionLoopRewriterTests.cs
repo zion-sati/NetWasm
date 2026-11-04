@@ -23,6 +23,8 @@ public sealed class ReductionLoopRewriterTests
     public static TheoryData<string, bool> Shapes() => new()
     {
         { "xor", true },
+        { "xor with the element first", true },
+        { "maximum of uints widened to ulongs, element first", true },
         { "copy only", false },
         { "local folded two ways", false },
         { "maximum of booleans", false },
@@ -59,6 +61,10 @@ public sealed class ReductionLoopRewriterTests
     private static CilMethodBody Shape(string shape) => shape switch
     {
         "xor" => Loop(code => code.Fold(Int32, CilOperation.BitwiseXor)),
+        "xor with the element first" => Loop(code => code.Element(Int32).Local(CilOperation.LoadLocal, Folded)
+            .Op(CilOperation.BitwiseXor).Local(CilOperation.StoreLocal, Folded)),
+        "maximum of uints widened to ulongs, element first" => Loop(code => code.MaximumFirst(Primitive("u4", CliValueKind.I4),
+            Primitive("u8", CliValueKind.I8), CilOperation.ConvertInt64Unsigned)),
         "copy only" => Loop(code => code.Element(Int32).Local(CilOperation.StoreLocal, Copy)),
         "local folded two ways" => Loop(code => code.Fold(Int32, CilOperation.BitwiseXor).Fold(Int32, CilOperation.Add)),
         "maximum of booleans" => Loop(code => code.Maximum(Primitive("bool", CliValueKind.I4), Int32)),
@@ -161,6 +167,15 @@ internal static class ReductionCil
         {
             code.Local(CilOperation.LoadLocal, 1).Element(element);
             if (conversion is { } widening) code.Op(widening);
+            return code.Max(comparison);
+        }
+
+        // x = Math.Max([conversion] a[i], x) over the comparison type.
+        public CilBuilder MaximumFirst(CliTypeIdentity element, CliTypeIdentity comparison, CilOperation conversion) =>
+            code.Element(element).Op(conversion).Local(CilOperation.LoadLocal, 1).Max(comparison);
+
+        private CilBuilder Max(CliTypeIdentity comparison)
+        {
             var signature = new MethodSignatureModel(comparison, [comparison, comparison]);
             var math = CliTypeIdentity.Named(new("System.Runtime"), "System", "Math", isValueType: false);
             var max = new MethodInstanceModel(

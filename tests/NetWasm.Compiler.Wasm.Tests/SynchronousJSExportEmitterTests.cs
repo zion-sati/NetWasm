@@ -15,15 +15,17 @@ using static EmitterTestSupport;
 public sealed class SynchronousJSExportEmitterTests
 {
     [Theory]
-    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32EqualZero, false, false)]
-    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64EqualZero, false, false)]
-    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32EqualZero, true, false)]
-    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64EqualZero, true, true)]
+    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32EqualZero, false, false, false)]
+    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64EqualZero, false, false, false)]
+    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32EqualZero, false, false, true)]
+    [InlineData(WasmTarget.Wasm32, WasmOpcodes.I32EqualZero, true, false, false)]
+    [InlineData(WasmTarget.Wasm64, WasmOpcodes.I64EqualZero, true, true, false)]
     public void ScalarVoidExportRunsFinalizersWithoutRooting(
         WasmTarget target,
         byte expectedEqualZero,
         bool includeReporter,
-        bool includeRaise)
+        bool includeRaise,
+        bool includeHint)
     {
         var layouts = new RecordingLayoutProvider(WasmTargetLayout.For(target));
         var imports = WasmRuntimeImports.CreateCatalog();
@@ -60,7 +62,8 @@ public sealed class SynchronousJSExportEmitterTests
             WasmModuleProfile.CoreApplication,
             IncludeTerminalExceptionReporter: includeReporter,
             IncludeTerminalExceptionRaise: includeRaise,
-            IncludeFinalization: true);
+            IncludeFinalization: true,
+            IncludeUnhandledExceptionHint: includeHint);
         var initialization = TestRuntimeInitialization.Create(512, selection);
 
         var body = emitter.Emit(
@@ -75,6 +78,10 @@ public sealed class SynchronousJSExportEmitterTests
         Assert.False(byteArrays.Called);
         Assert.Equal(includeReporter, terminal.ReportCalled);
         Assert.Equal(!includeReporter, terminal.TrapCalled);
+        // Without the reporter, a trap boundary hints at diagnostics when the hint's import is in the module.
+        Assert.Equal(includeHint
+            ? imports.Resolve(RuntimeImportSymbol.ReportUnhandledException, selection)
+            : (int?)null, terminal.UnhandledExceptionReporter);
         Assert.Equal(includeRaise
             ? imports.Resolve(RuntimeImportSymbol.ManagedTerminalExceptionRaise, selection)
             : (int?)null, terminal.RaiseFunctionIndex);
@@ -227,6 +234,7 @@ public sealed class SynchronousJSExportEmitterTests
         public int? ReportFunctionIndex { get; private set; }
         public int? RaiseFunctionIndex { get; private set; }
         public CliValueKind? ResultType { get; private set; }
+        public int? UnhandledExceptionReporter { get; private set; }
 
         public void Emit(
             IWasmInstructionWriter code,
@@ -236,6 +244,7 @@ public sealed class SynchronousJSExportEmitterTests
             int? unhandledExceptionReporter = null)
         {
             TrapCalled = true;
+            UnhandledExceptionReporter = unhandledExceptionReporter;
             ResultType = resultType;
             emitBody();
         }

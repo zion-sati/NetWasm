@@ -18,7 +18,7 @@ namespace NetWasm.Compiler.Caching.Frontend;
 internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
 {
     private const uint Magic = 0x3146434E;
-    private const ushort SchemaVersion = 28;
+    private const ushort SchemaVersion = 29;
 
     public FrontendArtifactSnapshot Decode(ImmutableArray<byte> payload)
     {
@@ -665,6 +665,18 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 groups.Add(key, ReadExceptionGroup());
             }
 
+            var stacks = ReadStackMap();
+            // Each proof describes the header's own instructions, as it did when cached.
+            header = header with
+            {
+                ArrayBoundsProof = ReadNullableClass(() => new ArrayBoundsProof(
+                    header.Instructions, header.Locals, header.LocalSignatureTypes, ReadOffsets())
+                {
+                    IndexOffsets = ReadIndexOffsets(),
+                    NonNullOffsets = ReadOffsets(),
+                }),
+                IntegerCheckProof = ReadNullableClass(() => new IntegerCheckProof(header.Instructions, ReadOffsets(), ReadOffsets())),
+            };
             return new(
                 header,
                 entry,
@@ -672,7 +684,21 @@ internal sealed class FrontendArtifactDecoder : IFrontendArtifactDecoder
                 body,
                 topLevel,
                 groups.ToImmutable(),
-                ReadStackMap());
+                stacks);
+        }
+
+        private ImmutableHashSet<int> ReadOffsets() => [.. ReadArray(reader.ReadInt32)];
+
+        private ImmutableDictionary<int, ArrayIndexOffset> ReadIndexOffsets()
+        {
+            var count = ReadCount();
+            var offsets = ImmutableDictionary.CreateBuilder<int, ArrayIndexOffset>();
+            for (var index = 0; index < count; index++)
+            {
+                var offset = reader.ReadInt32();
+                offsets.Add(offset, new(reader.ReadInt32(), reader.ReadInt32()));
+            }
+            return offsets.ToImmutable();
         }
 
         private StructuredBlockDefinition ReadBlock()

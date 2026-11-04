@@ -44,4 +44,6 @@ public sealed record WasmOptimizationSettings(
     PureCallReusePolicy PureCallReuse = PureCallReusePolicy.Disabled,
     FieldLoadReusePolicy FieldLoadReuse = FieldLoadReusePolicy.Disabled,
     ConditionalStoreMergingPolicy ConditionalStoreMerging = ConditionalStoreMergingPolicy.Disabled,
-    InlineArrayDataPolicy InlineArrayData = InlineArrayDataPolicy.Disabled);
+    InlineArrayDataPolicy InlineArrayData = InlineArrayDataPolicy.Disabled,
+    QuotientReusePolicy QuotientReuse = QuotientReusePolicy.Disabled,
+    IntegerCheckEliminationPolicy IntegerCheckElimination = IntegerCheckEliminationPolicy.Disabled);
