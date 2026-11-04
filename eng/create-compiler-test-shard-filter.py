@@ -17,7 +17,8 @@ DEFAULT_SPLIT_THRESHOLD_SECONDS = 300.0
 # xUnit runs a class's tests one after another, and as many classes at once as
 # the host has processors. GitHub's standard Linux runners have four.
 DEFAULT_PARALLEL_LANES = 4
-FILTER_OPERATOR_CHARACTERS = frozenset("()&|=!~")
+# VSTest's filter operators and its escape character.
+FILTER_SPECIAL_CHARACTERS = frozenset("()&|=!~\\")
 
 
 @dataclass(frozen=True)
@@ -173,7 +174,7 @@ def case_filter_arguments(method_name: str, display_name: str) -> str | None:
         return None
     arguments = display_name[len(prefix):-1]
     if not arguments or any(
-        character in arguments for character in FILTER_OPERATOR_CHARACTERS
+        character in arguments for character in FILTER_SPECIAL_CHARACTERS
     ):
         return None
     return arguments
@@ -196,13 +197,15 @@ def create_execution_items(
         display_names = test_cases[method_name]
         method_weight = method_weights[method_name]
         arguments = [case_filter_arguments(method_name, name) for name in display_names]
-        # A theory without case history may take far longer than the average
+        # A theory the history leaves out may take far longer than the average
         # its weight assumes, so its cases are placed one by one.
-        has_history = any(name in known_cases for name in display_names)
+        unrecorded = case_weights is not None and not any(
+            name in known_cases for name in display_names
+        )
         can_split = (
             len(display_names) > 1
             and len(display_names) == len(set(display_names))
-            and (method_weight > split_threshold_seconds or not has_history)
+            and (method_weight > split_threshold_seconds or unrecorded)
             and all(value is not None for value in arguments)
         )
         if not can_split:
@@ -355,7 +358,7 @@ def main() -> int:
             test_cases = select_classes(test_cases, load_class_list(args.classes))
         method_counts = Counter({name: len(cases) for name, cases in test_cases.items()})
         weights = None
-        case_weights: dict[str, float] = {}
+        case_weights: dict[str, float] | None = None
         fallback_methods = len(method_counts)
         if args.timings is not None:
             weights, fallback_methods = load_timing_weights(args.timings, method_counts)

@@ -202,18 +202,21 @@ class CompilerTestShardFilterTests(unittest.TestCase):
     def test_normal_and_unsafe_theories_remain_atomic(self):
         normal = "NetWasm.Compiler.Tests.NormalTests.Theory"
         unsafe = "NetWasm.Compiler.Tests.UnsafeTests.Theory"
+        # xUnit writes a NUL as \0, which VSTest's filter rejects as an
+        # unknown escape sequence.
+        escaped = "NetWasm.Compiler.Tests.EscapedTests.Theory"
         items = SHARDS.create_execution_items(
             {
                 normal: [f"{normal}(value: 1)", f"{normal}(value: 2)"],
                 unsafe: [f"{unsafe}(value: (1))", f"{unsafe}(value: (2))"],
+                escaped: [f'{escaped}(line: "a\\0b")', f'{escaped}(line: "a")'],
             },
-            {normal: 299.0, unsafe: 900.0},
-            {f"{normal}(value: 1)": 150.0, f"{normal}(value: 2)": 149.0},
+            {normal: 299.0, unsafe: 900.0, escaped: 900.0},
         )
 
-        self.assertEqual(2, len(items))
+        self.assertEqual(3, len(items))
         self.assertTrue(all(item.display_name is None for item in items))
-        self.assertEqual([2, 2], [item.cases for item in items])
+        self.assertEqual([2, 2, 2], [item.cases for item in items])
 
     def test_a_theory_without_case_history_is_split(self):
         # Its weight is the average case's, which says nothing about how long
@@ -225,6 +228,10 @@ class CompilerTestShardFilterTests(unittest.TestCase):
 
         self.assertEqual(cases, [item.display_name for item in items])
         self.assertEqual([20.0 / 3] * 3, [item.weight for item in items])
+        # Without any history every weight is a case count, and the theory
+        # stays whole.
+        whole = SHARDS.create_execution_items({method: cases}, {method: 3.0})
+        self.assertEqual([None], [item.display_name for item in whole])
 
     def test_schema_three_case_timings_are_loaded(self):
         history = {
