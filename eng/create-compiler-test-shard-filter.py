@@ -14,7 +14,11 @@ from urllib.parse import quote
 
 TEST_NAMESPACE = "NetWasm.Compiler.Tests."
 DEFAULT_SPLIT_THRESHOLD_SECONDS = 300.0
-FILTER_OPERATOR_CHARACTERS = frozenset("()&|=!~")
+# xUnit runs a class's tests one after another, and as many classes at once as
+# the host has processors. GitHub's standard Linux runners have four.
+DEFAULT_PARALLEL_LANES = 4
+# VSTest's filter operators and its escape character.
+FILTER_SPECIAL_CHARACTERS = frozenset("()&|=!~\\")
 
 
 @dataclass(frozen=True)
@@ -88,47 +92,6 @@ def select_classes(
     return selected
 
 
-def parse_test_method_counts(lines: list[str]) -> Counter[str]:
-    return Counter({
-        method_name: len(display_names)
-        for method_name, display_names in parse_test_cases(lines).items()
-    })
-
-
-def create_shards(
-    method_counts: Counter[str],
-    shard_count: int,
-    method_weights: dict[str, float] | None = None,
-) -> list[list[str]]:
-    if shard_count < 1:
-        raise ValueError("Shard count must be at least one.")
-
-    shards: list[list[str]] = [[] for _ in range(shard_count)]
-    weights = (
-        {method_name: float(count) for method_name, count in method_counts.items()}
-        if method_weights is None
-        else method_weights
-    )
-    if set(weights) != set(method_counts):
-        raise ValueError("Shard weights must cover every discovered test method exactly once.")
-    if any(weight <= 0 for weight in weights.values()):
-        raise ValueError("Shard weights must be positive.")
-
-    loads = [0.0] * shard_count
-    for method_name in sorted(
-        method_counts,
-        key=lambda name: (-weights[name], name),
-    ):
-        shard_index = min(
-            range(shard_count),
-            key=lambda candidate: (loads[candidate], candidate),
-        )
-        shards[shard_index].append(method_name)
-        loads[shard_index] += weights[method_name]
-
-    return shards
-
-
 def load_timing_weights(
     path: Path,
     method_counts: Counter[str],
@@ -137,7 +100,7 @@ def load_timing_weights(
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError(f"Cannot read compiler-test timing history: {error}") from error
-    if not isinstance(value, dict) or value.get("schemaVersion") not in (2, 3):
+    if not isinstance(value, dict) or value.get("schemaVersion") != 3:
         raise ValueError("Compiler-test timing history has an unsupported schema.")
     methods = value.get("methods")
     if not isinstance(methods, dict):
@@ -184,7 +147,7 @@ def load_case_timing_weights(path: Path) -> dict[str, float]:
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError(f"Cannot read compiler-test timing history: {error}") from error
     if not isinstance(value, dict) or value.get("schemaVersion") != 3:
-        return {}
+        raise ValueError("Compiler-test timing history has an unsupported schema.")
     cases = value.get("cases")
     if not isinstance(cases, dict):
         raise ValueError("Compiler-test timing history has no case map.")
@@ -211,7 +174,7 @@ def case_filter_arguments(method_name: str, display_name: str) -> str | None:
         return None
     arguments = display_name[len(prefix):-1]
     if not arguments or any(
-        character in arguments for character in FILTER_OPERATOR_CHARACTERS
+        character in arguments for character in FILTER_SPECIAL_CHARACTERS
     ):
         return None
     return arguments
@@ -234,10 +197,15 @@ def create_execution_items(
         display_names = test_cases[method_name]
         method_weight = method_weights[method_name]
         arguments = [case_filter_arguments(method_name, name) for name in display_names]
+        # A theory the history leaves out may take far longer than the average
+        # its weight assumes, so its cases are placed one by one.
+        unrecorded = case_weights is not None and not any(
+            name in known_cases for name in display_names
+        )
         can_split = (
             len(display_names) > 1
             and len(display_names) == len(set(display_names))
-            and method_weight > split_threshold_seconds
+            and (method_weight > split_threshold_seconds or unrecorded)
             and all(value is not None for value in arguments)
         )
         if not can_split:
@@ -258,26 +226,46 @@ def create_execution_items(
 def create_execution_shards(
     items: list[ShardItem],
     shard_count: int,
+    parallel_lanes: int = DEFAULT_PARALLEL_LANES,
 ) -> list[list[ShardItem]]:
     if shard_count < 1:
         raise ValueError("Shard count must be at least one.")
+    if parallel_lanes < 1:
+        raise ValueError("Parallel lanes must be at least one.")
     if not items:
         raise ValueError("The execution plan contains no tests.")
     if any(item.weight <= 0 or not math.isfinite(item.weight) for item in items):
         raise ValueError("Shard weights must be positive finite durations.")
 
+    # A shard lasts as long as its load spread over the lanes, or as its
+    # longest class, whose tests run in turn, whichever is longer. Each item
+    # goes where the shard it joins finishes soonest.
     shards: list[list[ShardItem]] = [[] for _ in range(shard_count)]
     loads = [0.0] * shard_count
+    class_loads: list[dict[str, float]] = [{} for _ in range(shard_count)]
+    longest_classes = [0.0] * shard_count
     for item in sorted(
         items,
         key=lambda value: (-value.weight, value.method_name, value.display_name or ""),
     ):
+        test_class = item.method_name.rsplit(".", 1)[0]
+
+        def finish(candidate: int) -> float:
+            return max(
+                (loads[candidate] + item.weight) / parallel_lanes,
+                longest_classes[candidate],
+                class_loads[candidate].get(test_class, 0.0) + item.weight,
+            )
+
         shard_index = min(
             range(shard_count),
-            key=lambda candidate: (loads[candidate], candidate),
+            key=lambda candidate: (finish(candidate), loads[candidate], candidate),
         )
         shards[shard_index].append(item)
         loads[shard_index] += item.weight
+        class_load = class_loads[shard_index].get(test_class, 0.0) + item.weight
+        class_loads[shard_index][test_class] = class_load
+        longest_classes[shard_index] = max(longest_classes[shard_index], class_load)
     return shards
 
 
@@ -370,7 +358,7 @@ def main() -> int:
             test_cases = select_classes(test_cases, load_class_list(args.classes))
         method_counts = Counter({name: len(cases) for name, cases in test_cases.items()})
         weights = None
-        case_weights: dict[str, float] = {}
+        case_weights: dict[str, float] | None = None
         fallback_methods = len(method_counts)
         if args.timings is not None:
             weights, fallback_methods = load_timing_weights(args.timings, method_counts)

@@ -344,8 +344,11 @@ public sealed class StaticProviderCatalogAsyncInterfaceCompilationTests
                 BindingFlags.Public | BindingFlags.Static)!;
             var immediate = (int)runMethod.Invoke(null, [0])!;
             Assert.Equal(ImmediateResult, immediate);
+            // The continuation after Task.Yield runs on the thread pool, which a parallel test run
+            // can keep busy for longer than a fixed number of short polls.
             var awaited = -2;
-            for (var attempt = 0; attempt < 100 && awaited == -2; attempt++)
+            var waiting = System.Diagnostics.Stopwatch.StartNew();
+            while (awaited == -2 && waiting.Elapsed < TimeSpan.FromSeconds(30))
             {
                 Thread.Sleep(1);
                 awaited = (int)observeMethod.Invoke(null, [0])!;

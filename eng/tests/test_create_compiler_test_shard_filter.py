@@ -37,13 +37,11 @@ class CompilerTestShardFilterTests(unittest.TestCase):
             "unrelated output",
         ]
         cases = SHARDS.parse_test_cases(listing)
-        counts = SHARDS.parse_test_method_counts(listing)
 
-        self.assertEqual(1, counts["NetWasm.Compiler.Tests.AlphaTests.Fact"])
-        self.assertEqual(1, counts["NetWasm.Compiler.Tests.AlphaTests.Theory"])
+        self.assertEqual(["NetWasm.Compiler.Tests.AlphaTests.Fact"], cases["NetWasm.Compiler.Tests.AlphaTests.Fact"])
         self.assertEqual(
-            1,
-            counts["NetWasm.Compiler.Tests.Correctness.BetaTests.Run"],
+            ['NetWasm.Compiler.Tests.Correctness.BetaTests.Run(cell: \\\"x\\\")'],
+            cases["NetWasm.Compiler.Tests.Correctness.BetaTests.Run"],
         )
         self.assertEqual(
             ["NetWasm.Compiler.Tests.AlphaTests.Theory(value: 1)"],
@@ -51,25 +49,41 @@ class CompilerTestShardFilterTests(unittest.TestCase):
         )
 
     def test_greedy_partition_is_deterministic_balanced_and_complete(self):
-        counts = SHARDS.Counter(
-            {
-                "NetWasm.Compiler.Tests.AlphaTests": 8,
-                "NetWasm.Compiler.Tests.BetaTests": 7,
-                "NetWasm.Compiler.Tests.GammaTests": 4,
-                "NetWasm.Compiler.Tests.DeltaTests": 3,
-                "NetWasm.Compiler.Tests.EpsilonTests": 2,
-            }
-        )
+        items = [
+            SHARDS.ShardItem(f"NetWasm.Compiler.Tests.{name}Tests.Run", None, 1, weight)
+            for name, weight in (
+                ("Alpha", 8.0), ("Beta", 7.0), ("Gamma", 4.0), ("Delta", 3.0), ("Epsilon", 2.0),
+            )
+        ]
 
-        first = SHARDS.create_shards(counts, 3)
-        second = SHARDS.create_shards(counts, 3)
+        first = SHARDS.create_execution_shards(items, 3)
+        second = SHARDS.create_execution_shards(list(reversed(items)), 3)
 
         self.assertEqual(first, second)
-        flattened = [name for shard in first for name in shard]
-        self.assertCountEqual(counts, flattened)
-        self.assertEqual(len(flattened), len(set(flattened)))
-        loads = [sum(counts[name] for name in shard) for shard in first]
+        flattened = [item for shard in first for item in shard]
+        self.assertCountEqual(items, flattened)
+        loads = [sum(item.weight for item in shard) for shard in first]
         self.assertLessEqual(max(loads) - min(loads), 2)
+
+    def test_a_class_s_cases_spread_because_they_run_in_turn(self):
+        # xUnit runs one class's tests one after another, so two of the beta
+        # cases in one shard would take 180 seconds where the shard's load,
+        # spread over its lanes, takes 45.
+        alpha = "NetWasm.Compiler.Tests.AlphaTests.Run"
+        beta = "NetWasm.Compiler.Tests.BetaTests.Run"
+        items = [
+            SHARDS.ShardItem(alpha, f"{alpha}(value: {index})", 1, 100.0) for index in range(2)
+        ] + [
+            SHARDS.ShardItem(beta, f"{beta}(value: {index})", 1, 90.0) for index in range(3)
+        ]
+
+        shards = SHARDS.create_execution_shards(items, 3)
+
+        for shard in shards:
+            self.assertLessEqual(
+                sum(1 for item in shard if item.method_name == beta), 1, shard)
+            self.assertLessEqual(
+                sum(1 for item in shard if item.method_name == alpha), 1, shard)
 
     def test_filter_selects_every_class_in_the_shard(self):
         value = SHARDS.create_vstest_filter(
@@ -92,7 +106,8 @@ class CompilerTestShardFilterTests(unittest.TestCase):
             "NetWasm.Compiler.Tests.NewTests": 4,
         })
         history = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
+            "cases": {},
             "methods": {
                 "NetWasm.Compiler.Tests.SlowTests": {
                     "cases": 2,
@@ -117,14 +132,15 @@ class CompilerTestShardFilterTests(unittest.TestCase):
         self.assertEqual(20.0, weights["NetWasm.Compiler.Tests.SlowTests"])
         self.assertEqual(5.0, weights["NetWasm.Compiler.Tests.FastTests"])
         self.assertAlmostEqual(25.0 / 12.0 * 4, weights["NetWasm.Compiler.Tests.NewTests"])
-        shards = SHARDS.create_shards(counts, 2, weights)
+        items = [SHARDS.ShardItem(name, None, counts[name], weight) for name, weight in weights.items()]
+        shards = SHARDS.create_execution_shards(items, 2)
         self.assertEqual(
             ["NetWasm.Compiler.Tests.SlowTests"],
-            shards[0],
+            [item.method_name for item in shards[0]],
         )
         self.assertCountEqual(
             ["NetWasm.Compiler.Tests.FastTests", "NetWasm.Compiler.Tests.NewTests"],
-            shards[1],
+            [item.method_name for item in shards[1]],
         )
 
     def test_oversized_theory_is_split_into_exact_case_filters(self):
@@ -186,17 +202,36 @@ class CompilerTestShardFilterTests(unittest.TestCase):
     def test_normal_and_unsafe_theories_remain_atomic(self):
         normal = "NetWasm.Compiler.Tests.NormalTests.Theory"
         unsafe = "NetWasm.Compiler.Tests.UnsafeTests.Theory"
+        # xUnit writes a NUL as \0, which VSTest's filter rejects as an
+        # unknown escape sequence.
+        escaped = "NetWasm.Compiler.Tests.EscapedTests.Theory"
         items = SHARDS.create_execution_items(
             {
                 normal: [f"{normal}(value: 1)", f"{normal}(value: 2)"],
                 unsafe: [f"{unsafe}(value: (1))", f"{unsafe}(value: (2))"],
+                escaped: [f'{escaped}(line: "a\\0b")', f'{escaped}(line: "a")'],
             },
-            {normal: 299.0, unsafe: 900.0},
+            {normal: 299.0, unsafe: 900.0, escaped: 900.0},
         )
 
-        self.assertEqual(2, len(items))
+        self.assertEqual(3, len(items))
         self.assertTrue(all(item.display_name is None for item in items))
-        self.assertEqual([2, 2], [item.cases for item in items])
+        self.assertEqual([2, 2, 2], [item.cases for item in items])
+
+    def test_a_theory_without_case_history_is_split(self):
+        # Its weight is the average case's, which says nothing about how long
+        # its cases take, so they are placed one by one.
+        method = "NetWasm.Compiler.Tests.NewTests.Theory"
+        cases = [f"{method}(chunk: {index})" for index in range(3)]
+
+        items = SHARDS.create_execution_items({method: cases}, {method: 20.0}, {})
+
+        self.assertEqual(cases, [item.display_name for item in items])
+        self.assertEqual([20.0 / 3] * 3, [item.weight for item in items])
+        # Without any history every weight is a case count, and the theory
+        # stays whole.
+        whole = SHARDS.create_execution_items({method: cases}, {method: 3.0})
+        self.assertEqual([None], [item.display_name for item in whole])
 
     def test_schema_three_case_timings_are_loaded(self):
         history = {
@@ -220,19 +255,20 @@ class CompilerTestShardFilterTests(unittest.TestCase):
         counts = SHARDS.Counter({"NetWasm.Compiler.Tests.CurrentTests": 1})
         for history, message in (
             ({"schemaVersion": 1, "methods": {}}, "unsupported schema"),
-            ({"schemaVersion": 2, "methods": {
+            ({"schemaVersion": 2, "methods": {}, "cases": {}}, "unsupported schema"),
+            ({"schemaVersion": 3, "methods": {
                 "NetWasm.Compiler.Tests.OldTests": {
                     "cases": 1,
                     "durationSeconds": 1.0,
                 },
             }}, "matches no discovered"),
-            ({"schemaVersion": 2, "methods": {
+            ({"schemaVersion": 3, "methods": {
                 "NetWasm.Compiler.Tests.CurrentTests": {
                     "cases": 0,
                     "durationSeconds": 1.0,
                 },
             }}, "Invalid timing history"),
-            ({"schemaVersion": 2, "methods": {
+            ({"schemaVersion": 3, "methods": {
                 "NetWasm.Compiler.Tests.CurrentTests": {
                     "cases": 1,
                     "durationSeconds": float("nan"),
@@ -244,6 +280,11 @@ class CompilerTestShardFilterTests(unittest.TestCase):
                 path.write_text(json.dumps(history), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
                     SHARDS.load_timing_weights(path, counts)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary, "timings.json")
+            path.write_text(json.dumps({"schemaVersion": 2, "methods": {}}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unsupported schema"):
+                SHARDS.load_case_timing_weights(path)
 
     def test_parses_tests_under_another_namespace(self):
         listing = [
@@ -295,16 +336,20 @@ class CompilerTestShardFilterTests(unittest.TestCase):
 
     def test_rejects_empty_discovery_and_empty_shards(self):
         with self.assertRaisesRegex(ValueError, "no NetWasm.Compiler.Tests tests"):
-            SHARDS.parse_test_method_counts(["The following Tests are available:"])
+            SHARDS.parse_test_cases(["The following Tests are available:"])
 
         with self.assertRaisesRegex(ValueError, "contains no test methods"):
             SHARDS.create_vstest_filter([])
         with self.assertRaisesRegex(ValueError, "cover every discovered"):
-            SHARDS.create_shards(
-                SHARDS.Counter({"NetWasm.Compiler.Tests.AlphaTests": 1}),
-                1,
+            SHARDS.create_execution_items(
+                {"NetWasm.Compiler.Tests.AlphaTests.Run": ["NetWasm.Compiler.Tests.AlphaTests.Run"]},
                 {},
             )
+        item = SHARDS.ShardItem("NetWasm.Compiler.Tests.AlphaTests.Run", None, 1, 1.0)
+        with self.assertRaisesRegex(ValueError, "no tests"):
+            SHARDS.create_execution_shards([], 1)
+        with self.assertRaisesRegex(ValueError, "Parallel lanes"):
+            SHARDS.create_execution_shards([item], 1, 0)
 
 
 if __name__ == "__main__":
