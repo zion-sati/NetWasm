@@ -135,7 +135,7 @@ public sealed class RuntimeTypeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
 
@@ -233,7 +233,7 @@ public sealed class RuntimeTypeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
 
@@ -716,7 +716,7 @@ public sealed class RuntimeTypeCompilationTests
                     }
                 }
                 """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "sdk10MinimumVersion": "10.0.303",
-  "sdk10BuildVersion": "10.0.401",
+  "sdk10BuildVersion": "10.0.403",
   "sdk11Version": "11.0.100-rc.3.26522.148",
   "roslynVersion": "5.12.0-1.26522.148",
   "roslynCommit": "5254d8bcf59917edc1e1abc33bdf2442b77b1c70",

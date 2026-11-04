@@ -134,7 +134,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -572,7 +572,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -950,7 +950,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -1276,7 +1276,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -1424,7 +1424,7 @@ public sealed class ExpressionTreeCompilationTests
         var assembly = assets.CompileSourceWithCompiler(
             "ExpressionTreeNumericOracleFixture",
             source,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -1514,7 +1514,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -1640,7 +1640,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -2294,7 +2294,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
@@ -2614,7 +2614,7 @@ public sealed class ExpressionTreeCompilationTests
                 }
             }
             """,
-            "10.0.401",
+            "10.0.403",
             "latest",
             optimized);
         var compilation = NetWasmCompiler.Compile(new CompilerOptions(
