@@ -250,23 +250,23 @@ internal sealed class UnitModelReader(ReadOnlyMemory<byte> bytes, IMethodReposit
         switch (shape)
         {
             case CliTypeShape.Primitive:
-            {
-                var name = String()!;
-                var isValueType = PeekValueType();
-                type = CliTypeIdentity.Primitive(name, PeekStackKind(), isValueType);
-                break;
-            }
+                {
+                    var name = String()!;
+                    var isValueType = PeekValueType();
+                    type = CliTypeIdentity.Primitive(name, PeekStackKind(), isValueType);
+                    break;
+                }
             case CliTypeShape.Named:
-            {
-                var assembly = String() ?? "";
-                var fullName = String() ?? throw new InvalidDataException("A named unit type has no name.");
-                // Namespaces never contain '+'; a nested type's name begins after its namespace.
-                var nested = fullName.IndexOf('+');
-                var dot = (nested < 0 ? fullName : fullName[..nested]).LastIndexOf('.');
-                type = CliTypeIdentity.Named(new AssemblyIdentity(assembly),
-                    dot < 0 ? "" : fullName[..dot], dot < 0 ? fullName : fullName[(dot + 1)..], PeekValueType());
-                break;
-            }
+                {
+                    var assembly = String() ?? "";
+                    var fullName = String() ?? throw new InvalidDataException("A named unit type has no name.");
+                    // Namespaces never contain '+'; a nested type's name begins after its namespace.
+                    var nested = fullName.IndexOf('+');
+                    var dot = (nested < 0 ? fullName : fullName[..nested]).LastIndexOf('.');
+                    type = CliTypeIdentity.Named(new AssemblyIdentity(assembly),
+                        dot < 0 ? "" : fullName[..dot], dot < 0 ? fullName : fullName[(dot + 1)..], PeekValueType());
+                    break;
+                }
             case CliTypeShape.SzArray:
                 type = CliTypeIdentity.SzArray(Required());
                 break;
@@ -277,43 +277,43 @@ internal sealed class UnitModelReader(ReadOnlyMemory<byte> bytes, IMethodReposit
                 type = CliTypeIdentity.UnmanagedPointer(Required());
                 break;
             case CliTypeShape.Array:
-            {
-                var element = Required();
-                type = CliTypeIdentity.Array(element, Int());
-                break;
-            }
+                {
+                    var element = Required();
+                    type = CliTypeIdentity.Array(element, Int());
+                    break;
+                }
             case CliTypeShape.GenericInstantiation:
-            {
-                var generic = Required();
-                type = CliTypeIdentity.GenericInstantiation(generic, Types());
-                break;
-            }
+                {
+                    var generic = Required();
+                    type = CliTypeIdentity.GenericInstantiation(generic, Types());
+                    break;
+                }
             case CliTypeShape.GenericTypeParameter:
             case CliTypeShape.GenericMethodParameter:
-            {
-                var owner = String();
-                var index = Int();
-                var method = shape == CliTypeShape.GenericMethodParameter;
-                type = owner is null
-                    ? CliTypeIdentity.GenericParameter(method, index)
-                    : CliTypeIdentity.ScopedGenericParameter(owner, method, index);
-                break;
-            }
+                {
+                    var owner = String();
+                    var index = Int();
+                    var method = shape == CliTypeShape.GenericMethodParameter;
+                    type = owner is null
+                        ? CliTypeIdentity.GenericParameter(method, index)
+                        : CliTypeIdentity.ScopedGenericParameter(owner, method, index);
+                    break;
+                }
             case CliTypeShape.FunctionPointer:
-            {
-                var header = Byte();
-                var arity = Int();
-                var required = Int();
-                type = CliTypeIdentity.FunctionPointer(new(header, arity, required, Signature()));
-                break;
-            }
+                {
+                    var header = Byte();
+                    var arity = Int();
+                    var required = Int();
+                    type = CliTypeIdentity.FunctionPointer(new(header, arity, required, Signature()));
+                    break;
+                }
             case CliTypeShape.Modified:
-            {
-                var element = Required();
-                var modifier = Required();
-                type = CliTypeIdentity.Modified(element, modifier, Bool());
-                break;
-            }
+                {
+                    var element = Required();
+                    var modifier = Required();
+                    type = CliTypeIdentity.Modified(element, modifier, Bool());
+                    break;
+                }
             default:
                 throw new InvalidDataException($"A unit type has an unknown shape {(int)shape}.");
         }

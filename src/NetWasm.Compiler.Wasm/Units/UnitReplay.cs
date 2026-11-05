@@ -44,9 +44,9 @@ internal sealed class UnitReplay(UnitAnswers answers, UnitPlans plans, IFunction
         new ReplayStaticDataLayout(answers), new ReplayMemberDescriptorLayout(answers),
         plans.RuntimeObjects, new ReplayManagedExceptionObjectProvider(answers),
         new ReplayTypeDescriptorSource(answers), logger)
-    {
-        Structuring = structuring,
-    };
+        {
+            Structuring = structuring,
+        };
 
     internal void Replayed() => Interlocked.Increment(ref _replayed);
 

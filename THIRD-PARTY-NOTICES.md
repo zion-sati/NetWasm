@@ -22,7 +22,11 @@ notices for its static archive inputs in its own
 
 Selected .NET runtime and CoreLib sources retain their `.NET Foundation` MIT
 headers and remain subject to those notices in addition to the repository's
-MIT path assignment. Ported framework libraries are maintained separately.
+MIT path assignment. Ported framework libraries are maintained separately. The
+micro-benchmark harness's two helpers copied from dotnet/performance, under
+`compiler-qualification/micro-benchmarks/shim/`, retain their `.NET
+Foundation` MIT headers; the benchmarks themselves are read from a
+dotnet/performance checkout and are not part of this repository.
 
 ## FluentValidation source adaptation
 

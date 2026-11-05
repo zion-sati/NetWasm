@@ -68,11 +68,11 @@ internal sealed class WasmIndexOperandScanner : IWasmIndexOperandScanner
                 reader.Unsigned();
                 return;
             case 0x0E: // br_table
-            {
-                var count = reader.Unsigned();
-                for (var label = 0u; label <= count; label++) reader.Unsigned();
-                return;
-            }
+                {
+                    var count = reader.Unsigned();
+                    for (var label = 0u; label <= count; label++) reader.Unsigned();
+                    return;
+                }
             case 0x10: // call
             case 0x12: // return_call
             case 0xD2: // ref.func
@@ -88,11 +88,11 @@ internal sealed class WasmIndexOperandScanner : IWasmIndexOperandScanner
                 operands.Add(reader.Index(WasmIndexSpace.Type));
                 return;
             case 0x1C: // select t*
-            {
-                var count = reader.Unsigned();
-                for (var type = 0u; type < count; type++) reader.ValueType();
-                return;
-            }
+                {
+                    var count = reader.Unsigned();
+                    for (var type = 0u; type < count; type++) reader.ValueType();
+                    return;
+                }
             case 0x1F: // try_table
                 BlockType(ref reader, operands);
                 TryTableCatches(ref reader, operands);

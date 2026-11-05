@@ -284,7 +284,8 @@ public sealed class ExceptionTerminationCompilationTests
             """);
 
         var compilation = NetWasmCompiler.Compile(CreateReactorOptions(
-            assets, assembly, "ReactorTerminal.EntryPoint", "Run") with { StructuredDiagnostics = true });
+            assets, assembly, "ReactorTerminal.EntryPoint", "Run") with
+        { StructuredDiagnostics = true });
 
         Assert.DoesNotContain(compilation.FunctionImports, import => import.Module == RuntimeAbi.HostModule);
     }

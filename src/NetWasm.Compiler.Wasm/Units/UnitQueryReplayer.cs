@@ -201,17 +201,17 @@ internal sealed class UnitQueryReplayer(
                 _ = ((IEnumMetadataSource)typeDescriptors).EnumMetadata;
                 return true;
             case UnitQueryKind.ManagedCallSite:
-            {
-                var separator = key.LastIndexOf('@');
-                if (separator < 0 || !int.TryParse(key.AsSpan(separator + 1), NumberStyles.HexNumber,
-                        CultureInfo.InvariantCulture, out var offset))
                 {
-                    return false;
+                    var separator = key.LastIndexOf('@');
+                    if (separator < 0 || !int.TryParse(key.AsSpan(separator + 1), NumberStyles.HexNumber,
+                            CultureInfo.InvariantCulture, out var offset))
+                    {
+                        return false;
+                    }
+                    _ = view.ManagedCallSites.TryGetValue(
+                        new ManagedCallSiteKey(new ManagedMethodIdentity(key[..separator]), offset), out _);
+                    return true;
                 }
-                _ = view.ManagedCallSites.TryGetValue(
-                    new ManagedCallSiteKey(new ManagedMethodIdentity(key[..separator]), offset), out _);
-                return true;
-            }
             case UnitQueryKind.ByRefEffects:
                 _ = view.ManagedByRefEffects.Methods.TryGetValue(key, out _);
                 return true;
@@ -225,14 +225,14 @@ internal sealed class UnitQueryReplayer(
                 _ = view.RootMaps.TryGetValue(key, out _);
                 return true;
             case UnitQueryKind.FunctionAddress:
-            {
-                var found = key.StartsWith("c:", StringComparison.Ordinal)
-                    ? view.FunctionIndices.TryGetConstructedMethod(key[2..], out var index)
-                    : TryParse(key[2..], out var function) & view.FunctionIndices.TryGetMethod(function, out index);
-                recorder.Record(UnitQueryKind.FunctionAddress, key,
-                    UnitTargetViews.FunctionAddressAnswer(found, found ? index.Value : -1));
-                return true;
-            }
+                {
+                    var found = key.StartsWith("c:", StringComparison.Ordinal)
+                        ? view.FunctionIndices.TryGetConstructedMethod(key[2..], out var index)
+                        : TryParse(key[2..], out var function) & view.FunctionIndices.TryGetMethod(function, out index);
+                    recorder.Record(UnitQueryKind.FunctionAddress, key,
+                        UnitTargetViews.FunctionAddressAnswer(found, found ? index.Value : -1));
+                    return true;
+                }
             case UnitQueryKind.Finalizable:
                 if (!int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var typeId)) return false;
                 _ = view.Finalization.IsFinalizable(typeId);
@@ -519,35 +519,35 @@ internal sealed record UnitQueryArguments(
         }
         foreach (var method in all)
         {
-        var header = method.Header;
-        if (header.MethodInstance is { } self) AddMethod(self);
-        AddType(header.Method.Signature.ReturnSignatureType);
-        foreach (var parameter in header.Method.Signature.ParameterSignatureTypes) AddType(parameter);
-        foreach (var local in header.LocalSignatureTypes) AddType(local);
-        foreach (var instruction in header.Instructions)
-        {
-            switch (instruction.Operand)
+            var header = method.Header;
+            if (header.MethodInstance is { } self) AddMethod(self);
+            AddType(header.Method.Signature.ReturnSignatureType);
+            foreach (var parameter in header.Method.Signature.ParameterSignatureTypes) AddType(parameter);
+            foreach (var local in header.LocalSignatureTypes) AddType(local);
+            foreach (var instruction in header.Instructions)
             {
-                case CilOperand.MethodInstance call: AddMethod(call.Value); break;
-                case CilOperand.FieldInstance access: AddField(access.Value); break;
-                case CilOperand.TypeIdentity type: AddType(type.Value); break;
-                case CilOperand.ExactType type: AddType(type.Value); break;
-                case CilOperand.ArrayInitializerData initializer: AddField(initializer.Field); break;
-                case CilOperand.ReadOnlySpanData span:
-                    AddField(span.Field);
-                    AddType(span.SpanType);
-                    AddType(span.ElementType);
-                    break;
-                case CilOperand.CallSite site:
-                    AddType(site.Signature.ReturnSignatureType);
-                    foreach (var parameter in site.Signature.ParameterSignatureTypes) AddType(parameter);
-                    break;
+                switch (instruction.Operand)
+                {
+                    case CilOperand.MethodInstance call: AddMethod(call.Value); break;
+                    case CilOperand.FieldInstance access: AddField(access.Value); break;
+                    case CilOperand.TypeIdentity type: AddType(type.Value); break;
+                    case CilOperand.ExactType type: AddType(type.Value); break;
+                    case CilOperand.ArrayInitializerData initializer: AddField(initializer.Field); break;
+                    case CilOperand.ReadOnlySpanData span:
+                        AddField(span.Field);
+                        AddType(span.SpanType);
+                        AddType(span.ElementType);
+                        break;
+                    case CilOperand.CallSite site:
+                        AddType(site.Signature.ReturnSignatureType);
+                        foreach (var parameter in site.Signature.ParameterSignatureTypes) AddType(parameter);
+                        break;
+                }
             }
-        }
-        foreach (var group in method.ExceptionGroups.Values)
-        {
-            foreach (var clause in group.Clauses) AddType(clause.CatchTypeIdentity);
-        }
+            foreach (var group in method.ExceptionGroups.Values)
+            {
+                foreach (var clause in group.Clauses) AddType(clause.CatchTypeIdentity);
+            }
         }
         return new(types, fields, methods);
     }

@@ -48,116 +48,116 @@ internal static class UnitAnswerCodec
                 Object(writer, (ObjectLayout)value);
                 break;
             case UnitQueryKind.ObjectLayoutLookup:
-            {
-                var lookup = (UnitLookup<ObjectLayout>)value;
-                writer.Bool(lookup.Found);
-                if (lookup.Found) Object(writer, lookup.Value);
-                break;
-            }
+                {
+                    var lookup = (UnitLookup<ObjectLayout>)value;
+                    writer.Bool(lookup.Found);
+                    if (lookup.Found) Object(writer, lookup.Value);
+                    break;
+                }
             case UnitQueryKind.ValueLayout:
-            {
-                var layout = (ValueLayout)value;
-                writer.Type(layout.Type);
-                writer.Int(layout.Size);
-                writer.Int(layout.Alignment);
-                writer.Ints(layout.ReferenceOffsets);
-                writer.Ints(layout.ByReferenceOffsets);
-                break;
-            }
+                {
+                    var layout = (ValueLayout)value;
+                    writer.Type(layout.Type);
+                    writer.Int(layout.Size);
+                    writer.Int(layout.Alignment);
+                    writer.Ints(layout.ReferenceOffsets);
+                    writer.Ints(layout.ByReferenceOffsets);
+                    break;
+                }
             case UnitQueryKind.InstanceField:
             case UnitQueryKind.InstanceFieldOfDefinition:
-            {
-                var layout = (FieldLayout)value;
-                writer.Int(layout.Offset);
-                writer.Int(layout.Size);
-                writer.Type(layout.Type);
-                break;
-            }
+                {
+                    var layout = (FieldLayout)value;
+                    writer.Int(layout.Offset);
+                    writer.Int(layout.Size);
+                    writer.Type(layout.Type);
+                    break;
+                }
             case UnitQueryKind.StaticField:
             case UnitQueryKind.StaticFieldOfDefinition:
                 writer.Int(((StaticFieldLayout)value).Address);
                 break;
             case UnitQueryKind.StringLayout:
-            {
-                var layout = (StringLayout)value;
-                writer.Int(layout.Address);
-                writer.Int(layout.Length);
-                writer.Int(layout.DataOffset);
-                break;
-            }
+                {
+                    var layout = (StringLayout)value;
+                    writer.Int(layout.Address);
+                    writer.Int(layout.Length);
+                    writer.Int(layout.DataOffset);
+                    break;
+                }
             case UnitQueryKind.StaticRootAddresses:
                 writer.Ints((ImmutableArray<int>)value);
                 break;
             case UnitQueryKind.DataSegments:
-            {
-                var segments = (ImmutableArray<DataSegment>)value;
-                writer.Int(segments.Length);
-                foreach (var segment in segments)
                 {
-                    writer.Int(segment.Address);
-                    writer.Int(segment.Data.Length);
-                    foreach (var data in segment.Data) writer.Byte(data);
+                    var segments = (ImmutableArray<DataSegment>)value;
+                    writer.Int(segments.Length);
+                    foreach (var segment in segments)
+                    {
+                        writer.Int(segment.Address);
+                        writer.Int(segment.Data.Length);
+                        foreach (var data in segment.Data) writer.Byte(data);
+                    }
+                    break;
                 }
-                break;
-            }
             case UnitQueryKind.TypeObjectAddress:
             case UnitQueryKind.FunctionAddress:
             case UnitQueryKind.StackTraceDirectMethodId:
             case UnitQueryKind.StackTraceConstructedMethodId:
-            {
-                var lookup = (UnitLookup<int>)value;
-                writer.Bool(lookup.Found);
-                writer.Int(lookup.Found ? lookup.Value : 0);
-                break;
-            }
+                {
+                    var lookup = (UnitLookup<int>)value;
+                    writer.Bool(lookup.Found);
+                    writer.Int(lookup.Found ? lookup.Value : 0);
+                    break;
+                }
             case UnitQueryKind.Finalizable:
             case UnitQueryKind.AllocatingMethod:
             case UnitQueryKind.AllocatingConstructedMethod:
                 writer.Bool((bool)value);
                 break;
             case UnitQueryKind.StackTraceLocationSymbols:
-            {
-                var lookup = (UnitLookup<ImmutableArray<StackTraceLocationSymbol>>)value;
-                writer.Bool(lookup.Found);
-                if (!lookup.Found) break;
-                writer.Int(lookup.Value.Length);
-                foreach (var symbol in lookup.Value)
                 {
-                    writer.Int(symbol.Offset);
-                    writer.Int(symbol.SymbolId);
+                    var lookup = (UnitLookup<ImmutableArray<StackTraceLocationSymbol>>)value;
+                    writer.Bool(lookup.Found);
+                    if (!lookup.Found) break;
+                    writer.Int(lookup.Value.Length);
+                    foreach (var symbol in lookup.Value)
+                    {
+                        writer.Int(symbol.Offset);
+                        writer.Int(symbol.SymbolId);
+                    }
+                    break;
                 }
-                break;
-            }
             case UnitQueryKind.StaticInitializerGuard:
-            {
-                var lookup = (UnitLookup<StaticInitializerGuard>)value;
-                writer.Bool(lookup.Found);
-                if (!lookup.Found) break;
-                var guard = lookup.Value!;
-                writer.Int(guard.Address);
-                writer.Bool(guard.Direct is not null);
-                if (guard.Direct is { } direct) writer.Entity(direct);
-                writer.String(guard.Constructed);
-                writer.Int(guard.FunctionIndex.IsPresent ? guard.FunctionIndex.Value : -1);
-                break;
-            }
+                {
+                    var lookup = (UnitLookup<StaticInitializerGuard>)value;
+                    writer.Bool(lookup.Found);
+                    if (!lookup.Found) break;
+                    var guard = lookup.Value!;
+                    writer.Int(guard.Address);
+                    writer.Bool(guard.Direct is not null);
+                    if (guard.Direct is { } direct) writer.Entity(direct);
+                    writer.String(guard.Constructed);
+                    writer.Int(guard.FunctionIndex.IsPresent ? guard.FunctionIndex.Value : -1);
+                    break;
+                }
             case UnitQueryKind.ExceptionMetadata:
-            {
-                var lookup = (UnitLookup<ExceptionGroupMetadata>)value;
-                writer.Bool(lookup.Found);
-                if (!lookup.Found) break;
-                writer.Int(lookup.Value.Address);
-                writer.Int(lookup.Value.ClauseCount);
-                writer.Bool(lookup.Value.HasFilters);
-                break;
-            }
+                {
+                    var lookup = (UnitLookup<ExceptionGroupMetadata>)value;
+                    writer.Bool(lookup.Found);
+                    if (!lookup.Found) break;
+                    writer.Int(lookup.Value.Address);
+                    writer.Int(lookup.Value.ClauseCount);
+                    writer.Bool(lookup.Value.HasFilters);
+                    break;
+                }
             case UnitQueryKind.RootMap:
-            {
-                var lookup = (UnitLookup<MethodRootMap>)value;
-                writer.Bool(lookup.Found);
-                if (lookup.Found) RootMap(writer, lookup.Value!);
-                break;
-            }
+                {
+                    var lookup = (UnitLookup<MethodRootMap>)value;
+                    writer.Bool(lookup.Found);
+                    if (lookup.Found) RootMap(writer, lookup.Value!);
+                    break;
+                }
             case UnitQueryKind.ManagedCallSite:
                 Lookup(writer, (UnitLookup<ManagedCallSite>)value, (writer, site) =>
                 {
@@ -258,23 +258,23 @@ internal static class UnitAnswerCodec
                 });
                 break;
             case UnitQueryKind.CallableMethods:
-            {
-                var methods = (IReadOnlyDictionary<string, MethodInstanceModel>)value;
-                writer.Int(methods.Count);
-                foreach (var (name, method) in methods)
                 {
-                    writer.String(name);
-                    writer.Method(method);
+                    var methods = (IReadOnlyDictionary<string, MethodInstanceModel>)value;
+                    writer.Int(methods.Count);
+                    foreach (var (name, method) in methods)
+                    {
+                        writer.String(name);
+                        writer.Method(method);
+                    }
+                    break;
                 }
-                break;
-            }
             case UnitQueryKind.DelegateTypes:
-            {
-                var types = (IReadOnlyList<CliTypeIdentity>)value;
-                writer.Int(types.Count);
-                foreach (var type in types) writer.Type(type);
-                break;
-            }
+                {
+                    var types = (IReadOnlyList<CliTypeIdentity>)value;
+                    writer.Int(types.Count);
+                    foreach (var type in types) writer.Type(type);
+                    break;
+                }
             default:
                 return null;
         }
@@ -312,22 +312,22 @@ internal static class UnitAnswerCodec
                 value = reader.Bool() ? new UnitLookup<ObjectLayout>(true, Object(reader)) : new UnitLookup<ObjectLayout>(false, default);
                 break;
             case UnitQueryKind.ValueLayout:
-            {
-                var type = reader.Type()!;
-                var size = reader.Int();
-                var alignment = reader.Int();
-                var references = reader.Ints();
-                value = new ValueLayout(type, size, alignment, references) { ByReferenceOffsets = reader.Ints() };
-                break;
-            }
+                {
+                    var type = reader.Type()!;
+                    var size = reader.Int();
+                    var alignment = reader.Int();
+                    var references = reader.Ints();
+                    value = new ValueLayout(type, size, alignment, references) { ByReferenceOffsets = reader.Ints() };
+                    break;
+                }
             case UnitQueryKind.InstanceField:
             case UnitQueryKind.InstanceFieldOfDefinition:
-            {
-                var offset = reader.Int();
-                var size = reader.Int();
-                value = new FieldLayout(offset) { Size = size, Type = reader.Type() };
-                break;
-            }
+                {
+                    var offset = reader.Int();
+                    var size = reader.Int();
+                    value = new FieldLayout(offset) { Size = size, Type = reader.Type() };
+                    break;
+                }
             case UnitQueryKind.StaticField:
             case UnitQueryKind.StaticFieldOfDefinition:
                 value = new StaticFieldLayout(reader.Int());
@@ -339,64 +339,64 @@ internal static class UnitAnswerCodec
                 value = reader.Ints();
                 break;
             case UnitQueryKind.DataSegments:
-            {
-                var count = reader.Int();
-                var segments = ImmutableArray.CreateBuilder<DataSegment>(count);
-                for (var index = 0; index < count; index++)
                 {
-                    var address = reader.Int();
-                    var length = reader.Int();
-                    var data = new byte[length];
-                    for (var at = 0; at < length; at++) data[at] = reader.Byte();
-                    segments.Add(new DataSegment(address, [.. data]));
+                    var count = reader.Int();
+                    var segments = ImmutableArray.CreateBuilder<DataSegment>(count);
+                    for (var index = 0; index < count; index++)
+                    {
+                        var address = reader.Int();
+                        var length = reader.Int();
+                        var data = new byte[length];
+                        for (var at = 0; at < length; at++) data[at] = reader.Byte();
+                        segments.Add(new DataSegment(address, [.. data]));
+                    }
+                    value = segments.MoveToImmutable();
+                    break;
                 }
-                value = segments.MoveToImmutable();
-                break;
-            }
             case UnitQueryKind.TypeObjectAddress:
             case UnitQueryKind.FunctionAddress:
             case UnitQueryKind.StackTraceDirectMethodId:
             case UnitQueryKind.StackTraceConstructedMethodId:
-            {
-                var found = reader.Bool();
-                value = new UnitLookup<int>(found, reader.Int());
-                break;
-            }
+                {
+                    var found = reader.Bool();
+                    value = new UnitLookup<int>(found, reader.Int());
+                    break;
+                }
             case UnitQueryKind.Finalizable:
             case UnitQueryKind.AllocatingMethod:
             case UnitQueryKind.AllocatingConstructedMethod:
                 value = reader.Bool();
                 break;
             case UnitQueryKind.StackTraceLocationSymbols:
-            {
-                if (!reader.Bool())
                 {
-                    value = new UnitLookup<ImmutableArray<StackTraceLocationSymbol>>(false, default);
+                    if (!reader.Bool())
+                    {
+                        value = new UnitLookup<ImmutableArray<StackTraceLocationSymbol>>(false, default);
+                        break;
+                    }
+                    var count = reader.Int();
+                    var symbols = ImmutableArray.CreateBuilder<StackTraceLocationSymbol>(count);
+                    for (var index = 0; index < count; index++) symbols.Add(new(reader.Int(), reader.Int()));
+                    value = new UnitLookup<ImmutableArray<StackTraceLocationSymbol>>(true, symbols.MoveToImmutable());
                     break;
                 }
-                var count = reader.Int();
-                var symbols = ImmutableArray.CreateBuilder<StackTraceLocationSymbol>(count);
-                for (var index = 0; index < count; index++) symbols.Add(new(reader.Int(), reader.Int()));
-                value = new UnitLookup<ImmutableArray<StackTraceLocationSymbol>>(true, symbols.MoveToImmutable());
-                break;
-            }
             case UnitQueryKind.StaticInitializerGuard:
-            {
-                if (!reader.Bool())
                 {
-                    value = new UnitLookup<StaticInitializerGuard>(false, null);
+                    if (!reader.Bool())
+                    {
+                        value = new UnitLookup<StaticInitializerGuard>(false, null);
+                        break;
+                    }
+                    var address = reader.Int();
+                    EntityKey? direct = reader.Bool() ? reader.Entity() : null;
+                    var constructed = reader.String();
+                    var function = reader.Int();
+                    value = new UnitLookup<StaticInitializerGuard>(true, new(address, direct, constructed)
+                    {
+                        FunctionIndex = function >= 0 ? OptionalFunctionIndex.At(function) : OptionalFunctionIndex.Missing,
+                    });
                     break;
                 }
-                var address = reader.Int();
-                EntityKey? direct = reader.Bool() ? reader.Entity() : null;
-                var constructed = reader.String();
-                var function = reader.Int();
-                value = new UnitLookup<StaticInitializerGuard>(true, new(address, direct, constructed)
-                {
-                    FunctionIndex = function >= 0 ? OptionalFunctionIndex.At(function) : OptionalFunctionIndex.Missing,
-                });
-                break;
-            }
             case UnitQueryKind.ExceptionMetadata:
                 value = reader.Bool()
                     ? new UnitLookup<ExceptionGroupMetadata>(true, new(reader.Int(), reader.Int(), reader.Bool()))
@@ -507,18 +507,18 @@ internal static class UnitAnswerCodec
                 });
                 break;
             case UnitQueryKind.CallableMethods:
-            {
-                // In the order they were written, as the compile enumerated them.
-                var count = reader.Int();
-                var callable = new Dictionary<string, MethodInstanceModel>(count, StringComparer.Ordinal);
-                for (var index = 0; index < count; index++)
                 {
-                    var name = reader.String()!;
-                    callable.Add(name, reader.Method());
+                    // In the order they were written, as the compile enumerated them.
+                    var count = reader.Int();
+                    var callable = new Dictionary<string, MethodInstanceModel>(count, StringComparer.Ordinal);
+                    for (var index = 0; index < count; index++)
+                    {
+                        var name = reader.String()!;
+                        callable.Add(name, reader.Method());
+                    }
+                    value = callable;
+                    break;
                 }
-                value = callable;
-                break;
-            }
             case UnitQueryKind.DelegateTypes:
                 value = reader.Types().ToList();
                 break;

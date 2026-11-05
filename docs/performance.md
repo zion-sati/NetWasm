@@ -102,6 +102,9 @@ round to round, and each runtime kept its fastest of two rounds. NetWasm ran at
 tiering off, so it runs optimized code from the start. The benchmarks are
 dotnet/performance at commit `ceb046992aa203f881d7c8a29d50a105805ecb42`, with
 BenchmarkDotNet replaced by a plain timing loop that every runtime shares.
+`compiler-qualification/micro-benchmarks/` holds the harness, and its
+[README](../compiler-qualification/micro-benchmarks/README.md) gives the command
+that reproduces the table.
 
 ## What was measured
 
