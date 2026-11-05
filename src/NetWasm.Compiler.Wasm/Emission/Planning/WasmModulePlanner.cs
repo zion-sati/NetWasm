@@ -68,7 +68,9 @@ internal sealed class WasmModulePlanner(
             request.EmitStackTrace,
             request.RequestedExports.Values.Any(request.JavaScriptAsyncBindings.ContainsKey),
             RequiresEphemeronHandles(calledIntrinsics),
-            request.StructuredDiagnostics || hasInteropTerminalBoundary,
+            // Only the reporter's boundaries raise: a module without one, such as a WIT worker's, imports
+            // nothing its host must provide for terminal exceptions.
+            includeTerminalExceptionReporter,
             finalization.RequiresRuntime,
             RequiresWeakHandles(calledIntrinsics),
             calledIntrinsics.Contains(RuntimeIntrinsic.RandomSeed),

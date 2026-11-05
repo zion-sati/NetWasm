@@ -72,9 +72,10 @@ def qualify(bench: Path, preset: str, collector: str, expected: str, environment
 
 def configure(bench: Path, packages: Path, version: str) -> None:
     """Points the benchmark at the candidate SDK and packages, and stops MSBuild's
-    search for Directory.Build files at it, so a checkout inside another
-    repository, as CI's is inside NetWasm's, takes none of that repository's
-    build properties, such as its package version defaults."""
+    search for Directory.Build and Directory.Packages files at it, so a checkout
+    inside another repository, as CI's is inside NetWasm's, takes none of that
+    repository's build properties, such as its package version defaults, nor its
+    central package management."""
     (bench / "global.json").write_text(json.dumps(
         {"sdk": {"version": "10.0.100", "rollForward": "latestFeature"},
          "msbuild-sdks": {"NetWasm.Sdk": version}}, indent=2) + "\n")
@@ -83,7 +84,7 @@ def configure(bench: Path, packages: Path, version: str) -> None:
         f"    <add key=\"candidate\" value=\"{packages}\" />\n"
         "    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" protocolVersion=\"3\" />\n"
         "  </packageSources>\n</configuration>\n")
-    for name in ("Directory.Build.props", "Directory.Build.targets"):
+    for name in ("Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props"):
         (bench / name).write_text("<Project />\n")
 
 

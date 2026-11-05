@@ -262,6 +262,33 @@ public sealed class ExceptionTerminationCompilationTests
         Assert.Contains("terminal wasm trap=true", terminal.Message, StringComparison.Ordinal);
     }
 
+    // Only an entry point or an interop boundary reports or raises a terminal
+    // exception. A component that exports through its world, as a WIT worker
+    // does, imports neither from the host even with structured diagnostics: its
+    // world provides no netwasm.host.v1, and at O0 no Binaryen pass removes an
+    // unused import before the component is encoded.
+    [Fact]
+    public void AComponentWithoutATerminalBoundaryImportsNoTerminalExceptionHost()
+    {
+        using var assets = TestAssets.Create();
+        var assembly = assets.CompileOptimizedSource("ReactorTerminal", """
+            using System;
+
+            namespace ReactorTerminal;
+
+            public static class EntryPoint
+            {
+                public static int Run(int input) =>
+                    input < 0 ? throw new InvalidOperationException("unnamed") : input + 1;
+            }
+            """);
+
+        var compilation = NetWasmCompiler.Compile(CreateReactorOptions(
+            assets, assembly, "ReactorTerminal.EntryPoint", "Run") with { StructuredDiagnostics = true });
+
+        Assert.DoesNotContain(compilation.FunctionImports, import => import.Module == RuntimeAbi.HostModule);
+    }
+
     [Fact]
     public void ExceptionObjectContractIsStacklessCatchableAndAutomaticallyMapped()
     {

@@ -482,11 +482,11 @@
            Text="Publish a worker caller for the browser using NetWasmPublishTarget=browser." />
     <MSBuild Projects="@(_NetWasmWorkerReference)"
              Targets="Build"
-             Properties="Configuration=$(Configuration);_NetWasmSiteBrowserPath=$(_NetWasmSiteBrowserPath)workers/%(_NetWasmWorkerReference.Filename)/;_NetWasmCallerRuntimeSitePath=$(_NetWasmSiteBrowserPath)"
+             Properties="Configuration=$(Configuration);_NetWasmPlacedWorker=true;_NetWasmSiteBrowserPath=$(_NetWasmSiteBrowserPath)workers/%(_NetWasmWorkerReference.Filename)/;_NetWasmCallerRuntimeSitePath=$(_NetWasmSiteBrowserPath)"
              RemoveProperties="PublishDir;OutputType;NetWasmRawWasm;NetWasmWorkerClientNamespace;NetWasmWorkerClientClass" />
     <MSBuild Projects="@(_NetWasmWorkerReference)"
              Targets="NetWasmCollectSiteFiles"
-             Properties="Configuration=$(Configuration);_NetWasmSiteBrowserPath=$(_NetWasmSiteBrowserPath)workers/%(_NetWasmWorkerReference.Filename)/;_NetWasmCallerRuntimeSitePath=$(_NetWasmSiteBrowserPath)"
+             Properties="Configuration=$(Configuration);_NetWasmPlacedWorker=true;_NetWasmSiteBrowserPath=$(_NetWasmSiteBrowserPath)workers/%(_NetWasmWorkerReference.Filename)/;_NetWasmCallerRuntimeSitePath=$(_NetWasmSiteBrowserPath)"
              RemoveProperties="PublishDir;OutputType;NetWasmRawWasm;NetWasmWorkerClientNamespace;NetWasmWorkerClientClass">
       <Output TaskParameter="TargetOutputs" ItemName="NetWasmSiteFile" />
     </MSBuild>
@@ -1491,9 +1491,9 @@
 
   <!-- Where a page places a worker's site describes the worker, not the projects it references, which keep the
        build's own instances. -->
-  <ItemDefinitionGroup Condition="'$(_NetWasmSiteBrowserPath)' != '' OR '$(_NetWasmCallerRuntimeSitePath)' != ''">
+  <ItemDefinitionGroup Condition="'$(_NetWasmPlacedWorker)' == 'true'">
     <ProjectReference>
-      <UndefineProperties>%(ProjectReference.UndefineProperties);_NetWasmSiteBrowserPath;_NetWasmCallerRuntimeSitePath</UndefineProperties>
+      <UndefineProperties>%(ProjectReference.UndefineProperties);_NetWasmPlacedWorker;_NetWasmSiteBrowserPath;_NetWasmCallerRuntimeSitePath</UndefineProperties>
     </ProjectReference>
   </ItemDefinitionGroup>
 
@@ -1506,11 +1506,13 @@
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true'"
           Returns="@(NetWasmSiteFile)" />
 
-  <!-- Publish copies the site files with the project's other files; a fallback file only where none is. -->
+  <!-- Publish copies the site files with the project's other files; a fallback file only where none is. The
+       condition names no site file: MSBuild evaluates it before NetWasmCollectSiteFiles declares them, so a
+       publish without a build, or of a project whose build collects none, would copy none. -->
   <Target Name="_NetWasmPublishSiteFiles"
           AfterTargets="ComputeResolvedFilesToPublishList"
           DependsOnTargets="NetWasmCollectSiteFiles"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true' AND '@(NetWasmSiteFile)' != ''">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true'">
     <NetWasmResolveSiteFilesTask PublishFiles="@(ResolvedFileToPublish)" SiteFiles="@(NetWasmSiteFile)">
       <Output TaskParameter="FilesToPublish" ItemName="_NetWasmSiteFilesToPublish" />
     </NetWasmResolveSiteFilesTask>
@@ -1535,12 +1537,14 @@
     </ItemGroup>
   </Target>
 
-  <!-- A page's build writes the map of its site, every file publish would copy at its path, which dotnet run
-       serves in place and reloads the page from whenever the build writes it again. -->
+  <!-- The build of a project dotnet run serves writes the map of its site, every file publish would copy at its
+       path, which dotnet run serves in place and reloads the page from whenever the build writes it again: a
+       browser application, and a JsModule or WIT worker, whose page may be its own. A worker built for its
+       place on another project's page serves nothing itself. -->
   <Target Name="NetWasmSdkWriteSite"
           AfterTargets="Build"
           DependsOnTargets="_NetWasmResolveSiteLayout;NetWasmResolveSiteFiles"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true' AND (('$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser') OR ('$(_NetWasmWorkerKind)' == 'jsexport' AND '$(_NetWasmJavaScriptPageHost)' == 'true'))">
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true' AND '$(_NetWasmPlacedWorker)' != 'true' AND (('$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser') OR '$(_NetWasmWorkerKind)' != '')">
     <NetWasmWriteSiteMapTask Files="@(ResolvedFileToPublish)" OutputPath="$(_NetWasmSiteMapPath)" />
   </Target>
 
