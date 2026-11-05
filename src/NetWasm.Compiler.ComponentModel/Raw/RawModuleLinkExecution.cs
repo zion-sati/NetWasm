@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
 
 namespace NetWasm.Compiler.ComponentModel.Raw;
@@ -15,9 +14,7 @@ public sealed class RawModuleLinkExecution(
     IComponentCoreModuleMergeRunner merge,
     IComponentCoreModuleOptimizer optimizer,
     IFileMover files,
-    IWasmCoreModuleExportEditor exports,
-    IWasmOptimizationSettingsResolver optimizationSettings,
-    IWasmCoreModuleInlineAnnotationEditor inlineAnnotations) : IRawModuleLinkExecution
+    IWasmOptimizationSettingsResolver optimizationSettings) : IRawModuleLinkExecution
 {
     private readonly IEmscriptenEnvironmentShimWriter _environment = environment ??
         throw new ArgumentNullException(nameof(environment));
@@ -27,12 +24,8 @@ public sealed class RawModuleLinkExecution(
         throw new ArgumentNullException(nameof(optimizer));
     private readonly IFileMover _files = files ??
         throw new ArgumentNullException(nameof(files));
-    private readonly IWasmCoreModuleExportEditor _exports = exports ??
-        throw new ArgumentNullException(nameof(exports));
     private readonly IWasmOptimizationSettingsResolver _optimizationSettings = optimizationSettings ??
         throw new ArgumentNullException(nameof(optimizationSettings));
-    private readonly IWasmCoreModuleInlineAnnotationEditor _inlineAnnotations = inlineAnnotations ??
-        throw new ArgumentNullException(nameof(inlineAnnotations));
 
     public void Run(RawModuleLinkRequest request, ComponentPackageWorkspace workspace)
     {
@@ -51,33 +44,29 @@ public sealed class RawModuleLinkExecution(
                 workspace.TemporaryDirectory,
                 "runtime-sanitized.wasm");
             _environment.Write(environment, request.Target);
-            _inlineAnnotations.Rewrite(
-                request.ApplicationModulePath,
-                sanitized,
-                settings.ManagedInlineAnnotations);
-            _inlineAnnotations.Rewrite(
-                request.RuntimeModulePath,
-                sanitizedRuntime,
-                settings.RuntimeInlineAnnotations);
-            _merge.Run(new ComponentCoreModuleMergeRequest(
-                sanitized,
-                sanitizedRuntime,
-                environment,
-                merged,
-                request.Target));
-            var optimizerInput = merged;
+            // The internal exports only link the runtime and the application, so the merged
+            // module drops them, and the optimizer can remove what only they reached.
             var removedExports = request.InternalRuntimeExports
                 .AddRange(request.InternalApplicationExports);
-            if (!removedExports.IsEmpty)
+            var optimizerInput = removedExports.IsEmpty ? merged : sanitized;
+            _merge.Run(new ComponentCoreModuleMergeRequest(
+                request.ApplicationModulePath,
+                request.RuntimeModulePath,
+                environment,
+                optimizerInput,
+                request.Target)
             {
-                optimizerInput = sanitized;
-                _exports.Rewrite(merged, optimizerInput, new(null, removedExports));
-            }
+                ApplicationInlineAnnotations = settings.ManagedInlineAnnotations,
+                RuntimeInlineAnnotations = settings.RuntimeInlineAnnotations,
+                Exports = removedExports.IsEmpty ? null : new(null, removedExports),
+                Intermediates = new(sanitized, sanitizedRuntime, merged),
+            });
             _optimizer.Optimize(
                 optimizerInput,
                 workspace.LinkedModulePath,
                 request.Target,
-                settings.BackendPreset);
+                settings.BackendPreset,
+                settings.Converge);
             _files.Move(workspace.LinkedModulePath, request.OutputPath);
         }
         finally

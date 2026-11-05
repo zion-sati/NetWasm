@@ -43,7 +43,7 @@ public sealed class FaultExceptionRegionCompilationTests
                     return input;
                 }
             }
-            """, "10.0.403", "latest", optimize: optimize);
+            """, TestAssets.RepositorySdkVersion, "latest", optimize: optimize);
         MethodBodyPatcher.RewriteExceptionRegionKind(assembly, "NestedFaultFixture.EntryPoint", "Run",
             CilExceptionRegionKind.Finally, CilExceptionRegionKind.Fault);
         var result = NetWasmCompiler.Compile(new CompilerOptions(assembly, [assets.CoreLib],

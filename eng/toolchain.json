@@ -1,6 +1,6 @@
 {
-  "dotnetSdk": "10.0.403",
-  "roslynCompiler": "5.9.0-1.26523.112",
+  "dotnetSdk": "11.0.100-rc.3.26522.148",
+  "roslynCompiler": "5.12.0-1.26522.148",
   "binaryen": "132",
   "wabt": "1.0.41",
   "node": "26.7.0",
@@ -145,7 +145,11 @@
           "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_amd64.deb",
           "sha256": "fe49cbbc7be753528380c724a8eef5f1e31dffa9221f692c5069048d81c7449d"
         },
-        "nodeRoot": "node-v26.7.0-linux-x64"
+        "nodeRoot": "node-v26.7.0-linux-x64",
+        "wasmTools": {
+          "url": "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-x86_64-linux.tar.gz",
+          "sha256": "0b488be25c9e8a74dfa09f7eac614a927ea197f389d8fa5a21ffb1c15deb469d"
+        }
       },
       "linux-arm64": {
         "emsdk": {
@@ -163,7 +167,11 @@
           "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
           "sha256": "fdeab74e7ad8572cf69c7024e8040c7ac851f6e667d35f0d429e7a0352840f73"
         },
-        "nodeRoot": "node-v26.7.0-linux-arm64"
+        "nodeRoot": "node-v26.7.0-linux-arm64",
+        "wasmTools": {
+          "url": "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-aarch64-linux.tar.gz",
+          "sha256": "d75de3cd49d39f9bf7688aa776ac02d6cf9068c7926e8149300ad811b1e65443"
+        }
       },
       "osx-arm64": {
         "emsdk": {
@@ -174,7 +182,11 @@
           "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-darwin-arm64.tar.xz",
           "sha256": "595d2f934e081b82961d1a5fd41c6dbd0c5a952d9e8be5b4566ab754426968d2"
         },
-        "nodeRoot": "node-v26.7.0-darwin-arm64"
+        "nodeRoot": "node-v26.7.0-darwin-arm64",
+        "wasmTools": {
+          "url": "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-aarch64-macos.tar.gz",
+          "sha256": "6e6a2df459b9f29ecfce148146d40178a4e6275de417e4ab7ebc1e27b9a41a24"
+        }
       },
       "win-x64": {
         "emsdk": {
@@ -185,7 +197,11 @@
           "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-win-x64.zip",
           "sha256": "d3bd72755141ed32bbcd841228ee81897c8a98d50dfa7dae2179399a0a7c90f8"
         },
-        "nodeRoot": "node-v26.7.0-win-x64"
+        "nodeRoot": "node-v26.7.0-win-x64",
+        "wasmTools": {
+          "url": "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-x86_64-windows.zip",
+          "sha256": "8ce28d91e40ac077a40e133d332d7909747f5179e795e3f022cfbad95e5df3b7"
+        }
       },
       "win-arm64": {
         "llvmSource": {
@@ -205,7 +221,11 @@
           "url": "https://nodejs.org/dist/v26.7.0/node-v26.7.0-win-arm64.zip",
           "sha256": "be8775204cfceca5a73c30f91bf0de5e85274c01b776dc13f16b91aa251ebb01"
         },
-        "nodeRoot": "node-v26.7.0-win-arm64"
+        "nodeRoot": "node-v26.7.0-win-arm64",
+        "wasmTools": {
+          "url": "https://github.com/bytecodealliance/wasm-tools/releases/download/v1.256.0/wasm-tools-1.256.0-aarch64-windows.zip",
+          "sha256": "52ccb633ff026fe0377d95b1923333a63e0166cd8ebf374a9b4541d2f62d0693"
+        }
       }
     }
   },

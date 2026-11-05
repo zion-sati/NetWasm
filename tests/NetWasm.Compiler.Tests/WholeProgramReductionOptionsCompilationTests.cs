@@ -1,7 +1,6 @@
 using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Diagnostics;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
@@ -37,8 +36,7 @@ public sealed class WholeProgramReductionOptionsCompilationTests
             }
             """;
         using var assets = TestAssets.Create();
-        // Entry-assembly methods are intentionally not cacheable. Keep the
-        // affected bodies in a dependency so the warm run exercises restoration.
+        // Keep the affected bodies in a dependency, as a reused library would be.
         var library = optimize
             ? assets.CompileOptimizedSource("WholeProgramControls.Library", source)
             : assets.CompileSource("WholeProgramControls.Library", source);
@@ -51,11 +49,9 @@ public sealed class WholeProgramReductionOptionsCompilationTests
         var assembly = optimize
             ? assets.CompileOptimizedSource("WholeProgramControls", application, library)
             : assets.CompileSource("WholeProgramControls", application, library);
-        var metrics = new Metrics();
         var options = new CompilerOptions(assembly, [assets.CoreLib, library], "Application", "Run", [],
             Target: target, Optimization: FinalWasmOptimization.Oz,
-            EnableFrontendCache: true, IntermediateOutputPath: Path.Combine(assets.Directory, "frontend-cache"),
-            MetricsObserver: metrics);
+            IntermediateOutputPath: Path.Combine(assets.Directory, "obj"));
         foreach (var constants in new[] { false, true })
             foreach (var population in new[] { false, true })
             {
@@ -65,10 +61,9 @@ public sealed class WholeProgramReductionOptionsCompilationTests
                         ConstantArgumentPropagation: constants ? ManagedConstantArgumentPropagation.Enabled : ManagedConstantArgumentPropagation.Disabled,
                         StaticArrayPopulationElimination: population ? ManagedStaticArrayPopulationElimination.Enabled : ManagedStaticArrayPopulationElimination.Disabled),
                 };
-                var cold = NetWasmCompiler.Compile(selected);
+                var first = NetWasmCompiler.Compile(selected);
                 var warm = NetWasmCompiler.Compile(selected);
-                Assert.True(metrics.Latest!.FrontendCache!.Hits > 0);
-                Assert.Equal(cold.ApplicationModule, warm.ApplicationModule);
+                Assert.Equal(first.ApplicationModule, warm.ApplicationModule);
                 Assert.Equal(!constants, warm.Program.Methods.Values.Any(method =>
                     method.Method.DeclaringType.FullName == "EntryPoint" && method.Method.Definition.Name == "Slow"));
                 var initializer = Assert.Single(warm.Program.Methods.Values, method =>
@@ -80,9 +75,4 @@ public sealed class WholeProgramReductionOptionsCompilationTests
             }
     }
 
-    private sealed class Metrics : ICompilerMetricsObserver
-    {
-        public CompilerMetricsReport? Latest { get; private set; }
-        public void Report(CompilerMetricsReport report) => Latest = report;
-    }
 }

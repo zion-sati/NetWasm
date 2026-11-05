@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 
@@ -15,7 +16,8 @@ public sealed class MetadataMethodFinderTests
         var repository = new MetadataMethodRepository(
             ImmutableDictionary<EntityKey, MethodDefinitionModel>.Empty
                 .Add(first.Key, first)
-                .Add(second.Key, second),
+                .Add(second.Key, second)
+                .ToFrozenDictionary(),
             MetadataActorTestData.CreateAvailabilityValidator());
         var unique = new MetadataMethodFinder(
             [Type(typeKey, [first.Key])],

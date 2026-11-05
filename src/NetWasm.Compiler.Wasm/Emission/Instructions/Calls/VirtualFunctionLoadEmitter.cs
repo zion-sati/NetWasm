@@ -56,7 +56,7 @@ internal sealed class VirtualFunctionLoadEmitter(
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(typeLayouts.GetObjectLayout(target.ReceiverType).TypeId)));
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
-            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(functionIndices.Resolve(target.Method))));
+            code.Write(WasmInstruction.WithOperand(WasmOpcodes.I32Constant, WasmInstructionOperand.Signed(functionIndices.Resolve(new FunctionAddress(target.Method)))));
             if (layouts.Target.UsesMemory64)
             {
                 code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));

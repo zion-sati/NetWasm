@@ -127,72 +127,59 @@ public sealed class ReachableMethodBatchAnalyzerTests
     }
 
     [Fact]
-    public void ConstructorRejectsAnEmptyWorkerSet()
+    public void PoolRejectsMissingOrEmptyCollaborators()
     {
+        var analyzer = new DelegatingAnalyzer(CreateAnalysis);
+        var observer = new RecordingReachableMethodBatchObserver();
+        Assert.Throws<ArgumentException>(() => new ReachableMethodAnalysisPool([], analyzer));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalysisPool([null!], analyzer));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodAnalysisPool([analyzer], null!));
         Assert.Throws<ArgumentException>(() =>
-            new ReachableMethodBatchAnalyzer([], new RecordingReachableMethodBatchObserver()));
+            new PooledReachableMethodAnalysisSessionFactory([], analyzer, observer));
+        Assert.Throws<ArgumentNullException>(() =>
+            new PooledReachableMethodAnalysisSessionFactory([analyzer], null!, observer));
+        Assert.Throws<ArgumentNullException>(() =>
+            new PooledReachableMethodAnalysisSessionFactory([analyzer], analyzer, null!));
+        using var pool = new ReachableMethodAnalysisPool([analyzer], analyzer);
+        Assert.Throws<ArgumentNullException>(() => new PipelinedReachableMethodBatchAnalyzer(null!, observer));
+        Assert.Throws<ArgumentNullException>(() => new PipelinedReachableMethodBatchAnalyzer(pool, null!));
+        Assert.Throws<ArgumentNullException>(() => new ReachableMethodPrefetcher(null!));
+        Assert.Throws<ArgumentNullException>(() => pool.Submit(null!));
+        Assert.Throws<ArgumentNullException>(() => new DeferredReachableMethodPrefetcher().Prefetch(null!));
     }
 
     [Fact]
-    public void ConstructorRejectsAMissingObserver()
+    public void BatchRejectsADefaultRequestBatchAndAcceptsAnEmptyOne()
     {
-        var workers = ImmutableArray.Create<IReachableMethodAnalyzer>(
-            new DelegatingAnalyzer(CreateAnalysis));
+        using var session = CreateSession([new DelegatingAnalyzer(CreateAnalysis)], new DelegatingAnalyzer(CreateAnalysis));
 
-        Assert.Throws<ArgumentNullException>(
-            () => new ReachableMethodBatchAnalyzer(workers, null!));
+        Assert.Throws<ArgumentException>(() => session.Batches.Analyze(default).ToArray());
+        Assert.Empty(session.Batches.Analyze([]));
     }
 
     [Fact]
-    public void AnalyzeRejectsADefaultRequestBatch()
-    {
-        var analyzer = new ReachableMethodBatchAnalyzer([
-            new DelegatingAnalyzer(CreateAnalysis)
-        ],
-            new RecordingReachableMethodBatchObserver()
-        );
-
-        Assert.Throws<ArgumentException>(() =>
-            analyzer.Analyze(default).ToArray());
-    }
-
-    [Fact]
-    public void AnalyzeReturnsAnEmptyResultForAnEmptyBatch()
-    {
-        var analyzer = new ReachableMethodBatchAnalyzer([
-            new DelegatingAnalyzer(CreateAnalysis)
-        ],
-            new RecordingReachableMethodBatchObserver()
-        );
-
-        Assert.Empty(analyzer.Analyze([]));
-    }
-
-    [Fact]
-    public async Task AnalyzeUsesIsolatedWorkersAndPublishesResultsInRequestOrder()
+    public async Task PoolUsesIsolatedWorkersAndPublishesResultsInRequestOrder()
     {
         using var entered = new CountdownEvent(2);
         using var release = new ManualResetEventSlim();
         var analyzers = ImmutableArray.Create<IReachableMethodAnalyzer>(
             CreateConcurrentAnalyzer(),
             CreateConcurrentAnalyzer());
-        var analyzer = new ReachableMethodBatchAnalyzer(analyzers, new RecordingReachableMethodBatchObserver());
+        using var session = CreateSession(analyzers, new DelegatingAnalyzer(CreateAnalysis));
         var requests = Enumerable.Range(0, 8)
             .Select(_ => new ReachableMethodRequest(CreateMethod()))
             .ToImmutableArray();
-
-        var analysisTask = Task.Run(() => analyzer.Analyze(requests).ToArray());
-
-        Assert.True(entered.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
-        release.Set();
-        var results = await analysisTask;
-
-        Assert.Equal(requests.Length, results.Length);
-        for (var index = 0; index < requests.Length; index++)
+        foreach (var request in requests)
         {
-            Assert.Same(requests[index].Method, results[index].Method);
+            session.Prefetcher.Prefetch(request);
         }
 
+        // Both workers hold a request until each has one, so they run at once.
+        Assert.True(entered.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
+        release.Set();
+        var results = await Task.Run(() => session.Batches.Analyze(requests).ToArray());
+
+        Assert.Equal(requests.Select(request => request.Method), results.Select(result => result.Method));
         Assert.All(analyzers.Cast<DelegatingAnalyzer>(),
             worker => Assert.Equal(1, worker.MaximumConcurrentCalls));
 
@@ -213,69 +200,175 @@ public sealed class ReachableMethodBatchAnalyzerTests
     }
 
     [Fact]
-    public void AnalyzePreservesTheEarliestRequestFailure()
+    public void APrefetchedRequestIsAnalyzedOnceAndTakenByItsBatch()
+    {
+        var calls = 0;
+        using var analyzed = new ManualResetEventSlim();
+        var worker = new DelegatingAnalyzer(request =>
+        {
+            Interlocked.Increment(ref calls);
+            analyzed.Set();
+            return CreateAnalysis(request);
+        });
+        var observer = new RecordingReachableMethodBatchObserver();
+        using var session = CreateSession([worker], new DelegatingAnalyzer(_ => throw new InvalidOperationException("closure")), observer);
+        var request = new ReachableMethodRequest(CreateMethod());
+
+        session.Prefetcher.Prefetch(request);
+        session.Prefetcher.Prefetch(request);
+        Assert.True(analyzed.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
+        var result = Assert.Single(session.Batches.Analyze([request]));
+
+        Assert.Same(request.Method, result.Method);
+        Assert.Equal(1, Volatile.Read(ref calls));
+        var observation = Assert.Single(observer.Observations);
+        Assert.Equal((1, 1), (observation.RequestCount, observation.WorkerCount));
+        Assert.True(observation.WorkerBusy >= TimeSpan.Zero && observation.OrderedWait >= TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void TheClosureAnalyzesARequestNoWorkerHasStarted()
+    {
+        using var held = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var blocking = new ReachableMethodRequest(CreateMethod());
+        var worker = new DelegatingAnalyzer(request =>
+        {
+            if (ReferenceEquals(request, blocking))
+            {
+                held.Set();
+                release.Wait();
+            }
+            return CreateAnalysis(request);
+        });
+        var closureThread = 0;
+        var closure = new DelegatingAnalyzer(request =>
+        {
+            closureThread = Environment.CurrentManagedThreadId;
+            return CreateAnalysis(request);
+        });
+        using var session = CreateSession([worker], closure);
+        session.Prefetcher.Prefetch(blocking);
+        Assert.True(held.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
+        var waiting = new ReachableMethodRequest(CreateMethod());
+
+        // The only worker is busy, so the closure takes the queued request itself.
+        var result = Assert.Single(session.Batches.Analyze([waiting]));
+        release.Set();
+
+        Assert.Same(waiting.Method, result.Method);
+        Assert.Equal(Environment.CurrentManagedThreadId, closureThread);
+        Assert.Same(blocking.Method, Assert.Single(session.Batches.Analyze([blocking])).Method);
+    }
+
+    [Fact]
+    public void BatchesPreserveTheEarliestFailureAndRejectAMissingResult()
     {
         var firstFailure = new InvalidOperationException("first");
         var secondFailure = new InvalidOperationException("second");
         var firstMethod = CreateMethod();
-        var secondMethod = CreateMethod();
-        var analyzer = new ReachableMethodBatchAnalyzer([
-            new DelegatingAnalyzer(request =>
-                throw (ReferenceEquals(request.Method, firstMethod)
-                    ? firstFailure
-                    : secondFailure)),
-            new DelegatingAnalyzer(request =>
-                throw (ReferenceEquals(request.Method, firstMethod)
-                    ? firstFailure
-                    : secondFailure))
-        ],
-            new RecordingReachableMethodBatchObserver()
-        );
+        var missingMethod = CreateMethod();
+        ReachableMethodAnalysis Analyze(ReachableMethodRequest request) =>
+            ReferenceEquals(request.Method, missingMethod) ? null!
+            : throw (ReferenceEquals(request.Method, firstMethod) ? firstFailure : secondFailure);
+        using var session = CreateSession(
+            [new DelegatingAnalyzer(Analyze), new DelegatingAnalyzer(Analyze)],
+            new DelegatingAnalyzer(Analyze));
 
-        var failure = Record.Exception(() => analyzer.Analyze([
+        Assert.Same(firstFailure, Record.Exception(() => session.Batches.Analyze([
             new ReachableMethodRequest(firstMethod),
-            new ReachableMethodRequest(secondMethod)
-        ]).ToArray());
-
-        Assert.Same(firstFailure, failure);
-    }
-
-    [Fact]
-    public void AnalyzeRejectsAMissingWorkerResult()
-    {
-        var analyzer = new ReachableMethodBatchAnalyzer([
-            new DelegatingAnalyzer(_ => null!)
-        ],
-            new RecordingReachableMethodBatchObserver()
-        );
-
+            new ReachableMethodRequest(CreateMethod()),
+        ]).ToArray()));
         Assert.Throws<InvalidOperationException>(() =>
-            analyzer.Analyze([
-                new ReachableMethodRequest(CreateMethod())
-            ]).ToArray());
+            session.Batches.Analyze([new ReachableMethodRequest(missingMethod)]).ToArray());
     }
 
     [Fact]
-    public void AnalyzeReportsAggregateBatchMetrics()
+    public async Task EndingASessionCancelsQueuedRequestsAndWaitsForRunningOnes()
     {
-        var observer = new RecordingReachableMethodBatchObserver();
-        var analyzer = new ReachableMethodBatchAnalyzer(
-            ImmutableArray.Create<IReachableMethodAnalyzer>(
-                new DelegatingAnalyzer(CreateAnalysis)),
-            observer);
-        var requests = ImmutableArray.Create(
-            new ReachableMethodRequest(CreateMethod()));
+        using var held = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var calls = 0;
+        var worker = new DelegatingAnalyzer(request =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                held.Set();
+                release.Wait();
+            }
+            return CreateAnalysis(request);
+        });
+        var session = CreateSession([worker], new DelegatingAnalyzer(CreateAnalysis));
+        session.Prefetcher.Prefetch(new ReachableMethodRequest(CreateMethod()));
+        Assert.True(held.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
+        foreach (var _ in Enumerable.Range(0, 5))
+        {
+            session.Prefetcher.Prefetch(new ReachableMethodRequest(CreateMethod()));
+        }
 
-        _ = analyzer.Analyze(requests).ToArray();
+        var cancellation = TestContext.Current.CancellationToken;
+        var ending = Task.Run(session.Dispose, cancellation);
+        Assert.NotSame(ending, await Task.WhenAny(ending, Task.Delay(100, cancellation)));
+        release.Set();
+        await ending.WaitAsync(TimeSpan.FromMinutes(1), cancellation);
 
-        var observation = Assert.Single(observer.Observations);
-        Assert.Equal(1, observation.RequestCount);
-        Assert.Equal(1, observation.WorkerCount);
-        Assert.True(observation.Elapsed >= TimeSpan.Zero);
-        Assert.True(observation.WorkerBusy >= TimeSpan.Zero);
-        Assert.True(observation.OrderedWait >= TimeSpan.Zero);
-        Assert.Equal(0, observation.PeakBufferedResults);
+        Assert.Equal(1, Volatile.Read(ref calls));
+        session.Dispose();
+        Assert.Throws<ObjectDisposedException>(() =>
+            session.Prefetcher.Prefetch(new ReachableMethodRequest(CreateMethod())));
     }
+
+    [Fact]
+    public void WorkersSeeTheClosuresExecutionContext()
+    {
+        var context = new AsyncLocal<string?> { Value = "compilation" };
+        var seen = new System.Collections.Concurrent.ConcurrentBag<string?>();
+        using var analyzed = new CountdownEvent(4);
+        var worker = new DelegatingAnalyzer(request =>
+        {
+            seen.Add(context.Value);
+            analyzed.Signal();
+            return CreateAnalysis(request);
+        });
+        using var session = CreateSession([worker, worker], worker);
+        var requests = Enumerable.Range(0, 4).Select(_ => new ReachableMethodRequest(CreateMethod())).ToArray();
+
+        foreach (var request in requests)
+        {
+            session.Prefetcher.Prefetch(request);
+        }
+        Assert.True(analyzed.Wait(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken));
+
+        Assert.All(seen, value => Assert.Equal("compilation", value));
+        Assert.Equal(4, session.Batches.Analyze([.. requests]).Count());
+    }
+
+    [Fact]
+    public void SynchronousSessionsDeferPrefetchToTheirBatch()
+    {
+        var calls = 0;
+        var factory = new SynchronousReachableMethodAnalysisSessionFactory(
+            new DelegatingAnalyzer(request =>
+            {
+                calls++;
+                return CreateAnalysis(request);
+            }),
+            new RecordingReachableMethodBatchObserver());
+        using var session = factory.Begin();
+        var request = new ReachableMethodRequest(CreateMethod());
+
+        session.Prefetcher.Prefetch(request);
+        Assert.Equal(0, calls);
+        Assert.Same(request.Method, Assert.Single(session.Batches.Analyze([request])).Method);
+        Assert.Equal(1, calls);
+    }
+
+    private static ReachableMethodAnalysisSession CreateSession(
+        ImmutableArray<IReachableMethodAnalyzer> workers,
+        IReachableMethodAnalyzer closure,
+        RecordingReachableMethodBatchObserver? observer = null) =>
+        new PooledReachableMethodAnalysisSessionFactory(
+            workers, closure, observer ?? new RecordingReachableMethodBatchObserver()).Begin();
 
     private static ReachableMethodAnalysis CreateAnalysis(
         ReachableMethodRequest request) =>

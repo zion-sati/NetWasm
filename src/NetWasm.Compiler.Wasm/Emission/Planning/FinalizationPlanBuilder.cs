@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.Collections.Immutable;
 using System.Linq;
@@ -7,10 +8,10 @@ using NetWasm.Compiler.Core;
 namespace NetWasm.Compiler.Wasm.Emission.Planning;
 
 internal sealed record FinalizationPlan(
-    ImmutableHashSet<int> FinalizableTypeIds,
+    IReadOnlySet<int> FinalizableTypeIds,
     bool UsesExplicitFinalizationApi)
 {
-    public bool RequiresRuntime => !FinalizableTypeIds.IsEmpty;
+    public bool RequiresRuntime => FinalizableTypeIds.Count != 0;
 
     public bool IsFinalizable(int typeId) => FinalizableTypeIds.Contains(typeId);
 }

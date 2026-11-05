@@ -241,7 +241,7 @@ public sealed class ManagedByRefEffectAnalyzerTests
             dispatches = dispatches.Add(dispatch.Key, dispatch);
         }
 
-        var effects = new ManagedByRefEffectAnalyzer(repository, new Intrinsics()).Analyze(
+        var effects = Create(repository).Analyze(
             new(methods, ImmutableDictionary<string, ManagedMethodBody>.Empty, dispatches));
         var effect = Effect(effects, wrapperBody);
 
@@ -360,7 +360,7 @@ public sealed class ManagedByRefEffectAnalyzerTests
             ImmutableDictionary<string, ManagedMethodBody>.Empty.Add(helperBody.Method.CanonicalName, helperBody),
             ImmutableDictionary<string, DispatchCallSiteModel>.Empty);
 
-        var effects = new ManagedByRefEffectAnalyzer(repository, new Intrinsics()).Analyze(request);
+        var effects = Create(repository).Analyze(request);
         var effect = Effect(effects, wrapperBody);
 
         Assert.Equal([0], effect.WrittenArguments);
@@ -563,6 +563,50 @@ public sealed class ManagedByRefEffectAnalyzerTests
         Assert.True(effect.RequiresOwnedStorage(0));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void EffectsReachEveryCallerOfAChainListedCallersFirst(int workers)
+    {
+        var repository = new Repository();
+        // Each link passes its address to the next; only the last writes through it.
+        var links = Enumerable.Range(0, 6)
+            .Select(index => Method(new EntityKey(Assembly, 0x06000100 + index), Void, PairAddress))
+            .ToArray();
+        var outsider = Method(new EntityKey(Assembly, 0x06000200), Void, Pair);
+        repository.Add([.. links, outsider]);
+        var bodies = links
+            .Select((link, index) => index == links.Length - 1
+                ? Body(repository, link,
+                    I(0, CilOperation.LoadArgument, Index(0)),
+                    I(1, CilOperation.InitializeObject, Type(Pair)),
+                    I(2, CilOperation.Return))
+                : Body(repository, link,
+                    I(0, CilOperation.LoadArgument, Index(0)),
+                    I(1, CilOperation.Call, Entity(links[index + 1].Key)),
+                    I(2, CilOperation.Return)))
+            .Append(Body(repository, outsider,
+                I(0, CilOperation.LoadArgumentAddress, Index(0)),
+                I(1, CilOperation.Call, Entity(links[0].Key)),
+                I(2, CilOperation.Return)))
+            .ToArray();
+        var withoutAddresses = Method(new EntityKey(Assembly, 0x06000201), Void, Pair);
+        repository.Add(withoutAddresses);
+        var unrelated = Body(repository, withoutAddresses,
+            I(0, CilOperation.LoadArgument, Index(0)),
+            I(1, CilOperation.Pop),
+            I(2, CilOperation.Return));
+
+        var effects = new ManagedByRefEffectAnalyzer(
+            repository, new Intrinsics(), new IndexedWorkExecutor(), workers).Analyze(new(
+                bodies.Append(unrelated).ToImmutableDictionary(body => body.Method.Definition.Key),
+                ImmutableDictionary<string, ManagedMethodBody>.Empty,
+                ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
+
+        Assert.All(bodies, body => Assert.Equal([0], Effect(effects, body).WrittenArguments));
+        Assert.Same(ManagedByRefMethodEffects.Empty, Effect(effects, unrelated));
+    }
+
     [Fact]
     public void MutuallyRecursiveClosedCallsReachTheirFixedPoint()
     {
@@ -593,19 +637,30 @@ public sealed class ManagedByRefEffectAnalyzerTests
         var repository = new Repository();
         var intrinsics = new Intrinsics();
 
+        var work = new IndexedWorkExecutor();
         Assert.Throws<ArgumentNullException>(() =>
-            new ManagedByRefEffectAnalyzer(null!, intrinsics));
+            new ManagedByRefEffectAnalyzer(null!, intrinsics, work, 1));
         Assert.Throws<ArgumentNullException>(() =>
-            new ManagedByRefEffectAnalyzer(repository, null!));
+            new ManagedByRefEffectAnalyzer(repository, null!, work, 1));
         Assert.Throws<ArgumentNullException>(() =>
-            new ManagedByRefEffectAnalyzer(repository, intrinsics).Analyze(null!));
+            new ManagedByRefEffectAnalyzer(repository, intrinsics, null!, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ManagedByRefEffectAnalyzer(repository, intrinsics, work, 0));
+        Assert.Throws<ArgumentNullException>(() =>
+            Create(repository, intrinsics).Analyze(null!));
     }
+
+    // Two workers, so the tests also run each round's methods in parallel.
+    private static ManagedByRefEffectAnalyzer Create(
+        Repository repository,
+        IRuntimeIntrinsicRegistry? intrinsics = null) =>
+        new(repository, intrinsics ?? new Intrinsics(), new IndexedWorkExecutor(), 2);
 
     private static ManagedByRefEffects Analyze(
         Repository repository,
         IReadOnlyCollection<ManagedMethodBody> bodies,
         IRuntimeIntrinsicRegistry? intrinsics = null) =>
-        new ManagedByRefEffectAnalyzer(repository, intrinsics ?? new Intrinsics())
+        Create(repository, intrinsics)
             .Analyze(new(
                 bodies.ToImmutableDictionary(body => body.Method.Definition.Key),
                 ImmutableDictionary<string, ManagedMethodBody>.Empty,

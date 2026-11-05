@@ -33,8 +33,11 @@ public sealed class NetWasmCompileTaskTests
         task.DiagnosticLogPath = "compiler.jsonl";
         task.UseJavaScriptExportBoundary = true;
         task.StructuredDiagnostics = true;
+        task.CompiledUnits = "false";
+        task.VerifyCompiledUnits = true;
         task.ProjectDirectory = "/project";
         task.PathMap = "/project=/_/";
+        task.NativeWasmToolsPath = "native/wasm-tools";
         task.ManagedMethodInlining = "Disabled";
         task.ManagedLoopRotation = "Enabled";
         task.ManagedAllocationElimination = string.Empty;
@@ -55,8 +58,10 @@ public sealed class NetWasmCompileTaskTests
                 "-exceptiontypemap:app.exceptions.json", "-stacktracesymbols:app.stacktrace.json", "-wit:app.wit",
                 "-world:example:app/app", "-importmodule:host_ui", "-diagnostictrace:trace.json",
                 "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
+                "-compiledunits-", "-verifycompiledunits+",
                 "-projectdirectory:/project", "-pathmap:/project=/_/", "-intermediatedirectory:obj/netwasm/",
                 "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
+                "-wasmtools:native/wasm-tools",
                 "-managedmethodinlining:Disabled", "-managedlooprotation:Enabled", "-managedloopvectorization:Disabled",
                 "-managedpurecallreuse:Enabled",
                 "-managedfieldloadreuse:Enabled",
@@ -66,6 +71,23 @@ public sealed class NetWasmCompileTaskTests
                 "-managedintegercheckelimination:Enabled",
             ],
             Lines(task.ResponseFileCommands));
+    }
+
+    // nwc is given gen0 budgets that let a compile finish without collecting, unless the
+    // build gives its own.
+    [Fact]
+    public void GivesNwcTheGarbageCollectionBudgetsUnlessTheBuildSetsThem()
+    {
+        var task = CreateTask();
+        Assert.Contains("DOTNET_GCgen0size=10000000", task.ToolEnvironment());
+        Assert.Contains("DOTNET_GCLOHThreshold=8000000", task.ToolEnvironment());
+
+        task.EnvironmentVariables = ["DOTNET_GCgen0size=4000000", "OTHER=1"];
+        var given = task.ToolEnvironment();
+        Assert.Contains("DOTNET_GCgen0size=4000000", given);
+        Assert.DoesNotContain("DOTNET_GCgen0size=10000000", given);
+        Assert.Contains("OTHER=1", given);
+        Assert.Contains("DOTNET_GCLOHThreshold=8000000", given);
     }
 
     [Fact]

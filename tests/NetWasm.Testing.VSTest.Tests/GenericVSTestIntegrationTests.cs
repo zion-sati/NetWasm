@@ -105,9 +105,12 @@ internal sealed class GenericVSTestFixture : IDisposable
         Directory.CreateDirectory(fixture.ExtensionRoot);
         Directory.CreateDirectory(fixture.ResultsRoot);
         File.WriteAllText(fixture.SourcePath, string.Empty);
-        File.Copy(
-            Path.Combine(AppContext.BaseDirectory, "global.json"),
-            Path.Combine(fixture.Root, "global.json"));
+        // Stock VSTest from the .NET 10 SDK, as a consumer's global.json selects it.
+        // VSTest 18.11 in the .NET 11 RC3 SDK does not load runtime providers from
+        // /TestAdapterPath, so it cannot run this source.
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "global.json"),
+            $$"""{ "sdk": { "version": "{{Sdk10MinimumVersion()}}", "rollForward": "latestFeature" } }""");
 
         var providerRoot = Path.GetDirectoryName(typeof(NetWasmTestRuntimeProvider).Assembly.Location)!;
         File.Copy(typeof(NetWasmTestRuntimeProvider).Assembly.Location, fixture.ProviderPath);
@@ -119,6 +122,19 @@ internal sealed class GenericVSTestFixture : IDisposable
     }
 
     public void Dispose() => Directory.Delete(Root, recursive: true);
+
+    private static string Sdk10MinimumVersion()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(directory.FullName, "eng", "csharp15-toolchain.json")))
+        {
+            directory = directory.Parent ?? throw new InvalidOperationException(
+                "The repository's eng/csharp15-toolchain.json was not found.");
+        }
+        using var toolchain = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(directory.FullName, "eng", "csharp15-toolchain.json")));
+        return toolchain.RootElement.GetProperty("sdk10MinimumVersion").GetString()!;
+    }
 
     private static void CopyDirectory(string source, string destination)
     {

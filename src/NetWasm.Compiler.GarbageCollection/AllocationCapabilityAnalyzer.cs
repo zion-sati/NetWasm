@@ -81,33 +81,35 @@ public sealed class AllocationCapabilityAnalyzer(
             .Select(pair => pair.Key)
             .ToHashSet(StringComparer.Ordinal);
 
-        bool changed;
-        do
+        // A method allocates when it calls one that does: the least fixed point from the
+        // directly allocating methods. Each pass checks every method still undecided against
+        // the set as it stood, on all cores, then adds the ones found; the property is
+        // monotone, so this reaches the same set as checking them one by one.
+        var pending = bodies
+            .Where(pair => !allocating.Contains(pair.Key) && !intrinsicBodies.Contains(pair.Key))
+            .ToArray();
+        while (pending.Length != 0)
         {
-            changed = false;
-            foreach ((var identity, var body) in bodies)
+            var current = pending;
+            var found = OrderedParallel.Map(current.Length, index => Instructions(current[index].Value).Any(instruction =>
+                CallsAllocatingMethod(
+                    current[index].Key,
+                    current[index].Value,
+                    instruction,
+                    allocating,
+                    directIdentities,
+                    directInitializers,
+                    constructedInitializers,
+                    request.DispatchCallSites)));
+            var remaining = new List<KeyValuePair<string, ManagedMethodBody>>(current.Length);
+            for (var index = 0; index < current.Length; index++)
             {
-                if (allocating.Contains(identity) || intrinsicBodies.Contains(identity))
-                {
-                    continue;
-                }
-                var callsAllocator = Instructions(body).Any(instruction =>
-                    CallsAllocatingMethod(
-                        identity,
-                        body,
-                        instruction,
-                        allocating,
-                        directIdentities,
-                        directInitializers,
-                        constructedInitializers,
-                        request.DispatchCallSites));
-                if (callsAllocator)
-                {
-                    changed |= allocating.Add(identity);
-                }
+                if (found[index]) allocating.Add(current[index].Key);
+                else remaining.Add(current[index]);
             }
+            if (remaining.Count == current.Length) break;
+            pending = [.. remaining];
         }
-        while (changed);
 
         return new AllocationCapabilities(
             [..

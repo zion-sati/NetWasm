@@ -231,7 +231,7 @@ public sealed class ConditionalWeakTableCompilationTests
                 }
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             optimized);
 
@@ -279,7 +279,7 @@ public sealed class ConditionalWeakTableCompilationTests
                 public static int Run(int input) => 42 + (input - input);
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             false);
 

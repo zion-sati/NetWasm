@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Wasm.Emission.Planning;
 using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
@@ -85,8 +86,11 @@ internal static class MethodEmissionServiceCollectionExtensions
             ManagedMethodSequenceEmitter>();
         services.AddSingleton<IManagedMethodBodyEmitterFactory,
             ManagedMethodBodyEmitterFactory>();
-        services.AddSingleton<IManagedMethodBodyEmitter>(provider =>
-            provider.GetRequiredService<IManagedMethodBodyEmitterFactory>().Create());
+        // Deferred methods are structured with the compile's structuring, which a compile
+        // that defers registers.
+        services.AddSingleton<IManagedMethodBodyEmitter>(provider => new OutlineStructuringBodyEmitter(
+            provider.GetRequiredService<IManagedMethodBodyEmitterFactory>().Create(),
+            provider.GetService<IWasmMethodLowerer>()));
         return services;
     }
 }

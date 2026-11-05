@@ -16,7 +16,7 @@ public sealed class MetadataTypeFinderFactory(
         ArgumentNullException.ThrowIfNull(snapshot);
         var materialized = _materializations.Create(snapshot);
         return new MetadataTypeFinder(
-            materialized.Types.Values.ToImmutableArray(),
+            materialized.TypesByFullName,
             new MetadataAvailabilityValidator(new MetadataLifetime()));
     }
 }

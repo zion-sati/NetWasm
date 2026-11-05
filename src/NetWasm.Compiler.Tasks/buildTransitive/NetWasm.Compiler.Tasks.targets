@@ -1,63 +1,69 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- MSBuild on .NET runs the compiler's tasks in its own process. MSBuild on .NET Framework, as Visual
+       Studio's is, runs these .NET tasks in a .NET task host, as does a build that sets
+       NetWasmIsolateBuildTasks=true: a process of their own for each task. -->
+  <PropertyGroup>
+    <_NetWasmBuildTaskFactory Condition="'$(MSBuildRuntimeType)' != 'Core' OR '$(NetWasmIsolateBuildTasks)' == 'true'">TaskHostFactory</_NetWasmBuildTaskFactory>
+  </PropertyGroup>
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmCompileTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmWriteCompileArtifactManifestTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmValidateArtifactTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmReadPreviousCompileOutputsTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmComponentizeTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmLinkRawModuleTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmBuildRawBindingsTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmProjectWitFunctionsTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmMaterializeWitWorkerPackageTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmReadCompilerBuildMetadataTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmReadHostInteropManifestTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
   <UsingTask TaskName="NetWasm.Compiler.Tasks.MsBuild.NetWasmReadRawBindingManifestTask"
              Runtime="NET"
              Architecture="CurrentArchitecture"
-             TaskFactory="TaskHostFactory"
+             TaskFactory="$(_NetWasmBuildTaskFactory)"
              AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\net10.0\NetWasm.Compiler.Tasks.dll" />
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'netwasm0.1'">
@@ -65,8 +71,16 @@
     <NetWasmManagedStackTrace Condition="'$(NetWasmManagedStackTrace)' == ''">false</NetWasmManagedStackTrace>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == '' AND '$(Configuration)' == 'Debug'">true</NetWasmStructuredDiagnostics>
     <NetWasmStructuredDiagnostics Condition="'$(NetWasmStructuredDiagnostics)' == ''">false</NetWasmStructuredDiagnostics>
+    <!-- A Debug build compiles for build speed; a project or command line that sets a level keeps it. -->
+    <NetWasmOptimization Condition="'$(NetWasmOptimization)' == '' AND '$(Configuration)' == 'Debug'">O0</NetWasmOptimization>
     <NetWasmOptimization Condition="'$(NetWasmOptimization)' == ''">Oz</NetWasmOptimization>
+    <!-- Compiled units serve edits; they are on by default where a build compiles for speed. -->
+    <NetWasmCompiledUnits Condition="'$(NetWasmCompiledUnits)' == '' AND ('$(NetWasmOptimization)' == 'O0' OR '$(NetWasmOptimization)' == 'None')">true</NetWasmCompiledUnits>
+    <NetWasmCompiledUnits Condition="'$(NetWasmCompiledUnits)' == ''">false</NetWasmCompiledUnits>
+    <NetWasmVerifyCompiledUnits Condition="'$(NetWasmVerifyCompiledUnits)' == ''">false</NetWasmVerifyCompiledUnits>
     <NetWasmManagedInliningHints Condition="'$(NetWasmManagedInliningHints)' == ''">Auto</NetWasmManagedInliningHints>
+    <!-- Repeats wasm-opt's preset until the module stops shrinking: slower builds for a little size. -->
+    <NetWasmOptimizerConverge Condition="'$(NetWasmOptimizerConverge)' == ''">false</NetWasmOptimizerConverge>
     <NetWasmManagedLoopInvariantFieldHoisting Condition="'$(NetWasmManagedLoopInvariantFieldHoisting)' == ''">Auto</NetWasmManagedLoopInvariantFieldHoisting>
     <NetWasmManagedStaticDataViewElimination Condition="'$(NetWasmManagedStaticDataViewElimination)' == ''">Auto</NetWasmManagedStaticDataViewElimination>
     <NetWasmManagedAddressTakenValuePromotion Condition="'$(NetWasmManagedAddressTakenValuePromotion)' == ''">Auto</NetWasmManagedAddressTakenValuePromotion>
@@ -199,6 +213,8 @@
       <_NetWasmCompilationIdentityLine Include="world=$(NetWasmCompilerWitWorld)" />
       <_NetWasmCompilationIdentityLine Include="stackTrace=$(NetWasmManagedStackTrace)" />
       <_NetWasmCompilationIdentityLine Include="structuredDiagnostics=$(NetWasmStructuredDiagnostics)" />
+      <_NetWasmCompilationIdentityLine Include="compiledUnits=$(NetWasmCompiledUnits)" />
+      <_NetWasmCompilationIdentityLine Include="verifyCompiledUnits=$(NetWasmVerifyCompiledUnits)" />
       <_NetWasmCompilationIdentityLine Include="optimization=$(_NetWasmCanonicalOptimization)" />
       <_NetWasmCompilationIdentityLine Include="managedLoopInvariantFieldHoisting=$(NetWasmManagedLoopInvariantFieldHoisting)" />
       <_NetWasmCompilationIdentityLine Include="managedStaticDataViewElimination=$(NetWasmManagedStaticDataViewElimination)" />
@@ -271,10 +287,12 @@
                       WriteOnlyWhenDifferent="true" />
   </Target>
 
+  <!-- A design-time build (an IDE's, or dotnet watch's, which reads the compiler's command
+       line) compiles no module: it resolves no build environment. -->
   <Target Name="NetWasmCompileCoreModule"
           DependsOnTargets="NetWasmWriteCompilationIdentity;NetWasmReadPreviousCompileOutputs"
           AfterTargets="CoreCompile"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(DesignTimeBuild)' != 'true'"
           Inputs="@(IntermediateAssembly);@(ReferenceCopyLocalPaths);$(NetWasmRuntimeCoreLibPath);@(Compile);@(_NetWasmCompilerWitInput);@(_NetWasmPortablePdbInput);$(NetWasmCompilationIdentityPath)"
           Outputs="$(NetWasmCoreModuleOutputPath);$(NetWasmRuntimeLayoutPath);$(NetWasmInteropManifestPath);$(NetWasmCompilerMetadataPath);$(NetWasmExceptionTypeMapPath);$(NetWasmArtifactManifestPath);@(_NetWasmConditionalCompileOutput)">
     <ItemGroup>
@@ -314,8 +332,11 @@
                         WasmToolsNodePath="$(NetWasmNodePath)"
                         WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                         WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                        NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                         EmitStackTrace="$(NetWasmManagedStackTrace)"
                         StructuredDiagnostics="$(NetWasmStructuredDiagnostics)"
+                        CompiledUnits="$(NetWasmCompiledUnits)"
+                        VerifyCompiledUnits="$(NetWasmVerifyCompiledUnits)"
                         Optimization="$(_NetWasmCanonicalOptimization)"
                         ManagedLoopInvariantFieldHoisting="$(NetWasmManagedLoopInvariantFieldHoisting)"
                         ManagedStaticDataViewElimination="$(NetWasmManagedStaticDataViewElimination)"
@@ -383,6 +404,7 @@
       <_NetWasmPackagingIdentityLine Remove="@(_NetWasmPackagingIdentityLine)" />
       <_NetWasmPackagingIdentityLine Include="optimization=$(_NetWasmCanonicalOptimization)" />
       <_NetWasmPackagingIdentityLine Include="managedInliningHints=$(NetWasmManagedInliningHints)" />
+      <_NetWasmPackagingIdentityLine Include="optimizerConverge=$(NetWasmOptimizerConverge)" />
       <_NetWasmPackagingIdentityLine Include="packagingPolicyRevision=4" />
       <_NetWasmPackagingIdentityLine Include="target=$(NetWasmTarget)" />
       <_NetWasmPackagingIdentityLine Include="worker=$(_NetWasmWorkerKind)" />
@@ -405,15 +427,13 @@
       <_NetWasmPackagingIdentityLine Include="node=$(NetWasmNodePath)" />
       <_NetWasmPackagingIdentityLine Include="wasmToolsCommand=$(NetWasmWasmToolsCommandPath)" />
       <_NetWasmPackagingIdentityLine Include="wasmToolsModule=$(NetWasmWasmToolsModulePath)" />
+      <_NetWasmPackagingIdentityLine Include="wasmToolsNative=$(NetWasmNativeWasmToolsPath)" />
       <_NetWasmPackagingIdentityLine Include="binaryenOpt=$(NetWasmBinaryenWasmOptPath)" />
       <_NetWasmPackagingIdentityLine Include="binaryenMerge=$(NetWasmBinaryenWasmMergePath)" />
       <_NetWasmPackagingIdentityLine Include="binaryenPortableVersion=$(NetWasmBinaryenPortableVersion)" />
       <_NetWasmPackagingIdentityLine Include="binaryenOptImplementation=$(NetWasmBinaryenWasmOptImplementation)" />
       <_NetWasmPackagingIdentityLine Include="binaryenOptNativePath=$(NetWasmNativeBinaryenWasmOptPath)" />
       <_NetWasmPackagingIdentityLine Include="binaryenOptNativeVersion=$(NetWasmNativeBinaryenWasmOptVersion)" />
-      <_NetWasmPackagingIdentityLine Include="binaryenMergeImplementation=$(NetWasmBinaryenWasmMergeImplementation)" />
-      <_NetWasmPackagingIdentityLine Include="binaryenMergeNativePath=$(NetWasmNativeBinaryenWasmMergePath)" />
-      <_NetWasmPackagingIdentityLine Include="binaryenMergeNativeVersion=$(NetWasmNativeBinaryenWasmMergeVersion)" />
       <_NetWasmPackagingIdentityLine Include="runtime=%(NetWasmComponentRuntime.FullPath)" />
       <_NetWasmPackagingIdentityLine Include="internalRuntimeExports=%(NetWasmComponentRuntime.InternalRuntimeExports)" />
       <_NetWasmPackagingIdentityLine Include="internalApplicationExports=%(NetWasmComponentRuntime.InternalApplicationExports)" />
@@ -428,7 +448,7 @@
   <Target Name="NetWasmCompilerTasksComponentize"
           DependsOnTargets="NetWasmRuntimePackMaterialize;NetWasmWritePackagingIdentity"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '')"
-          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(_NetWasmComponentWitPath);@(NetWasmComponentWitVariant);$(NetWasmInteropManifestPath);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
+          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(_NetWasmComponentWitPath);@(NetWasmComponentWitVariant);$(NetWasmInteropManifestPath);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmNativeWasmToolsPath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
           Outputs="$(NetWasmOutputPath);$(NetWasmComponentManifestPath)">
     <Error Code="NWSDK022"
            Condition="'@(NetWasmComponentRuntime)' == ''"
@@ -452,15 +472,16 @@
                              WasmToolsNodePath="$(NetWasmNodePath)"
                              WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                              WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                             NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                              BinaryenWasmOptPath="$(NetWasmBinaryenWasmOptPath)"
                              BinaryenWasmMergePath="$(NetWasmBinaryenWasmMergePath)"
                              NativeBinaryenWasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
-                             NativeBinaryenWasmMergePath="$(NetWasmNativeBinaryenWasmMergePath)"
                              Target="$(NetWasmTarget)"
                              JcoVersion="$(NetWasmJcoVersion)"
                              Preview2ShimVersion="$(NetWasmPreview2ShimVersion)"
                              Optimization="$(_NetWasmCanonicalOptimization)"
                              ManagedInliningHints="$(NetWasmManagedInliningHints)"
+                             OptimizerConverge="$(NetWasmOptimizerConverge)"
                              StructuredDiagnostics="$(NetWasmStructuredDiagnostics)">
       <Output TaskParameter="Components" ItemName="_NetWasmBuiltComponent" />
       <Output TaskParameter="SelectedWitPath" PropertyName="NetWasmSelectedWitPath" />
@@ -471,7 +492,7 @@
   <Target Name="NetWasmCompilerTasksLinkRawModule"
           DependsOnTargets="NetWasmRuntimePackMaterialize;NetWasmWritePackagingIdentity"
           Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(OutputType)' == 'Exe' OR '$(_NetWasmWorkerKind)' != '') AND '$(NetWasmRawWasm)' == 'true'"
-          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
+          Inputs="$(NetWasmCoreModuleOutputPath);@(NetWasmComponentRuntime);$(NetWasmNodePath);$(NetWasmWasmToolsCommandPath);$(NetWasmWasmToolsModulePath);$(NetWasmNativeWasmToolsPath);$(NetWasmBinaryenWasmOptPath);$(NetWasmBinaryenWasmMergePath);$(NetWasmPackagingIdentityPath)"
           Outputs="$(NetWasmOutputPath)">
     <Error Code="NWSDK028"
            Condition="'@(NetWasmComponentRuntime)' == ''"
@@ -490,12 +511,13 @@
                               WasmToolsNodePath="$(NetWasmNodePath)"
                               WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                               WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                              NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                               BinaryenWasmOptPath="$(NetWasmBinaryenWasmOptPath)"
                               BinaryenWasmMergePath="$(NetWasmBinaryenWasmMergePath)"
                               NativeBinaryenWasmOptPath="$(NetWasmNativeBinaryenWasmOptPath)"
-                              NativeBinaryenWasmMergePath="$(NetWasmNativeBinaryenWasmMergePath)"
                               Target="$(NetWasmTarget)"
                               ManagedInliningHints="$(NetWasmManagedInliningHints)"
+                              OptimizerConverge="$(NetWasmOptimizerConverge)"
                               Optimization="$(_NetWasmCanonicalOptimization)">
       <Output TaskParameter="Modules" ItemName="_NetWasmBuiltRawModule" />
     </NetWasmLinkRawModuleTask>
@@ -531,6 +553,7 @@
                                  NodePath="$(NetWasmNodePath)"
                                  WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                                  WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                 NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                                  InspectionScriptPath="$(NetWasmRawInspectionScriptPath)"
                                  BinaryenPath="$(NetWasmBinaryenModulePath)"
                                  AdapterPath="$(NetWasmRawAdapterPath)"

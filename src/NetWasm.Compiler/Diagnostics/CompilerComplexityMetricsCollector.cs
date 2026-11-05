@@ -54,26 +54,28 @@ internal sealed class CompilerComplexityMetricsCollector(
         var emissionsByIdentity = emissions.ToImmutableDictionary(
             emission => emission.Identity,
             StringComparer.Ordinal);
-        var methods = program.Methods
-            .Select(pair => Analyze(
-                pair.Key.ToString(),
-                symbols.Format(pair.Value.Method.Definition),
-                pair.Value,
-                lowering.Methods[pair.Key],
-                emissionsByIdentity,
-            _blockOwnershipAnalyzer,
-            _logger))
-            .Concat(program.ConstructedMethods.OrderBy(
-                    pair => pair.Key,
-                    StringComparer.Ordinal)
-                .Select(pair => Analyze(
-                    pair.Key,
-                    pair.Key,
-                    pair.Value,
-                    lowering.ConstructedMethods[pair.Key],
+        // Each method is measured on its own, on all cores.
+        var ordinary = program.Methods.ToArray();
+        var constructed = program.ConstructedMethods
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .ToArray();
+        var methods = OrderedParallel.Map(ordinary.Length + constructed.Length, index => index < ordinary.Length
+                ? Analyze(
+                    ordinary[index].Key.ToString(),
+                    symbols.Format(ordinary[index].Value.Method.Definition),
+                    ordinary[index].Value,
+                    lowering.Methods[ordinary[index].Key],
                     emissionsByIdentity,
-            _blockOwnershipAnalyzer,
-            _logger)))
+                    _blockOwnershipAnalyzer,
+                    _logger)
+                : Analyze(
+                    constructed[index - ordinary.Length].Key,
+                    constructed[index - ordinary.Length].Key,
+                    constructed[index - ordinary.Length].Value,
+                    lowering.ConstructedMethods[constructed[index - ordinary.Length].Key],
+                    emissionsByIdentity,
+                    _blockOwnershipAnalyzer,
+                    _logger))
             .OrderBy(metric => metric.Identity, StringComparer.Ordinal)
             .ToImmutableArray();
         return new(

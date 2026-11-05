@@ -24,7 +24,6 @@ internal sealed record CompilationRequest(
     string? StackTraceSymbolsPath = null,
     CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
     bool CollectCompilerMetrics = true,
-    bool EnableFrontendCache = false,
     string? IntermediateOutputPath = null,
     string? RuntimeLayoutPath = null,
     string? InteropManifestPath = null,

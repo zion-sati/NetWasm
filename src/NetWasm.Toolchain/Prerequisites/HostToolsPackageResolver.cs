@@ -9,11 +9,26 @@ namespace NetWasm.Toolchain.Prerequisites;
 public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
 {
     private static readonly ImmutableArray<string> RequiredRoles =
-        ["node", "wasm-ld", "wasm-opt", "wasm-merge"];
+        ["node", "wasm-ld", "wasm-opt"];
+
+    // wasm-merge, which packages carried until the compiler merged modules itself; an
+    // older package's copy is verified with the rest and not used.
+    private const string LegacyMergeRole = "wasm-merge";
 
     // nwc, the NetWasm compiler, which packages carry from the release that
     // moved it out of the compiler tasks; a project names one for older tools.
     private const string CompilerRole = "nwc";
+
+    // The native wasm-tools, which packages carry from the release that added it;
+    // the build runs the toolchain's WASI wasm-tools without it.
+    private const string WasmToolsRole = "wasm-tools";
+
+    private static readonly ImmutableArray<string> WasmToolsNotices =
+    [
+        "licenses/wasm-tools-LICENSE-APACHE",
+        "licenses/wasm-tools-LICENSE-Apache-2.0_WITH_LLVM-exception",
+        "licenses/wasm-tools-LICENSE-MIT",
+    ];
 
     private readonly IHostToolsPackageFileReader _files;
     private readonly IHostToolsPackageManifestReader _manifestReader;
@@ -69,9 +84,25 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
 
         var suffix = request.HostRid.StartsWith("win-", StringComparison.Ordinal) ? ".exe" : string.Empty;
         var carriesCompiler = manifest.Roles.ContainsKey(CompilerRole);
-        ImmutableArray<string> roles = carriesCompiler ? [.. RequiredRoles, CompilerRole] : RequiredRoles;
-        if (manifest.Roles.Count != roles.Length ||
-            roles.Any(role => !manifest.Roles.TryGetValue(role, out var path) ||
+        var carriesWasmTools = manifest.Roles.ContainsKey(WasmToolsRole);
+        if (carriesWasmTools != (manifest.WasmToolsVersion is not null) ||
+            carriesWasmTools && !Version.TryParse(manifest.WasmToolsVersion, out _))
+        {
+            throw new InvalidDataException("Host-tools package declares an invalid wasm-tools version.");
+        }
+        ImmutableArray<string> roles =
+        [
+            .. RequiredRoles,
+            .. carriesWasmTools ? [WasmToolsRole] : ImmutableArray<string>.Empty,
+            .. carriesCompiler ? [CompilerRole] : ImmutableArray<string>.Empty,
+        ];
+        ImmutableArray<string> declared =
+        [
+            .. roles,
+            .. manifest.Roles.ContainsKey(LegacyMergeRole) ? [LegacyMergeRole] : ImmutableArray<string>.Empty,
+        ];
+        if (manifest.Roles.Count != declared.Length ||
+            declared.Any(role => !manifest.Roles.TryGetValue(role, out var path) ||
                 path != $"tools/bin/{role}{suffix}"))
         {
             throw new InvalidDataException("Host-tools package role map is incomplete or unexpected.");
@@ -85,6 +116,10 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
         if (carriesCompiler)
         {
             expectedPaths.UnionWith(["licenses/NetWasm-LICENSE.txt", "licenses/nwc-THIRD-PARTY-NOTICES.txt"]);
+        }
+        if (carriesWasmTools)
+        {
+            expectedPaths.UnionWith(WasmToolsNotices);
         }
         if (request.HostRid.StartsWith("linux-", StringComparison.Ordinal))
         {
@@ -129,7 +164,10 @@ public sealed class HostToolsPackageResolver : IHostToolsPackageResolver
 
         return new(expectedId, request.PackageVersion, request.HostRid,
             manifest.NodeVersion, manifest.WasmLdVersion, manifest.BinaryenVersion,
-            paths.ToImmutable());
+            paths.ToImmutable())
+        {
+            WasmToolsVersion = manifest.WasmToolsVersion,
+        };
     }
 
     private HostToolsPackageFileContents Read(string path)

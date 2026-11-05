@@ -174,7 +174,7 @@ public sealed class ConcurrentDictionaryCompilationTests
                 }
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             optimized);
 

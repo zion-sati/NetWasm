@@ -17,7 +17,6 @@ public sealed class ComponentWorkflowContractTests
         var output = files.PathFor("component-core.wasm");
         var merge = new RecordingMergeRunner();
         var environment = new RecordingEnvironmentShim();
-        var exports = new RecordingExports();
         var optimizer = new RecordingOptimizer();
         InvokeLink(
             AsLinker(new ComponentCoreModuleLinker(
@@ -28,18 +27,22 @@ public sealed class ComponentWorkflowContractTests
                     environment,
                     new RecordingHostShim(),
                     new RecordingManagedExecutableAdapter(),
-                    exports,
-                    optimizer, new WasmOptimizationSettingsResolver(), new RecordingInlineAnnotations()))),
+                    optimizer, new WasmOptimizationSettingsResolver()))),
             application,
             runtime,
             output,
             ComponentTarget.Wasm32Wasi02);
 
-        Assert.Equal(output + ".sanitized.wasm", merge.Request!.ApplicationModulePath);
-        Assert.Equal(output + ".runtime-sanitized.wasm", merge.Request.RuntimeModulePath);
+        // The merge takes the inputs as they are, with Oz's selections: the application keeps its
+        // AggressiveInlining hints and the runtime does not.
+        Assert.Equal(application, merge.Request!.ApplicationModulePath);
+        Assert.Equal(runtime, merge.Request.RuntimeModulePath);
+        Assert.Equal(output + ".sanitized.wasm", merge.Request.OutputPath);
+        Assert.Equal(WasmInlineAnnotationSelection.Preserve, merge.Request.ApplicationInlineAnnotations);
+        Assert.Equal(WasmInlineAnnotationSelection.SizeAware, merge.Request.RuntimeInlineAnnotations);
         Assert.Equal(output + ".sanitized.wasm", optimizer.InputPath);
         Assert.Equal(output, optimizer.OutputPath);
-        Assert.Equal("cm32p2", exports.Prefix);
+        Assert.Equal("cm32p2", merge.Request.Exports!.ComponentPrefix);
         Assert.Equal(1, environment.Writes);
     }
 
@@ -53,7 +56,6 @@ public sealed class ComponentWorkflowContractTests
         {
             Result = new ToolResult(1, string.Empty, "merge failed\n"),
         };
-        var exports = new RecordingExports();
         var optimizer = new RecordingOptimizer();
         var exception = Assert.Throws<CompilerException>(() => InvokeLink(
             AsLinker(new ComponentCoreModuleLinker(
@@ -64,8 +66,7 @@ public sealed class ComponentWorkflowContractTests
                     new RecordingEnvironmentShim(),
                     new RecordingHostShim(),
                     new RecordingManagedExecutableAdapter(),
-                    exports,
-                    optimizer, new WasmOptimizationSettingsResolver(), new RecordingInlineAnnotations()))),
+                    optimizer, new WasmOptimizationSettingsResolver()))),
             application,
             runtime,
             files.PathFor("component-core.wasm"),
@@ -73,7 +74,6 @@ public sealed class ComponentWorkflowContractTests
 
         Assert.Equal(DiagnosticCode.ComponentToolchain, exception.Diagnostic.Code);
         Assert.Contains("merge failed", exception.Diagnostic.Message);
-        Assert.Equal(0, exports.Calls);
         Assert.Equal(0, optimizer.Calls);
     }
 
@@ -98,8 +98,7 @@ public sealed class ComponentWorkflowContractTests
                 new RecordingEnvironmentShim(),
                 host,
                 adapter,
-                new RecordingExports(),
-                new RecordingOptimizer(), new WasmOptimizationSettingsResolver(), new RecordingInlineAnnotations())));
+                new RecordingOptimizer(), new WasmOptimizationSettingsResolver())));
 
         linker.Link(new(
             application,
@@ -256,32 +255,6 @@ public sealed class ComponentWorkflowContractTests
         public void Write(string outputPath, ComponentTarget target) => Writes++;
     }
 
-    private sealed class RecordingExports : IWasmCoreModuleExportEditor
-    {
-        public int Calls { get; private set; }
-        public string Prefix { get; private set; } = string.Empty;
-
-        public void Rewrite(
-            string inputPath,
-            string outputPath,
-            WasmExportSelection selection)
-        {
-            Calls++;
-            Prefix = selection.ComponentPrefix!;
-        }
-    }
-
-    private sealed class RecordingInlineAnnotations : IWasmCoreModuleInlineAnnotationEditor
-    {
-        public void Rewrite(string inputPath, string outputPath, WasmInlineAnnotationSelection selection)
-        {
-            // At the default Oz, the application keeps its AggressiveInlining hints and the runtime does not.
-            Assert.Equal(Path.GetFileName(inputPath) == "runtime.wasm"
-                ? WasmInlineAnnotationSelection.SizeAware
-                : WasmInlineAnnotationSelection.Preserve, selection);
-        }
-    }
-
     private sealed class RecordingOptimizer : IComponentCoreModuleOptimizer
     {
         public int Calls { get; private set; }
@@ -292,7 +265,8 @@ public sealed class ComponentWorkflowContractTests
             string inputPath,
             string outputPath,
             ComponentTarget target,
-            FinalWasmOptimization optimization)
+            FinalWasmOptimization optimization,
+            bool converge)
         {
             Calls++;
             InputPath = inputPath;

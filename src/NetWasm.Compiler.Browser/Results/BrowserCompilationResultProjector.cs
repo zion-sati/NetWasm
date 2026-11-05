@@ -6,7 +6,7 @@ namespace NetWasm.Compiler.Browser.Results;
 internal sealed class BrowserCompilationResultProjector : IBrowserCompilationResultProjector
 {
     public BrowserCompilationResult Project(
-        CompilationResult result, CompilerOptions options, ManagedExecutableEntryPointAbi? entryPointAbi)
+        ModuleCompilationResult result, CompilerOptions options, ManagedExecutableEntryPointAbi? entryPointAbi)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(options);

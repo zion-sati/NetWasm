@@ -41,6 +41,8 @@ public sealed class NetWasmWriteDeploymentTask : Microsoft.Build.Utilities.Task
     public ITaskItem[] RequiredImportModules { get; set; } = [];
     public ITaskItem[] RequiredImports { get; set; } = [];
     public ITaskItem[] Exports { get; set; } = [];
+    // False to write only the manifest, for a site that serves the artifacts from where they are.
+    public bool CopyArtifacts { get; set; } = true;
 
     [Output] public string BuildFingerprint { get; private set; } = string.Empty;
     [Output] public string ManifestSha256 { get; private set; } = string.Empty;
@@ -66,7 +68,10 @@ public sealed class NetWasmWriteDeploymentTask : Microsoft.Build.Utilities.Task
                 [.. Artifacts.Select(CreateArtifact)],
                 [.. RequiredImportModules.Select(item => item.ItemSpec)],
                 [.. RequiredImports.Select(CreateFunction)],
-                [.. Exports.Select(CreateFunction)]));
+                [.. Exports.Select(CreateFunction)])
+            {
+                CopyArtifacts = CopyArtifacts,
+            });
             BuildFingerprint = result.Manifest.BuildFingerprint;
             ManifestSha256 = result.ManifestSha256;
             return true;

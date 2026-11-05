@@ -1,0 +1,52 @@
+# Benchmark sources left out of every runtime's build: each entry names a file, or a
+# directory ending in '/', under dotnet/performance's src/benchmarks/micro/.
+
+# Need Microsoft.CodeAnalysis, reflection or native interop.
+runtime/Roslyn/
+runtime/System.Reflection/
+runtime/Interop/
+runtime/perflab/ReflectionPerf.cs
+runtime/Exceptions/Handling.cs
+runtime/Benchstones/MDBenchI/MDGeneralArray.cs
+
+# Need threads: Thread, Parallel, Barrier, BlockingCollection or blocking on tasks.
+runtime/BenchmarksGame/binarytrees-5.cs
+runtime/BenchmarksGame/binarytrees-6.cs
+runtime/BenchmarksGame/fannkuch-redux-5.cs
+runtime/BenchmarksGame/fannkuch-redux-9.cs
+runtime/BenchmarksGame/fasta-1.cs
+runtime/BenchmarksGame/k-nucleotide-9.cs
+runtime/BenchmarksGame/mandelbrot-7.cs
+runtime/BenchmarksGame/regex-redux-5.cs
+runtime/BenchmarksGame/reverse-complement-6.cs
+runtime/BenchmarksGame/spectralnorm-3.cs
+runtime/SIMD/ConsoleMandel/ScalarDouble.cs
+runtime/SIMD/ConsoleMandel/ScalarFloat.cs
+runtime/SIMD/ConsoleMandel/VectorDouble.cs
+runtime/SIMD/ConsoleMandel/VectorDoubleStrict.cs
+runtime/SIMD/ConsoleMandel/VectorFloat.cs
+runtime/SIMD/ConsoleMandel/VectorFloatStrict.cs
+runtime/SIMD/RayTracer/
+
+# Read input files or write standard output as a stream.
+runtime/BenchmarksGame/Inputs/InputFileHelper.cs
+runtime/BenchmarksGame/fasta-2.cs
+runtime/BenchmarksGame/k-nucleotide-1.cs
+runtime/BenchmarksGame/mandelbrot-2.cs
+runtime/BenchmarksGame/regex-redux-1.cs
+runtime/BenchmarksGame/reverse-complement-1.cs
+
+# Written for x86 hardware intrinsics.
+runtime/BilinearInterpol/
+runtime/PacketTracer/
+
+# Compile only with files excluded above.
+runtime/BenchmarksGame/Inputs/NucleotideHelpers.cs
+runtime/BenchmarksGame/Inputs/RegexReduxHelpers.cs
+runtime/BenchmarksGame/Inputs/ReverseComplementHelpers.cs
+runtime/SIMD/ConsoleMandel/Interfaces.cs
+runtime/SIMD/ConsoleMandel/ConsoleMandel.cs
+
+# NetWasm has no ReadOnlySequence<T>, SequencePosition or SequenceReader<T>.
+libraries/System.Memory/ReadOnlySequence.cs
+libraries/System.Memory/SequenceReader.cs

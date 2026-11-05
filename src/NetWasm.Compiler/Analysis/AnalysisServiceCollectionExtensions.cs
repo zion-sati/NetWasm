@@ -34,6 +34,8 @@ internal static class AnalysisServiceCollectionExtensions
             DispatchTargetResolverFactory>();
         services.AddSingleton<ITypeRelationshipClassifierFactory,
             TypeRelationshipClassifierFactory>();
+        services.AddSingleton<ITypeRelationshipKeyResolverFactory,
+            TypeRelationshipKeyResolverFactory>();
         services.AddSingleton<IDispatchSiteKeyBuilder, DispatchSiteKeyBuilder>();
         services.AddSingleton<IDelegateTypeRecognizerFactory,
             DelegateTypeRecognizerFactory>();
@@ -67,6 +69,7 @@ internal static class AnalysisServiceCollectionExtensions
         services.AddSingleton<IReachableMethodBatchObserver, LoggingReachableMethodBatchObserver>();
         services.AddSingleton<IReachabilityClosureObserver, LoggingReachabilityClosureObserver>();
         services.AddSingleton<IWholeProgramAnalyzerFactory, WholeProgramAnalyzerFactory>();
+        services.AddSingleton<IStandaloneMethodAnalyzerFactory, StandaloneMethodAnalyzerFactory>();
         return services;
     }
 }

@@ -10,7 +10,6 @@ using NetWasm.Compiler.GarbageCollection;
 using NetWasm.Compiler.Layout;
 using NetWasm.Compiler.Loading;
 using NetWasm.Compiler.Pipeline;
-using NetWasm.Compiler.Caching.Frontend;
 
 namespace NetWasm.Compiler.Tests;
 
@@ -102,67 +101,25 @@ public sealed class CompilerDependencyInjectionTests
     {
         var options = new CompilerOptions("entry.dll", [], "Application", "Run", []);
         var executor = new RecordingPipelineExecutor();
-        var compiler = new NetWasmCompilationPipeline(
-            executor,
-            new RecordingFrontendRequestFactory(),
-            new RecordingMetricsObserverFactory());
+        var compiler = new NetWasmCompilationPipeline(executor);
 
         Assert.Throws<PipelineExecutionObservedException>(() => compiler.Compile(options));
         Assert.Same(options, executor.Options);
     }
 
     [Fact]
-    public void CompilationFacadeDecoratesAnExplicitMetricsObserver()
-    {
-        var observer = new RecordingMetricsObserver();
-        var options = new CompilerOptions("entry.dll", [], "Application", "Run", [])
-        {
-            MetricsObserver = observer,
-        };
-        var metrics = new RecordingMetricsObserverFactory();
-        var compiler = new NetWasmCompilationPipeline(
-            new RecordingPipelineExecutor(),
-            new RecordingFrontendRequestFactory(),
-            metrics);
-
-        Assert.Throws<PipelineExecutionObservedException>(() => compiler.Compile(options));
-
-        Assert.Same(observer, metrics.Observer);
-    }
-
-    [Fact]
     public void CompilationFacadeRejectsAMissingPipelineExecutor()
     {
-        Assert.Throws<ArgumentNullException>(() => new NetWasmCompilationPipeline(
-            null!, new RecordingFrontendRequestFactory(), new RecordingMetricsObserverFactory()));
-        Assert.Throws<ArgumentNullException>(() => new NetWasmCompilationPipeline(
-            new RecordingPipelineExecutor(), null!, new RecordingMetricsObserverFactory()));
-        Assert.Throws<ArgumentNullException>(() => new NetWasmCompilationPipeline(
-            new RecordingPipelineExecutor(), new RecordingFrontendRequestFactory(), null!));
+        Assert.Throws<ArgumentNullException>(() => new NetWasmCompilationPipeline(null!));
     }
 
     [Fact]
     public void CompilationFacadeRejectsMissingOptions()
     {
-        var compiler = new NetWasmCompilationPipeline(
-            new RecordingPipelineExecutor(),
-            new RecordingFrontendRequestFactory(),
-            new RecordingMetricsObserverFactory());
+        var compiler = new NetWasmCompilationPipeline(new RecordingPipelineExecutor());
 
         Assert.Throws<ArgumentNullException>(() => compiler.Compile(null!));
         Assert.Throws<ArgumentNullException>(() => NetWasmCompiler.Compile(null!));
-    }
-
-    [Fact]
-    public void FrontendMetricsObserverFactoryRequiresItsContracts()
-    {
-        Assert.Throws<ArgumentNullException>(() =>
-            new FrontendCacheMetricsObserverFactory(null!));
-        var state = new FrontendArtifactCacheState();
-        var factory = new FrontendCacheMetricsObserverFactory(
-            new FrontendArtifactCacheMetricsReader(
-                new FrontendArtifactCacheRequestResolver(state)));
-        Assert.Throws<ArgumentNullException>(() => factory.Create(null!));
     }
 
     private sealed class RecordingMetadataLoader : IMetadataCompilationLoader
@@ -183,40 +140,11 @@ public sealed class CompilerDependencyInjectionTests
     {
         public CompilerOptions? Options { get; private set; }
 
-        public CompilationResult Execute(CompilerOptions options)
+        public CompilationOutcome Execute(CompilerOptions options, bool serveFromLastCompile = false)
         {
             Options = options;
             throw new PipelineExecutionObservedException();
         }
-    }
-
-    private sealed class RecordingFrontendRequestFactory : IFrontendArtifactCacheRequestFactory
-    {
-        public IFrontendArtifactCacheRequest Begin(CompilerOptions options) =>
-            new RecordingFrontendRequest();
-    }
-
-    private sealed class RecordingFrontendRequest : IFrontendArtifactCacheRequest
-    {
-        public void Commit() { }
-
-        public void Dispose() { }
-    }
-
-    private sealed class RecordingMetricsObserverFactory : IFrontendCacheMetricsObserverFactory
-    {
-        public ICompilerMetricsObserver? Observer { get; private set; }
-
-        public ICompilerMetricsObserver Create(ICompilerMetricsObserver observer)
-        {
-            Observer = observer;
-            return observer;
-        }
-    }
-
-    private sealed class RecordingMetricsObserver : ICompilerMetricsObserver
-    {
-        public void Report(CompilerMetricsReport report) { }
     }
 
     private sealed class PipelineExecutionObservedException : Exception;

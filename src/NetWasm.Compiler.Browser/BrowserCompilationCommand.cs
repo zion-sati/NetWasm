@@ -12,7 +12,7 @@ internal interface IBrowserCompilationCommand
 }
 
 internal sealed class BrowserCompilationCommand(
-    INetWasmCompiler compiler,
+    INetWasmModuleCompiler compiler,
     IManagedExecutableEntryPointSelector entryPoints,
     IBrowserCompilationResultProjector results) : IBrowserCompilationCommand
 {
@@ -35,7 +35,7 @@ internal sealed class BrowserCompilationCommand(
         var compilation = compiler.Compile(options);
         // Only the managed-executable profile prepares an image and selects an entry.
         var actualEntry = image is null ? null : entryPoints.SelectEntryPoint(
-            options.EntryAssemblyPath, image, compilation.Program.EntryPoint!.Key.MetadataToken);
+            options.EntryAssemblyPath, image, compilation.EntryPointToken!.Value);
         if (actualEntry is not null)
         {
             options = options with

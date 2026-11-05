@@ -43,7 +43,7 @@ internal sealed class FunctionLoadEmitter(
         {
             code.Write(WasmInstruction.WithOperand(
                 WasmOpcodes.I32Constant,
-                WasmInstructionOperand.Signed(functionIndices.Resolve(target))));
+                WasmInstructionOperand.Signed(functionIndices.Resolve(new FunctionAddress(target)))));
             if (layouts.Target.UsesMemory64)
             {
                 code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64ExtendI32Unsigned));

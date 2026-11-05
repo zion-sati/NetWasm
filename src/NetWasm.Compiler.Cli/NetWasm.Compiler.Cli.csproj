@@ -3,10 +3,20 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>nwc</AssemblyName>
     <RootNamespace>NetWasm.Compiler.Cli</RootNamespace>
+    <!-- The shipped nwc is a self-contained Native AOT executable published for net11.0;
+         it needs no installed runtime. The net10.0 build serves tests and tools that run
+         nwc.dll on the .NET 10 runtime. -->
+    <TargetFramework />
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <Version>0.4.2</Version>
     <IsPackable>false</IsPackable>
     <!-- The compiler reads no culture data, so a Native AOT nwc needs no ICU on the host. -->
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The analysis and emission workers allocate concurrently; per-core heaps keep them
+         from stopping each other for every collection. A compilation is short, so its
+         heaps are sized for speed rather than adapted down to save memory. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <GarbageCollectionAdaptationMode>0</GarbageCollectionAdaptationMode>
   </PropertyGroup>
   <!-- MSVC's linker stamps the time into each image unless /Brepro, which a
        repeatable Native AOT nwc needs. -->

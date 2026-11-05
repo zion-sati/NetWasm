@@ -318,7 +318,7 @@ public sealed class AddressTakenScalarPromotionPlannerTests
             Step(Fixture.Call(1, target), CliValueKind.ManagedAddress));
         var request = fixture.Request(method, target, ManagedByRefMethodEffects.Empty);
         request = scenario == 0
-            ? request with { CallSites = [] }
+            ? request with { CallSites = ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty }
             : request with { ByRefEffects = ManagedByRefEffects.Empty };
 
         Assert.Empty(new AddressTakenScalarPromotionPlanner().Plan(request)

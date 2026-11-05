@@ -231,7 +231,7 @@ public sealed class AddressTakenAggregatePromotionPlannerTests
         ]).ToArray());
         var request = fixture.Request(method, target, ManagedByRefMethodEffects.Empty);
         request = scenario == 0
-            ? request with { CallSites = [] }
+            ? request with { CallSites = ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty }
             : request with { ByRefEffects = ManagedByRefEffects.Empty };
 
         Assert.Empty(fixture.CreatePlanner().Plan(request).PromotedLocals);

@@ -21,7 +21,7 @@ namespace NetWasm.Runtime.Pack.Tests.Integration;
 
 public sealed class NativeCallbackDceIntegrationTests
 {
-    private static readonly string[] ToolNames = ["node", "wasm-opt", "wasm-merge"];
+    private static readonly string[] ToolNames = ["node", "wasm-opt"];
     private static readonly string[] FinalizationExports =
     [
         RuntimeAbi.RuntimeAllocateFinalizable,

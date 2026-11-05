@@ -202,7 +202,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var request = fixture.Request(method, fixture.EmptyRootMap());
         request = request with
         {
-            ByRefEffects = new(request.ByRefEffects.Methods.Remove(fixture.Target.CanonicalName)),
+            ByRefEffects = new(request.ByRefEffects.Methods.ToImmutableDictionary().Remove(fixture.Target.CanonicalName)),
         };
 
         Assert.Same(ManagedAggregateValueAnalysis.Empty, fixture.Analyzer.Analyze(request));
@@ -521,7 +521,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
         var request = fixture.Request(method, fixture.EmptyRootMap());
         request = request with
         {
-            ByRefEffects = new(request.ByRefEffects.Methods.SetItem(
+            ByRefEffects = new(request.ByRefEffects.Methods.ToImmutableDictionary().SetItem(
                 fixture.MultiTarget.CanonicalName, new([1], [], []))),
         };
         var analysis = fixture.Analyzer.Analyze(request);
@@ -1011,7 +1011,7 @@ public sealed class ManagedAggregateValueAnalyzerTests
             1 => request with { ByRefEffects = new(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty) },
             _ => request with
             {
-                ByRefEffects = new(request.ByRefEffects.Methods.SetItem(
+                ByRefEffects = new(request.ByRefEffects.Methods.ToImmutableDictionary().SetItem(
                     fixture.Body.CanonicalName, ManagedByRefMethodEffects.Empty)),
             },
         };

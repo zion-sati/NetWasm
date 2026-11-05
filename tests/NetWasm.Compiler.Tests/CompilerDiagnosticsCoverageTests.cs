@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using NetWasm.Compiler.Caching.Frontend;
 using NetWasm.Compiler.Diagnostics;
 
 namespace NetWasm.Compiler.Tests;
@@ -27,24 +26,12 @@ public sealed class CompilerDiagnosticsCoverageTests
     }
 
     [Fact]
-    public void DiagnosticAndTransportRecordsExposeTheirPublicContract()
+    public void AdapterTimingExposesItsPublicContract()
     {
         var timing = new CompilerAdapterTiming(
             TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1));
         Assert.Equal(TimeSpan.FromSeconds(3), timing.TotalDuration);
         Assert.Equal(TimeSpan.FromSeconds(2), timing.CompilerDuration);
         Assert.Equal(TimeSpan.FromSeconds(1), timing.ResidualDuration);
-
-        var publication = new FrontendArtifactCachePublication("publication", 2, 3);
-        Assert.Equal("publication", publication.Token);
-        Assert.Equal(2, publication.EntryCount);
-        Assert.Equal(3, publication.TotalBytes);
-
-        var batch = new FrontendArtifactCacheBatch(
-            "publication", "batch", [], true);
-        Assert.Equal("publication", batch.PublicationToken);
-        Assert.Equal("batch", batch.BatchToken);
-        Assert.Empty(batch.Entries);
-        Assert.True(batch.IsFinal);
     }
 }

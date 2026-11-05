@@ -40,17 +40,7 @@ public sealed record CompilerMetricsReport(
     TimeSpan TotalDuration,
     TimeSpan StageDuration,
     TimeSpan UnattributedDuration,
-    ImmutableArray<CompilerStageMetrics> Stages,
-    FrontendArtifactCacheMetrics? FrontendCache = null);
-
-public sealed record FrontendArtifactCacheMetrics(
-    long Lookups,
-    long Hits,
-    long Misses,
-    long MemoryHits,
-    long DiskHits,
-    long StagedArtifacts,
-    long StagedBytes);
+    ImmutableArray<CompilerStageMetrics> Stages);
 
 public sealed record CompilerAdapterTiming(
     TimeSpan TotalDuration,

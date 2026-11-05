@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
+using System.Runtime.InteropServices;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata.UnsafeAccessors;
 
@@ -14,8 +15,8 @@ namespace NetWasm.Compiler.Metadata;
 
 public sealed class ManagedAssembly : IDisposable
 {
-    private readonly MemoryStream _stream;
     private readonly PEReader _peReader;
+    private readonly byte[] _image;
     private readonly Dictionary<int, TypeDefinitionModel> _types;
     private readonly Dictionary<int, FieldDefinitionModel> _fields;
     private readonly Dictionary<int, MethodDefinitionModel> _methods;
@@ -51,8 +52,9 @@ public sealed class ManagedAssembly : IDisposable
             IUnsafeAccessorDeclarationReader unsafeAccessors)
     {
         Path = path;
-        _stream = new MemoryStream(image, writable: false);
-        _peReader = new PEReader(_stream);
+        _image = image;
+        // Over the image itself, so concurrent method body reads take no lock.
+        _peReader = new PEReader(ImmutableCollectionsMarshal.AsImmutableArray(image));
         Reader = _peReader.GetMetadataReader();
         var definition = Reader.GetAssemblyDefinition();
         Identity = new AssemblyIdentity(Reader.GetString(definition.Name));
@@ -101,6 +103,8 @@ public sealed class ManagedAssembly : IDisposable
     public IReadOnlyDictionary<int, MethodDefinitionModel> Methods => _methods;
     public IReadOnlyDictionary<int, PropertyDefinitionModel> Properties => _properties;
     internal MetadataAssemblySnapshot Metadata => _metadata;
+    // The assembly file's bytes, as loaded.
+    internal ReadOnlySpan<byte> Image => _image;
     internal PEReader PortableExecutableReader
     {
         get
@@ -163,7 +167,6 @@ public sealed class ManagedAssembly : IDisposable
             return;
         }
         _peReader.Dispose();
-        _stream.Dispose();
         _disposed = true;
     }
 
@@ -178,10 +181,12 @@ public sealed class ManagedAssembly : IDisposable
         INativeCallbackDeclarationReader nativeCallbacks,
         IUnsafeAccessorDeclarationReader unsafeAccessors)
     {
-        var types = new Dictionary<int, TypeDefinitionModel>();
-        var fields = new Dictionary<int, FieldDefinitionModel>();
-        var methods = new Dictionary<int, MethodDefinitionModel>();
-        var properties = new Dictionary<int, PropertyDefinitionModel>();
+        // Sized from the metadata tables, so CoreLib's definitions never rehash.
+        var types = new Dictionary<int, TypeDefinitionModel>(Reader.TypeDefinitions.Count);
+        var fields = new Dictionary<int, FieldDefinitionModel>(Reader.FieldDefinitions.Count);
+        var methods = new Dictionary<int, MethodDefinitionModel>(Reader.MethodDefinitions.Count);
+        var properties = new Dictionary<int, PropertyDefinitionModel>(Reader.PropertyDefinitions.Count);
+        ILookup<string, TypeDefinitionModel>? typesByName = null;
         var constants = Enumerable.Range(1, Reader.GetTableRowCount(TableIndex.Constant))
             .Select(index => Reader.GetConstant(MetadataTokens.ConstantHandle(index)))
             .ToDictionary(constant => MetadataTokens.GetToken(constant.Parent));
@@ -195,10 +200,12 @@ public sealed class ManagedAssembly : IDisposable
             var definition = Reader.GetTypeDefinition(typeHandle);
             var typeToken = MetadataTokens.GetToken(typeHandle);
             var typeKey = new EntityKey(Identity, typeToken);
-            var fieldKeys = ImmutableArray.CreateBuilder<EntityKey>();
-            var methodKeys = ImmutableArray.CreateBuilder<EntityKey>();
+            var fieldHandles = definition.GetFields();
+            var methodHandles = definition.GetMethods();
+            var fieldKeys = ImmutableArray.CreateBuilder<EntityKey>(fieldHandles.Count);
+            var methodKeys = ImmutableArray.CreateBuilder<EntityKey>(methodHandles.Count);
 
-            foreach (var fieldHandle in definition.GetFields())
+            foreach (var fieldHandle in fieldHandles)
             {
                 var field = Reader.GetFieldDefinition(fieldHandle);
                 var fieldToken = MetadataTokens.GetToken(fieldHandle);
@@ -225,7 +232,7 @@ public sealed class ManagedAssembly : IDisposable
             }
 
             var typeStackTraceHidden = HasStackTraceHiddenAttribute(definition.GetCustomAttributes());
-            foreach (var methodHandle in definition.GetMethods())
+            foreach (var methodHandle in methodHandles)
             {
                 var method = Reader.GetMethodDefinition(methodHandle);
                 var signature = method.DecodeSignature(
@@ -298,15 +305,15 @@ public sealed class ManagedAssembly : IDisposable
             var layout = definition.GetLayout();
             var genericParameters = definition.GetGenericParameters();
             var isEnum = IsEnumBase(definition.BaseType);
+            // The fields this type declares are the ones just read for it.
+            var typeFields = fieldKeys.MoveToImmutable();
             var enumUnderlyingType = isEnum
-                ? fields.Values.Single(field =>
-                    field.DeclaringType == typeKey && field.Name == "value__").SignatureType
+                ? typeFields.Select(key => fields[key.MetadataToken])
+                    .Single(field => field.Name == "value__").SignatureType
                 : CliTypeIdentity.FromStackKind(stackKinds.Resolve(typeName));
             var enumMembers = isEnum
-                ? fields.Values
-                    .Where(field => field.DeclaringType == typeKey &&
-                                    field.Name != "value__" &&
-                                    field.IsStatic)
+                ? typeFields.Select(key => fields[key.MetadataToken])
+                    .Where(field => field.Name != "value__" && field.IsStatic)
                     .OrderBy(field => field.Key.MetadataToken)
                     .Select(field => new EnumMemberModel(
                         field.Name,
@@ -323,8 +330,8 @@ public sealed class ManagedAssembly : IDisposable
                     typeNamespace,
                     typeName,
                     IsValueTypeDefinition(typeName, isEnum, definition.BaseType),
-                    fieldKeys.ToImmutable(),
-                    methodKeys.ToImmutable())
+                    typeFields,
+                    methodKeys.MoveToImmutable())
                 {
                     LayoutKind = (definition.Attributes & TypeAttributes.LayoutMask) switch
                     {
@@ -391,7 +398,8 @@ public sealed class ManagedAssembly : IDisposable
                 return primitiveSize;
             }
             var fullName = signature.FullName!;
-            return types.Values.Single(candidate => candidate.FullName == fullName).DeclaredSize;
+            typesByName ??= types.Values.ToLookup(candidate => candidate.FullName, StringComparer.Ordinal);
+            return typesByName[fullName].Single().DeclaredSize;
         }
 
         ulong? ReadLiteralValue(

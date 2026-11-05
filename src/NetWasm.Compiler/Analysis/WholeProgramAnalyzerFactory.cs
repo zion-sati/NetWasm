@@ -26,6 +26,7 @@ internal sealed class WholeProgramAnalyzerFactory(
     IAttributeQueryMethodSpecializerFactory attributeQueries,
     IDispatchTargetResolverFactory dispatchTargets,
     ITypeRelationshipClassifierFactory typeRelationships,
+    ITypeRelationshipKeyResolverFactory typeRelationshipKeys,
     IDelegateTypeRecognizerFactory delegateTypes,
     IReachabilityImportClassifierFactory importClassifiers,
     IReachabilityInstructionAnalyzerFactory instructionAnalyzers,
@@ -96,105 +97,61 @@ internal sealed class WholeProgramAnalyzerFactory(
             optimizationSettings.AllocationElimination is not (AllocationEliminationPolicy.Disabled or
             AllocationEliminationPolicy.Unused))
             throw new ArgumentOutOfRangeException(nameof(optimizationSettings));
-        var baseTypes = baseTypeResolvers.Create(
-            typeFinder,
-            typeIdentities,
-            baseTypeIdentities);
-        var relationships = typeRelationships.Create(
-            typeFinder,
-            typeDefinitions,
-            typeIdentities,
-            implementedInterfaces,
-            baseTypes);
-        var delegateTypeRecognizer = delegateTypes.Create(typeDefinitions, baseTypes);
-        var delegateMethodClassifier = delegateMethodClassifiers.Create(
-            delegateTypeRecognizer);
-        var calls = calledMethods.Create(methodRepository, methodInstances, symbols);
-        var types = typeOperands.Create(typeIdentities);
-        var instructionAnalyzer = instructionAnalyzers.Create(
-            typeFinder,
-            typeIdentities,
-            calls,
-            types,
-            dispatchSiteKeys,
-            delegateMethodClassifier);
-        var specializer = specializers.Create(
-            typeDefinitions,
-            methodRepository,
-            methodInstances,
-            symbols,
-            fieldRepository,
-            typeFinder,
-            calls,
-            methodImplementations,
-            relationships,
-            methodBodies,
-            optimizationSettings,
-            intrinsics,
-            world,
-            typeIdentities);
-        specializer = attributeQueries.Create(specializer, metadata, typeRepository, fieldRepository,
-            methodRepository, typeFinder, typeDefinitions, typeIdentities, methodInstances,
-            relationships, baseTypes, calls, types, symbols);
-        var operands = new ConstantOperandReader(calls, fieldRepository, typeRepository, methodRepository);
-        IMethodRewriteRule ConstantCalls() => new ConstantCallRewriter(graphBuilders.Create(), calls,
-            new ConstantCallEvaluator(methodBodies, calls, typeDefinitions, methodRepository, intrinsics, operands,
-                new ConstantComparisonEvaluator(typeDefinitions), specializer),
-            operands);
-        IMethodRewriteRule? constantCallFolding = optimizationSettings.ConstantCallFolding == ConstantCallFoldingPolicy.Conservative
-            ? new ConstantCallFoldingRule(ConstantCalls(), new MethodSpecializer(
-            [
-                new KnownSizeRewriter(calls),
-                ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
-            ]))
-            : null;
-        var optimizer = optimizers.Create(
-            methodBodies,
-            typeRepository,
-            fieldRepository,
-            methodRepository,
-            specializer,
-            calls,
-            intrinsics,
-            // Folding before inlining sees constant arguments before they are spilled to locals.
-            new MethodSpecializer(constantCallFolding is null ? [] : [constantCallFolding]),
-            dispatchTargets.Create(
-                typeFinder,
-                typeDefinitions,
-                methodRepository,
-                methodImplementations,
-                implementedInterfaces,
-                methodInstances,
-                symbols,
-                relationships,
-                baseTypes),
-            new FinalizerResolver(typeDefinitions, methodRepository, baseTypes),
-            typeDefinitions,
-            new Loops.ArrayLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
-            new Loops.SpanLengthResolver(typeFinder, methodRepository, methodInstances, symbols),
-            new Loops.VectorLoopMethodResolver(typeFinder, methodRepository, methodInstances, symbols),
-            optimizationSettings);
+        var parts = MethodAnalysisParts.Build(
+            new(calledMethods, typeOperands, specializers, optimizers, attributeQueries, dispatchTargets,
+                typeRelationships, typeRelationshipKeys, delegateTypes, instructionAnalyzers, methodAnalyzers,
+                exceptionDiscoveries, baseTypeResolvers, delegateMethodClassifiers, dispatchSiteKeys, graphBuilders),
+            metadata, typeRepository, fieldRepository, methodRepository, typeFinder, typeDefinitions, typeIdentities,
+            baseTypeIdentities, implementedInterfaces, methodBodies, methodInstances, methodImplementations, symbols,
+            intrinsics, optimizationSettings, world);
+        var baseTypes = parts.BaseTypes;
+        var relationships = parts.Relationships;
+        var relationshipKeys = parts.RelationshipKeys;
+        var delegateTypeRecognizer = parts.DelegateTypeRecognizer;
+        var calls = parts.Calls;
+        var types = parts.Types;
+        IMethodRewriteRule ConstantCalls() => parts.ConstantCalls();
+        var constantCallFolding = parts.ConstantCallFolding;
+        var reducers = ImmutableArray.CreateBuilder<IReachableProgramReducer>();
+        if (optimizationSettings.ConstantArgumentPropagation == ConstantArgumentPropagationPolicy.Conservative)
+        {
+            reducers.Add(new ConstantArgumentProgramReducer(
+                new CallArgumentConstantCollector(calls),
+                new MethodSpecializer(
+                [
+                    ConstantCalls(),
+                    new KnownSizeRewriter(calls),
+                    ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
+                ])));
+        }
+        if (constantCallFolding is not null)
+        {
+            reducers.Add(new ConstantCallProgramReducer(constantCallFolding));
+        }
+        if (optimizationSettings.StaticArrayPopulationElimination == StaticArrayPopulationEliminationPolicy.Conservative)
+        {
+            reducers.Add(new StaticArrayPopulationReducer(
+                    new StaticFieldObservationCollector(),
+                    new StaticArrayPopulationPlanner(fieldRepository, calls, types,
+                        new ValueConstructorPurityClassifier(methodBodies, fieldRepository, typeDefinitions, methodRepository, intrinsics),
+                        new ClosedTypeIdentityComparer(typeDefinitions), typeDefinitions)));
+        }
         var concurrency = SelectConcurrency(
             OperatingSystem.IsBrowser(), Environment.ProcessorCount);
         var methodAnalyzerWorkers =
             System.Collections.Immutable.ImmutableArray
-                .CreateBuilder<IReachableMethodAnalyzer>(concurrency.WorkerCount);
-        for (var workerIndex = 0; workerIndex < concurrency.WorkerCount; workerIndex++)
-        {
-            methodAnalyzerWorkers.Add(methodAnalyzers.Create(
-            methodBodies,
-            typeRepository,
-            fieldRepository,
-            methodRepository,
-            specializer,
-            optimizer,
-            calls,
-            optimizationSettings.IntegerCheckElimination,
-            exceptionDiscoveries.Create(methodRepository, symbols, intrinsics),
-            instructionAnalyzer));
-        }
-        var methodAnalyzerBatch = methodAnalyzerWorkers.MoveToImmutable();
-        var methodBatchAnalyzer = CreateMethodBatchAnalyzer(
+                .CreateBuilder<IReachableMethodAnalyzer>(concurrency.WorkerCount + 1);
+        // One analyzer per worker, and one for the closure's own thread. A reducing closure
+        // builds the program again after each reduction, so the analyzers share a memo and
+        // analyze again only the bodies a reduction rewrote.
+        var analyzerCount = concurrency.Synchronous ? 1 : concurrency.WorkerCount + 1;
+        var memo = reducers.Count == 0 ? null : new ReachableMethodAnalysisMemo();
+        for (var workerIndex = 0; workerIndex < analyzerCount; workerIndex++)
+            methodAnalyzerWorkers.Add(memo is null
+                ? parts.CreateAnalyzer()
+                : new MemoizingReachableMethodAnalyzer(parts.CreateAnalyzer(), memo));
+        var methodAnalyzerBatch = methodAnalyzerWorkers.ToImmutable();
+        var methodBatchAnalyzer = CreateMethodAnalysisSessions(
             concurrency.Synchronous, methodAnalyzerBatch,
             reachableMethodBatchObserver);
         var asyncBindingResolver = new DelegateJavaScriptAsyncBindingResolver(
@@ -239,13 +196,13 @@ internal sealed class WholeProgramAnalyzerFactory(
             delegateTypeRecognizer,
             importClassifier,
             methodBatchAnalyzer,
-            typeTestPlanners.Create(types, relationships),
+            typeTestPlanners.Create(types, relationships, relationshipKeys),
             programBuilder,
             ledgers,
             managedCallSites,
             new RuntimeIntrinsicTypeRootPlanner(intrinsics, nullableTypes, typeDefinitions),
             reachabilityClosureObserver,
-            new DispatchCandidateIndexFactory(relationships),
+            new DispatchCandidateIndexFactory(relationships, relationshipKeys),
             new ModuleInitializerResolver(
                 metadata.Types,
                 metadata.Methods),
@@ -278,30 +235,6 @@ internal sealed class WholeProgramAnalyzerFactory(
             new MethodInitializationTriggerClassifier(typeRepository),
             new IntrinsicAddressBodyPlanner(intrinsics),
             new RuntimeTypeFactsClosurePlanner(baseTypes, typeDefinitions));
-        var reducers = ImmutableArray.CreateBuilder<IReachableProgramReducer>();
-        if (optimizationSettings.ConstantArgumentPropagation == ConstantArgumentPropagationPolicy.Conservative)
-        {
-            reducers.Add(new ConstantArgumentProgramReducer(
-                new CallArgumentConstantCollector(calls),
-                new MethodSpecializer(
-                [
-                    ConstantCalls(),
-                    new KnownSizeRewriter(calls),
-                    ConstantBranchFoldingFactory.Create(graphBuilders.Create()),
-                ])));
-        }
-        if (constantCallFolding is not null)
-        {
-            reducers.Add(new ConstantCallProgramReducer(constantCallFolding));
-        }
-        if (optimizationSettings.StaticArrayPopulationElimination == StaticArrayPopulationEliminationPolicy.Conservative)
-        {
-            reducers.Add(new StaticArrayPopulationReducer(
-                    new StaticFieldObservationCollector(),
-                    new StaticArrayPopulationPlanner(fieldRepository, calls, types,
-                        new ValueConstructorPurityClassifier(methodBodies, fieldRepository, typeDefinitions, methodRepository, intrinsics),
-                        new ClosedTypeIdentityComparer(typeDefinitions), typeDefinitions)));
-        }
         return new WholeProgramAnalyzer(reducers.Count == 0
             ? closure
             : new ReducingReachabilityClosureBuilder(closure,
@@ -313,12 +246,13 @@ internal sealed class WholeProgramAnalyzerFactory(
         ? new(1, true)
         : new(processorCount, false);
 
-    internal static IReachableMethodBatchAnalyzer CreateMethodBatchAnalyzer(
+    // The last analyzer is the closure's own; the rest are the pool's workers.
+    internal static IReachableMethodAnalysisSessionFactory CreateMethodAnalysisSessions(
         bool synchronous,
-        ImmutableArray<IReachableMethodAnalyzer> workers,
-        IReachableMethodBatchObserver observer) => synchronous
-        ? new SynchronousReachableMethodBatchAnalyzer(workers[0], observer)
-        : new ReachableMethodBatchAnalyzer(workers, observer);
+        ImmutableArray<IReachableMethodAnalyzer> analyzers,
+        IReachableMethodBatchObserver observer) => synchronous || analyzers.Length == 1
+        ? new SynchronousReachableMethodAnalysisSessionFactory(analyzers[0], observer)
+        : new PooledReachableMethodAnalysisSessionFactory(analyzers[..^1], analyzers[^1], observer);
 
     private static Dictionary<AssemblyIdentity, IReadOnlyList<AssemblyIdentity>>
         BuildModuleDependencies(MetadataCompilationSnapshot metadata)

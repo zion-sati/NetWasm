@@ -7,6 +7,7 @@ internal sealed class TypeTestPlannerFactory(
 {
     public ITypeTestPlanner Create(
         ITypeOperandResolver typeOperands,
-        ITypeRelationshipClassifier relationships) =>
-        new TypeTestPlanner(typeOperands, relationships, nullableTypes);
+        ITypeRelationshipClassifier relationships,
+        ITypeRelationshipKeyResolver relationshipKeys) =>
+        new TypeTestPlanner(typeOperands, relationships, relationshipKeys, nullableTypes);
 }

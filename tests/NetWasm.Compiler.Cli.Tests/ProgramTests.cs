@@ -112,7 +112,7 @@ public sealed class ProgramTests
     [Theory]
     [InlineData("wasm32")]
     [InlineData("wasm64")]
-    public void CompilesALibraryRepeatablyThroughTheFrontendCache(string platform)
+    public void CompilesALibraryRepeatablyWithAnIntermediateDirectory(string platform)
     {
         using var assets = TestAssets.Create();
         var library = assets.CompileSource("WorkerLibrary", """

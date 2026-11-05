@@ -16,6 +16,8 @@ using NetWasm.Compiler.Wasm.Emission.Results;
 using NetWasm.Compiler.Wasm.Emission.Support;
 using NetWasm.Compiler.Wasm.ModuleEncoding;
 
+using NetWasm.Compiler.Wasm.Units;
+
 namespace NetWasm.Compiler.Wasm.Emission;
 
 internal static class WasmModuleServiceCollectionExtensions
@@ -84,6 +86,7 @@ internal static class WasmModuleServiceCollectionExtensions
             .AddWasmGeneratedFunctionEmission();
 
         services.AddSingleton<IWasmModuleBuilder>(WasmModuleBuilderFactory.Create());
+        services.AddCompiledUnits();
         services.AddSingleton<IWasmModuleEmitter, WasmModuleEmitter>();
         return services;
     }

@@ -169,6 +169,8 @@ internal sealed record RuntimeMaterializationRequest(
     public string? GarbageCollector { get; init; }
     public ImmutableArray<RuntimeNativeLibraryDescriptor> NativeLibraries { get; init; } = [];
     public string? NativeCallbackObjectPath { get; init; }
+    // A native wasm-tools of the same release, which validates in place of the WASI one.
+    public string? NativeWasmToolsPath { get; init; }
 }
 
 internal sealed record RuntimeMaterializationCacheKeyRequest(

@@ -97,10 +97,6 @@ if [[ "$mode" == fast ]]; then
     --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 \
     tests/end-to-end/generated-assembly/cases.test.mjs
   run_gate node --test --experimental-test-coverage \
-    --test-coverage-include=tests/end-to-end/cache-semantics/cache-contract.mjs \
-    --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 \
-    tests/end-to-end/cache-semantics/cache-contract.test.mjs
-  run_gate node --test --experimental-test-coverage \
     --test-coverage-include=tests/NetWasm.Compiler.Tests/Correctness/corpus-trace-reader.mjs \
     --test-coverage-include=tests/NetWasm.Compiler.Tests/Correctness/linked-corpus-observer.mjs \
     --test-coverage-include=tests/NetWasm.Compiler.Tests/Correctness/linked-corpus-program.mjs \
@@ -159,7 +155,6 @@ else
   run_gate dotnet test tests/NetWasm.Compiler.Tests/NetWasm.Compiler.Tests.csproj -c Release \
     --environment NETWASM_CORPUS_PROFILE=Extended \
     --filter "$filter" --logger "trx;LogFileName=$mode.trx" --results-directory "$artifact_dir"
-  run_gate node tests/end-to-end/cache-semantics/run.mjs "$artifact_dir/cache-semantics"
   run_gate node tests/end-to-end/generated-assembly/run.mjs "$artifact_dir/generated-assembly" \
     "${NETWASM_GENERATOR_PACKAGE_ROOT:-}" "${NETWASM_LIBRARIES_SOURCE_ROOT:-}"
   # Coverlet's MSBuild report requires a successful VSTest invocation. The full

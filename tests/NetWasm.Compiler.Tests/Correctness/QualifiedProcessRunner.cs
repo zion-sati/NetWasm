@@ -48,20 +48,15 @@ internal sealed class QualifiedProcessRunner : IQualifiedProcessRunner
                     $"failed to start process '{request.FileName}'");
             }
 
-            var standardOutput = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
-            var standardError = ReadStandardErrorAsync(
-                process.StandardError,
-                request.Progress);
-            using var timeout = new CancellationTokenSource(request.Timeout);
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                timeout.Token,
-                cancellationToken);
-            try
-            {
-                process.WaitForExitAsync(cancellation.Token).GetAwaiter().GetResult();
-            }
-            catch (OperationCanceledException)
-                when (cancellation.IsCancellationRequested)
+            // Nothing here waits on the thread pool: the test host runs many processes at once and
+            // blocks pool threads on them, so a read, exit or timeout that needed a pool thread to
+            // complete could miss its bound for a process that had exited. Each pipe is read on a
+            // thread of its own, and the exit is awaited on this one.
+            var output = process.StandardOutput;
+            var error = process.StandardError;
+            var standardOutput = ReadOnOwnThread(output.ReadToEnd);
+            var standardError = ReadOnOwnThread(() => ReadStandardError(error, request.Progress));
+            if (!WaitForExit(process, request.Timeout, cancellationToken))
             {
                 var cleanup = Terminate(process);
                 var streams = ReadStreams(standardOutput, standardError);
@@ -129,13 +124,30 @@ internal sealed class QualifiedProcessRunner : IQualifiedProcessRunner
         }
     }
 
-    private static async Task<string> ReadStandardErrorAsync(
+    private static readonly TimeSpan ExitPollInterval = TimeSpan.FromMilliseconds(50);
+
+    // Whether the process exited before the timeout or the cancellation.
+    private static bool WaitForExit(Process process, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var waited = Stopwatch.StartNew();
+        while (!process.WaitForExit(ExitPollInterval))
+        {
+            if (cancellationToken.IsCancellationRequested || waited.Elapsed >= timeout)
+                return false;
+        }
+        return true;
+    }
+
+    private static Task<string> ReadOnOwnThread(Func<string> read) => Task.Factory.StartNew(
+        read, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+    private static string ReadStandardError(
         StreamReader reader,
         Action<int, int>? progress)
     {
         const string prefix = "NETWASM_PROGRESS ";
         var lines = new List<string>();
-        while (await reader.ReadLineAsync(CancellationToken.None) is { } line)
+        while (reader.ReadLine() is { } line)
         {
             if (line.StartsWith(prefix, StringComparison.Ordinal) &&
                 TryParseProgress(line.AsSpan(prefix.Length), out var completed, out var total))
@@ -218,8 +230,7 @@ internal sealed class QualifiedProcessRunner : IQualifiedProcessRunner
         Task<string> standardOutput,
         Task<string> standardError)
     {
-        var streams = Task.WhenAll(standardOutput, standardError);
-        if (!streams.Wait(ForcedTerminationTimeout))
+        if (!Task.WaitAll([standardOutput, standardError], ForcedTerminationTimeout))
         {
             return new(
                 standardOutput.IsCompletedSuccessfully ? standardOutput.Result : string.Empty,

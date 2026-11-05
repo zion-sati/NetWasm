@@ -50,7 +50,7 @@ internal sealed class CallIndirectEmitter(
                 CliValueKind.NativeInt)))));
             EmitAddressConstant(
                 code,
-                functionIndices.Resolve(target));
+                functionIndices.Resolve(new FunctionAddress(target)));
             if (layouts.Target.UsesMemory64) code.Write(WasmInstruction.NoOperand(WasmOpcodes.I64Equal));
             else code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Equal));
             code.Write(WasmInstruction.WithOperand(WasmOpcodes.If, WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));

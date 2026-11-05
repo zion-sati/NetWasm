@@ -148,7 +148,10 @@ internal sealed class RuntimeNativeModuleMaterializer(
                 artifactWriter.Write(warmOutput, cached.Bytes!);
                 validation.Validate(new(profile, consumer.Target, warmOutput, consumer.WasmToolsNodePath,
                     consumer.WasmToolsCommandPath, consumer.WasmToolsModulePath,
-                    Path.Combine(warmWorkspace.LogDirectoryPath, "native-cache-validate.log")));
+                    Path.Combine(warmWorkspace.LogDirectoryPath, "native-cache-validate.log"))
+                {
+                    NativeWasmToolsPath = consumer.NativeWasmToolsPath,
+                });
                 publisher.PublishIfDifferent(consumer.OutputPath, cached.Bytes!, cached.Sha256!);
                 return Result(request, cached.NativeEvidence!.Layout, cached.Sha256!, key, cached.Outcome,
                     false, cached.Bytes!.LongLength, lookupMilliseconds, started, internalExports);
@@ -234,7 +237,10 @@ internal sealed class RuntimeNativeModuleMaterializer(
         artifactWriter.Write(output, annotated);
         validation.Validate(new(profile, consumer.Target, output, consumer.WasmToolsNodePath,
             consumer.WasmToolsCommandPath, consumer.WasmToolsModulePath,
-            Path.Combine(workspace.LogDirectoryPath, "native-validate.log")));
+            Path.Combine(workspace.LogDirectoryPath, "native-validate.log"))
+        {
+            NativeWasmToolsPath = consumer.NativeWasmToolsPath,
+        });
         var bytes = artifacts.Read(output);
         var optimized = modules.Read(bytes);
         imports.Validate(profile, optimized, callbackSupport, importModules);

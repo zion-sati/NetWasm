@@ -29,17 +29,25 @@ internal sealed class CompilerDiagnosticCompilationDecorator(
     public CompilationResult Compile(CompilerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        return Logged(_logger, _logPaths, options, () => _compiler.Compile(options));
+    }
 
-        using var scope = _logger.BeginScope(new CompilerDiagnosticScope(
-            _logPaths.Resolve(options)));
-        LogStarted(_logger, options.Target, null);
+    // A compile within the diagnostic log's scope, its start and any failure logged.
+    internal static T Logged<T>(ILogger<CompilerDiagnosticCompilationDecorator> logger,
+        ICompilerDiagnosticLogPathResolver logPaths, CompilerOptions options, Func<T> compile)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(logPaths);
+        ArgumentNullException.ThrowIfNull(compile);
+        using var scope = logger.BeginScope(new CompilerDiagnosticScope(logPaths.Resolve(options)));
+        LogStarted(logger, options.Target, null);
         try
         {
-            return _compiler.Compile(options);
+            return compile();
         }
         catch (Exception exception)
         {
-            LogCompilationFailure(_logger, exception);
+            LogCompilationFailure(logger, exception);
             throw;
         }
     }

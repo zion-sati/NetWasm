@@ -1,0 +1,7 @@
+# Cases that never use what they compute: Mono AOT's LLVM removes their work and times
+# an empty loop. They carry a dagger and stay out of the NetWasm / Mono AOT means.
+Benchstone.BenchF.NewtE.Test()
+Benchstone.BenchF.Simpsn.Test()
+Benchstone.BenchF.Trap.Test()
+PerfLabTests.LowLevelPerf.NewDelegateClassEmptyInstanceFn()
+PerfLabTests.LowLevelPerf.NewDelegateClassEmptyStaticFn()

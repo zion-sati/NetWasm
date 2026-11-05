@@ -138,7 +138,7 @@ public sealed class PortableExceptionApiCompilationTests
                 }
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             optimized);
 
@@ -287,7 +287,7 @@ public sealed class PortableExceptionApiCompilationTests
                 }
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             optimized);
 
@@ -555,7 +555,7 @@ public sealed class PortableExceptionApiCompilationTests
                 private const int COR_E_VERIFICATION = unchecked((int)0x8013150D);
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             optimized);
 
@@ -678,7 +678,7 @@ public sealed class PortableExceptionApiCompilationTests
                 }
             }
             """,
-            "10.0.403",
+            TestAssets.RepositorySdkVersion,
             "latest",
             optimized);
 

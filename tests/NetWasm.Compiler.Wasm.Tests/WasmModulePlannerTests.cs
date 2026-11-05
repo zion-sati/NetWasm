@@ -18,7 +18,7 @@ public sealed class WasmModulePlannerTests
     public void FinalizationPlanSelectsItsRuntimeImportsAndFlowsToEmission()
     {
         var program = new FakeProgram();
-        var finalization = new FinalizationPlan([9], false);
+        var finalization = new FinalizationPlan(ImmutableHashSet.Create(9), false);
         var finalizationPlans = new FixedFinalizationPlanBuilder(finalization);
         var planner = new WasmModulePlanner(
             program,

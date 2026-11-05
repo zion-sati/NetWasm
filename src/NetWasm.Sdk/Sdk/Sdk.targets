@@ -81,13 +81,23 @@
     <Using Remove="System.Linq;System.Net.Http" />
   </ItemGroup>
 
+  <!-- A NoBuild publish compiles nothing, so it leaves the global usings file the build generated, which a
+       file without the optional namespaces would replace and make the next build compile again. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NoBuild)' == 'true'">
+    <Using Remove="@(Using)" />
+  </ItemGroup>
+  <!-- The optional namespaces follow the compile references that packages, transitive ones included, and
+       project references give, read before ResolveAssemblyReferences: a build that starts at Compile (an
+       IDE's or dotnet watch's design-time build) reaches PrepareForBuild, and so GenerateGlobalUsings, only
+       inside ResolveAssemblyReferences, where depending on ResolveReferences would be circular. -->
   <Target Name="NetWasmSdkResolveOptionalImplicitUsings"
           BeforeTargets="GenerateGlobalUsings"
-          DependsOnTargets="ResolveReferences"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND ('$(ImplicitUsings)' == 'enable' OR '$(ImplicitUsings)' == 'true')">
+          DependsOnTargets="ResolveProjectReferences;ResolveLockFileReferences"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(NoBuild)' != 'true' AND ('$(ImplicitUsings)' == 'enable' OR '$(ImplicitUsings)' == 'true')">
     <ItemGroup>
-      <_NetWasmLinqCompileReference Include="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'System.Linq'" />
-      <_NetWasmHttpCompileReference Include="@(ReferencePath)" Condition="'%(ReferencePath.Filename)' == 'System.Net.Http'" />
+      <_NetWasmCompileReference Include="@(Reference);@(_ResolvedProjectReferencePaths)" />
+      <_NetWasmLinqCompileReference Include="@(_NetWasmCompileReference)" Condition="'%(_NetWasmCompileReference.Filename)' == 'System.Linq'" />
+      <_NetWasmHttpCompileReference Include="@(_NetWasmCompileReference)" Condition="'%(_NetWasmCompileReference.Filename)' == 'System.Net.Http'" />
       <Using Include="@(_NetWasmOptionalImplicitUsing)"
              Condition="('%(_NetWasmOptionalImplicitUsing.Identity)' == 'System.Linq' AND '@(_NetWasmLinqCompileReference)' != '') OR ('%(_NetWasmOptionalImplicitUsing.Identity)' == 'System.Net.Http' AND '@(_NetWasmHttpCompileReference)' != '')" />
     </ItemGroup>

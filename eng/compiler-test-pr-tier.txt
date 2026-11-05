@@ -15,10 +15,6 @@ NetWasm.Compiler.Tests.BaseTypeResolverTests
 NetWasm.Compiler.Tests.BoxedValueCallCompilationTests
 NetWasm.Compiler.Tests.BufferAndMemoryCompatibilityCompilationTests
 NetWasm.Compiler.Tests.CSharp15CompilationTests
-NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactCacheActorTests
-NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactCodecTests
-NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactEligibilityClassifierTests
-NetWasm.Compiler.Tests.Caching.Frontend.FrontendArtifactSnapshotTests
 NetWasm.Compiler.Tests.CaseInsensitiveCollectionPayForPlayCompilationTests
 NetWasm.Compiler.Tests.CoincidingOverloadCompilationTests
 NetWasm.Compiler.Tests.CommandWorldAwaitCompilationTests
@@ -324,6 +320,7 @@ NetWasm.Compiler.Tests.TupleDeconstructionCompilationTests
 NetWasm.Compiler.Tests.TypeIdPreorderTests
 NetWasm.Compiler.Tests.TypeRelationshipClassifierActorTests
 NetWasm.Compiler.Tests.TypeTestPlannerTests
+NetWasm.Compiler.Tests.Units.WasmIndexOperandModuleTests
 NetWasm.Compiler.Tests.UnsafeMemoryMarshalP11CompatibilityTests
 NetWasm.Compiler.Tests.UnsupportedBoundaryCompilationTests
 NetWasm.Compiler.Tests.Utf8DecimalParsingCompilationTests

@@ -11,10 +11,12 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
     public void Validate(CilMethodBody body, int methodEnd)
     {
         ArgumentNullException.ThrowIfNull(body);
-        var boundaries = body.Instructions
-            .Select(instruction => instruction.Offset)
-            .Append(methodEnd)
-            .ToImmutableHashSet();
+        if (body.ExceptionRegions.IsEmpty)
+        {
+            ValidateWithoutRegions(body);
+            return;
+        }
+        var boundaries = new InstructionBoundaries(body, methodEnd);
         var filterRanges = new List<(int Start, int End)>();
         foreach (var region in body.ExceptionRegions)
         {
@@ -134,6 +136,26 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
         }
     }
 
+    // Without regions there are no zones or filters: the instructions that need one are
+    // invalid, leave has no region to exit, and every other branch stays where it starts.
+    private static void ValidateWithoutRegions(CilMethodBody body)
+    {
+        foreach (var instruction in body.Instructions)
+        {
+            var message = instruction.Operation switch
+            {
+                CilOperation.EndFilter => "endfilter appears outside an exception filter",
+                CilOperation.EndFinally => "endfinally appears outside a finally or fault handler",
+                CilOperation.Rethrow => "rethrow appears outside a catch handler",
+                CilOperation.Leave when instruction.Operand is CilOperand.BranchTarget =>
+                    "leave target does not exit to an enclosing exception region",
+                _ => null,
+            };
+            if (message is not null)
+                throw Invalid(body, instruction.Offset, message);
+        }
+    }
+
     private static void ValidateTransfers(
         CilMethodBody body,
         List<(int Start, int End)> filterRanges,
@@ -141,10 +163,15 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
     {
         foreach (var instruction in body.Instructions)
         {
+            // Only these instructions and branches depend on the zones around them.
+            if (instruction.Operation is not (CilOperation.EndFilter or CilOperation.EndFinally or
+                    CilOperation.Rethrow or CilOperation.Return) &&
+                instruction.Operand is not CilOperand.BranchTarget)
+            {
+                continue;
+            }
             var sourceZones = ZonesAt(zones, instruction.Offset);
-            var inFilter = filterRanges.Any(range =>
-                instruction.Offset >= range.Start && instruction.Offset < range.End);
-            if (instruction.Operation == CilOperation.EndFilter && !inFilter)
+            if (instruction.Operation == CilOperation.EndFilter && !InFilter(filterRanges, instruction.Offset))
             {
                 throw Invalid(
                     body,
@@ -270,10 +297,32 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
         return zones.ToImmutable();
     }
 
+    private static bool InFilter(List<(int Start, int End)> filterRanges, int offset)
+    {
+        foreach (var (start, end) in filterRanges)
+        {
+            if (offset >= start && offset < end) return true;
+        }
+        return false;
+    }
+
     private static ImmutableArray<ExceptionZone> ZonesAt(
         ImmutableArray<ExceptionZone> zones,
-        int offset) =>
-        [.. zones.Where(zone => offset >= zone.Start && offset < zone.End)];
+        int offset)
+    {
+        var count = 0;
+        foreach (var zone in zones)
+        {
+            if (offset >= zone.Start && offset < zone.End) count++;
+        }
+        if (count == 0) return [];
+        var builder = ImmutableArray.CreateBuilder<ExceptionZone>(count);
+        foreach (var zone in zones)
+        {
+            if (offset >= zone.Start && offset < zone.End) builder.Add(zone);
+        }
+        return builder.MoveToImmutable();
+    }
 
     private static bool SameZones(
         ImmutableArray<ExceptionZone> left,
@@ -327,6 +376,24 @@ internal sealed class CilExceptionRegionValidator : ICilExceptionRegionValidator
             message,
             body.Method.Name,
             offset));
+
+    // Which offsets begin an instruction, plus the method's end: a bitmap over the body.
+    private readonly struct InstructionBoundaries
+    {
+        private readonly bool[] _starts;
+
+        public InstructionBoundaries(CilMethodBody body, int methodEnd)
+        {
+            _starts = new bool[Math.Max(methodEnd, 0) + 1];
+            foreach (var instruction in body.Instructions)
+            {
+                if ((uint)instruction.Offset < (uint)_starts.Length) _starts[instruction.Offset] = true;
+            }
+            if (methodEnd >= 0) _starts[methodEnd] = true;
+        }
+
+        public bool Contains(int offset) => (uint)offset < (uint)_starts.Length && _starts[offset];
+    }
 
     private enum ExceptionZoneKind
     {

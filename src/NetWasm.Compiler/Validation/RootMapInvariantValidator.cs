@@ -21,7 +21,8 @@ internal sealed class RootMapInvariantValidator(
         IFieldRepository fields,
         IMethodRepository methods,
         ReachableProgram program,
-        ITypeClassifier typeClassifier)
+        ITypeClassifier typeClassifier,
+        IReadOnlySet<string>? restored = null)
     {
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(fields);
@@ -39,28 +40,28 @@ internal sealed class RootMapInvariantValidator(
             throw exceptions.Create(
                 "constructed root-map keys do not match reachable methods");
         }
+        // Each method is checked on its own; the first failing method in order is reported.
+        // Root maps taken from compiled units were checked when they were analysed.
+        var checks = new List<(ManagedMethodBody Method, MethodRootMap Roots)>(
+            program.Methods.Count + program.ConstructedMethods.Count);
         foreach (var pair in program.Methods)
         {
-            ValidateMethod(
-                types,
-                fields,
-                methods,
-                program,
-                pair.Value,
-                program.RootMaps[pair.Key],
-                typeClassifier);
+            if (restored?.Contains(pair.Value.Method.CanonicalName) != true)
+                checks.Add((pair.Value, program.RootMaps[pair.Key]));
         }
         foreach (var pair in program.ConstructedMethods)
         {
-            ValidateMethod(
-                types,
-                fields,
-                methods,
-                program,
-                pair.Value,
-                program.ConstructedRootMaps[pair.Key],
-                typeClassifier);
+            if (restored?.Contains(pair.Key) != true)
+                checks.Add((pair.Value, program.ConstructedRootMaps[pair.Key]));
         }
+        OrderedParallel.For(checks.Count, index => ValidateMethod(
+            types,
+            fields,
+            methods,
+            program,
+            checks[index].Method,
+            checks[index].Roots,
+            typeClassifier));
     }
 
     private void ValidateMethod(

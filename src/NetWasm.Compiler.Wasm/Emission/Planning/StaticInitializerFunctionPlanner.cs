@@ -15,7 +15,7 @@ internal sealed class StaticInitializerFunctionPlanner(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(functions);
         ArgumentNullException.ThrowIfNull(data);
-        if (data.StaticInitializerGuards.IsEmpty)
+        if (data.StaticInitializerGuards.Count == 0)
             return data;
 
         var exception = descriptors.TypeDescriptors.Single(descriptor =>
@@ -23,7 +23,7 @@ internal sealed class StaticInitializerFunctionPlanner(
         var metadata = new byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(metadata, exception.TypeId);
         var metadataAddress = checked((data.StaticDataEnd + 3) & ~3);
-        var guards = data.StaticInitializerGuards.ToBuilder();
+        var guards = ImmutableDictionary.CreateRange(StringComparer.Ordinal, data.StaticInitializerGuards).ToBuilder();
         var initializers = ImmutableArray.CreateBuilder<StaticInitializerFunction>();
         var next = functions.StaticInitializerFunctionBase;
         foreach (var (key, guard) in data.StaticInitializerGuards.OrderBy(pair => pair.Value.Address))

@@ -10,5 +10,6 @@ internal interface ICompilationEmissionBuilder
         CompilationPreparation preparation,
         CompilationAnalysis analysis,
         CompilationLayouts layouts,
-        CompilerOptions options);
+        CompilerOptions options,
+        NetWasm.Compiler.Wasm.Units.CompiledUnitState? units = null);
 }

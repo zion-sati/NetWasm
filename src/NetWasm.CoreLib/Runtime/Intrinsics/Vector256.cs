@@ -51,7 +51,7 @@ namespace System.Runtime.Intrinsics
         public static bool IsHardwareAccelerated
         {
             // NetWasm: the JIT replaces this getter upstream; NetWasm accelerates only
-            // 128-bit vectors, so code takes its Vector128 paths (SIMD128_PLAN.md).
+            // 128-bit vectors, so code takes its Vector128 paths.
             [Intrinsic]
             get => false;
         }

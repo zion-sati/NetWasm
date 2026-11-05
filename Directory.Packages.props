@@ -1,0 +1,36 @@
+<Project>
+  <!--
+    Every NuGet package version the repository's own projects use, in one place
+    (Central Package Management): a project's PackageReference names the package and
+    takes its version from here. A project that must stay on another version says so
+    with VersionOverride. Test fixtures and spikes that pin their own versions opt out
+    with a Directory.Packages.props of their own.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup Label="Compiler and tools">
+    <PackageVersion Include="Microsoft.Build" Version="18.0.2" />
+    <PackageVersion Include="Microsoft.Build.Framework" Version="18.0.2" />
+    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="18.0.2" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="NuGet.Frameworks" Version="7.0.0" />
+    <PackageVersion Include="NuGet.Packaging" Version="7.0.0" />
+    <PackageVersion Include="NuGet.Versioning" Version="7.0.0" />
+    <PackageVersion Include="System.IO.Hashing" Version="10.0.0" />
+  </ItemGroup>
+  <ItemGroup Label="Test platform">
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="coverlet.msbuild" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageVersion Include="Microsoft.TestPlatform.ObjectModel" Version="18.0.1" />
+    <PackageVersion Include="Microsoft.TestPlatform.Portable" Version="18.0.1" />
+    <PackageVersion Include="Microsoft.TestPlatform.TestHost" Version="18.0.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+  </ItemGroup>
+</Project>

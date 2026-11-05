@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 
@@ -22,7 +23,7 @@ public sealed class MetadataTypeIdentityResolverTests
             Type(6, "System", "IntPtr", true),
             Type(7, "System", "UIntPtr", true),
         ];
-        var repository = new MetadataTypeRepository(definitions.ToImmutableDictionary(
+        var repository = new MetadataTypeRepository(definitions.ToFrozenDictionary(
             type => type.Key), MetadataActorTestData.CreateAvailabilityValidator());
         var resolver = new MetadataTypeIdentityResolver(repository);
         Assert.Equal(CliValueKind.ManagedReference, Identity(resolver, definitions[0]).StackKind);

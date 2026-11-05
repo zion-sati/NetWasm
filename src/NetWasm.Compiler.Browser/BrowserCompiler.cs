@@ -64,10 +64,10 @@ public static class BrowserCompiler
                 };
             }
 
-            var result = services.GetRequiredService<INetWasmCompiler>().Compile(options);
+            var result = services.GetRequiredService<INetWasmModuleCompiler>().Compile(options);
             // Only managed executables prepare an image; their entry is mandatory.
             var actualEntry = image is null ? null : entries.SelectEntryPoint(
-                options.EntryAssemblyPath, image, result.Program.EntryPoint!.Key.MetadataToken);
+                options.EntryAssemblyPath, image, result.EntryPointToken!.Value);
             if (actualEntry is not null)
             {
                 options = options with

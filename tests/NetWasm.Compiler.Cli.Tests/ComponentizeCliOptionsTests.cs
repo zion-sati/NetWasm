@@ -15,7 +15,7 @@ public sealed class ComponentizeCliOptionsTests
         var options = Parse([
             .. Required, "-runtimemodule:runtime.wasm", "-world:example:test/main", "-platform:wasm64",
             "-interopmanifest:interop.json", "-jcoversion:1.2.3", "-preview2shimversion:4.5.6", "-optimize:none",
-            "-managedinlininghints:Preserve",
+            "-managedinlininghints:Preserve", "-converge+",
         ]);
 
         Assert.Equal("application.wasm", options.CoreModule);
@@ -28,6 +28,8 @@ public sealed class ComponentizeCliOptionsTests
         Assert.Equal("interop.json", options.InteropManifest);
         Assert.Equal("1.2.3", options.JcoVersion);
         Assert.Equal("4.5.6", options.Preview2ShimVersion);
+        Assert.True(options.Converge);
+        Assert.False(Parse([.. Required]).Converge);
         Assert.Equal(FinalWasmOptimization.None, options.Optimization);
         Assert.Equal("Preserve", options.ManagedInliningHints);
     }

@@ -14,7 +14,7 @@ questions and agreements: <zion.sati@netwasm.com>. Project repository:
 
 | Area | License |
 | --- | --- |
-| Compiler projects, CLI, SDK/pack, build scripts, debugger, IDE/browser tooling, developer tools, and tests/test infrastructure | NetWasm Community License 1.0 |
+| Compiler projects, CLI, SDK/pack, build scripts, debugger, IDE/browser tooling, developer tools, benchmark and qualification harnesses, and tests/test infrastructure | NetWasm Community License 1.0 |
 | `NetWasm.CoreLib`, runtime libraries, templates, and generated support code | MIT |
 | NetWasmGC and CompactGC collector implementations | Apache-2.0 |
 | Vendored WASI description files | Upstream WASI license |

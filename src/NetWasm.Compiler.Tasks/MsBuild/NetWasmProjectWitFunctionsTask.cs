@@ -32,6 +32,8 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
     [Required] public string WasmToolsNodePath { get; set; } = string.Empty;
     [Required] public string WasmToolsCommandPath { get; set; } = string.Empty;
     [Required] public string WasmToolsModulePath { get; set; } = string.Empty;
+    // The host tools' native wasm-tools of the same release, run in place of the WASI one.
+    public string NativeWasmToolsPath { get; set; } = string.Empty;
     [Required] public string WitPath { get; set; } = string.Empty;
     public string World { get; set; } = string.Empty;
     public string ApplicationWitPath { get; set; } = string.Empty;
@@ -56,7 +58,8 @@ public sealed class NetWasmProjectWitFunctionsTask : Microsoft.Build.Utilities.T
                 CompilerTaskComposition.CreateWasmToolsCommand(
                 WasmToolsNodePath,
                 WasmToolsCommandPath,
-                WasmToolsModulePath));
+                WasmToolsModulePath,
+                NativeWasmToolsPath));
             var result = session.Project(
                 WitPath,
                 NullIfEmpty(World),

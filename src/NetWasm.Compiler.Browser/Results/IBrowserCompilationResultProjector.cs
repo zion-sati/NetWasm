@@ -5,5 +5,5 @@ namespace NetWasm.Compiler.Browser.Results;
 internal interface IBrowserCompilationResultProjector
 {
     BrowserCompilationResult Project(
-        CompilationResult result, CompilerOptions options, ManagedExecutableEntryPointAbi? entryPointAbi);
+        ModuleCompilationResult result, CompilerOptions options, ManagedExecutableEntryPointAbi? entryPointAbi);
 }

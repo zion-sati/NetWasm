@@ -12,7 +12,15 @@ internal sealed record ManagedBodyEmission(
     WasmFunctionDefinition Function,
     string EnvironmentKey,
     FilterEnvironmentLayout Environment,
-    ManagedMethodEmissionRecord Record);
+    ManagedMethodEmissionRecord Record)
+{
+    // The queries the body's emission made, when compiled units are on.
+    public ImmutableArray<NetWasm.Compiler.Wasm.Units.UnitDependency> Dependencies { get; init; } = [];
+    // Whether the body was restored from its compiled unit rather than emitted.
+    public bool IsRestored => Unit is not null;
+    // Where the unit the body was restored from is; it is kept there for the next compile.
+    public NetWasm.Compiler.Wasm.Units.UnitLocation? Unit { get; init; }
+}
 
 internal interface IManagedBodyBatchEmitter : IDisposable
 {

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.ComponentModel.ManagedExecutables;
+using NetWasm.Compiler.ComponentModel.Merging;
 using NetWasm.Compiler.Core.ManagedExecutables;
 
 namespace NetWasm.Compiler.ComponentModel.Linking;
@@ -19,10 +20,8 @@ internal static class LinkingServiceCollectionExtensions
             ManagedCompilerOptimizationOverridesParser>();
         services.AddSingleton<IWasmInlineAnnotationFilter, WasmInlineAnnotationFilter>();
         services.AddSingleton<IWasmCoreModuleInlineAnnotationEditor, WasmCoreModuleInlineAnnotationEditor>();
-        services.AddSingleton<IComponentCoreModuleMergeRunner,
-            ComponentCoreModuleMergeRunner>();
-        services.AddSingleton<IWasmCoreModuleExportEditor,
-            WasmCoreModuleExportEditor>();
+        services.AddSingleton<IWasmCoreModuleMerger, WasmCoreModuleMerger>();
+        services.AddSingleton<IComponentCoreModuleMergeRunner, WasmCoreModuleMergeRunner>();
         services.AddSingleton<IComponentCoreModuleOptimizer,
             ComponentCoreModuleOptimizer>();
         services.AddSingleton<INetWasmHostComponentShimWriter>(provider =>

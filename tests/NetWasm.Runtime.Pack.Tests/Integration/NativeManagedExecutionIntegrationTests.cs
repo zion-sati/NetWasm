@@ -21,7 +21,7 @@ public sealed class NativeManagedExecutionIntegrationTests
     private static readonly int[] ExpectedInvocationValues = [42, 42];
     private static readonly int[] ExpectedNamedCallbackInvocationValues = [-100, 35];
     private static readonly int[] ExpectedCallbackOnlyInvocationValues = [1, 137];
-    private static readonly string[] ToolNames = ["node", "wasm-ld", "wasm-opt", "wasm-merge"];
+    private static readonly string[] ToolNames = ["node", "wasm-ld", "wasm-opt"];
     private static readonly ImmutableDictionary<string, string> DesktopAliases =
         new[] { "System.Runtime", "System.Runtime.InteropServices" }
             .ToImmutableDictionary(name => name, _ => "NetWasm.CoreLib");

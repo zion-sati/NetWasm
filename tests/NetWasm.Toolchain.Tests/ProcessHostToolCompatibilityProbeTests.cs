@@ -22,13 +22,13 @@ public sealed class ProcessHostToolCompatibilityProbeTests
     [Fact]
     public void ObserveAcceptsBinaryenIntegerVersionBanners()
     {
-        var executable = CreateVersionReporter("wasm-merge version 132 (build metadata)");
+        var executable = CreateVersionReporter("wasm-opt version 132 (build metadata)");
         try
         {
             IHostToolCompatibilityProbe probe = new ProcessHostToolCompatibilityProbe();
 
             var result = probe.Observe(new(
-                HostToolIds.BinaryenWasmMerge,
+                HostToolIds.BinaryenWasmOpt,
                 executable,
                 HostExecutableResolutionSource.EnvironmentRoot));
 

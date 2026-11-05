@@ -67,6 +67,27 @@ public sealed class HostToolsOverrideSelectorTests
     }
 
     [Fact]
+    public void ChooseTakesANamedWasmToolsButNeverOneFromTheSdkRoot()
+    {
+        var packaged = PackagedNode with { ToolId = HostToolIds.WasmTools };
+        var named = new RecordingEnvironment(
+            ("NETWASM_WASM_TOOLS_PATH", Path.Combine(Path.GetTempPath(), "custom", "wasm-tools")));
+        var namedPaths = new RecordingPaths();
+
+        var result = new HostToolsOverrideSelector(named, namedPaths).Choose(packaged);
+
+        Assert.Equal(HostExecutableResolutionSource.Override, result.Source);
+        Assert.Equal("wasm-tools", Assert.Single(namedPaths.Requests).ExecutableName);
+
+        var rooted = new RecordingEnvironment(("NETWASM_EMSDK_ROOT", Path.GetTempPath()));
+        var rootedPaths = new RecordingPaths();
+
+        Assert.Same(packaged, new HostToolsOverrideSelector(rooted, rootedPaths).Choose(packaged));
+        Assert.Equal(["NETWASM_WASM_TOOLS_PATH"], rooted.ReadNames);
+        Assert.Empty(rootedPaths.Requests);
+    }
+
+    [Fact]
     public void ChooseRejectsAnEmptyDeliberateSdkRootInsteadOfFallingBack()
     {
         var environment = new RecordingEnvironment(("NETWASM_EMSDK_ROOT", ""));
@@ -74,7 +95,7 @@ public sealed class HostToolsOverrideSelectorTests
         var chooser = new HostToolsOverrideSelector(environment, paths);
 
         Assert.Throws<ArgumentException>(() => chooser.Choose(
-            PackagedNode with { ToolId = HostToolIds.BinaryenWasmMerge }));
+            PackagedNode with { ToolId = HostToolIds.BinaryenWasmOpt }));
 
         Assert.Empty(paths.Requests);
     }

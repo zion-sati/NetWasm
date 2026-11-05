@@ -105,8 +105,8 @@ public sealed class BrowserCompilationCommandTests
 
     private static BrowserCompilationResult BrowserResult() => new([], 0, [], [], null!, null!);
 
-    private static CompilationResult Result(MethodDefinitionModel? entry = null) => new(
-        [], Program(entry ?? Method(0x06000001)), null!, null!, 0);
+    private static ModuleCompilationResult Result(MethodDefinitionModel? entry = null) => ModuleCompilationResult.Of(new(
+        [], Program(entry ?? Method(0x06000001)), null!, null!, 0));
 
     private static ReachableProgram Program(MethodDefinitionModel entry) => new(entry,
         ImmutableDictionary<EntityKey, ManagedMethodBody>.Empty,
@@ -125,13 +125,13 @@ public sealed class BrowserCompilationCommandTests
     }
 
     private sealed class RecordingCompiler(
-        CompilationResult result,
-        CompilerMetricsReport? report = null) : INetWasmCompiler
+        ModuleCompilationResult result,
+        CompilerMetricsReport? report = null) : INetWasmModuleCompiler
     {
-        public CompilationResult Result { get; } = result;
+        public ModuleCompilationResult Result { get; } = result;
         public CompilerOptions? Options { get; private set; }
 
-        public CompilationResult Compile(CompilerOptions options)
+        public ModuleCompilationResult Compile(CompilerOptions options)
         {
             Options = options;
             if (report is not null) options.MetricsObserver?.Report(report);
@@ -163,11 +163,11 @@ public sealed class BrowserCompilationCommandTests
     private sealed class RecordingProjector(BrowserCompilationResult result) :
         IBrowserCompilationResultProjector
     {
-        public CompilationResult? Compilation { get; private set; }
+        public ModuleCompilationResult? Compilation { get; private set; }
         public CompilerOptions? Options { get; private set; }
         public ManagedExecutableEntryPointAbi? Abi { get; private set; }
 
-        public BrowserCompilationResult Project(CompilationResult compilation,
+        public BrowserCompilationResult Project(ModuleCompilationResult compilation,
             CompilerOptions options, ManagedExecutableEntryPointAbi? entryPointAbi)
         {
             Compilation = compilation;

@@ -8,11 +8,13 @@ namespace NetWasm.Compiler.ComponentModel;
 
 public interface IComponentCoreModuleOptimizer
 {
+    // Converging repeats the preset until the module stops shrinking.
     void Optimize(
         string inputPath,
         string outputPath,
         ComponentTarget target,
-        FinalWasmOptimization optimization);
+        FinalWasmOptimization optimization,
+        bool converge = false);
 }
 
 public sealed class ComponentCoreModuleOptimizer(
@@ -24,7 +26,6 @@ public sealed class ComponentCoreModuleOptimizer(
     private static readonly FrozenDictionary<FinalWasmOptimization, string>
         OptimizationFlags = new Dictionary<FinalWasmOptimization, string>
         {
-            [FinalWasmOptimization.O0] = "-O0",
             [FinalWasmOptimization.O1] = "-O1",
             [FinalWasmOptimization.O2] = "-O2",
             [FinalWasmOptimization.O3] = "-O3",
@@ -45,7 +46,8 @@ public sealed class ComponentCoreModuleOptimizer(
         string inputPath,
         string outputPath,
         ComponentTarget target,
-        FinalWasmOptimization optimization)
+        FinalWasmOptimization optimization,
+        bool converge = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
@@ -59,7 +61,9 @@ public sealed class ComponentCoreModuleOptimizer(
             throw new ArgumentOutOfRangeException(nameof(optimization));
         }
         RequireFile(inputPath);
-        if (optimization == FinalWasmOptimization.None)
+        // O0 builds for speed and does not care about size, so like None it runs no
+        // Binaryen passes: removing unused elements rewrote the whole module to drop a few.
+        if (optimization is FinalWasmOptimization.None or FinalWasmOptimization.O0)
         {
             _validator.Validate(inputPath, target);
             _inlineAnnotations.Rewrite(inputPath, outputPath, WasmInlineAnnotationSelection.Remove);
@@ -69,7 +73,6 @@ public sealed class ComponentCoreModuleOptimizer(
         {
             inputPath,
             OptimizationFlags[optimization],
-            "--converge",
             "--remove-unused-module-elements",
             "--strip-debug",
             "--enable-multimemory",
@@ -83,6 +86,10 @@ public sealed class ComponentCoreModuleOptimizer(
         if (target.Width == "wasm64")
         {
             arguments.Add("--enable-memory64");
+        }
+        if (converge)
+        {
+            arguments.Insert(2, "--converge");
         }
         arguments.Add("--output");
         arguments.Add(outputPath);

@@ -1,10 +1,10 @@
-using System.Collections.Immutable;
+using System.Collections.Frozen;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata;
 
 internal sealed class MetadataTypeRepository(
-    ImmutableDictionary<EntityKey, TypeDefinitionModel> types,
+    FrozenDictionary<EntityKey, TypeDefinitionModel> types,
     IMetadataAvailabilityValidator availability) : ITypeRepository
 {
     public TypeDefinitionModel GetTypeDefinition(EntityKey key)

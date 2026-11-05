@@ -7,7 +7,20 @@ namespace NetWasm.Compiler.Cli;
 
 internal static class Program
 {
-    internal static int Main(string[] args) => Run(args, new SystemConsole());
+    internal static int Main(string[] args)
+    {
+        var result = Run(args, new SystemConsole());
+        // A plain account of the compile's garbage collection, for tuning.
+        if (Environment.GetEnvironmentVariable("NETWASM_GC_STATS") == "1")
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            Console.Error.WriteLine(
+                $"gc: gen0 {GC.CollectionCount(0)} gen1 {GC.CollectionCount(1)} gen2 {GC.CollectionCount(2)}, " +
+                $"pause {GC.GetTotalPauseDuration().TotalMilliseconds:F0} ms, allocated {GC.GetTotalAllocatedBytes() >> 20} MB, " +
+                $"peak working set {process.PeakWorkingSet64 >> 20} MB");
+        }
+        return result;
+    }
 
     // Runs one command and reports its failure as csc does: a diagnostic line,
     // then exit code 1.

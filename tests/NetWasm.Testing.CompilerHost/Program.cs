@@ -48,7 +48,8 @@ try
         services.GetRequiredService<INetWasmCompiler>(),
         services.GetRequiredService<IMetadataCompilationLoader>(),
         new CompilerHostArtifactFormatter(),
-        new CompilerHostArtifactWriter());
+        new CompilerHostArtifactWriter(),
+        new CompilerHostUnitVerification(services.GetRequiredService<INetWasmCompiler>()));
     if (!sequenceMode)
     {
         var request = new CompilerHostRequestReader(

@@ -17,7 +17,10 @@ internal sealed class RuntimeNativeModuleValidator(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ModulePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.LogPath);
         var arguments = _arguments.Build(request.Profile, request.Target, request.Path);
-        _commands.Invoke(new(request.NodePath,
-            ["--disable-warning=ExperimentalWarning", request.CommandPath, request.ModulePath, .. arguments], request.LogPath));
+        _commands.Invoke(request.NativeWasmToolsPath is { } native
+            ? new(native, [.. arguments], request.LogPath)
+            : new(request.NodePath,
+                ["--disable-warning=ExperimentalWarning", request.CommandPath, request.ModulePath, .. arguments],
+                request.LogPath));
     }
 }

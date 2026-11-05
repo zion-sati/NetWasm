@@ -7,11 +7,12 @@ namespace NetWasm.Compiler.ComponentModel.Optimization;
 
 public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettingsResolver
 {
+    // None and O0 run no optimizer, so nothing reads the hints: the link keeps none.
     private static readonly FrozenDictionary<FinalWasmOptimization, WasmInlineAnnotationSelection> Presets =
         new Dictionary<FinalWasmOptimization, WasmInlineAnnotationSelection>
         {
-            [FinalWasmOptimization.None] = WasmInlineAnnotationSelection.SizeAware,
-            [FinalWasmOptimization.O0] = WasmInlineAnnotationSelection.SizeAware,
+            [FinalWasmOptimization.None] = WasmInlineAnnotationSelection.Remove,
+            [FinalWasmOptimization.O0] = WasmInlineAnnotationSelection.Remove,
             [FinalWasmOptimization.O1] = WasmInlineAnnotationSelection.Preserve,
             [FinalWasmOptimization.O2] = WasmInlineAnnotationSelection.Preserve,
             [FinalWasmOptimization.O3] = WasmInlineAnnotationSelection.Preserve,
@@ -25,8 +26,8 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
     private static readonly FrozenDictionary<FinalWasmOptimization, WasmInlineAnnotationSelection> ManagedHintPresets =
         new Dictionary<FinalWasmOptimization, WasmInlineAnnotationSelection>
         {
-            [FinalWasmOptimization.None] = WasmInlineAnnotationSelection.SizeAware,
-            [FinalWasmOptimization.O0] = WasmInlineAnnotationSelection.SizeAware,
+            [FinalWasmOptimization.None] = WasmInlineAnnotationSelection.Remove,
+            [FinalWasmOptimization.O0] = WasmInlineAnnotationSelection.Remove,
             [FinalWasmOptimization.O1] = WasmInlineAnnotationSelection.Preserve,
             [FinalWasmOptimization.O2] = WasmInlineAnnotationSelection.Preserve,
             [FinalWasmOptimization.O3] = WasmInlineAnnotationSelection.Preserve,
@@ -548,6 +549,7 @@ public sealed class WasmOptimizationSettingsResolver : IWasmOptimizationSettings
             storeMerging,
             arrayData,
             quotients,
-            integerChecks);
+            integerChecks,
+            options?.Converge ?? false);
     }
 }

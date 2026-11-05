@@ -12,7 +12,6 @@ using NetWasm.Compiler.Wasm.Emission;
 using NetWasm.TestInfrastructure;
 
 using NetWasm.Compiler.Analysis;
-using NetWasm.Compiler.Caching.Frontend;
 using NetWasm.Compiler.Emission;
 using NetWasm.Compiler.Layout;
 
@@ -289,10 +288,6 @@ public sealed partial class CompilerArchitectureTests
             .SelectMany(type => type.GetInterfaces()
                 .Where(IsCompilerBehavioralInterface))
             .Distinct()
-            // Preserve the released browser-cache facade in 0.2.x. Its seven
-            // operations delegate to one-verb actors and are contract-tested
-            // by LegacyFrontendCacheTransportPreservesItsPublicFacade.
-            .Where(type => type != typeof(IFrontendArtifactCacheTransport))
             .Select(type => new
             {
                 Type = type,
@@ -344,31 +339,6 @@ public sealed partial class CompilerArchitectureTests
             .ToArray();
 
         Assert.True(violations.Length == 0, string.Join(Environment.NewLine, violations));
-    }
-
-    [Fact]
-    public void LegacyFrontendCacheTransportPreservesItsPublicFacade()
-    {
-        var methods = typeof(IFrontendArtifactCacheTransport).GetMethods()
-            .Select(method => method.Name)
-            .Order(StringComparer.Ordinal);
-        Assert.Equal([
-            "Abandon",
-            "AcknowledgeBatch",
-            "BeginCompilation",
-            "CancelPreparation",
-            "CompleteCompilation",
-            "Prepare",
-            "ReadBatch",
-        ], methods);
-
-        var capabilities = typeof(FrontendArtifactCacheTransport)
-            .GetConstructors().Single().GetParameters()
-            .Select(parameter => parameter.ParameterType)
-            .ToArray();
-        Assert.Equal(7, capabilities.Length);
-        Assert.All(capabilities, capability => Assert.Equal(1, capability
-            .GetMethods().Count(method => !method.IsSpecialName)));
     }
 
     [Fact]

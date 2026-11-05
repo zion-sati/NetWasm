@@ -19,9 +19,12 @@ internal interface IAssignableTypeMetadataBuilderFactory
 
 internal sealed class AssignableTypeMetadataBuilderFactory(
     IImplementedInterfaceResolverFactory implementedInterfaces,
-    ITypeRelationshipClassifierFactory relationships) :
+    ITypeRelationshipClassifierFactory relationships,
+    ITypeRelationshipKeyResolverFactory relationshipKeys) :
     IAssignableTypeMetadataBuilderFactory
 {
+    private readonly ITypeRelationshipKeyResolverFactory _relationshipKeys = relationshipKeys ??
+        throw new ArgumentNullException(nameof(relationshipKeys));
     private readonly IImplementedInterfaceResolverFactory _implementedInterfaces =
         implementedInterfaces ?? throw new ArgumentNullException(nameof(implementedInterfaces));
     private readonly ITypeRelationshipClassifierFactory _relationships = relationships ??
@@ -36,16 +39,19 @@ internal sealed class AssignableTypeMetadataBuilderFactory(
         ManagedTypeLayouts types,
         ManagedStaticDataBuildState state)
     {
+        var interfaces = _implementedInterfaces.Create(metadata);
+        var baseTypes = new LayoutBaseTypeResolver(typeFinder, identities, identityBaseTypes);
         var relationshipClassifier = _relationships.Create(
             typeFinder,
             typeDefinitions,
             identities,
-            _implementedInterfaces.Create(metadata),
-            new LayoutBaseTypeResolver(typeFinder, identities, identityBaseTypes));
+            interfaces,
+            baseTypes);
         return new AssignableTypeMetadataBuilder(
             identities,
             typeDefinitions,
             relationshipClassifier,
+            _relationshipKeys.Create(typeFinder, typeDefinitions, identities, interfaces, baseTypes),
             types,
             state);
     }

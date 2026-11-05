@@ -32,6 +32,7 @@ public sealed class ComponentizeCliCommandTests
         Assert.Equal(ComponentTarget.Wasm32Wasi02, request.Target);
         Assert.Equal(expectedOptimization, request.Optimization);
         Assert.Equal(expectedHints, request.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
+        Assert.False(request.OptimizationOverrides?.Converge ?? false);
         var manifest = Assert.Single(harness.Files.TextWrites);
         Assert.Equal("component.json", manifest.Path);
         Assert.Contains("\"world\": \"main\"", manifest.Content, StringComparison.Ordinal);
@@ -49,6 +50,25 @@ public sealed class ComponentizeCliCommandTests
 
         Assert.Equal(ComponentTarget.Wasm64Wasi02, harness.Packager.Request!.Target);
         Assert.Contains("wasm64", Assert.Single(harness.Files.TextWrites).Content, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Preserve")]
+    public void ConvergesTheOptimizerOnlyWhenAsked(string? hints)
+    {
+        var harness = new Harness("wasm32");
+        string[] arguments =
+        [
+            "-coremodule:app.wasm", "-runtimemodule:runtime.wasm", "-wit:contract.wit", "-out:component.wasm",
+            "-manifest:component.json", "-optimize:O3", "-converge",
+        ];
+
+        Assert.Equal(0, harness.Run(hints is null ? arguments : [.. arguments, $"-managedinlininghints:{hints}"]));
+
+        var overrides = harness.Packager.Request!.OptimizationOverrides!;
+        Assert.True(overrides.Converge);
+        Assert.Equal(hints is null ? ManagedInliningHints.Auto : ManagedInliningHints.Preserve, overrides.ManagedInliningHints);
     }
 
     [Fact]

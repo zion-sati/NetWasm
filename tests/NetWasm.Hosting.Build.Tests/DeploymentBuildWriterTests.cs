@@ -38,6 +38,26 @@ public sealed class DeploymentBuildWriterTests
         Assert.Equal("application", artifact.Role);
     }
 
+    // A site that serves the artifacts from where they are takes only the manifest.
+    [Fact]
+    public void WritesOnlyTheManifestWhenTheArtifactsStayWhereTheyAre()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var source = Path.Combine(directory.Path, "input", "application.wasm");
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        File.WriteAllBytes(source, [0, 97, 115, 109]);
+        var deploymentRoot = Path.Combine(directory.Path, "site");
+        var manifestPath = Path.Combine(deploymentRoot, "deployment.json");
+
+        var copied = Create().Write(Request(source, Path.Combine(directory.Path, "copied"),
+            Path.Combine(directory.Path, "copied", "deployment.json")));
+        var result = Create().Write(Request(source, deploymentRoot, manifestPath) with { CopyArtifacts = false });
+
+        Assert.Equal(copied.ManifestSha256, result.ManifestSha256);
+        Assert.True(File.Exists(manifestPath));
+        Assert.False(File.Exists(Path.Combine(deploymentRoot, "application.wasm")));
+    }
+
     [Fact]
     public void RemovesPreviouslyAcceptedManifestBeforeArtifactReadFailure()
     {

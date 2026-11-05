@@ -1,0 +1,7 @@
+<Project>
+  <!-- These end-to-end fixtures pin their own package versions, so they stay outside the repository's
+       Central Package Management. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

@@ -34,30 +34,58 @@ public sealed class NerdbankReportRegressionTests
     }
 
     [Theory]
-    [InlineData("enable", "System.Linq", false, true)]
-    [InlineData("true", "System.Linq", false, true)]
-    [InlineData("enable", "System.Net.Http", false, true)]
-    [InlineData("true", "System.Net.Http", false, true)]
-    [InlineData("disable", "System.Linq", false, false)]
-    [InlineData("false", "System.Net.Http", false, false)]
-    [InlineData("enable", "System.Linq", true, false)]
-    [InlineData("enable", "System.Net.Http", true, false)]
+    [InlineData("enable", "System.Linq", false, true, false)]
+    [InlineData("true", "System.Linq", false, true, false)]
+    [InlineData("enable", "System.Net.Http", false, true, false)]
+    [InlineData("true", "System.Net.Http", false, true, false)]
+    [InlineData("disable", "System.Linq", false, false, false)]
+    [InlineData("false", "System.Net.Http", false, false, false)]
+    [InlineData("enable", "System.Linq", true, false, false)]
+    [InlineData("enable", "System.Net.Http", true, false, false)]
+    [InlineData("enable", "System.Linq", false, true, true)]
+    [InlineData("enable", "System.Net.Http", true, false, true)]
     [Trait("Issue", "56")]
     public async Task OptionalImplicitUsingsFollowCompileReferencesAndUserRemovals(
-        string setting, string assembly, bool remove, bool expected)
+        string setting, string assembly, bool remove, bool expected, bool fromProject)
     {
         var items = remove ? $"<Using Remove=\"{assembly}\" />" : "";
-        using var result = await EvaluateAsync("netwasm0.1", $"<ImplicitUsings>{setting}</ImplicitUsings>",
-            items, "Using", "NetWasmSdkResolveOptionalImplicitUsings", afterImports: $$"""
-                <Target Name="ResolveReferences">
-                  <ItemGroup><ReferencePath Include="resolved/{{assembly}}.dll" /></ItemGroup>
+        var reference = fromProject
+            ? $$"""
+                <Target Name="ResolveProjectReferences">
+                  <ItemGroup><_ResolvedProjectReferencePaths Include="project/bin/{{assembly}}.dll" /></ItemGroup>
                 </Target>
-                """);
+                <Target Name="ResolveLockFileReferences" />
+                """
+            : $$"""
+                <Target Name="ResolveProjectReferences" />
+                <Target Name="ResolveLockFileReferences">
+                  <ItemGroup><Reference Include="packages/{{assembly}}.dll" /></ItemGroup>
+                </Target>
+                """;
+        using var result = await EvaluateAsync("netwasm0.1", $"<ImplicitUsings>{setting}</ImplicitUsings>",
+            items, "Using", "NetWasmSdkResolveOptionalImplicitUsings", afterImports: reference);
         var usings = result.RootElement.GetProperty("Items").GetProperty("Using").EnumerateArray()
             .Select(item => item.GetProperty("Identity").GetString()).ToArray();
         Assert.Equal(expected, usings.Contains(assembly));
         Assert.DoesNotContain(assembly == "System.Linq" ? "System.Net.Http" : "System.Linq", usings);
         Assert.Equal(usings.Length, usings.Distinct().Count());
+    }
+
+    // A build that starts at Compile, as an IDE's or dotnet watch's design-time build does, reaches
+    // PrepareForBuild, and so GenerateGlobalUsings, inside ResolveAssemblyReferences.
+    [Fact]
+    public async Task OptionalImplicitUsingsResolveInsideResolveAssemblyReferences()
+    {
+        using var result = await EvaluateAsync("netwasm0.1", "<ImplicitUsings>enable</ImplicitUsings>", "", "Using",
+            "ResolveAssemblyReferences", afterImports: """
+                <Target Name="ResolvePackageAssets" />
+                <Target Name="ResolveLockFileReferences">
+                  <ItemGroup><Reference Include="packages/System.Linq.dll" /></ItemGroup>
+                </Target>
+                """);
+        var usings = result.RootElement.GetProperty("Items").GetProperty("Using").EnumerateArray()
+            .Select(item => item.GetProperty("Identity").GetString());
+        Assert.Contains("System.Linq", usings);
     }
 
     [Theory]

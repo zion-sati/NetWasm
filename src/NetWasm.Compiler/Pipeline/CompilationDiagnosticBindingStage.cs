@@ -11,6 +11,13 @@ internal interface ICompilationDiagnosticBindingStage
         CompilationResult result,
         MetadataCompilationSnapshot metadata,
         CompilerOptions options);
+
+    // A patched module's diagnostic artifacts, from the exception types its compile kept.
+    DiagnosticArtifactBundle? Bind(
+        byte[] applicationModule,
+        System.Collections.Immutable.ImmutableArray<ReachableExceptionType> exceptionTypes,
+        MetadataCompilationSnapshot metadata,
+        CompilerOptions options);
 }
 
 internal sealed class CompilationDiagnosticBindingStage(
@@ -32,4 +39,10 @@ internal sealed class CompilationDiagnosticBindingStage(
         ArgumentNullException.ThrowIfNull(options);
         return _planner.Bind(result, metadata, _identities.Create(metadata), options);
     }
+
+    public DiagnosticArtifactBundle? Bind(
+        byte[] applicationModule,
+        System.Collections.Immutable.ImmutableArray<ReachableExceptionType> exceptionTypes,
+        MetadataCompilationSnapshot metadata,
+        CompilerOptions options) => _planner.Bind(applicationModule, exceptionTypes, metadata, options);
 }

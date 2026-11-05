@@ -8,5 +8,6 @@ internal interface ICompilationRootMapBuilder
     ReachableProgram Analyze(
         MetadataCompilationSnapshot metadata,
         CompilationLayouts layouts,
-        ReachableProgram program);
+        ReachableProgram program,
+        NetWasm.Compiler.Wasm.Units.CompiledUnitState? units = null);
 }

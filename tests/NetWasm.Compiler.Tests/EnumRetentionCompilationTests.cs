@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using NetWasm.Compiler.Core;
-using NetWasm.Compiler.Diagnostics;
 using NetWasm.TestInfrastructure;
 
 namespace NetWasm.Compiler.Tests;
@@ -9,7 +8,7 @@ namespace NetWasm.Compiler.Tests;
 public sealed class EnumRetentionCompilationTests(ITestOutputHelper output)
 {
     [Fact]
-    public void LibraryCacheDoesNotFreezeEntryAssemblyEnumDemand()
+    public void RepeatedCompilationsFollowEntryAssemblyEnumDemand()
     {
         using var assets = TestAssets.Create();
         var intermediate = Path.Combine(assets.Directory, "obj");
@@ -25,8 +24,7 @@ public sealed class EnumRetentionCompilationTests(ITestOutputHelper output)
 
         var assembly = assets.CompileOptimizedSource(
             "EnumCacheApplication", numericSource, library);
-        var firstObserver = new RecordingObserver();
-        var first = NetWasmCompiler.Compile(Options(assembly, firstObserver));
+        var first = NetWasmCompiler.Compile(Options(assembly));
         Assert.True(first.ApplicationModule.AsSpan().IndexOf(
             Encoding.Unicode.GetBytes("One")) < 0);
         Assert.Equal(1, CompilerTestSupport.ExecuteWithStandardWasiNode(
@@ -35,30 +33,20 @@ public sealed class EnumRetentionCompilationTests(ITestOutputHelper output)
 
         assembly = assets.CompileOptimizedSource(
             "EnumCacheApplication", namesSource, library);
-        var secondObserver = new RecordingObserver();
-        var second = NetWasmCompiler.Compile(Options(assembly, secondObserver));
+        var second = NetWasmCompiler.Compile(Options(assembly));
 
         Assert.True(second.ApplicationModule.AsSpan().IndexOf(
             Encoding.Unicode.GetBytes("One")) >= 0);
         Assert.Equal(1, CompilerTestSupport.ExecuteWithStandardWasiNode(
             second.ApplicationModule, assets.Directory, 1,
             WasmTarget.Wasm32, second.StaticDataEnd));
-        var cache = Assert.Single(secondObserver.Reports).FrontendCache;
-        Assert.NotNull(cache);
-        Assert.True(cache.Hits > 0);
-
-        var cold = NetWasmCompiler.Compile(Options(
-            assembly, new RecordingObserver(), enableCache: false));
-        Assert.Equal(cold.ApplicationModule, second.ApplicationModule);
 
         assembly = assets.CompileOptimizedSource(
             "EnumCacheApplication", numericSource, library);
-        var thirdObserver = new RecordingObserver();
-        var third = NetWasmCompiler.Compile(Options(assembly, thirdObserver));
+        var third = NetWasmCompiler.Compile(Options(assembly));
         Assert.Equal(first.ApplicationModule, third.ApplicationModule);
         Assert.True(third.ApplicationModule.AsSpan().IndexOf(
             Encoding.Unicode.GetBytes("One")) < 0);
-        Assert.NotNull(Assert.Single(thirdObserver.Reports).FrontendCache);
 
         static string Source(string call) => $$"""
             using System;
@@ -80,17 +68,12 @@ public sealed class EnumRetentionCompilationTests(ITestOutputHelper output)
             }
             """;
 
-        CompilerOptions Options(
-            string entryAssembly,
-            ICompilerMetricsObserver observer,
-            bool enableCache = true) => new(
+        CompilerOptions Options(string entryAssembly) => new(
             entryAssembly,
             [assets.CoreLib, library],
             "EntryPoint",
             "Run",
             [],
-            MetricsObserver: observer,
-            EnableFrontendCache: enableCache,
             IntermediateOutputPath: intermediate);
     }
 
@@ -283,10 +266,4 @@ public sealed class EnumRetentionCompilationTests(ITestOutputHelper output)
             $"enum-retention: operation={operation}; bits={bits}; module-bytes={compilation.ApplicationModule.Length}; static-end={compilation.StaticDataEnd}; declared-names-present={declaredNamesPresent}"));
     }
 
-    private sealed class RecordingObserver : ICompilerMetricsObserver
-    {
-        public List<CompilerMetricsReport> Reports { get; } = [];
-
-        public void Report(CompilerMetricsReport report) => Reports.Add(report);
-    }
 }

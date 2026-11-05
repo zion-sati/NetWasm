@@ -17,7 +17,7 @@ internal sealed record ModuleDataPlan(
         ExceptionMetadata,
     ImmutableArray<FilterFunclet> FilterFunclets,
     ImmutableArray<DataSegment> DataSegments,
-    ImmutableDictionary<string, StaticInitializerGuard> StaticInitializerGuards,
+    IReadOnlyDictionary<string, StaticInitializerGuard> StaticInitializerGuards,
     int StaticDataEnd)
 {
     public StaticInitializerFunctionPlan? StaticInitializerFunctions { get; init; }

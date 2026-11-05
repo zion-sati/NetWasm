@@ -121,17 +121,13 @@ internal sealed class RuntimeModuleMaterializer(
         var annotated = inlineIntents.Write(
             File.ReadAllBytes(request.OutputPath), manifest.InlineIntents);
         artifactWriter.Write(request.OutputPath, annotated);
-        commands.Invoke(new(
-            request.WasmToolsNodePath,
-            ImmutableArray.Create(
-                DisableExperimentalWarningOption,
-                request.WasmToolsCommandPath,
-                request.WasmToolsModulePath,
-                "validate",
-                Path.GetFullPath(request.OutputPath),
-                "--features",
-                "all"),
-            Path.Combine(request.LogDirectory, "runtime-validate.log")));
+        ImmutableArray<string> validate = ["validate", Path.GetFullPath(request.OutputPath), "--features", "all"];
+        commands.Invoke(request.NativeWasmToolsPath is { } native
+            ? new(native, validate, Path.Combine(request.LogDirectory, "runtime-validate.log"))
+            : new(
+                request.WasmToolsNodePath,
+                [DisableExperimentalWarningOption, request.WasmToolsCommandPath, request.WasmToolsModulePath, .. validate],
+                Path.Combine(request.LogDirectory, "runtime-validate.log")));
 
         var sha256 = artifactDigests.Calculate(request.OutputPath);
         var bytes = File.ReadAllBytes(request.OutputPath);

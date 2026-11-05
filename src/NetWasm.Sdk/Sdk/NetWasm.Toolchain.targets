@@ -140,6 +140,13 @@
              Text="NetWasm now uses $(NuGetLockFilePath) for this development host. Existing packages.lock.json is unchanged; review and remove it from source control after migration, or explicitly set NuGetLockFilePath to retain that name." />
   </Target>
 
+  <PropertyGroup>
+    <!-- Resolved build environments by stamp, shared by every project and every clean build on this machine;
+         without a local application data folder, each project keeps its own under obj. -->
+    <_NetWasmLocalApplicationData>$([System.Environment]::GetFolderPath(SpecialFolder.LocalApplicationData))</_NetWasmLocalApplicationData>
+    <NetWasmBuildEnvironmentCacheDirectory Condition="'$(NetWasmBuildEnvironmentCacheDirectory)' == '' AND '$(_NetWasmLocalApplicationData)' != ''">$([System.IO.Path]::Combine('$(_NetWasmLocalApplicationData)', 'NetWasm', 'build-environment-cache'))</NetWasmBuildEnvironmentCacheDirectory>
+  </PropertyGroup>
+
   <Target Name="NetWasmSdkResolveBuildEnvironment"
           BeforeTargets="CoreCompile;Run"
           DependsOnTargets="ResolvePackageAssets"
@@ -157,13 +164,16 @@
                                         HostToolsPackageRoot="$(NetWasmHostToolsPackageRoot)"
                                         HostToolsPackageId="$(NetWasmHostToolsPackageId)"
                                         HostToolsPackageVersion="$(NetWasmHostToolsPackageVersion)"
-                                        HostRid="$(_NetWasmHostRid)">
+                                        HostRid="$(_NetWasmHostRid)"
+                                        CachePath="$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'build-environment.json'))"
+                                        CacheDirectory="$(NetWasmBuildEnvironmentCacheDirectory)">
       <Output TaskParameter="NodePath" PropertyName="NetWasmNodePath" />
       <Output TaskParameter="NodeSource" PropertyName="NetWasmNodeSource" />
       <Output TaskParameter="NodeVersion" PropertyName="NetWasmNodeVersion" />
       <Output TaskParameter="WasmToolsCommandPath" PropertyName="NetWasmWasmToolsCommandPath" />
       <Output TaskParameter="WasmToolsModulePath" PropertyName="NetWasmWasmToolsModulePath" />
       <Output TaskParameter="WasmToolsVersion" PropertyName="NetWasmWasmToolsVersion" />
+      <Output TaskParameter="NativeWasmToolsPath" PropertyName="NetWasmNativeWasmToolsPath" />
       <Output TaskParameter="WasmLdPath" PropertyName="NetWasmWasmLdPath" />
       <Output TaskParameter="WasmLdSource" PropertyName="NetWasmWasmLdSource" />
       <Output TaskParameter="WasmLdVersion" PropertyName="NetWasmWasmLdVersion" />
@@ -179,10 +189,7 @@
       <Output TaskParameter="BinaryenWasmMergePath" PropertyName="NetWasmBinaryenWasmMergePath" />
       <Output TaskParameter="NativeBinaryenWasmOptPath" PropertyName="NetWasmNativeBinaryenWasmOptPath" />
       <Output TaskParameter="NativeBinaryenWasmOptVersion" PropertyName="NetWasmNativeBinaryenWasmOptVersion" />
-      <Output TaskParameter="NativeBinaryenWasmMergePath" PropertyName="NetWasmNativeBinaryenWasmMergePath" />
-      <Output TaskParameter="NativeBinaryenWasmMergeVersion" PropertyName="NetWasmNativeBinaryenWasmMergeVersion" />
       <Output TaskParameter="BinaryenWasmOptImplementation" PropertyName="NetWasmBinaryenWasmOptImplementation" />
-      <Output TaskParameter="BinaryenWasmMergeImplementation" PropertyName="NetWasmBinaryenWasmMergeImplementation" />
       <Output TaskParameter="BinaryenPortableVersion" PropertyName="NetWasmBinaryenPortableVersion" />
       <Output TaskParameter="JcoPath" PropertyName="NetWasmJcoPath" />
       <Output TaskParameter="JcoVersion" PropertyName="NetWasmJcoVersion" />
@@ -194,7 +201,7 @@
       <Output TaskParameter="RolldownVersion" PropertyName="NetWasmRolldownVersion" />
     </NetWasmResolveBuildEnvironmentTask>
     <Message Importance="Low"
-             Text="NetWasm Binaryen: wasm-merge=$(NetWasmBinaryenWasmMergeImplementation) $(NetWasmNativeBinaryenWasmMergeVersion) $(NetWasmNativeBinaryenWasmMergePath); wasm-opt=$(NetWasmBinaryenWasmOptImplementation) $(NetWasmNativeBinaryenWasmOptVersion) $(NetWasmNativeBinaryenWasmOptPath); portable=$(NetWasmBinaryenPortableVersion)" />
+             Text="NetWasm Binaryen: wasm-opt=$(NetWasmBinaryenWasmOptImplementation) $(NetWasmNativeBinaryenWasmOptVersion) $(NetWasmNativeBinaryenWasmOptPath); portable=$(NetWasmBinaryenPortableVersion)" />
     <Message Importance="Normal"
              Text="NetWasm host tools: Node=$(NetWasmNodeSource) $(NetWasmNodeVersion); wasm-ld=$(NetWasmWasmLdSource) $(NetWasmWasmLdVersion); Binaryen=$(NetWasmBinaryenWasmOptImplementation)." />
     <PropertyGroup>
@@ -259,6 +266,7 @@
     <NetWasmProjectWitFunctionsTask WasmToolsNodePath="$(NetWasmNodePath)"
                                     WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                                     WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                    NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                                     WitPath="$(_NetWasmResolvedWitWorkerPackagePath)"
                                     World="$(NetWasmWorld)"
                                     ApplicationWitPath="$(_NetWasmResolvedWitWorkerPackagePath)"
@@ -463,19 +471,25 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="NetWasmSdkPublishReferencedWorkers"
-          AfterTargets="NetWasmSdkPublishJsModule;NetWasmSdkPublishBrowser"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(_NetWasmWorkerReference)' != '' AND '$(DesignTimeBuild)' != 'true' AND '$(IsPublishable)' == 'true'">
-    <PropertyGroup>
-      <_NetWasmWorkerCallerPublishDir Condition="'$(_NetWasmWorkerKind)' == 'jsexport'">$(NetWasmWorkerPublishDir)</_NetWasmWorkerCallerPublishDir>
-      <_NetWasmWorkerCallerPublishDir Condition="'$(_NetWasmWorkerKind)' == '' AND '$(NetWasmPublishTargetNormalized)' == 'browser'">$(NetWasmBrowserPublishDir)</_NetWasmWorkerCallerPublishDir>
-    </PropertyGroup>
-    <Error Condition="'$(_NetWasmWorkerCallerPublishDir)' == ''"
+  <!-- A page publishes its workers beside its own browser files, each in workers/<project>/, sharing the page's
+       JavaScript runtime: each worker's site files, as the worker generates them for that place. The worker's
+       instance for that place builds first, as publishing it would, so it checks its artifacts against the same
+       inputs its build compiled with; the build is current, so it compiles nothing. -->
+  <Target Name="NetWasmSdkWorkerSites"
+          DependsOnTargets="_NetWasmResolveSiteLayout"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '@(_NetWasmWorkerReference)' != '' AND '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(_NetWasmWorkerKind)' != 'jsexport' AND ('$(_NetWasmWorkerKind)' != '' OR '$(NetWasmPublishTargetNormalized)' != 'browser')"
            Text="Publish a worker caller for the browser using NetWasmPublishTarget=browser." />
     <MSBuild Projects="@(_NetWasmWorkerReference)"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);IsPublishable=true;NetWasmWorkerPublishDir=$(_NetWasmWorkerCallerPublishDir)/workers/%(_NetWasmWorkerReference.Filename);_NetWasmCallerRuntimeDirectory=$(_NetWasmWorkerCallerPublishDir)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);_NetWasmPlacedWorker=true;_NetWasmSiteBrowserPath=$(_NetWasmSiteBrowserPath)workers/%(_NetWasmWorkerReference.Filename)/;_NetWasmCallerRuntimeSitePath=$(_NetWasmSiteBrowserPath)"
              RemoveProperties="PublishDir;OutputType;NetWasmRawWasm;NetWasmWorkerClientNamespace;NetWasmWorkerClientClass" />
+    <MSBuild Projects="@(_NetWasmWorkerReference)"
+             Targets="NetWasmCollectSiteFiles"
+             Properties="Configuration=$(Configuration);_NetWasmPlacedWorker=true;_NetWasmSiteBrowserPath=$(_NetWasmSiteBrowserPath)workers/%(_NetWasmWorkerReference.Filename)/;_NetWasmCallerRuntimeSitePath=$(_NetWasmSiteBrowserPath)"
+             RemoveProperties="PublishDir;OutputType;NetWasmRawWasm;NetWasmWorkerClientNamespace;NetWasmWorkerClientClass">
+      <Output TaskParameter="TargetOutputs" ItemName="NetWasmSiteFile" />
+    </MSBuild>
   </Target>
 
   <!--
@@ -723,6 +737,7 @@
                                     WasmToolsNodePath="$(NetWasmNodePath)"
                                     WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                                     WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                    NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                                     WitPath="$(NetWasmOutputPath)">
       <Output TaskParameter="RequiredImports" ItemName="_NetWasmDeploymentRequiredImport" />
       <Output TaskParameter="RequiredImportModules" ItemName="_NetWasmDeploymentRequiredImportModule" />
@@ -732,6 +747,7 @@
                                     WasmToolsNodePath="$(NetWasmNodePath)"
                                     WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                                     WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                    NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                                     WitPath="$(NetWasmWitPath)"
                                     World="$(NetWasmWorld)">
       <Output TaskParameter="Exports" ItemName="_NetWasmDeploymentExport" />
@@ -885,10 +901,11 @@
           SkipUnchangedFiles="true" />
   </Target>
 
-  <Target Name="NetWasmSdkPublishBrowser"
-          BeforeTargets="Publish"
-          DependsOnTargets="NetWasmSdkPrepareLocalDeployment;NetWasmSdkValidateFinalArtifactForNoBuild"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser' AND '$(IsPublishable)' == 'true'">
+  <!-- An application published for the browser: its deployment's files, and the manifest and command module
+       generated for them under obj. -->
+  <Target Name="NetWasmSdkBrowserSite"
+          DependsOnTargets="_NetWasmResolveSiteLayout;NetWasmSdkPrepareLocalDeployment;NetWasmSdkValidateFinalArtifactForNoBuild"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser' AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK015"
            Condition="'$(NetWasmNodePath)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmNodePath)')) OR !Exists('$(NetWasmNodePath)')"
            Text="Browser publish requires a validated system Node executable." />
@@ -958,8 +975,9 @@
         <SchemaVersion>1</SchemaVersion>
       </_NetWasmBrowserDeploymentArtifact>
     </ItemGroup>
-    <NetWasmWriteDeploymentTask ManifestPath="$([System.IO.Path]::Combine('$(NetWasmBrowserPublishDir)', 'deployment.json'))"
-                                DeploymentRoot="$(NetWasmBrowserPublishDir)"
+    <NetWasmWriteDeploymentTask ManifestPath="$(_NetWasmSiteOutputDirectory)deployment.json"
+                                DeploymentRoot="$(_NetWasmSiteOutputDirectory)"
+                                CopyArtifacts="false"
                                 SemanticBuildId="$(NetWasmSemanticBuildId)"
                                 DeploymentKind="$(_NetWasmBrowserDeploymentKind)"
                                 Profile="$(NetWasmProfile)"
@@ -984,13 +1002,22 @@
     <NetWasmWriteCommandRunModuleTask BundleFileName="netwasm.browser.mjs"
                                       BuildFingerprint="$(_NetWasmBrowserBuildFingerprint)"
                                       ManifestSha256="$(_NetWasmBrowserManifestSha256)"
-                                      OutputPath="$([System.IO.Path]::Combine('$(NetWasmBrowserPublishDir)', '$(AssemblyName).mjs'))"
-                                      DeclarationPath="$([System.IO.Path]::Combine('$(NetWasmBrowserPublishDir)', '$(AssemblyName).d.mts'))"
+                                      OutputPath="$(_NetWasmSiteOutputDirectory)$(AssemblyName).mjs"
+                                      DeclarationPath="$(_NetWasmSiteOutputDirectory)$(AssemblyName).d.mts"
                                       Arguments="@(_NetWasmExecutionArgument)"
                                       EnvironmentVariables="@(NetWasmEnvironmentVariable)"
                                       Clocks="@(NetWasmClockGrant)"
                                       Network="$(NetWasmNetworkPolicy)"
                                       Randomness="$(NetWasmRandomness)" />
+    <ItemGroup>
+      <NetWasmSiteFile Include="@(_NetWasmBrowserDeploymentArtifact->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteBrowserPath)%(_NetWasmBrowserDeploymentArtifact.RelativePath)</SitePath>
+      </NetWasmSiteFile>
+      <_NetWasmBrowserGeneratedSiteFile Include="$(_NetWasmSiteOutputDirectory)deployment.json;$(_NetWasmSiteOutputDirectory)$(AssemblyName).mjs;$(_NetWasmSiteOutputDirectory)$(AssemblyName).d.mts" />
+      <NetWasmSiteFile Include="@(_NetWasmBrowserGeneratedSiteFile->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteBrowserPath)%(_NetWasmBrowserGeneratedSiteFile.Filename)%(_NetWasmBrowserGeneratedSiteFile.Extension)</SitePath>
+      </NetWasmSiteFile>
+    </ItemGroup>
   </Target>
 
   <Target Name="NetWasmSdkValidateJavaScriptHosts"
@@ -1017,10 +1044,11 @@
            Text="The NetWasmWorkerJavaScriptModule item was renamed to NetWasmJavaScriptModule. Rename '@(NetWasmWorkerJavaScriptModule)' in the project file." />
   </Target>
 
-  <Target Name="NetWasmSdkPublishJsModule"
-          BeforeTargets="Publish"
-          DependsOnTargets="NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmPrepareRawAdapterArtifact;_NetWasmValidateJavaScriptItems"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'jsexport' AND '$(DesignTimeBuild)' != 'true' AND '$(IsPublishable)' == 'true'">
+  <!-- A JsModule's deployment: its files, and the manifest, modules and JavaScript runtime generated for them
+       under obj. -->
+  <Target Name="NetWasmSdkJsModuleSite"
+          DependsOnTargets="_NetWasmResolveSiteLayout;NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmPrepareRawAdapterArtifact;_NetWasmValidateJavaScriptItems"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'jsexport' AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK048"
            Condition="'$(NetWasmWorkerPublishDir)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmWorkerPublishDir)'))"
            Text="NetWasmWorkerPublishDir must be an absolute output directory." />
@@ -1033,19 +1061,16 @@
       <_NetWasmWorkerClientEntryPath>$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', '$(AssemblyName).worker-client-entry.mjs'))</_NetWasmWorkerClientEntryPath>
       <_NetWasmWorkerFileName>$(AssemblyName).worker.mjs</_NetWasmWorkerFileName>
       <_NetWasmWorkerClientFileName>$(AssemblyName).worker-client.mjs</_NetWasmWorkerClientFileName>
-      <_NetWasmWorkerClientPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(_NetWasmWorkerClientFileName)'))</_NetWasmWorkerClientPath>
-      <_NetWasmWorkerDeclarationPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).worker-client.d.mts'))</_NetWasmWorkerDeclarationPath>
-      <_NetWasmWorkerManifestPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', 'deployment.json'))</_NetWasmWorkerManifestPath>
+      <_NetWasmWorkerClientPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', '$(_NetWasmWorkerClientFileName)'))</_NetWasmWorkerClientPath>
+      <_NetWasmWorkerDeclarationPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', '$(AssemblyName).worker-client.d.mts'))</_NetWasmWorkerDeclarationPath>
+      <_NetWasmWorkerManifestPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', 'deployment.json'))</_NetWasmWorkerManifestPath>
       <_NetWasmPageHostEntryPath>$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', '$(AssemblyName).page-entry.mjs'))</_NetWasmPageHostEntryPath>
       <_NetWasmPageHostBundlePath>$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', 'netwasm.page.mjs'))</_NetWasmPageHostBundlePath>
-      <_NetWasmPageModulePath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).mjs'))</_NetWasmPageModulePath>
-      <_NetWasmPageDeclarationPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).d.mts'))</_NetWasmPageDeclarationPath>
-      <!-- The shared runtime's files go beside the entries, or, for a worker a
-           page publishes into its own deployment, beside the page's, so the
-           page and its workers load one copy. -->
-      <_NetWasmJavaScriptRuntimeDirectory>$([MSBuild]::EnsureTrailingSlash('$(NetWasmWorkerPublishDir)'))</_NetWasmJavaScriptRuntimeDirectory>
-      <_NetWasmJavaScriptRuntimeDirectory Condition="'$(_NetWasmCallerRuntimeDirectory)' != ''">$([MSBuild]::EnsureTrailingSlash('$(_NetWasmCallerRuntimeDirectory)'))</_NetWasmJavaScriptRuntimeDirectory>
-      <_NetWasmJavaScriptRuntimeUrlPrefix>$([MSBuild]::MakeRelative('$([MSBuild]::EnsureTrailingSlash('$(NetWasmWorkerPublishDir)'))', '$(_NetWasmJavaScriptRuntimeDirectory)').Replace('\', '/'))</_NetWasmJavaScriptRuntimeUrlPrefix>
+      <_NetWasmPageModulePath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', '$(AssemblyName).mjs'))</_NetWasmPageModulePath>
+      <_NetWasmPageDeclarationPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', '$(AssemblyName).d.mts'))</_NetWasmPageDeclarationPath>
+      <!-- The shared runtime's files are served at _NetWasmSiteRuntimePath; the entries name them relative to
+           their own place. -->
+      <_NetWasmJavaScriptRuntimeUrlPrefix>$([MSBuild]::MakeRelative('$(_NetWasmSiteDirectory)$(_NetWasmSiteBrowserPath)', '$(_NetWasmSiteDirectory)$(_NetWasmSiteRuntimePath)').Replace('\', '/'))</_NetWasmJavaScriptRuntimeUrlPrefix>
       <_NetWasmJavaScriptRuntimeUrlPrefix Condition="'$(_NetWasmJavaScriptRuntimeUrlPrefix)' == '' OR '$(_NetWasmJavaScriptRuntimeUrlPrefix)' == '.'">./</_NetWasmJavaScriptRuntimeUrlPrefix>
     </PropertyGroup>
 
@@ -1186,7 +1211,8 @@
       </_NetWasmWorkerDeploymentArtifact>
     </ItemGroup>
     <NetWasmWriteDeploymentTask ManifestPath="$(_NetWasmWorkerManifestPath)"
-                                DeploymentRoot="$(NetWasmWorkerPublishDir)"
+                                DeploymentRoot="$(_NetWasmSiteOutputDirectory)"
+                                CopyArtifacts="false"
                                 SemanticBuildId="$(NetWasmSemanticBuildId)"
                                 DeploymentKind="raw"
                                 Profile="$(NetWasmProfile)"
@@ -1236,18 +1262,28 @@
       <_NetWasmJavaScriptRuntimeFileDistinct Remove="@(_NetWasmJavaScriptRuntimeFileDistinct)" />
       <_NetWasmJavaScriptRuntimeFileDistinct Include="@(_NetWasmJavaScriptRuntimeFile->Distinct())" />
     </ItemGroup>
-    <Copy SourceFiles="@(_NetWasmJavaScriptRuntimeFileDistinct)"
-          DestinationFiles="@(_NetWasmJavaScriptRuntimeFileDistinct->'$(_NetWasmJavaScriptRuntimeDirectory)%(RelativePath)')"
-          SkipUnchangedFiles="true" />
     <ItemGroup>
-      <FileWrites Include="@(_NetWasmJavaScriptRuntimeFileDistinct->'$(_NetWasmJavaScriptRuntimeDirectory)%(RelativePath)')" />
+      <NetWasmSiteFile Include="@(_NetWasmWorkerDeploymentArtifact->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteBrowserPath)%(_NetWasmWorkerDeploymentArtifact.RelativePath)</SitePath>
+      </NetWasmSiteFile>
+      <_NetWasmJsModuleGeneratedSiteFile Include="$(_NetWasmWorkerManifestPath)" />
+      <_NetWasmJsModuleGeneratedSiteFile Include="$(_NetWasmPageModulePath);$(_NetWasmPageDeclarationPath)"
+                                         Condition="'$(_NetWasmJavaScriptPageHost)' == 'true'" />
+      <_NetWasmJsModuleGeneratedSiteFile Include="$(_NetWasmWorkerClientPath);$(_NetWasmWorkerDeclarationPath)"
+                                         Condition="'$(_NetWasmJavaScriptWorkerHost)' == 'true'" />
+      <NetWasmSiteFile Include="@(_NetWasmJsModuleGeneratedSiteFile->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteBrowserPath)%(_NetWasmJsModuleGeneratedSiteFile.Filename)%(_NetWasmJsModuleGeneratedSiteFile.Extension)</SitePath>
+      </NetWasmSiteFile>
+      <NetWasmSiteFile Include="@(_NetWasmJavaScriptRuntimeFileDistinct->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteRuntimePath)%(_NetWasmJavaScriptRuntimeFileDistinct.RelativePath)</SitePath>
+      </NetWasmSiteFile>
     </ItemGroup>
   </Target>
 
-  <Target Name="NetWasmSdkPublishWitWorker"
-          BeforeTargets="Publish"
-          DependsOnTargets="NetWasmSdkGetWitWorkerContract;NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmValidateJavaScriptItems"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'wit' AND '$(DesignTimeBuild)' != 'true' AND '$(IsPublishable)' == 'true'">
+  <!-- A WIT web worker's deployment: its files, and the manifest and client generated for them under obj. -->
+  <Target Name="NetWasmSdkWitWorkerSite"
+          DependsOnTargets="_NetWasmResolveSiteLayout;NetWasmSdkGetWitWorkerContract;NetWasmSdkComponentize;NetWasmValidateCompilerArtifacts;NetWasmSdkValidateFinalArtifactForNoBuild;NetWasmSdkResolveExecutionArguments;NetWasmSdkPrepareTimeZoneSidecar;_NetWasmValidateJavaScriptItems"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmWorkerKind)' == 'wit' AND '$(DesignTimeBuild)' != 'true'">
     <Error Code="NWSDK067"
            Condition="'$(NetWasmWorkerPublishDir)' == '' OR !$([System.IO.Path]::IsPathFullyQualified('$(NetWasmWorkerPublishDir)'))"
            Text="WIT worker publish requires an absolute NetWasmWorkerPublishDir." />
@@ -1262,9 +1298,9 @@
       <_NetWasmWitWorkerHostBundlePath>$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', '$(AssemblyName).worker.mjs'))</_NetWasmWitWorkerHostBundlePath>
       <_NetWasmWitWorkerClientEntryPath>$([System.IO.Path]::Combine('$(NetWasmIntermediateOutputPath)', '$(AssemblyName).worker-client-entry.mjs'))</_NetWasmWitWorkerClientEntryPath>
       <_NetWasmWitWorkerFileName>$(AssemblyName).worker.mjs</_NetWasmWitWorkerFileName>
-      <_NetWasmWitWorkerClientPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).worker-client.mjs'))</_NetWasmWitWorkerClientPath>
-      <_NetWasmWitWorkerDeclarationPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', '$(AssemblyName).worker-client.d.mts'))</_NetWasmWitWorkerDeclarationPath>
-      <_NetWasmWitWorkerManifestPath>$([System.IO.Path]::Combine('$(NetWasmWorkerPublishDir)', 'deployment.json'))</_NetWasmWitWorkerManifestPath>
+      <_NetWasmWitWorkerClientPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', '$(AssemblyName).worker-client.mjs'))</_NetWasmWitWorkerClientPath>
+      <_NetWasmWitWorkerDeclarationPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', '$(AssemblyName).worker-client.d.mts'))</_NetWasmWitWorkerDeclarationPath>
+      <_NetWasmWitWorkerManifestPath>$([System.IO.Path]::Combine('$(_NetWasmSiteOutputDirectory)', 'deployment.json'))</_NetWasmWitWorkerManifestPath>
     </PropertyGroup>
 
     <NetWasmReadCompilerBuildMetadataTask MetadataPath="$(NetWasmCompilerMetadataPath)">
@@ -1281,6 +1317,7 @@
     <NetWasmProjectWitFunctionsTask WasmToolsNodePath="$(NetWasmNodePath)"
                                     WasmToolsCommandPath="$(NetWasmWasmToolsCommandPath)"
                                     WasmToolsModulePath="$(NetWasmWasmToolsModulePath)"
+                                    NativeWasmToolsPath="$(NetWasmNativeWasmToolsPath)"
                                     WitPath="$(NetWasmOutputPath)"
                                     ApplicationWitPath="$(_NetWasmResolvedWitWorkerPackagePath)"
                                     ApplicationWorld="$(NetWasmApplicationWorld)"
@@ -1358,7 +1395,8 @@
       </_NetWasmWitWorkerDeploymentArtifact>
     </ItemGroup>
     <NetWasmWriteDeploymentTask ManifestPath="$(_NetWasmWitWorkerManifestPath)"
-                                DeploymentRoot="$(NetWasmWorkerPublishDir)"
+                                DeploymentRoot="$(_NetWasmSiteOutputDirectory)"
+                                CopyArtifacts="false"
                                 SemanticBuildId="$(NetWasmSemanticBuildId)"
                                 DeploymentKind="browser"
                                 Profile="$(NetWasmProfile)"
@@ -1392,6 +1430,15 @@
                                 OutputPath="$(_NetWasmWitWorkerClientPath)"
                                 Platform="browser"
                                 Minify="$(NetWasmMinifyJavaScript)" />
+    <ItemGroup>
+      <NetWasmSiteFile Include="@(_NetWasmWitWorkerDeploymentArtifact->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteBrowserPath)%(_NetWasmWitWorkerDeploymentArtifact.RelativePath)</SitePath>
+      </NetWasmSiteFile>
+      <_NetWasmWitWorkerGeneratedSiteFile Include="$(_NetWasmWitWorkerManifestPath);$(_NetWasmWitWorkerClientPath);$(_NetWasmWitWorkerDeclarationPath)" />
+      <NetWasmSiteFile Include="@(_NetWasmWitWorkerGeneratedSiteFile->'%(FullPath)')">
+        <SitePath>$(_NetWasmSiteBrowserPath)%(_NetWasmWitWorkerGeneratedSiteFile.Filename)%(_NetWasmWitWorkerGeneratedSiteFile.Extension)</SitePath>
+      </NetWasmSiteFile>
+    </ItemGroup>
   </Target>
 
 
@@ -1411,61 +1458,113 @@
        compiler input, so its publish stages nothing, and a solution publish
        skips it with IsPublishable=false. -->
 
+  <!-- A browser project's site: every file it serves, each a NetWasmSiteFile item naming its source and the
+       SitePath it is served at, relative to the publish directory. Projects and packages add their files in a
+       target listed in NetWasmCollectSiteFilesDependsOn, or one that runs before NetWasmCollectSiteFiles; a file
+       with Fallback="true" is served only when nothing else is at its path. NetWasm's own files are generated
+       under obj during the build. Publish copies the site files as it copies any other; dotnet run serves them
+       where they are, from the map the build writes (NetWasmSdkWriteSite). -->
+  <Target Name="_NetWasmResolveSiteLayout">
+    <PropertyGroup>
+      <_NetWasmRunServesBrowser>false</_NetWasmRunServesBrowser>
+      <_NetWasmRunServesBrowser Condition="'$(_NetWasmWorkerKind)' != '' OR ('$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser')">true</_NetWasmRunServesBrowser>
+      <_NetWasmSitePublishDir>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(PublishDir)'))))))</_NetWasmSitePublishDir>
+      <_NetWasmSiteBrowserDirectory>$(NetWasmBrowserPublishDir)</_NetWasmSiteBrowserDirectory>
+      <_NetWasmSiteBrowserDirectory Condition="'$(_NetWasmWorkerKind)' != ''">$(NetWasmWorkerPublishDir)</_NetWasmSiteBrowserDirectory>
+      <!-- Where the browser files are served, relative to the publish directory; a page that publishes a worker
+           names it, under its own browser files. -->
+      <_NetWasmSiteBrowserPath Condition="'$(_NetWasmSiteBrowserPath)' == ''">$([MSBuild]::MakeRelative('$(_NetWasmSitePublishDir)', '$([MSBuild]::EnsureTrailingSlash('$(_NetWasmSiteBrowserDirectory)'))').Replace('\', '/'))</_NetWasmSiteBrowserPath>
+      <_NetWasmSiteBrowserPath Condition="'$(_NetWasmSiteBrowserPath)' == './'"></_NetWasmSiteBrowserPath>
+      <!-- The shared JavaScript runtime's files go beside the browser files, or beside the page's for a worker the
+           page publishes, so the page and its workers load one copy. -->
+      <_NetWasmSiteRuntimePath>$(_NetWasmSiteBrowserPath)</_NetWasmSiteRuntimePath>
+      <_NetWasmSiteRuntimePath Condition="'$(_NetWasmCallerRuntimeSitePath)' != ''">$(_NetWasmCallerRuntimeSitePath)</_NetWasmSiteRuntimePath>
+      <_NetWasmSiteDirectory>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'site'))))))</_NetWasmSiteDirectory>
+      <!-- Generated files keep their site path under obj; browser files published outside the publish directory
+           are generated under obj's browser folder. -->
+      <_NetWasmSiteOutputPath>$(_NetWasmSiteBrowserPath)</_NetWasmSiteOutputPath>
+      <_NetWasmSiteOutputPath Condition="$(_NetWasmSiteOutputPath.StartsWith('..')) OR $([System.IO.Path]::IsPathRooted('$(_NetWasmSiteOutputPath)'))">browser/</_NetWasmSiteOutputPath>
+      <_NetWasmSiteOutputDirectory>$(_NetWasmSiteDirectory)$(_NetWasmSiteOutputPath)</_NetWasmSiteOutputDirectory>
+      <_NetWasmSiteMapPath>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'site.json'))))</_NetWasmSiteMapPath>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Where a page places a worker's site describes the worker, not the projects it references, which keep the
+       build's own instances. -->
+  <ItemDefinitionGroup Condition="'$(_NetWasmPlacedWorker)' == 'true'">
+    <ProjectReference>
+      <UndefineProperties>%(ProjectReference.UndefineProperties);_NetWasmPlacedWorker;_NetWasmSiteBrowserPath;_NetWasmCallerRuntimeSitePath</UndefineProperties>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+
+  <PropertyGroup>
+    <NetWasmCollectSiteFilesDependsOn>_NetWasmResolveSiteLayout;NetWasmSdkResolveBuildEnvironment;NetWasmSdkPrepareWitWorkerPackage;NetWasmSdkValidateLifecycleTarget;NetWasmSdkBrowserSite;NetWasmSdkJsModuleSite;NetWasmSdkWitWorkerSite;NetWasmSdkWorkerSites;$(NetWasmCollectSiteFilesDependsOn)</NetWasmCollectSiteFilesDependsOn>
+  </PropertyGroup>
+
+  <Target Name="NetWasmCollectSiteFiles"
+          DependsOnTargets="$(NetWasmCollectSiteFilesDependsOn)"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true'"
+          Returns="@(NetWasmSiteFile)" />
+
+  <!-- Publish copies the site files with the project's other files; a fallback file only where none is. The
+       condition names no site file: MSBuild evaluates it before NetWasmCollectSiteFiles declares them, so a
+       publish without a build, or of a project whose build collects none, would copy none. -->
+  <Target Name="_NetWasmPublishSiteFiles"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          DependsOnTargets="NetWasmCollectSiteFiles"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true'">
+    <NetWasmResolveSiteFilesTask PublishFiles="@(ResolvedFileToPublish)" SiteFiles="@(NetWasmSiteFile)">
+      <Output TaskParameter="FilesToPublish" ItemName="_NetWasmSiteFilesToPublish" />
+    </NetWasmResolveSiteFilesTask>
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" />
+      <ResolvedFileToPublish Include="@(_NetWasmSiteFilesToPublish)" />
+      <_NetWasmSiteFilesToPublish Remove="@(_NetWasmSiteFilesToPublish)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Every file of the site, as publish copies it: its source, and its SitePath. A site that serves another
+       project's site in part, as a routed application serves its routes, takes it from here. -->
+  <Target Name="NetWasmResolveSiteFiles"
+          DependsOnTargets="NetWasmCollectSiteFiles;ComputeResolvedFilesToPublishList"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true'"
+          Returns="@(_NetWasmResolvedSiteFile)">
+    <ItemGroup>
+      <_NetWasmResolvedSiteFile Remove="@(_NetWasmResolvedSiteFile)" />
+      <_NetWasmResolvedSiteFile Include="@(ResolvedFileToPublish->'%(FullPath)')">
+        <SitePath>$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/'))</SitePath>
+      </_NetWasmResolvedSiteFile>
+    </ItemGroup>
+  </Target>
+
+  <!-- The build of a project dotnet run serves writes the map of its site, every file publish would copy at its
+       path, which dotnet run serves in place and reloads the page from whenever the build writes it again: a
+       browser application, and a JsModule or WIT worker, whose page may be its own. A worker built for its
+       place on another project's page serves nothing itself. -->
+  <Target Name="NetWasmSdkWriteSite"
+          AfterTargets="Build"
+          DependsOnTargets="_NetWasmResolveSiteLayout;NetWasmResolveSiteFiles"
+          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(DesignTimeBuild)' != 'true' AND '$(_NetWasmPlacedWorker)' != 'true' AND (('$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser') OR '$(_NetWasmWorkerKind)' != '')">
+    <NetWasmWriteSiteMapTask Files="@(ResolvedFileToPublish)" OutputPath="$(_NetWasmSiteMapPath)" />
+  </Target>
+
   <!-- dotnet run runs what dotnet publish produces. An application published
-       for the local launcher runs in Node. A browser project, a JsModule, a
-       WitWebWorker or an application published for the browser, publishes
-       to a staging directory that a development server serves on localhost;
-       its page is the index.html it publishes. dotnet run calls
-       ComputeRunArguments after the build and then starts RunCommand. -->
+       for the local launcher runs in Node. A page's site is served on
+       localhost by a development server, from the map its build wrote; the
+       page is the site's index.html. dotnet run calls ComputeRunArguments after
+       the build and then starts RunCommand. -->
   <Target Name="NetWasmSdkComputeRunArguments"
           BeforeTargets="ComputeRunArguments"
-          DependsOnTargets="NetWasmSdkResolveBuildEnvironment"
+          DependsOnTargets="NetWasmSdkResolveBuildEnvironment;_NetWasmResolveSiteLayout"
           Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <Error Code="NWSDK018"
            Condition="'$(OutputType)' != 'Exe' AND '$(_NetWasmWorkerKind)' == ''"
            Text="NetWasm Library projects cannot be run; run an application or browser project that references the library." />
-    <PropertyGroup>
-      <_NetWasmRunServesBrowser>false</_NetWasmRunServesBrowser>
-      <_NetWasmRunServesBrowser Condition="'$(_NetWasmWorkerKind)' != '' OR ('$(OutputType)' == 'Exe' AND '$(NetWasmPublishTargetNormalized)' == 'browser')">true</_NetWasmRunServesBrowser>
-    </PropertyGroup>
-    <PropertyGroup Condition="'$(_NetWasmRunServesBrowser)' == 'true'">
-      <_NetWasmRunSiteDirectory>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'run-site'))))</_NetWasmRunSiteDirectory>
-      <!-- The staged browser files keep their place under the publish directory,
-           where the page's imports expect them. -->
-      <_NetWasmRunPublishDir>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(PublishDir)'))))</_NetWasmRunPublishDir>
-      <_NetWasmRunBrowserDirectory>$([MSBuild]::MakeRelative('$(_NetWasmRunPublishDir)', '$(NetWasmBrowserPublishDir)'))</_NetWasmRunBrowserDirectory>
-      <_NetWasmRunBrowserDirectory Condition="'$(_NetWasmRunBrowserDirectory)' == '' OR $(_NetWasmRunBrowserDirectory.StartsWith('..')) OR $([System.IO.Path]::IsPathRooted('$(_NetWasmRunBrowserDirectory)'))">browser</_NetWasmRunBrowserDirectory>
-    </PropertyGroup>
-    <!-- dotnet run computes the run command inside the .NET CLI, where MSBuild
-         cannot start the compiler's task hosts, so the development server
-         publishes the site first, in a process of its own, with the run's
-         global properties. -->
-    <PropertyGroup Condition="'$(_NetWasmRunServesBrowser)' == 'true'">
-      <_NetWasmRunDotNetPath>$(DOTNET_HOST_PATH)</_NetWasmRunDotNetPath>
-      <_NetWasmRunDotNetPath Condition="'$(_NetWasmRunDotNetPath)' == '' AND $([MSBuild]::IsOSPlatform('Windows'))">$([System.IO.Path]::Combine('$(NetCoreRoot)', 'dotnet.exe'))</_NetWasmRunDotNetPath>
-      <_NetWasmRunDotNetPath Condition="'$(_NetWasmRunDotNetPath)' == ''">$([System.IO.Path]::Combine('$(NetCoreRoot)', 'dotnet'))</_NetWasmRunDotNetPath>
-      <_NetWasmRunStagePath>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'netwasm', 'run-stage.json'))))</_NetWasmRunStagePath>
-    </PropertyGroup>
-    <RemoveDir Condition="'$(_NetWasmRunServesBrowser)' == 'true'" Directories="$(_NetWasmRunSiteDirectory)" />
-    <NetWasmWriteBrowserRunStageTask Condition="'$(_NetWasmRunServesBrowser)' == 'true'"
-                                     DotNetPath="$(_NetWasmRunDotNetPath)"
-                                     ProjectPath="$(MSBuildProjectFullPath)"
-                                     SiteDirectory="$(_NetWasmRunSiteDirectory)"
-                                     BrowserDirectory="$(_NetWasmRunBrowserDirectory)"
-                                     OutputPath="$(_NetWasmRunStagePath)" />
     <PropertyGroup Condition="'$(_NetWasmRunServesBrowser)' == 'true'">
       <RunCommand>$(NetWasmNodePath)</RunCommand>
-      <RunArguments>&quot;$(MSBuildThisFileDirectory)netwasm-serve.mjs&quot; --root &quot;$(_NetWasmRunSiteDirectory)&quot; --stage &quot;$(_NetWasmRunStagePath)&quot;</RunArguments>
+      <RunArguments>&quot;$(MSBuildThisFileDirectory)netwasm-serve.mjs&quot; --site &quot;$(_NetWasmSiteMapPath)&quot;</RunArguments>
       <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
     </PropertyGroup>
-  </Target>
-
-  <Target Name="_NetWasmRequireRunPage"
-          AfterTargets="Publish"
-          Condition="'$(TargetFramework)' == 'netwasm0.1' AND '$(_NetWasmRunStaging)' == 'true' AND '$(IsPublishable)' == 'true'">
-    <Error Code="NWSDK052"
-           Condition="!Exists('$(PublishDir)index.html')"
-           Text="dotnet run serves the page this project publishes, but it publishes no index.html. Add the page, such as &lt;Content Include=&quot;index.html&quot; CopyToPublishDirectory=&quot;PreserveNewest&quot; /&gt;, or run the project whose page uses this one." />
   </Target>
 
   <Target Name="NetWasmSdkValidateRun"
@@ -1484,6 +1583,7 @@
           BeforeTargets="CoreClean"
           Condition="'$(TargetFramework)' == 'netwasm0.1'">
     <Delete Files="$(NetWasmOutputPath);$(NetWasmComponentManifestPath);$(NetWasmExecutionDescriptorPath);$(NetWasmExecutionRequestPath);$(NetWasmExecutionResultPath);$(NetWasmLocalLauncherBuildPath)" />
-    <RemoveDir Directories="$(NetWasmDeploymentRoot);$(NetWasmComponentJavaScriptDirectory)" />
+    <RemoveDir Directories="$(NetWasmDeploymentRoot);$(NetWasmComponentJavaScriptDirectory);$(MSBuildProjectDirectory)/$(IntermediateOutputPath)netwasm/site" />
+    <Delete Files="$(MSBuildProjectDirectory)/$(IntermediateOutputPath)netwasm/site.json" />
   </Target>
 </Project>

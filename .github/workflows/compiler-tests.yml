@@ -43,6 +43,10 @@ on:
         description: Collect before every allocation on the linked runtime (NETWASM_CORPUS_GC_STRESS).
         type: boolean
         default: false
+      compiled-units:
+        description: NETWASM_TEST_COMPILED_UNITS; verify also compiles every corpus request at its own level with compiled units under verification, reusing what the shard's other requests left behind.
+        type: string
+        default: ''
       coverage:
         description: Collect each shard's Coverlet JSON report as an artifact.
         type: boolean
@@ -180,6 +184,7 @@ jobs:
           CORPUS_BACKEND: ${{ inputs.corpus-backend }}
           CORPUS_COLLECTOR: ${{ inputs.collector }}
           GC_STRESS: ${{ inputs.gc-stress }}
+          COMPILED_UNITS: ${{ inputs.compiled-units }}
           TEST_OPTIMIZATION: ${{ inputs.optimization }}
           TEST_CLASSES: ${{ inputs.classes }}
           COVERAGE: ${{ inputs.coverage }}
@@ -204,6 +209,10 @@ jobs:
           fi
           if [[ "$GC_STRESS" == true ]]; then
             export NETWASM_CORPUS_GC_STRESS=1
+          fi
+          if [[ -n "$COMPILED_UNITS" ]]; then
+            export NETWASM_TEST_COMPILED_UNITS="$COMPILED_UNITS"
+            export NETWASM_TEST_COMPILED_UNITS_DIR="$RUNNER_TEMP/compiled-units"
           fi
           NETWASM_NODE_PATH="$(command -v node)"
           export NETWASM_NODE_PATH

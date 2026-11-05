@@ -1,13 +1,11 @@
 using System.Collections.Immutable;
 using NetWasm.Compiler.Analysis;
-using NetWasm.Compiler.Caching.Frontend;
 using NetWasm.Compiler.ControlFlow;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.Types;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Delegates;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Members;
 using NetWasm.Compiler.Metadata;
-using NetWasm.Compiler.Tests.Caching.Frontend;
 
 using NetWasm.Compiler.Analysis.ManagedCallSites;
 using NetWasm.Compiler.Analysis.Delegates;
@@ -410,50 +408,39 @@ public sealed class WholeProgramAnalyzerDirectTests
     }
 
     [Fact]
-    public void DelegateInvokeDemandMatchesColdAndCachedProductionHierarchyClosure()
+    public void DelegateInvokeDemandFollowsTheProductionHierarchyClosure()
     {
-        var cold = new ClosureFixture(genericDelegate: true)
+        var fixture = new ClosureFixture(genericDelegate: true)
         {
             DemandDelegateInvoke = true,
             UseProductionDelegateHierarchy = true,
         };
-        var cached = new ClosureFixture(genericDelegate: true)
-        {
-            DemandDelegateInvoke = true,
-            UseProductionDelegateHierarchy = true,
-            RoundTripInstructionsThroughFrontendCache = true,
-        };
 
-        _ = cold.CreateBuilder().Build(cold.Entry, []);
-        _ = cached.CreateBuilder().Build(cached.Entry, []);
+        _ = fixture.CreateBuilder().Build(fixture.Entry, []);
 
-        var coldSnapshot = cold.ProgramBuilder.Snapshot!;
-        var cachedSnapshot = cached.ProgramBuilder.Snapshot!;
-        Assert.True(cachedSnapshot.RequiresDelegateInvoke);
-        Assert.Equal(
-            coldSnapshot.DelegateInvokeDescriptors.Keys,
-            cachedSnapshot.DelegateInvokeDescriptors.Keys);
-        Assert.Equal(2, cachedSnapshot.DelegateInvokeDescriptors.Count);
+        var snapshot = fixture.ProgramBuilder.Snapshot!;
+        Assert.True(snapshot.RequiresDelegateInvoke);
+        Assert.Equal(2, snapshot.DelegateInvokeDescriptors.Count);
         Assert.DoesNotContain(
-            cachedSnapshot.DelegateInvokeDescriptors.Keys,
+            snapshot.DelegateInvokeDescriptors.Keys,
             key => key.Contains("System.Delegate", StringComparison.Ordinal) ||
                    key.Contains("System.MulticastDelegate", StringComparison.Ordinal));
         Assert.DoesNotContain(
-            cachedSnapshot.DelegateInvokeDescriptors.Keys,
-            key => key == cached.DelegateDefinitionType.CanonicalName);
+            snapshot.DelegateInvokeDescriptors.Keys,
+            key => key == fixture.DelegateDefinitionType.CanonicalName);
         Assert.Equal(
             [CliValueKind.I4, CliValueKind.I8],
-            cachedSnapshot.DelegateInvokeDescriptors.Values
+            snapshot.DelegateInvokeDescriptors.Values
                 .Select(method => method.Signature.ReturnSignatureType.StackKind)
                 .Order()
                 .ToArray());
         Assert.All(
-            cachedSnapshot.DelegateInvokeDescriptors.Values,
+            snapshot.DelegateInvokeDescriptors.Values,
             invoke => Assert.DoesNotContain(
-                cachedSnapshot.MethodInstances.Values,
+                snapshot.MethodInstances.Values,
                 candidate => candidate.CanonicalName == invoke.CanonicalName));
         Assert.DoesNotContain(
-            cachedSnapshot.ConstructedStaticInitializers,
+            snapshot.ConstructedStaticInitializers,
             identity => identity.Contains("Callback", StringComparison.Ordinal));
     }
 
@@ -760,7 +747,6 @@ public sealed class WholeProgramAnalyzerDirectTests
         internal bool ContradictoryDelegateInvokeFacts { get; init; }
         internal bool IncludeNonInstanceInvokeCandidates { get; init; }
         internal bool UseProductionDelegateHierarchy { get; init; }
-        internal bool RoundTripInstructionsThroughFrontendCache { get; init; }
         internal bool IncludeNativeCallback { get; init; }
         internal bool IncludeOpenGenericRuntimeType { get; init; }
         internal RuntimeTypeNamePayload DemandedTypeNamePayload { get; init; }
@@ -1115,19 +1101,6 @@ public sealed class WholeProgramAnalyzerDirectTests
                     _initializer,
                     invalid.Definition);
             }
-            if (RoundTripInstructionsThroughFrontendCache)
-            {
-                var artifact = FrontendArtifactSnapshotTests.CreateArtifact();
-                var snapshot = new FrontendArtifactSnapshotter().Capture(artifact);
-                var encoded = new FrontendArtifactEncoder().Encode(snapshot with
-                {
-                    Analysis = snapshot.Analysis with { Instructions = instructions },
-                });
-                instructions = new FrontendArtifactDecoder()
-                    .Decode(encoded)
-                    .Analysis
-                    .Instructions;
-            }
             var methodAnalyzer = new FixedMethodAnalyzer(instructions, CatchTypeIdentity);
             var definition = _targetDefinition with { IsBeforeFieldInit = BeforeFieldInit };
             var delegateMethods = DelegateInvokeCount switch
@@ -1258,8 +1231,8 @@ public sealed class WholeProgramAnalyzerDirectTests
                 missing == 10 ? null! : Imports,
                 missing == 17
                     ? null!
-                    : new ReachableMethodBatchAnalyzer(
-                        [missing == 11 ? null! : methodAnalyzer],
+                    : new SynchronousReachableMethodAnalysisSessionFactory(
+                        missing == 11 ? null! : methodAnalyzer,
                         new RecordingReachableMethodBatchObserver()),
                 missing == 12 ? null! : typeTests,
                 missing == 13 ? null! : ProgramBuilder,
@@ -1270,7 +1243,7 @@ public sealed class WholeProgramAnalyzerDirectTests
                 missing == 15
                     ? null!
                     : new DispatchCandidateIndexFactory(
-                        new TestTypeRelationshipClassifier()),
+                        new TestTypeRelationshipClassifier(), UnboundedTypeRelationshipKeys.Instance),
                 missing == 19 ? null! : new ModuleInitializerResolver([], []),
                 missing == 20
                     ? null!

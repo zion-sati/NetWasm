@@ -31,11 +31,10 @@ public static class BrowserRawCoreModules
         var tools = BrowserLinkPlanValidation.CreateToolCapture(recorder);
         var inline = new BrowserLinkInlineCapture(recorder);
         var execution = new RawModuleLinkExecution(new EmscriptenEnvironmentShimWriter(new BrowserLinkTextCapture(recorder)),
-            new ComponentCoreModuleMergeRunner(tools),
+            new ComponentCoreModuleMergeRunner(tools, inline, new BrowserLinkExportCapture(recorder)),
             new ComponentCoreModuleOptimizer(tools, new BrowserLinkCaptureFileExistence(state),
                 new WasmCoreModuleValidator(new BrowserLinkValidationCapture(recorder)), inline),
-            new BrowserLinkMoveCapture(recorder), new BrowserLinkExportCapture(recorder),
-            new WasmOptimizationSettingsResolver(), inline);
+            new BrowserLinkMoveCapture(recorder), new WasmOptimizationSettingsResolver());
         execution.Run(request, new ComponentPackageWorkspace(new BrowserLinkDirectoryCleanupCapture(workspace.TemporaryDirectory),
             workspace.TemporaryDirectory, workspace.LinkedModulePath,
             Path.Combine(workspace.TemporaryDirectory, "unused-embedded.wasm"),

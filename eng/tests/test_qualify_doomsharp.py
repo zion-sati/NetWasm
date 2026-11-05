@@ -40,7 +40,7 @@ class ConfigureTests(unittest.TestCase):
             config = (bench / "NuGet.Config").read_text()
             self.assertIn("<clear />", config)
             self.assertIn('value="/packages"', config)
-            for name in ("Directory.Build.props", "Directory.Build.targets"):
+            for name in ("Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props"):
                 self.assertEqual("<Project />\n", (bench / name).read_text())
 
 

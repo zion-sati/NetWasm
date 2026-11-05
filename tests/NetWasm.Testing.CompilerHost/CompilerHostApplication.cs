@@ -18,7 +18,8 @@ internal sealed class CompilerHostApplication(
     INetWasmCompiler compiler,
     IMetadataCompilationLoader metadataLoader,
     ICompilerHostArtifactFormatter artifactFormatter,
-    ICompilerHostArtifactWriter artifactWriter) : ICompilerHostRequestRunner
+    ICompilerHostArtifactWriter artifactWriter,
+    ICompilerHostUnitVerification? unitVerification = null) : ICompilerHostRequestRunner
 {
     private readonly INetWasmCompiler _compiler =
         compiler ?? throw new ArgumentNullException(nameof(compiler));
@@ -37,7 +38,7 @@ internal sealed class CompilerHostApplication(
         var metrics = new CompilerHostMetricsObserver();
         try
         {
-            var result = _compiler.Compile(new CompilerOptions(
+            var options = new CompilerOptions(
                 request.EntryAssemblyPath,
                 request.ReferencePaths,
                 request.EntryTypeName,
@@ -52,11 +53,12 @@ internal sealed class CompilerHostApplication(
                 EmitStackTrace: request.EmitStackTrace,
                 EntryPointKind: request.EntryPointKind,
                 MetricsObserver: request.CollectCompilerMetrics ? metrics : null,
-                EnableFrontendCache: request.EnableFrontendCache,
                 IntermediateOutputPath: request.IntermediateOutputPath,
                 StructuredDiagnostics: request.StructuredDiagnostics,
-                Optimization: request.Optimization));
+                Optimization: request.Optimization);
+            var result = _compiler.Compile(options);
             _artifactWriter.Write(_artifactFormatter.Format(request, result));
+            unitVerification?.Verify(options);
 
             using var metadata = request.ReferenceAssemblyAliases.Count == 0
                 ? _metadataLoader.Load(request.EntryAssemblyPath, request.ReferencePaths)

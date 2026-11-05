@@ -54,6 +54,7 @@ def publish_compiler(rid: str, version: str, environment: dict[str, str]) -> Pat
             "dotnet", "publish",
             str(ROOT / "src/NetWasm.Compiler.Cli/NetWasm.Compiler.Cli.csproj"),
             "-c", "Release",
+            "-f", "net11.0",
             "-r", rid,
             "-p:PublishAot=true",
             f"-p:Version={version}",

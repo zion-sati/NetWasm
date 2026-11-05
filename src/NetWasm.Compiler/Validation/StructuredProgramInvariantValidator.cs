@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
@@ -18,29 +19,36 @@ internal sealed class StructuredProgramInvariantValidator(
     {
         ArgumentNullException.ThrowIfNull(symbols);
         ArgumentNullException.ThrowIfNull(program);
-        foreach (var pair in program.Methods)
+        // The validators keep no state between methods, so methods are checked on all cores;
+        // the first failing method in order is reported.
+        var ordinary = program.Methods.ToArray();
+        var constructed = program.ConstructedMethods.ToArray();
+        OrderedParallel.For(ordinary.Length + constructed.Length, index =>
         {
-            ValidateIdentity(
-                pair.Key == pair.Value.Header.Method.Key,
-                symbols.Format(pair.Value.Header.Method));
-            _validator.Validate(pair.Value);
-        }
-        foreach (var pair in program.ConstructedMethods)
-        {
-            ValidateIdentity(
-                pair.Value.Header.MethodInstance?.CanonicalName == pair.Key,
-                pair.Key);
-            _validator.Validate(pair.Value);
-        }
+            if (index < ordinary.Length)
+            {
+                var pair = ordinary[index];
+                if (pair.Key != pair.Value.Header.Method.Key)
+                    throw IdentityMismatch(symbols.Format(pair.Value.Header.Method));
+                Validate(pair.Value);
+            }
+            else
+            {
+                var pair = constructed[index - ordinary.Length];
+                if (pair.Value.Header.MethodInstance?.CanonicalName != pair.Key)
+                    throw IdentityMismatch(pair.Key);
+                Validate(pair.Value);
+            }
+        });
     }
 
-    private void ValidateIdentity(bool valid, string method)
+    // An outline has no blocks yet; it is checked when it is structured, if it is emitted.
+    private void Validate(StructuredMethod method)
     {
-        if (!valid)
-        {
-            throw exceptions.Create(
-                "structured method identity does not match its reachable-program key",
-                method);
-        }
+        if (method.Outline is null) _validator.Validate(method);
     }
+
+    private CompilerException IdentityMismatch(string method) => exceptions.Create(
+        "structured method identity does not match its reachable-program key",
+        method);
 }

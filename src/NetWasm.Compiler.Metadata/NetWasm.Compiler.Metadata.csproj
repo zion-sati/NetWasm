@@ -3,6 +3,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.IO.Hashing" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../NetWasm.Compiler.Core/NetWasm.Compiler.Core.csproj" />
   </ItemGroup>
 </Project>

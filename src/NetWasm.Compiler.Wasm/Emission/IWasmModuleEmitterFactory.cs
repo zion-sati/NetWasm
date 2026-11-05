@@ -111,7 +111,9 @@ public sealed class WasmModuleEmitterFactory(
     {
         var workerCount = SelectWorkerCount(
             OperatingSystem.IsBrowser(), parallelism);
-        var forks = workerCount > 1 && layoutForks is not null
+        // Workers emit bodies side by side; compiled units are restored and recorded by
+        // workers, so a compile that keeps them uses one even without parallelism.
+        var forks = (workerCount > 1 || request.CompiledUnits is not null) && layoutForks is not null
             ? layoutForks.Create(targetLayout, types, typeDefinitions, fields)
             : null;
         return WasmModuleEmissionCompositionRoot.Emit(

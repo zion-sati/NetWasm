@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -774,7 +775,7 @@ public sealed class ManagedAssemblyTests
     private static MetadataSymbolFormatter Symbols(ManagedAssembly assembly) =>
         new MetadataSymbolFormatter(
             new MetadataTypeRepository(
-                assembly.Types.Values.ToImmutableDictionary(type => type.Key),
+                assembly.Types.Values.ToFrozenDictionary(type => type.Key),
                 MetadataActorTestData.CreateAvailabilityValidator()));
 
     private static int FindBlob(byte[] image, byte[] blob) =>

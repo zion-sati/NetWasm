@@ -1,0 +1,27 @@
+<Project>
+  <!-- The dotnet/performance micro-benchmarks, the attribute stand-ins and the generated case table, shared by
+       every runtime's build. run.py passes DotnetPerformanceSource (the checkout's src directory) and
+       MicroBenchmarkGenerated (the directory holding the case table and the exclusions as Compile removals). -->
+  <PropertyGroup>
+    <Micro>$(MSBuildThisFileDirectory)</Micro>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);CS0162;CS0168;CS0219;CS0414;CS0649;CS0169;CS8618;CS8632;CS1998;CS0618;CS8981;SYSLIB0011</NoWarn>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/runtime/**/*.cs" />
+    <!-- The vector library benchmarks, since NetWasm lowers Vector128<T> and Vector<T> to Wasm SIMD. -->
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Runtime.Intrinsics/**/*.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Numerics.Vectors/**/*.cs" />
+    <!-- The span and string benchmarks, which take upstream's vectorized SpanHelpers, SearchValues and Ascii. -->
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/libraries/System.Memory/**/*.cs" />
+    <Compile Include="$(DotnetPerformanceSource)/benchmarks/micro/Categories.cs" />
+    <Compile Include="$(Micro)shim/*.cs;$(Micro)runner/*.cs;$(MicroBenchmarkGenerated)/Benchmarks.g.cs" />
+    <!-- NetWasm's own workloads, such as issue #166's prime search. -->
+    <Compile Include="$(Micro)workloads/*.cs" />
+  </ItemGroup>
+  <Import Project="$(MicroBenchmarkGenerated)/Exclusions.g.props" />
+</Project>

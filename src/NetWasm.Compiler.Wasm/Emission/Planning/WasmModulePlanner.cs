@@ -49,6 +49,8 @@ internal sealed class WasmModulePlanner(
         WasmEmissionRequest request,
         ImmutableArray<StructuredMethodEmission> methodEmissions)
     {
+        // The runtime intrinsics the program calls, found in one pass over its instructions.
+        var calledIntrinsics = CalledIntrinsics(methodEmissions).ToHashSet();
         var hasInteropTerminalBoundary =
             !request.HostCallbacks.IsEmpty ||
             request.NativeCallbacks.Count != 0 ||
@@ -65,12 +67,14 @@ internal sealed class WasmModulePlanner(
             includeTerminalExceptionReporter,
             request.EmitStackTrace,
             request.RequestedExports.Values.Any(request.JavaScriptAsyncBindings.ContainsKey),
-            RequiresEphemeronHandles(methodEmissions),
-            request.StructuredDiagnostics || hasInteropTerminalBoundary,
+            RequiresEphemeronHandles(calledIntrinsics),
+            // Only the reporter's boundaries raise: a module without one, such as a WIT worker's, imports
+            // nothing its host must provide for terminal exceptions.
+            includeTerminalExceptionReporter,
             finalization.RequiresRuntime,
-            RequiresWeakHandles(methodEmissions),
-            RequiresIntrinsic(methodEmissions, RuntimeIntrinsic.RandomSeed),
-            RequiresIntrinsic(methodEmissions, RuntimeIntrinsic.ArraySetValue),
+            RequiresWeakHandles(calledIntrinsics),
+            calledIntrinsics.Contains(RuntimeIntrinsic.RandomSeed),
+            calledIntrinsics.Contains(RuntimeIntrinsic.ArraySetValue),
             // A process that reports no exceptions traps on an unhandled one after the hint.
             request.EntryPointProfile == WasmEntryPointProfile.Process && !includeTerminalExceptionReporter);
         var selectedRuntimeImports = runtimeImports.Resolve(runtimeImportSelection);
@@ -189,7 +193,7 @@ internal sealed class WasmModulePlanner(
         // the managed methods. ExceptionDispatchInfo's rethrow has its own when reachable.
         var managedThrowFunction = importedFunctionCount + orderedMethods.Length +
             orderedConstructedMethods.Length;
-        var hasManagedRethrowFunction = RequiresManagedRethrowFunction(methodEmissions);
+        var hasManagedRethrowFunction = calledIntrinsics.Contains(RuntimeIntrinsic.ExceptionDispatchPreserved);
         var throwFunctionCount = hasManagedRethrowFunction ? 2 : 1;
         var delegateInvokeHelperIndices = delegateInvokes
             .Select((method, index) => (
@@ -239,33 +243,19 @@ internal sealed class WasmModulePlanner(
         return plan;
     }
 
-    private bool RequiresManagedRethrowFunction(
-        ImmutableArray<StructuredMethodEmission> methodEmissions) =>
-        CalledIntrinsics(methodEmissions)
-            .Any(static intrinsic => intrinsic == RuntimeIntrinsic.ExceptionDispatchPreserved);
-
-    private bool RequiresEphemeronHandles(
-        ImmutableArray<StructuredMethodEmission> methodEmissions) =>
-        CalledIntrinsics(methodEmissions)
-            .Any(static intrinsic => intrinsic is RuntimeIntrinsic.EphemeronHandleCreate or
+    private static bool RequiresEphemeronHandles(HashSet<RuntimeIntrinsic> called) =>
+        called.Any(static intrinsic => intrinsic is RuntimeIntrinsic.EphemeronHandleCreate or
                 RuntimeIntrinsic.EphemeronHandleGetKey or
                 RuntimeIntrinsic.EphemeronHandleGetValue or
                 RuntimeIntrinsic.EphemeronHandleSetTargetToNull or
                 RuntimeIntrinsic.EphemeronHandleSetValue or
                 RuntimeIntrinsic.EphemeronHandleRelease);
 
-    private bool RequiresWeakHandles(
-        ImmutableArray<StructuredMethodEmission> methodEmissions) =>
-        CalledIntrinsics(methodEmissions)
-            .Any(static intrinsic => intrinsic is RuntimeIntrinsic.WeakHandleCreate or
+    private static bool RequiresWeakHandles(HashSet<RuntimeIntrinsic> called) =>
+        called.Any(static intrinsic => intrinsic is RuntimeIntrinsic.WeakHandleCreate or
                 RuntimeIntrinsic.WeakHandleGet or
                 RuntimeIntrinsic.WeakHandleSet or
                 RuntimeIntrinsic.WeakHandleRelease);
-
-    private bool RequiresIntrinsic(
-        ImmutableArray<StructuredMethodEmission> methodEmissions,
-        RuntimeIntrinsic required) =>
-        CalledIntrinsics(methodEmissions).Any(intrinsic => intrinsic == required);
 
     private IEnumerable<RuntimeIntrinsic> CalledIntrinsics(
         ImmutableArray<StructuredMethodEmission> methodEmissions)

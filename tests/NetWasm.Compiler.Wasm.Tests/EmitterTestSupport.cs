@@ -600,7 +600,7 @@ internal static class EmitterTestSupport
                 IncludeTerminalExceptionReporter: true,
                 IncludeFinalization: true),
             FinalizationPlan.Empty,
-            ManagedCallSites: [],
+            ManagedCallSites: ImmutableDictionary<NetWasm.Compiler.Core.IntermediateRepresentation.Calls.ManagedCallSiteKey, NetWasm.Compiler.Core.IntermediateRepresentation.Calls.ManagedCallSite>.Empty,
             ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Empty,
             MemberExecutionPlan.Empty);
     }

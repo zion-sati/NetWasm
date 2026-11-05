@@ -15,7 +15,12 @@ from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_PACKAGE_BYTES = 240_000_000
-ROLES = ("node", "wasm-ld", "wasm-opt", "wasm-merge", "nwc")
+ROLES = ("node", "wasm-ld", "wasm-opt", "wasm-tools", "nwc")
+WASM_TOOLS_NOTICES = (
+    "licenses/wasm-tools-LICENSE-APACHE",
+    "licenses/wasm-tools-LICENSE-Apache-2.0_WITH_LLVM-exception",
+    "licenses/wasm-tools-LICENSE-MIT",
+)
 # nwc is NetWasm's own Native AOT build, under these notices from the source tree.
 COMPILER_NOTICES = {
     "licenses/NetWasm-LICENSE.txt": "LICENSES/LicenseRef-NetWasm-Community-1.0.txt",
@@ -89,12 +94,13 @@ def inspect(
                     "pinned-native-tools-release" if expected_rid == "win-arm64" else "emsdk-release") or
                 upstream.get("llvmLld") != pins["llvmLld"] or
                 upstream.get("binaryen") != pins["binaryen"] or
-                upstream.get("node") != pins["node"]):
+                upstream.get("node") != pins["node"] or
+                upstream.get("wasmTools") != pins["wasmTools"]):
             raise ValueError("Host-tools package uses unpinned upstream versions.")
         archive_roles = (
-            ("llvmSource", "lldRelease", "binaryen", "node") if expected_rid == "win-arm64"
-            else ("emsdk", "node", "libatomic") if expected_rid.startswith("linux-")
-            else ("emsdk", "node")
+            ("llvmSource", "lldRelease", "binaryen", "node", "wasmTools") if expected_rid == "win-arm64"
+            else ("emsdk", "node", "libatomic", "wasmTools") if expected_rid.startswith("linux-")
+            else ("emsdk", "node", "wasmTools")
         )
         if upstream.get("archives") != [{"role": role, **host[role]} for role in archive_roles]:
             raise ValueError("Host-tools package archive provenance mismatch.")
@@ -115,7 +121,7 @@ def inspect(
             "licenses/LLVM-LICENSE.txt", "licenses/LLD-LICENSE.txt",
             "licenses/LLVM-BLAKE3-LICENSE", "licenses/LLVM-ThirdParty-NOTICES.txt",
             "licenses/Binaryen-LICENSE",
-        } | set(COMPILER_NOTICES)
+        } | set(COMPILER_NOTICES) | set(WASM_TOOLS_NOTICES)
         if expected_rid.startswith("linux-"):
             required |= {
                 "tools/bin/libatomic.so.1",

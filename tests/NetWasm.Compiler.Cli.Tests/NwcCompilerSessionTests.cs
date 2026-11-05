@@ -21,7 +21,7 @@ public sealed class NwcCompilerSessionTests
         var symbols = new StackTraceSymbolArtifact([41, 42], "application/json", "symbols.json", "digest");
         var exceptions = new ExceptionTypeMapArtifact([1], "application/json", "exceptions.json", "digest");
         var callbacks = CliTestData.CallbackSupport(WasmValueType.I32);
-        var result = new CompilationResult([0, 97, 115, 109], null!, null!, CliTestData.InteropManifest(expectedTarget), 99)
+        var result = new ModuleCompilationResult([0, 97, 115, 109], CliTestData.InteropManifest(expectedTarget), 99)
         {
             StackTraceSymbols = symbols,
             DiagnosticArtifacts = new DiagnosticArtifactBundle([], exceptions, [], null!),
@@ -53,7 +53,7 @@ public sealed class NwcCompilerSessionTests
     [Fact]
     public void LeavesTheExceptionTypeMapOutWithoutDiagnosticArtifacts()
     {
-        var result = new CompilationResult([], null!, null!, CliTestData.InteropManifest("wasm32"), 0);
+        var result = new ModuleCompilationResult([], CliTestData.InteropManifest("wasm32"), 0);
 
         var actual = new NwcCompilerSession(new RecordingCompiler(result), new Disposable())
             .Compile(Options(WasmTarget.Wasm32));
@@ -88,7 +88,8 @@ public sealed class NwcCompilerSessionTests
                     })
                 : ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty,
         };
-        var result = new CompilationResult([], program, null!, CliTestData.InteropManifest("wasm32"), 0);
+        var result = ModuleCompilationResult.Of(
+            new CompilationResult([], program, null!, CliTestData.InteropManifest("wasm32"), 0));
 
         var actual = new NwcCompilerSession(new RecordingCompiler(result), new Disposable())
             .Compile(Options(WasmTarget.Wasm32));
@@ -134,11 +135,11 @@ public sealed class NwcCompilerSessionTests
 
     private static CompilerOptions Options(WasmTarget target) => new("App.dll", [], "Entry", "Run", [], target);
 
-    private sealed class RecordingCompiler(CompilationResult result) : INetWasmCompiler
+    private sealed class RecordingCompiler(ModuleCompilationResult result) : INetWasmModuleCompiler
     {
         public CompilerOptions? Options { get; private set; }
 
-        public CompilationResult Compile(CompilerOptions options)
+        public ModuleCompilationResult Compile(CompilerOptions options)
         {
             Options = options;
             return result;

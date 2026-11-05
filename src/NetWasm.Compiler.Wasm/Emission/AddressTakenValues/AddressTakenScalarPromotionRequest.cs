@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
@@ -9,6 +10,6 @@ namespace NetWasm.Compiler.Wasm.Emission.AddressTakenValues;
 internal sealed record AddressTakenScalarPromotionRequest(
     StructuredMethod Method,
     ManagedMethodIdentity Caller,
-    ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> CallSites,
+    IReadOnlyDictionary<ManagedCallSiteKey, ManagedCallSite> CallSites,
     ManagedByRefEffects ByRefEffects,
     bool Enabled);

@@ -48,6 +48,9 @@ public sealed class RuntimeMaterializationTask : Task
     [Required]
     public string WasmToolsModulePath { get; set; } = string.Empty;
 
+    // The host tools' native wasm-tools of the same release, run in place of the WASI one.
+    public string NativeWasmToolsPath { get; set; } = string.Empty;
+
     [Required]
     public string OutputPath { get; set; } = string.Empty;
 
@@ -144,6 +147,7 @@ public sealed class RuntimeMaterializationTask : Task
                 GarbageCollector = garbageCollector,
                 NativeLibraries = _nativeLibraries.Read(NativeLibraries),
                 NativeCallbackObjectPath = NativeCallbackObjectPath,
+                NativeWasmToolsPath = NativeWasmToolsPath.Length == 0 ? null : NativeWasmToolsPath,
             });
             RuntimeModules = [CreateRuntimeModule(materialization)];
             LogCacheMetrics(materialization.CacheMetrics);

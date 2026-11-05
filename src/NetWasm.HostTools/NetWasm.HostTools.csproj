@@ -4,7 +4,7 @@
     <PackageId>NetWasm.HostTools.$(NetWasmHostRid)</PackageId>
     <Version>0.4.2</Version>
     <Description>nwc, the NetWasm compiler, and pinned native build tools for a supported NetWasm development host.</Description>
-    <PackageTags>netwasm;compiler;toolchain;node;lld;binaryen</PackageTags>
+    <PackageTags>netwasm;compiler;toolchain;node;lld;binaryen;wasm-tools</PackageTags>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsPackable>true</IsPackable>

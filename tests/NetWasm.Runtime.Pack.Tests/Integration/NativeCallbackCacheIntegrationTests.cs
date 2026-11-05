@@ -22,7 +22,7 @@ public sealed class NativeCallbackCacheIntegrationTests
     private const string FirstCallback = "native_mule_callback_first";
     private const string OtherCallback = "native_mule_callback_other";
     private const string CallbackObjectFileName = "application.callbacks.o";
-    private static readonly string[] ToolNames = ["node", "wasm-ld", "wasm-opt", "wasm-merge"];
+    private static readonly string[] ToolNames = ["node", "wasm-ld", "wasm-opt"];
     private static readonly DateTime PreservedTimestamp =
         new(2025, 1, 2, 3, 4, 5, DateTimeKind.Utc);
     private static readonly JsonSerializerOptions JsonOptions = new()

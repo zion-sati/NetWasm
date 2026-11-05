@@ -25,7 +25,7 @@ public sealed class HostToolsOverrideSelector(
             HostToolIds.Node => ("node", "NETWASM_NODE_PATH"),
             HostToolIds.WasmLd => ("wasm-ld", "NETWASM_WASM_LD_PATH"),
             HostToolIds.BinaryenWasmOpt => ("wasm-opt", "NETWASM_WASM_OPT_PATH"),
-            HostToolIds.BinaryenWasmMerge => ("wasm-merge", "NETWASM_WASM_MERGE_PATH"),
+            HostToolIds.WasmTools => ("wasm-tools", "NETWASM_WASM_TOOLS_PATH"),
             _ => throw new ArgumentException($"Unknown host tool: {packaged.ToolId}", nameof(packaged)),
         };
 
@@ -36,7 +36,8 @@ public sealed class HostToolsOverrideSelector(
                 packaged.ToolId, name, overrideVariable, [], [], SearchPath: false));
         }
 
-        if (packaged.ToolId == HostToolIds.Node)
+        // emsdk has neither Node of its own for the build nor wasm-tools.
+        if (packaged.ToolId is HostToolIds.Node or HostToolIds.WasmTools)
         {
             return packaged;
         }

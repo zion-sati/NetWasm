@@ -34,7 +34,7 @@ public sealed class NetWasmCompilerTests
             [new RequestedExport("value", "Worker", "Value"),
              new RequestedExport("add", "Worker", "Add")], target,
             DiagnosticTracePath: trace, EntryPointKind: CompilerEntryPointKind.Library,
-            EnableFrontendCache: true, IntermediateOutputPath: Path.Combine(assets.Directory, "obj"));
+            IntermediateOutputPath: Path.Combine(assets.Directory, "obj"));
 
         var first = NetWasmCompiler.Compile(options);
         var repeated = NetWasmCompiler.Compile(options);
@@ -55,11 +55,11 @@ public sealed class NetWasmCompilerTests
         Assert.Contains("entry=none", File.ReadAllText(trace));
     }
 
-    // A rebuild that takes CoreLib's methods from the frontend cache emits the
-    // module the first build did: the cache keeps the proofs that their array
+    // A rebuild that can reuse state from the intermediate directory emits the
+    // module the first build did, including the proofs that CoreLib's array
     // accesses and divisions, as number formatting's by 10, cannot fail.
     [Fact]
-    public void ACachedRebuildEmitsTheModuleTheFirstBuildDid()
+    public void ARebuildEmitsTheModuleTheFirstBuildDid()
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileOptimizedSource("CachedProofs", """
@@ -77,13 +77,13 @@ public sealed class NetWasmCompilerTests
             }
             """);
         var options = new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
-            Optimization: FinalWasmOptimization.O3, EnableFrontendCache: true,
+            Optimization: FinalWasmOptimization.O3,
             IntermediateOutputPath: Path.Combine(assets.Directory, "obj"));
 
         var first = NetWasmCompiler.Compile(options);
-        var cached = NetWasmCompiler.Compile(options);
+        var rebuilt = NetWasmCompiler.Compile(options);
 
-        Assert.Equal(first.ApplicationModule, cached.ApplicationModule);
+        Assert.Equal(first.ApplicationModule, rebuilt.ApplicationModule);
     }
 
     [Fact]

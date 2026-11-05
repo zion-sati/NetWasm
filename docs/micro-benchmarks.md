@@ -7,6 +7,8 @@ NetWasm's own workloads, run on NetWasm, Mono AOT and desktop .NET 11 with the
 versions and settings on that page. Each time is nanoseconds per call of the
 benchmark method, the fastest of two interleaved rounds. The ratios are
 NetWasm's time over the other runtime's; lower is faster.
+[`compiler-qualification/micro-benchmarks/`](../compiler-qualification/micro-benchmarks/README.md)
+reproduces every number on this page.
 
 | Family | Cases | NetWasm / Mono AOT | NetWasm / desktop .NET 11 JIT |
 | --- | ---: | ---: | ---: |

@@ -66,7 +66,8 @@ public sealed class IndexedWorkExecutorTests
     [InlineData(true, 16, 1)]
     [InlineData(false, 0, 1)]
     [InlineData(false, 2, 2)]
-    [InlineData(false, 16, 4)]
+    [InlineData(false, 6, 6)]
+    [InlineData(false, 16, 8)]
     public void HostPolicyCapsNativeWorkersAndKeepsBrowserSerial(
         bool browser, int processors, int expected)
     {

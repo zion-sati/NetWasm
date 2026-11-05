@@ -6,6 +6,8 @@ using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Methods;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 
+using NetWasm.Compiler.Wasm.Units;
+
 namespace NetWasm.Compiler.Wasm.Emission;
 
 /// <summary>
@@ -57,13 +59,16 @@ internal static class WasmModuleEmissionCompositionRoot
             exceptionObjects,
             typeDescriptors,
             logger);
-        if (layoutForks is not null && workerCount > 1)
+        if (request.CompiledUnits?.Structuring is { } structuring)
+            services.AddSingleton(structuring);
+        if (layoutForks is not null && (workerCount > 1 || request.CompiledUnits is not null))
         {
+            var units = request.CompiledUnits;
             var shared = new ManagedBodySharedCapabilities(
                 types, typeDefinitions, fields, methods, symbols,
                 typeClassifier, intrinsics, targetLayout, typeLayouts,
                 staticFields, staticData, memberDescriptors, runtimeObjects, exceptionObjects,
-                typeDescriptors, logger);
+                typeDescriptors, logger, units);
             services.AddSingleton<IManagedBodyWorkerFactory>(
                 new ManagedBodyWorkerFactory(shared));
             services.AddSingleton<IManagedBodyBatchEmitterFactory>(provider =>
@@ -75,6 +80,8 @@ internal static class WasmModuleEmissionCompositionRoot
             services.Replace(ServiceDescriptor.Singleton<
                 IConstructedMethodSetAppender,
                 ParallelConstructedMethodSetAppender>());
+            if (units is not null)
+                services.Replace(ServiceDescriptor.Singleton(units));
         }
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {

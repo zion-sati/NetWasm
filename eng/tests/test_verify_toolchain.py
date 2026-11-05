@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -15,6 +16,10 @@ import unittest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 VERIFIER = REPOSITORY_ROOT / "eng" / "verify-toolchain.sh"
 SYSTEM_PATH = "/usr/bin:/bin"
+# The pinned SDK and its Roslyn, as the verifier reads them.
+MANIFEST = json.loads((REPOSITORY_ROOT / "eng" / "toolchain.json").read_text())
+SDK_VERSION = MANIFEST["dotnetSdk"]
+ROSLYN_VERSION = MANIFEST["roslynCompiler"]
 
 
 class VerifyToolchainTests(unittest.TestCase):
@@ -106,15 +111,15 @@ class VerifyToolchainTests(unittest.TestCase):
         self._write_executable(self.bin / "npm", ":")
         self._write_executable(
             self.bin / "dotnet",
-            """
-if [[ "${1:-}" == "--version" ]]; then
-    printf '10.0.403\\n'
+            f"""
+if [[ "${{1:-}}" == "--version" ]]; then
+    printf '{SDK_VERSION}\\n'
 else
-    printf '5.9.0-1.26523.112\\n'
+    printf '{ROSLYN_VERSION}\\n'
 fi
 """,
         )
-        csc = self.bin / "sdk" / "10.0.403" / "Roslyn" / "bincore" / "csc.dll"
+        csc = self.bin / "sdk" / SDK_VERSION / "Roslyn" / "bincore" / "csc.dll"
         csc.parent.mkdir(parents=True)
         csc.touch()
         self._write_executable(
