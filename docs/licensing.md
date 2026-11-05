@@ -28,7 +28,7 @@ the notices and terms of included components.
 
 | Area | License |
 | --- | --- |
-| Compiler, linker, optimizer, CLI, SDK/pack, build, debugger, IDE/browser, and developer tooling | NetWasm Community License 1.0 |
+| Compiler, linker, optimizer, CLI, SDK/pack, build, debugger, IDE/browser, and developer tooling, including the benchmark and qualification harnesses | NetWasm Community License 1.0 |
 | CoreLib, runtime libraries, templates, generated support code, and adjacent framework ports | MIT, subject to preserved upstream notices |
 | NetWasmGC and CompactGC collector implementations | Apache-2.0 |
 | Vendored WASI inputs and other third-party material | Their preserved upstream license |
