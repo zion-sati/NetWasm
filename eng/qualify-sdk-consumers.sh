@@ -297,15 +297,13 @@ run_log "$work_root/template-install.log" \
 run_log "$work_root/app-create.log" \
   dotnet new netwasm-app -n NetWasmApp -o "$app_root"
 if [[ -n "${NETWASM_QUALIFY_SDK_VERSION:-}" ]]; then
-  if ! grep -Fq '"rollForward": "latestFeature"' "$app_root/global.json"; then
+  # Templates leave SDK selection to the user's dotnet; pin the qualified SDK.
+  if [[ -e "$app_root/global.json" ]]; then
     echo "The template SDK selection has changed; minimum-SDK qualification needs review" >&2
     exit 1
   fi
-  sed \
-    -e "s/\"version\": \"[^\"]*\"/\"version\": \"$NETWASM_QUALIFY_SDK_VERSION\"/" \
-    -e 's/"rollForward": "latestFeature"/"rollForward": "disable"/' \
-    "$app_root/global.json" > "$app_root/global.json.tmp"
-  mv "$app_root/global.json.tmp" "$app_root/global.json"
+  printf '{\n  "sdk": {\n    "version": "%s",\n    "rollForward": "disable"\n  }\n}\n' \
+    "$NETWASM_QUALIFY_SDK_VERSION" > "$app_root/global.json"
 fi
 
 # The .NET CLI selects global.json from its working directory, even when a

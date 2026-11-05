@@ -129,6 +129,7 @@ class HostToolsPackageTests(unittest.TestCase):
             "licenses/LLVM-BLAKE3-LICENSE": b"blake3 notice",
             "licenses/LLVM-ThirdParty-NOTICES.txt": b"embedded notices",
             "licenses/Binaryen-LICENSE": b"binaryen notice",
+            **{notice: b"wasm-tools notice" for notice in verify.WASM_TOOLS_NOTICES},
             **{packaged: (ROOT / source).read_bytes() for packaged, source in verify.COMPILER_NOTICES.items()},
             **{f"tools/bin/{role}": executable for role in verify.ROLES},
         }
@@ -146,9 +147,10 @@ class HostToolsPackageTests(unittest.TestCase):
                 "llvmLld": self.pins["llvmLld"],
                 "binaryen": self.pins["binaryen"],
                 "node": self.pins["node"],
+                "wasmTools": self.pins["wasmTools"],
                 "archives": [
                     {"role": role, **self.pins["hostArtifacts"]["hosts"][self.RID][role]}
-                    for role in ("emsdk", "node")
+                    for role in ("emsdk", "node", "wasmTools")
                 ],
             },
             "roles": roles,
@@ -169,6 +171,8 @@ class HostToolsPackageTests(unittest.TestCase):
             file["sha256"] = hashlib.sha256(data).hexdigest()
         if defect == "wrong-hash":
             payload["tools/bin/node"] = b"changed"
+        if defect == "unpinned-wasm-tools":
+            manifest["upstream"]["wasmTools"] = "1.0.0"
         if defect == "missing-notice":
             del payload["licenses/Node-LICENSE"]
         if defect == "extra-binary":
@@ -252,6 +256,7 @@ class HostToolsPackageTests(unittest.TestCase):
         for defect in (
             "missing-notice", "extra-binary", "wrong-hash",
             "wrong-architecture", "symlink", "wrong-host", "changed-compiler-notice",
+            "unpinned-wasm-tools",
         ):
             with self.subTest(defect=defect):
                 self.make_package(defect=defect)
@@ -286,6 +291,37 @@ class HostToolsPackageTests(unittest.TestCase):
                 "wasm-opt": "install/bin/wasm-opt",
                 "wasm-merge": "install/bin/wasm-merge",
             })
+
+    def test_wasm_tools_comes_from_its_release_archive_with_its_licenses(self):
+        cache = Path(self.temporary.name) / "cache"
+        cache.mkdir()
+        files = {name: name.encode() for name in stage.WASM_TOOLS_LICENSES}
+
+        def pinned(name: str, data: bytes) -> dict[str, str]:
+            sha = hashlib.sha256(data).hexdigest()
+            (cache / f"{sha[:16]}-{name}").write_bytes(data)
+            return {"url": f"https://example.invalid/v1/{name}", "sha256": sha}
+
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode="w:gz") as writer:
+            for name, data in files.items() | {("wasm-tools", b"linux tool")}:
+                item = tarfile.TarInfo(f"wasm-tools-1.0.0-x86_64-linux/{name}")
+                item.size = len(data)
+                writer.addfile(item, io.BytesIO(data))
+        linux = stage.wasm_tools_files(
+            pinned("wasm-tools-1.0.0-x86_64-linux.tar.gz", tar_bytes.getvalue()), "linux-x64", cache)
+        self.assertEqual(files | {"wasm-tools": b"linux tool"}, linux)
+
+        zip_bytes = io.BytesIO()
+        with zipfile.ZipFile(zip_bytes, "w") as writer:
+            for name, data in files.items() | {("wasm-tools.exe", b"windows tool")}:
+                writer.writestr(f"wasm-tools-1.0.0-x86_64-windows/{name}", data)
+        windows = stage.wasm_tools_files(
+            pinned("wasm-tools-1.0.0-x86_64-windows.zip", zip_bytes.getvalue()), "win-x64", cache)
+        self.assertEqual(b"windows tool", windows["wasm-tools"])
+
+        with self.assertRaisesRegex(ValueError, "Unexpected wasm-tools archive"):
+            stage.wasm_tools_files(pinned("wasm-tools.7z", b"other"), "linux-x64", cache)
 
     def test_release_archive_download_and_cache_are_hash_pinned(self):
         payload = b"versioned release asset"
@@ -446,6 +482,7 @@ class HostToolsPackageTests(unittest.TestCase):
             "licenses/LLVM-BLAKE3-LICENSE": b"blake3 notice",
             "licenses/LLVM-ThirdParty-NOTICES.txt": b"embedded notices",
             "licenses/Binaryen-LICENSE": b"binaryen notice",
+            **{notice: b"wasm-tools notice" for notice in verify.WASM_TOOLS_NOTICES},
             **{packaged: (ROOT / source).read_bytes() for packaged, source in verify.COMPILER_NOTICES.items()},
             **{path: bytes(binary) for path in roles.values()},
         }
@@ -478,9 +515,10 @@ class HostToolsPackageTests(unittest.TestCase):
                 "llvmLld": self.pins["llvmLld"],
                 "binaryen": self.pins["binaryen"],
                 "node": self.pins["node"],
+                "wasmTools": self.pins["wasmTools"],
                 "archives": [
                     {"role": role, **artifacts["hosts"][rid][role]}
-                    for role in ("llvmSource", "lldRelease", "binaryen", "node")
+                    for role in ("llvmSource", "lldRelease", "binaryen", "node", "wasmTools")
                 ],
                 "lldBuild": receipt,
             },

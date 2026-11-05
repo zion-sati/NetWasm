@@ -1,4 +1,5 @@
 using Microsoft.Build.Framework;
+using NetWasm.Hosting.Build.Environment;
 using NetWasm.Hosting.Build.JavaScript;
 
 namespace NetWasm.Hosting.Build.MsBuild;
@@ -37,6 +38,22 @@ public sealed class NetWasmBuildJavaScriptRuntimeTask : Microsoft.Build.Utilitie
         try
         {
             var root = Path.GetFullPath(OutputDirectory);
+            var output = Path.Combine(root, Minify ? "minified" : "readable");
+            var manifest = Path.Combine(output, "runtime.json");
+            // The runtime is the same for every build of a release, so it is bundled again only
+            // when Node, the bundler, the hosting JavaScript or the preview2 shim changed.
+            var inputs = Path.Combine(output, ".netwasm-runtime-inputs");
+            var stamp = FileTreeStamp.Compute(
+                [typeof(NetWasmBuildJavaScriptRuntimeTask).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
+                    Minify ? "minified" : "readable"],
+                [Path.GetFullPath(NodePath), Path.GetDirectoryName(Path.GetFullPath(CommandPath)),
+                    Path.GetFullPath(HostingJavaScriptRoot), Path.GetFullPath(Preview2ShimRoot)]);
+            if (File.Exists(manifest) && File.Exists(inputs) && File.ReadAllText(inputs) == stamp)
+            {
+                JavaScriptRuntimeManifest.Read(manifest);
+                ManifestPath = manifest;
+                return true;
+            }
             var facades = Path.Combine(root, "facades");
             JavaScriptRuntime.WriteFacades(
                 facades,
@@ -44,7 +61,6 @@ public sealed class NetWasmBuildJavaScriptRuntimeTask : Microsoft.Build.Utilitie
                 Path.GetFullPath(Preview2ShimRoot));
             // Each build replaces the files, so no runtime of an earlier build
             // can be published beside the current one.
-            var output = Path.Combine(root, Minify ? "minified" : "readable");
             if (Directory.Exists(output))
             {
                 Directory.Delete(output, recursive: true);
@@ -55,8 +71,8 @@ public sealed class NetWasmBuildJavaScriptRuntimeTask : Microsoft.Build.Utilitie
                 facades,
                 output,
                 Minify));
-            var manifest = Path.Combine(output, "runtime.json");
             JavaScriptRuntimeManifest.Read(manifest);
+            File.WriteAllText(inputs, stamp);
             ManifestPath = manifest;
             return true;
         }

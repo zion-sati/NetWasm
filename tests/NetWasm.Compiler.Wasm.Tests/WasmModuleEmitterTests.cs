@@ -83,7 +83,7 @@ public sealed class WasmModuleEmitterTests
         {
             var data = target.ModuleData with
             {
-                StaticInitializerGuards = target.ModuleData.StaticInitializerGuards.Add(
+                StaticInitializerGuards = ImmutableDictionary.CreateRange(target.ModuleData.StaticInitializerGuards).Add(
                     StaticInitializerGuard.KeyFor(EntryKey),
                     new(240, EntryKey, null) { FunctionIndex = OptionalFunctionIndex.At(91) }),
             };
@@ -142,6 +142,8 @@ public sealed class WasmModuleEmitterTests
             methods,
             symbols,
             layouts,
+            null!,
+            null!,
             null!,
             null!,
             null!,

@@ -205,6 +205,41 @@ public sealed class JavaScriptRuntimeTests
         Assert.Throws<ArgumentNullException>(() => new NetWasmBuildJavaScriptRuntimeTask(null!));
     }
 
+    [Fact]
+    public void ReusesTheRuntimeUntilAnInputChanges()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var hosting = Path.Combine(directory.Path, "hosting");
+        Directory.CreateDirectory(hosting);
+        File.WriteAllText(Path.Combine(hosting, "page.mjs"), "export {}");
+        var bundler = new RecordingBundler
+        {
+            OnRuntime = request =>
+            {
+                Directory.CreateDirectory(request.OutputDirectory);
+                File.WriteAllText(Path.Combine(request.OutputDirectory, "runtime.json"), Manifest);
+            },
+        };
+        NetWasmBuildJavaScriptRuntimeTask Create() => new(bundler)
+        {
+            BuildEngine = new RecordingBuildEngine(),
+            NodePath = Path.Combine(directory.Path, "node"),
+            CommandPath = Path.Combine(directory.Path, "bundler", "bundle.mjs"),
+            HostingJavaScriptRoot = hosting,
+            Preview2ShimRoot = Path.Combine(directory.Path, "shim"),
+            OutputDirectory = Path.Combine(directory.Path, "javascript-runtime"),
+        };
+
+        Assert.True(Create().Execute());
+        var reused = Create();
+        Assert.True(reused.Execute());
+        File.WriteAllText(Path.Combine(hosting, "page.mjs"), "export const changed = 1;");
+        Assert.True(Create().Execute());
+
+        Assert.Equal(2, bundler.Runtimes.Count);
+        Assert.Equal(Path.Combine(directory.Path, "javascript-runtime", "readable", "runtime.json"), reused.ManifestPath);
+    }
+
     private sealed class RecordingBundler : IJavaScriptBundler
     {
         public List<JavaScriptBundleRequest> Bundles { get; } = [];

@@ -130,6 +130,31 @@ public sealed class RuntimeModuleMaterializerTests
     }
 
     [Fact]
+    public void ANativeWasmToolsValidatesInPlaceOfTheWasiOne()
+    {
+        using var directory = new TemporaryDirectory();
+        var commands = new RecordingCommandInvoker();
+        var materializer = Materializer(
+            new RecordingManifestReader(RuntimePackTestData.Manifest()),
+            new RecordingLayoutReader(new RuntimeLayout(2, "wasm32", 0)),
+            new RecordingLayoutCalculator(RuntimePackTestData.Layout()),
+            new RecordingAssetVerifier(),
+            new RecordingArgumentBuilder(["link"]),
+            new RecordingOptimizationArgumentBuilder(["optimize"]),
+            commands,
+            new Sha256ArtifactDigestCalculator());
+        var request = Request(directory, "wasm32") with { NativeWasmToolsPath = "/tools/wasm-tools" };
+
+        materializer.Materialize(request);
+
+        var validation = commands.Commands[^1];
+        Assert.Equal("/tools/wasm-tools", validation.ExecutablePath);
+        Assert.Equal(["validate", Path.GetFullPath(request.OutputPath), "--features", "all"],
+            validation.Arguments.ToArray());
+        Assert.EndsWith("runtime-validate.log", validation.LogPath, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RejectsLayoutTargetMismatch()
     {
         using var directory = new TemporaryDirectory();

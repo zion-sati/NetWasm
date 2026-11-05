@@ -48,6 +48,9 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
     [Required]
     public string WasmToolsModulePath { get; set; } = string.Empty;
 
+    // The host tools' native wasm-tools of the same release, run in place of the WASI one.
+    public string NativeWasmToolsPath { get; set; } = string.Empty;
+
     [Required]
     public string BinaryenWasmOptPath { get; set; } = string.Empty;
 
@@ -56,13 +59,15 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
 
     public string NativeBinaryenWasmOptPath { get; set; } = string.Empty;
 
-    public string NativeBinaryenWasmMergePath { get; set; } = string.Empty;
 
     [Required]
     public string Target { get; set; } = string.Empty;
 
     public string Optimization { get; set; } = "Oz";
     public string ManagedInliningHints { get; set; } = "Auto";
+
+    // Repeats wasm-opt's preset until the module stops shrinking.
+    public bool OptimizerConverge { get; set; }
     public string InternalRuntimeExports { get; set; } = string.Empty;
     public string InternalApplicationExports { get; set; } = string.Empty;
 
@@ -83,6 +88,8 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
             };
             var optimization = ParseOptimization();
             var optimizationOverrides = _inlineHints.Parse(ManagedInliningHints);
+            if (OptimizerConverge)
+                optimizationOverrides = (optimizationOverrides ?? new()) with { Converge = true };
             var internalExports = _exports.Read(InternalRuntimeExports);
             var internalApplicationExports = _exports.Read(
                 InternalApplicationExports);
@@ -90,13 +97,13 @@ public sealed class NetWasmLinkRawModuleTask : Microsoft.Build.Utilities.Task
                 CompilerTaskComposition.CreateWasmToolsCommand(
                     WasmToolsNodePath,
                     WasmToolsCommandPath,
-                    WasmToolsModulePath),
+                    WasmToolsModulePath,
+                    NativeWasmToolsPath),
                 CompilerTaskComposition.CreateBinaryenConfiguration(
                     WasmToolsNodePath,
                     BinaryenWasmOptPath,
                     BinaryenWasmMergePath,
-                    NullIfEmpty(NativeBinaryenWasmOptPath),
-                    NullIfEmpty(NativeBinaryenWasmMergePath)));
+                    NullIfEmpty(NativeBinaryenWasmOptPath)));
             session.Link(new(
                 CoreModulePath,
                 RuntimeModulePath,

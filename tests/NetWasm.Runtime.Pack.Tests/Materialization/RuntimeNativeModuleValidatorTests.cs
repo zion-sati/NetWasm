@@ -25,6 +25,20 @@ public sealed class RuntimeNativeModuleValidatorTests
     }
 
     [Fact]
+    public void RunsANativeWasmToolsInPlaceOfTheWasiOneUnderNode()
+    {
+        var fixture = new Fixture();
+        var request = Request() with { NativeWasmToolsPath = "/tools/wasm-tools" };
+
+        new RuntimeNativeModuleValidator(fixture, fixture).Validate(request);
+
+        var command = Assert.Single(fixture.Commands);
+        Assert.Equal("/tools/wasm-tools", command.ExecutablePath);
+        Assert.Equal(new[] { "validate", request.Path, "--features=mvp" }, command.Arguments);
+        Assert.Equal(request.LogPath, command.LogPath);
+    }
+
+    [Fact]
     public void RejectsMissingDependenciesAndRequestPathsBeforeInvokingCollaborators()
     {
         var fixture = new Fixture();

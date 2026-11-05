@@ -100,7 +100,7 @@ public sealed class WitWorkerClientWriterTests
 internal static class WitWorkerValueSourceFixture
 {
     internal static WitWorkerValueSourceRequest Request(string kind, string value, bool nullable = false) =>
-        new(1, new("Sample", kind, JsonDocument.Parse(value).RootElement.Clone(), false, null),
+        new(1, new("Sample", kind, JsonElement.Parse(value), false, null),
             System.Collections.Immutable.ImmutableDictionary<int, WitWorkerValueLayout>.Empty
                 .Add(42, new("Referenced", "type", default, nullable, "Int8Array")));
 }

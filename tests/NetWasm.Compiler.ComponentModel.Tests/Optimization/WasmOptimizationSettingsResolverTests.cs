@@ -379,11 +379,11 @@ public sealed class WasmOptimizationSettingsResolverTests
     }
 
     [Theory]
-    [InlineData(FinalWasmOptimization.None, WasmInlineAnnotationSelection.SizeAware,
+    [InlineData(FinalWasmOptimization.None, WasmInlineAnnotationSelection.Remove,
         LoopInvariantFieldHoistingPolicy.Disabled, StaticDataViewEliminationPolicy.Disabled,
         AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Disabled,
         BranchPrefixDuplicationPolicy.Disabled)]
-    [InlineData(FinalWasmOptimization.O0, WasmInlineAnnotationSelection.SizeAware,
+    [InlineData(FinalWasmOptimization.O0, WasmInlineAnnotationSelection.Remove,
         LoopInvariantFieldHoistingPolicy.Disabled, StaticDataViewEliminationPolicy.Disabled,
         AddressTakenValuePromotionPolicy.Disabled, ManagedMethodInliningPolicy.Disabled,
         BranchPrefixDuplicationPolicy.Disabled)]
@@ -468,6 +468,16 @@ public sealed class WasmOptimizationSettingsResolverTests
         Assert.Equal(expected, resolver.Resolve(preset, new()));
     }
 
+    [Fact]
+    public void TheOptimizerConvergesOnlyWhereAProjectAsks()
+    {
+        var resolver = Create();
+
+        Assert.False(resolver.Resolve(FinalWasmOptimization.O3).Converge);
+        Assert.False(resolver.Resolve(FinalWasmOptimization.Oz, new()).Converge);
+        Assert.True(resolver.Resolve(FinalWasmOptimization.O3, new(Converge: true)).Converge);
+    }
+
     [Theory]
     [InlineData(ManagedInliningHints.IgnoreAggressive, WasmInlineAnnotationSelection.SizeAware)]
     [InlineData(ManagedInliningHints.Preserve, WasmInlineAnnotationSelection.Preserve)]
@@ -477,10 +487,14 @@ public sealed class WasmOptimizationSettingsResolverTests
         var resolver = Create();
         foreach (var preset in Enum.GetValues<FinalWasmOptimization>().Where(value => value != FinalWasmOptimization.None))
         {
-            var runtimeSelection = preset is FinalWasmOptimization.O1 or
-                FinalWasmOptimization.O2 or FinalWasmOptimization.O3
-                ? WasmInlineAnnotationSelection.Preserve
-                : WasmInlineAnnotationSelection.SizeAware;
+            // O0 runs no optimizer to read the runtime's hints.
+            var runtimeSelection = preset switch
+            {
+                FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or FinalWasmOptimization.O3 =>
+                    WasmInlineAnnotationSelection.Preserve,
+                FinalWasmOptimization.O0 => WasmInlineAnnotationSelection.Remove,
+                _ => WasmInlineAnnotationSelection.SizeAware,
+            };
             var fieldHoisting = preset switch
             {
                 FinalWasmOptimization.O2 => LoopInvariantFieldHoistingPolicy.Conservative,

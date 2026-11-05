@@ -1,5 +1,4 @@
 using System;
-using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.ComponentModel.ManagedExecutables;
@@ -18,10 +17,8 @@ public sealed class ComponentCoreModuleLinkExecution(
     IEmscriptenEnvironmentShimWriter environmentShim,
     INetWasmHostComponentShimWriter hostShim,
     IManagedExecutableComponentAdapterWriter managedExecutables,
-    IWasmCoreModuleExportEditor exports,
     IComponentCoreModuleOptimizer optimizer,
-    IWasmOptimizationSettingsResolver optimizationSettings,
-    IWasmCoreModuleInlineAnnotationEditor inlineAnnotations) : IComponentCoreModuleLinkExecution
+    IWasmOptimizationSettingsResolver optimizationSettings) : IComponentCoreModuleLinkExecution
 {
     private readonly IComponentCoreModuleMergeRunner _merge = merge ??
         throw new ArgumentNullException(nameof(merge));
@@ -31,14 +28,10 @@ public sealed class ComponentCoreModuleLinkExecution(
         throw new ArgumentNullException(nameof(hostShim));
     private readonly IManagedExecutableComponentAdapterWriter _managedExecutables =
         managedExecutables ?? throw new ArgumentNullException(nameof(managedExecutables));
-    private readonly IWasmCoreModuleExportEditor _exports = exports ??
-        throw new ArgumentNullException(nameof(exports));
     private readonly IComponentCoreModuleOptimizer _optimizer = optimizer ??
         throw new ArgumentNullException(nameof(optimizer));
     private readonly IWasmOptimizationSettingsResolver _optimizationSettings = optimizationSettings ??
         throw new ArgumentNullException(nameof(optimizationSettings));
-    private readonly IWasmCoreModuleInlineAnnotationEditor _inlineAnnotations = inlineAnnotations ??
-        throw new ArgumentNullException(nameof(inlineAnnotations));
 
     public void Run(
         ComponentCoreModuleLinkRequest request,
@@ -68,30 +61,31 @@ public sealed class ComponentCoreModuleLinkExecution(
                 managedExecutableAdapterModulePath =
                     workspace.ManagedExecutableAdapterModulePath;
             }
-            _inlineAnnotations.Rewrite(request.ApplicationModulePath,
-                workspace.SanitizedModulePath, settings.ManagedInlineAnnotations);
-            _inlineAnnotations.Rewrite(request.RuntimeModulePath,
-                workspace.SanitizedRuntimeModulePath, settings.RuntimeInlineAnnotations);
-            _merge.Run(new ComponentCoreModuleMergeRequest(
-                workspace.SanitizedModulePath,
-                workspace.SanitizedRuntimeModulePath,
-                workspace.EnvironmentModulePath,
-                workspace.MergedModulePath,
-                request.Target,
-                hostModulePath,
-                managedExecutableAdapterModulePath));
             var wasmTarget = request.Target.Width == "wasm64"
                 ? WasmTarget.Wasm64
                 : WasmTarget.Wasm32;
-            _exports.Rewrite(
-                workspace.MergedModulePath,
+            // A component exports only its canonical ABI.
+            _merge.Run(new ComponentCoreModuleMergeRequest(
+                request.ApplicationModulePath,
+                request.RuntimeModulePath,
+                workspace.EnvironmentModulePath,
                 workspace.SanitizedModulePath,
-                new(CanonicalAbiNames.ModulePrefix(wasmTarget), []));
+                request.Target,
+                hostModulePath,
+                managedExecutableAdapterModulePath)
+            {
+                ApplicationInlineAnnotations = settings.ManagedInlineAnnotations,
+                RuntimeInlineAnnotations = settings.RuntimeInlineAnnotations,
+                Exports = new(CanonicalAbiNames.ModulePrefix(wasmTarget), []),
+                Intermediates = new(workspace.SanitizedModulePath, workspace.SanitizedRuntimeModulePath,
+                    workspace.MergedModulePath),
+            });
             _optimizer.Optimize(
                 workspace.SanitizedModulePath,
                 request.OutputPath,
                 request.Target,
-                settings.BackendPreset);
+                settings.BackendPreset,
+                settings.Converge);
         }
         finally
         {

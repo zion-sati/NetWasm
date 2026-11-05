@@ -43,20 +43,21 @@ public sealed class HostingBuildEnvironmentResolver(
         new("EMSDK_ROOT", Path.Combine("upstream", "bin")),
     ];
 
-    private static readonly HostExecutableResolutionRequest WasmMergeRequest = new(
-        HostToolIds.BinaryenWasmMerge,
-        "wasm-merge",
-        "NETWASM_WASM_MERGE_PATH",
-        [],
-        EmsdkRoots,
-        SearchPath: false);
-
     private static readonly HostExecutableResolutionRequest WasmOptRequest = new(
         HostToolIds.BinaryenWasmOpt,
         "wasm-opt",
         "NETWASM_WASM_OPT_PATH",
         [],
         EmsdkRoots,
+        SearchPath: false);
+
+    // A native wasm-tools only where it is named: emsdk has none.
+    private static readonly HostExecutableResolutionRequest WasmToolsRequest = new(
+        HostToolIds.WasmTools,
+        "wasm-tools",
+        "NETWASM_WASM_TOOLS_PATH",
+        [],
+        [],
         SearchPath: false);
 
     private readonly IHostExecutablePathResolver _executables = executables ??
@@ -90,18 +91,22 @@ public sealed class HostingBuildEnvironmentResolver(
             .Select(ResolveTool)
             .ToImmutableDictionary(product => product.Executable.ToolId, StringComparer.Ordinal);
         var node = products[HostToolIds.Node];
+        var opt = ResolveOptionalTool(WasmOptRequest);
+        var wasmTools = ResolveOptionalTool(WasmToolsRequest);
+        var toolchain = _packagePaths.Resolve(
+            Path.GetFullPath(request.ToolchainPackageRoot),
+            node.Executable,
+            node.Compatibility);
         return new(
             node.Executable,
             node.Compatibility,
             products[HostToolIds.WasmLd].Executable,
             products[HostToolIds.WasmLd].Compatibility,
-            new(
-                ResolveOptionalTool(WasmMergeRequest),
-                ResolveOptionalTool(WasmOptRequest)),
-            _packagePaths.Resolve(
-                Path.GetFullPath(request.ToolchainPackageRoot),
-                node.Executable,
-                node.Compatibility));
+            new(Binaryen(opt)),
+            toolchain)
+        {
+            NativeWasmTools = wasmTools is null ? null : Matching(wasmTools, toolchain),
+        };
     }
 
     private HostingBuildEnvironment ResolveRestoredTools(HostingBuildEnvironmentRequest request)
@@ -127,25 +132,44 @@ public sealed class HostingBuildEnvironmentResolver(
 
         var node = Tool("node", HostToolIds.Node, package.NodeVersion);
         var linker = Tool("wasm-ld", HostToolIds.WasmLd, package.WasmLdVersion);
-        var merge = Tool("wasm-merge", HostToolIds.BinaryenWasmMerge, package.BinaryenVersion);
         var opt = Tool("wasm-opt", HostToolIds.BinaryenWasmOpt, package.BinaryenVersion);
+        var wasmTools = package.Roles.ContainsKey("wasm-tools")
+            ? Tool("wasm-tools", HostToolIds.WasmTools, package.WasmToolsVersion!)
+            : null;
+        var toolchain = _packagePaths.Resolve(
+            Path.GetFullPath(request.ToolchainPackageRoot),
+            node.Executable,
+            node.Compatibility);
         return new(
             node.Executable,
             node.Compatibility,
             linker.Executable,
             linker.Compatibility,
-            new(new(merge.Executable, merge.Compatibility),
-                new(opt.Executable, opt.Compatibility)),
-            _packagePaths.Resolve(
-                Path.GetFullPath(request.ToolchainPackageRoot),
-                node.Executable,
-                node.Compatibility))
+            new(new NativeBinaryenTool(opt.Executable, opt.Compatibility)),
+            toolchain)
         {
             CompilerPath = package.Roles.GetValueOrDefault("nwc"),
+            NativeWasmTools = wasmTools is null ? null : Matching(wasmTools, toolchain),
         };
     }
 
-    private NativeBinaryenTool? ResolveOptionalTool(
+    private static NativeBinaryenTool? Binaryen(HostToolProduct? tool) =>
+        tool is null ? null : new(tool.Executable, tool.Compatibility);
+
+    // The build runs a native wasm-tools in place of the toolchain's WASI one, so the two
+    // are the same release: each writes what the other would.
+    private static NativeWasmTools Matching(HostToolProduct tool, ToolchainPackagePaths toolchain)
+    {
+        if (!Version.TryParse(toolchain.WasmTools.WasmToolsVersion, out var expected) ||
+            tool.Compatibility.Version != expected)
+        {
+            throw new InvalidDataException(
+                $"Native wasm-tools is version {tool.Compatibility.Version}; the toolchain's wasm-tools is {toolchain.WasmTools.WasmToolsVersion}.");
+        }
+        return new(tool.Executable, tool.Compatibility);
+    }
+
+    private HostToolProduct? ResolveOptionalTool(
         HostExecutableResolutionRequest request)
     {
         ResolvedHostExecutable executable;
@@ -173,7 +197,7 @@ public sealed class HostingBuildEnvironmentResolver(
             var compatibility = validator.Validate(observation) ??
                 throw new InvalidOperationException(
                     "The host compatibility validator returned no product.");
-            return new(executable, compatibility);
+            return new HostToolProduct(executable, compatibility);
         }
         catch (Exception exception) when (
             executable.Source == HostExecutableResolutionSource.Path &&

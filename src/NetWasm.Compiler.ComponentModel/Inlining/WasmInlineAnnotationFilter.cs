@@ -14,6 +14,9 @@ public sealed class WasmInlineAnnotationFilter : IWasmInlineAnnotationFilter
             throw new ArgumentOutOfRangeException(nameof(selection));
         var reader = new WasmBinaryReader(source);
         reader.RequireHeader();
+        // A module without hints, as a link below O1 writes, is returned as it is.
+        if (!HasAnnotations(source))
+            return source;
         using var output = new MemoryStream(source.Length);
         output.Write(WasmBinaryFormat.Header);
         var sawAnnotations = false;
@@ -48,6 +51,20 @@ public sealed class WasmInlineAnnotationFilter : IWasmInlineAnnotationFilter
             output.Write(source.AsSpan(start, reader.Offset - start));
         }
         return output.ToArray();
+    }
+
+    private static bool HasAnnotations(byte[] source)
+    {
+        var reader = new WasmBinaryReader(source);
+        reader.RequireHeader();
+        while (!reader.IsAtEnd)
+        {
+            var sectionId = reader.ReadByte();
+            var section = reader.ReadBytes(reader.ReadUnsigned());
+            if (sectionId == 0 && new WasmBinaryReader(section).ReadString() == "binaryen.inline")
+                return true;
+        }
+        return false;
     }
 
     private static byte[]? FilterAnnotations(

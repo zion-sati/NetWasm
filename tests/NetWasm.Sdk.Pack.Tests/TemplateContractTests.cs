@@ -17,6 +17,30 @@ public sealed class TemplateContractTests
         Assert.True(document.RootElement.GetProperty("preferNameDirectory").GetBoolean());
     }
 
+    // An empty source folder is not packed, and dotnet new then refuses the
+    // whole template (MV012).
+    [Theory]
+    [InlineData("NetWasm.App")]
+    [InlineData("NetWasm.Library")]
+    public void EachTemplateSourceHoldsFiles(string templateName)
+    {
+        var template = Path.Combine(FindRepositoryRoot(), "src", "NetWasm.Templates", "content", templateName);
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            template, ".template.config", "template.json")));
+        var sources = document.RootElement.TryGetProperty("sources", out var declared)
+            ? declared.EnumerateArray().Select(source => source.GetProperty("source").GetString()!).ToArray()
+            : ["."];
+
+        foreach (var source in sources)
+        {
+            var directory = Path.Combine(template, source);
+            Assert.True(Directory.Exists(directory) &&
+                Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                    .Any(file => !file.Contains(".template.config", StringComparison.Ordinal)),
+                $"{templateName}'s source '{source}' holds no files.");
+        }
+    }
+
     [Theory]
     [InlineData("src/NetWasm.Compiler.Tasks/NetWasm.Compiler.Tasks.csproj", "CanonicalizeNetWasmCompilerTasksPackage")]
     [InlineData("src/NetWasm.Sdk/NetWasm.Sdk.csproj", "CanonicalizeNetWasmSdkPackage")]
@@ -54,29 +78,15 @@ public sealed class TemplateContractTests
                 StringComparison.Ordinal));
     }
 
+    // A generated project builds with whichever SDK the user's dotnet selects.
     [Theory]
     [InlineData("NetWasm.App")]
     [InlineData("NetWasm.Library")]
-    public void GeneratedProjectRequiresTheCompatibleDotNet10FeatureBand(string templateName)
+    public void GeneratedProjectUsesTheUsersSdk(string templateName)
     {
-        var repositoryRoot = FindRepositoryRoot();
-        var globalJsonPath = templateName == "NetWasm.App"
-            ? Path.Combine("base", "global.json")
-            : "global.json";
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
-            repositoryRoot,
-            "src",
-            "NetWasm.Templates",
-            "content",
-            templateName,
-            globalJsonPath)));
+        var template = Path.Combine(FindRepositoryRoot(), "src", "NetWasm.Templates", "content", templateName);
 
-        var sdk = document.RootElement.GetProperty("sdk");
-        Assert.Equal("10.0.303", sdk.GetProperty("version").GetString());
-        Assert.Equal("latestFeature", sdk.GetProperty("rollForward").GetString());
-        Assert.False(sdk.GetProperty("allowPrerelease").GetBoolean());
-        // The project file names NetWasm.Sdk's version, where upgrading changes it.
-        Assert.False(document.RootElement.TryGetProperty("msbuild-sdks", out _));
+        Assert.Empty(Directory.EnumerateFiles(template, "global.json", SearchOption.AllDirectories));
     }
 
     [Theory]
@@ -124,7 +134,7 @@ public sealed class TemplateContractTests
             worker.GetProperty("choices").EnumerateArray()
                 .Select(choice => choice.GetProperty("choice").GetString()));
         Assert.Equal(
-            ["base", "console", "worker-common", "wit", "host-page", "host-worker"],
+            ["console", "worker-common", "wit", "host-page", "host-worker"],
             root.GetProperty("sources").EnumerateArray()
                 .Select(source => source.GetProperty("source").GetString()));
     }

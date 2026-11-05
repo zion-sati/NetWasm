@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 
@@ -20,6 +21,23 @@ public sealed record StructuredMethodHeader(
     public ArrayBoundsProof? ArrayBoundsProof { get; init; }
 
     public IntegerCheckProof? IntegerCheckProof { get; init; }
+
+    // The header structuring gives a method body.
+    public static StructuredMethodHeader Of(CilMethodBody source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new(
+            source.Method,
+            source.MethodInstance,
+            source.MaxStack,
+            source.Locals,
+            source.LocalSignatureTypes,
+            source.Instructions)
+        {
+            ArrayBoundsProof = source.ExceptionRegions.IsEmpty ? source.ArrayBoundsProof : null,
+            IntegerCheckProof = source.IntegerCheckProof,
+        };
+    }
 }
 
 public sealed record StructuredMethod(
@@ -29,7 +47,47 @@ public sealed record StructuredMethod(
     StructuredSequence Body,
     ImmutableArray<StructuredExceptionGroupId> TopLevelExceptionGroups,
     ImmutableDictionary<StructuredExceptionGroupId, StructuredExceptionGroup> ExceptionGroups,
-    ImmutableDictionary<int, ImmutableArray<CliValueKind>> InstructionEntryStacks);
+    ImmutableDictionary<int, ImmutableArray<CliValueKind>> InstructionEntryStacks)
+{
+    // Set when structuring was deferred because the method's compiled unit is expected to
+    // be reused: the method then has its header and its exception groups (all top level,
+    // in the order planning reads them, without bodies) but no blocks, and is structured
+    // from the outline if it must be emitted after all.
+    public StructuredMethodOutline? Outline { get; init; }
+}
+
+/// <summary>What a deferred method is structured from, and how.</summary>
+public sealed record StructuredMethodOutline(
+    ManagedMethodBody Body,
+    NetWasm.Compiler.ComponentModel.Optimization.BranchPrefixDuplicationPolicy BranchPrefixDuplication,
+    NetWasm.Compiler.ComponentModel.Optimization.DispatcherEliminationPolicy DispatcherElimination)
+{
+    // The method that stands in for the structured form until it must be emitted: the
+    // header structuring gives the body and the given exception groups, all top level in
+    // the order given. It has no blocks and is not validated; it is not a structured
+    // method until it is structured, which validates it.
+    public StructuredMethod StandIn(ImmutableArray<StructuredExceptionGroup> groups)
+    {
+        var order = ImmutableArray.CreateBuilder<StructuredExceptionGroupId>(groups.Length);
+        var byId = ImmutableDictionary.CreateBuilder<StructuredExceptionGroupId, StructuredExceptionGroup>();
+        foreach (var group in groups)
+        {
+            byId.Add(group.Id, group);
+            order.Add(group.Id);
+        }
+        return new StructuredMethod(
+            StructuredMethodHeader.Of(Body.Body),
+            new(Body.ControlFlow.Graph.Entry.Index),
+            ImmutableDictionary<StructuredBlockId, StructuredBlockDefinition>.Empty,
+            new StructuredSequence([]),
+            order.MoveToImmutable(),
+            byId.ToImmutable(),
+            ImmutableDictionary<int, ImmutableArray<CliValueKind>>.Empty)
+        {
+            Outline = this,
+        };
+    }
+}
 
 public sealed record StructuredBlockDefinition(
     StructuredBlockId Id,

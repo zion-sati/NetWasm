@@ -1162,6 +1162,7 @@ public sealed class ManagedLayoutPhaseTests
                 new UnusedTypeIdentities(),
                 new TypeDefinitions([]),
                 new RejectingTypeRelationshipClassifier(),
+                UnboundedTypeRelationshipKeys.Instance,
                 EmptyLayouts(target),
                 new ManagedStaticDataBuildState()));
 

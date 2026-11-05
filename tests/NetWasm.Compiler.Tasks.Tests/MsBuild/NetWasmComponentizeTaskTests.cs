@@ -27,6 +27,24 @@ public sealed class NetWasmComponentizeTaskTests
         Assert.Equal(expected, sessions.Session.Request!.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
     }
 
+    // The optimizer converges only where a project opts in, with or without a hint override.
+    [Theory]
+    [InlineData("Auto", false)]
+    [InlineData("Auto", true)]
+    [InlineData("Preserve", true)]
+    public void PassesTheOptimizersConvergenceToTheLinkSession(string hints, bool converge)
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions, new RecordingManifestInputsReader(),
+            new RecordingManifestWriter(), new RecordingEntryPointReader());
+        task.ManagedInliningHints = hints;
+        task.OptimizerConverge = converge;
+        Assert.True(task.Execute());
+        Assert.Equal(converge, sessions.Session.Request!.OptimizationOverrides?.Converge ?? false);
+        Assert.Equal(hints == "Preserve" ? ManagedInliningHints.Preserve : ManagedInliningHints.Auto,
+            sessions.Session.Request.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
+    }
+
     [Fact]
     public void InvalidHintsFailBeforeCreatingSession()
     {
@@ -84,8 +102,6 @@ public sealed class NetWasmComponentizeTaskTests
             [
                 new BinaryenNativeTool(BinaryenToolIds.WasmOpt,
                     Path.GetFullPath("native-wasm-opt")),
-                new BinaryenNativeTool(BinaryenToolIds.WasmMerge,
-                    Path.GetFullPath("native-wasm-merge")),
             ],
             sessions.BinaryenConfiguration?.NativeTools);
         Assert.Equal(expectedWidth, sessions.Session.Request!.Target.Width);
@@ -308,7 +324,6 @@ public sealed class NetWasmComponentizeTaskTests
             BinaryenWasmOptPath = "wasm-opt",
             BinaryenWasmMergePath = "wasm-merge",
             NativeBinaryenWasmOptPath = Path.GetFullPath("native-wasm-opt"),
-            NativeBinaryenWasmMergePath = Path.GetFullPath("native-wasm-merge"),
             Target = "wasm32",
         };
 

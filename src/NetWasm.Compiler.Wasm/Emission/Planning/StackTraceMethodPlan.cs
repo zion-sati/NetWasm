@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 
@@ -10,13 +11,17 @@ internal readonly record struct StackTraceConstructedMethod(
     EntityKey DefinitionKey);
 
 internal sealed record StackTraceMethodPlan(
-    ImmutableDictionary<EntityKey, int> DirectMethodIds,
-    ImmutableDictionary<string, int> ConstructedMethodIds,
+    IReadOnlyDictionary<EntityKey, int> DirectMethodIds,
+    IReadOnlyDictionary<string, int> ConstructedMethodIds,
     ImmutableArray<WasmStackTraceSymbol> Symbols,
-    ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>> LocationSymbols,
+    IReadOnlyDictionary<int, ImmutableArray<StackTraceLocationSymbol>> LocationSymbols,
     int ExceptionTraceOffset,
     int StringTypeId)
 {
+    // Each shown constructed method's definition, whose source locations it takes.
+    public IReadOnlyDictionary<string, EntityKey> ConstructedDefinitions { get; init; } =
+        ImmutableDictionary<string, EntityKey>.Empty;
+
     public static StackTraceMethodPlan Disabled { get; } = new(
         ImmutableDictionary<EntityKey, int>.Empty,
         ImmutableDictionary<string, int>.Empty,

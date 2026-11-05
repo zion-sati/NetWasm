@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NetWasm.Compiler.Browser.Inputs;
 using NetWasm.Compiler.Browser.Results;
 using NetWasm.Compiler.Browser.Wit;
@@ -7,6 +8,7 @@ using NetWasm.Compiler.ComponentModel;
 using NetWasm.Compiler.ExceptionTypes;
 using NetWasm.Compiler.Metadata;
 using NetWasm.Compiler.Metadata.ManagedExecutables;
+using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Browser;
 
@@ -15,6 +17,10 @@ internal static class BrowserCompilerCompositionRoot
     internal static BrowserCompilerComposition Create()
     {
         var registrations = new ServiceCollection().AddNetWasmCompiler();
+        // Compiled units and their inputs stay in the session's memory; the host keeps them
+        // across sessions by exporting and importing them.
+        var units = new UnitStoreMemory();
+        registrations.UseUnitMemory(units);
         registrations.AddSingleton<BrowserCompilationRequestState>();
         registrations.AddSingleton<IBrowserCompilationRequestFactory,
             BrowserCompilationRequestFactory>();
@@ -44,8 +50,10 @@ internal static class BrowserCompilerCompositionRoot
             services,
             services.GetRequiredService<IBrowserCompilationRequestFactory>(),
             services.GetRequiredService<IBrowserCompilationPreparationFactory>(),
-            services.GetRequiredService<IFrontendArtifactCacheTransport>(),
-            services.GetRequiredService<IBrowserCompilationCommand>());
+            services.GetRequiredService<IBrowserCompilationCommand>())
+        {
+            Units = units,
+        };
     }
 }
 
@@ -53,17 +61,15 @@ internal sealed class BrowserCompilerComposition(
     IDisposable services,
     IBrowserCompilationRequestFactory requests,
     IBrowserCompilationPreparationFactory preparations,
-    IFrontendArtifactCacheTransport frontendArtifacts,
     IBrowserCompilationCommand compiler)
 {
     internal IDisposable Services { get; } = services ??
         throw new ArgumentNullException(nameof(services));
+    internal UnitStoreMemory Units { get; init; } = new();
     internal IBrowserCompilationRequestFactory Requests { get; } = requests ??
         throw new ArgumentNullException(nameof(requests));
     internal IBrowserCompilationPreparationFactory Preparations { get; } = preparations ??
         throw new ArgumentNullException(nameof(preparations));
-    internal IFrontendArtifactCacheTransport FrontendArtifacts { get; } = frontendArtifacts ??
-        throw new ArgumentNullException(nameof(frontendArtifacts));
     internal IBrowserCompilationCommand Compiler { get; } = compiler ??
         throw new ArgumentNullException(nameof(compiler));
 }

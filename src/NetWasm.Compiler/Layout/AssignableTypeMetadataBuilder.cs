@@ -12,6 +12,7 @@ internal sealed class AssignableTypeMetadataBuilder(
     ITypeIdentityResolver identities,
     ITypeDefinitionResolver typeDefinitions,
     ITypeRelationshipClassifier relationships,
+    ITypeRelationshipKeyResolver relationshipKeys,
     ManagedTypeLayouts types,
     ManagedStaticDataBuildState state) : IAssignableTypeMetadataBuilder
 {
@@ -28,6 +29,10 @@ internal sealed class AssignableTypeMetadataBuilder(
                 target.Type))
             .ToArray();
 
+    // The runtime types filed under their own relationship key, and those without one.
+    private Dictionary<string, List<(CliTypeIdentity Type, int TypeId)>>? _targetsByKey;
+    private readonly List<(CliTypeIdentity Type, int TypeId)> _unboundedTargets = [];
+
     public AssignableTypeMetadataLayout Build(CliTypeIdentity candidate)
     {
         if (candidate.Shape is CliTypeShape.ManagedByReference or
@@ -39,7 +44,8 @@ internal sealed class AssignableTypeMetadataBuilder(
             return default;
         }
 
-        var typeIds = _runtimeAssignableTypes
+        // A candidate classifies only the runtime types filed under the keys it reaches.
+        var typeIds = Targets(candidate)
             .Where(target => relationships
                 .Classify(candidate, target.Type)
                 .IsAssignmentCompatible)
@@ -64,6 +70,36 @@ internal sealed class AssignableTypeMetadataBuilder(
         state.Segments.Add(new DataSegment(address, [.. data]));
         state.Cursor += data.Length;
         return new AssignableTypeMetadataLayout(address, typeIds.Length);
+    }
+
+    private IEnumerable<(CliTypeIdentity Type, int TypeId)> Targets(CliTypeIdentity candidate)
+    {
+        if (_targetsByKey is null)
+        {
+            _targetsByKey = new(StringComparer.Ordinal);
+            foreach (var target in _runtimeAssignableTypes)
+            {
+                var keys = relationshipKeys.Resolve(target.Type);
+                if (keys.Unbounded)
+                {
+                    _unboundedTargets.Add(target);
+                }
+                else if (_targetsByKey.TryGetValue(keys.Own, out var filed))
+                {
+                    filed.Add(target);
+                }
+                else
+                {
+                    _targetsByKey.Add(keys.Own, [target]);
+                }
+            }
+        }
+        var candidateKeys = relationshipKeys.Resolve(candidate);
+        return candidateKeys.Unbounded
+            ? _runtimeAssignableTypes
+            : candidateKeys.Reachable
+                .SelectMany(key => _targetsByKey.GetValueOrDefault(key) ?? [])
+                .Concat(_unboundedTargets);
     }
 
     private static bool IsClosedRuntimeAssignableTarget(

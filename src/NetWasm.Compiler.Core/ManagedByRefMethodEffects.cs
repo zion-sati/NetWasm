@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 
 namespace NetWasm.Compiler.Core;
@@ -20,9 +21,15 @@ public sealed record ManagedByRefMethodEffects(
         ReturnedArgumentAliases.Union(other.ReturnedArgumentAliases));
 }
 
+// Read through IReadOnlyDictionary so a compiled unit can record the methods it looks up.
 public sealed record ManagedByRefEffects(
-    ImmutableDictionary<string, ManagedByRefMethodEffects> Methods)
+    IReadOnlyDictionary<string, ManagedByRefMethodEffects> Methods)
 {
     public static ManagedByRefEffects Empty { get; } = new(
         ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty);
+
+    // The managed methods each analysed method (one with argument addresses) calls, whose
+    // effects its own were derived from.
+    public IReadOnlyDictionary<string, ImmutableArray<string>> Callees { get; init; } =
+        ImmutableDictionary<string, ImmutableArray<string>>.Empty;
 }

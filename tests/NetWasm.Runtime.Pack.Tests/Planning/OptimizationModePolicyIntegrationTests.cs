@@ -10,18 +10,20 @@ namespace NetWasm.Runtime.Pack.Tests.Planning;
 
 public sealed class OptimizationModePolicyIntegrationTests
 {
+    // The final pass runs no Binaryen passes at O0, as at None: O0 builds for speed.
     [Theory]
-    [InlineData(RuntimeWasmOptimization.None, FinalWasmOptimization.None, null)]
-    [InlineData(RuntimeWasmOptimization.O0, FinalWasmOptimization.O0, "-O0")]
-    [InlineData(RuntimeWasmOptimization.O1, FinalWasmOptimization.O1, "-O1")]
-    [InlineData(RuntimeWasmOptimization.O2, FinalWasmOptimization.O2, "-O2")]
-    [InlineData(RuntimeWasmOptimization.O3, FinalWasmOptimization.O3, "-O3")]
-    [InlineData(RuntimeWasmOptimization.Os, FinalWasmOptimization.Os, "-Os")]
-    [InlineData(RuntimeWasmOptimization.Oz, FinalWasmOptimization.Oz, "-Oz")]
+    [InlineData(RuntimeWasmOptimization.None, FinalWasmOptimization.None, null, null)]
+    [InlineData(RuntimeWasmOptimization.O0, FinalWasmOptimization.O0, "-O0", null)]
+    [InlineData(RuntimeWasmOptimization.O1, FinalWasmOptimization.O1, "-O1", "-O1")]
+    [InlineData(RuntimeWasmOptimization.O2, FinalWasmOptimization.O2, "-O2", "-O2")]
+    [InlineData(RuntimeWasmOptimization.O3, FinalWasmOptimization.O3, "-O3", "-O3")]
+    [InlineData(RuntimeWasmOptimization.Os, FinalWasmOptimization.Os, "-Os", "-Os")]
+    [InlineData(RuntimeWasmOptimization.Oz, FinalWasmOptimization.Oz, "-Oz", "-Oz")]
     public void RuntimeAndFinalPassesUseTheSameCanonicalMode(
         RuntimeWasmOptimization runtimeOptimization,
         FinalWasmOptimization finalOptimization,
-        string? expectedFlag)
+        string? expectedRuntimeFlag,
+        string? expectedFinalFlag)
     {
         using var directory = new TemporaryDirectory();
         var runtimeOutput = directory.PathTo("runtime.wasm");
@@ -43,16 +45,18 @@ public sealed class OptimizationModePolicyIntegrationTests
                 ComponentTarget.Wasm32Wasi02,
                 finalOptimization);
 
-        if (expectedFlag is null)
-        {
+        if (expectedRuntimeFlag is null)
             Assert.Empty(runtimeArguments);
+        else
+            Assert.Equal(expectedRuntimeFlag, Assert.Single(runtimeArguments, IsOptimizationFlag));
+        if (expectedFinalFlag is null)
+        {
             Assert.Empty(tools.Arguments);
             Assert.Equal(File.ReadAllBytes(input), File.ReadAllBytes(output));
             return;
         }
 
-        Assert.Equal(expectedFlag, Assert.Single(runtimeArguments, IsOptimizationFlag));
-        Assert.Equal(expectedFlag, Assert.Single(tools.Arguments, IsOptimizationFlag));
+        Assert.Equal(expectedFinalFlag, Assert.Single(tools.Arguments, IsOptimizationFlag));
     }
 
     private static bool IsOptimizationFlag(string argument) =>

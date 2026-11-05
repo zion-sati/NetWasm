@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.Linq;
 using NetWasm.Compiler;
@@ -64,11 +65,12 @@ internal sealed class ReachabilityInvariantValidator(
                     $"allocating constructed method '{method}' is not reachable");
             }
         }
+        var dispatchImports = ImportKeys(program);
         foreach (var pair in program.DispatchCallSites)
         {
             foreach (var target in pair.Value.Targets)
             {
-                var reachable = IsResolvable(program, target.Method, intrinsics);
+                var reachable = IsResolvable(program, target.Method, intrinsics, dispatchImports);
                 if (!reachable)
                 {
                     throw exceptions.Create(
@@ -100,9 +102,13 @@ internal sealed class ReachabilityInvariantValidator(
         ReachableProgram program,
         IRuntimeIntrinsicRegistry intrinsics)
     {
-        foreach (var method in program.Methods.Values.Concat(
-                     program.ConstructedMethods.Values))
+        var imports = ImportKeys(program);
+        var bodies = program.Methods.Values.Concat(program.ConstructedMethods.Values).ToArray();
+        // Each method's calls are checked on their own; the first failing method in order is
+        // reported, as by the loop over them.
+        OrderedParallel.For(bodies.Length, index =>
         {
+            var method = bodies[index];
             var body = method.Body;
             var caller = method.Method.CanonicalName;
             foreach (var instruction in body.Instructions)
@@ -128,10 +134,9 @@ internal sealed class ReachabilityInvariantValidator(
                     continue;
                 }
                 var target = GetMethodInstance(methodInstances, instruction, caller);
-                var dispatchKey = $"{caller}@{instruction.Offset:x8}";
-                if ((instruction.Operation is CilOperation.CallVirtual or
-                         CilOperation.LoadVirtualFunction) &&
-                    program.DispatchCallSites.ContainsKey(dispatchKey))
+                if (instruction.Operation is CilOperation.CallVirtual or
+                        CilOperation.LoadVirtualFunction &&
+                    program.DispatchCallSites.ContainsKey($"{caller}@{instruction.Offset:x8}"))
                 {
                     continue;
                 }
@@ -153,7 +158,7 @@ internal sealed class ReachabilityInvariantValidator(
                         caller,
                         instruction.Offset);
                 }
-                if (!IsResolvable(program, target, intrinsics) &&
+                if (!IsResolvable(program, target, intrinsics, imports) &&
                     !IsDelegateRuntimeMethod(types, target))
                 {
                     throw exceptions.Create(
@@ -162,11 +167,11 @@ internal sealed class ReachabilityInvariantValidator(
                         instruction.Offset);
                 }
             }
-        }
+        });
         foreach (var pair in program.CallableMethods)
         {
             if (pair.Key != pair.Value.CanonicalName ||
-                !IsResolvable(program, pair.Value, intrinsics))
+                !IsResolvable(program, pair.Value, intrinsics, imports))
             {
                 throw exceptions.Create(
                     $"callable method '{pair.Key}' has no canonical reachable target");
@@ -255,21 +260,29 @@ internal sealed class ReachabilityInvariantValidator(
                 instruction.Offset),
         };
 
+    // The JavaScript and WIT import methods, looked up per call target.
+    private static HashSet<EntityKey> ImportKeys(ReachableProgram program)
+    {
+        var keys = new HashSet<EntityKey>();
+        foreach (var method in program.JSImportMethods) keys.Add(method.Key);
+        foreach (var method in program.WitImportMethods) keys.Add(method.Key);
+        return keys;
+    }
+
+    // Reachable bodies are checked first: they resolve nearly every call.
     private static bool IsResolvable(
         ReachableProgram program,
         MethodInstanceModel method,
-        IRuntimeIntrinsicRegistry intrinsics) =>
+        IRuntimeIntrinsicRegistry intrinsics,
+        HashSet<EntityKey> imports) =>
+        (method.IsConstructed
+            ? program.ConstructedMethods.ContainsKey(method.CanonicalName)
+            : program.Methods.ContainsKey(method.Definition.Key)) ||
         intrinsics.TryGetIntrinsic(method.Definition.Key, out _) ||
         method.Definition.NativeImport is not null &&
         program.MethodInstances.TryGetValue(method.CanonicalName, out var native) &&
         native.HasEquivalentDescriptorFacts(method) ||
-        program.JSImportMethods.Any(candidate =>
-            candidate.Key == method.Definition.Key) ||
-        program.WitImportMethods.Any(candidate =>
-            candidate.Key == method.Definition.Key) ||
-        (method.IsConstructed
-            ? program.ConstructedMethods.ContainsKey(method.CanonicalName)
-            : program.Methods.ContainsKey(method.Definition.Key));
+        imports.Contains(method.Definition.Key);
 
     private static bool IsDelegateRuntimeMethod(
         ITypeClassifier types,

@@ -335,7 +335,7 @@ public sealed class RawBindingServiceCollectionExtensionsTests
 
         Assert.Same(services, services.AddCompilerRawBindings());
 
-        Assert.Equal(19, services.Count);
+        Assert.Equal(20, services.Count);
         var identity = services[0];
         Assert.Equal(typeof(IRawCanonicalImportIdentityFormatter), identity.ServiceType);
         Assert.Equal(typeof(RawCanonicalImportIdentityFormatter), identity.ImplementationType);
@@ -388,27 +388,31 @@ public sealed class RawBindingServiceCollectionExtensionsTests
         Assert.Equal(typeof(IRawModuleInspectionProtocolReader), protocol.ServiceType);
         Assert.Equal(typeof(RawModuleInspectionProtocolReader), protocol.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, protocol.Lifetime);
-        var inspection = services[13];
+        var nodeInspection = services[13];
+        Assert.Equal(typeof(RawModuleImportSignatureReader), nodeInspection.ServiceType);
+        Assert.Equal(typeof(RawModuleImportSignatureReader), nodeInspection.ImplementationType);
+        Assert.Equal(ServiceLifetime.Singleton, nodeInspection.Lifetime);
+        var inspection = services[14];
         Assert.Equal(typeof(IRawModuleImportSignatureReader), inspection.ServiceType);
-        Assert.Equal(typeof(RawModuleImportSignatureReader), inspection.ImplementationType);
+        Assert.NotNull(inspection.ImplementationFactory);
         Assert.Equal(ServiceLifetime.Singleton, inspection.Lifetime);
-        var declarations = services[14];
+        var declarations = services[15];
         Assert.Equal(typeof(IRawCompilerImportDeclarationBuilder), declarations.ServiceType);
         Assert.Equal(typeof(RawCompilerImportDeclarationBuilder), declarations.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, declarations.Lifetime);
-        var runtimeDeclarations = services[15];
+        var runtimeDeclarations = services[16];
         Assert.Equal(typeof(IRawCoreRuntimeImportDeclarationBuilder), runtimeDeclarations.ServiceType);
         Assert.Equal(typeof(RawCoreRuntimeImportDeclarationBuilder), runtimeDeclarations.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, runtimeDeclarations.Lifetime);
-        var sourceValidator = services[16];
+        var sourceValidator = services[17];
         Assert.Equal(typeof(IRawBuildImportSourceValidator), sourceValidator.ServiceType);
         Assert.Equal(typeof(RawBuildImportSourceValidator), sourceValidator.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, sourceValidator.Lifetime);
-        var buildValidator = services[17];
+        var buildValidator = services[18];
         Assert.Equal(typeof(IRawBuildImportValidator), buildValidator.ServiceType);
         Assert.Equal(typeof(RawBuildImportValidator), buildValidator.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, buildValidator.Lifetime);
-        var deploymentFunctions = services[18];
+        var deploymentFunctions = services[19];
         Assert.Equal(typeof(IRawDeploymentFunctionProjector), deploymentFunctions.ServiceType);
         Assert.Equal(typeof(RawDeploymentFunctionProjector), deploymentFunctions.ImplementationType);
         Assert.Equal(ServiceLifetime.Singleton, deploymentFunctions.Lifetime);
@@ -433,7 +437,8 @@ public sealed class RawBindingServiceCollectionExtensionsTests
         Assert.IsType<RawAdapterWriter>(provider.GetRequiredService<IRawAdapterWriter>());
         Assert.IsType<RawModuleInspectionProcess>(provider.GetRequiredService<IRawModuleInspectionProcess>());
         Assert.IsType<RawModuleInspectionProtocolReader>(provider.GetRequiredService<IRawModuleInspectionProtocolReader>());
-        Assert.IsType<RawModuleImportSignatureReader>(provider.GetRequiredService<IRawModuleImportSignatureReader>());
+        Assert.IsType<WasmBinaryImportSignatureReader>(provider.GetRequiredService<IRawModuleImportSignatureReader>());
+        Assert.IsType<RawModuleImportSignatureReader>(provider.GetRequiredService<RawModuleImportSignatureReader>());
         Assert.IsType<RawCompilerImportDeclarationBuilder>(provider.GetRequiredService<IRawCompilerImportDeclarationBuilder>());
         Assert.IsType<RawCoreRuntimeImportDeclarationBuilder>(provider.GetRequiredService<IRawCoreRuntimeImportDeclarationBuilder>());
         Assert.IsType<RawBuildImportValidator>(provider.GetRequiredService<IRawBuildImportValidator>());

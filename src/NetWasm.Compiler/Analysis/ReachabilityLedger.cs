@@ -21,6 +21,9 @@ internal sealed class ReachabilityLedger
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Builder ManagedCallSites { get; } =
         ImmutableDictionary.CreateBuilder<ManagedCallSiteKey, ManagedCallSite>();
 
+    // What each analysed method adds to the whole program, by canonical name.
+    internal Dictionary<string, MethodContribution> Contributions { get; } = new(StringComparer.Ordinal);
+
     internal ImmutableDictionary<EntityKey, ManagedMethodBody>.Builder Methods { get; } =
         ImmutableDictionary.CreateBuilder<EntityKey, ManagedMethodBody>();
     internal ImmutableDictionary<string, ManagedMethodBody>.Builder ConstructedMethods { get; } =

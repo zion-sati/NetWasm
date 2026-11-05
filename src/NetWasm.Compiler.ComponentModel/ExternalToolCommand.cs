@@ -11,4 +11,9 @@ public sealed record ExternalToolCommand(
     // lead every diagnostic the tool reports.
     public static ExternalToolCommand ForWasmTools(string node, string command, string module) =>
         new(node, ["--disable-warning=ExperimentalWarning", command, module]);
+
+    // A native wasm-tools of the same release, where the host tools carry one: it starts
+    // and validates several times faster than the WASI build under Node.
+    public static ExternalToolCommand ForWasmTools(string node, string command, string module, string? native) =>
+        string.IsNullOrWhiteSpace(native) ? ForWasmTools(node, command, module) : new(native, []);
 }

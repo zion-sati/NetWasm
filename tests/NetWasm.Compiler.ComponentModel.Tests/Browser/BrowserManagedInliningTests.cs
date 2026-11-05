@@ -36,9 +36,11 @@ public sealed class BrowserManagedInliningTests
                 ? WasmInlineAnnotationSelection.Preserve : WasmInlineAnnotationSelection.SizeAware;
             Assert.Equal(expected, component.Operations.OfType<BrowserLinkInlineOperation>().First().Selection);
             Assert.Equal(expected, raw.Operations.OfType<BrowserLinkInlineOperation>().First().Selection);
-            var runtimeExpected = IsSpeedProfile(optimization)
-                ? WasmInlineAnnotationSelection.Preserve
-                : WasmInlineAnnotationSelection.SizeAware;
+            var runtimeExpected = Unoptimized(optimization)
+                ? WasmInlineAnnotationSelection.Remove
+                : IsSpeedProfile(optimization)
+                    ? WasmInlineAnnotationSelection.Preserve
+                    : WasmInlineAnnotationSelection.SizeAware;
             Assert.Equal(runtimeExpected, component.Operations.OfType<BrowserLinkInlineOperation>().Skip(1).First().Selection);
             Assert.Equal(runtimeExpected, raw.Operations.OfType<BrowserLinkInlineOperation>().Skip(1).First().Selection);
         }
@@ -72,13 +74,18 @@ public sealed class BrowserManagedInliningTests
         var raw = BrowserRawCoreModules.CreateOrderedLinkPlan(
             new RawModuleLinkRequest("application", "runtime", "output", target, optimization),
             new("temporary", "linked"));
-        var expected = IsSpeedProfile(optimization)
-            ? WasmInlineAnnotationSelection.Preserve
-            : WasmInlineAnnotationSelection.SizeAware;
+        // Without an optimizer, nothing reads hints and the link keeps none.
+        var expected = Unoptimized(optimization)
+            ? WasmInlineAnnotationSelection.Remove
+            : IsSpeedProfile(optimization)
+                ? WasmInlineAnnotationSelection.Preserve
+                : WasmInlineAnnotationSelection.SizeAware;
         // Managed AggressiveInlining hints also survive at Oz.
-        var managedExpected = IsSpeedProfile(optimization) || optimization == FinalWasmOptimization.Oz
-            ? WasmInlineAnnotationSelection.Preserve
-            : WasmInlineAnnotationSelection.SizeAware;
+        var managedExpected = Unoptimized(optimization)
+            ? WasmInlineAnnotationSelection.Remove
+            : IsSpeedProfile(optimization) || optimization == FinalWasmOptimization.Oz
+                ? WasmInlineAnnotationSelection.Preserve
+                : WasmInlineAnnotationSelection.SizeAware;
 
         foreach (var (managedEdit, runtimeEdit, merge) in new[]
         {
@@ -104,4 +111,7 @@ public sealed class BrowserManagedInliningTests
     private static bool IsSpeedProfile(FinalWasmOptimization optimization) =>
         optimization is FinalWasmOptimization.O1 or FinalWasmOptimization.O2 or
             FinalWasmOptimization.O3;
+
+    private static bool Unoptimized(FinalWasmOptimization optimization) =>
+        optimization is FinalWasmOptimization.None or FinalWasmOptimization.O0;
 }

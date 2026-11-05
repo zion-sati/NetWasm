@@ -61,35 +61,22 @@ internal static class CompilerTaskComposition
     public static ExternalToolCommand CreateWasmToolsCommand(
         string nodePath,
         string commandPath,
-        string modulePath) => ExternalToolCommand.ForWasmTools(nodePath, commandPath, modulePath);
+        string modulePath,
+        string? nativePath = null) => ExternalToolCommand.ForWasmTools(nodePath, commandPath, modulePath, nativePath);
 
     public static BinaryenToolRunnerConfiguration CreateBinaryenConfiguration(
         string nodePath,
         string wasmOptPath,
         string wasmMergePath,
-        string? nativeWasmOptPath = null,
-        string? nativeWasmMergePath = null) => new(
+        string? nativeWasmOptPath = null) => new(
             nodePath,
             [
                 new(BinaryenToolIds.WasmOpt, wasmOptPath),
                 new(BinaryenToolIds.WasmMerge, wasmMergePath),
             ],
-            CreateNativeBinaryenTools(nativeWasmOptPath, nativeWasmMergePath));
-
-    private static System.Collections.Immutable.ImmutableArray<BinaryenNativeTool>
-        CreateNativeBinaryenTools(string? wasmOptPath, string? wasmMergePath)
-    {
-        var tools = System.Collections.Immutable.ImmutableArray.CreateBuilder<BinaryenNativeTool>();
-        if (!string.IsNullOrWhiteSpace(wasmOptPath))
-        {
-            tools.Add(new(BinaryenToolIds.WasmOpt, wasmOptPath));
-        }
-        if (!string.IsNullOrWhiteSpace(wasmMergePath))
-        {
-            tools.Add(new(BinaryenToolIds.WasmMerge, wasmMergePath));
-        }
-        return tools.ToImmutable();
-    }
+            string.IsNullOrWhiteSpace(nativeWasmOptPath)
+                ? []
+                : [new(BinaryenToolIds.WasmOpt, nativeWasmOptPath)]);
 
     public static IHostInteropManifestReader CreateHostInteropManifestReader() =>
         new HostInteropManifestReader();
@@ -144,9 +131,15 @@ internal static class CompilerTaskComposition
         var services = new ServiceCollection()
             .AddNetWasmCompiler();
         services.RemoveAll<IWasmTools>();
-        services.AddSingleton<IWasmTools>(serviceProvider => new ProcessWasmTools(
-            serviceProvider.GetRequiredService<IExternalToolRunner>(),
-            wasmToolsCommand));
+        services.AddSingleton<IWasmTools>(serviceProvider =>
+        {
+            var tools = new ProcessWasmTools(
+                serviceProvider.GetRequiredService<IExternalToolRunner>(),
+                wasmToolsCommand);
+            return CachingWasmTools.DefaultDirectory() is { } cache
+                ? new CachingWasmTools(tools, wasmToolsCommand, cache)
+                : tools;
+        });
         if (binaryenConfiguration is not null)
         {
             services.RemoveAll<IBinaryenToolRunner>();

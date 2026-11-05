@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler.Core;
@@ -7,7 +9,7 @@ namespace NetWasm.Compiler.Metadata;
 
 internal sealed class MetadataTypeDefinitionResolver : ITypeDefinitionResolver
 {
-    private readonly ImmutableDictionary<(string Assembly, string FullName),
+    private readonly FrozenDictionary<(string Assembly, string FullName),
         TypeDefinitionModel> _types;
     private readonly ImmutableDictionary<string, string> _aliases;
     private readonly ITypeFinder _typeFinder;
@@ -18,12 +20,29 @@ internal sealed class MetadataTypeDefinitionResolver : ITypeDefinitionResolver
         ImmutableDictionary<string, string> aliases,
         ITypeFinder typeFinder,
         IMetadataAvailabilityValidator availability)
+        : this(Index(types), aliases, typeFinder, availability)
     {
-        _types = types.ToImmutableDictionary(
-            type => (type.Key.Assembly.Name, type.FullName));
+    }
+
+    public MetadataTypeDefinitionResolver(
+        FrozenDictionary<(string Assembly, string FullName), TypeDefinitionModel> types,
+        ImmutableDictionary<string, string> aliases,
+        ITypeFinder typeFinder,
+        IMetadataAvailabilityValidator availability)
+    {
+        _types = types;
         _aliases = aliases;
         _typeFinder = typeFinder;
         _availability = availability;
+    }
+
+    // Types by assembly and full name; a duplicate is refused.
+    internal static FrozenDictionary<(string Assembly, string FullName), TypeDefinitionModel> Index(
+        IEnumerable<TypeDefinitionModel> types)
+    {
+        var index = new Dictionary<(string Assembly, string FullName), TypeDefinitionModel>();
+        foreach (var type in types) index.Add((type.Key.Assembly.Name, type.FullName), type);
+        return index.ToFrozenDictionary();
     }
 
     public TypeDefinitionModel ResolveTypeIdentity(CliTypeIdentity identity)

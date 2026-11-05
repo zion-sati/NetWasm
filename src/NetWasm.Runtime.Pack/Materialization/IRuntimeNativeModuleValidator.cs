@@ -12,4 +12,8 @@ internal sealed record RuntimeNativeModuleValidationRequest(
     string NodePath,
     string CommandPath,
     string ModulePath,
-    string LogPath);
+    string LogPath)
+{
+    // A native wasm-tools of the same release, run in place of the WASI one.
+    public string? NativeWasmToolsPath { get; init; }
+}

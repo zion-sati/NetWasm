@@ -168,6 +168,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
             new AttributeQueryMethodSpecializerFactory(),
             dispatchTargets,
             relationships,
+            new TypeRelationshipKeyResolverFactory(),
             delegateTypes,
             importClassifiers,
             new ReachabilityInstructionAnalyzerFactory(
@@ -183,7 +184,7 @@ public sealed class WholeProgramAnalyzerCompositionTests
             new ReachabilityLedgerFactory(),
             new AllocationCapabilityAnalyzerFactory(
                 new RuntimeAllocationSafepointClassifier()),
-            new ManagedByRefEffectAnalyzerFactory(),
+            new ManagedByRefEffectAnalyzerFactory(new IndexedWorkExecutor(), new CompilerParallelism(1)),
             new BaseTypeResolverFactory(),
             new DelegateMethodClassifierFactory(),
             new DispatchSiteKeyBuilder(),
@@ -480,12 +481,14 @@ public sealed class WholeProgramAnalyzerCompositionTests
 
         public ITypeTestPlanner Create(
             ITypeOperandResolver typeOperands,
-            ITypeRelationshipClassifier relationships)
+            ITypeRelationshipClassifier relationships,
+            ITypeRelationshipKeyResolver relationshipKeys)
         {
             Called = true;
             return new TypeTestPlanner(
                 typeOperands,
                 relationships,
+                relationshipKeys,
                 new NullableTypeResolver());
         }
     }

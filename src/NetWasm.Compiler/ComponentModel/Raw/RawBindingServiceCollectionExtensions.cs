@@ -27,7 +27,10 @@ internal static class RawBindingServiceCollectionExtensions
         services.AddSingleton<IRawAdapterWriter, RawAdapterWriter>();
         services.AddSingleton<IRawModuleInspectionProcess, RawModuleInspectionProcess>();
         services.AddSingleton<IRawModuleInspectionProtocolReader, RawModuleInspectionProtocolReader>();
-        services.AddSingleton<IRawModuleImportSignatureReader, RawModuleImportSignatureReader>();
+        services.AddSingleton<RawModuleImportSignatureReader>();
+        // Import sections are read in process; the Node inspection reads the type forms this reader does not model.
+        services.AddSingleton<IRawModuleImportSignatureReader>(provider =>
+            new WasmBinaryImportSignatureReader(provider.GetRequiredService<RawModuleImportSignatureReader>()));
         services.AddSingleton<IRawCompilerImportDeclarationBuilder, RawCompilerImportDeclarationBuilder>();
         services.AddSingleton<IRawCoreRuntimeImportDeclarationBuilder, RawCoreRuntimeImportDeclarationBuilder>();
         services.AddSingleton<IRawBuildImportSourceValidator,

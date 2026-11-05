@@ -1,10 +1,10 @@
-using System.Collections.Immutable;
+using System.Collections.Frozen;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata;
 
 internal sealed class MetadataFieldRepository(
-    ImmutableDictionary<EntityKey, FieldDefinitionModel> fields,
+    FrozenDictionary<EntityKey, FieldDefinitionModel> fields,
     IMetadataAvailabilityValidator availability) : IFieldRepository
 {
     public FieldDefinitionModel GetField(EntityKey key)

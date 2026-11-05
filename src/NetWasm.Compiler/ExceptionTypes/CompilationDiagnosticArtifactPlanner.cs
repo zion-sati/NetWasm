@@ -12,6 +12,14 @@ public interface ICompilationDiagnosticArtifactPlanner
         MetadataCompilationSnapshot metadata,
         ITypeIdentityResolver typeIdentities,
         CompilerOptions options);
+
+    // A module's diagnostic artifacts from exception types planned before: a compile that
+    // keeps the last one's layouts keeps their exception types.
+    DiagnosticArtifactBundle? Bind(
+        byte[] applicationModule,
+        System.Collections.Immutable.ImmutableArray<ReachableExceptionType> planned,
+        MetadataCompilationSnapshot metadata,
+        CompilerOptions options);
 }
 
 public sealed class CompilationDiagnosticArtifactPlanner(
@@ -39,9 +47,26 @@ public sealed class CompilationDiagnosticArtifactPlanner(
             typeIdentities,
             assemblyFormatters.Create(metadata.Assemblies),
             result.Layouts);
+        return result with
+        {
+            DiagnosticArtifacts = Bind(result.ApplicationModule, [.. plannedTypes], metadata, options),
+        };
+    }
+
+    public DiagnosticArtifactBundle? Bind(
+        byte[] applicationModule,
+        System.Collections.Immutable.ImmutableArray<ReachableExceptionType> planned,
+        MetadataCompilationSnapshot metadata,
+        CompilerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(applicationModule);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(options);
+        if (!options.EmitExceptionTypeMap)
+            return null;
         var buildId = identities.CalculateBuildId(
-            semanticInputs.GetSemanticInputs(options, metadata, plannedTypes));
-        var map = mapWriter.Write(plannedTypes, buildId);
-        return result with { DiagnosticArtifacts = binder.Bind(result.ApplicationModule, map, buildId) };
+            semanticInputs.GetSemanticInputs(options, metadata, planned));
+        var map = mapWriter.Write(planned, buildId);
+        return binder.Bind(applicationModule, map, buildId) with { ExceptionTypes = planned };
     }
 }

@@ -105,6 +105,14 @@ async function bundle(input, output, platform, minify, runtimePath) {
     }
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, generated.output[0].code, "utf8");
+    // The files the bundle read, so a build can tell when bundling again would write the same.
+    // Rolldown's own modules start with a NUL; any other kind of module leaves no list.
+    const ids = generated.output[0].moduleIds;
+    if (ids.every(id => isAbsolute(id) || id.startsWith("\0"))) {
+      const inputs = ids.filter(id => isAbsolute(id));
+      if (runtimePath !== null) inputs.push(runtimePath);
+      await writeFile(`${output}.inputs.json`, JSON.stringify(inputs), "utf8");
+    }
   } finally {
     await build.close();
   }

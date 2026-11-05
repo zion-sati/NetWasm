@@ -23,6 +23,13 @@ public sealed class IndexedWorkExecutor : IIndexedWorkExecutor
 
         var results = new TResult[requestCount];
         if (requestCount == 0) return results;
+        if (workers.Count == 1)
+        {
+            // One worker works on the calling thread, as hosts without threads require.
+            for (var requestIndex = 0; requestIndex < requestCount; requestIndex++)
+                results[requestIndex] = work(workers[0], requestIndex);
+            return results;
+        }
         var failures = new ExceptionDispatchInfo?[requestCount];
         var next = -1;
         var tasks = new Task[Math.Min(workers.Count, requestCount)];

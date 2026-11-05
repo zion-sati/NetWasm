@@ -52,4 +52,7 @@ public sealed record WasmOptimizationOverrides(
     ManagedQuotientReuse QuotientReuse =
         ManagedQuotientReuse.Auto,
     ManagedIntegerCheckElimination IntegerCheckElimination =
-        ManagedIntegerCheckElimination.Auto);
+        ManagedIntegerCheckElimination.Auto,
+    // Repeats wasm-opt's preset until the module stops shrinking. Opt-in: on DoomSharp it
+    // doubled the optimizer's time for 0.04-0.12% of size and no measured speed.
+    bool Converge = false);

@@ -29,22 +29,7 @@ public sealed class WasmCoreModuleExportEditor(
 
     public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
     {
-        ArgumentNullException.ThrowIfNull(selection);
-        if (selection.RemovedExports.IsDefault)
-            throw ComponentException.Invalid("core module export selection is uninitialized");
-        if (selection.ComponentPrefix is { } prefix)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
-            if (!selection.RemovedExports.IsEmpty)
-                throw ComponentException.Invalid("core module export selection combines incompatible policies");
-        }
-        var removed = new Dictionary<string, byte>(StringComparer.Ordinal);
-        foreach (var export in selection.RemovedExports)
-        {
-            if (export is null || string.IsNullOrWhiteSpace(export.Name) || export.Kind > 4 ||
-                !removed.TryAdd(export.Name, export.Kind))
-                throw ComponentException.Invalid("core module internal export selection is invalid");
-        }
+        var filter = new WasmExportFilter(selection);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
         RequireFile(inputPath);
 
@@ -53,8 +38,6 @@ public sealed class WasmCoreModuleExportEditor(
         reader.RequireHeader();
         using var output = new MemoryStream(module.Length);
         output.Write(WasmBinaryFormat.Header);
-        var memoryExports = 0;
-        var matched = new HashSet<string>(StringComparer.Ordinal);
         while (!reader.IsAtEnd)
         {
             var sectionStart = reader.Offset;
@@ -67,28 +50,17 @@ public sealed class WasmCoreModuleExportEditor(
                 continue;
             }
 
-            var rewritten = RewriteExportSection(section, selection.ComponentPrefix, removed, matched, ref memoryExports);
+            var rewritten = RewriteExportSection(section, filter);
             output.WriteByte(sectionId);
             WasmUnsignedLeb128.Write(output, (uint)rewritten.Length);
             output.Write(rewritten);
         }
 
-        if (selection.ComponentPrefix is not null && memoryExports != 1)
-        {
-            throw ComponentException.Invalid(
-                $"core module must export exactly one memory named '{selection.ComponentPrefix}_memory'");
-        }
-        if (matched.Count != removed.Count)
-            throw ComponentException.Invalid("core module is missing a required internal export");
+        filter.Complete();
         _writer.Write(outputPath, output.ToArray());
     }
 
-    private static byte[] RewriteExportSection(
-        ReadOnlySpan<byte> section,
-        string? prefix,
-        Dictionary<string, byte> removed,
-        HashSet<string> matched,
-        ref int memoryExports)
+    private static byte[] RewriteExportSection(ReadOnlySpan<byte> section, WasmExportFilter filter)
     {
         var reader = new WasmBinaryReader(section);
         var count = reader.ReadUnsigned();
@@ -99,20 +71,9 @@ public sealed class WasmCoreModuleExportEditor(
             var name = reader.ReadString();
             var kind = reader.ReadByte();
             reader.ReadUnsigned();
-            var entry = section[start..reader.Offset].ToArray();
-            if (prefix is not null && string.Equals(name, prefix + "_memory", StringComparison.Ordinal) &&
-                kind == WasmBinaryFormat.MemoryExternalKind)
+            if (filter.Keeps(name, kind))
             {
-                memoryExports++;
-            }
-            if (removed.TryGetValue(name, out var expectedKind))
-            {
-                if (kind != expectedKind || !matched.Add(name))
-                    throw ComponentException.Invalid("core module internal export has a conflicting kind or identity");
-            }
-            else if (prefix is null || IsComponentExport(name, prefix))
-            {
-                retained.Add(entry);
+                retained.Add(section[start..reader.Offset].ToArray());
             }
         }
         reader.RequireEnd("export section");
@@ -125,10 +86,6 @@ public sealed class WasmCoreModuleExportEditor(
         }
         return output.ToArray();
     }
-
-    private static bool IsComponentExport(string name, string prefix) =>
-        name.StartsWith(prefix + "_", StringComparison.Ordinal) ||
-        name.StartsWith(prefix + "|", StringComparison.Ordinal);
 
     private void RequireFile(string path)
     {

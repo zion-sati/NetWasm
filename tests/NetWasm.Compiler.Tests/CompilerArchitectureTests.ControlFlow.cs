@@ -126,9 +126,14 @@ public sealed partial class CompilerArchitectureTests
             .Where(creation => GetTerminalTypeName(creation.Type) == "StructuredMethod")
             .ToArray();
 
-        var construction = Assert.Single(constructions);
-        Assert.EndsWith("StructuredMethodFactory.cs", construction.SyntaxTree.FilePath,
-            StringComparison.Ordinal);
+        // Every structured method is built and validated by the factory. The one other
+        // construction is an outline's stand-in, which has no blocks, is marked as an
+        // outline and is structured (through the factory) before it is emitted.
+        Assert.Equal(
+            ["StructuredControlFlowModel.cs", "StructuredMethodFactory.cs"],
+            constructions.Select(construction => Path.GetFileName(construction.SyntaxTree.FilePath))
+                .Order(StringComparer.Ordinal)
+                .ToArray());
 
         var factoryCallers = sources
             .SelectMany(source => source.Root.DescendantNodes()
@@ -145,9 +150,7 @@ public sealed partial class CompilerArchitectureTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(
-            ["FrontendArtifactHydrator.cs", "StructuredMethodCompleter.cs"],
-            factoryCallers);
+        Assert.Equal(["StructuredMethodCompleter.cs"], factoryCallers);
 
         var removedReferences = sources
             .SelectMany(source => source.Root.DescendantNodes().OfType<IdentifierNameSyntax>())

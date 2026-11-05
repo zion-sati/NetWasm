@@ -934,7 +934,7 @@ public sealed class ExceptionRegionEmitterTests
                     entry.HasFilters)))),
         [],
         [],
-        [],
+        ImmutableDictionary<string, StaticInitializerGuard>.Empty,
         132);
 
     private static MethodEmissionContext CreateContext(

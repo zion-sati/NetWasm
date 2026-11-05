@@ -16,19 +16,16 @@ public sealed class ComponentCoreModuleLinkExecutionTests
         var request = new ComponentCoreModuleLinkRequest("application", "runtime", "output", ComponentTarget.Wasm32Wasi02)
         { OptimizationOverrides = options };
         var execution = Assert.IsAssignableFrom<IComponentCoreModuleLinkExecution>(new ComponentCoreModuleLinkExecution(
-            stages, stages, stages, stages, stages, stages, resolver, stages));
+            stages, stages, stages, stages, stages, resolver));
 
         execution.Run(request, CreateWorkspace(stages));
 
         Assert.Equal(1, resolver.Calls);
         Assert.Equal((FinalWasmOptimization.Oz, options), resolver.Request);
-        Assert.Equal(
-            ("application", "sanitized", WasmInlineAnnotationSelection.Preserve),
-            stages.Inlinings[0]);
-        Assert.Equal(
-            ("runtime", "runtime-sanitized", WasmInlineAnnotationSelection.SizeAware),
-            stages.Inlinings[1]);
+        Assert.Equal(WasmInlineAnnotationSelection.Preserve, stages.Merge!.ApplicationInlineAnnotations);
+        Assert.Equal(WasmInlineAnnotationSelection.SizeAware, stages.Merge.RuntimeInlineAnnotations);
         Assert.Equal(FinalWasmOptimization.O1, stages.Optimization!.Value.Item4);
+        Assert.True(stages.Converge);
     }
 
     [Fact]
@@ -55,7 +52,8 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             return new(
                 FinalWasmOptimization.O1,
                 WasmInlineAnnotationSelection.Preserve,
-                WasmInlineAnnotationSelection.SizeAware);
+                WasmInlineAnnotationSelection.SizeAware,
+                Converge: true);
         }
     }
 
@@ -76,29 +74,31 @@ public sealed class ComponentCoreModuleLinkExecutionTests
 
         var expected = new List<string> { "environment" };
         if (managed) expected.AddRange(["host", "adapter"]);
-        expected.AddRange(["inlining", "inlining", "merge", "exports", "optimize", "delete:environment",
+        expected.AddRange(["merge", "optimize", "delete:environment",
             "delete:host", "delete:adapter", "delete:merged", "delete:sanitized", "delete:runtime-sanitized"]);
         Assert.Equal(expected, stages.Calls);
         Assert.Equal(("environment", target), stages.Environment);
+        // The inputs merge as they are, with Oz's hint selections, keeping only the canonical ABI.
         Assert.Equal(new ComponentCoreModuleMergeRequest(
-            "sanitized", "runtime-sanitized", "environment", "merged", target,
-            managed ? "host" : null, managed ? "adapter" : null), stages.Merge);
-        Assert.Equal(("merged", "sanitized", width == "wasm64" ? "cm64p2" : "cm32p2"), stages.Exports);
+            "application", "runtime", "environment", "sanitized", target,
+            managed ? "host" : null, managed ? "adapter" : null)
+        {
+            ApplicationInlineAnnotations = WasmInlineAnnotationSelection.Preserve,
+            RuntimeInlineAnnotations = WasmInlineAnnotationSelection.SizeAware,
+            Exports = stages.Merge!.Exports,
+            Intermediates = new("sanitized", "runtime-sanitized", "merged"),
+        }, stages.Merge);
+        Assert.Equal(width == "wasm64" ? "cm64p2" : "cm32p2", stages.Merge.Exports!.ComponentPrefix);
+        Assert.Empty(stages.Merge.Exports.RemovedExports);
         Assert.Equal(("sanitized", "output", target, FinalWasmOptimization.Oz),
             stages.Optimization);
-        Assert.Equal(
-            [
-                ("application", "sanitized", WasmInlineAnnotationSelection.Preserve),
-                ("runtime", "runtime-sanitized", WasmInlineAnnotationSelection.SizeAware),
-            ],
-            stages.Inlinings);
         Assert.Equal(managed ? new NetWasmHostComponentShimRequest("host", target) : null, stages.Host);
         Assert.Equal(managed ? new ManagedExecutableComponentAdapterRequest("adapter", target, entry!) : null,
             stages.Adapter);
     }
 
     [Fact]
-    public void MergeFailureReleasesWorkspaceWithoutExportFilteringOrOptimization()
+    public void MergeFailureReleasesWorkspaceWithoutOptimization()
     {
         var failure = new InvalidOperationException("merge failure");
         var stages = new RecordingStages { MergeFailure = failure };
@@ -108,9 +108,8 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             CreateWorkspace(stages)));
 
         Assert.Same(failure, observed);
-        Assert.Equal(["environment", "inlining", "inlining", "merge", "delete:environment", "delete:host",
+        Assert.Equal(["environment", "merge", "delete:environment", "delete:host",
             "delete:adapter", "delete:merged", "delete:sanitized", "delete:runtime-sanitized"], stages.Calls);
-        Assert.Null(stages.Exports);
         Assert.Null(stages.Optimization);
     }
 
@@ -127,27 +126,12 @@ public sealed class ComponentCoreModuleLinkExecutionTests
     }
 
     [Fact]
-    public void RequiresInliningCapabilitiesBeforeExecution()
+    public void RequiresTheSettingsResolverBeforeExecution()
     {
         var stages = new RecordingStages();
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            stages, stages, stages, stages, stages, stages, null!, stages));
-        Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            stages, stages, stages, stages, stages, stages, new WasmOptimizationSettingsResolver(), null!));
+            stages, stages, stages, stages, stages, null!));
         Assert.Empty(stages.Calls);
-    }
-
-    [Fact]
-    public void SelectionFailureReleasesWorkspaceWithoutMerging()
-    {
-        var failure = new InvalidOperationException("annotation failure");
-        var stages = new RecordingStages { InliningFailure = failure };
-        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => CreateExecution(stages).Run(
-            new("application", "runtime", "output", ComponentTarget.Wasm32Wasi02), CreateWorkspace(stages))));
-        Assert.Equal(["environment", "inlining", "delete:environment", "delete:host",
-            "delete:adapter", "delete:merged", "delete:sanitized", "delete:runtime-sanitized"], stages.Calls);
-        Assert.Null(stages.Merge);
-        Assert.Null(stages.Optimization);
     }
 
     [Fact]
@@ -163,34 +147,24 @@ public sealed class ComponentCoreModuleLinkExecutionTests
 
     private static IComponentCoreModuleLinkExecution CreateExecution(RecordingStages stages) =>
         Assert.IsAssignableFrom<IComponentCoreModuleLinkExecution>(
-            new ComponentCoreModuleLinkExecution(stages, stages, stages, stages, stages, stages,
-                new WasmOptimizationSettingsResolver(), stages));
+            new ComponentCoreModuleLinkExecution(stages, stages, stages, stages, stages,
+                new WasmOptimizationSettingsResolver()));
 
     private static ComponentCoreModuleWorkspace CreateWorkspace(RecordingStages stages) =>
         new(stages, "environment", "host", "adapter", "merged", "sanitized", "runtime-sanitized");
 
     private sealed class RecordingStages : IComponentCoreModuleMergeRunner,
         IEmscriptenEnvironmentShimWriter, INetWasmHostComponentShimWriter,
-        IManagedExecutableComponentAdapterWriter, IWasmCoreModuleExportEditor,
-        IComponentCoreModuleOptimizer, IFileDeleter, IWasmCoreModuleInlineAnnotationEditor
+        IManagedExecutableComponentAdapterWriter, IComponentCoreModuleOptimizer, IFileDeleter
     {
         public List<string> Calls { get; } = [];
         public Exception? MergeFailure { get; init; }
-        public Exception? InliningFailure { get; init; }
         public (string, ComponentTarget)? Environment { get; private set; }
         public ComponentCoreModuleMergeRequest? Merge { get; private set; }
         public NetWasmHostComponentShimRequest? Host { get; private set; }
         public ManagedExecutableComponentAdapterRequest? Adapter { get; private set; }
-        public (string, string, string)? Exports { get; private set; }
         public (string, string, ComponentTarget, FinalWasmOptimization)? Optimization { get; private set; }
-        public List<(string, string, WasmInlineAnnotationSelection)> Inlinings { get; } = [];
-
-        public void Rewrite(string inputPath, string outputPath, WasmInlineAnnotationSelection selection)
-        {
-            Calls.Add("inlining");
-            if (InliningFailure is not null) throw InliningFailure;
-            Inlinings.Add((inputPath, outputPath, selection));
-        }
+        public bool? Converge { get; private set; }
 
         public void Write(string outputPath, ComponentTarget target)
         {
@@ -217,20 +191,16 @@ public sealed class ComponentCoreModuleLinkExecutionTests
             if (MergeFailure is not null) throw MergeFailure;
         }
 
-        public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
-        {
-            Calls.Add("exports");
-            Exports = (inputPath, outputPath, selection.ComponentPrefix!);
-        }
-
         public void Optimize(
             string inputPath,
             string outputPath,
             ComponentTarget target,
-            FinalWasmOptimization optimization)
+            FinalWasmOptimization optimization,
+            bool converge)
         {
             Calls.Add("optimize");
             Optimization = (inputPath, outputPath, target, optimization);
+            Converge = converge;
         }
 
         public void Delete(string path) => Calls.Add("delete:" + path);

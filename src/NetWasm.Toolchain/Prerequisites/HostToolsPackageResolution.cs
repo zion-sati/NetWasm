@@ -19,7 +19,11 @@ public sealed record HostToolsPackageManifest(
     string WasmLdVersion,
     string BinaryenVersion,
     ImmutableDictionary<string, string> Roles,
-    ImmutableArray<HostToolsPackageFile> Files);
+    ImmutableArray<HostToolsPackageFile> Files)
+{
+    // The native wasm-tools' version, in packages that carry it.
+    public string? WasmToolsVersion { get; init; }
+}
 
 public sealed record HostToolsPackageFileContents(
     byte[] Bytes,
@@ -33,7 +37,11 @@ public sealed record HostToolsPackagePaths(
     string NodeVersion,
     string WasmLdVersion,
     string BinaryenVersion,
-    ImmutableDictionary<string, string> Roles);
+    ImmutableDictionary<string, string> Roles)
+{
+    // The native wasm-tools' version, when the package carries it.
+    public string? WasmToolsVersion { get; init; }
+}
 
 public interface IHostToolsPackageFileReader
 {

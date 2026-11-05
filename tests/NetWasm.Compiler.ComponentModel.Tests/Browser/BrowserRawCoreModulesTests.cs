@@ -29,12 +29,14 @@ public sealed class BrowserRawCoreModulesTests
         Assert.Equal("v/tmp/environment.wasm", Assert.Single(plan.Operations.OfType<BrowserLinkTextOperation>().ToArray()).OutputPath);
         Assert.Equal(BinaryenToolIds.WasmMerge, plan.Operations.OfType<BrowserLinkToolOperation>().First().ToolId);
         Assert.Equal(ExpectedMergePrefix, plan.Operations.OfType<BrowserLinkToolOperation>().First().Arguments.Take(6));
-        // Managed AggressiveInlining hints survive at Oz; the runtime's do not.
+        // Managed AggressiveInlining hints survive at Oz; the runtime's do not. Without an
+        // optimizer, nothing reads hints and the link keeps none.
         Assert.Equal(new BrowserLinkInlineOperation("v/application.wasm", "v/tmp/sanitized.wasm",
-            optimization == FinalWasmOptimization.Oz ? WasmInlineAnnotationSelection.Preserve : WasmInlineAnnotationSelection.SizeAware),
+            optimization == FinalWasmOptimization.Oz ? WasmInlineAnnotationSelection.Preserve : WasmInlineAnnotationSelection.Remove),
             plan.Operations.OfType<BrowserLinkInlineOperation>().First());
         Assert.Equal(new BrowserLinkInlineOperation("v/runtime.wasm", "v/tmp/runtime-sanitized.wasm",
-            WasmInlineAnnotationSelection.SizeAware), plan.Operations.OfType<BrowserLinkInlineOperation>().Skip(1).First());
+            optimization == FinalWasmOptimization.Oz ? WasmInlineAnnotationSelection.SizeAware : WasmInlineAnnotationSelection.Remove),
+            plan.Operations.OfType<BrowserLinkInlineOperation>().Skip(1).First());
         Assert.Equal(request.InternalRuntimeExports, plan.Operations.OfType<BrowserLinkExportOperation>().SingleOrDefault()!.RemovedExports);
         Assert.Equal("v/tmp/merged.wasm", plan.Operations.OfType<BrowserLinkExportOperation>().Single().InputPath);
         Assert.Equal("v/tmp/sanitized.wasm", plan.Operations.OfType<BrowserLinkExportOperation>().Single().OutputPath);

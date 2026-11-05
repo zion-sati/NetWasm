@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Wasm.Units;
 using System;
 using System.Collections.Immutable;
 using System.Linq;
@@ -34,7 +35,9 @@ internal sealed class CompilationEmissionBuilder(
     IStaticDataLayoutProviderFactory staticData,
     IMemberDescriptorLayoutProviderFactory memberDescriptors,
     IManagedExceptionObjectProviderFactory exceptionObjects,
-    IStackTraceSourceLocationReader stackTraceSourceLocations) : ICompilationEmissionBuilder
+    IStackTraceSourceLocationReader stackTraceSourceLocations,
+    IMethodOutlineProviderFactory outlines,
+    IUnitStoreCommitter unitCommitter) : ICompilationEmissionBuilder
 {
     private readonly IManagedWasmEmitterFactory _emitters = emitters ??
         throw new ArgumentNullException(nameof(emitters));
@@ -77,13 +80,18 @@ internal sealed class CompilationEmissionBuilder(
     private readonly IStackTraceSourceLocationReader _stackTraceSourceLocations =
         stackTraceSourceLocations ??
         throw new ArgumentNullException(nameof(stackTraceSourceLocations));
+    private readonly IMethodOutlineProviderFactory _outlines = outlines ??
+        throw new ArgumentNullException(nameof(outlines));
+    private readonly IUnitStoreCommitter _unitCommitter = unitCommitter ??
+        throw new ArgumentNullException(nameof(unitCommitter));
 
     public CompilationEmission Emit(
         MetadataCompilationSnapshot metadata,
         CompilationPreparation preparation,
         CompilationAnalysis analysis,
         CompilationLayouts layouts,
-        CompilerOptions options)
+        CompilerOptions options,
+        CompiledUnitState? units = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(preparation);
@@ -110,11 +118,20 @@ internal sealed class CompilationEmissionBuilder(
         var memberDescriptorLayout = _memberDescriptors.Create(layouts.Snapshot);
         var exceptionObjectLayouts = _exceptionObjects.Create(layouts.Snapshot);
         var runtimeIntrinsics = _intrinsics.Create(symbols, metadata.Methods);
+        // Methods whose units will be reused are not structured; diagnostics need every
+        // method's structure.
+        var outlines = units is null || options.DiagnosticTracePath is not null
+            ? null
+            : _outlines.Create(units, analysis.Program.Methods, analysis.Program.RootMaps,
+                analysis.Program.ConstructedRootMaps,
+                preparation.OptimizationSettings.BranchPrefixDuplication,
+                preparation.OptimizationSettings.DispatcherElimination);
         var lowering = _methodProgram.Build(
             analysis.Program.Methods,
             analysis.Program.ConstructedMethods,
             preparation.OptimizationSettings.BranchPrefixDuplication,
-            preparation.OptimizationSettings.DispatcherElimination);
+            preparation.OptimizationSettings.DispatcherElimination,
+            outlines);
         _structuredInvariants.Validate(symbols, lowering);
 
         var emitter = _emitters.Create(
@@ -188,6 +205,7 @@ internal sealed class CompilationEmissionBuilder(
             AddressedNativeCallbacks = addressedNativeCallbacks,
             EntryPointArgumentFactory = preparation.EntryPointArgumentFactory,
             CollectManagedMethodMemoryMetrics = options.DiagnosticTracePath is not null,
+            CompiledUnits = units,
             UseJavaScriptExportBoundary =
                 options.UseJavaScriptExportBoundary || options.WitPath is null,
             StructuredDiagnostics = options.StructuredDiagnostics,
@@ -223,6 +241,24 @@ internal sealed class CompilationEmissionBuilder(
         };
         var emission = emitter.Emit(request);
         _invariants.Validate(emission.Module, options.Target);
+        if (units is { Directory: { } directory, Change: { } change })
+            _unitCommitter.Commit(directory, change);
+        if (units is { FunctionIndices: { } functions, Target: { } target })
+        {
+            units.Kept = new UnitKeptCompile(emission.Module, functions,
+                UnitPlanCodec.Encode(target, layouts.Snapshot, ProgramFacts(analysis.Program)), []);
+        }
         return new CompilationEmission(emission, lowering);
     }
+
+    // What a later compile's early cutoff derives an edited method's own facts from.
+    private static UnitProgramFacts ProgramFacts(ReachableProgram program) => new(
+        program.AllocatedTypes,
+        program.Methods.ToDictionary(pair => pair.Key, pair => pair.Value.Method.CanonicalName),
+        [.. program.ConstructedMethods.Keys.Order(StringComparer.Ordinal)],
+        program.ManagedByRefEffects.Methods
+            .Where(pair => !pair.Value.WrittenArguments.IsEmpty || !pair.Value.EscapedArguments.IsEmpty ||
+                !pair.Value.ReturnedArgumentAliases.IsEmpty)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+        program.ManagedByRefEffects.Callees);
 }

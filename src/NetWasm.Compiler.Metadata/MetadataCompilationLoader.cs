@@ -23,12 +23,31 @@ public sealed class MetadataCompilationLoader(
         var loaded = new List<ManagedAssembly>();
         try
         {
-            var entry = assemblies.Load(entryAssemblyPath, referenceAssemblyAliases);
-            loaded.Add(entry);
-            foreach (var referencePath in referencePaths)
+            // Assemblies are read and parsed side by side, in their given order; when any
+            // fails, the first failure in that order is thrown and the rest are disposed.
+            var paths = new List<string> { entryAssemblyPath };
+            paths.AddRange(referencePaths);
+            var parsed = new ManagedAssembly?[paths.Count];
+            var failures = new System.Runtime.ExceptionServices.ExceptionDispatchInfo?[paths.Count];
+            System.Threading.Tasks.Parallel.For(0, paths.Count, index =>
             {
-                loaded.Add(assemblies.Load(referencePath, referenceAssemblyAliases));
+                try
+                {
+                    parsed[index] = assemblies.Load(paths[index], referenceAssemblyAliases);
+                }
+#pragma warning disable CA1031 // Rethrown below, in path order.
+                catch (Exception exception)
+#pragma warning restore CA1031
+                {
+                    failures[index] = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception);
+                }
+            });
+            foreach (var assembly in parsed)
+            {
+                if (assembly is not null) loaded.Add(assembly);
             }
+            Array.Find(failures, failure => failure is not null)?.Throw();
+            var entry = parsed[0]!;
 
             var byName = ImmutableDictionary.CreateBuilder<string, ManagedAssembly>(
                 StringComparer.Ordinal);

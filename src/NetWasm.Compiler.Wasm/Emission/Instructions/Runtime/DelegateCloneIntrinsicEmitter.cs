@@ -64,7 +64,7 @@ internal sealed class DelegateCloneIntrinsicEmitter(
 
         exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Instruction.Context.ManagedThrowFunction);
         for (var index = 0;
-             index < request.Instruction.Target.DelegateTypes.Length;
+             index < request.Instruction.Target.DelegateTypes.Count;
              index++)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));

@@ -40,6 +40,8 @@ internal sealed class ComponentizeCliCommand(
     {
         var options = ComponentizeCliOptions.Parse(arguments);
         var optimizationOverrides = _inlineHints.Parse(options.ManagedInliningHints);
+        if (options.Converge)
+            optimizationOverrides = (optimizationOverrides ?? new()) with { Converge = true };
         var target = options.Platform == WasmTarget.Wasm32
             ? ComponentTarget.Wasm32Wasi02
             : ComponentTarget.Wasm64Wasi02;

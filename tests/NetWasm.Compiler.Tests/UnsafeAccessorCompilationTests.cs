@@ -14,7 +14,7 @@ public sealed class UnsafeAccessorCompilationTests
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm32)]
     [InlineData(true, WasmTarget.Wasm64)]
-    public void LibraryAccessorsPreserveBodiesAndSourceFramesThroughFrontendCache(bool optimized, WasmTarget target)
+    public void LibraryAccessorsPreserveBodiesAndSourceFrames(bool optimized, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var library = assets.CompileSourceWithPortablePdb("AccessorLibrary", """
@@ -80,16 +80,12 @@ public sealed class UnsafeAccessorCompilationTests
                 }
             }
             """, optimized, library);
-        var metrics = new CacheMetricsObserver();
         var options = new CompilerOptions(assembly, [assets.CoreLib, library],
             "AccessorApplication.EntryPoint", "Run", [], Target: target, EmitStackTrace: true,
-            MetricsObserver: metrics, EnableFrontendCache: true,
-            IntermediateOutputPath: Path.Combine(assets.Directory, "frontend-cache"),
             ProjectDirectory: assets.Directory);
 
-        foreach (var cached in new[] { false, true, true })
         {
-            var result = NetWasmCompiler.Compile(options with { EnableFrontendCache = cached });
+            var result = NetWasmCompiler.Compile(options);
             var accessors = result.Program.MethodInstances.Values.Where(method =>
                 method.DeclaringType.FullName == "AccessorLibrary.Accessors").ToArray();
             Assert.Equal(5, accessors.Length);
@@ -106,13 +102,12 @@ public sealed class UnsafeAccessorCompilationTests
             Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
                 42, target, result.StaticDataEnd));
         }
-        Assert.True(metrics.Latest!.FrontendCache!.Hits > 0);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void AddingAnUnusedFieldAccessorInvalidatesCachedReadonlyTypeProofs(bool generic)
+    public void AnUnusedFieldAccessorDisablesReadonlyTypeProofs(bool generic)
     {
         using var assets = TestAssets.Create();
         var library = assets.CompileSource("AttributeLibrary", $$"""
@@ -140,31 +135,16 @@ public sealed class UnsafeAccessorCompilationTests
             }
             """, library);
         var assembly = CompileEntry(false);
-        var metrics = new CacheMetricsObserver();
         var options = new CompilerOptions(assembly, [assets.CoreLib, library],
-            "AttributeApplication.EntryPoint", "Run", [], EnableFrontendCache: true,
-            MetricsObserver: metrics, IntermediateOutputPath: Path.Combine(assets.Directory, "frontend-cache"));
-        for (var run = 0; run < 2; run++)
-        {
-            var result = NetWasmCompiler.Compile(options);
-            Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
-                42, WasmTarget.Wasm32, result.StaticDataEnd));
-        }
-        Assert.True(metrics.Latest!.FrontendCache!.Hits > 0);
+            "AttributeApplication.EntryPoint", "Run", []);
+        var result = NetWasmCompiler.Compile(options);
+        Assert.Equal(42, ExecuteWithStandardWasiNode(result.ApplicationModule, assets.Directory,
+            42, WasmTarget.Wasm32, result.StaticDataEnd));
 
+        // The same path now names an entry assembly that exposes the field.
         CompileEntry(true);
-        foreach (var cached in new[] { true, false })
-        {
-            var error = Assert.Throws<CompilerException>(() =>
-                NetWasmCompiler.Compile(options with { EnableFrontendCache = cached }));
-            Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
-            Assert.Contains("Read", error.Diagnostic.Method);
-        }
-    }
-
-    private sealed class CacheMetricsObserver : ICompilerMetricsObserver
-    {
-        internal CompilerMetricsReport? Latest { get; private set; }
-        public void Report(CompilerMetricsReport report) => Latest = report;
+        var error = Assert.Throws<CompilerException>(() => NetWasmCompiler.Compile(options));
+        Assert.Equal(DiagnosticCode.UnsupportedMetadata, error.Diagnostic.Code);
+        Assert.Contains("Read", error.Diagnostic.Method);
     }
 }

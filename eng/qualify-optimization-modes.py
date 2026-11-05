@@ -191,10 +191,8 @@ def parse_trace(path: Path, expected_flag: str | None) -> tuple[list[list[str]],
                 f"Expected exactly one {expected_flag} flag; recorded {flags}."
             )
         is_runtime = "--post-emscripten" in invocation
-        is_final = (
-            "--converge" in invocation
-            and "--remove-unused-module-elements" in invocation
-        )
+        # The final link removes unused elements; it converges only where a project opts in.
+        is_final = "--remove-unused-module-elements" in invocation
         if is_runtime == is_final:
             raise RuntimeError("A wasm-opt invocation did not identify exactly one build phase.")
         phases.append("runtime" if is_runtime else "final")
@@ -256,7 +254,7 @@ def qualify(args: argparse.Namespace) -> dict[str, object]:
         "NETWASM_NODE_PATH",
         "NETWASM_WASM_LD_PATH",
         "NETWASM_WASM_OPT_PATH",
-        "NETWASM_WASM_MERGE_PATH",
+        "NETWASM_WASM_TOOLS_PATH",
     ):
         environment.pop(name, None)
 

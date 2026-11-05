@@ -32,7 +32,7 @@ public sealed class ClsComplianceReferenceMetadataTests
                     public Expression<Func<int, int>> Selector { get; set; }
                 }
                 """,
-                "10.0.403",
+                TestAssets.RepositorySdkVersion,
                 "latest",
                 warningsAsErrors: true);
         }
@@ -60,7 +60,7 @@ public sealed class ClsComplianceReferenceMetadataTests
                     public uint Value { get; set; }
                 }
                 """,
-                "10.0.403",
+                TestAssets.RepositorySdkVersion,
                 "latest",
                 warningsAsErrors: true));
 

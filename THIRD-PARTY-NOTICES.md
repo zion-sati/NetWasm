@@ -8,8 +8,8 @@ The corresponding standard texts are also available under [LICENSES](LICENSES/).
 ## Restored build tools and runtime archives
 
 Each `NetWasm.HostTools.<host RID>` NuGet package includes the upstream Node.js,
-LLVM/LLD and Binaryen license texts and embedded third-party notices in its
-`LICENSE.txt` and `licenses/` entries. The development-host executables stay in
+LLVM/LLD, Binaryen and wasm-tools license texts and embedded third-party notices
+in its `LICENSE.txt` and `licenses/` entries. The development-host executables stay in
 the NuGet cache and are not copied into an application's publish output.
 The Linux host packages also carry Ubuntu GCC `libatomic.so.1`, its GPL-3.0
 and GCC Runtime Library Exception notices, and exact corresponding-source

@@ -14,7 +14,7 @@ public sealed class HostingBuildEnvironmentResolverTests
         Path.Combine(Path.GetTempPath(), "netwasm-hosting-build"));
 
     [Fact]
-    public void CompositionPinsRequiredHostsAndOptionalBinaryen132()
+    public void CompositionPinsRequiredHostsOptionalBinaryen132AndAnyWasmTools()
     {
         var requirements = HostingBuildComposition.Requirements();
 
@@ -34,17 +34,18 @@ public sealed class HostingBuildEnvironmentResolverTests
                 Assert.Null(lld.MaximumVersionExclusive);
                 Assert.Empty(lld.RequiredCapabilities);
             },
-            merge =>
-            {
-                Assert.Equal(HostToolIds.BinaryenWasmMerge, merge.ToolId);
-                Assert.Equal(new Version(132, 0), merge.MinimumVersionInclusive);
-                Assert.Equal(new Version(133, 0), merge.MaximumVersionExclusive);
-            },
             opt =>
             {
                 Assert.Equal(HostToolIds.BinaryenWasmOpt, opt.ToolId);
                 Assert.Equal(new Version(132, 0), opt.MinimumVersionInclusive);
                 Assert.Equal(new Version(133, 0), opt.MaximumVersionExclusive);
+            },
+            wasmTools =>
+            {
+                // The resolver requires the toolchain's own release.
+                Assert.Equal(HostToolIds.WasmTools, wasmTools.ToolId);
+                Assert.Equal(new Version(1, 0), wasmTools.MinimumVersionInclusive);
+                Assert.Null(wasmTools.MaximumVersionExclusive);
             });
     }
 
@@ -81,11 +82,17 @@ public sealed class HostingBuildEnvironmentResolverTests
                 Assert.Equal("EMSDK", fallback.RootEnvironmentVariableName);
                 Assert.Equal(Path.Combine("upstream", "bin"), fallback.RelativeDirectory);
             },
-            merge => AssertBinaryenRequest(
-                merge, "wasm-merge", "NETWASM_WASM_MERGE_PATH"),
             opt => AssertBinaryenRequest(
-                opt, "wasm-opt", "NETWASM_WASM_OPT_PATH")
-            );
+                opt, "wasm-opt", "NETWASM_WASM_OPT_PATH"),
+            wasmTools =>
+            {
+                // Only where it is named: emsdk has no wasm-tools.
+                Assert.Equal("wasm-tools", wasmTools.ExecutableName);
+                Assert.Equal("NETWASM_WASM_TOOLS_PATH", wasmTools.OverrideEnvironmentVariableName);
+                Assert.Empty(wasmTools.EnvironmentFallbacks);
+                Assert.Empty(wasmTools.RootFallbacks);
+                Assert.False(wasmTools.SearchPath);
+            });
         Assert.Equal(HostToolIds.Known.ToArray(), probe.Requests.Select(x => x.ToolId));
         Assert.Equal(HostToolIds.Known.ToArray(), validators.Requests);
         Assert.Equal(Root, packagePaths.PackageRoot);
@@ -94,12 +101,27 @@ public sealed class HostingBuildEnvironmentResolverTests
         Assert.Equal("0.1.0-preview.24", result.Toolchain.PackageVersion);
         Assert.Equal(Path.Combine(Root, "node"), result.Node.AbsolutePath);
         Assert.Equal(Path.Combine(Root, "wasm-ld"), result.WasmLd.AbsolutePath);
-        Assert.Equal(Path.Combine(Root, "wasm-merge"),
-            result.Binaryen.WasmMerge?.Executable.AbsolutePath);
         Assert.Equal(Path.Combine(Root, "wasm-opt"),
             result.Binaryen.WasmOpt?.Executable.AbsolutePath);
         Assert.Equal("1.256.0", result.Toolchain.WasmTools.WasmToolsVersion);
         Assert.Equal(Path.Combine(Root, "node"), result.Toolchain.WasmTools.NodePath);
+        Assert.Equal(Path.Combine(Root, "wasm-tools"), result.NativeWasmTools?.Executable.AbsolutePath);
+    }
+
+    [Fact]
+    public void ResolveRejectsANativeWasmToolsOfAnotherReleaseThanTheToolchains()
+    {
+        var resolver = new HostingBuildEnvironmentResolver(
+            new RecordingExecutableResolver(),
+            new RecordingProbe(wasmToolsVersion: new Version(1, 255, 0)),
+            new RecordingValidatorResolver(),
+            new RecordingPackagePathResolver());
+
+        var exception = Assert.Throws<InvalidDataException>(() => resolver.Resolve(new(Root)));
+
+        Assert.Equal(
+            "Native wasm-tools is version 1.255.0; the toolchain's wasm-tools is 1.256.0.",
+            exception.Message);
     }
 
     private static void AssertBinaryenRequest(
@@ -145,8 +167,8 @@ public sealed class HostingBuildEnvironmentResolverTests
 
         var result = resolver.Resolve(new(Root));
 
-        Assert.Null(result.Binaryen.WasmMerge);
         Assert.Null(result.Binaryen.WasmOpt);
+        Assert.Null(result.NativeWasmTools);
     }
 
     [Theory]
@@ -166,7 +188,7 @@ public sealed class HostingBuildEnvironmentResolverTests
             resolver.Resolve(new(Root)));
 
         Assert.Equal(failure, exception.Failure);
-        Assert.Equal(HostToolIds.BinaryenWasmMerge, exception.ToolId);
+        Assert.Equal(HostToolIds.BinaryenWasmOpt, exception.ToolId);
     }
 
     [Theory]
@@ -191,7 +213,6 @@ public sealed class HostingBuildEnvironmentResolverTests
         }
 
         var result = resolver.Resolve(new(Root));
-        Assert.Null(result.Binaryen.WasmMerge);
         Assert.Null(result.Binaryen.WasmOpt);
     }
 
@@ -214,7 +235,7 @@ public sealed class HostingBuildEnvironmentResolverTests
     }
 
     [Fact]
-    public void ResolveUsesAllFourValidatedPackagedExecutables()
+    public void ResolveUsesEveryValidatedPackagedExecutable()
     {
         var packages = new RecordingHostToolsPackageResolver();
         var chooser = new RecordingHostToolsChooser();
@@ -236,12 +257,27 @@ public sealed class HostingBuildEnvironmentResolverTests
         Assert.Equal(HostExecutableResolutionSource.Package, result.Node.Source);
         Assert.Equal(HostExecutableResolutionSource.Package, result.WasmLd.Source);
         Assert.Equal(HostExecutableResolutionSource.Package,
-            result.Binaryen.WasmMerge?.Executable.Source);
-        Assert.Equal(HostExecutableResolutionSource.Package,
             result.Binaryen.WasmOpt?.Executable.Source);
         Assert.Equal(result.Node.AbsolutePath, result.Toolchain.WasmTools.NodePath);
         Assert.Equal(Root, toolchain.PackageRoot);
         Assert.Equal(Path.Combine(Root, "host-tools", "nwc"), result.CompilerPath);
+        Assert.Equal(Path.Combine(Root, "host-tools", "wasm-tools"),
+            result.NativeWasmTools?.Executable.AbsolutePath);
+    }
+
+    [Fact]
+    public void ResolveRunsTheToolchainsWasmToolsWhenThePackageCarriesNone()
+    {
+        var chooser = new RecordingHostToolsChooser();
+        IHostingBuildEnvironmentResolver resolver = new HostingBuildEnvironmentResolver(
+            new RecordingExecutableResolver(), new PackagedProbe(),
+            new RecordingValidatorResolver(), new RecordingPackagePathResolver(),
+            new RecordingHostToolsPackageResolver(carriesWasmTools: false), chooser);
+
+        var result = resolver.Resolve(PackagedRequest());
+
+        Assert.Null(result.NativeWasmTools);
+        Assert.DoesNotContain(chooser.Requests, request => request.ToolId == HostToolIds.WasmTools);
     }
 
     [Fact]
@@ -268,23 +304,29 @@ public sealed class HostingBuildEnvironmentResolverTests
         "0.2.5-preview.1",
         "osx-arm64");
 
-    private sealed class RecordingHostToolsPackageResolver : IHostToolsPackageResolver
+    private sealed class RecordingHostToolsPackageResolver(bool carriesWasmTools = true) : IHostToolsPackageResolver
     {
         public HostToolsPackageRequest? Request { get; private set; }
 
         public HostToolsPackagePaths Resolve(HostToolsPackageRequest request)
         {
             Request = request;
+            var roles = new Dictionary<string, string>
+            {
+                ["node"] = Path.Combine(Root, "host-tools", "node"),
+                ["wasm-ld"] = Path.Combine(Root, "host-tools", "wasm-ld"),
+                ["wasm-opt"] = Path.Combine(Root, "host-tools", "wasm-opt"),
+                ["nwc"] = Path.Combine(Root, "host-tools", "nwc"),
+            };
+            if (carriesWasmTools)
+            {
+                roles["wasm-tools"] = Path.Combine(Root, "host-tools", "wasm-tools");
+            }
             return new(request.PackageId, request.PackageVersion, request.HostRid,
-                "26.7.0", "24.0.0", "132",
-                new Dictionary<string, string>
-                {
-                    ["node"] = Path.Combine(Root, "host-tools", "node"),
-                    ["wasm-ld"] = Path.Combine(Root, "host-tools", "wasm-ld"),
-                    ["wasm-merge"] = Path.Combine(Root, "host-tools", "wasm-merge"),
-                    ["wasm-opt"] = Path.Combine(Root, "host-tools", "wasm-opt"),
-                    ["nwc"] = Path.Combine(Root, "host-tools", "nwc"),
-                }.ToImmutableDictionary(StringComparer.Ordinal));
+                "26.7.0", "24.0.0", "132", roles.ToImmutableDictionary(StringComparer.Ordinal))
+            {
+                WasmToolsVersion = carriesWasmTools ? "1.256.0" : null,
+            };
         }
     }
 
@@ -312,6 +354,7 @@ public sealed class HostingBuildEnvironmentResolverTests
             {
                 HostToolIds.Node => nodeVersion ?? new Version(26, 7, 0),
                 HostToolIds.WasmLd => new Version(24, 0, 0),
+                HostToolIds.WasmTools => new Version(1, 256, 0),
                 _ => new Version(132, 0),
             };
             return new(executable.ToolId, version, []);
@@ -337,8 +380,7 @@ public sealed class HostingBuildEnvironmentResolverTests
     {
         public ResolvedHostExecutable Resolve(HostExecutableResolutionRequest request)
         {
-            if (request.ToolId is HostToolIds.BinaryenWasmMerge
-                or HostToolIds.BinaryenWasmOpt)
+            if (request.ToolId is HostToolIds.BinaryenWasmOpt or HostToolIds.WasmTools)
             {
                 throw new HostExecutableResolutionException(
                     request.ToolId,
@@ -355,8 +397,7 @@ public sealed class HostingBuildEnvironmentResolverTests
     {
         public ResolvedHostExecutable Resolve(HostExecutableResolutionRequest request)
         {
-            if (request.ToolId is HostToolIds.BinaryenWasmMerge
-                or HostToolIds.BinaryenWasmOpt)
+            if (request.ToolId is HostToolIds.BinaryenWasmOpt)
             {
                 throw new HostExecutableResolutionException(
                     request.ToolId,
@@ -373,11 +414,10 @@ public sealed class HostingBuildEnvironmentResolverTests
     {
         public ResolvedHostExecutable Resolve(HostExecutableResolutionRequest request) =>
             new(request.ToolId, Path.Combine(Root, request.ExecutableName),
-                request.ToolId is HostToolIds.BinaryenWasmMerge
-                    or HostToolIds.BinaryenWasmOpt ? source : HostExecutableResolutionSource.Path);
+                request.ToolId is HostToolIds.BinaryenWasmOpt ? source : HostExecutableResolutionSource.Path);
     }
 
-    private sealed class RecordingProbe : IHostToolCompatibilityProbe
+    private sealed class RecordingProbe(Version? wasmToolsVersion = null) : IHostToolCompatibilityProbe
     {
         private readonly List<ResolvedHostExecutable> _requests = [];
         public ImmutableArray<ResolvedHostExecutable> Requests => [.. _requests];
@@ -385,7 +425,9 @@ public sealed class HostingBuildEnvironmentResolverTests
         public HostToolCompatibilityObservation Observe(ResolvedHostExecutable executable)
         {
             _requests.Add(executable);
-            return new(executable.ToolId, new Version(50, 1), []);
+            return new(executable.ToolId, executable.ToolId == HostToolIds.WasmTools
+                ? wasmToolsVersion ?? new Version(1, 256, 0)
+                : new Version(50, 1), []);
         }
     }
 
@@ -412,7 +454,7 @@ public sealed class HostingBuildEnvironmentResolverTests
         IHostToolCompatibilityValidatorResolver
     {
         public IHostToolCompatibilityValidator Resolve(string toolId) =>
-            toolId is HostToolIds.BinaryenWasmMerge or HostToolIds.BinaryenWasmOpt
+            toolId is HostToolIds.BinaryenWasmOpt
                 ? new RejectingValidator(toolId)
                 : new PassValidator(toolId);
 

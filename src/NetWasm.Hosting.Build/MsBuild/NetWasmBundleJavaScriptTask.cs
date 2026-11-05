@@ -11,7 +11,7 @@ public sealed class NetWasmBundleJavaScriptTask : Microsoft.Build.Utilities.Task
     private readonly IJavaScriptBundler _bundler;
 
     public NetWasmBundleJavaScriptTask()
-        : this(new ProcessJavaScriptBundler())
+        : this(new StampedJavaScriptBundler(new ProcessJavaScriptBundler()))
     {
     }
 

@@ -14,7 +14,8 @@ public sealed class TypeTestPlannerTests
         var target = CreateReferenceType("Marker");
         var planner = new TypeTestPlannerFactory(new NullableTypeResolver()).Create(
             new RecordingTypeOperandResolver(target),
-            new FixedRelationshipClassifier(isAssignmentCompatible: true));
+            new FixedRelationshipClassifier(isAssignmentCompatible: true),
+            UnboundedTypeRelationshipKeys.Instance);
 
         Assert.IsType<TypeTestPlanner>(planner);
     }
@@ -44,6 +45,41 @@ public sealed class TypeTestPlannerTests
             second => Assert.Same(laterAllocated, second));
         Assert.Same(method, typeOperands.LastMethod);
         Assert.Equal(1, typeOperands.CallCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SitesClassifyOnlyTheAllocatedTypesTheirTargetKeyCanMatch(bool unboundedTarget)
+    {
+        var target = CreateReferenceType("Marker");
+        var filed = CreateReferenceType("Filed");
+        var unfiled = CreateReferenceType("Unfiled");
+        var open = CreateReferenceType("Open");
+        var keys = new KeyTable(new()
+        {
+            [target] = new("marker", new HashSet<string> { "marker" }, unboundedTarget),
+            [filed] = new("filed", new HashSet<string> { "filed", "marker" }, false),
+            [unfiled] = new("unfiled", new HashSet<string> { "unfiled" }, false),
+            [open] = new("open", new HashSet<string>(), true),
+        });
+        var planner = new TypeTestPlanner(
+            new RecordingTypeOperandResolver(target),
+            new FixedRelationshipClassifier(isAssignmentCompatible: true),
+            keys,
+            new NullableTypeResolver());
+
+        var site = Assert.Single(planner.Build(
+            [CreateManagedMethodBody([CreateTypeInstruction(CilOperation.CastClass)],
+                instance: CreateMethodInstance(target))],
+            [unfiled, filed, open])).Value;
+
+        Assert.Equal(unboundedTarget ? [filed, open, unfiled] : [filed, open], site.MatchingTypes);
+    }
+
+    private sealed class KeyTable(Dictionary<CliTypeIdentity, TypeRelationshipKeys> keys) : ITypeRelationshipKeyResolver
+    {
+        public TypeRelationshipKeys Resolve(CliTypeIdentity type) => keys[type];
     }
 
     [Fact]
@@ -219,6 +255,7 @@ public sealed class TypeTestPlannerTests
         ThroughContract(new TypeTestPlanner(
             typeOperands,
             relationships,
+            UnboundedTypeRelationshipKeys.Instance,
             new NullableTypeResolver()));
 
     private sealed class RecordingTypeOperandResolver(CliTypeIdentity result) : ITypeOperandResolver

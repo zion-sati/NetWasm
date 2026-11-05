@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 
@@ -33,8 +34,8 @@ internal static class MetadataActorTestData
         MethodSignatureModel.Create(CliValueKind.Void),
         0);
 
-    internal static ImmutableDictionary<EntityKey, T> One<T>(EntityKey key, T value)
-        where T : notnull => ImmutableDictionary<EntityKey, T>.Empty.Add(key, value);
+    internal static FrozenDictionary<EntityKey, T> One<T>(EntityKey key, T value)
+        where T : notnull => new Dictionary<EntityKey, T> { [key] = value }.ToFrozenDictionary();
 
     internal static MetadataAvailabilityValidator CreateAvailabilityValidator() =>
         new(new MetadataLifetime());

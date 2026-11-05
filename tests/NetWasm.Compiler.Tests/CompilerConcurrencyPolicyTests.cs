@@ -15,15 +15,15 @@ public sealed class CompilerConcurrencyPolicyTests
         Assert.Equal(new AnalysisConcurrency(8, false),
             WholeProgramAnalyzerFactory.SelectConcurrency(false, 8));
 
-        var workers = ImmutableArray.Create<IReachableMethodAnalyzer>(
-            new UnusedAnalyzer());
+        var one = ImmutableArray.Create<IReachableMethodAnalyzer>(new UnusedAnalyzer());
+        var several = ImmutableArray.Create<IReachableMethodAnalyzer>(new UnusedAnalyzer(), new UnusedAnalyzer());
         var observer = new RecordingReachableMethodBatchObserver();
-        Assert.IsType<SynchronousReachableMethodBatchAnalyzer>(
-            WholeProgramAnalyzerFactory.CreateMethodBatchAnalyzer(
-                true, workers, observer));
-        Assert.IsType<ReachableMethodBatchAnalyzer>(
-            WholeProgramAnalyzerFactory.CreateMethodBatchAnalyzer(
-                false, workers, observer));
+        Assert.IsType<SynchronousReachableMethodAnalysisSessionFactory>(
+            WholeProgramAnalyzerFactory.CreateMethodAnalysisSessions(true, several, observer));
+        Assert.IsType<SynchronousReachableMethodAnalysisSessionFactory>(
+            WholeProgramAnalyzerFactory.CreateMethodAnalysisSessions(false, one, observer));
+        Assert.IsType<PooledReachableMethodAnalysisSessionFactory>(
+            WholeProgramAnalyzerFactory.CreateMethodAnalysisSessions(false, several, observer));
     }
 
     [Fact]

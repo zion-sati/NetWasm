@@ -24,7 +24,12 @@ public sealed record DeploymentBuildRequest(
     ImmutableArray<DeploymentArtifactSource> Artifacts,
     ImmutableArray<string> RequiredImportModules,
     ImmutableArray<DeploymentFunction> RequiredImports,
-    ImmutableArray<DeploymentFunction> Exports);
+    ImmutableArray<DeploymentFunction> Exports)
+{
+    // Whether the artifacts are copied under the deployment root; a site that serves them
+    // from where they are takes only the manifest.
+    public bool CopyArtifacts { get; init; } = true;
+}
 
 public sealed record DeploymentBuildResult(
     DeploymentManifest Manifest,
@@ -77,7 +82,7 @@ public sealed class DeploymentBuildWriter(
             [.. staged.Select(item => item.Artifact)]);
         var manifestBytes = _manifests.Write(manifest);
 
-        foreach (var item in staged)
+        foreach (var item in request.CopyArtifacts ? staged : [])
         {
             _artifacts.Write(
                 ResolveDeploymentPath(request.DeploymentRoot, item.Artifact.RelativePath),

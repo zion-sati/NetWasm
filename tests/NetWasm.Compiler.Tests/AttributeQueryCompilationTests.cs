@@ -96,7 +96,7 @@ public sealed class AttributeQueryCompilationTests
     [InlineData(false, WasmTarget.Wasm64)]
     [InlineData(true, WasmTarget.Wasm32)]
     [InlineData(true, WasmTarget.Wasm64)]
-    public void QueryExpansionPreservesSourceLinesThroughSwitchesAndFrontendCache(bool optimized, WasmTarget target)
+    public void QueryExpansionPreservesSourceLinesThroughSwitches(bool optimized, WasmTarget target)
     {
         using var assets = TestAssets.Create();
         var assembly = assets.CompileSourceWithPortablePdb("AttributeSourceLines", """
@@ -135,25 +135,12 @@ public sealed class AttributeQueryCompilationTests
                 }
             }
             """, optimized);
-        var metrics = new CacheMetricsObserver();
         var options = new CompilerOptions(assembly, [assets.CoreLib], "AttributeSourceLines.EntryPoint",
-            "Run", [], Target: target, EmitStackTrace: true, MetricsObserver: metrics,
-            IntermediateOutputPath: Path.Combine(assets.Directory, "frontend-cache"), ProjectDirectory: assets.Directory);
+            "Run", [], Target: target, EmitStackTrace: true, ProjectDirectory: assets.Directory);
 
-        foreach (var cached in new[] { false, true, true })
-        {
-            var compilation = NetWasmCompiler.Compile(options with { EnableFrontendCache = cached });
-            Assert.Equal(42, ExecuteWithStandardWasiNode(compilation.ApplicationModule, assets.Directory,
-                42, target, compilation.StaticDataEnd));
-        }
-        Assert.True(metrics.Latest!.FrontendCache!.Hits > 0);
-    }
-
-    private sealed class CacheMetricsObserver : ICompilerMetricsObserver
-    {
-        internal CompilerMetricsReport? Latest { get; private set; }
-
-        public void Report(CompilerMetricsReport report) => Latest = report;
+        var compilation = NetWasmCompiler.Compile(options);
+        Assert.Equal(42, ExecuteWithStandardWasiNode(compilation.ApplicationModule, assets.Directory,
+            42, target, compilation.StaticDataEnd));
     }
 
     [Theory]

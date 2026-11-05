@@ -47,19 +47,8 @@ internal sealed class StructuredMethodDraftAdapter(
                 definitions,
             groupIds));
         var body = _controlFlow.Project(method.Body, method, definitions, groupIds, activeGroup: null);
-        var source = method.ValidatedGraph.Graph.MethodBody;
         return new(
-            new(
-                source.Method,
-                source.MethodInstance,
-                source.MaxStack,
-                source.Locals,
-                source.LocalSignatureTypes,
-                source.Instructions)
-            {
-                ArrayBoundsProof = source.ExceptionRegions.IsEmpty ? source.ArrayBoundsProof : null,
-                IntegerCheckProof = source.IntegerCheckProof,
-            },
+            StructuredMethodHeader.Of(method.ValidatedGraph.Graph.MethodBody),
             new(method.ValidatedGraph.Graph.Entry.Index),
             definitions,
             body,

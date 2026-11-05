@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using NetWasm.Compiler.ComponentModel.Inlining;
 using NetWasm.Compiler.ComponentModel.Node;
 using NetWasm.Compiler.Core;
 
@@ -37,6 +38,9 @@ public sealed class ComponentOperationRunnerTests
         Assert.Contains("bad  component", exception.Diagnostic.Message);
     }
 
+    private static readonly ComponentCoreModuleMergeIntermediates Steps =
+        new("sanitized.wasm", "runtime-sanitized.wasm", "merged.wasm");
+
     [Theory]
     [InlineData("wasm32", false)]
     [InlineData("wasm64", true)]
@@ -51,10 +55,11 @@ public sealed class ComponentOperationRunnerTests
             "runtime.wasm",
             "environment.wasm",
             "merged.wasm",
-            target);
+            target)
+        { Intermediates = Steps };
 
         InvokeMerge(
-            AsMergeRunner(new ComponentCoreModuleMergeRunner(tools)),
+            AsMergeRunner(new ComponentCoreModuleMergeRunner(tools, new RecordingSteps(), new RecordingSteps())),
             request);
 
         Assert.Equal(BinaryenToolIds.WasmMerge, tools.ToolId);
@@ -63,8 +68,8 @@ public sealed class ComponentOperationRunnerTests
         Assert.DoesNotContain("libc.wasm", tools.Arguments);
         var expected = new List<string>
         {
-            "runtime.wasm", "netwasm.runtime.v1",
-            "application.wasm", "netwasm.application.v1",
+            "runtime-sanitized.wasm", "netwasm.runtime.v1",
+            "sanitized.wasm", "netwasm.application.v1",
             "environment.wasm", "env",
             "--output", "merged.wasm",
             "--enable-multimemory", "--enable-exception-handling",
@@ -76,6 +81,57 @@ public sealed class ComponentOperationRunnerTests
         Assert.Equal(expected, tools.Arguments);
     }
 
+    // wasm-merge keeps every input as it is, so the hints are selected into intermediate modules
+    // before it, and the exports after it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CoreModuleMergeRunnerSelectsHintsBeforeAndExportsAfterTheMerge(bool exports)
+    {
+        var tools = new RecordingExternalTools();
+        var steps = new RecordingSteps();
+        WasmExportSelection selection = new("cm32p2", []);
+
+        InvokeMerge(
+            AsMergeRunner(new ComponentCoreModuleMergeRunner(tools, steps, steps)),
+            new ComponentCoreModuleMergeRequest("application.wasm", "runtime.wasm", "environment.wasm",
+                "output.wasm", ComponentTarget.Wasm32Wasi02)
+            {
+                ApplicationInlineAnnotations = WasmInlineAnnotationSelection.SizeAware,
+                RuntimeInlineAnnotations = WasmInlineAnnotationSelection.Remove,
+                Exports = exports ? selection : null,
+                Intermediates = Steps,
+            });
+
+        string[] expected =
+        [
+            "hints application.wasm -> sanitized.wasm SizeAware",
+            "hints runtime.wasm -> runtime-sanitized.wasm Remove",
+            .. exports ? ["exports merged.wasm -> output.wasm cm32p2"] : Array.Empty<string>(),
+        ];
+        Assert.Equal(expected, steps.Calls);
+        Assert.Equal(exports ? "merged.wasm" : "output.wasm",
+            tools.Arguments[tools.Arguments.ToList().IndexOf("--output") + 1]);
+    }
+
+    [Fact]
+    public void CoreModuleMergeRunnerNeedsItsIntermediatesAndEditors()
+    {
+        var tools = new RecordingExternalTools();
+        var steps = new RecordingSteps();
+        var runner = new ComponentCoreModuleMergeRunner(tools, steps, steps);
+
+        var exception = Assert.Throws<CompilerException>(() => runner.Run(new(
+            "application.wasm", "runtime.wasm", "environment.wasm", "merged.wasm", ComponentTarget.Wasm32Wasi02)));
+
+        Assert.Contains("needs its intermediate modules", exception.Diagnostic.Message, StringComparison.Ordinal);
+        Assert.Empty(steps.Calls);
+        Assert.Throws<ArgumentNullException>(() => runner.Run(null!));
+        Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleMergeRunner(null!, steps, steps));
+        Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleMergeRunner(tools, null!, steps));
+        Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleMergeRunner(tools, steps, null!));
+    }
+
     [Fact]
     public void CoreModuleMergeRunnerReportsFailure()
     {
@@ -83,7 +139,7 @@ public sealed class ComponentOperationRunnerTests
             new RecordingExternalTools
             {
                 Result = new ToolResult(1, string.Empty, "merge\r\nfailed"),
-            });
+            }, new RecordingSteps(), new RecordingSteps());
 
         var exception = Assert.Throws<CompilerException>(() => InvokeMerge(
             AsMergeRunner(runner),
@@ -92,7 +148,8 @@ public sealed class ComponentOperationRunnerTests
                 "runtime.wasm",
                 "environment.wasm",
                 "merged.wasm",
-                ComponentTarget.Wasm32Wasi02)));
+                ComponentTarget.Wasm32Wasi02)
+            { Intermediates = Steps }));
 
         Assert.Equal(DiagnosticCode.ComponentToolchain, exception.Diagnostic.Code);
         Assert.Contains("merge  failed", exception.Diagnostic.Message);
@@ -109,10 +166,11 @@ public sealed class ComponentOperationRunnerTests
             "merged.wasm",
             ComponentTarget.Wasm32Wasi02,
             "host.wasm",
-            "adapter.wasm");
+            "adapter.wasm")
+        { Intermediates = Steps };
 
         InvokeMerge(
-            AsMergeRunner(new ComponentCoreModuleMergeRunner(tools)),
+            AsMergeRunner(new ComponentCoreModuleMergeRunner(tools, new RecordingSteps(), new RecordingSteps())),
             request);
 
         Assert.Contains("host.wasm", tools.Arguments);
@@ -125,7 +183,8 @@ public sealed class ComponentOperationRunnerTests
     public void CoreModuleMergeRunnerReportsUnknownFailureWithoutErrorOutput()
     {
         var runner = new ComponentCoreModuleMergeRunner(
-            new RecordingExternalTools { Result = new(1, string.Empty, string.Empty) });
+            new RecordingExternalTools { Result = new(1, string.Empty, string.Empty) },
+            new RecordingSteps(), new RecordingSteps());
 
         var exception = Assert.Throws<CompilerException>(() => InvokeMerge(
             AsMergeRunner(runner),
@@ -134,7 +193,8 @@ public sealed class ComponentOperationRunnerTests
                 "runtime.wasm",
                 "environment.wasm",
                 "merged.wasm",
-                ComponentTarget.Wasm32Wasi02)));
+                ComponentTarget.Wasm32Wasi02)
+            { Intermediates = Steps }));
 
         Assert.Contains("unknown error", exception.Diagnostic.Message,
             StringComparison.Ordinal);
@@ -178,6 +238,17 @@ public sealed class ComponentOperationRunnerTests
             Arguments = arguments.ToArray();
             return Result;
         }
+    }
+
+    private sealed class RecordingSteps : IWasmCoreModuleInlineAnnotationEditor, IWasmCoreModuleExportEditor
+    {
+        public List<string> Calls { get; } = [];
+
+        public void Rewrite(string inputPath, string outputPath, WasmInlineAnnotationSelection selection) =>
+            Calls.Add($"hints {inputPath} -> {outputPath} {selection}");
+
+        public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection) =>
+            Calls.Add($"exports {inputPath} -> {outputPath} {selection.ComponentPrefix}");
     }
 
     private sealed class RecordingExternalTools : IBinaryenToolRunner

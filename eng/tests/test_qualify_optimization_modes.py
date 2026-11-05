@@ -38,7 +38,7 @@ class OptimizationTraceTests(unittest.TestCase):
                 "-O3",
                 [
                     ["input.wasm", "-O4", "--post-emscripten", "-o", "runtime.wasm"],
-                    ["input.wasm", "-O3", "--converge", "--remove-unused-module-elements"],
+                    ["input.wasm", "-O3", "--remove-unused-module-elements"],
                 ],
             ),
             "duplicate runtime": (
@@ -51,8 +51,8 @@ class OptimizationTraceTests(unittest.TestCase):
             "duplicate final": (
                 "-Oz",
                 [
-                    ["input.wasm", "-Oz", "--converge", "--remove-unused-module-elements"],
-                    ["input.wasm", "-Oz", "--converge", "--remove-unused-module-elements"],
+                    ["input.wasm", "-Oz", "--remove-unused-module-elements"],
+                    ["input.wasm", "-Oz", "--remove-unused-module-elements"],
                 ],
             ),
             "nonexact version probe": (None, [["--version", "extra"]]),

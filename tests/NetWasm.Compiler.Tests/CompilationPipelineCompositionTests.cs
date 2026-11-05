@@ -633,11 +633,12 @@ public sealed class CompilationPipelineCompositionTests
             IFieldRepository fields,
             IMethodRepository methods,
             ReachableProgram program,
-            ITypeClassifier typeClassifier)
+            ITypeClassifier typeClassifier,
+            IReadOnlySet<string>? restored = null)
         {
             calls.Add("invariant-roots");
             TypeClassifier = typeClassifier;
-            inner.Validate(types, fields, methods, program, typeClassifier);
+            inner.Validate(types, fields, methods, program, typeClassifier, restored);
         }
     }
 

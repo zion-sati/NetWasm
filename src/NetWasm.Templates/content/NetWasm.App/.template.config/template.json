@@ -49,10 +49,6 @@
   },
   "sources": [
     {
-      "source": "base",
-      "target": "."
-    },
-    {
       "source": "console",
       "target": ".",
       "condition": "(worker == \"none\" && host == \"none\")"

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -27,7 +28,7 @@ internal sealed class ReachabilityClosureBuilder(
     IDispatchTargetResolver dispatchTargets,
     IDelegateTypeRecognizer delegateTypes,
     IReachabilityImportClassifier importClassifier,
-    IReachableMethodBatchAnalyzer methodBatchAnalyzer,
+    IReachableMethodAnalysisSessionFactory methodAnalysis,
     ITypeTestPlanner typeTestPlanner,
     IReachableProgramBuilder programBuilder,
     IReachabilityLedgerFactory ledgers,
@@ -65,7 +66,7 @@ internal sealed class ReachabilityClosureBuilder(
     private readonly IDispatchTargetResolver _dispatchTargets = dispatchTargets ?? throw new ArgumentNullException(nameof(dispatchTargets));
     private readonly IDelegateTypeRecognizer _delegateTypes = delegateTypes ?? throw new ArgumentNullException(nameof(delegateTypes));
     private readonly IReachabilityImportClassifier _importClassifier = importClassifier ?? throw new ArgumentNullException(nameof(importClassifier));
-    private readonly IReachableMethodBatchAnalyzer _methodBatchAnalyzer = methodBatchAnalyzer ?? throw new ArgumentNullException(nameof(methodBatchAnalyzer));
+    private readonly IReachableMethodAnalysisSessionFactory _methodAnalysis = methodAnalysis ?? throw new ArgumentNullException(nameof(methodAnalysis));
     private readonly ITypeTestPlanner _typeTestPlanner = typeTestPlanner ?? throw new ArgumentNullException(nameof(typeTestPlanner));
     private readonly IReachableProgramBuilder _programBuilder = programBuilder ?? throw new ArgumentNullException(nameof(programBuilder));
     private readonly IReachabilityLedgerFactory _ledgers = ledgers ?? throw new ArgumentNullException(nameof(ledgers));
@@ -126,6 +127,10 @@ internal sealed class ReachabilityClosureBuilder(
         var dispatchTargets = state.DispatchTargets;
         var callableMethods = state.CallableMethods;
         var intrinsicAddressBodies = new Queue<ReachableMethodRequest>();
+        // Methods are classified and their analysis started when they are discovered; the
+        // closure still applies them, and any classification failure, in discovery order.
+        using var methodAnalysis = _methodAnalysis.Begin();
+        var discoveredRequests = new Dictionary<string, DiscoveredMethod>(StringComparer.Ordinal);
         var dispatchCandidates = _dispatchCandidateIndexes.Create();
 
         if (entryPoint is not null)
@@ -246,25 +251,24 @@ internal sealed class ReachabilityClosureBuilder(
                     var method = methodInstance.Definition;
                     methodInstances.Add(methodInstance.CanonicalName, methodInstance);
                     types.Add(method.DeclaringType);
-                    var import = _importClassifier.Classify(new ReachabilityImportRequest(
-                        methodInstance,
-                        outwardBoundaries.Contains(method.Key),
-                        entryPoint?.Key == method.Key));
+                    if (!discoveredRequests.Remove(methodInstance.CanonicalName, out var discoveredMethod))
+                    {
+                        discoveredMethod = Discover(methodInstance);
+                    }
+                    discoveredMethod.Failure?.Throw();
+                    var import = discoveredMethod.Import!;
                     ApplyImport(import);
                     if (import.IsHandled)
                     {
                         continue;
                     }
-                    methodRequests.Add(new ReachableMethodRequest(methodInstance)
-                    {
-                        RewrittenBody = rewrittenBodies?.GetValueOrDefault(methodInstance.CanonicalName),
-                    });
+                    methodRequests.Add(discoveredMethod.Request!);
                 }
                 while (intrinsicAddressBodies.TryDequeue(out var addressBody))
                 {
                     methodRequests.Add(addressBody);
                 }
-                foreach (var analysis in _methodBatchAnalyzer.Analyze(
+                foreach (var analysis in methodAnalysis.Batches.Analyze(
                              methodRequests.ToImmutable()))
                 {
                     var publicationStarted = Stopwatch.GetTimestamp();
@@ -539,6 +543,9 @@ internal sealed class ReachabilityClosureBuilder(
                 AddRuntimeType(identity);
                 AddConstructedType(identity);
             }
+            state.Contributions[analysis.Method.CanonicalName] = new(
+                analysis.Method.Definition.Key,
+                analysis.Contribution ?? MethodContributionFingerprint.Of(analysis));
             if (analysis.Method.IsConstructed)
             {
                 state.ConstructedMethods.Add(analysis.Method.CanonicalName, analysis.Body);
@@ -617,6 +624,7 @@ internal sealed class ReachabilityClosureBuilder(
                 _intrinsicAddressBodies.Plan(method) is { } request)
             {
                 intrinsicAddressBodies.Enqueue(request);
+                methodAnalysis.Prefetcher.Prefetch(request);
             }
         }
 
@@ -695,7 +703,36 @@ internal sealed class ReachabilityClosureBuilder(
             if (discovered.Add(method.CanonicalName))
             {
                 pending.Enqueue(method);
+                discoveredRequests[method.CanonicalName] = Discover(method);
             }
+        }
+
+        // Classifies a discovered method and, unless an import handles it, starts its analysis.
+        // Classification reads only the method and the closure's fixed boundaries.
+        DiscoveredMethod Discover(MethodInstanceModel method)
+        {
+            ReachabilityImportAnalysis import;
+            try
+            {
+                import = _importClassifier.Classify(new ReachabilityImportRequest(
+                    method,
+                    outwardBoundaries.Contains(method.Definition.Key),
+                    entryPoint?.Key == method.Definition.Key));
+            }
+            catch (Exception exception)
+            {
+                return new(null, ExceptionDispatchInfo.Capture(exception), null);
+            }
+            if (import.IsHandled)
+            {
+                return new(import, null, null);
+            }
+            var request = new ReachableMethodRequest(method)
+            {
+                RewrittenBody = rewrittenBodies?.GetValueOrDefault(method.CanonicalName),
+            };
+            methodAnalysis.Prefetcher.Prefetch(request);
+            return new(import, null, request);
         }
 
         void AddAllocatedType(CliTypeIdentity type)
@@ -1117,6 +1154,11 @@ internal sealed class ReachabilityClosureBuilder(
         }
 
     }
+
+    private sealed record DiscoveredMethod(
+        ReachabilityImportAnalysis? Import,
+        ExceptionDispatchInfo? Failure,
+        ReachableMethodRequest? Request);
 }
 
 // Facade for the reachability closure builder used by the compiler pipeline.

@@ -24,6 +24,23 @@ public sealed class NetWasmLinkRawModuleTaskTests
         Assert.Equal(expected, sessions.Session.Request!.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
     }
 
+    // The optimizer converges only where a project opts in, with or without a hint override.
+    [Theory]
+    [InlineData("Auto", false)]
+    [InlineData("Auto", true)]
+    [InlineData("Preserve", true)]
+    public void PassesTheOptimizersConvergenceToTheLinkSession(string hints, bool converge)
+    {
+        var sessions = new RecordingSessionFactory();
+        var task = CreateTask(sessions);
+        task.ManagedInliningHints = hints;
+        task.OptimizerConverge = converge;
+        Assert.True(task.Execute());
+        Assert.Equal(converge, sessions.Session.Request!.OptimizationOverrides?.Converge ?? false);
+        Assert.Equal(hints == "Preserve" ? ManagedInliningHints.Preserve : ManagedInliningHints.Auto,
+            sessions.Session.Request.OptimizationOverrides?.ManagedInliningHints ?? ManagedInliningHints.Auto);
+    }
+
     [Fact]
     public void InvalidHintsFailBeforeCreatingSession()
     {
@@ -73,8 +90,6 @@ public sealed class NetWasmLinkRawModuleTaskTests
             [
                 new BinaryenNativeTool(BinaryenToolIds.WasmOpt,
                     Path.GetFullPath("native-wasm-opt")),
-                new BinaryenNativeTool(BinaryenToolIds.WasmMerge,
-                    Path.GetFullPath("native-wasm-merge")),
             ],
             sessions.BinaryenConfiguration?.NativeTools);
         Assert.Equal("app.core.wasm", sessions.Session.Request!.ApplicationModulePath);
@@ -181,8 +196,7 @@ public sealed class NetWasmLinkRawModuleTaskTests
     {
         var sessions = new RecordingSessionFactory();
         var task = CreateTask(sessions);
-        task.NativeBinaryenWasmOptPath = string.Empty;
-        task.NativeBinaryenWasmMergePath = " ";
+        task.NativeBinaryenWasmOptPath = " ";
 
         Assert.True(task.Execute());
         Assert.Empty(sessions.BinaryenConfiguration?.NativeTools ?? []);
@@ -200,7 +214,6 @@ public sealed class NetWasmLinkRawModuleTaskTests
             BinaryenWasmOptPath = "wasm-opt",
             BinaryenWasmMergePath = "wasm-merge",
             NativeBinaryenWasmOptPath = Path.GetFullPath("native-wasm-opt"),
-            NativeBinaryenWasmMergePath = Path.GetFullPath("native-wasm-merge"),
             Target = "wasm32",
         };
 

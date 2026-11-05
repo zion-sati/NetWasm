@@ -37,19 +37,25 @@ internal static class NwcCompilerComposition
         if (wasmTools is not null)
         {
             services.RemoveAll<IWasmTools>();
-            services.AddSingleton<IWasmTools>(provider => new ProcessWasmTools(
-                provider.GetRequiredService<IExternalToolRunner>(),
-                wasmTools));
+            services.AddSingleton<IWasmTools>(provider =>
+            {
+                var tools = new ProcessWasmTools(
+                    provider.GetRequiredService<IExternalToolRunner>(),
+                    wasmTools);
+                return CachingWasmTools.DefaultDirectory() is { } cache
+                    ? new CachingWasmTools(tools, wasmTools, cache)
+                    : tools;
+            });
         }
         var provider = services.BuildServiceProvider();
-        return new NwcCompilerSession(provider.GetRequiredService<INetWasmCompiler>(), provider);
+        return new NwcCompilerSession(provider.GetRequiredService<INetWasmModuleCompiler>(), provider);
     }
 }
 
 // One compilation's compiler, and the services it disposes with it.
-internal sealed class NwcCompilerSession(INetWasmCompiler compiler, IDisposable services) : INwcCompilerSession
+internal sealed class NwcCompilerSession(INetWasmModuleCompiler compiler, IDisposable services) : INwcCompilerSession
 {
-    private readonly INetWasmCompiler _compiler = compiler ?? throw new ArgumentNullException(nameof(compiler));
+    private readonly INetWasmModuleCompiler _compiler = compiler ?? throw new ArgumentNullException(nameof(compiler));
     private readonly IDisposable _services = services ?? throw new ArgumentNullException(nameof(services));
 
     public ManagedModuleCompilation Compile(CompilerOptions options)
@@ -68,9 +74,7 @@ internal sealed class NwcCompilerSession(INetWasmCompiler compiler, IDisposable 
             ExceptionTypeMap = result.DiagnosticArtifacts?.ExceptionTypeMap,
             NativeImports = result.NativeImports,
             NativeCallbackSupport = result.NativeCallbackSupport,
-            SynchronousEntry = result.Program is not { EntryPoint: { } entry } program ||
-                !program.JavaScriptAsyncBindings.TryGetValue(entry.Key, out var binding) ||
-                binding.CommandEntryPoint is not null,
+            SynchronousEntry = result.SynchronousEntry,
         };
     }
 

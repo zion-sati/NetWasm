@@ -185,7 +185,7 @@ public sealed class WasmModuleEmitterContractTests
                 request = request with { ModuleInitializers = [EmitterTestSupport.EntryKey], EmitStackTrace = true };
                 data = data with
                 {
-                    StaticInitializerGuards = data.StaticInitializerGuards.Add(
+                    StaticInitializerGuards = ImmutableDictionary.CreateRange(data.StaticInitializerGuards).Add(
                         StaticInitializerGuard.KeyFor(EmitterTestSupport.EntryKey),
                         new(80, EmitterTestSupport.EntryKey, null) { FunctionIndex = OptionalFunctionIndex.At(91) }),
                 };
@@ -214,7 +214,12 @@ public sealed class WasmModuleEmitterContractTests
                 Capability<IManagedBoundaryPlanValidator>("boundary"),
                 Capability<IWasmModuleEmissionResultBuilder>("result", Result),
                 Capability<IStaticInitializerFunctionAppender>("static"),
-                Capability<IRuntimeInitializerFunctionAppender>("runtimeInitializer", 30));
+                Capability<IRuntimeInitializerFunctionAppender>("runtimeInitializer", 30),
+                new NetWasm.Compiler.Wasm.Units.CompiledUnitSymbolBinder(
+                    new NetWasm.Compiler.Wasm.Units.CompiledUnitState(null),
+                    new NetWasm.Compiler.Wasm.Units.WasmFunctionSymbolBuilder()),
+                new NetWasm.Compiler.Wasm.Units.CompiledUnitPublisher(
+                    new NetWasm.Compiler.Wasm.Units.CompiledUnitState(null)));
         }
 
         public WasmModuleEmitter Emitter { get; }

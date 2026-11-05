@@ -31,45 +31,96 @@ internal sealed class StackTraceMethodPlanBuilder(
             return StackTraceMethodPlan.Disabled;
         }
 
-        var direct = ImmutableDictionary.CreateBuilder<EntityKey, int>();
-        var constructed = ImmutableDictionary.CreateBuilder<string, int>(
-            StringComparer.Ordinal);
-        var methodSymbols = ImmutableArray.CreateBuilder<WasmStackTraceSymbol>();
-        var methodNames = new Dictionary<EntityKey, string>();
-        var id = 1;
-        var shownMethods = directMethods.Where(method => Shown(methods.GetMethod(method))).ToImmutableArray();
+        var shownMethods = directMethods
+            .Select(methods.GetMethod)
+            .Where(Shown)
+            .Select(method => (method.Key, symbols.Format(method)))
+            .ToImmutableArray();
         var shownConstructed = constructedMethods
             .Where(method => Shown(methods.GetMethod(method.DefinitionKey)))
             .ToImmutableArray();
-        foreach (var method in shownMethods)
+        var table = StackTraceSymbolTable.Build(shownMethods, shownConstructed, sourceLocations);
+        var traceOffset = exceptionFields.Resolve("_stackTrace") ??
+            throw new InvalidOperationException(
+                "stack traces require the reachable System.Exception._stackTrace field");
+        return new(table.DirectMethodIds, table.ConstructedMethodIds, table.Symbols, table.LocationSymbols,
+            traceOffset, typeLayouts.StringTypeId)
+        {
+            ConstructedDefinitions = shownConstructed.ToImmutableDictionary(
+                method => method.Name, method => method.DefinitionKey, StringComparer.Ordinal),
+        };
+    }
+}
+
+/// <summary>
+/// A stack-trace plan's numbering: each shown method in order, then one symbol for each
+/// source line its locations name, method by method. The plan builder and the early
+/// cutoff, which renumbers the last compile's methods against the current sources, use it
+/// alike.
+/// </summary>
+internal sealed record StackTraceSymbolTable(
+    ImmutableDictionary<EntityKey, int> DirectMethodIds,
+    ImmutableDictionary<string, int> ConstructedMethodIds,
+    ImmutableArray<WasmStackTraceSymbol> Symbols,
+    ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>> LocationSymbols)
+{
+    // Everything of a table but where in each body a location starts: its symbols and, per
+    // method, which symbols its locations take. Two tables alike here differ only in the IL
+    // offsets of their methods' locations, which each method's own code alone reads.
+    public static Units.UnitFingerprint Fingerprint(
+        ImmutableArray<WasmStackTraceSymbol> symbols,
+        IReadOnlyDictionary<int, ImmutableArray<StackTraceLocationSymbol>> locations)
+    {
+        ArgumentNullException.ThrowIfNull(locations);
+        var fingerprint = new Units.UnitFingerprintBuilder();
+        fingerprint.Add(symbols.Length);
+        foreach (var symbol in symbols)
+        {
+            fingerprint.Add(symbol.Id);
+            fingerprint.Add(symbol.Name);
+        }
+        fingerprint.Add(locations.Count);
+        foreach (var (method, list) in locations.OrderBy(pair => pair.Key))
+        {
+            fingerprint.Add(method);
+            fingerprint.Add(list.Length);
+            foreach (var location in list) fingerprint.Add(location.SymbolId);
+        }
+        return fingerprint.Finish();
+    }
+
+    public static StackTraceSymbolTable Build(
+        IReadOnlyList<(EntityKey Method, string Name)> directMethods,
+        IReadOnlyList<StackTraceConstructedMethod> constructedMethods,
+        ImmutableDictionary<EntityKey, ImmutableArray<WasmSourceLocation>> sourceLocations)
+    {
+        ArgumentNullException.ThrowIfNull(directMethods);
+        ArgumentNullException.ThrowIfNull(constructedMethods);
+        ArgumentNullException.ThrowIfNull(sourceLocations);
+        var direct = ImmutableDictionary.CreateBuilder<EntityKey, int>();
+        var constructed = ImmutableDictionary.CreateBuilder<string, int>(StringComparer.Ordinal);
+        var methodSymbols = ImmutableArray.CreateBuilder<WasmStackTraceSymbol>();
+        var id = 1;
+        foreach (var (method, name) in directMethods)
         {
             direct.Add(method, id);
-            var name = symbols.Format(methods.GetMethod(method));
-            methodNames.Add(method, name);
             methodSymbols.Add(new(id++, name));
         }
-        foreach (var method in shownConstructed)
+        foreach (var method in constructedMethods)
         {
             constructed.Add(method.Name, id);
             methodSymbols.Add(new(id++, method.Name));
         }
-        var locationIds = ImmutableDictionary.CreateBuilder<
-            int,
-            ImmutableArray<StackTraceLocationSymbol>>();
-        foreach (var method in shownMethods)
+        var locationIds = ImmutableDictionary.CreateBuilder<int, ImmutableArray<StackTraceLocationSymbol>>();
+        foreach (var (method, name) in directMethods)
         {
-            AddLocations(method, direct[method], methodNames[method]);
+            AddLocations(method, direct[method], name);
         }
-        foreach (var method in shownConstructed)
+        foreach (var method in constructedMethods)
         {
             AddLocations(method.DefinitionKey, constructed[method.Name], method.Name);
         }
-        var traceOffset = exceptionFields.Resolve("_stackTrace") ??
-            throw new InvalidOperationException(
-                "stack traces require the reachable System.Exception._stackTrace field");
-        return new(direct.ToImmutable(), constructed.ToImmutable(),
-            methodSymbols.ToImmutable(), locationIds.ToImmutable(), traceOffset,
-            typeLayouts.StringTypeId);
+        return new(direct.ToImmutable(), constructed.ToImmutable(), methodSymbols.ToImmutable(), locationIds.ToImmutable());
 
         void AddLocations(EntityKey definition, int methodId, string methodName)
         {

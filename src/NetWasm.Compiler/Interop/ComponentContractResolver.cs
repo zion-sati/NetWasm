@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using NetWasm.Compiler;
@@ -193,12 +194,8 @@ internal sealed class ComponentContractResolver(
                 break;
         }
         var imported = kind != CanonicalAbiFunctionKind.ExportedResourceDestructor;
-        var matchingMethods = metadata.Methods.Where(method => imported
-                ? method.WitImport?.InterfaceName == interfaceName &&
-                    method.WitImport.FunctionName == marker
-                : method.WitExport?.InterfaceName == interfaceName &&
-                    method.WitExport.FunctionName == marker)
-            .ToImmutableArray();
+        var matchingMethods = WitBindings(metadata).Find(imported ? WitBindingKind.Import : WitBindingKind.Export,
+            interfaceName, marker);
         var candidates = _bindings.Select(metadata, matchingMethods);
         if (!imported && candidates.Length != 1)
         {
@@ -292,12 +289,8 @@ internal sealed class ComponentContractResolver(
                 $"user-defined asynchronous WIT function '{function.Name}' in " +
                 (interfaceName.Length == 0 ? "the world" : $"interface '{interfaceName}'") + " is not supported");
         }
-        var matchingMethods = metadata.Methods.Where(method => imported
-                ? method.WitImport?.InterfaceName == interfaceName &&
-                    method.WitImport.FunctionName == function.Name
-                : method.WitExport?.InterfaceName == interfaceName &&
-                    method.WitExport.FunctionName == function.Name)
-            .ToImmutableArray();
+        var matchingMethods = WitBindings(metadata).Find(imported ? WitBindingKind.Import : WitBindingKind.Export,
+            interfaceName, function.Name);
         var candidates = _bindings.Select(metadata, matchingMethods);
         if (!imported && candidates.Length != 1)
         {
@@ -333,9 +326,7 @@ internal sealed class ComponentContractResolver(
         if (!imported)
         {
             var postReturns = _bindings.Select(metadata,
-                metadata.Methods.Where(candidate =>
-                    candidate.WitPostReturn?.InterfaceName == interfaceName &&
-                    candidate.WitPostReturn.FunctionName == function.Name));
+                WitBindings(metadata).Find(WitBindingKind.PostReturn, interfaceName, function.Name));
             if (postReturns.Length > 1)
             {
                 throw Invalid(
@@ -415,4 +406,47 @@ internal sealed class ComponentContractResolver(
 
     private static CompilerException Invalid(string message, string? method = null) =>
         new(new CompilerDiagnostic(DiagnosticCode.ComponentContract, message, method));
+
+    // The methods each WIT function binds to, found once per compile instead of scanning every
+    // method for every function.
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<MetadataCompilationSnapshot, WitBindingIndex>
+        _witBindings = new();
+
+    private WitBindingIndex WitBindings(MetadataCompilationSnapshot metadata) =>
+        _witBindings.GetValue(metadata, static snapshot => new(snapshot.Methods));
+
+    private enum WitBindingKind
+    {
+        Import,
+        Export,
+        PostReturn,
+    }
+
+    // Methods by binding kind, interface and function, in metadata order.
+    private sealed class WitBindingIndex
+    {
+        private readonly Dictionary<(WitBindingKind Kind, string? Interface, string? Function), ImmutableArray<MethodDefinitionModel>.Builder>
+            _methods = [];
+
+        public WitBindingIndex(ImmutableArray<MethodDefinitionModel> methods)
+        {
+            foreach (var method in methods)
+            {
+                if (method.WitImport is { } import) Add(WitBindingKind.Import, import.InterfaceName, import.FunctionName, method);
+                if (method.WitExport is { } export) Add(WitBindingKind.Export, export.InterfaceName, export.FunctionName, method);
+                if (method.WitPostReturn is { } postReturn)
+                    Add(WitBindingKind.PostReturn, postReturn.InterfaceName, postReturn.FunctionName, method);
+            }
+        }
+
+        internal ImmutableArray<MethodDefinitionModel> Find(WitBindingKind kind, string? @interface, string? function) =>
+            _methods.TryGetValue((kind, @interface, function), out var found) ? found.ToImmutable() : [];
+
+        private void Add(WitBindingKind kind, string? @interface, string? function, MethodDefinitionModel method)
+        {
+            if (!_methods.TryGetValue((kind, @interface, function), out var list))
+                _methods[(kind, @interface, function)] = list = ImmutableArray.CreateBuilder<MethodDefinitionModel>();
+            list.Add(method);
+        }
+    }
 }

@@ -58,11 +58,13 @@ internal sealed class ReachableMethodAnalyzer(
             .Where(region => region.CatchType is not null)
             .Select(region => region.CatchType!.Value)
             .ToImmutableArray();
-        return new(
+        var analysis = new ReachableMethodAnalysis(
             request.Method,
             managed,
             catchTypes,
             exceptions.ToImmutable(),
             instructionAnalyzer.Analyze(new(request.Method, body)));
+        // Fingerprinted here, on the worker, rather than as the closure applies it.
+        return analysis with { Contribution = MethodContributionFingerprint.Of(analysis) };
     }
 }

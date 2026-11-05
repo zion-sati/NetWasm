@@ -131,7 +131,7 @@ public sealed class ManagedFunctionSetAppenderTests
     {
         var fixture = new Fixture();
         var appender = new ParallelManagedDefinitionSetAppender(
-            new ThrowingBatchFactory());
+            new ThrowingBatchFactory(), NoUnits());
 
         appender.Append(fixture.Functions, fixture.Environments,
             fixture.Emissions, [],
@@ -149,7 +149,7 @@ public sealed class ManagedFunctionSetAppenderTests
     {
         var fixture = new Fixture();
         var appender = new ParallelConstructedMethodSetAppender(
-            new ThrowingBatchFactory());
+            new ThrowingBatchFactory(), NoUnits());
 
         appender.Append(fixture.Functions, fixture.Environments,
             fixture.Emissions, [],
@@ -230,4 +230,10 @@ public sealed class ManagedFunctionSetAppenderTests
         public IManagedBodyBatchEmitter Create() =>
             throw new InvalidOperationException("An empty set must not create a batch.");
     }
+
+    private static NetWasm.Compiler.Wasm.Units.CompiledUnitCapturer NoUnits() =>
+        new NetWasm.Compiler.Wasm.Units.CompiledUnitCapturer(
+            new NetWasm.Compiler.Wasm.Units.CompiledUnitState(null),
+            new NetWasm.Compiler.Wasm.Units.WasmIndexOperandScanner(),
+            new ExceptionGroupEnumerator());
 }

@@ -32,7 +32,8 @@ internal sealed record CompileCliOptions(
         "out", "reference", "r", "target", "entry", "export", "platform", "optimize", "pathmap", "source", "interopmanifest", "runtimelayout", "compilermetadata",
         "exceptiontypemap", "stacktracesymbols", "callbackobject", "wit", "world", "importmodule",
         "diagnostictrace", "diagnosticlog", "jsexportboundary", "structureddiagnostics",
-        "projectdirectory", "intermediatedirectory", "wasmtoolsnode", "wasmtoolscommand",
+        "compiledunits", "verifycompiledunits",
+        "projectdirectory", "intermediatedirectory", "wasmtools", "wasmtoolsnode", "wasmtoolscommand",
         "wasmtoolsmodule", "managedloopinvariantfieldhoisting", "managedstaticdataviewelimination",
         "managedaddresstakenvaluepromotion", "managedmethodinlining", "managedbranchprefixduplication",
         "managedscalarcallpreservation", "managedarrayboundscheckelimination", "managedloopunrolling",
@@ -62,6 +63,10 @@ internal sealed record CompileCliOptions(
     public string? DiagnosticLog { get; init; }
     public bool UseJavaScriptExportBoundary { get; init; }
     public bool StructuredDiagnostics { get; init; }
+    // Keep and reuse compiled units in the intermediate directory; on by default.
+    // Absent: on at O0 (and no optimization), off at the optimizing levels.
+    public bool? CompiledUnits { get; init; }
+    public bool VerifyCompiledUnits { get; init; }
     public string? ProjectDirectory { get; init; }
     public string? IntermediateDirectory { get; init; }
     public ExternalToolCommand? WasmTools { get; init; }
@@ -146,9 +151,12 @@ internal sealed record CompileCliOptions(
             DiagnosticLog = options.Single("diagnosticlog"),
             UseJavaScriptExportBoundary = options.Toggle("jsexportboundary"),
             StructuredDiagnostics = options.Toggle("structureddiagnostics"),
+            CompiledUnits = options.Toggle("compiledunits", absent: null),
+            VerifyCompiledUnits = options.Toggle("verifycompiledunits"),
             ProjectDirectory = options.Single("projectdirectory"),
             IntermediateDirectory = options.Single("intermediatedirectory"),
             WasmTools = ParseWasmTools(
+                options.Single("wasmtools"),
                 options.Single("wasmtoolsnode"),
                 options.Single("wasmtoolscommand"),
                 options.Single("wasmtoolsmodule")),
@@ -185,14 +193,15 @@ internal sealed record CompileCliOptions(
         };
     }
 
-    // wasm-tools runs as the toolchain's JavaScript build under node; without
-    // these, nwc runs the wasm-tools on the PATH.
-    private static ExternalToolCommand? ParseWasmTools(string? node, string? command, string? module) =>
+    // wasm-tools runs as the toolchain's JavaScript build under node, or as the native
+    // build of the same release that -wasmtools names; without either, nwc runs the
+    // wasm-tools on the PATH.
+    private static ExternalToolCommand? ParseWasmTools(string? native, string? node, string? command, string? module) =>
         (node, command, module) switch
         {
-            (null, null, null) => null,
+            (null, null, null) => native is null ? null : new(native, []),
             ({ } executable, { } script, { } component) =>
-                ExternalToolCommand.ForWasmTools(executable, script, component),
+                ExternalToolCommand.ForWasmTools(executable, script, component, native),
             _ => throw CliOptionException.Create(
                 "-wasmtoolsnode, -wasmtoolscommand and -wasmtoolsmodule must be given together"),
         };
@@ -256,9 +265,12 @@ internal sealed record ComponentizeCliOptions(
     {
         "coremodule", "runtimemodule", "wit", "world", "out", "manifest", "platform",
         "interopmanifest", "jcoversion", "preview2shimversion", "optimize", "managedinlininghints",
+        "converge",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public string? ManagedInliningHints { get; init; }
+
+    public bool Converge { get; init; }
 
     public static ComponentizeCliOptions Parse(NwcArguments arguments)
     {
@@ -283,6 +295,7 @@ internal sealed record ComponentizeCliOptions(
             CompileCliOptions.ParseOptimization(options.Single("optimize")))
         {
             ManagedInliningHints = options.Single("managedinlininghints"),
+            Converge = options.Toggle("converge"),
         };
     }
 }
@@ -328,9 +341,11 @@ internal sealed class NwcOptionValues(NwcArguments arguments)
         return _options[name].Any();
     }
 
-    public bool Toggle(string name) => _options[name].LastOrDefault() switch
+    public bool Toggle(string name, bool absent = false) => Toggle(name, (bool?)absent) ?? absent;
+
+    public bool? Toggle(string name, bool? absent) => _options[name].LastOrDefault() switch
     {
-        null => false,
+        null => absent,
         { Value: null or "+" } => true,
         { Value: "-" } => false,
         var option => throw CliOptionException.Create($"option '{option.Spelling}' takes '+' or '-', not a value"),

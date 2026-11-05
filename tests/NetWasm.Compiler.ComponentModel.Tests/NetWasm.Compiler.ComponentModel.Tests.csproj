@@ -5,10 +5,10 @@
   <ItemGroup>
     <EmbeddedResource Include="Browser/Plans/Fixtures/ordered-link-v1.json" LogicalName="ordered-link-v1.json" />
     <None Include="Raw/raw-adapter-harness.mjs" CopyToOutputDirectory="PreserveNewest" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.msbuild" />
     <ProjectReference Include="../../src/NetWasm.Compiler.ComponentModel/NetWasm.Compiler.ComponentModel.csproj" />
     <ProjectReference Include="../../tools/NetWasm.Wit.Bindings/NetWasm.Wit.Bindings.csproj" />
   </ItemGroup>

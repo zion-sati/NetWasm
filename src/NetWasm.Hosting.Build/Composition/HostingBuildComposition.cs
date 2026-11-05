@@ -69,7 +69,8 @@ public static class HostingBuildComposition
     [
         new(HostToolIds.Node, new Version(24, 0), null, []),
         new(HostToolIds.WasmLd, new Version(24, 0), null, []),
-        new(HostToolIds.BinaryenWasmMerge, new Version(132, 0), new Version(133, 0), []),
         new(HostToolIds.BinaryenWasmOpt, new Version(132, 0), new Version(133, 0), []),
+        // Any release resolves; the resolver requires the toolchain's own.
+        new(HostToolIds.WasmTools, new Version(1, 0), null, []),
     ];
 }

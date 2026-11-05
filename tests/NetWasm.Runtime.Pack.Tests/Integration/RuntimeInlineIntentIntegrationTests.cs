@@ -94,23 +94,35 @@ public sealed class RuntimeInlineIntentIntegrationTests
             new SystemByteFileReader(),
             new SystemByteFileWriter(),
             new WasmInlineAnnotationFilter());
-        var sanitizedApplication = Path.Combine(cell, "application-sanitized.wasm");
-        var sanitizedRuntime = Path.Combine(cell, "runtime-sanitized.wasm");
-        editor.Rewrite(applicationPath, sanitizedApplication, settings.ManagedInlineAnnotations);
-        editor.Rewrite(runtimePath, sanitizedRuntime, settings.RuntimeInlineAnnotations);
-
-        var mergedPath = Path.Combine(cell, "merged.wasm");
-        var hostTools = RequiredDirectory("NETWASM_NATIVE_INTEROP_HOST_TOOLS_ROOT");
-        var suffix = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
-        var mergePath = Path.Combine(hostTools, "tools", "bin", "wasm-merge" + suffix);
-        var tools = new ProcessBinaryenToolRunner(
-            new ProcessExternalToolRunner(new BoundProcessExecution(mergePath)));
-        new ComponentCoreModuleMergeRunner(tools).Run(new(
-            sanitizedApplication,
-            sanitizedRuntime,
+        var request = new ComponentCoreModuleMergeRequest(
+            applicationPath,
+            runtimePath,
             environmentPath,
-            mergedPath,
-            target == "wasm64" ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02));
+            Path.Combine(cell, "merged.wasm"),
+            target == "wasm64" ? ComponentTarget.Wasm64Wasi02 : ComponentTarget.Wasm32Wasi02)
+        {
+            ApplicationInlineAnnotations = settings.ManagedInlineAnnotations,
+            RuntimeInlineAnnotations = settings.RuntimeInlineAnnotations,
+            Intermediates = new(
+                Path.Combine(cell, "application-sanitized.wasm"),
+                Path.Combine(cell, "runtime-sanitized.wasm"),
+                Path.Combine(cell, "merged-unfiltered.wasm")),
+        };
+
+        // The synthetic application exports only its own candidate, which wasm-merge leaves the
+        // runtime's other imports beside; the SDK's merger requires every import an input names.
+        // The stepwise merge is the browser link plan's, which runs the toolchain's portable
+        // Binaryen.
+        var hostTools = RequiredDirectory("NETWASM_NATIVE_INTEROP_HOST_TOOLS_ROOT");
+        var toolchain = RequiredDirectory("NETWASM_NATIVE_INTEROP_TOOLCHAIN_ROOT");
+        var suffix = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
+        var tools = new ProcessBinaryenToolRunner(new ProcessExternalToolRunner(new BoundProcessExecution(
+            Path.Combine(hostTools, "tools", "bin", "node" + suffix),
+            Path.Combine(toolchain, "tools", "binaryen", "bin", "wasm-merge"))));
+        new ComponentCoreModuleMergeRunner(tools, editor,
+            new WasmCoreModuleExportEditor(new SystemFileExistence(), new SystemByteFileReader(),
+                new SystemByteFileWriter())).Run(request);
+        var mergedPath = request.OutputPath;
 
         var evidence = ReadEvidence(File.ReadAllBytes(mergedPath));
         var expectedExports = optimization == FinalWasmOptimization.O3
@@ -332,7 +344,7 @@ public sealed class RuntimeInlineIntentIntegrationTests
         Aggressive,
     }
 
-    private sealed class BoundProcessExecution(string mergePath) : IProcessExecution
+    private sealed class BoundProcessExecution(string nodePath, string mergeScript) : IProcessExecution
     {
         public ToolResult Execute(ExternalToolInvocation invocation)
         {
@@ -340,12 +352,13 @@ public sealed class RuntimeInlineIntentIntegrationTests
             Assert.Empty(invocation.EnvironmentVariablePrefixesToRemove);
             var start = new ProcessStartInfo
             {
-                FileName = mergePath,
+                FileName = nodePath,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+            start.ArgumentList.Add(mergeScript);
             foreach (var argument in invocation.Arguments)
                 start.ArgumentList.Add(argument);
             using var process = Process.Start(start) ??

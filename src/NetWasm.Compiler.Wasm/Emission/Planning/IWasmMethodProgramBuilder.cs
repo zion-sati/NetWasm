@@ -13,5 +13,6 @@ internal interface IWasmMethodProgramBuilder
         BranchPrefixDuplicationPolicy branchPrefixDuplication =
             BranchPrefixDuplicationPolicy.SizeAware,
         DispatcherEliminationPolicy dispatcherElimination =
-            DispatcherEliminationPolicy.Disabled);
+            DispatcherEliminationPolicy.Disabled,
+        IMethodOutlineProvider? outlines = null);
 }

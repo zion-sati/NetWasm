@@ -160,6 +160,24 @@ def executable_name(role: str, rid: str) -> str:
     return role + (".exe" if rid.startswith("win-") else "")
 
 
+# wasm-tools' licenses, as its release archives name them; the package keeps each under
+# licenses/wasm-tools-<name>.
+WASM_TOOLS_LICENSES = ("LICENSE-APACHE", "LICENSE-Apache-2.0_WITH_LLVM-exception", "LICENSE-MIT")
+
+
+def wasm_tools_files(source: dict[str, str], rid: str, cache: Path) -> dict[str, bytes]:
+    """The native wasm-tools of rid and its licenses, from the pinned upstream release archive."""
+    archive = acquire(source, cache)
+    name = posixpath.basename(urlparse(source["url"]).path)
+    root = name.removesuffix(".tar.gz").removesuffix(".zip")
+    if root == name:
+        raise ValueError(f"Unexpected wasm-tools archive: {name}")
+    return read_members(archive, {
+        "wasm-tools": f"{root}/{executable_name('wasm-tools', rid)}",
+        **{license: f"{root}/{license}" for license in WASM_TOOLS_LICENSES},
+    })
+
+
 def linux_node_closure(
     node: bytes, rid: str, host: dict[str, object], artifacts: dict[str, object], cache: Path,
 ) -> tuple[bytes, bytes, dict[str, str]]:
@@ -233,7 +251,6 @@ def archive_members(rid: str, node_root: str) -> tuple[dict[str, str], dict[str,
     emsdk = {
         "wasm-ld": f"install/bin/wasm-ld{suffix}" if suffix else "install/bin/lld",
         "wasm-opt": f"install/bin/wasm-opt{suffix}",
-        "wasm-merge": f"install/bin/wasm-merge{suffix}",
     }
     node = {
         "node": f"{node_root}/node.exe" if suffix else f"{node_root}/bin/node",
@@ -334,7 +351,7 @@ def probe(stage: Path, rid: str, pins: dict[str, object]) -> None:
         "node": str(pins["node"]),
         "wasm-ld": str(pins["llvmLld"]["version"]),
         "wasm-opt": str(pins["binaryen"]),
-        "wasm-merge": str(pins["binaryen"]),
+        "wasm-tools": str(pins["wasmTools"]),
     }
     for role, version in expected.items():
         path = stage / "tools/bin" / executable_name(role, rid)
@@ -371,16 +388,18 @@ def stage(
         lld_binary, lld_receipt = published_windows_arm64_lld(lld_archive, pins)
         binaryen_archive = acquire(host["binaryen"], cache)
         tool_files = read_members(binaryen_archive, {
-            role: f"binaryen-version_{pins['binaryen']}/bin/{role}.exe"
-            for role in ("wasm-opt", "wasm-merge")
+            "wasm-opt": f"binaryen-version_{pins['binaryen']}/bin/wasm-opt.exe",
         })
         tool_files["wasm-ld"] = lld_binary
-        archive_roles = ("llvmSource", "lldRelease", "binaryen", "node")
+        archive_roles = ("llvmSource", "lldRelease", "binaryen", "node", "wasmTools")
     else:
         emsdk_archive = acquire(host["emsdk"], cache)
         emsdk_names, _ = archive_members(rid, host["nodeRoot"])
         tool_files = read_members(emsdk_archive, emsdk_names)
-        archive_roles = ("emsdk", "node", "libatomic") if rid.startswith("linux-") else ("emsdk", "node")
+        archive_roles = ("emsdk", "node", "libatomic", "wasmTools") if rid.startswith("linux-") \
+            else ("emsdk", "node", "wasmTools")
+    wasm_tools = wasm_tools_files(host["wasmTools"], rid, cache)
+    tool_files["wasm-tools"] = wasm_tools["wasm-tools"]
     node_archive = acquire(host["node"], cache)
     llvm_license = acquire(artifacts["licenseSources"]["llvm"], cache).read_bytes()
     lld_license = acquire(artifacts["licenseSources"]["lld"], cache).read_bytes()
@@ -442,6 +461,7 @@ def stage(
             "licenses/LLVM-BLAKE3-LICENSE": blake3_license,
             "licenses/LLVM-ThirdParty-NOTICES.txt": llvm_notices,
             "licenses/Binaryen-LICENSE": binaryen_license,
+            **{f"licenses/wasm-tools-{license}": wasm_tools[license] for license in WASM_TOOLS_LICENSES},
         }
         if libatomic is not None:
             package_files |= {
@@ -469,6 +489,7 @@ def stage(
             ("LLVM BLAKE3", blake3_license),
             ("LLVM embedded third parties", llvm_notices),
             ("Binaryen", binaryen_license),
+            *((f"wasm-tools {license}", wasm_tools[license]) for license in WASM_TOOLS_LICENSES),
         ):
             license_text += f"===== {label} =====\n".encode() + data + b"\n\n"
         if libatomic is not None:
@@ -481,7 +502,7 @@ def stage(
             f"# NetWasm host tools for {rid}\n\n"
             + ("nwc, the NetWasm compiler, and private SDK build tools: "
                if compiler is not None else "Private SDK build tools: ")
-            + "Node, wasm-ld, wasm-opt and wasm-merge. "
+            + "Node, wasm-ld, wasm-opt and wasm-tools. "
             "This package does not contribute application runtime assets.\n" +
             ("The Linux Node executable loads bundled libatomic.so.1 from its own directory. "
              "See licenses/GCC-Libatomic-SOURCE.txt for corresponding source.\n"
@@ -512,6 +533,7 @@ def stage(
                 "llvmLld": pins["llvmLld"],
                 "binaryen": pins["binaryen"],
                 "node": pins["node"],
+                "wasmTools": pins["wasmTools"],
                 "archives": [
                     {"role": role, **host[role]}
                     for role in archive_roles
@@ -519,7 +541,7 @@ def stage(
             },
             "roles": {
                 role: f"tools/bin/{executable_name(role, rid)}"
-                for role in ("node", "wasm-ld", "wasm-opt", "wasm-merge") + (("nwc",) if compiler else ())
+                for role in ("node", "wasm-ld", "wasm-opt", "wasm-tools") + (("nwc",) if compiler else ())
             },
             "files": manifest_files,
         }

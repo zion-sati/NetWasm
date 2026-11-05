@@ -10,7 +10,7 @@ mount are deliberately narrower capabilities.
 ## 1. Install .NET
 
 Install [.NET SDK 10.0.303 or newer](https://dotnet.microsoft.com/download/dotnet/10.0).
-The repository pins SDK 10.0.403, which carries runtime 10.0.14. SDK 10.0.302
+NetWasm's own repository builds with the .NET 11 SDK. SDK 10.0.302
 and earlier carry a [CoreCLR ARM64 thread-static publication race](https://github.com/dotnet/runtime/issues/127776)
 that can terminate parallel compilation with `SIGSEGV`; Microsoft shipped the
 [fix](https://github.com/dotnet/runtime/pull/127843) in runtime 10.0.11.
@@ -30,11 +30,13 @@ Node's `libatomic.so.1` dependency. Musl-based distributions such as Alpine
 are not supported development hosts and stop with `NWSDK041`. The pinned
 macOS Node binary needs macOS 13.5 or newer.
 
-The default templates stay on .NET 10. To compile C# 15 source, select the
-.NET 11 SDK version recorded in [`eng/csharp15-toolchain.json`](../eng/csharp15-toolchain.json)
-in the project's `global.json` and allow prerelease SDKs while .NET 11 is a
-prerelease. An isolated .NET 11 SDK installation is sufficient; NetWasm does
-not also require the .NET 10 SDK. The target framework remains `netwasm0.1`.
+Projects from the templates build with whichever .NET SDK `dotnet` selects:
+the newest one installed, unless a `global.json` you add chooses another.
+NetWasm accepts SDK 10.0.303 or newer, including .NET 11; to compile C# 15
+source, use the .NET 11 SDK version recorded in
+[`eng/csharp15-toolchain.json`](../eng/csharp15-toolchain.json). An isolated
+.NET 11 SDK installation is sufficient; NetWasm does not also require the
+.NET 10 SDK. The target framework remains `netwasm0.1`.
 
 SDK selection does not change NetWasm's `float`/`double` to `decimal`
 rounding rule. Even with the .NET 10 SDK and C# 14 or earlier, NetWasm selects
@@ -47,8 +49,8 @@ For an ordinary application or test project, no separate Emscripten, Node.js,
 LLVM/LLD, Binaryen, Git or Python installation is needed. `dotnet restore`
 selects one host-tools NuGet package for the machine doing the build. That
 package supplies `nwc`, the NetWasm compiler, as a native executable, and the
-pinned Node, `wasm-ld`, `wasm-merge` and `wasm-opt` tools. The first restore
-downloads the package (about 87 MB compressed on macOS ARM64, plus the other
+pinned Node, `wasm-ld`, `wasm-opt` and `wasm-tools` tools. The first restore
+downloads the package (about 90 MB compressed on macOS ARM64, plus the other
 NetWasm dependencies); NuGet caches it for subsequent
 projects. Package sizes differ by host. Builds do not download tools.
 
@@ -82,13 +84,31 @@ Structured rich failure reporting also defaults on in Debug and off in Release,
 with the independent `NetWasmStructuredDiagnostics` switch. See
 [exception profiles and their non-desktop boundaries](diagnostics.md#managed-exceptions-and-diagnostic-profiles).
 
+Debug builds compile at `O0` and keep each method's compiled code under `obj/`, so
+the next build compiles only the methods an edit affects. A kept method is reused
+only while everything its code was built from still holds. When an edit changes only
+method bodies and each edited method still uses what it used before, the build patches
+the last module with those methods instead of compiling the program again. Set
+`NetWasmCompiledUnits=false` to compile every method each time,
+`NetWasmCompiledUnits=true` to keep compiled code at other levels too, or
+`NetWasmVerifyCompiledUnits=true` to also compile every reused method and fail the
+build if it differs.
+
+Release builds optimize at `Oz` unless `NetWasmOptimization` names another level.
+Binaryen's `wasm-opt` runs the level's passes once over the linked module. Set
+`NetWasmOptimizerConverge=true` to repeat them until the module stops shrinking:
+on DoomSharp that took the optimizer about twice as long for a module 0.04% (`Oz`)
+to 0.12% (`O3`) smaller, and rendered no faster.
+
 An application or runnable test project restores one host-tools package. A
 plain or dual-target library does not; its consumer selects the host package.
 If you move a restored checkout to another development host, run `dotnet
 restore` again. An ambient `node`, `wasm-ld` or Binaryen installation does not
 replace the restored defaults. For an intentional override, set
-`NETWASM_NODE_PATH`, `NETWASM_WASM_LD_PATH`, `NETWASM_WASM_MERGE_PATH` or
-`NETWASM_WASM_OPT_PATH` to the corresponding executable's absolute path.
+`NETWASM_NODE_PATH`, `NETWASM_WASM_LD_PATH`,
+`NETWASM_WASM_OPT_PATH` or `NETWASM_WASM_TOOLS_PATH` to the corresponding
+executable's absolute path. A `wasm-tools` override must be the toolchain's own
+release.
 Invalid overrides fail validation rather than falling back silently.
 
 If you enable NuGet lock files with `RestorePackagesWithLockFile=true`, the SDK
@@ -272,21 +292,54 @@ surface. Those APIs remain outside the first-preview profile.
 `dotnet run` runs what `dotnet publish` produces. An application published for
 the local launcher, the default, runs in Node. A browser project, a `JsModule`
 or `WitWebWorker` project or an application published with
-`NetWasmPublishTarget=browser`, publishes to a staging directory under `obj`
-and serves it on `http://localhost:5080/`, or another free port when 5080 is in
-use, until you stop it:
+`NetWasmPublishTarget=browser`, is served on `http://localhost:5080/`, or
+another free port when 5080 is in use, until you stop it:
 
 ```text
 $ dotnet run
 Now listening on: http://localhost:5080/
 ```
 
-Open the address to load the page the project publishes, its `index.html`. A
-project that publishes no `index.html`, such as a worker module whose page is in
-another project, stops with `NWSDK052`; run the project with the page instead.
-Choose the port with `dotnet run -- --port 8080`. The server is for
-development: it listens on the loopback interface only and serves each file as
-it is on disk, without caching. A library cannot be run (`NWSDK018`).
+Open the address to load the page the project publishes, its `index.html`. The
+server serves each file the project publishes from where the build left it, at
+the path `dotnet publish` copies it to, so it serves the published site without
+publishing it. A project that publishes no `index.html`, such as a worker
+module whose page is in another project, stops with `NWSDK052`; run the
+project with the page instead. Choose the port with `dotnet run -- --port
+8080`. The server is for development: it listens on the loopback interface
+only and serves each file as it is on disk, without caching. A library cannot
+be run (`NWSDK018`).
+
+Under `dotnet watch`, the server stays up for the whole session. Each rebuild
+after a save updates the site it serves, and the pages it serves reload
+themselves when the build ends.
+
+The site is every file the project publishes: its content items, NetWasm's own
+files and its workers' files. A target that copies files into the publish
+directory after `Publish` adds them to the published site only, not to the
+served one. Declare such files during the build instead, as `NetWasmSiteFile`
+items with the `SitePath` they are served at, relative to the publish
+directory, in a target listed in `NetWasmCollectSiteFilesDependsOn`:
+
+```xml
+<PropertyGroup>
+  <NetWasmCollectSiteFilesDependsOn>$(NetWasmCollectSiteFilesDependsOn);AddShellFiles</NetWasmCollectSiteFilesDependsOn>
+</PropertyGroup>
+
+<Target Name="AddShellFiles">
+  <ItemGroup>
+    <_ShellFile Include="shell/**/*" />
+    <NetWasmSiteFile Include="@(_ShellFile->'%(FullPath)')"
+                     SitePath="%(_ShellFile.RecursiveDir)%(_ShellFile.Filename)%(_ShellFile.Extension)" />
+  </ItemGroup>
+</Target>
+```
+
+Name the metadata through another item, as `_ShellFile` does here: inside a
+target, a bare `%(RecursiveDir)` would apply each `NetWasmSiteFile` declared
+before it. `dotnet publish` copies each declared file to its `SitePath`. A file
+with `Fallback="true"` is served and published only where no other file has its
+path.
 ## 4. Publish
 
 Publish a portable local deployment:

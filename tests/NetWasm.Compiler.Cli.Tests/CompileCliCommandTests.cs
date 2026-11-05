@@ -100,6 +100,7 @@ public sealed class CompileCliCommandTests
             "-stacktracesymbols:symbols.json", "-callbackobject:native/callbacks.o", "-wit:contract.wit",
             "-world:example:test/test", "-importmodule:host_ui", "-diagnostictrace:trace.json",
             "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics+",
+            "-verifycompiledunits+",
             "-projectdirectory:/project", "-intermediatedirectory:/project/obj", "-wasmtoolsnode:node",
             "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
             "-managedloopinvariantfieldhoisting:Disabled", "-managedstaticdataviewelimination:Enabled",
@@ -141,8 +142,9 @@ public sealed class CompileCliCommandTests
         Assert.Equal("compiler.jsonl", options.DiagnosticLogPath);
         Assert.True(options.UseJavaScriptExportBoundary);
         Assert.True(options.StructuredDiagnostics);
+        Assert.True(options.CompiledUnits);
+        Assert.True(options.VerifyCompiledUnits);
         Assert.Equal("/project", options.ProjectDirectory);
-        Assert.True(options.EnableFrontendCache);
         Assert.Equal("/project/obj", options.IntermediateOutputPath);
         var overrides = options.OptimizationOverrides!;
         Assert.Equal(ManagedLoopInvariantFieldHoisting.Disabled, overrides.LoopInvariantFieldHoisting);
@@ -183,7 +185,7 @@ public sealed class CompileCliCommandTests
     }
 
     [Fact]
-    public void LeavesTheFrontendCacheAndWasmToolsUnsetByDefault()
+    public void LeavesTheIntermediateDirectoryAndWasmToolsUnsetByDefault()
     {
         var harness = new Harness(entryPoint: null);
 
@@ -191,7 +193,6 @@ public sealed class CompileCliCommandTests
 
         Assert.Null(harness.Sessions.WasmTools);
         var options = harness.Sessions.Options!;
-        Assert.False(options.EnableFrontendCache);
         Assert.Null(options.IntermediateOutputPath);
         Assert.False(options.EmitStackTrace);
         Assert.Equal(FinalWasmOptimization.Oz, options.Optimization);

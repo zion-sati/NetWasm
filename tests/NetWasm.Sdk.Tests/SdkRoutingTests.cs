@@ -295,21 +295,24 @@ public sealed class SdkRoutingTests
                 ((string?)target.Attribute(attribute) ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    // NetWasm publishes a referenced worker into its caller's output on purpose, so a
-    // worker that sets IsPublishable=false, as one its caller publishes would, is
-    // still published (#163).
+    // NetWasm publishes a referenced worker into its caller's site on purpose, so a worker
+    // that sets IsPublishable=false, as one its caller publishes would, is still published
+    // (#163): the caller collects the worker's site files, which no IsPublishable governs.
     [Fact]
     public void ProjectsNetWasmPublishesItselfArePublishedWhateverTheirIsPublishable()
     {
-        var calls = SdkTargetFiles()
-            .SelectMany(static file => XDocument.Load(file).Descendants())
-            .Where(static element => element.Name.LocalName == "MSBuild"
-                && ((string?)element.Attribute("Targets") ?? string.Empty).Split(';').Contains("Publish"))
-            .ToArray();
+        var elements = SdkTargetFiles().SelectMany(static file => XDocument.Load(file).Descendants()).ToArray();
+        static string[] Targets(XElement call) => ((string?)call.Attribute("Targets") ?? string.Empty).Split(';');
+        var calls = elements.Where(static element => element.Name.LocalName == "MSBuild").ToArray();
 
-        Assert.NotEmpty(calls);
-        Assert.All(calls, static call =>
-            Assert.Contains(";IsPublishable=true;", $";{(string?)call.Attribute("Properties")};", StringComparison.Ordinal));
+        Assert.Contains(calls, static call => Targets(call).Contains("NetWasmCollectSiteFiles"));
+        Assert.DoesNotContain(calls, static call => Targets(call).Contains("Publish"));
+        var siteTargets = elements.Where(static element => element.Name.LocalName == "Target" && (string?)element.Attribute("Name") is
+            "NetWasmCollectSiteFiles" or "NetWasmSdkBrowserSite" or "NetWasmSdkJsModuleSite" or "NetWasmSdkWitWorkerSite"
+            or "NetWasmSdkWorkerSites").ToArray();
+        Assert.Equal(5, siteTargets.Length);
+        Assert.All(siteTargets, static target =>
+            Assert.DoesNotContain("IsPublishable", (string?)target.Attribute("Condition") ?? string.Empty, StringComparison.Ordinal));
     }
 
     // A project with IsPublishable=false publishes nothing and succeeds, as any .NET
@@ -889,6 +892,27 @@ public sealed class SdkRoutingTests
     }
 
     [Fact]
+    public void DebugBuildsDefaultToO0UnlessALevelIsSet()
+    {
+        using var debug = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>",
+            configuration: "Debug",
+            includeCompilerTargets: true);
+        using var debugOz = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework><NetWasmOptimization>Oz</NetWasmOptimization>",
+            configuration: "Debug",
+            includeCompilerTargets: true);
+        using var release = EvaluationProject.Create(
+            "<TargetFramework>netwasm0.1</TargetFramework>",
+            includeCompilerTargets: true);
+
+        Assert.Equal("O0", debug.Property("NetWasmOptimization"));
+        Assert.Equal("O0", debug.Property("_NetWasmCanonicalOptimization"));
+        Assert.Equal("Oz", debugOz.Property("NetWasmOptimization"));
+        Assert.Equal("Oz", release.Property("NetWasmOptimization"));
+    }
+
+    [Fact]
     public void FinalWasmOptimizationDefaultsToOzAndAllowsExplicitNone()
     {
         using var defaultPolicy = EvaluationProject.Create(
@@ -905,6 +929,8 @@ public sealed class SdkRoutingTests
         Assert.Equal("None", noFinalOptimization.Property("NetWasmOptimization"));
         Assert.Equal("Oz", explicitOz.Property("_NetWasmCanonicalOptimization"));
         Assert.Equal("Auto", defaultPolicy.Property("NetWasmManagedInliningHints"));
+        // wasm-opt runs each preset once unless a project converges it.
+        Assert.Equal("false", defaultPolicy.Property("NetWasmOptimizerConverge"));
         Assert.Equal("Auto", defaultPolicy.Property(
             "NetWasmManagedLoopInvariantFieldHoisting"));
         Assert.Equal("Auto", defaultPolicy.Property(
@@ -1083,6 +1109,7 @@ public sealed class SdkRoutingTests
                      "$(_NetWasmCanonicalOptimization)",
                      "packagingPolicyRevision=4",
                      "$(NetWasmManagedInliningHints)",
+                     "$(NetWasmOptimizerConverge)",
                      "$(NetWasmTarget)",
                      "$(NetWasmWorld)",
                      "$(_NetWasmComponentWitPath)",
@@ -1369,6 +1396,7 @@ public sealed class SdkRoutingTests
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmStructuredDiagnostics=$(NetWasmStructuredDiagnostics)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimization=$(NetWasmOptimization)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedInliningHints=$(NetWasmManagedInliningHints)" />
+                    <Message Importance="High" Text="__NETWASM_PROP__NetWasmOptimizerConverge=$(NetWasmOptimizerConverge)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedLoopInvariantFieldHoisting=$(NetWasmManagedLoopInvariantFieldHoisting)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedStaticDataViewElimination=$(NetWasmManagedStaticDataViewElimination)" />
                     <Message Importance="High" Text="__NETWASM_PROP__NetWasmManagedBranchPrefixDuplication=$(NetWasmManagedBranchPrefixDuplication)" />

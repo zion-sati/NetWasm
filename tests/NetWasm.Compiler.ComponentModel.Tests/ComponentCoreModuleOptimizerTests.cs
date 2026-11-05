@@ -10,14 +10,14 @@ public sealed class ComponentCoreModuleOptimizerTests
     [Theory]
     [InlineData("wasm32", FinalWasmOptimization.None, null)]
     [InlineData("wasm64", FinalWasmOptimization.None, null)]
-    [InlineData("wasm32", FinalWasmOptimization.O0, "-O0")]
+    [InlineData("wasm32", FinalWasmOptimization.O0, null)]
     [InlineData("wasm32", FinalWasmOptimization.O1, "-O1")]
     [InlineData("wasm32", FinalWasmOptimization.O2, "-O2")]
     [InlineData("wasm32", FinalWasmOptimization.O3, "-O3")]
     [InlineData("wasm32", FinalWasmOptimization.Os, "-Os")]
     [InlineData("wasm32", FinalWasmOptimization.Oz, "-Oz")]
     [InlineData("wasm64", FinalWasmOptimization.Oz, "-Oz")]
-    [InlineData("wasm64", FinalWasmOptimization.O0, "-O0")]
+    [InlineData("wasm64", FinalWasmOptimization.O0, null)]
     [InlineData("wasm64", FinalWasmOptimization.O1, "-O1")]
     [InlineData("wasm64", FinalWasmOptimization.O2, "-O2")]
     [InlineData("wasm64", FinalWasmOptimization.O3, "-O3")]
@@ -45,13 +45,23 @@ public sealed class ComponentCoreModuleOptimizerTests
         Assert.Equal(("output", "output"), stages.AnnotationCleanup);
         var expected = new List<string>
         {
-            "input", flag, "--converge", "--remove-unused-module-elements", "--strip-debug",
+            "input", flag, "--remove-unused-module-elements", "--strip-debug",
             "--enable-multimemory", "--enable-exception-handling", "--enable-reference-types", "--enable-bulk-memory",
             "--enable-nontrapping-float-to-int", "--enable-simd",
         };
         if (width == "wasm64") expected.Add("--enable-memory64");
         expected.AddRange(["--output", "output"]);
         Assert.Equal(expected, stages.Arguments);
+    }
+
+    [Fact]
+    public void AProjectThatConvergesRepeatsThePresetUntilTheModuleStopsShrinking()
+    {
+        var stages = new RecordingStages();
+
+        Create(stages).Optimize("input", "output", ComponentTarget.Wasm32Wasi02, FinalWasmOptimization.O3, converge: true);
+
+        Assert.Equal(["input", "-O3", "--converge", "--remove-unused-module-elements"], stages.Arguments.Take(4));
     }
 
     [Theory]

@@ -85,7 +85,6 @@ internal sealed class CompileCliCommand(
                 NwcTarget.Library => CompilerEntryPointKind.Library,
                 _ => CompilerEntryPointKind.RawFunction,
             },
-            EnableFrontendCache: options.IntermediateDirectory is not null,
             IntermediateOutputPath: options.IntermediateDirectory,
             UseJavaScriptExportBoundary: options.UseJavaScriptExportBoundary,
             ProjectDirectory: options.ProjectDirectory,
@@ -95,6 +94,20 @@ internal sealed class CompileCliCommand(
             OptimizationOverrides: overrides)
         {
             ImportModules = options.ImportModules,
+            // Compiled units serve O0 compiles that have an intermediate directory. The
+            // environment overrides the switches for a process: 0 turns units off, 1 on, and
+            // verify on with every restored body emitted again and compared.
+            CompiledUnits = Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS") switch
+            {
+                "0" => false,
+                "1" or "verify" => true,
+                // Verifying units asks for them; otherwise they are on where builds compile for speed.
+                _ => options.CompiledUnits ?? (options.VerifyCompiledUnits ||
+                    options.Optimization is NetWasm.Compiler.ComponentModel.FinalWasmOptimization.O0 or
+                        NetWasm.Compiler.ComponentModel.FinalWasmOptimization.None),
+            },
+            VerifyCompiledUnits = Environment.GetEnvironmentVariable("NETWASM_COMPILED_UNITS") == "verify" ||
+                options.VerifyCompiledUnits,
         });
         // The recorded entry ABI describes the export the compiler produced, which hosts follow.
         compilation = compilation with

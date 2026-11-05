@@ -38,7 +38,8 @@ public sealed class BrowserRawOrderedCaptureTests
         Assert.Equal(prune ? 1 : 0, operations.OfType<BrowserLinkExportOperation>().Count());
         if (prune)
             Assert.Equal(request.InternalApplicationExports, Assert.IsType<BrowserLinkExportOperation>(operations[4]).RemovedExports);
-        Assert.Equal(mode == FinalWasmOptimization.None ? 1 : 2, operations.OfType<BrowserLinkToolOperation>().Count());
+        Assert.Equal(mode is FinalWasmOptimization.None or FinalWasmOptimization.O0 ? 1 : 2,
+            operations.OfType<BrowserLinkToolOperation>().Count());
         var publication = Assert.IsType<BrowserLinkMoveOperation>(operations[^1]);
         Assert.Equal("v/tmp/linked.wasm", publication.InputPath);
         Assert.Equal(request.OutputPath, publication.OutputPath);

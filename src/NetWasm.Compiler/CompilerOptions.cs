@@ -36,7 +36,6 @@ public sealed record CompilerOptions(
     int? EntryMethodToken = null,
     CompilerEntryPointKind EntryPointKind = CompilerEntryPointKind.RawFunction,
     ICompilerMetricsObserver? MetricsObserver = null,
-    bool EnableFrontendCache = false,
     string? IntermediateOutputPath = null,
     bool UseJavaScriptExportBoundary = false,
     string? ProjectDirectory = null,
@@ -45,6 +44,14 @@ public sealed record CompilerOptions(
     FinalWasmOptimization Optimization = FinalWasmOptimization.Oz,
     WasmOptimizationOverrides? OptimizationOverrides = null)
 {
+    // Keep and reuse compiled units under IntermediateOutputPath. nwc and the SDK turn them
+    // on by default at O0; at an optimizing level they are reused only when asked for.
+    public bool CompiledUnits { get; init; }
+
+    // Emit every method a unit restores as well, and fail the compile when the two bodies
+    // differ: proves units sound on a workload (tests, diagnosis). Costs a full emission.
+    public bool VerifyCompiledUnits { get; init; }
+
     // Modules the project's native archives import from; the host supplies
     // them beside the modules [WasmImportLinkage] imports name.
     public ImmutableArray<string> ImportModules { get; init; } = [];

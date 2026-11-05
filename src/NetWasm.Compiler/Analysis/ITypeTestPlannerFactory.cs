@@ -4,5 +4,6 @@ internal interface ITypeTestPlannerFactory
 {
     ITypeTestPlanner Create(
         ITypeOperandResolver typeOperands,
-        ITypeRelationshipClassifier relationships);
+        ITypeRelationshipClassifier relationships,
+        ITypeRelationshipKeyResolver relationshipKeys);
 }

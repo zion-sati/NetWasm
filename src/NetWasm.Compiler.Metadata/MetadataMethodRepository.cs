@@ -1,10 +1,10 @@
-using System.Collections.Immutable;
+using System.Collections.Frozen;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Metadata;
 
 internal sealed class MetadataMethodRepository(
-    ImmutableDictionary<EntityKey, MethodDefinitionModel> methods,
+    FrozenDictionary<EntityKey, MethodDefinitionModel> methods,
     IMetadataAvailabilityValidator availability) : IMethodRepository
 {
     public MethodDefinitionModel GetMethod(EntityKey key)

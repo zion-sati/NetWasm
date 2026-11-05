@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
+using System.Runtime.CompilerServices;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Metadata.RuntimeProvidedMembers;
 
@@ -20,6 +22,10 @@ internal sealed class MetadataMethodReferenceResolver(
     IMetadataStackTypeResolver stackTypes,
     IBaseTypeIdentityResolver baseTypes) : IMetadataMethodReferenceResolver
 {
+    // A token resolves the same way in the same generic context every time it is met, and
+    // every call site naming it meets it again; a resolution is made once per compile.
+    private readonly ConcurrentDictionary<ResolutionKey, MethodInstanceModel> _resolved = new();
+
     public MethodInstanceModel Resolve(
         MetadataAssemblySnapshot source,
         int metadataToken,
@@ -27,7 +33,21 @@ internal sealed class MetadataMethodReferenceResolver(
         int ilOffset,
         CliGenericContext? genericContext = null)
     {
+        ArgumentNullException.ThrowIfNull(source);
         var context = (genericContext ?? CliGenericContext.Empty).Normalize();
+        var key = new ResolutionKey(source.Identity.Name, metadataToken, context.TypeArguments, context.MethodArguments);
+        if (_resolved.TryGetValue(key, out var known))
+            return known;
+        return _resolved.GetOrAdd(key, Resolve(source, metadataToken, methodDisplayName, ilOffset, context));
+    }
+
+    private MethodInstanceModel Resolve(
+        MetadataAssemblySnapshot source,
+        int metadataToken,
+        string methodDisplayName,
+        int ilOffset,
+        CliGenericContext context)
+    {
         var handle = entityHandles.Read(
             metadataToken, "method", methodDisplayName, ilOffset);
         if (handle.Kind == HandleKind.MethodSpecification)
@@ -133,25 +153,8 @@ internal sealed class MetadataMethodReferenceResolver(
         MethodDefinitionModel[] matches;
         while (true)
         {
-            matches = declaringDefinition.Methods
-                .Select(GetMethod)
-                .Where(method => method.Name == name &&
-                    method.GenericArity == referenceSignature.GenericParameterCount)
-                .Where(method =>
-                {
-                    var candidate = method.Signature.Substitute(typeArguments);
-                    return signatureTypes.Compare(
-                               candidate.ReturnSignatureType,
-                               expected.ReturnSignatureType) &&
-                           candidate.ParameterSignatureTypes.Length ==
-                               expected.ParameterSignatureTypes.Length &&
-                           candidate.ParameterSignatureTypes.Zip(
-                                   expected.ParameterSignatureTypes)
-                               .All(pair => signatureTypes.Compare(
-                                   pair.First,
-                                   pair.Second));
-                })
-                .ToArray();
+            matches = Matching(declaringDefinition, name, referenceSignature.GenericParameterCount,
+                typeArguments, expected);
             if (matches.Length != 0 || name is ".ctor" or ".cctor")
                 break;
             visited ??= [];
@@ -202,6 +205,81 @@ internal sealed class MetadataMethodReferenceResolver(
             stackTypes.Resolve(
                 definitionMatch.Signature,
                 new CliGenericContext(typeArguments, [])));
+    }
+
+    // The type's methods of this name and arity whose signature, in the type's
+    // instantiation, is the expected one.
+    private MethodDefinitionModel[] Matching(
+        TypeDefinitionModel type,
+        string name,
+        int genericArity,
+        ImmutableArray<CliTypeIdentity> typeArguments,
+        MethodSignatureModel expected)
+    {
+        List<MethodDefinitionModel>? matches = null;
+        foreach (var key in type.Methods)
+        {
+            var method = GetMethod(key);
+            if (method.GenericArity != genericArity || !string.Equals(method.Name, name, StringComparison.Ordinal))
+                continue;
+            var candidate = method.Signature.Substitute(typeArguments);
+            if (!signatureTypes.Compare(candidate.ReturnSignatureType, expected.ReturnSignatureType) ||
+                candidate.ParameterSignatureTypes.Length != expected.ParameterSignatureTypes.Length)
+            {
+                continue;
+            }
+            var same = true;
+            for (var index = 0; index < candidate.ParameterSignatureTypes.Length && same; index++)
+            {
+                same = signatureTypes.Compare(candidate.ParameterSignatureTypes[index],
+                    expected.ParameterSignatureTypes[index]);
+            }
+            if (same) (matches ??= []).Add(method);
+        }
+        return matches is null ? [] : [.. matches];
+    }
+
+    // A resolution's inputs: the token's assembly and the generic context's arguments,
+    // compared by reference (identities are shared, so equal arguments are usually the same).
+    private readonly struct ResolutionKey(
+        string assembly,
+        int token,
+        ImmutableArray<CliTypeIdentity> typeArguments,
+        ImmutableArray<CliTypeIdentity> methodArguments) : IEquatable<ResolutionKey>
+    {
+        private readonly string _assembly = assembly;
+        private readonly int _token = token;
+        private readonly ImmutableArray<CliTypeIdentity> _typeArguments = typeArguments;
+        private readonly ImmutableArray<CliTypeIdentity> _methodArguments = methodArguments;
+
+        public bool Equals(ResolutionKey other) =>
+            _token == other._token &&
+            string.Equals(_assembly, other._assembly, StringComparison.Ordinal) &&
+            Same(_typeArguments, other._typeArguments) &&
+            Same(_methodArguments, other._methodArguments);
+
+        public override bool Equals(object? obj) => obj is ResolutionKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(_token);
+            hash.Add(_assembly, StringComparer.Ordinal);
+            foreach (var argument in _typeArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
+            hash.Add(-1);
+            foreach (var argument in _methodArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
+            return hash.ToHashCode();
+        }
+
+        private static bool Same(ImmutableArray<CliTypeIdentity> left, ImmutableArray<CliTypeIdentity> right)
+        {
+            if (left.Length != right.Length) return false;
+            for (var index = 0; index < left.Length; index++)
+            {
+                if (!ReferenceEquals(left[index], right[index])) return false;
+            }
+            return true;
+        }
     }
 
     private static CliTypeIdentity GetTypeIdentity(TypeDefinitionModel type) =>

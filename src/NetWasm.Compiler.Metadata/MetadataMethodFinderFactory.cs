@@ -19,7 +19,7 @@ public sealed class MetadataMethodFinderFactory(
         ArgumentNullException.ThrowIfNull(snapshot);
         var materialized = _materializations.Create(snapshot);
         return new MetadataMethodFinder(
-            materialized.Types.Values.ToImmutableArray(),
+            materialized.Types.Values,
             _repositories.Create(snapshot),
             new MetadataAvailabilityValidator(new MetadataLifetime()));
     }

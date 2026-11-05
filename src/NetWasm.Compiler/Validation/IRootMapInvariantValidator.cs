@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Validation;
@@ -9,5 +10,6 @@ internal interface IRootMapInvariantValidator
         IFieldRepository fields,
         IMethodRepository methods,
         ReachableProgram program,
-        ITypeClassifier typeClassifier);
+        ITypeClassifier typeClassifier,
+        IReadOnlySet<string>? restored = null);
 }

@@ -46,6 +46,9 @@ public sealed class NetWasmCompileTask : ToolTask
     [Required]
     public string WasmToolsModulePath { get; set; } = string.Empty;
 
+    // The host tools' native wasm-tools of the same release, which nwc runs in place of the WASI one.
+    public string NativeWasmToolsPath { get; set; } = string.Empty;
+
     public ITaskItem[] References { get; set; } = [];
     public ITaskItem[] Sources { get; set; } = [];
     public string Target { get; set; } = "wasm32";
@@ -61,6 +64,10 @@ public sealed class NetWasmCompileTask : ToolTask
     public string? PathMap { get; set; }
     public bool EmitStackTrace { get; set; }
     public bool StructuredDiagnostics { get; set; }
+    // Keep and reuse compiled units (NetWasmCompiledUnits: on by default at O0), and verify reused ones.
+    // "true" or "false"; empty leaves nwc's default (on at O0).
+    public string? CompiledUnits { get; set; }
+    public bool VerifyCompiledUnits { get; set; }
     public bool CompileAsLibrary { get; set; }
     public bool UseJavaScriptExportBoundary { get; set; }
     public bool NoLogo { get; set; }
@@ -109,12 +116,37 @@ public sealed class NetWasmCompileTask : ToolTask
             "NetWasm: Compiling {0} for {1}...",
             Path.GetFileName(InputAssemblyPath),
             Target);
+        EnvironmentVariables = ToolEnvironment();
         if (!base.Execute())
         {
             return false;
         }
         Log.LogMessage(MessageImportance.High, "NetWasm: Wrote {0}.", Path.GetFullPath(CoreModulePath));
         return true;
+    }
+
+    // A compile allocates about a gigabyte and exits: gen0 budgets of 256 MB per heap, with
+    // large arrays allocated there too, let it finish without collecting at all. The runtime
+    // reads these only from the environment, in hex; a build or shell that sets either keeps
+    // its own.
+    private static readonly (string Name, string Value)[] GarbageCollection =
+    [
+        ("DOTNET_GCgen0size", "10000000"),
+        ("DOTNET_GCLOHThreshold", "8000000"),
+    ];
+
+    internal string[] ToolEnvironment()
+    {
+        var variables = new List<string>(EnvironmentVariables ?? []);
+        foreach (var (name, value) in GarbageCollection)
+        {
+            if (Environment.GetEnvironmentVariable(name) is null &&
+                !variables.Exists(variable => variable.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase)))
+            {
+                variables.Add($"{name}={value}");
+            }
+        }
+        return [.. variables];
     }
 
     internal string FullPathToTool => GenerateFullPathToTool();
@@ -180,12 +212,21 @@ public sealed class NetWasmCompileTask : ToolTask
         {
             builder.AppendSwitch("-structureddiagnostics+");
         }
+        if (bool.TryParse(CompiledUnits, out var compiledUnits))
+        {
+            builder.AppendSwitch(compiledUnits ? "-compiledunits+" : "-compiledunits-");
+        }
+        if (VerifyCompiledUnits)
+        {
+            builder.AppendSwitch("-verifycompiledunits+");
+        }
         AppendIfNotEmpty(builder, "-projectdirectory:", ProjectDirectory);
         AppendIfNotEmpty(builder, "-pathmap:", PathMap);
         builder.AppendSwitchIfNotNull("-intermediatedirectory:", IntermediateDirectory);
         builder.AppendSwitchIfNotNull("-wasmtoolsnode:", WasmToolsNodePath);
         builder.AppendSwitchIfNotNull("-wasmtoolscommand:", WasmToolsCommandPath);
         builder.AppendSwitchIfNotNull("-wasmtoolsmodule:", WasmToolsModulePath);
+        AppendIfNotEmpty(builder, "-wasmtools:", NativeWasmToolsPath);
         // Auto is nwc's own default for each managed optimization.
         foreach (var (name, value) in new[]
                  {

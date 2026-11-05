@@ -89,6 +89,7 @@ internal sealed class ReachableProgramBuilder(
             state.ImplicitExceptions)
         {
             EnumMetadataRequirements = state.EnumMetadataRequirements,
+            MethodContributions = state.Contributions,
             ModuleInitializers = [
                 .. state.ModuleInitializers
                     .OrderBy(key => key.Assembly.Name, StringComparer.Ordinal)
@@ -136,6 +137,7 @@ internal sealed class ReachableProgramBuilder(
             DelegateTypes = [.. state.AllocatedTypes
                 .Where(delegateTypes.Recognize)
                 .OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
+            AllocatedTypes = [.. state.AllocatedTypes.OrderBy(type => type.CanonicalName, StringComparer.Ordinal)],
         };
     }
 

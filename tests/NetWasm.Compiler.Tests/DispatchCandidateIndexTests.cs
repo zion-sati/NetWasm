@@ -12,7 +12,9 @@ public sealed class DispatchCandidateIndexTests
     public void IndexMatchesDeclarationPublishedBeforeReceiver()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new DispatchCandidateIndexFactory(null!));
+            new DispatchCandidateIndexFactory(null!, UnboundedTypeRelationshipKeys.Instance));
+        Assert.Throws<ArgumentNullException>(() =>
+            new DispatchCandidateIndexFactory(new TestTypeRelationshipClassifier(), null!));
         var relationships = new TestTypeRelationshipClassifier();
         var index = CreateIndex(relationships).Index;
         var contract = Type("IContract");
@@ -141,7 +143,9 @@ public sealed class DispatchCandidateIndexTests
     public void IndexValidatesInputsBeforePublishingState()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new DispatchCandidateIndex(null!));
+            new DispatchCandidateIndex(null!, UnboundedTypeRelationshipKeys.Instance));
+        Assert.Throws<ArgumentNullException>(() =>
+            new DispatchCandidateIndex(new TestTypeRelationshipClassifier(), null!));
 
         var relationships = new TestTypeRelationshipClassifier();
         var index = CreateIndex(relationships).Index;
@@ -227,7 +231,7 @@ public sealed class DispatchCandidateIndexTests
             [(ofA, bound)] = TypeRelationshipCharacteristics.Hierarchy,
             [(ofDerived, bound)] = TypeRelationshipCharacteristics.GenericVariance,
         });
-        var index = new DispatchCandidateIndex(relationships);
+        var index = new DispatchCandidateIndex(relationships, UnboundedTypeRelationshipKeys.Instance);
         var bounded = Declaration("MoveNext", 1, contract) with { ReceiverBound = bound };
         var unbounded = Declaration("Reset", 2, contract);
         CliTypeIdentity[] receivers = [ofA, ofDerived, ofB];
@@ -244,6 +248,70 @@ public sealed class DispatchCandidateIndexTests
             candidates.Where(static candidate => candidate.DispatchKey == "bounded").Select(static candidate => candidate.Receiver));
         Assert.Equal(receivers,
             candidates.Where(static candidate => candidate.DispatchKey == "unbounded").Select(static candidate => candidate.Receiver));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClassifiesOnlyReceiversAndContractsTheirKeysCanMatch(bool receiversFirst)
+    {
+        var contractA = Type("ContractA");
+        var contractB = Type("ContractB");
+        var openContract = Type("OpenContract");
+        var onlyA = Type("OnlyA");
+        var onlyB = Type("OnlyB");
+        var open = Type("Open");
+        var both = Type("Both");
+        var keys = new KeyTable(new()
+        {
+            [contractA] = new("A", new HashSet<string> { "A" }, false),
+            [contractB] = new("B", new HashSet<string> { "B" }, false),
+            [openContract] = new("open", new HashSet<string>(), true),
+            [onlyA] = new("onlyA", new HashSet<string> { "onlyA", "A" }, false),
+            [onlyB] = new("onlyB", new HashSet<string> { "onlyB", "B" }, false),
+            [open] = new("open", new HashSet<string>(), true),
+            [both] = new("both", new HashSet<string> { "both", "A", "B" }, false),
+        });
+        var relationships = new AcceptingRelationshipClassifier();
+        var index = new DispatchCandidateIndex(relationships, keys);
+        CliTypeIdentity[] receivers = [onlyA, onlyB, open, both];
+        DispatchDeclarationCandidate[] declarations =
+        [
+            new("a", Declaration("A", 1, contractA)),
+            new("b", Declaration("B", 2, contractB)),
+            new("open", Declaration("Open", 3, openContract)),
+        ];
+
+        DispatchCandidate[] candidates = receiversFirst
+            ? [.. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver))),
+                .. declarations.SelectMany(declaration => index.Index(declaration))]
+            : [.. declarations.SelectMany(declaration => index.Index(declaration)),
+                .. receivers.SelectMany(receiver => index.Index(new DispatchReceiverCandidate(receiver)))];
+
+        IEnumerable<CliTypeIdentity> For(string key) => candidates
+            .Where(candidate => candidate.DispatchKey == key)
+            .Select(candidate => candidate.Receiver);
+        Assert.Equal([onlyA, open, both], For("a"));
+        Assert.Equal([onlyB, open, both], For("b"));
+        Assert.Equal(receivers, For("open"));
+        Assert.DoesNotContain((onlyA, contractB), relationships.Pairs);
+        Assert.DoesNotContain((onlyB, contractA), relationships.Pairs);
+    }
+
+    private sealed class KeyTable(Dictionary<CliTypeIdentity, TypeRelationshipKeys> keys) : ITypeRelationshipKeyResolver
+    {
+        public TypeRelationshipKeys Resolve(CliTypeIdentity type) => keys[type];
+    }
+
+    private sealed class AcceptingRelationshipClassifier : ITypeRelationshipClassifier
+    {
+        public List<(CliTypeIdentity Candidate, CliTypeIdentity Target)> Pairs { get; } = [];
+
+        public TypeRelationship Classify(CliTypeIdentity candidate, CliTypeIdentity target)
+        {
+            Pairs.Add((candidate, target));
+            return new(TypeRelationshipCharacteristics.Hierarchy);
+        }
     }
 
     private sealed class TableRelationshipClassifier(
@@ -287,11 +355,11 @@ public sealed class DispatchCandidateIndexTests
 
     private static DispatchCandidateIndexFixture CreateIndex(
         TestTypeRelationshipClassifier relationships) =>
-        new(new DispatchCandidateIndex(relationships));
+        new(new DispatchCandidateIndex(relationships, UnboundedTypeRelationshipKeys.Instance));
 
     private static DispatchCandidateIndexFactoryFixture CreateFactory(
         TestTypeRelationshipClassifier relationships) =>
-        new(new DispatchCandidateIndexFactory(relationships));
+        new(new DispatchCandidateIndexFactory(relationships, UnboundedTypeRelationshipKeys.Instance));
 
     private static CliTypeIdentity Type(string name) =>
         CliTypeIdentity.Named(

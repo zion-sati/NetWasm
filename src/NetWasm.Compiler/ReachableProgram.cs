@@ -27,6 +27,11 @@ public sealed record ReachableProgram(
 
     public ImmutableArray<EntityKey> ModuleInitializers { get; init; } = [];
 
+    // What each analysed method adds to the whole program, by canonical name: an edit that
+    // keeps every changed method's contribution leaves the rest of the program as it was.
+    internal ImmutableDictionary<string, NetWasm.Compiler.Analysis.MethodContribution> MethodContributions { get; init; } =
+        ImmutableDictionary<string, NetWasm.Compiler.Analysis.MethodContribution>.Empty;
+
     public ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites { get; init; } =
         ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty;
 
@@ -98,6 +103,10 @@ public sealed record ReachableProgram(
         [];
 
     public ImmutableArray<CliTypeIdentity> DelegateTypes { get; init; } = [];
+
+    // Every type the program allocates, by canonical name: the receivers dispatch and type
+    // tests are resolved against.
+    public ImmutableArray<CliTypeIdentity> AllocatedTypes { get; init; } = [];
 
     public ImmutableArray<MethodDefinitionModel> JSImportMethods { get; init; } = [];
 

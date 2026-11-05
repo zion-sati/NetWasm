@@ -6,9 +6,9 @@ public static class HostToolIds
 {
     public const string Node = "node";
     public const string WasmLd = "wasm-ld";
-    public const string BinaryenWasmMerge = "binaryen.wasm-merge";
     public const string BinaryenWasmOpt = "binaryen.wasm-opt";
+    public const string WasmTools = "wasm-tools";
 
     public static ImmutableArray<string> Known { get; } =
-        [Node, WasmLd, BinaryenWasmMerge, BinaryenWasmOpt];
+        [Node, WasmLd, BinaryenWasmOpt, WasmTools];
 }

@@ -15,6 +15,8 @@ using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Emission.Results;
 using NetWasm.Compiler.Wasm.ModuleEncoding;
 
+using NetWasm.Compiler.Wasm.Units;
+
 namespace NetWasm.Compiler.Wasm.Emission;
 
 internal sealed class WasmModuleEmitter(
@@ -41,7 +43,9 @@ internal sealed class WasmModuleEmitter(
     IManagedBoundaryPlanValidator boundaryPlans,
     IWasmModuleEmissionResultBuilder results,
     IStaticInitializerFunctionAppender staticInitializers,
-    IRuntimeInitializerFunctionAppender runtimeInitializer) : IWasmModuleEmitter
+    IRuntimeInitializerFunctionAppender runtimeInitializer,
+    ICompiledUnitSymbolBinder unitSymbols,
+    ICompiledUnitPublisher units) : IWasmModuleEmitter
 {
     private readonly IMethodRepository _methods =
         methods ?? throw new ArgumentNullException(nameof(methods));
@@ -96,6 +100,7 @@ internal sealed class WasmModuleEmitter(
             _entryPoints.Validate(entryPoint);
         }
         var plan = target.Plan;
+        if (request.CompiledUnits is { } compiledUnits) compiledUnits.Target = target.Instructions;
         var functionIndices = _functionIndexResolvers.Create(
             _methods,
             _symbols,
@@ -116,6 +121,7 @@ internal sealed class WasmModuleEmitter(
             NativeImports = plan.NativeImports,
             NativeCallbacks = plan.NativeCallbacks,
         });
+        unitSymbols.Bind(plan, moduleData, imports, methods.Values.Concat(constructedMethods.Values));
         var functions = new List<WasmFunctionDefinition>(
             orderedMethods.Length + orderedConstructedMethods.Length + 1);
         var boundaryEntries = new List<ManagedBoundaryPlanEntry>();
@@ -289,6 +295,7 @@ internal sealed class WasmModuleEmitter(
 
         _moduleExportValidator.Validate(exports, nativeCallbackIndices);
         _boundaryPlans.Validate(functions, exports, imports.Length, boundaryEntries);
+        units.Publish();
 
         return _results.Build(new(
             new WasmModuleBuildRequest(

@@ -11,12 +11,19 @@ namespace NetWasm.Compiler.GarbageCollection;
 // is not proved read-only is conservatively classified as write-and-escape.
 public sealed class ManagedByRefEffectAnalyzer(
     IMethodRepository methods,
-    IRuntimeIntrinsicRegistry intrinsics) : IManagedByRefEffectAnalyzer
+    IRuntimeIntrinsicRegistry intrinsics,
+    IIndexedWorkExecutor work,
+    int workerCount) : IManagedByRefEffectAnalyzer
 {
     private readonly IMethodRepository _methods = methods ??
         throw new ArgumentNullException(nameof(methods));
     private readonly IRuntimeIntrinsicRegistry _intrinsics = intrinsics ??
         throw new ArgumentNullException(nameof(intrinsics));
+    private readonly IIndexedWorkExecutor _work = work ??
+        throw new ArgumentNullException(nameof(work));
+    private readonly int _workerCount = workerCount >= 1
+        ? workerCount
+        : throw new ArgumentOutOfRangeException(nameof(workerCount));
 
     public ManagedByRefEffects Analyze(ManagedByRefEffectAnalysisRequest request)
     {
@@ -39,44 +46,142 @@ public sealed class ManagedByRefEffectAnalyzer(
             _ => ManagedByRefMethodEffects.Empty,
             StringComparer.Ordinal);
 
-        bool changed;
-        do
+        // Every alias starts at an argument whose address the method takes or that is an
+        // address itself, so a method with neither keeps empty effects. The others are
+        // analyzed until their effects stop growing: first all of them, then only the
+        // callers of those whose effects grew in the round before. A round reads the
+        // effects as the last one left them, so its methods run in parallel. Effects only
+        // grow with their callees', which reaches the same fixpoint as analyzing every
+        // body in turn until none changes.
+        var methods = bodies
+            .Select(pair => new AnalyzedMethod(pair.Key, pair.Value, CandidateArguments(pair.Value)))
+            .Where(method => !method.Candidates.IsEmpty)
+            .ToArray();
+        // The analysis keeps no state of its own, so each worker is this analyzer.
+        var workers = Enumerable.Repeat(this, _workerCount).ToArray();
+        var identities = bodies.Keys.ToHashSet(StringComparer.Ordinal);
+        Dictionary<string, List<int>>? callers = null;
+        var calleesByMethod = ImmutableDictionary.CreateBuilder<string, ImmutableArray<string>>(StringComparer.Ordinal);
+        var round = Enumerable.Range(0, methods.Length).ToArray();
+        while (round.Length != 0)
         {
-            changed = false;
-            foreach ((var identity, var body) in bodies)
+            var collectCallees = callers is null;
+            var results = _work.Execute(workers, round.Length, (analyzer, index) =>
             {
-                var analyzed = AnalyzeBody(
-                    identity,
-                    body,
+                var method = methods[round[index]];
+                var callees = collectCallees ? new HashSet<string>(StringComparer.Ordinal) : null;
+                return (Effects: analyzer.AnalyzeBody(
+                    method.Identity,
+                    method.Body,
+                    method.Candidates,
                     effects,
-                    bodies,
+                    identities,
                     directIdentities,
-                    request.DispatchCallSites);
-                var combined = effects[identity].Union(analyzed);
+                    request.DispatchCallSites,
+                    callees), Callees: callees);
+            });
+            if (callers is null)
+            {
+                callers = new(StringComparer.Ordinal);
+                for (var index = 0; index < results.Length; index++)
+                {
+                    calleesByMethod[methods[round[index]].Identity] = [.. results[index].Callees!.Order(StringComparer.Ordinal)];
+                    foreach (var callee in results[index].Callees!)
+                    {
+                        if (!callers.TryGetValue(callee, out var calling))
+                        {
+                            callers.Add(callee, calling = []);
+                        }
+                        calling.Add(round[index]);
+                    }
+                }
+            }
+
+            var next = new SortedSet<int>();
+            for (var index = 0; index < results.Length; index++)
+            {
+                var identity = methods[round[index]].Identity;
+                var combined = effects[identity].Union(results[index].Effects);
                 if (combined != effects[identity])
                 {
                     effects[identity] = combined;
-                    changed = true;
+                    if (callers.TryGetValue(identity, out var calling))
+                    {
+                        next.UnionWith(calling);
+                    }
                 }
             }
+            round = [.. next];
         }
-        while (changed);
 
-        return new(effects.ToImmutableDictionary(StringComparer.Ordinal));
+        return new(effects.ToImmutableDictionary(StringComparer.Ordinal))
+        {
+            Callees = calleesByMethod.ToImmutable(),
+        };
+    }
+
+    // One method's effects with every other method's as known, iterated until its own stop
+    // growing (a method may call itself), and the methods whose effects they were read from.
+    internal ManagedByRefMethodSummary AnalyzeAlone(ManagedByRefMethodSummaryRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var candidates = CandidateArguments(request.Method);
+        if (candidates.IsEmpty) return new(ManagedByRefMethodEffects.Empty, []);
+        var effects = new KnownEffects(request.Identity, request.Methods, request.Effects);
+        var callees = new HashSet<string>(StringComparer.Ordinal);
+        while (true)
+        {
+            var combined = effects.Own.Union(AnalyzeBody(request.Identity, request.Method, candidates, effects,
+                request.Methods, request.DirectMethods, request.DispatchCallSites, callees));
+            if (combined == effects.Own) break;
+            effects.Own = combined;
+        }
+        return new(effects.Own, [.. callees.Order(StringComparer.Ordinal)]);
+    }
+
+    // Every method's effects as known, the analysed method's as they stand; a method of the
+    // program with no known effects has none.
+    private sealed class KnownEffects(string identity, IReadOnlySet<string> methods,
+        IReadOnlyDictionary<string, ManagedByRefMethodEffects> known) : IReadOnlyDictionary<string, ManagedByRefMethodEffects>
+    {
+        public ManagedByRefMethodEffects Own { get; set; } = ManagedByRefMethodEffects.Empty;
+
+        public ManagedByRefMethodEffects this[string key] =>
+            TryGetValue(key, out var value) ? value : throw new KeyNotFoundException(key);
+
+        public IEnumerable<string> Keys => throw new NotSupportedException();
+
+        public IEnumerable<ManagedByRefMethodEffects> Values => throw new NotSupportedException();
+
+        public int Count => throw new NotSupportedException();
+
+        public bool ContainsKey(string key) => TryGetValue(key, out _);
+
+        public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out ManagedByRefMethodEffects value)
+        {
+            if (string.Equals(key, identity, StringComparison.Ordinal)) value = Own;
+            else if (!known.TryGetValue(key, out value!) && methods.Contains(key)) value = ManagedByRefMethodEffects.Empty;
+            return value is not null;
+        }
+
+        public IEnumerator<KeyValuePair<string, ManagedByRefMethodEffects>> GetEnumerator() => throw new NotSupportedException();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private ManagedByRefMethodEffects AnalyzeBody(
         string identity,
         ManagedMethodBody method,
+        ImmutableHashSet<int> candidates,
         IReadOnlyDictionary<string, ManagedByRefMethodEffects> effects,
-        IReadOnlyDictionary<string, ManagedMethodBody> bodies,
+        IReadOnlySet<string> bodies,
         IReadOnlyDictionary<EntityKey, string> directIdentities,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites)
+        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        HashSet<string>? callees)
     {
         var written = ImmutableHashSet.CreateBuilder<int>();
         var escaped = ImmutableHashSet.CreateBuilder<int>();
         var returned = ImmutableHashSet.CreateBuilder<int>();
-        var candidates = CandidateArguments(method);
 
         // Exception handlers can observe byref locals established on exceptional
         // edges. Until that flow is modeled, retaining ownership is the only safe
@@ -170,7 +275,8 @@ public sealed class ManagedByRefEffectAnalyzer(
                             effects,
                             bodies,
                             directIdentities,
-                            dispatchCallSites);
+                            dispatchCallSites,
+                            callees);
                         break;
                     case CilOperation.CallIndirect:
                         MarkUnknown(consumedOrigins, written, escaped);
@@ -278,9 +384,10 @@ public sealed class ManagedByRefEffectAnalyzer(
         ImmutableHashSet<int>.Builder written,
         ImmutableHashSet<int>.Builder escaped,
         IReadOnlyDictionary<string, ManagedByRefMethodEffects> effects,
-        IReadOnlyDictionary<string, ManagedMethodBody> bodies,
+        IReadOnlySet<string> bodies,
         IReadOnlyDictionary<EntityKey, string> directIdentities,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites)
+        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        HashSet<string>? callees)
     {
         var call = ResolveCall(instruction, stack);
         if (call.Definition is not null &&
@@ -313,6 +420,7 @@ public sealed class ManagedByRefEffectAnalyzer(
                 MarkUnknown(call.Arguments.Values, written, escaped);
                 return [];
             }
+            callees?.Add(target);
             foreach (var argument in targetEffects.WrittenArguments)
             {
                 if (call.Arguments.TryGetValue(argument, out var origins))
@@ -342,7 +450,7 @@ public sealed class ManagedByRefEffectAnalyzer(
         string caller,
         CilInstruction instruction,
         CallModel call,
-        IReadOnlyDictionary<string, ManagedMethodBody> bodies,
+        IReadOnlySet<string> bodies,
         IReadOnlyDictionary<EntityKey, string> directIdentities,
         IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites)
     {
@@ -354,7 +462,7 @@ public sealed class ManagedByRefEffectAnalyzer(
                 ? [.. dispatch.Targets.Select(target => target.Method.CanonicalName)]
                 : null;
         }
-        if (call.Identity is { } identity && bodies.ContainsKey(identity))
+        if (call.Identity is { } identity && bodies.Contains(identity))
         {
             return [identity];
         }
@@ -580,6 +688,11 @@ public sealed class ManagedByRefEffectAnalyzer(
             escaped.UnionWith(origin);
         }
     }
+
+    private sealed record AnalyzedMethod(
+        string Identity,
+        ManagedMethodBody Body,
+        ImmutableHashSet<int> Candidates);
 
     private sealed record FlowState(
         ImmutableArray<ImmutableHashSet<int>> Stack,

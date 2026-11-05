@@ -1,3 +1,4 @@
+using NetWasm.Compiler.Wasm.Units;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -53,7 +54,8 @@ internal sealed class CompilationRootMapBuilder(
     public ReachableProgram Analyze(
         MetadataCompilationSnapshot metadata,
         CompilationLayouts layouts,
-        ReachableProgram program)
+        ReachableProgram program,
+        CompiledUnitState? units = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(layouts);
@@ -66,7 +68,9 @@ internal sealed class CompilationRootMapBuilder(
         ArgumentNullException.ThrowIfNull(types);
         ArgumentNullException.ThrowIfNull(fields);
         ArgumentNullException.ThrowIfNull(methods);
-        if (_parallelism.WorkerCount == 1)
+        // Compiled units are recorded and restored by root-map workers, so a compile that
+        // keeps them uses one even without parallelism.
+        if (_parallelism.WorkerCount == 1 && units?.Directory is null)
         {
             var valueResolver = _valueResolvers.Create(
                 typeDefinitions,
@@ -103,13 +107,20 @@ internal sealed class CompilationRootMapBuilder(
         var forkSet = _forks.Create(layouts.Snapshot, types,
             typeDefinitions, fields).Create(Math.Min(
                 _parallelism.WorkerCount, Math.Max(1, bodies.Length)));
-        var analyzers = forkSet.Workers.Select(fork => _analyzers.Create(
-            types, fields, methods, fork.Values,
-            program.DispatchCallSites, typeClassifier)).ToArray();
-        var results = _work.Execute(analyzers, bodies.Length,
-            (analyzer, index) => analyzer.Analyze(new RootMapAnalysisRequest(
-                bodies[index], program.AllocatingMethods,
-                program.ConstructedAllocatingMethods)));
+        // With compiled units each worker records the facts a root map is built from, and
+        // takes a method's root map from its unit where those facts still hold.
+        var workers = forkSet.Workers.Select(fork =>
+        {
+            var recorder = units?.Directory is null ? null : new UnitRootMapRecorder(units, fork.Values,
+                program.DispatchCallSites, program.AllocatingMethods, program.ConstructedAllocatingMethods, fields);
+            return (Analyzer: _analyzers.Create(types, fields, methods, recorder?.Values ?? fork.Values,
+                recorder?.DispatchCallSites ?? program.DispatchCallSites, typeClassifier), Units: recorder);
+        }).ToArray();
+        var results = _work.Execute(workers, bodies.Length, (worker, index) => worker.Units is { } recorder
+            ? recorder.Map(bodies[index], () => worker.Analyzer.Analyze(new RootMapAnalysisRequest(
+                bodies[index], recorder.AllocatingMethods, recorder.AllocatingConstructedMethods)))
+            : worker.Analyzer.Analyze(new RootMapAnalysisRequest(
+                bodies[index], program.AllocatingMethods, program.ConstructedAllocatingMethods)));
         var ordinaryMaps = ImmutableDictionary.CreateBuilder<EntityKey,
             MethodRootMap>();
         for (var index = 0; index < ordinary.Length; index++)
@@ -124,7 +135,10 @@ internal sealed class CompilationRootMapBuilder(
             RootMaps = ordinaryMaps.ToImmutable(),
             ConstructedRootMaps = constructedMaps.ToImmutable(),
         };
-        _invariants.Validate(types, fields, methods, updated, typeClassifier);
+        _invariants.Validate(types, fields, methods, updated, typeClassifier,
+            units is null || units.RootMapSources.IsEmpty
+                ? null
+                : units.RootMapSources.Keys.ToHashSet(StringComparer.Ordinal));
         forkSet.Publisher.Publish();
         return updated;
     }

@@ -71,9 +71,12 @@ public sealed partial class SdkToolchainContractTests
 
         Assert.Contains("NetWasmSdkComponentize", targetNames);
         Assert.Contains("NetWasmSdkPublishPortable", targetNames);
-        Assert.Contains("NetWasmSdkPublishBrowser", targetNames);
-        Assert.Contains("NetWasmSdkPublishJsModule", targetNames);
-        Assert.Contains("NetWasmSdkPublishWitWorker", targetNames);
+        Assert.Contains("NetWasmSdkBrowserSite", targetNames);
+        Assert.Contains("NetWasmSdkJsModuleSite", targetNames);
+        Assert.Contains("NetWasmSdkWitWorkerSite", targetNames);
+        Assert.Contains("NetWasmCollectSiteFiles", targetNames);
+        Assert.Contains("NetWasmResolveSiteFiles", targetNames);
+        Assert.Contains("NetWasmSdkWriteSite", targetNames);
         Assert.Contains("NetWasmSdkComputeRunArguments", targetNames);
         Assert.DoesNotContain("NetWasmSdkRejectWorkerRun", targetNames);
         Assert.DoesNotContain("NetWasmSdkRejectLibraryLifecycle", targetNames);
@@ -178,8 +181,8 @@ public sealed partial class SdkToolchainContractTests
         Assert.Contains("--replace-result", local.Value, StringComparison.Ordinal);
         // Issue #140: a browser project serves the site its staged publish writes.
         var browser = Assert.Single(runArguments, element => element.Value.Contains("netwasm-serve.mjs", StringComparison.Ordinal));
-        Assert.Contains("--root", browser.Value, StringComparison.Ordinal);
-        Assert.Contains("--stage", browser.Value, StringComparison.Ordinal);
+        Assert.Contains("--site", browser.Value, StringComparison.Ordinal);
+        Assert.Contains("$(_NetWasmSiteMapPath)", browser.Value, StringComparison.Ordinal);
         Assert.Equal(2, runArguments.Length);
     }
 
@@ -212,9 +215,9 @@ public sealed partial class SdkToolchainContractTests
 
     [Theory]
     [InlineData("NetWasmSdkPrepareLocalDeployment", "NetWasmWriteExecutionRequestTask")]
-    [InlineData("NetWasmSdkPublishJsModule", "NetWasmWritePageHostEntryTask")]
-    [InlineData("NetWasmSdkPublishJsModule", "NetWasmWriteWorkerHostEntryTask")]
-    [InlineData("NetWasmSdkPublishWitWorker", "NetWasmWriteWitWorkerHostEntryTask")]
+    [InlineData("NetWasmSdkJsModuleSite", "NetWasmWritePageHostEntryTask")]
+    [InlineData("NetWasmSdkJsModuleSite", "NetWasmWriteWorkerHostEntryTask")]
+    [InlineData("NetWasmSdkWitWorkerSite", "NetWasmWriteWitWorkerHostEntryTask")]
     public void ExecutionConsumersShareTheCompleteArgumentVector(string targetName, string taskName)
     {
         XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
@@ -314,18 +317,18 @@ public sealed partial class SdkToolchainContractTests
         }
     }
 
+    // Templates leave SDK selection to the user's dotnet; the SDK itself rejects
+    // an SDK older than its minimum.
     [Fact]
-    public void TemplatesPinTheMinimumSdkVersionThatTheSdkValidates()
+    public void TheSdkValidatesTheMinimumSdkVersionThatTemplatesNoLongerPin()
     {
         XNamespace ns = "http://schemas.microsoft.com/developer/msbuild/2003";
-        var minimum = (string?)LoadSdkTarget("NetWasm.Sdk.Tfm.props").Descendants(ns + "_NetWasmMinimumSdkVersion")
-            .Single();
-        foreach (var template in new[] { "NetWasm.App/base", "NetWasm.Library" })
-        {
-            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(
-                FindRepositoryRoot(), "src", "NetWasm.Templates", "content", template, "global.json")));
-            Assert.Equal(minimum, json.RootElement.GetProperty("sdk").GetProperty("version").GetString());
-        }
+        Assert.Equal("10.0.303", (string?)LoadSdkTarget("NetWasm.Sdk.Tfm.props")
+            .Descendants(ns + "_NetWasmMinimumSdkVersion").Single());
+        Assert.Contains(LoadSdkTarget("NetWasm.Toolchain.targets").Descendants(ns + "Target"),
+            target => (string?)target.Attribute("Name") == "NetWasmSdkValidateSdkVersion");
+        var templates = Path.Combine(FindRepositoryRoot(), "src", "NetWasm.Templates", "content");
+        Assert.Empty(Directory.EnumerateFiles(templates, "global.json", SearchOption.AllDirectories));
     }
 
     // Only the SDK version check reads the SDK's own RID, to name a
@@ -448,6 +451,50 @@ public sealed partial class SdkToolchainContractTests
             StringComparison.Ordinal);
         Assert.Contains("$(NetWasmRuntimePackMaterializationIdentityPath)",
             clean.ToString(SaveOptions.DisableFormatting),
+            StringComparison.Ordinal);
+    }
+
+    // MSBuild on .NET runs the compiler's and the runtime pack's .NET tasks in its own process: a
+    // task host of their own for each task cost a process start, many times in every build. MSBuild
+    // on .NET Framework (Visual Studio's) cannot load them, so it, or a build that asks, keeps the
+    // .NET task host.
+    [Theory]
+    [InlineData("src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets")]
+    [InlineData("src/NetWasm.Runtime.Pack/buildTransitive/NetWasm.Runtime.Pack.targets")]
+    public void BuildTasksRunInMsBuildOnDotNetAndInATaskHostElsewhere(string path)
+    {
+        var targetNamespace = XNamespace.Get(
+            "http://schemas.microsoft.com/developer/msbuild/2003");
+        var targets = XDocument.Load(Path.Combine(FindRepositoryRoot(), path));
+        var tasks = targets.Root!.Elements(targetNamespace + "UsingTask").ToArray();
+        Assert.NotEmpty(tasks);
+        Assert.All(tasks, task =>
+        {
+            Assert.Equal("$(_NetWasmBuildTaskFactory)", (string?)task.Attribute("TaskFactory"));
+            Assert.Equal("NET", (string?)task.Attribute("Runtime"));
+        });
+        var factory = Assert.Single(targets.Root.Elements(targetNamespace + "PropertyGroup")
+            .Elements(targetNamespace + "_NetWasmBuildTaskFactory"));
+        Assert.Equal("TaskHostFactory", factory.Value);
+        Assert.Equal("'$(MSBuildRuntimeType)' != 'Core' OR '$(NetWasmIsolateBuildTasks)' == 'true'",
+            (string?)factory.Attribute("Condition"));
+    }
+
+    // An IDE's or dotnet watch's design-time build runs Compile to read the compiler's command
+    // line; it resolves no build environment, so it compiles no module and materializes no runtime.
+    [Theory]
+    [InlineData("src/NetWasm.Compiler.Tasks/buildTransitive/NetWasm.Compiler.Tasks.targets", "NetWasmCompileCoreModule")]
+    [InlineData("src/NetWasm.Runtime.Pack/buildTransitive/NetWasm.Runtime.Pack.targets", "NetWasmRuntimePackMaterialize")]
+    [InlineData("src/NetWasm.Sdk/Sdk/NetWasm.Toolchain.targets", "NetWasmSdkResolveBuildEnvironment")]
+    [InlineData("src/NetWasm.Sdk/Sdk/NetWasm.Toolchain.targets", "NetWasmSdkComponentize")]
+    public void DesignTimeBuildsCompileNoModule(string path, string targetName)
+    {
+        var targetNamespace = XNamespace.Get(
+            "http://schemas.microsoft.com/developer/msbuild/2003");
+        var targets = XDocument.Load(Path.Combine(FindRepositoryRoot(), path));
+        var target = Assert.Single(targets.Descendants(targetNamespace + "Target"),
+            candidate => (string?)candidate.Attribute("Name") == targetName);
+        Assert.Contains("'$(DesignTimeBuild)' != 'true'", (string?)target.Attribute("Condition"),
             StringComparison.Ordinal);
     }
 

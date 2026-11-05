@@ -9,7 +9,9 @@
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
   <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteDeploymentTask"
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
-  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteBrowserRunStageTask"
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmResolveSiteFilesTask"
+             AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
+  <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteSiteMapTask"
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />
   <UsingTask TaskName="NetWasm.Hosting.Build.MsBuild.NetWasmWriteExecutionDescriptorTask"
              AssemblyFile="$(MSBuildThisFileDirectory)../tasks/net10.0/NetWasm.Hosting.Build.dll" />

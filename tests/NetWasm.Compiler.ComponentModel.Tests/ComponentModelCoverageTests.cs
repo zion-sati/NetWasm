@@ -132,6 +132,18 @@ public sealed class ComponentModelCoverageTests
     }
 
     [Fact]
+    public void ANativeWasmToolsRunsInPlaceOfTheWasiOneUnderNode()
+    {
+        var wasi = ExternalToolCommand.ForWasmTools("node", "run.mjs", "wasm-tools.wasm", " ");
+        var native = ExternalToolCommand.ForWasmTools("node", "run.mjs", "wasm-tools.wasm", "/tools/wasm-tools");
+
+        Assert.Equal("node", wasi.Executable);
+        Assert.Equal(["--disable-warning=ExperimentalWarning", "run.mjs", "wasm-tools.wasm"], wasi.ArgumentPrefix);
+        Assert.Equal("/tools/wasm-tools", native.Executable);
+        Assert.Empty(native.ArgumentPrefix);
+    }
+
+    [Fact]
     public void OptimizerAndPackageValidatorRejectMissingPaths()
     {
         using var files = new ComponentModelTestFiles();
@@ -174,7 +186,6 @@ public sealed class ComponentModelCoverageTests
         var environment = new NoopEnvironment();
         var host = new NoopHost();
         var managedExecutables = new NoopManagedExecutables();
-        var exports = new NoopExports();
         var optimizer = new NoopOptimizer();
         var coreExecution = new NoopCoreExecution();
         var coreFactory = new ComponentCoreModuleWorkspaceFactory(new SystemFileDeleter());
@@ -221,18 +232,15 @@ public sealed class ComponentModelCoverageTests
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinker(
             coreValidator, coreFactory, null!));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            null!, environment, host, managedExecutables, exports, optimizer, new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations()));
+            null!, environment, host, managedExecutables, optimizer, new WasmOptimizationSettingsResolver()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            merge, null!, host, managedExecutables, exports, optimizer, new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations()));
+            merge, null!, host, managedExecutables, optimizer, new WasmOptimizationSettingsResolver()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            merge, environment, null!, managedExecutables, exports, optimizer, new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations()));
+            merge, environment, null!, managedExecutables, optimizer, new WasmOptimizationSettingsResolver()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            merge, environment, host, null!, exports, optimizer, new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations()));
+            merge, environment, host, null!, optimizer, new WasmOptimizationSettingsResolver()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            merge, environment, host, managedExecutables, null!, optimizer, new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations()));
-        Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleLinkExecution(
-            merge, environment, host, managedExecutables, exports, null!, new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations()));
-        Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleMergeRunner(null!));
+            merge, environment, host, managedExecutables, null!, new WasmOptimizationSettingsResolver()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCoreModuleOptimizer(
             null!, new SystemFileExistence(),
             new WasmCoreModuleValidator(new NoopPackageOperations()),
@@ -425,8 +433,7 @@ public sealed class ComponentModelCoverageTests
                 new NoopEnvironment(),
                 new NoopHost(),
                 new NoopManagedExecutables(),
-                new NoopExports(),
-                new NoopOptimizer(), new WasmOptimizationSettingsResolver(), new NoopInlineAnnotations())
+                new NoopOptimizer(), new WasmOptimizationSettingsResolver())
             .Run(request, workspace);
 
         Assert.False(File.Exists(environment));
@@ -489,20 +496,14 @@ public sealed class ComponentModelCoverageTests
         }
     }
 
-    private sealed class NoopExports : IWasmCoreModuleExportEditor
-    {
-        public void Rewrite(string inputPath, string outputPath, WasmExportSelection selection)
-        {
-        }
-    }
-
     private sealed class NoopOptimizer : IComponentCoreModuleOptimizer
     {
         public void Optimize(
             string inputPath,
             string outputPath,
             ComponentTarget target,
-            FinalWasmOptimization optimization)
+            FinalWasmOptimization optimization,
+            bool converge)
         {
         }
     }

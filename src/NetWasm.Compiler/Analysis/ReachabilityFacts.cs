@@ -57,7 +57,11 @@ internal sealed record ReachableMethodAnalysis(
     ManagedMethodBody Body,
     ImmutableArray<EntityKey> CatchTypes,
     ImmutableArray<ReachabilityExceptionRequirement> Exceptions,
-    ReachabilityInstructionAnalysis Instructions);
+    ReachabilityInstructionAnalysis Instructions)
+{
+    // What the method adds to the whole program, fingerprinted by the worker that analysed it.
+    public NetWasm.Compiler.Metadata.Inputs.InputFingerprint? Contribution { get; init; }
+}
 
 internal sealed record ReachabilityImportAnalysis(
     bool IsHandled,

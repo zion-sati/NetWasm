@@ -30,7 +30,8 @@ public static class BrowserComponentCoreModules
         var tools = BrowserLinkPlanValidation.CreateToolCapture(recorder);
         var inline = new BrowserLinkInlineCapture(recorder);
         var execution = new ComponentCoreModuleLinkExecution(
-            new ComponentCoreModuleMergeRunner(tools), new EmscriptenEnvironmentShimWriter(modules),
+            new ComponentCoreModuleMergeRunner(tools, inline, new BrowserLinkExportCapture(recorder)),
+            new EmscriptenEnvironmentShimWriter(modules),
             new NetWasmHostComponentShimWriter(
             [
                 new(ManagedExecutableCompletionShape.Synchronous, new PortableCommandHostComponentShimWriter(modules)),
@@ -41,10 +42,9 @@ public static class BrowserComponentCoreModules
                 new(ManagedExecutableCompletionShape.Synchronous, new SynchronousManagedExecutableComponentAdapterWriter(modules)),
                 new(ManagedExecutableCompletionShape.Asynchronous, new AsynchronousManagedExecutableComponentAdapterWriter(modules)),
             ]),
-            new BrowserLinkExportCapture(recorder),
             new ComponentCoreModuleOptimizer(tools, new BrowserLinkCaptureFileExistence(state),
                 new WasmCoreModuleValidator(new BrowserLinkValidationCapture(recorder)), inline),
-            new WasmOptimizationSettingsResolver(), inline);
+            new WasmOptimizationSettingsResolver());
         execution.Run(request, new ComponentCoreModuleWorkspace(new BrowserLinkFileCleanupCapture(owned),
             workspace.EnvironmentModulePath, workspace.HostModulePath, workspace.ManagedExecutableAdapterModulePath,
             workspace.MergedModulePath, workspace.SanitizedModulePath, workspace.SanitizedRuntimeModulePath));

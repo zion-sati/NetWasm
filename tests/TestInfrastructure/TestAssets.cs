@@ -418,9 +418,7 @@ public sealed class TestAssets : IDisposable
         IReadOnlyList<string>? defines = null,
         IReadOnlyList<string>? analyzers = null)
     {
-        var sdkVersion = sdkVersionOverride ?? File.ReadAllText(Path.Combine(root, "global.json"))
-            .Split("\"version\": \"", StringSplitOptions.None)[1]
-            .Split('"')[0];
+        var sdkVersion = sdkVersionOverride ?? ReadSdkVersion(root);
         var dotnet = DotNetHost.Executable;
         var csc = Path.Combine(
             Path.GetDirectoryName(dotnet)!,
@@ -503,6 +501,17 @@ public sealed class TestAssets : IDisposable
             throw new RoslynCompilationException(standardOutput + standardError);
         }
     }
+
+    // The SDK version global.json pins for the repository build.
+    public static string RepositorySdkVersion => s_repositorySdkVersion.Value;
+
+    private static readonly Lazy<string> s_repositorySdkVersion =
+        new(static () => ReadSdkVersion(FindRepositoryRoot()));
+
+    private static string ReadSdkVersion(string root) =>
+        File.ReadAllText(Path.Combine(root, "global.json"))
+            .Split("\"version\": \"", StringSplitOptions.None)[1]
+            .Split('"')[0];
 
     public static string FindRepositoryRoot()
     {

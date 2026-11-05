@@ -40,7 +40,9 @@ public sealed class CompilationPipelineExecutorTests
         var executor = Assert.IsAssignableFrom<ICompilationPipelineExecutor>(fixture.Executor);
         var options = fixture.Options(metrics, aliases);
 
-        var result = executor.Execute(options);
+        var outcome = executor.Execute(options);
+        var result = outcome.Full!;
+        Assert.Same(result.ApplicationModule, outcome.Module.ApplicationModule);
 
         Assert.Same(fixture.Emission.Result.Module, result.ApplicationModule);
         Assert.Same(fixture.Program, result.Program);
@@ -198,7 +200,12 @@ public sealed class CompilationPipelineExecutorTests
                 Capability<ICompilationStackTraceArtifactBinder>("stack-binding", invoke: (_, args) =>
                     StackBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ISymbolFormatterFactory>("symbols", ValidationTestData.Symbols()),
-                Capability<ICompilationMetricsRequestFactory>("metrics-create", metrics));
+                Capability<ICompilationMetricsRequestFactory>("metrics-create", metrics),
+                Capability<ICompilationInputDetector>("inputs-detect", invoke: (_, _) => null),
+                Capability<ICompilationInputRecorder>("inputs-record"),
+                new NoCompiledUnits(Calls),
+                new NoEarlyCutoff(),
+                new NoKeptCompiles());
         }
 
         public CompilationPipelineExecutor Executor { get; }
@@ -236,6 +243,7 @@ public sealed class CompilationPipelineExecutorTests
             yield return "lease";
             yield return "lease-snapshot";
             yield return "metadata-stage";
+            yield return "inputs-detect";
             yield return "symbols";
             yield return "prepare";
             yield return "entry-artifact";
@@ -243,6 +251,7 @@ public sealed class CompilationPipelineExecutorTests
             yield return "program-artifact";
             yield return "layouts";
             yield return "layout-artifact";
+            yield return "units-open";
             yield return "roots";
             yield return "root-artifact";
             yield return "emission";
@@ -254,10 +263,40 @@ public sealed class CompilationPipelineExecutorTests
             yield return "success-artifact";
             yield return "stack-binding";
             yield return "diagnostic-binding";
+            yield return "inputs-record";
             yield return "lease";
             yield return "lease-dispose";
             if (metrics)
                 yield return "metric-complete";
+        }
+
+        // Without units there is no compile to keep.
+        private sealed class NoKeptCompiles : NetWasm.Compiler.Wasm.Units.IUnitKeptCompileCommitter
+        {
+            public void Commit(string location, NetWasm.Compiler.Wasm.Units.UnitKeptCompile kept) =>
+                throw new InvalidOperationException("A compile was kept without units.");
+        }
+
+        // Without detected inputs the pipeline never asks for the early cutoff.
+        private sealed class NoEarlyCutoff : IEarlyCutoffEmitter
+        {
+            public EarlyCutoffEmission Emit(EarlyCutoffRequest request) =>
+                throw new InvalidOperationException("The early cutoff was asked without detected inputs.");
+        }
+
+        private sealed class NoCompiledUnits(List<(string Capability, object?[] Arguments)> calls) : ICompiledUnitStateFactory
+        {
+            public NetWasm.Compiler.Wasm.Units.CompiledUnitState? Create(
+                CompilerOptions options,
+                MetadataCompilationSnapshot metadata,
+                CompilationInputObservation? inputs,
+                ReachableProgram program,
+                NetWasm.Compiler.ComponentModel.Optimization.BranchPrefixDuplicationPolicy branchPrefixDuplication,
+                NetWasm.Compiler.ComponentModel.Optimization.DispatcherEliminationPolicy dispatcherElimination)
+            {
+                calls.Add(("units-open", [options, metadata, inputs, program, branchPrefixDuplication, dispatcherElimination]));
+                return null;
+            }
         }
 
         private T Capability<T>(string name, object? result = null, Func<MethodInfo, object?[], object?>? invoke = null) where T : class

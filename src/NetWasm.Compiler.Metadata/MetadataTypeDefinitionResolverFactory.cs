@@ -19,7 +19,7 @@ public sealed class MetadataTypeDefinitionResolverFactory(
         ArgumentNullException.ThrowIfNull(snapshot);
         var materialized = _materializations.Create(snapshot);
         return new MetadataTypeDefinitionResolver(
-            materialized.Types.Values.ToImmutableArray(),
+            materialized.TypesByName,
             materialized.ReferenceAssemblyAliases,
             _finders.Create(snapshot),
             new MetadataAvailabilityValidator(new MetadataLifetime()));

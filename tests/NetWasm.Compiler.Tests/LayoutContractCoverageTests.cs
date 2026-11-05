@@ -19,10 +19,13 @@ public sealed class LayoutContractCoverageTests
     {
         Assert.Throws<ArgumentNullException>(() =>
             new AssignableTypeMetadataBuilderFactory(null!,
-                new TypeRelationshipClassifierFactory()));
+                new TypeRelationshipClassifierFactory(), new TypeRelationshipKeyResolverFactory()));
         Assert.Throws<ArgumentNullException>(() =>
             new AssignableTypeMetadataBuilderFactory(
-                new UnusedImplementedInterfaceResolverFactory(), null!));
+                new UnusedImplementedInterfaceResolverFactory(), null!, new TypeRelationshipKeyResolverFactory()));
+        Assert.Throws<ArgumentNullException>(() =>
+            new AssignableTypeMetadataBuilderFactory(
+                new UnusedImplementedInterfaceResolverFactory(), new TypeRelationshipClassifierFactory(), null!));
         Assert.Throws<ArgumentNullException>(() =>
             new ManagedLayoutForkPublisher(null!, []));
         Assert.Throws<ArgumentNullException>(() =>
@@ -186,6 +189,7 @@ public sealed class LayoutContractCoverageTests
                 Definition(TypeKey, "Coverage.Node", valueType: false),
             ]),
             new NoTypeRelationships(),
+            UnboundedTypeRelationshipKeys.Instance,
             types,
             state);
 
@@ -247,6 +251,7 @@ public sealed class LayoutContractCoverageTests
             new FixedIdentityResolver(interfaceType),
             new TypeDefinitions([interfaceDefinition, genericDefinition]),
             new ThrowingTypeRelationships(),
+            UnboundedTypeRelationshipKeys.Instance,
             types,
             state);
 
@@ -256,8 +261,11 @@ public sealed class LayoutContractCoverageTests
         Assert.Empty(state.Segments);
     }
 
-    [Fact]
-    public void AssignableTypeMetadataWritesClosedArrayAndVariantTargets()
+    [Theory]
+    [InlineData("unbounded")]
+    [InlineData("filed")]
+    [InlineData("unfiled-array")]
+    public void AssignableTypeMetadataWritesClosedArrayAndVariantTargets(string keys)
     {
         var argument = CliTypeIdentity.Named(
             Assembly,
@@ -341,6 +349,14 @@ public sealed class LayoutContractCoverageTests
                 classDefinition,
             ]),
             new AllTypeRelationships(),
+            keys switch
+            {
+                "unbounded" => UnboundedTypeRelationshipKeys.Instance,
+                // The candidate reaches the variant's key and the array's, or not the array's,
+                // which an unbounded array is classified against anyway.
+                "filed" => new KeyTable(argument, ["variant", "array"], array, unboundedArray: false),
+                _ => new KeyTable(argument, ["variant"], array, unboundedArray: true),
+            },
             types,
             state);
 
@@ -353,6 +369,47 @@ public sealed class LayoutContractCoverageTests
         Assert.Equal(
             (byte[])[7, 0, 0, 0, 9, 0, 0, 0],
             segment.Data);
+    }
+
+    [Fact]
+    public void AssignableTypeMetadataClassifiesOnlyTargetsUnderReachedKeys()
+    {
+        var argument = CliTypeIdentity.Named(Assembly, "Coverage", "Argument", isValueType: false);
+        var array = CliTypeIdentity.SzArray(argument);
+        var types = new ManagedTypeLayouts(
+            ImmutableDictionary<EntityKey, ObjectLayout>.Empty,
+            ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty,
+            ImmutableDictionary<string, ObjectLayout>.Empty,
+            ImmutableDictionary<CliTypeIdentity, ObjectLayout>.Empty.Add(array, new ObjectLayout(9, 8, [])),
+            new ManagedValueLayoutState(),
+            WasmTargetLayout.For(WasmTarget.Wasm32),
+            -1,
+            -1,
+            -1,
+            -1);
+        var builder = new AssignableTypeMetadataBuilder(
+            new FixedIdentityResolver(argument),
+            new TypeDefinitions([Definition(new EntityKey(Assembly, 24), "Coverage.Argument", valueType: false)]),
+            new AllTypeRelationships(),
+            new KeyTable(argument, ["variant"], array, unboundedArray: false),
+            types,
+            new ManagedStaticDataBuildState());
+
+        Assert.Equal(default, builder.Build(argument));
+    }
+
+    // The candidate reaches the named keys; the array target files under "array" unless unbounded.
+    private sealed class KeyTable(
+        CliTypeIdentity candidate,
+        string[] reached,
+        CliTypeIdentity array,
+        bool unboundedArray) : ITypeRelationshipKeyResolver
+    {
+        public TypeRelationshipKeys Resolve(CliTypeIdentity type) =>
+            type == candidate ? new("candidate", reached.ToHashSet(StringComparer.Ordinal), false) :
+            type == array ? new("array", new HashSet<string> { "array" }, unboundedArray) :
+            type.Shape == CliTypeShape.GenericInstantiation ? new("variant", new HashSet<string> { "variant" }, false) :
+            new(type.CanonicalName, new HashSet<string> { type.CanonicalName }, false);
     }
 
     [Fact]

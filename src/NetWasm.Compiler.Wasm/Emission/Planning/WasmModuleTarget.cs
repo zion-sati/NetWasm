@@ -65,14 +65,14 @@ internal sealed record InstructionModuleTarget(
     IReadOnlyDictionary<string, DispatchCallSiteModel> DispatchCallSites,
     IReadOnlyDictionary<string, TypeTestSiteModel> TypeTestSites,
     IReadOnlyDictionary<string, MethodInstanceModel> CallableMethods,
-    ImmutableArray<CliTypeIdentity> DelegateTypes,
+    IReadOnlyList<CliTypeIdentity> DelegateTypes,
     ImmutableDictionary<(EntityKey Method, int ParameterIndex), HostCallbackDeclaration>
         HostCallbacks,
     IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> JavaScriptAsyncBindings,
     StackTraceMethodPlan StackTraceMethods,
     RuntimeImportSelection RuntimeImportSelection,
     FinalizationPlan Finalization,
-    ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites,
+    IReadOnlyDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites,
     ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
         ObjectArrayDelegateAdapters,
     MemberExecutionPlan MemberExecution,

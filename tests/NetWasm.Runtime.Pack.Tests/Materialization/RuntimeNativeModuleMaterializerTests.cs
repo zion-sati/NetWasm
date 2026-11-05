@@ -212,6 +212,25 @@ public sealed class RuntimeNativeModuleMaterializerTests
     }
 
     [Fact]
+    public void ANativeWasmToolsValidatesBothFreshAndCachedRuntimes()
+    {
+        var fresh = new Fixture();
+        var request = Request();
+        request = request with { Consumer = request.Consumer with { NativeWasmToolsPath = "/tools/wasm-tools" } };
+
+        fresh.Create().Materialize(request);
+
+        Assert.Equal("/tools/wasm-tools", Assert.Single(fresh.ValidationRequests).NativeWasmToolsPath);
+        var warm = new Fixture();
+        warm.Cached = new(RuntimeMaterializationCacheOutcome.Hit, warm.Bytes, Digest(warm.Bytes))
+        { NativeEvidence = new(warm.Expected, warm.Validated) };
+
+        warm.Create().Materialize(request);
+
+        Assert.Equal("/tools/wasm-tools", Assert.Single(warm.ValidationRequests).NativeWasmToolsPath);
+    }
+
+    [Fact]
     public void WarmHitRevalidatesFrozenBoundsCurrentProviderEvidenceAndExportSignatures()
     {
         var fixture = new Fixture();

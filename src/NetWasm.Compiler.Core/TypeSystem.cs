@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using NetWasm.Compiler.Core.NativeInterop;
 
 namespace NetWasm.Compiler.Core;
@@ -60,6 +64,9 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         bool isRequiredModifier = false)
     {
         CanonicalName = canonicalName;
+        // Identities key the compiler's hottest dictionaries; hashing the canonical name, which
+        // for a generic instantiation is long, on every lookup cost more than the lookup.
+        _hashCode = StringComparer.Ordinal.GetHashCode(canonicalName);
         Shape = shape;
         StackKind = stackKind;
         IsValueType = isValueType;
@@ -76,6 +83,8 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         CustomModifier = customModifier;
         IsRequiredModifier = isRequiredModifier;
     }
+
+    private readonly int _hashCode;
 
     public string CanonicalName { get; }
     public CliTypeShape Shape { get; }
@@ -128,16 +137,55 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
+    // Primitives are a handful of identities the compiler asks for constantly, so each is made
+    // once and shared. A new one replaces the map by compare-and-swap.
+    private static ImmutableDictionary<(string Name, CliValueKind StackKind, bool IsValueType), CliTypeIdentity>
+        s_primitives = ImmutableDictionary<(string, CliValueKind, bool), CliTypeIdentity>.Empty;
+
     public static CliTypeIdentity Primitive(
         string name,
         CliValueKind stackKind,
-        bool isValueType = true) => new(
-            $"primitive:{name}",
-            CliTypeShape.Primitive,
-            stackKind,
-            isValueType);
+        bool isValueType = true)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return Volatile.Read(ref s_primitives).TryGetValue((name, stackKind, isValueType), out var shared)
+            ? shared
+            : ImmutableInterlocked.GetOrAdd(
+                ref s_primitives,
+                (name, stackKind, isValueType),
+                static key => new CliTypeIdentity(
+                    $"primitive:{key.Item1}",
+                    CliTypeShape.Primitive,
+                    key.Item2,
+                    key.Item3));
+    }
+
+    // Identities are immutable and every factory is a function of its inputs, so equal inputs
+    // share one identity. Named types are keyed by value; derived shapes by the identities
+    // they are made from, so a cached identity is exactly the one the factory would build.
+    // Each compile makes the same identities millions of times; sharing them removes most of
+    // the allocation and the canonical names built for them.
+    private static readonly ConcurrentDictionary<(string Assembly, string Namespace, string Name, bool IsValueType), CliTypeIdentity>
+        s_named = new();
+    private static readonly ConcurrentDictionary<InstantiationKey, CliTypeIdentity> s_instantiations = new();
+    private static readonly ConditionalWeakTable<CliTypeIdentity, CliTypeIdentity> s_byReferences = new();
+    private static readonly ConditionalWeakTable<CliTypeIdentity, CliTypeIdentity> s_szArrays = new();
 
     public static CliTypeIdentity Named(
+        AssemblyIdentity assembly,
+        string @namespace,
+        string name,
+        bool isValueType)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        var key = (assembly.Name ?? "", @namespace ?? "", name, isValueType);
+        return s_named.TryGetValue(key, out var shared)
+            ? shared
+            : s_named.GetOrAdd(key, static key => CreateNamed(
+                new AssemblyIdentity(key.Assembly), key.Namespace, key.Name, key.IsValueType));
+    }
+
+    private static CliTypeIdentity CreateNamed(
         AssemblyIdentity assembly,
         string @namespace,
         string name,
@@ -276,12 +324,18 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
         return identity.WithStackStorageType(type.EnumUnderlyingType);
     }
 
-    public static CliTypeIdentity SzArray(CliTypeIdentity elementType) => new(
-        $"{elementType.CanonicalName}[]",
-        CliTypeShape.SzArray,
-        CliValueKind.ManagedReference,
-        isValueType: false,
-        elementType);
+    public static CliTypeIdentity SzArray(CliTypeIdentity elementType)
+    {
+        ArgumentNullException.ThrowIfNull(elementType);
+        return s_szArrays.TryGetValue(elementType, out var shared)
+            ? shared
+            : s_szArrays.GetValue(elementType, static element => new(
+                $"{element.CanonicalName}[]",
+                CliTypeShape.SzArray,
+                CliValueKind.ManagedReference,
+                isValueType: false,
+                element));
+    }
 
     public static CliTypeIdentity Array(CliTypeIdentity elementType, int rank) => new(
         $"{elementType.CanonicalName}[{(rank == 1 ? "*" : new string(',', rank - 1))}]",
@@ -293,14 +347,56 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
 
     public static CliTypeIdentity GenericInstantiation(
         CliTypeIdentity genericType,
-        ImmutableArray<CliTypeIdentity> typeArguments) => new(
-            $"{genericType.CanonicalName}<{string.Join(',', typeArguments.Select(type => type.CanonicalName))}>",
-            CliTypeShape.GenericInstantiation,
-            genericType.StackKind,
-            genericType.IsValueType,
-            elementType: genericType,
-            typeArguments: typeArguments,
-            stackStorageType: genericType.StackStorageType);
+        ImmutableArray<CliTypeIdentity> typeArguments)
+    {
+        ArgumentNullException.ThrowIfNull(genericType);
+        typeArguments = typeArguments.IsDefault ? [] : typeArguments;
+        var key = new InstantiationKey(genericType, typeArguments);
+        return s_instantiations.TryGetValue(key, out var shared)
+            ? shared
+            : s_instantiations.GetOrAdd(key, static key => new(
+                $"{key.GenericType.CanonicalName}<{string.Join(',', key.TypeArguments.Select(type => type.CanonicalName))}>",
+                CliTypeShape.GenericInstantiation,
+                key.GenericType.StackKind,
+                key.GenericType.IsValueType,
+                elementType: key.GenericType,
+                typeArguments: key.TypeArguments,
+                stackStorageType: key.GenericType.StackStorageType));
+    }
+
+    // An instantiation by the identities it is made from (by reference): a variant of an
+    // argument, such as one with another stack kind, is another key.
+    private readonly struct InstantiationKey(
+        CliTypeIdentity genericType,
+        ImmutableArray<CliTypeIdentity> typeArguments) : IEquatable<InstantiationKey>
+    {
+        public CliTypeIdentity GenericType { get; } = genericType;
+        public ImmutableArray<CliTypeIdentity> TypeArguments { get; } = typeArguments;
+
+        public bool Equals(InstantiationKey other)
+        {
+            if (!ReferenceEquals(GenericType, other.GenericType) ||
+                TypeArguments.Length != other.TypeArguments.Length)
+            {
+                return false;
+            }
+            for (var index = 0; index < TypeArguments.Length; index++)
+            {
+                if (!ReferenceEquals(TypeArguments[index], other.TypeArguments[index])) return false;
+            }
+            return true;
+        }
+
+        public override bool Equals(object? obj) => obj is InstantiationKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(RuntimeHelpers.GetHashCode(GenericType));
+            foreach (var argument in TypeArguments) hash.Add(RuntimeHelpers.GetHashCode(argument));
+            return hash.ToHashCode();
+        }
+    }
 
     public static CliTypeIdentity GenericParameter(bool method, int index) => new(
         $"{(method ? "!!" : "!")}{index}",
@@ -324,12 +420,18 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             genericParameterIndex: index);
     }
 
-    public static CliTypeIdentity ManagedByReference(CliTypeIdentity elementType) => new(
-        $"{elementType.CanonicalName}&",
-        CliTypeShape.ManagedByReference,
-        CliValueKind.ManagedAddress,
-        isValueType: true,
-        elementType);
+    public static CliTypeIdentity ManagedByReference(CliTypeIdentity elementType)
+    {
+        ArgumentNullException.ThrowIfNull(elementType);
+        return s_byReferences.TryGetValue(elementType, out var shared)
+            ? shared
+            : s_byReferences.GetValue(elementType, static element => new(
+                $"{element.CanonicalName}&",
+                CliTypeShape.ManagedByReference,
+                CliValueKind.ManagedAddress,
+                isValueType: true,
+                element));
+    }
 
     public static CliTypeIdentity UnmanagedPointer(CliTypeIdentity elementType) => new(
         $"{elementType.CanonicalName}*",
@@ -442,20 +544,42 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             }),
             CliTypeShape.GenericInstantiation => GenericInstantiation(
                 ElementType!.Substitute(typeArguments, methodArguments),
-                [.. TypeArguments.Select(argument =>
-                    argument.Substitute(typeArguments, methodArguments))]),
+                SubstituteArguments(TypeArguments, typeArguments, methodArguments)),
             _ => this,
         };
     }
 
+    // The arguments substituted; the same array when none changes, so the instantiation
+    // is found again without allocating.
+    private static ImmutableArray<CliTypeIdentity> SubstituteArguments(
+        ImmutableArray<CliTypeIdentity> arguments,
+        ImmutableArray<CliTypeIdentity> typeArguments,
+        ImmutableArray<CliTypeIdentity> methodArguments)
+    {
+        CliTypeIdentity[]? changed = null;
+        for (var index = 0; index < arguments.Length; index++)
+        {
+            var substituted = arguments[index].Substitute(typeArguments, methodArguments);
+            if (changed is null && ReferenceEquals(substituted, arguments[index])) continue;
+            if (changed is null)
+            {
+                changed = new CliTypeIdentity[arguments.Length];
+                for (var copied = 0; copied < index; copied++) changed[copied] = arguments[copied];
+            }
+            changed[index] = substituted;
+        }
+        return changed is null ? arguments : ImmutableCollectionsMarshal.AsImmutableArray(changed);
+    }
+
     public bool Equals(CliTypeIdentity? other) =>
+        ReferenceEquals(this, other) ||
         other is not null &&
+        _hashCode == other._hashCode &&
         StringComparer.Ordinal.Equals(CanonicalName, other.CanonicalName);
 
     public override bool Equals(object? obj) => Equals(obj as CliTypeIdentity);
 
-    public override int GetHashCode() =>
-        StringComparer.Ordinal.GetHashCode(CanonicalName);
+    public override int GetHashCode() => _hashCode;
 
     public override string ToString() => CanonicalName;
 }
@@ -485,6 +609,17 @@ public readonly record struct AssemblyIdentity(string Name)
 public readonly record struct EntityKey(AssemblyIdentity Assembly, int MetadataToken)
 {
     public override string ToString() => $"{Assembly}:0x{MetadataToken:x8}";
+
+    // Keys index the compiler's largest maps. The token separates entities within an
+    // assembly; the assembly name's length and ends separate assemblies well enough without
+    // hashing its text on every lookup (equality still compares it).
+    public override int GetHashCode()
+    {
+        var name = Assembly.Name;
+        return name is null || name.Length == 0
+            ? MetadataToken
+            : HashCode.Combine(MetadataToken, name.Length, name[0], name[^1]);
+    }
 }
 
 public enum CliTypeLayoutKind
@@ -526,9 +661,13 @@ public sealed record TypeDefinitionModel(
     public ImmutableArray<EnumMemberModel> EnumMembers { get; init; } = [];
     public bool IsFlagsEnum { get; init; }
 
-    public string FullName => string.IsNullOrEmpty(Namespace)
-        ? Name
-        : $"{Namespace}.{Name}";
+    private readonly DerivedString<(string, string)> _fullName = new();
+
+    public string FullName => _fullName.Get(
+        (Namespace, Name),
+        static parts => string.IsNullOrEmpty(parts.Item1)
+            ? parts.Item2
+            : $"{parts.Item1}.{parts.Item2}");
 }
 
 public sealed record FieldDefinitionModel(
@@ -558,31 +697,73 @@ public sealed record FieldDefinitionModel(
     }
 }
 
-public sealed record MethodSignatureModel(
-    CliValueKind ReturnType,
-    ImmutableArray<CliValueKind> ParameterTypes)
+public sealed record MethodSignatureModel
 {
-    public CliTypeIdentity ReturnSignatureType { get; init; } =
-        CliTypeIdentity.FromStackKind(ReturnType);
-
-    public ImmutableArray<CliTypeIdentity> ParameterSignatureTypes { get; init; } =
-        [.. ParameterTypes.Select(CliTypeIdentity.FromStackKind)];
+    // A signature known only by its stack kinds; its types are those kinds' identities.
+    public MethodSignatureModel(
+        CliValueKind ReturnType,
+        ImmutableArray<CliValueKind> ParameterTypes)
+    {
+        this.ReturnType = ReturnType;
+        this.ParameterTypes = ParameterTypes;
+        ReturnSignatureType = CliTypeIdentity.FromStackKind(ReturnType);
+        // An empty list is the shared empty array: record equality compares arrays by reference.
+        var parameters = ParameterTypes.Length == 0 ? [] : new CliTypeIdentity[ParameterTypes.Length];
+        for (var index = 0; index < parameters.Length; index++)
+            parameters[index] = CliTypeIdentity.FromStackKind(ParameterTypes[index]);
+        ParameterSignatureTypes = parameters.Length == 0 ? [] : ImmutableCollectionsMarshal.AsImmutableArray(parameters);
+    }
 
     public MethodSignatureModel(
         CliTypeIdentity returnType,
         ImmutableArray<CliTypeIdentity> parameterTypes)
-        : this(returnType.StackKind, [.. parameterTypes.Select(type => type.StackKind)])
     {
+        ArgumentNullException.ThrowIfNull(returnType);
+        parameterTypes = parameterTypes.IsDefault ? [] : parameterTypes;
+        ReturnType = returnType.StackKind;
+        var kinds = parameterTypes.Length == 0 ? [] : new CliValueKind[parameterTypes.Length];
+        for (var index = 0; index < kinds.Length; index++) kinds[index] = parameterTypes[index].StackKind;
+        ParameterTypes = kinds.Length == 0 ? [] : ImmutableCollectionsMarshal.AsImmutableArray(kinds);
         ReturnSignatureType = returnType;
         ParameterSignatureTypes = parameterTypes;
     }
 
+    public CliValueKind ReturnType { get; init; }
+    public ImmutableArray<CliValueKind> ParameterTypes { get; init; }
+    public CliTypeIdentity ReturnSignatureType { get; init; }
+    public ImmutableArray<CliTypeIdentity> ParameterSignatureTypes { get; init; }
+
+    public void Deconstruct(out CliValueKind ReturnType, out ImmutableArray<CliValueKind> ParameterTypes)
+    {
+        ReturnType = this.ReturnType;
+        ParameterTypes = this.ParameterTypes;
+    }
+
+    // The signature with generic parameters replaced; this signature when none occurs.
     public MethodSignatureModel Substitute(
         ImmutableArray<CliTypeIdentity> typeArguments,
-        ImmutableArray<CliTypeIdentity> methodArguments = default) => new(
-            ReturnSignatureType.Substitute(typeArguments, methodArguments),
-            [.. ParameterSignatureTypes.Select(type =>
-                type.Substitute(typeArguments, methodArguments))]);
+        ImmutableArray<CliTypeIdentity> methodArguments = default)
+    {
+        var returnType = ReturnSignatureType.Substitute(typeArguments, methodArguments);
+        CliTypeIdentity[]? changed = null;
+        for (var index = 0; index < ParameterSignatureTypes.Length; index++)
+        {
+            var parameter = ParameterSignatureTypes[index];
+            var substituted = parameter.Substitute(typeArguments, methodArguments);
+            if (changed is null && ReferenceEquals(substituted, parameter)) continue;
+            if (changed is null)
+            {
+                changed = new CliTypeIdentity[ParameterSignatureTypes.Length];
+                for (var copied = 0; copied < index; copied++) changed[copied] = ParameterSignatureTypes[copied];
+            }
+            changed[index] = substituted;
+        }
+        if (changed is null && ReferenceEquals(returnType, ReturnSignatureType))
+            return this;
+        return new(returnType, changed is null
+            ? ParameterSignatureTypes
+            : ImmutableCollectionsMarshal.AsImmutableArray(changed));
+    }
 }
 
 public sealed record MethodDefinitionModel(
@@ -644,11 +825,25 @@ public sealed record MethodInstanceModel(
     ImmutableArray<CliTypeIdentity> MethodArguments,
     MethodSignatureModel Signature)
 {
-    public string CanonicalName =>
-        $"{DeclaringType.CanonicalName}::0x{Definition.Key.MetadataToken:x8}" +
-        (MethodArguments.IsEmpty
-            ? ""
-            : $"<{string.Join(',', MethodArguments.Select(type => type.CanonicalName))}>");
+    private readonly DerivedString<(CliTypeIdentity, int, ImmutableArray<CliTypeIdentity>)> _canonicalName = new();
+
+    // A copy made with `with` keeps its own name rather than sharing the original's.
+    private MethodInstanceModel(MethodInstanceModel original)
+    {
+        Definition = original.Definition;
+        DeclaringType = original.DeclaringType;
+        MethodArguments = original.MethodArguments;
+        Signature = original.Signature;
+        _canonicalName = new();
+    }
+
+    // The compiler keys its tables by this name, so it is built once per instance.
+    public string CanonicalName => _canonicalName.Get(
+        (DeclaringType, Definition.Key.MetadataToken, MethodArguments),
+        static parts => $"{parts.Item1.CanonicalName}::0x{parts.Item2:x8}" +
+            (parts.Item3.IsEmpty
+                ? ""
+                : $"<{string.Join(',', parts.Item3.Select(type => type.CanonicalName))}>"));
 
     public bool IsConstructed =>
         DeclaringType.Shape is CliTypeShape.GenericInstantiation or CliTypeShape.Array ||
@@ -699,8 +894,19 @@ public sealed record FieldInstanceModel(
     CliTypeIdentity DeclaringType,
     CliTypeIdentity FieldType)
 {
-    public string CanonicalName =>
-        $"{DeclaringType.CanonicalName}::0x{Definition.Key.MetadataToken:x8}";
+    private readonly DerivedString<(CliTypeIdentity, int)> _canonicalName = new();
+
+    private FieldInstanceModel(FieldInstanceModel original)
+    {
+        Definition = original.Definition;
+        DeclaringType = original.DeclaringType;
+        FieldType = original.FieldType;
+        _canonicalName = new();
+    }
+
+    public string CanonicalName => _canonicalName.Get(
+        (DeclaringType, Definition.Key.MetadataToken),
+        static parts => $"{parts.Item1.CanonicalName}::0x{parts.Item2:x8}");
 
     public bool IsConstructed =>
         DeclaringType.Shape == CliTypeShape.GenericInstantiation;
@@ -714,8 +920,22 @@ public sealed record PropertyInstanceModel(
     MethodInstanceModel? Getter,
     MethodInstanceModel? Setter)
 {
-    public string CanonicalName =>
-        $"{DeclaringType.CanonicalName}::0x{Definition.Key.MetadataToken:x8}";
+    private readonly DerivedString<(CliTypeIdentity, int)> _canonicalName = new();
+
+    private PropertyInstanceModel(PropertyInstanceModel original)
+    {
+        Definition = original.Definition;
+        DeclaringType = original.DeclaringType;
+        PropertyType = original.PropertyType;
+        IndexParameterTypes = original.IndexParameterTypes;
+        Getter = original.Getter;
+        Setter = original.Setter;
+        _canonicalName = new();
+    }
+
+    public string CanonicalName => _canonicalName.Get(
+        (DeclaringType, Definition.Key.MetadataToken),
+        static parts => $"{parts.Item1.CanonicalName}::0x{parts.Item2:x8}");
 
     public bool IsConstructed =>
         DeclaringType.Shape == CliTypeShape.GenericInstantiation;

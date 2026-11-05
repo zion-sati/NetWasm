@@ -24,6 +24,8 @@ public sealed class CompileCliOptionsTests
         Assert.Empty(options.ImportModules);
         Assert.False(options.UseJavaScriptExportBoundary);
         Assert.False(options.StructuredDiagnostics);
+        Assert.Null(options.CompiledUnits);
+        Assert.False(options.VerifyCompiledUnits);
         Assert.Null(options.WasmTools);
         Assert.Null(options.RuntimeLayout);
         Assert.Null(options.CallbackObject);
@@ -43,6 +45,7 @@ public sealed class CompileCliOptionsTests
             "-callbackobject:callbacks.o", "-wit:contract.wit", "-world:example:test/test",
             "-importmodule:host_ui", "-importmodule:host_gl", "-diagnostictrace:trace.json",
             "-diagnosticlog:compiler.jsonl", "-jsexportboundary+", "-structureddiagnostics",
+            "-compiledunits-", "-verifycompiledunits+",
             "-projectdirectory:/project", "-intermediatedirectory:/project/obj",
             "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm",
             "-managedloopinvariantfieldhoisting:Disabled", "-managedstaticdataviewelimination:Enabled",
@@ -92,6 +95,8 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("compiler.jsonl", options.DiagnosticLog);
         Assert.True(options.UseJavaScriptExportBoundary);
         Assert.True(options.StructuredDiagnostics);
+        Assert.False(options.CompiledUnits);
+        Assert.True(options.VerifyCompiledUnits);
         Assert.Equal("/project", options.ProjectDirectory);
         Assert.Equal("/project/obj", options.IntermediateDirectory);
         Assert.Equal("node", options.WasmTools!.Executable);
@@ -210,6 +215,19 @@ public sealed class CompileCliOptionsTests
 
         Assert.Equal(DiagnosticCode.InvalidCommandLine, exception.Diagnostic.Code);
         Assert.Equal(message, exception.Diagnostic.Message);
+    }
+
+    [Fact]
+    public void RunsANamedNativeWasmToolsInPlaceOfTheWasiOne()
+    {
+        var alone = Parse(["App.dll", "-out:a.wasm", "-wasmtools:/tools/wasm-tools"]);
+        var withWasi = Parse(["App.dll", "-out:a.wasm", "-wasmtools:/tools/wasm-tools",
+            "-wasmtoolsnode:node", "-wasmtoolscommand:run.mjs", "-wasmtoolsmodule:wasm-tools.wasm"]);
+
+        Assert.Equal("/tools/wasm-tools", alone.WasmTools!.Executable);
+        Assert.Empty(alone.WasmTools.ArgumentPrefix);
+        Assert.Equal("/tools/wasm-tools", withWasi.WasmTools!.Executable);
+        Assert.Empty(withWasi.WasmTools.ArgumentPrefix);
     }
 
     [Fact]

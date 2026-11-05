@@ -74,6 +74,9 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
     [Required]
     public string WasmToolsModulePath { get; set; } = string.Empty;
 
+    // The host tools' native wasm-tools of the same release, run in place of the WASI one.
+    public string NativeWasmToolsPath { get; set; } = string.Empty;
+
     [Required]
     public string InspectionScriptPath { get; set; } = string.Empty;
 
@@ -124,7 +127,8 @@ public sealed class NetWasmBuildRawBindingsTask : Microsoft.Build.Utilities.Task
                 CompilerTaskComposition.CreateWasmToolsCommand(
                     NodePath,
                     WasmToolsCommandPath,
-                    WasmToolsModulePath));
+                    WasmToolsModulePath,
+                    NativeWasmToolsPath));
             var result = session.Build(new(
                 new(metadata.FunctionImports, interop),
                 WitPath,

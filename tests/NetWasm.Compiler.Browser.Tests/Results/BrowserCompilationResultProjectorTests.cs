@@ -24,7 +24,7 @@ public sealed class BrowserCompilationResultProjectorTests
         // Reachability and layout payloads are deliberately not needed for projection.
         var callback = new WasmNativeCallbackSupportArtifact(
             [1, 2, 3], new string('a', 64), [], [], []);
-        var source = new CompilationResult([0, 97, 115, 109], null!, null!, manifest, 4096)
+        var source = new ModuleCompilationResult([0, 97, 115, 109], manifest, 4096)
         {
             RuntimeFeatures = ["exceptions"],
             FunctionImports = [new WasmFunctionImport("runtime", "function", new([], default))],
@@ -66,7 +66,7 @@ public sealed class BrowserCompilationResultProjectorTests
         var projector = CreateProjector();
         Assert.Throws<ArgumentNullException>(() => projector.Project(null!, BrowserCompilationRequestTests.CreateOptions(), null));
         Assert.Throws<ArgumentNullException>(() => projector.Project(
-            new CompilationResult([], null!, null!, null!, 0), null!, null));
+            new ModuleCompilationResult([], null!, 0), null!, null));
     }
 
     [Theory]
@@ -80,7 +80,7 @@ public sealed class BrowserCompilationResultProjectorTests
                 ManagedExecutableReturnShape.Void)
             : null;
         Assert.Throws<ArgumentException>(() => CreateProjector().Project(
-            new CompilationResult([], null!, null!, null!, 0), options, incorrectAbi));
+            new ModuleCompilationResult([], null!, 0), options, incorrectAbi));
     }
 
     private static BrowserCompilationResultProjector CreateProjector() => new();

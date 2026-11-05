@@ -156,11 +156,14 @@ public sealed class MetadataMethodReferenceResolverTests
 
         Assert.Same(method, control.Resolve(source, token, "Test.Method", 0).Definition);
         Assert.Same(method, withUnrelated.Resolve(source, token, "Test.Method", 0).Definition);
+        // A resolver keeps its resolutions, so the search is measured on fresh resolvers.
+        var freshControl = CreateResolver(method.Key);
+        var freshUnrelated = CreateResolver(unrelated.Key, method.Key);
         var beforeControl = GC.GetAllocatedBytesForCurrentThread();
-        var controlResult = control.Resolve(source, token, "Test.Method", 0);
+        var controlResult = freshControl.Resolve(source, token, "Test.Method", 0);
         var controlAllocation = GC.GetAllocatedBytesForCurrentThread() - beforeControl;
         var beforeUnrelated = GC.GetAllocatedBytesForCurrentThread();
-        var unrelatedResult = withUnrelated.Resolve(source, token, "Test.Method", 0);
+        var unrelatedResult = freshUnrelated.Resolve(source, token, "Test.Method", 0);
         var unrelatedAllocation = GC.GetAllocatedBytesForCurrentThread() - beforeUnrelated;
 
         Assert.Same(method, controlResult.Definition);
