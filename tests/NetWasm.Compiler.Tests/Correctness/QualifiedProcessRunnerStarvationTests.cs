@@ -15,8 +15,9 @@ public sealed class QualifiedProcessRunnerStarvationTests
         Assert.SkipWhen(OperatingSystem.IsWindows(), "The fixture process is a POSIX shell.");
         ThreadPool.GetMaxThreads(out var maxWorkers, out var maxCompletionPorts);
         ThreadPool.GetMinThreads(out var minWorkers, out _);
-        using var release = new ManualResetEventSlim();
+        var release = new ManualResetEventSlim();
         var started = new int[1];
+        var finished = new int[1];
         Assert.True(ThreadPool.SetMaxThreads(minWorkers, maxCompletionPorts));
         try
         {
@@ -26,6 +27,7 @@ public sealed class QualifiedProcessRunnerStarvationTests
                 {
                     Interlocked.Increment(ref started[0]);
                     release.Wait();
+                    Interlocked.Increment(ref finished[0]);
                 }, null);
             }
             // The pool is saturated once no more of the items start while some still wait: this
@@ -67,6 +69,13 @@ public sealed class QualifiedProcessRunnerStarvationTests
         {
             release.Set();
             ThreadPool.SetMaxThreads(maxWorkers, maxCompletionPorts);
+            // The items the saturated pool left queued start after the release, possibly after
+            // the test returns; one that waited on a disposed event would throw on a pool thread
+            // and end the test process. The event is disposed only once every item has finished.
+            if (SpinWait.SpinUntil(() => Volatile.Read(ref finished[0]) == minWorkers, TimeSpan.FromSeconds(30)))
+            {
+                release.Dispose();
+            }
         }
     }
 }
