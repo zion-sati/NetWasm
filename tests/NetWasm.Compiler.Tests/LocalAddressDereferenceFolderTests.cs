@@ -47,6 +47,20 @@ public sealed class LocalAddressDereferenceFolderTests
         Assert.Equal(new CilOperand.Index(0), rewritten.Instructions[1].Operand);
     }
 
+    // A narrow value is only read or cleared: a store through its address truncates it, where
+    // a store to the local may not.
+    [Theory]
+    [InlineData(CilOperation.StoreObject)]
+    [InlineData(CilOperation.StoreField)]
+    public void StoringANarrowLocalThroughItsAddressStays(CilOperation store)
+    {
+        var narrow = CliTypeIdentity.Primitive("i2", CliValueKind.I4);
+        var body = Body([narrow], code => code.Local(CilOperation.LoadLocalAddress, 0).Op(CilOperation.LoadInt32, 5)
+            .Op(store, store == CilOperation.StoreObject ? new CilOperand.TypeIdentity(narrow) : ValueField(narrow, narrow)).Return());
+
+        Assert.Same(body, Folder().Rewrite(body));
+    }
+
     // A native integer's zero depends on the target, so its initobj stays.
     [Fact]
     public void ClearingANativeIntegerLocalStaysAStoreThroughItsAddress()

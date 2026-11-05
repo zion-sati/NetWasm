@@ -47,4 +47,54 @@ public sealed class WasmCodePatcherTests
         Assert.Null(WasmCodePatcher.ReplaceBodies([1, 2, 3], new Dictionary<int, byte[]>()));
         Assert.Null(WasmCodePatcher.Bodies([1, 2, 3]));
     }
+
+    private static readonly byte[] Header = [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+
+    private static byte[] Section(byte id, params byte[] payload) => [id, (byte)payload.Length, .. payload];
+
+    // Each malformed shape a module can take refuses the patch rather than guessing: an empty
+    // function count, code for another number of functions, a body longer than its section,
+    // trailing code bytes, an overlong LEB128, and no code at all.
+    [Theory]
+    [InlineData("function count")]
+    [InlineData("code count")]
+    [InlineData("other count")]
+    [InlineData("long body")]
+    [InlineData("trailing")]
+    [InlineData("overlong")]
+    [InlineData("no code")]
+    public void RefusesEveryMalformedShapeToPatch(string damage)
+    {
+        byte[] functions = Section(0x03, 0x01, 0x00);
+        byte[] module = damage switch
+        {
+            "function count" => [.. Header, .. Section(0x03)],
+            "code count" => [.. Header, .. functions, .. Section(0x0A)],
+            "other count" => [.. Header, .. functions, .. Section(0x0A, 0x02, 0x02, 0x00, 0x0B, 0x02, 0x00, 0x0B)],
+            "long body" => [.. Header, .. functions, .. Section(0x0A, 0x01, 0x09, 0x00, 0x0B)],
+            "trailing" => [.. Header, .. functions, .. Section(0x0A, 0x01, 0x02, 0x00, 0x0B, 0x00)],
+            "overlong" => [.. Header, 0x01, 0x80, 0x80, 0x80, 0x80, 0x80],
+            _ => [.. Header, .. functions],
+        };
+
+        Assert.Null(WasmCodePatcher.ReplaceBodies(module, new Dictionary<int, byte[]>()));
+    }
+
+    [Theory]
+    [InlineData("code count")]
+    [InlineData("long body")]
+    [InlineData("truncated")]
+    [InlineData("no code")]
+    public void RefusesEveryMalformedShapeToRead(string damage)
+    {
+        byte[] module = damage switch
+        {
+            "code count" => [.. Header, .. Section(0x0A)],
+            "long body" => [.. Header, .. Section(0x0A, 0x01, 0x09, 0x00, 0x0B)],
+            "truncated" => [.. Header, 0x0A, 0x09, 0x01],
+            _ => [.. Header, .. Section(0x03, 0x01, 0x00)],
+        };
+
+        Assert.Null(WasmCodePatcher.Bodies(module));
+    }
 }

@@ -44,12 +44,7 @@ internal sealed record UnitProgramFacts(
     IReadOnlyDictionary<EntityKey, string> DirectMethods,
     ImmutableArray<string> ConstructedMethods,
     IReadOnlyDictionary<string, ManagedByRefMethodEffects> ByRefEffects,
-    IReadOnlyDictionary<string, ImmutableArray<string>> ByRefCallees)
-{
-    public static UnitProgramFacts Empty { get; } = new([], ImmutableDictionary<EntityKey, string>.Empty, [],
-        ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty,
-        ImmutableDictionary<string, ImmutableArray<string>>.Empty);
-}
+    IReadOnlyDictionary<string, ImmutableArray<string>> ByRefCallees);
 
 /// <summary>The runtime object offsets a compile laid out, as its plans keep them.</summary>
 internal sealed record UnitRuntimeObjectLayout(

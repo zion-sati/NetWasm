@@ -12,8 +12,6 @@ internal sealed class RecordingTypeLayoutProvider(
     private readonly IUnitDependencyRecorder _recorder = recorder ??
         throw new ArgumentNullException(nameof(recorder));
 
-    public int ReferenceArrayTypeId => Recorded(UnitQueryKind.ReferenceArrayTypeId, _inner.ReferenceArrayTypeId);
-
     public int StringTypeId => Recorded(UnitQueryKind.StringTypeId, _inner.StringTypeId);
 
     public int TypeTypeId => Recorded(UnitQueryKind.TypeTypeId, _inner.TypeTypeId);

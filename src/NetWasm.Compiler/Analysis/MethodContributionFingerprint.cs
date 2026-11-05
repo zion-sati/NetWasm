@@ -71,7 +71,7 @@ internal static class MethodContributionFingerprint
         Set(12);
         foreach (var method in facts.NativeCallbacks) names.Add(method.CanonicalName);
         Set(13);
-        foreach (var site in facts.CallSites.IsDefault ? [] : facts.CallSites)
+        foreach (var site in facts.CallSites)
             names.Add($"{(int)site.Operation}:{site.TargetIdentity.CanonicalName}:{site.Target.CanonicalName}:{site.ConstrainedType?.CanonicalName}");
         Set(14);
         foreach (var requirement in analysis.Exceptions) names.Add($"{(int)requirement.Kind}:{requirement.TypeName}");

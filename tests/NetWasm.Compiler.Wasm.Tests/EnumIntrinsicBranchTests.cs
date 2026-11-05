@@ -312,8 +312,6 @@ public sealed class EnumIntrinsicBranchTests
             instruction.Operand.UnsignedValue == selector));
         Assert.True(instructions.Count(instruction => instruction.Opcode == WasmOpcodes.LocalSet &&
             instruction.Operand.UnsignedValue == index) >= metadata.EnumMetadata[0].Members.Length);
-        Assert.DoesNotContain(instructions, instruction => instruction.Opcode == WasmOpcodes.I32Constant &&
-            instruction.Operand.SignedValue == metadata.Layouts.ReferenceArrayTypeId);
         if (names)
             Assert.Contains(CliTypeIdentity.SzArray(CliTypeIdentity.Primitive("string", CliValueKind.ManagedReference, false)),
                 metadata.Layouts.RequestedObjects);
@@ -1870,7 +1868,6 @@ public sealed class EnumIntrinsicBranchTests
         public ObjectLayout GetObjectLayout(EntityKey type) =>
             Layouts.GetObjectLayout(type);
 
-        public int ReferenceArrayTypeId => Layouts.ReferenceArrayTypeId;
         public int StringTypeId => Layouts.StringTypeId;
         public int TypeTypeId => Layouts.TypeTypeId;
         public StringLayout GetStringLayout(string value) => Layouts.GetStringLayout(value);
@@ -1912,7 +1909,6 @@ public sealed class EnumIntrinsicBranchTests
         }
 
         public WasmTargetLayout Target => _target;
-        public int ReferenceArrayTypeId => 12;
         public int StringTypeId => 13;
         public int TypeTypeId => 14;
         public int StringLengthOffset => 4;

@@ -469,6 +469,43 @@ public sealed class CilExceptionRegionValidatorTests
             "branch crosses an exception-region boundary");
     }
 
+    // Each handler-ending instruction belongs to its own kind of region, and a leave must
+    // exit to a region that encloses it.
+    [Theory]
+    [InlineData(CilOperation.EndFilter, "endfilter appears outside an exception filter")]
+    [InlineData(CilOperation.EndFinally, "endfinally appears outside a finally or fault handler")]
+    [InlineData(CilOperation.Rethrow, "rethrow appears outside a catch handler")]
+    public void AHandlerInstructionOutsideItsHandlerIsRefused(CilOperation operation, string message)
+    {
+        // Without regions, and in the try of a finally.
+        var bare = Body(CliValueKind.Void, 0, [], I(0, operation), I(1, CilOperation.Return));
+        var guarded = FinallyBody() with
+        {
+            Instructions = [I(0, operation), .. FinallyBody().Instructions.Skip(1)],
+        };
+
+        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(bare, bare.Instructions[^1].NextOffset), message);
+        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(guarded, guarded.Instructions[^1].NextOffset), message);
+    }
+
+    [Fact]
+    public void ALeaveThatExitsNoRegionIsRefused()
+    {
+        var outside = Body(CliValueKind.Void, 0, [], I(0, CilOperation.Leave, new CilOperand.BranchTarget(1)),
+            I(1, CilOperation.Return));
+        var within = FinallyBody() with
+        {
+            Instructions = [.. FinallyBody().Instructions.Select(instruction => instruction.Offset == 1
+                ? instruction with { Operand = new CilOperand.BranchTarget(0) }
+                : instruction)],
+        };
+
+        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(outside, outside.Instructions[^1].NextOffset),
+            "leave target does not exit to an enclosing exception region");
+        AssertDiagnostic(() => CreateExceptionRegionValidator().Validate(within, within.Instructions[^1].NextOffset),
+            "leave target does not exit to an enclosing exception region");
+    }
+
     private static CilMethodBody FinallyBody() => Body(
         CliValueKind.Void,
         0,

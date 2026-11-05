@@ -168,10 +168,7 @@ public sealed class CompilationInputReader : ICompilationInputReader
                 Token(field.GetDefaultValue());
                 Blob(field.GetMarshallingDescriptor());
                 // Initial data (array and span literals) is read by bodies, so it is shape.
-                if (assembly.Fields.TryGetValue(MetadataTokens.GetToken(handle), out var model))
-                    Bytes(model.InitialData.AsSpan());
-                else
-                    Int(-1);
+                Bytes(assembly.Fields[MetadataTokens.GetToken(handle)].InitialData.AsSpan());
             }
             Tag(5);
             foreach (var handle in reader.MethodDefinitions)
@@ -302,8 +299,9 @@ public sealed class CompilationInputReader : ICompilationInputReader
         internal void Resources(PEReader pe)
         {
             Tag(18);
-            var directory = pe.PEHeaders.CorHeader?.ResourcesDirectory;
-            if (directory is not { Size: > 0 } resources)
+            // A managed assembly always has its CLR header.
+            var resources = pe.PEHeaders.CorHeader!.ResourcesDirectory;
+            if (resources.Size <= 0)
             {
                 Int(0);
                 return;
@@ -344,8 +342,6 @@ public sealed class CompilationInputReader : ICompilationInputReader
 
         private void Token(EntityHandle handle) => Int(handle.IsNil ? 0 : MetadataTokens.GetToken(handle));
 
-        private void Token(Handle handle) => Int(handle.IsNil ? 0 : MetadataTokens.GetToken(handle));
-
         private void String(StringHandle handle)
         {
             if (handle.IsNil)
@@ -382,7 +378,7 @@ public sealed class CompilationInputReader : ICompilationInputReader
 
     // A method body: header, locals by signature, exception regions, and IL with each
     // string literal's token replaced by its text.
-    private static class BodyHash
+    internal static class BodyHash
     {
         public static void Append(XxHash128 hash, MetadataReader reader, MethodBodyBlock body)
         {
@@ -411,7 +407,7 @@ public sealed class CompilationInputReader : ICompilationInputReader
                 Int(region.CatchType.IsNil ? 0 : MetadataTokens.GetToken(region.CatchType));
                 Int(region.FilterOffset);
             }
-            var il = body.GetILBytes() ?? [];
+            var il = body.GetILBytes()!;
             Int(il.Length);
             AppendIl(hash, reader, il);
         }
@@ -420,7 +416,7 @@ public sealed class CompilationInputReader : ICompilationInputReader
         // other bodies' edits may move, is replaced by the literal's text. Opcodes this scan
         // does not know end it; the rest is taken byte for byte (conservative: a moved
         // literal there reads as a change).
-        private static void AppendIl(XxHash128 hash, MetadataReader reader, byte[] il)
+        internal static void AppendIl(XxHash128 hash, MetadataReader reader, byte[] il)
         {
             var start = 0;
             var position = 0;
@@ -469,7 +465,7 @@ public sealed class CompilationInputReader : ICompilationInputReader
             hash.Append(bytes);
         }
 
-        private static int OneByteOperandSize(byte opcode) => opcode switch
+        internal static int OneByteOperandSize(byte opcode) => opcode switch
         {
             <= 0x0D => 0,
             <= 0x13 => 1,             // ldarg.s .. stloc.s
@@ -512,7 +508,7 @@ public sealed class CompilationInputReader : ICompilationInputReader
             _ => -1,
         };
 
-        private static int TwoByteOperandSize(byte opcode) => opcode switch
+        internal static int TwoByteOperandSize(byte opcode) => opcode switch
         {
             <= 0x05 => 0,             // arglist, ceq .. clt.un
             0x06 or 0x07 => 4,        // ldftn, ldvirtftn

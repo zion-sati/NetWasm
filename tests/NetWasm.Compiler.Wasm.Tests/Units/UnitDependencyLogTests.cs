@@ -108,7 +108,6 @@ public sealed class UnitDependencyLogTests
 
     private sealed class FixedLayouts : ITypeLayoutProvider
     {
-        public int ReferenceArrayTypeId => 1;
         public int StringTypeId => 2;
         public int TypeTypeId => 3;
         public ObjectLayout GetObjectLayout(CliTypeIdentity type) => new(9, 16, []);

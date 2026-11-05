@@ -125,9 +125,7 @@ internal sealed class CompiledUnitRestorer(
         ref UnitQueryArguments? arguments)
     {
         var key = query.Key.ToString();
-        arguments ??= state.Bodies.TryGetValue(identity, out var body)
-            ? UnitQueryArguments.Of(body)
-            : UnitQueryArguments.Of(method);
+        arguments ??= UnitQueryArguments.Of(state.Bodies[identity]);
         var answer = replayer.Replay(query.Kind, key, arguments, target);
         if (answer.Status == UnitQueryStatus.Unbuildable && state.Program is { } program)
             answer = replayer.Replay(query.Kind, key, arguments.Before(program.Value), target);

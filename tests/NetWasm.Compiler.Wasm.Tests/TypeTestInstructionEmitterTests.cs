@@ -254,7 +254,6 @@ public sealed class TypeTestInstructionEmitterTests
 
         public ObjectLayout GetObjectLayout(EntityKey type) => throw new NotSupportedException();
 
-        public int ReferenceArrayTypeId => 0;
 
         public int StringTypeId => 0;
 

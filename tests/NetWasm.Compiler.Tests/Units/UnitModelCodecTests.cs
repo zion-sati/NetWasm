@@ -11,12 +11,19 @@ namespace NetWasm.Compiler.Tests.Units;
 // models the compiler would have built, through the same factories.
 public sealed class UnitModelCodecTests
 {
-    [Fact]
-    public void EveryModelAProgramNamesRoundTrips()
+    // The query-kinds program adds function pointers, multidimensional arrays and open
+    // generic parameters to the base program's shapes.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EveryModelAProgramNamesRoundTrips(bool kinds)
     {
         using var assets = TestAssets.Create();
-        var options = new CompilerOptions(assets.CompileOptimizedSource("ModelCodec", CompiledUnitRestoreTests.BaseSource),
-            [assets.CoreLib], "EntryPoint", "Run", [], Optimization: FinalWasmOptimization.O0);
+        var assembly = kinds
+            ? assets.CompileOptimizedUnsafeSource("ModelCodec", UnitQueryKindTests.Source)
+            : assets.CompileOptimizedSource("ModelCodec", CompiledUnitRestoreTests.BaseSource);
+        var options = new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+            Optimization: FinalWasmOptimization.O0);
         using var services = new ServiceCollection().AddNetWasmCompiler().BuildServiceProvider();
         var program = services.GetRequiredService<INetWasmCompiler>().Compile(options).Program;
         using var lease = services.GetRequiredService<IMetadataCompilationLoader>().Load(options.EntryAssemblyPath, options.ReferencePaths);
@@ -31,6 +38,7 @@ public sealed class UnitModelCodecTests
         var reader = new UnitModelReader(writer.ToArray(), methods, fields);
 
         Assert.True(named.Types.Count > 20 && named.Methods.Count > 20, $"the program names too few models: {named.Types.Count} types, {named.Methods.Count} methods");
+        if (kinds) Assert.Contains(named.Types.Values, type => type.Shape == CliTypeShape.FunctionPointer);
         foreach (var type in named.Types.Values) AssertSame(type, reader.Type()!);
         foreach (var method in named.Methods.Values)
         {

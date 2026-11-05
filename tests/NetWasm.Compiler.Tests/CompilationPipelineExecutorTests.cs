@@ -135,9 +135,95 @@ public sealed class CompilationPipelineExecutorTests
         Assert.Empty(fixture.Calls);
     }
 
+    private static CompilationInputObservation Observation() => new("units", NetWasm.Compiler.Metadata.Inputs.CompilationInputs.Empty,
+        NetWasm.Compiler.Metadata.Inputs.CompilationInputs.Empty, NetWasm.Compiler.Metadata.Inputs.CompilationInputChanges.Between(
+            NetWasm.Compiler.Metadata.Inputs.CompilationInputs.Empty, NetWasm.Compiler.Metadata.Inputs.CompilationInputs.Empty));
+
+    // The last compile's module patched, with the facts it kept.
+    private static EarlyCutoffEmission Served(Fixture fixture, ImmutableArray<NetWasm.Compiler.ExceptionTypes.ReachableExceptionType>? exceptionTypes) =>
+        new([9, 9], 1, "early cutoff: patched 1 of the last compile's functions\n")
+        {
+            Kept = new([9, 9], [], [], []),
+            Facts = new("", 96, fixture.Manifest, [], [], null, false, exceptionTypes),
+        };
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AServedCompileIsTheLastCompilesModuleWithTheFactsItKept(bool metrics)
+    {
+        var plain = new Fixture(WasmTarget.Wasm32);
+        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, []));
+
+        var outcome = fixture.Executor.Execute(fixture.Options(metrics, 0), serveFromLastCompile: true);
+
+        Assert.True(outcome.Module.PatchedLastCompile);
+        Assert.Equal([9, 9], outcome.Module.ApplicationModule);
+        Assert.Contains(fixture.Calls, call => call.Capability == "kept-commit");
+        Assert.Equal(metrics, fixture.Calls.Any(call => call.Capability == "metric-complete"));
+    }
+
+    // Its facts name no exception types, which an exception type map needs: it runs in full.
+    [Fact]
+    public void AServedCompileWhoseFactsCannotBindItsDiagnosticsRunsInFull()
+    {
+        var plain = new Fixture(WasmTarget.Wasm32);
+        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, null));
+
+        var outcome = fixture.Executor.Execute(fixture.Options(false, 0) with { EmitExceptionTypeMap = true },
+            serveFromLastCompile: true);
+
+        Assert.False(outcome.Module.PatchedLastCompile);
+        Assert.Same(fixture.Emission.Result.Module, outcome.Module.ApplicationModule);
+    }
+
+    // Without detected inputs there is no cutoff to verify: the compile runs in full.
+    [Fact]
+    public void VerificationWithoutACutoffCompilesInFull()
+    {
+        var fixture = new Fixture(WasmTarget.Wasm32);
+
+        var outcome = fixture.Executor.Execute(fixture.Options(false, 0) with { VerifyCompiledUnits = true });
+
+        Assert.Same(fixture.Emission.Result.Module, outcome.Module.ApplicationModule);
+    }
+
+    // Verification proves the cutoff against the full compile: one that declined, or patched
+    // the module the full compile emits, passes.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void VerificationPassesACutoffThatDeclinedOrPatchedTheSameModule(bool patched)
+    {
+        var plain = new Fixture(WasmTarget.Wasm32);
+        var cutoff = patched
+            ? Served(plain, []) with { Module = plain.Emission.Result.Module }
+            : new EarlyCutoffEmission(null, 0, "early cutoff: declined (an edit)\n");
+        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), cutoff);
+
+        var outcome = fixture.Executor.Execute(fixture.Options(false, 0) with { VerifyCompiledUnits = true });
+
+        Assert.Same(fixture.Emission.Result.Module, outcome.Module.ApplicationModule);
+    }
+
+    // Verification proves the cutoff against the full compile: a patched module that differs fails.
+    [Fact]
+    public void VerificationFailsACutoffThatPatchedAnotherModule()
+    {
+        var plain = new Fixture(WasmTarget.Wasm32);
+        var fixture = new Fixture(WasmTarget.Wasm32, Observation(), Served(plain, []));
+
+        var failure = Assert.Throws<InvalidOperationException>(() =>
+            fixture.Executor.Execute(fixture.Options(false, 0) with { VerifyCompiledUnits = true }));
+
+        Assert.StartsWith("The early cutoff patched a module that differs from the full compile's at byte 0",
+            failure.Message, StringComparison.Ordinal);
+    }
+
     private sealed class Fixture
     {
-        public Fixture(WasmTarget width)
+        // With inputs and a cutoff, the compile is one the last compile's units may serve.
+        public Fixture(WasmTarget width, CompilationInputObservation? inputs = null, EarlyCutoffEmission? cutoff = null)
         {
             var assembly = new AssemblyIdentity("PipelineUnitTests");
             var entry = new MethodDefinitionModel(new(assembly, 0x06000001), new(assembly, 0x02000001),
@@ -195,17 +281,18 @@ public sealed class CompilationPipelineExecutorTests
                 Capability<IHostInteropManifestBuilder>("manifest", Manifest),
                 Capability<ICompilationComplexityStage>("complexity"),
                 Capability<ICompilerProgressReporter>("progress"),
+                // A served compile binds its patched module; a full one, its result.
                 Capability<ICompilationDiagnosticBindingStage>("diagnostic-binding", invoke: (_, args) =>
-                    DiagnosticBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
+                    args[0] is byte[] ? null : DiagnosticBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ICompilationStackTraceArtifactBinder>("stack-binding", invoke: (_, args) =>
                     StackBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ISymbolFormatterFactory>("symbols", ValidationTestData.Symbols()),
                 Capability<ICompilationMetricsRequestFactory>("metrics-create", metrics),
-                Capability<ICompilationInputDetector>("inputs-detect", invoke: (_, _) => null),
+                Capability<ICompilationInputDetector>("inputs-detect", invoke: (_, _) => inputs),
                 Capability<ICompilationInputRecorder>("inputs-record"),
                 new NoCompiledUnits(Calls),
-                new NoEarlyCutoff(),
-                new NoKeptCompiles());
+                cutoff is null ? new NoEarlyCutoff() : new FixedEarlyCutoff(cutoff),
+                cutoff is null ? new NoKeptCompiles() : new RecordingKeptCompiles(Calls));
         }
 
         public CompilationPipelineExecutor Executor { get; }
@@ -277,6 +364,18 @@ public sealed class CompilationPipelineExecutorTests
                 throw new InvalidOperationException("A compile was kept without units.");
         }
 
+        private sealed class RecordingKeptCompiles(List<(string Capability, object?[] Arguments)> calls)
+            : NetWasm.Compiler.Wasm.Units.IUnitKeptCompileCommitter
+        {
+            public void Commit(string location, NetWasm.Compiler.Wasm.Units.UnitKeptCompile kept) =>
+                calls.Add(("kept-commit", [location, kept]));
+        }
+
+        private sealed class FixedEarlyCutoff(EarlyCutoffEmission emission) : IEarlyCutoffEmitter
+        {
+            public EarlyCutoffEmission Emit(EarlyCutoffRequest request) => emission;
+        }
+
         // Without detected inputs the pipeline never asks for the early cutoff.
         private sealed class NoEarlyCutoff : IEarlyCutoffEmitter
         {
@@ -292,9 +391,11 @@ public sealed class CompilationPipelineExecutorTests
                 CompilationInputObservation? inputs,
                 ReachableProgram program,
                 NetWasm.Compiler.ComponentModel.Optimization.BranchPrefixDuplicationPolicy branchPrefixDuplication,
-                NetWasm.Compiler.ComponentModel.Optimization.DispatcherEliminationPolicy dispatcherElimination)
+                NetWasm.Compiler.ComponentModel.Optimization.DispatcherEliminationPolicy dispatcherElimination,
+                NetWasm.Compiler.Wasm.Units.UnitKeptCompile? servedFrom)
             {
-                calls.Add(("units-open", [options, metadata, inputs, program, branchPrefixDuplication, dispatcherElimination]));
+                calls.Add(("units-open", [options, metadata, inputs, program, branchPrefixDuplication, dispatcherElimination,
+                    servedFrom]));
                 return null;
             }
         }

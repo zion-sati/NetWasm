@@ -12,21 +12,23 @@ namespace NetWasm.Compiler.Pipeline;
 
 internal interface ICompiledUnitStateFactory
 {
-    // This compile's compiled units over the store the last compile kept; null when units are off.
+    // This compile's compiled units over the store the last compile kept; null when units are off,
+    // which is when no inputs were detected.
+    // Under verification, they replay every method against the kept compile the early cutoff
+    // served this compile from, when it served it.
     CompiledUnitState? Create(
         CompilerOptions options,
         MetadataCompilationSnapshot metadata,
         CompilationInputObservation? inputs,
         ReachableProgram program,
         BranchPrefixDuplicationPolicy branchPrefixDuplication,
-        DispatcherEliminationPolicy dispatcherElimination);
+        DispatcherEliminationPolicy dispatcherElimination,
+        UnitKeptCompile? servedFrom);
 }
 
 internal sealed class CompiledUnitStateFactory(
     IUnitStoreLoader loader,
-    IUnitKeptCompileLoader keptCompiles,
     IWasmMethodLowerer structuring,
-    ICompilationInputReader inputReader,
     IMethodRepositoryFactory methodRepositories,
     IFieldRepositoryFactory fieldRepositories,
     ISymbolFormatterFactory symbolFormatters,
@@ -42,95 +44,54 @@ internal sealed class CompiledUnitStateFactory(
         CompilationInputObservation? inputs,
         ReachableProgram program,
         BranchPrefixDuplicationPolicy branchPrefixDuplication,
-        DispatcherEliminationPolicy dispatcherElimination)
+        DispatcherEliminationPolicy dispatcherElimination,
+        UnitKeptCompile? servedFrom)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(program);
-        if (CompiledUnitPolicy.DirectoryFor(options) is not { } directory)
+        if (inputs is null)
             return null;
-        var state = new CompiledUnitState(directory)
+        var state = new CompiledUnitState(inputs.Directory)
         {
             Verifies = options.VerifyCompiledUnits,
             // Every unit's input holds what emission reads from the compile itself rather than
             // through a recorded query: the target's width and how methods are structured.
             Policy = $"{options.Target}/{branchPrefixDuplication}/{dispatcherElimination}",
             Bodies = CompiledUnitState.Index(program.Methods.Values, program.ConstructedMethods.Values),
-            Store = _loader.Load(directory),
+            Store = _loader.Load(inputs.Directory),
             Structuring = _structuring,
-            // Units depend on assembly shapes; without detection, they are read here.
-            AssemblyShapes = AssemblyShapes(options, metadata,
-                inputs?.Current ?? inputReader.Read(metadata, CompilationInputs.Empty)),
+            AssemblyShapes = UnitAssemblyShapes.Of(
+                metadata.Assemblies.ToDictionary(assembly => assembly.Identity.Name, assembly => assembly.References,
+                    StringComparer.Ordinal),
+                options.ReferenceAssemblyAliases,
+                inputs.Current.Assemblies.ToDictionary(assembly => assembly.Name, assembly => assembly.Shape, StringComparer.Ordinal)),
         };
-        // Verification proves the early cutoff's replay too, where the cutoff applies.
-        if (options.VerifyCompiledUnits && inputs is not null &&
-            CompilationInputRecorder.CutoffVerdict(inputs, CompilationInputRecorder.WithContributions(inputs.Current, program)).Applies)
+        // Verification proves the early cutoff's replay too, where the cutoff served the compile:
+        // it serves one only from a compile with the same options, whose answers then hold.
+        if (options.VerifyCompiledUnits && servedFrom is not null)
         {
-            state.Replay = Replay(directory, metadata, state.Store);
+            state.Replay = Replay(servedFrom, metadata, state.Store);
         }
         return state;
     }
 
-    // The last compile to replay against, or none when it was not kept or cannot be replayed.
-    private UnitReplay? Replay(string directory, MetadataCompilationSnapshot metadata, UnitStore store)
+    // The compile the cutoff served this one from, to replay against: the cutoff read its
+    // plans to serve it, so they read again. A cutoff with nothing changed reads no units, so
+    // the store may be damaged; that costs the replay, never the compile.
+    private UnitReplay? Replay(UnitKeptCompile kept, MetadataCompilationSnapshot metadata, UnitStore store)
     {
-        if (keptCompiles.Load(directory) is not { } kept) return null;
         var methods = methodRepositories.Create(metadata);
         var fields = fieldRepositories.Create(metadata);
+        var plans = UnitPlanCodec.Decode(kept.Plans, methods, fields)!;
         try
         {
-            if (UnitPlanCodec.Decode(kept.Plans, methods, fields) is not { } plans) return null;
             return new UnitReplay(UnitAnswers.Over(store, methods, fields), plans,
                 functionIndexResolvers.Create(methods, symbolFormatters.Create(metadata), plans.Target.FunctionIndices));
         }
         catch (System.IO.InvalidDataException)
         {
-            // A damaged store or kept compile costs the replay, never the compile.
             return null;
         }
-    }
-
-    // Each assembly's shape together with those of everything it references, transitively,
-    // and of the core assemblies every program builds on.
-    private static FrozenDictionary<string, UnitFingerprint> AssemblyShapes(
-        CompilerOptions options, MetadataCompilationSnapshot metadata, CompilationInputs inputs)
-    {
-        var shapes = new Dictionary<string, InputFingerprint>(StringComparer.Ordinal);
-        foreach (var assembly in inputs.Assemblies)
-            shapes[assembly.Name] = assembly.Detail?.Shape ?? assembly.Content;
-        var byName = metadata.Assemblies.ToDictionary(assembly => assembly.Identity.Name, StringComparer.Ordinal);
-        string Resolve(string reference) =>
-            options.ReferenceAssemblyAliases?.TryGetValue(reference, out var target) == true ? target : reference;
-        var cores = metadata.Assemblies
-            .Where(assembly => !assembly.References.Any(reference => byName.ContainsKey(Resolve(reference))))
-            .Select(assembly => assembly.Identity.Name)
-            .ToArray();
-        var result = new Dictionary<string, UnitFingerprint>(byName.Count, StringComparer.Ordinal);
-        foreach (var name in byName.Keys)
-        {
-            var closure = new SortedSet<string>(cores, StringComparer.Ordinal);
-            var pending = new Stack<string>();
-            pending.Push(name);
-            while (pending.TryPop(out var next))
-            {
-                if (!closure.Add(next) && next != name) continue;
-                foreach (var reference in byName[next].References)
-                {
-                    var resolved = Resolve(reference);
-                    if (byName.ContainsKey(resolved) && !closure.Contains(resolved)) pending.Push(resolved);
-                }
-            }
-            var fingerprint = new UnitFingerprintBuilder();
-            fingerprint.Add(closure.Count);
-            foreach (var member in closure)
-            {
-                fingerprint.Add(member);
-                var shape = shapes.GetValueOrDefault(member);
-                fingerprint.Add((long)shape.First);
-                fingerprint.Add((long)shape.Second);
-            }
-            result[name] = fingerprint.Finish();
-        }
-        return result.ToFrozenDictionary(StringComparer.Ordinal);
     }
 }

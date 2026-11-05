@@ -962,7 +962,6 @@ public sealed class CoreModelTests
         public StaticFieldLayout GetStaticFieldLayout(FieldInstanceModel field) => new(11);
         public StaticFieldLayout GetStaticFieldLayout(EntityKey field) => new(11);
         public StringLayout GetStringLayout(string value) => new(0, value.Length, 8);
-        public int ReferenceArrayTypeId => 1;
         public int StringTypeId => 2;
         public int TypeTypeId => 3;
         public int DelegateTargetOffset => -1;

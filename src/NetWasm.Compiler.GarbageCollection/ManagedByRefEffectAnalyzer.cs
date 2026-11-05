@@ -141,7 +141,7 @@ public sealed class ManagedByRefEffectAnalyzer(
 
     // Every method's effects as known, the analysed method's as they stand; a method of the
     // program with no known effects has none.
-    private sealed class KnownEffects(string identity, IReadOnlySet<string> methods,
+    internal sealed class KnownEffects(string identity, IReadOnlySet<string> methods,
         IReadOnlyDictionary<string, ManagedByRefMethodEffects> known) : IReadOnlyDictionary<string, ManagedByRefMethodEffects>
     {
         public ManagedByRefMethodEffects Own { get; set; } = ManagedByRefMethodEffects.Empty;

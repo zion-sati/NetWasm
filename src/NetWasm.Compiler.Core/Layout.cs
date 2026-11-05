@@ -99,7 +99,6 @@ public interface ITypeLayoutProvider
     ObjectLayout GetObjectLayout(CliTypeIdentity type);
     bool GetObjectLayout(CliTypeIdentity type, out ObjectLayout layout);
     ObjectLayout GetObjectLayout(EntityKey type);
-    int ReferenceArrayTypeId { get; }
     int StringTypeId { get; }
     int TypeTypeId { get; }
 }

@@ -312,6 +312,39 @@ public sealed class CompiledUnitRestoreTests
         }
     }
 
+    // The early cutoff serves a compile only from one with the same options, so verification
+    // replays only against such a compile: switching the target, stack traces or level
+    // between compiles into one store verifies as any other compile does.
+    [Fact]
+    public void VerificationReplaysOnlyACompileTheCutoffWouldServe()
+    {
+        using var assets = TestAssets.Create();
+        var units = Path.Combine(assets.Directory, "obj");
+        var assembly = assets.CompileOptimizedSource("UnitRestore", Base);
+        foreach (var (step, target, stackTrace) in new[]
+                 {
+                     ("wasm32", WasmTarget.Wasm32, false), ("wasm64", WasmTarget.Wasm64, false),
+                     ("stack traces", WasmTarget.Wasm64, true), ("wasm32 again", WasmTarget.Wasm32, false),
+                     ("unchanged", WasmTarget.Wasm32, false),
+                 })
+        {
+            var options = new CompilerOptions(assembly, [assets.CoreLib], "EntryPoint", "Run", [],
+                Target: target, EmitStackTrace: stackTrace, Optimization: FinalWasmOptimization.O0);
+            var plain = NetWasmCompiler.Compile(options).ApplicationModule;
+            var restored = NetWasmCompiler.Compile(options with
+            {
+                IntermediateOutputPath = units,
+                CompiledUnits = true,
+                VerifyCompiledUnits = true,
+            }).ApplicationModule;
+
+            Assert.True(plain.AsSpan().SequenceEqual(restored), $"{step}: the module differs from a plain compile");
+            var summary = File.ReadAllText(Path.Combine(units, "netwasm-units", "last-compile.txt"));
+            // Only the compile the cutoff serves replays every method against the last one.
+            Assert.Equal(step == "unchanged", summary.Contains("replayed ", StringComparison.Ordinal));
+        }
+    }
+
     // At an optimizing level analysis crosses methods, so units are restored under
     // verification but the early cutoff, which analyses edited methods alone, never applies.
     [Fact]

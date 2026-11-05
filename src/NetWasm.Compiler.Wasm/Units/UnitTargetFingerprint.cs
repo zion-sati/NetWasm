@@ -91,12 +91,12 @@ internal static class UnitTargetFingerprint
             answer.Add(binding.SetResult.CanonicalName);
             answer.Add(binding.SetException.CanonicalName);
             answer.Add(binding.SetCanceled.CanonicalName);
-            answer.Add(binding.ValueTaskTaskField?.CanonicalName);
-            answer.Add(binding.ValueTaskAsTask?.CanonicalName);
-            answer.Add(binding.StatusField?.CanonicalName);
-            answer.Add(binding.ResultField?.CanonicalName);
-            answer.Add(binding.GetVoidResult?.CanonicalName);
-            answer.Add(binding.CommandEntryPoint?.CanonicalName);
+            answer.Add(binding.ValueTaskTaskField);
+            answer.Add(binding.ValueTaskAsTask);
+            answer.Add(binding.StatusField);
+            answer.Add(binding.ResultField);
+            answer.Add(binding.GetVoidResult);
+            answer.Add(binding.CommandEntryPoint);
         }
         answer.Add(target.NativeImports.Methods.Length);
         foreach (var import in target.NativeImports.Methods)
@@ -126,7 +126,7 @@ internal static class UnitTargetFingerprint
             answer.Add(key);
             answer.Add(adapter.Factory.CanonicalName);
             answer.Add(adapter.DelegateType);
-            answer.Add(adapter.Invoke?.CanonicalName);
+            answer.Add(adapter.Invoke);
             answer.Add(adapter.Target.CanonicalName);
             answer.Add(adapter.IsSupported);
         }
@@ -150,7 +150,7 @@ internal static class UnitTargetFingerprint
             answer.Add(key);
             answer.Add(field.CanonicalName);
         }
-        answer.Add(members.UnsupportedTarget?.CanonicalName);
+        answer.Add(members.UnsupportedTarget);
         answer.Add(members.MethodInvokers.Count);
         foreach (var invoker in members.MethodInvokers.Select(UnitQueryKeys.Of).Order(StringComparer.Ordinal))
             answer.Add(invoker);

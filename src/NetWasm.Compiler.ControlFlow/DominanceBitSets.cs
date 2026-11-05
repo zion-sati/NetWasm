@@ -19,13 +19,10 @@ internal sealed class DominanceBitSets
 
     public DominanceBitSets(int blockCount)
     {
-        BlockCount = blockCount;
         _words = (blockCount + 63) >> 6;
         _bits = new ulong[blockCount * _words];
         Scratch = new ulong[_words];
     }
-
-    public int BlockCount { get; }
 
     // A row's worth of words for building a value before it is stored.
     public ulong[] Scratch { get; }

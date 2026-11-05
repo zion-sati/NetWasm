@@ -120,7 +120,6 @@ public sealed class LayoutContractCoverageTests
         var snapshot = new ManagedLayoutSnapshot(types, staticData);
 
         Assert.Equal(WasmTarget.Wasm64, snapshot.Target.Target);
-        Assert.Equal(1, snapshot.ReferenceArrayTypeId);
         Assert.Equal(2, snapshot.StringTypeId);
         Assert.Equal(3, snapshot.TypeTypeId);
         Assert.Equal(80, snapshot.StaticDataEnd);
@@ -479,7 +478,6 @@ public sealed class LayoutContractCoverageTests
         ]);
         var provider = new TypeLayoutProvider(definitions, snapshot);
 
-        Assert.Equal(1, provider.ReferenceArrayTypeId);
         Assert.Equal(2, provider.StringTypeId);
         Assert.Equal(3, provider.TypeTypeId);
         var entityLayout = provider.GetObjectLayout(TypeKey);

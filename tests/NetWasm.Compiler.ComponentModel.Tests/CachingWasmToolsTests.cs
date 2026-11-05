@@ -112,6 +112,57 @@ public sealed class CachingWasmToolsTests : IDisposable
         Assert.Equal(2, tools.Calls);
     }
 
+    // The tool's own files key its results by size and write time.
+    [Fact]
+    public void RunsAgainWhenTheToolsOwnFileChanges()
+    {
+        var script = Input("run-wasm-tools.mjs", "one");
+        var tools = new RecordingTools(new ToolResult(0, "out", ""));
+        var command = new ExternalToolCommand("node", [script]);
+        var wit = Input("package.wit.wasm", "wit");
+        new CachingWasmTools(tools, command, Path.Combine(_root, "cache")).Run("component", "wit", wit, "--json");
+
+        File.WriteAllText(script, "two, longer");
+        new CachingWasmTools(tools, command, Path.Combine(_root, "cache")).Run("component", "wit", wit, "--json");
+
+        Assert.Equal(2, tools.Calls);
+    }
+
+    // An entry cut short in its output, or an output that cannot be put back, runs the tool.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RunsAgainWhenACachedOutputCannotBeRestored(bool truncated)
+    {
+        var source = Input("environment.wat", "(module)");
+        var output = Path.Combine(_root, "environment.wasm");
+        var tools = new RecordingTools(new ToolResult(0, "", ""), writes: [1, 2, 3]);
+        Create(tools).Run("parse", source, "-o", output);
+        if (truncated)
+        {
+            foreach (var file in Directory.GetFiles(Path.Combine(_root, "cache"), "*", SearchOption.AllDirectories))
+                File.WriteAllBytes(file, File.ReadAllBytes(file)[..^2]);
+        }
+        else
+        {
+            File.Delete(output);
+            Directory.CreateDirectory(output);
+        }
+
+        var again = new RecordingTools(new ToolResult(0, "", ""));
+        Create(again).Run("parse", source, "-o", truncated ? output : Path.Combine(output, "missing", "out.wasm"));
+
+        Assert.Equal(1, again.Calls);
+    }
+
+    [Fact]
+    public void ThereIsNoDefaultDirectoryWithoutLocalApplicationData()
+    {
+        Assert.Null(CachingWasmTools.DirectoryUnder(null));
+        Assert.Null(CachingWasmTools.DirectoryUnder(" "));
+        Assert.Equal(Path.Combine("data", "NetWasm", "wasm-tools-cache"), CachingWasmTools.DirectoryUnder("data"));
+    }
+
     [Fact]
     public void RejectsMissingCollaborators()
     {

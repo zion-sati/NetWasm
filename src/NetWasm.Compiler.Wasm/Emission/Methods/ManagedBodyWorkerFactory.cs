@@ -125,17 +125,7 @@ internal static class ManagedBodyWorkerCompositionRoot
         if (restorer is null) return worker;
         ManagedBodyReplay? replay = null;
         if (shared.Units!.Replay is { } unitReplay)
-        {
-            try
-            {
-                replay = new(Create(unitReplay.Capabilities(shared), unitReplay.Fork), unitReplay);
-            }
-            catch
-            {
-                worker.Dispose();
-                throw;
-            }
-        }
+            replay = new(Beside(worker, () => Create(unitReplay.Capabilities(shared), unitReplay.Fork)), unitReplay);
         return new ManagedBodyWorker(provider, worker.Ordinary, worker.Constructed, worker.Logger)
         {
             Dependencies = dependencies,
@@ -143,6 +133,20 @@ internal static class ManagedBodyWorkerCompositionRoot
             VerifiesUnits = shared.Units.Verifies,
             Replay = replay,
         };
+    }
+
+    // What is built beside a worker; if it cannot be, the worker is released with it.
+    internal static T Beside<T>(IDisposable worker, Func<T> build)
+    {
+        try
+        {
+            return build();
+        }
+        catch
+        {
+            worker.Dispose();
+            throw;
+        }
     }
 
     internal static ManagedBodyWorker Resolve(

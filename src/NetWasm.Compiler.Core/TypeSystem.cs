@@ -366,13 +366,10 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
 
     // An instantiation by the identities it is made from (by reference): a variant of an
     // argument, such as one with another stack kind, is another key.
-    private readonly struct InstantiationKey(
-        CliTypeIdentity genericType,
-        ImmutableArray<CliTypeIdentity> typeArguments) : IEquatable<InstantiationKey>
+    private readonly record struct InstantiationKey(
+        CliTypeIdentity GenericType,
+        ImmutableArray<CliTypeIdentity> TypeArguments)
     {
-        public CliTypeIdentity GenericType { get; } = genericType;
-        public ImmutableArray<CliTypeIdentity> TypeArguments { get; } = typeArguments;
-
         public bool Equals(InstantiationKey other)
         {
             if (!ReferenceEquals(GenericType, other.GenericType) ||
@@ -386,8 +383,6 @@ public sealed class CliTypeIdentity : IEquatable<CliTypeIdentity>
             }
             return true;
         }
-
-        public override bool Equals(object? obj) => obj is InstantiationKey other && Equals(other);
 
         public override int GetHashCode()
         {
@@ -732,12 +727,6 @@ public sealed record MethodSignatureModel
     public ImmutableArray<CliValueKind> ParameterTypes { get; init; }
     public CliTypeIdentity ReturnSignatureType { get; init; }
     public ImmutableArray<CliTypeIdentity> ParameterSignatureTypes { get; init; }
-
-    public void Deconstruct(out CliValueKind ReturnType, out ImmutableArray<CliValueKind> ParameterTypes)
-    {
-        ReturnType = this.ReturnType;
-        ParameterTypes = this.ParameterTypes;
-    }
 
     // The signature with generic parameters replaced; this signature when none occurs.
     public MethodSignatureModel Substitute(

@@ -12,8 +12,6 @@ namespace NetWasm.Compiler.Wasm.Units;
 
 internal sealed class ReplayTypeLayoutProvider(UnitAnswers answers) : ITypeLayoutProvider
 {
-    public int ReferenceArrayTypeId => answers.Get<int>(UnitQueryKind.ReferenceArrayTypeId, "");
-
     public int StringTypeId => answers.Get<int>(UnitQueryKind.StringTypeId, "");
 
     public int TypeTypeId => answers.Get<int>(UnitQueryKind.TypeTypeId, "");

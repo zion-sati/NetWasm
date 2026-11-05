@@ -862,7 +862,6 @@ internal sealed class RecordingLayoutProvider(
     public int ArrayElementTypeIdOffset => ArrayDataPointerOffset + Target.AddressSize;
     public RectangularArrayLayout Provide() =>
         RectangularArrayLayout.Create(Target, ArrayElementTypeIdOffset);
-    public int ReferenceArrayTypeId => 12;
     public int StringTypeId => 13;
     public int TypeTypeId => 14;
     public int DelegateTargetOffset => 4;

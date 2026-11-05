@@ -765,3 +765,31 @@ public sealed class ManagedByRefEffectAnalyzerTests
         public MethodDefinitionModel GetMethod(EntityKey key) => Methods[key];
     }
 }
+
+// While one method is analysed alone, its effects are its own as they stand, every other
+// method's are as known, and a method of the program known for none has none; the view is
+// looked up, never listed.
+public sealed class KnownByRefEffectsTests
+{
+    [Fact]
+    public void TheAnalysedMethodsEffectsAreItsOwnAndOthersAreAsKnown()
+    {
+        var written = new ManagedByRefMethodEffects([0], [], []);
+        var effects = new ManagedByRefEffectAnalyzer.KnownEffects("Self", new HashSet<string> { "Self", "Known", "Quiet" },
+            new Dictionary<string, ManagedByRefMethodEffects> { ["Known"] = written })
+        {
+            Own = new([1], [], []),
+        };
+
+        Assert.Same(effects.Own, effects["Self"]);
+        Assert.Same(written, effects["Known"]);
+        Assert.Same(ManagedByRefMethodEffects.Empty, effects["Quiet"]);
+        Assert.False(effects.ContainsKey("Outside"));
+        Assert.Throws<KeyNotFoundException>(() => effects["Outside"]);
+        Assert.Throws<NotSupportedException>(() => effects.Keys);
+        Assert.Throws<NotSupportedException>(() => effects.Values);
+        Assert.Throws<NotSupportedException>(() => effects.Count);
+        Assert.Throws<NotSupportedException>(() => effects.GetEnumerator());
+        Assert.Throws<NotSupportedException>(() => ((System.Collections.IEnumerable)effects).GetEnumerator());
+    }
+}

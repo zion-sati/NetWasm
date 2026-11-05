@@ -263,6 +263,9 @@ internal sealed class ReductionLoopRewriter(
         }
     }
 
+    private static readonly System.Collections.Frozen.FrozenSet<string> EightByteIntegers =
+        System.Collections.Frozen.FrozenSet.ToFrozenSet(["primitive:i8", "primitive:u8"], StringComparer.Ordinal);
+
     // Whether Math.Min or Max over the comparison type orders the elements,
     // widened as the fold widens them, as their own type does. A truncating
     // fold could reorder them, so it is not one.
@@ -272,7 +275,7 @@ internal sealed class ReductionLoopRewriter(
         {
             null => comparison == element.CanonicalName ||
                 narrow && (comparison == "primitive:i4" || comparison == "primitive:u4" && !signed) ||
-                PrimitiveElements.Size(element) == 8 && comparison is "primitive:i8" or "primitive:u8",
+                PrimitiveElements.Size(element) == 8 && EightByteIntegers.Contains(comparison),
             CilOperation.ConvertInt64 or CilOperation.ConvertInt64Unsigned => extended &&
                 (comparison == "primitive:i8" || comparison == "primitive:u8" && !signed),
             _ => false,

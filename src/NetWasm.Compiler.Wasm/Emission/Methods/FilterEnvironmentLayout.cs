@@ -11,6 +11,10 @@ internal sealed record FilterEnvironmentLayout(
     public ImmutableDictionary<int, int> AnchorOffsets { get; init; } = [];
     public int ParentRootFrameOffset { get; init; }
 
+    // Whether the method has no filter environment: no frame, roots, captures or anchors.
+    // Where an empty one would sit does not matter.
+    public bool IsEmpty => Size == 0 && RootSlotCount == 0 && Captures.IsEmpty && AnchorOffsets.IsEmpty;
+
     public static FilterEnvironmentLayout Empty { get; } = new(
         0,
         0,

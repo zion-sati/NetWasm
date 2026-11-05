@@ -33,7 +33,10 @@ public sealed class ReductionLoopRewriterTests
         { "maximum of ushorts as uints", true },
         { "maximum of longs as doubles", false },
         { "maximum of ints widened unsigned", false },
+        { "maximum of ints widened to longs", true },
         { "maximum of uints widened to ulongs", true },
+        // An eight-byte element loads as signed whatever its sign: the comparison orders it.
+        { "maximum of longs as ulongs", true },
         { "maximum of widened ints as doubles", false },
         { "index offset below the range", false },
         { "bound through the counter", false },
@@ -74,8 +77,11 @@ public sealed class ReductionLoopRewriterTests
         "maximum of longs as doubles" => Loop(code => code.Maximum(Primitive("i8", CliValueKind.I8), Primitive("f8", CliValueKind.F8))),
         "maximum of ints widened unsigned" => Loop(code => code.Maximum(Int32, Primitive("i8", CliValueKind.I8),
             CilOperation.ConvertInt64Unsigned)),
+        "maximum of ints widened to longs" => Loop(code => code.Maximum(Int32, Primitive("i8", CliValueKind.I8),
+            CilOperation.ConvertInt64)),
         "maximum of uints widened to ulongs" => Loop(code => code.Maximum(Primitive("u4", CliValueKind.I4),
             Primitive("u8", CliValueKind.I8), CilOperation.ConvertInt64Unsigned)),
+        "maximum of longs as ulongs" => Loop(code => code.Maximum(Primitive("i8", CliValueKind.I8), Primitive("u8", CliValueKind.I8))),
         "maximum of widened ints as doubles" => Loop(code => code.Maximum(Int32, Primitive("f8", CliValueKind.F8),
             CilOperation.ConvertInt64)),
         "index offset below the range" => Loop(code => code

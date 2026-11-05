@@ -61,6 +61,7 @@ public sealed class WasmBinaryImportSignatureReaderTests : IDisposable
     [InlineData("truncated", "invalid-core-module")]
     [InlineData("name", "invalid-core-module")]
     [InlineData("leb", "invalid-core-module")]
+    [InlineData("section past the end", "invalid-core-module")]
     public void RejectsWhatTheInspectionCommandRejects(string shape, string code)
     {
         byte[] bytes = shape switch
@@ -74,6 +75,8 @@ public sealed class WasmBinaryImportSignatureReaderTests : IDisposable
             "truncated" => Module(Section(2, [1])),
             "name" => Module(Section(2, [1, 9, (byte)'e'])),
             "leb" => [.. Module(), 2, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+            // A section whose size runs past the module's last byte.
+            "section past the end" => [.. Module(), 2, 8, 0],
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         };
         var reader = new WasmBinaryImportSignatureReader(new FailingFallback());

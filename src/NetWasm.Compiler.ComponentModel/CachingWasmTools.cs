@@ -194,9 +194,9 @@ public sealed class CachingWasmTools(
     }
 
     /// <summary>The cache directory under the user's local application data, or null without one.</summary>
-    public static string? DefaultDirectory()
-    {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, "NetWasm", "wasm-tools-cache");
-    }
+    public static string? DefaultDirectory() =>
+        DirectoryUnder(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+    internal static string? DirectoryUnder(string? root) =>
+        string.IsNullOrWhiteSpace(root) ? null : Path.Combine(root, "NetWasm", "wasm-tools-cache");
 }

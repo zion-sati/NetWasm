@@ -950,7 +950,6 @@ public sealed class StringAndArrayCompilationTests
             Assert.Contains(result.Program.Methods.Values
                 .SelectMany(method => method.Body.Instructions),
                 instruction => instruction.Operation == CilOperation.NewArray);
-            Assert.True(result.Layouts.ReferenceArrayTypeId > 0);
             var array = result.Layouts.ObjectLayouts[arrayType.Key];
             Assert.Equal(4 * sizeof(int), array.Size);
             Assert.True(array.ReferenceOffsets.AsSpan().SequenceEqual(

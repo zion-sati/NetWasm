@@ -10,8 +10,15 @@ public static class NetWasmEmissionServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IWasmModuleEmitterFactory, WasmModuleEmitterFactory>();
-        // Compiled-unit storage. Desktop: memory-mapped segments; hosts without files
-        // register their own first.
+        // Compiled-unit storage. Desktop: memory-mapped segments, which the OS is asked to
+        // read ahead; hosts without files register their own first.
+        services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.INativeExportResolver,
+            NetWasm.Compiler.Wasm.Units.NativeLibraryExportResolver>();
+        services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitMemoryPrefetcherFactory,
+            NetWasm.Compiler.Wasm.Units.UnitMemoryPrefetcherFactory>();
+        services.TryAddSingleton(provider => provider.GetRequiredService<NetWasm.Compiler.Wasm.Units.IUnitMemoryPrefetcherFactory>()
+            .Create(NetWasm.Compiler.Wasm.Units.UnitMemoryPrefetcherFactory.Host()));
+        services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitFileDeleter, NetWasm.Compiler.Wasm.Units.UnitFileDeleter>();
         services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitStoreLoader,
             NetWasm.Compiler.Wasm.Units.MappedFileUnitStoreLoader>();
         services.TryAddSingleton<NetWasm.Compiler.Wasm.Units.IUnitStoreCommitter,

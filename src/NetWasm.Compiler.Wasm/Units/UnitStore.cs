@@ -37,9 +37,9 @@ namespace NetWasm.Compiler.Wasm.Units;
 internal static class UnitStoreFormat
 {
     public const uint Magic = 0x5554574E; // "NWTU"
-    // Raised whenever units come to record more of what emission reads, so older units,
-    // validated against less, are not restored.
-    public const int Version = 12;
+    // Raised whenever the queries units record change, so older units, validated against
+    // other queries or numbering them otherwise, are not restored.
+    public const int Version = 13;
     public const uint SegmentKind = 1;
     public const uint ManifestKind = 2;
     public const int SegmentHeaderSize = 64;
@@ -264,7 +264,6 @@ internal readonly ref struct UnitRecord
     // Whether the unit records its method's exception groups, so planning can use them
     // without structuring the method.
     public bool HasExceptionGroups => GroupWords >= 0;
-    public int Size => _bytes.Length;
 
     public ImmutableArray<UnitExceptionGroup> ExceptionGroups()
     {

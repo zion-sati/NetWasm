@@ -687,6 +687,20 @@ jobs:
           bash eng/qualify-sdk-consumers.sh \
             "$RUNNER_TEMP/packages" "${{ needs.verify-packages.outputs.version }}" \
             --skip-tunit-consumer
+      # The compiler's OS calls (read-ahead of mapped units, deleting a held file), on the
+      # host they run on, after the consumers so they qualify on one SDK alone. That SDK
+      # is the repository's; nwc runs on .NET 11, so the tests roll forward to it.
+      - name: Test the compiler's OS calls on this host
+        if: matrix.sdk-major == 11
+        shell: bash
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
+          DOTNET_ROLL_FORWARD_TO_PRERELEASE: 1
+        run: |
+          dotnet test tests/NetWasm.Compiler.Wasm.Tests/NetWasm.Compiler.Wasm.Tests.csproj -c Release \
+            --filter "Category=HostInterop" | tee "$RUNNER_TEMP/host-interop.log"
+          # A filter that matches nothing passes; these tests must run.
+          grep -E "Passed!.*Passed: +[1-9]" "$RUNNER_TEMP/host-interop.log"
 
   # DoomSharp's render benchmark at every optimization preset with each
   # collector, built from the candidate packages: every build must render the

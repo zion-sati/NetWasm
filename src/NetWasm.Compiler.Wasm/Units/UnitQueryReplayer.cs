@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
-using NetWasm.Compiler.ControlFlow.Structured;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Calls;
 using NetWasm.Compiler.Core.IntermediateRepresentation.Identity;
@@ -111,9 +110,6 @@ internal sealed class UnitQueryReplayer(
             case UnitQueryKind.ObjectLayoutOfDefinition:
                 if (!TryParse(key, out var definition)) return false;
                 _ = types.GetObjectLayout(definition);
-                return true;
-            case UnitQueryKind.ReferenceArrayTypeId:
-                _ = types.ReferenceArrayTypeId;
                 return true;
             case UnitQueryKind.StringTypeId:
                 _ = types.StringTypeId;
@@ -479,91 +475,23 @@ internal sealed record UnitQueryArguments(
         }
     }
 
-    public static UnitQueryArguments Of(StructuredMethod method)
-    {
-        ArgumentNullException.ThrowIfNull(method);
-        var definitions = ImmutableArray.CreateBuilder<EntityKey>();
-        foreach (var instruction in method.Header.Instructions)
-        {
-            if (instruction.Operand is CilOperand.Entity entity) definitions.Add(entity.Key);
-        }
-        return Of([method]) with { Definitions = definitions.ToImmutable() };
-    }
-
-    // Every identity the given methods' bodies name, transitively through type arguments,
-    // element types, signatures and field types.
-    public static UnitQueryArguments Of(IEnumerable<StructuredMethod> all)
-    {
-        var types = new Dictionary<string, CliTypeIdentity>(StringComparer.Ordinal);
-        var fields = new Dictionary<string, FieldInstanceModel>(StringComparer.Ordinal);
-        var methods = new Dictionary<string, MethodInstanceModel>(StringComparer.Ordinal);
-        void AddType(CliTypeIdentity? type)
-        {
-            if (type is null || !types.TryAdd(type.CanonicalName, type)) return;
-            foreach (var argument in type.TypeArguments) AddType(argument);
-            AddType(type.ElementType);
-        }
-        void AddMethod(MethodInstanceModel instance)
-        {
-            if (!methods.TryAdd(instance.CanonicalName, instance)) return;
-            AddType(instance.DeclaringType);
-            foreach (var argument in instance.MethodArguments) AddType(argument);
-            AddType(instance.Signature.ReturnSignatureType);
-            foreach (var parameter in instance.Signature.ParameterSignatureTypes) AddType(parameter);
-        }
-        void AddField(FieldInstanceModel field)
-        {
-            if (!fields.TryAdd(field.CanonicalName, field)) return;
-            AddType(field.DeclaringType);
-            AddType(field.FieldType);
-        }
-        foreach (var method in all)
-        {
-            var header = method.Header;
-            if (header.MethodInstance is { } self) AddMethod(self);
-            AddType(header.Method.Signature.ReturnSignatureType);
-            foreach (var parameter in header.Method.Signature.ParameterSignatureTypes) AddType(parameter);
-            foreach (var local in header.LocalSignatureTypes) AddType(local);
-            foreach (var instruction in header.Instructions)
-            {
-                switch (instruction.Operand)
-                {
-                    case CilOperand.MethodInstance call: AddMethod(call.Value); break;
-                    case CilOperand.FieldInstance access: AddField(access.Value); break;
-                    case CilOperand.TypeIdentity type: AddType(type.Value); break;
-                    case CilOperand.ExactType type: AddType(type.Value); break;
-                    case CilOperand.ArrayInitializerData initializer: AddField(initializer.Field); break;
-                    case CilOperand.ReadOnlySpanData span:
-                        AddField(span.Field);
-                        AddType(span.SpanType);
-                        AddType(span.ElementType);
-                        break;
-                    case CilOperand.CallSite site:
-                        AddType(site.Signature.ReturnSignatureType);
-                        foreach (var parameter in site.Signature.ParameterSignatureTypes) AddType(parameter);
-                        break;
-                }
-            }
-            foreach (var group in method.ExceptionGroups.Values)
-            {
-                foreach (var clause in group.Clauses) AddType(clause.CatchTypeIdentity);
-            }
-        }
-        return new(types, fields, methods);
-    }
-
+    // The first identities shadow the second, so the view answers keys but is never
+    // enumerated: listing both would name a shadowed key twice.
     private sealed class Fallback<T>(
         IReadOnlyDictionary<string, T> first,
         IReadOnlyDictionary<string, T> second) : IReadOnlyDictionary<string, T>
     {
         public T this[string key] => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException(key);
-        public IEnumerable<string> Keys => first.Keys.Concat(second.Keys);
-        public IEnumerable<T> Values => first.Values.Concat(second.Values);
-        public int Count => first.Count + second.Count;
+        public IEnumerable<string> Keys => throw Unenumerable();
+        public IEnumerable<T> Values => throw Unenumerable();
+        public int Count => throw Unenumerable();
         public bool ContainsKey(string key) => first.ContainsKey(key) || second.ContainsKey(key);
         public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out T value) =>
             first.TryGetValue(key, out value) || second.TryGetValue(key, out value);
-        public IEnumerator<KeyValuePair<string, T>> GetEnumerator() => first.Concat(second).GetEnumerator();
+        public IEnumerator<KeyValuePair<string, T>> GetEnumerator() => throw Unenumerable();
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private static NotSupportedException Unenumerable() =>
+            new("A method's identities over the program's are looked up, never enumerated.");
     }
 }

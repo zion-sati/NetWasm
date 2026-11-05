@@ -14,6 +14,8 @@ public sealed class CompilerConcurrencyPolicyTests
             WholeProgramAnalyzerFactory.SelectConcurrency(true, 32));
         Assert.Equal(new AnalysisConcurrency(8, false),
             WholeProgramAnalyzerFactory.SelectConcurrency(false, 8));
+        Assert.Equal(1, WholeProgramAnalyzerFactory.SelectConcurrency(true, 32).AnalyzerCount);
+        Assert.Equal(9, WholeProgramAnalyzerFactory.SelectConcurrency(false, 8).AnalyzerCount);
 
         var one = ImmutableArray.Create<IReachableMethodAnalyzer>(new UnusedAnalyzer());
         var several = ImmutableArray.Create<IReachableMethodAnalyzer>(new UnusedAnalyzer(), new UnusedAnalyzer());

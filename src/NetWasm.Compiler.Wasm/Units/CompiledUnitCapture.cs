@@ -24,8 +24,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
         new(StringComparer.Ordinal);
 
     private WasmFunctionSymbols _symbols = WasmFunctionSymbols.Empty;
-    private FrozenDictionary<string, uint>.AlternateLookup<ReadOnlySpan<char>> _bySymbol;
-    private bool _hasSpanLookup;
+    private FrozenDictionary<string, uint>.AlternateLookup<ReadOnlySpan<char>> _bySymbol = WasmFunctionSymbols.Empty.BySpan;
 
     internal string? Directory { get; } = directory;
     // Whether restored methods are emitted as well and compared.
@@ -66,14 +65,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
     {
         if (!Bodies.TryGetValue(identity, out var body)) return null;
         var input = new UnitFingerprintBuilder();
-        try
-        {
-            input.Add(body);
-        }
-        catch (NotSupportedException)
-        {
-            return null;
-        }
+        input.Add(body);
         input.Add(Policy);
         input.Add(rootMap);
         var assemblies = new HashSet<string>(StringComparer.Ordinal);
@@ -95,7 +87,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
         set
         {
             _symbols = value;
-            _hasSpanLookup = value.BySymbol.TryGetAlternateLookup(out _bySymbol);
+            _bySymbol = value.BySpan;
         }
     }
 
@@ -152,9 +144,7 @@ internal sealed class CompiledUnitState(string? directory) : IDisposable
     }
 
     // The function index a symbol names in this module, read without copying the symbol.
-    internal bool TryResolve(ReadOnlySpan<char> symbol, out uint index) => _hasSpanLookup
-        ? _bySymbol.TryGetValue(symbol, out index)
-        : _symbols.BySymbol.TryGetValue(symbol.ToString(), out index);
+    internal bool TryResolve(ReadOnlySpan<char> symbol, out uint index) => _bySymbol.TryGetValue(symbol, out index);
 }
 
 internal interface ICompiledUnitSymbolBinder
@@ -235,12 +225,8 @@ internal sealed class CompiledUnitCapturer(
         }
         // A filter environment is shared with the method's filter funclets; such methods
         // are not kept until a unit can carry one.
-        if (state.Directory is null || emission.Environment != FilterEnvironmentLayout.Empty &&
-            (emission.Environment.Size != 0 || !emission.Environment.Captures.IsEmpty ||
-             !emission.Environment.AnchorOffsets.IsEmpty || emission.Environment.RootSlotCount != 0))
-        {
+        if (state.Directory is null || !emission.Environment.IsEmpty)
             return;
-        }
         ImmutableArray<WasmIndexOperand> operands;
         try
         {
@@ -266,11 +252,9 @@ internal sealed class CompiledUnitCapturer(
             }
             relocations.Add(new(operand.Offset, operand.Length, operand.Space, symbol, operand.IsSigned33));
         }
-        if (state.InputOf(identity, rootMap) is not { } input)
+        if (!state.Bodies.TryGetValue(identity, out var body) || state.InputOf(identity, rootMap) is not { } input)
             return;
-        var groups = state.Bodies.TryGetValue(identity, out var body)
-            ? UnitExceptionGroups.Of(method, body.Body.ExceptionRegions, exceptionGroups)
-            : null;
+        var groups = UnitExceptionGroups.Of(method, body.Body.ExceptionRegions, exceptionGroups);
         // The root map is kept with the facts its analysis read: recorded in this compile, or
         // those of the unit it was taken from.
         ImmutableArray<UnitDependency>? rootMapDependencies =

@@ -189,10 +189,11 @@ internal static class UnitRootMapFormat
             return roots.MoveToImmutable();
         }
 
+        // A name's length counts its UTF-16 characters, two bytes each.
         public string Text()
         {
-            var length = Count();
-            if (_at + length * 2L > _bytes.Length) throw new InvalidDataException("A unit's root map is corrupt.");
+            var length = Word();
+            if (length < 0 || _at + length * 2L > _bytes.Length) throw new InvalidDataException("A unit's root map is corrupt.");
             var text = System.Text.Encoding.Unicode.GetString(_bytes.Slice(_at, length * 2));
             _at += length * 2;
             return text;

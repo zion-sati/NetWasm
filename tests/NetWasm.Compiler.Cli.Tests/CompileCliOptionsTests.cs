@@ -244,6 +244,34 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("option '-nologo:yes' takes no value", exception.Diagnostic.Message);
     }
 
+    // The environment overrides the switches for a process; without it, units serve the
+    // builds that compile for speed (O0 and None) unless a switch says otherwise.
+    [Theory]
+    [InlineData("0", "-optimize:O0", false)]
+    [InlineData("1", "-optimize:O3", true)]
+    [InlineData("verify", "-optimize:O3", true)]
+    [InlineData(null, "-optimize:O0", true)]
+    [InlineData(null, "-optimize:None", true)]
+    [InlineData(null, "-optimize:O3", false)]
+    [InlineData(null, "-compiledunits+", true)]
+    [InlineData(null, "-verifycompiledunits+", true)]
+    public void CompiledUnitsFollowTheEnvironmentThenTheSwitchesThenTheLevel(string? environment, string option, bool units)
+    {
+        var options = option.StartsWith("-optimize", StringComparison.Ordinal)
+            ? Parse("App.dll", "-out:app.wasm", option)
+            : Parse("App.dll", "-out:app.wasm", "-optimize:O3", option);
+
+        Assert.Equal(units, CompileCliCommand.CompiledUnits(environment, options));
+    }
+
+    [Theory]
+    [InlineData(null, "-optimize:O0", false)]
+    [InlineData("1", "-optimize:O0", false)]
+    [InlineData("verify", "-optimize:O3", true)]
+    [InlineData(null, "-verifycompiledunits+", true)]
+    public void UnitsAreVerifiedWhereTheEnvironmentOrTheSwitchesAsk(string? environment, string option, bool verified) =>
+        Assert.Equal(verified, CompileCliCommand.VerifiesCompiledUnits(environment, Parse("App.dll", "-out:app.wasm", option)));
+
     private static CompileCliOptions Parse(params string[] arguments) =>
         CompileCliOptions.Parse(NwcTestArguments.Read(CompileCliOptions.Names, arguments));
 }

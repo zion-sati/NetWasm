@@ -21,7 +21,11 @@ public sealed record AssemblyInputDetail(
     FrozenDictionary<int, InputFingerprint> Bodies);
 
 /// <summary>An input assembly: its bytes' fingerprint, and its detail once it has been read.</summary>
-public sealed record AssemblyInputs(string Name, InputFingerprint Content, AssemblyInputDetail? Detail);
+public sealed record AssemblyInputs(string Name, InputFingerprint Content, AssemblyInputDetail? Detail)
+{
+    // What its users depend on: its detail's shape, or, read without detail, all its content.
+    public InputFingerprint Shape => Detail?.Shape ?? Content;
+}
 
 /// <summary>What one analysed method added to the whole program, and its definition.</summary>
 public readonly record struct MethodContributionRecord(string Assembly, int Token, InputFingerprint Fingerprint);
@@ -208,6 +212,7 @@ public static class CompilationInputsFormat
             reader.ReadUInt32();
             reader.ReadInt32();
             var count = reader.ReadInt32();
+            if (count < 0) return CompilationInputs.Empty;
             var assemblies = ImmutableArray.CreateBuilder<AssemblyInputs>(count);
             for (var index = 0; index < count; index++)
             {

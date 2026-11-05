@@ -101,12 +101,12 @@ public sealed class CompiledUnitStoreTests
         {
             var first = new UnitSegmentWriter();
             first.Add(Unit("Program::Run", new(3, 4)));
-            new FileUnitStoreCommitter().Commit(location, Change(first, 1));
+            new FileUnitStoreCommitter(new UnitFileDeleter()).Commit(location, Change(first, 1));
             var second = new UnitSegmentWriter();
             second.Add(Unit("Program::Next", new(3, 4)));
-            new FileUnitStoreCommitter().Commit(location, Change(second, 2));
+            new FileUnitStoreCommitter(new UnitFileDeleter()).Commit(location, Change(second, 2));
 
-            using (var store = new MappedFileUnitStoreLoader().Load(location))
+            using (var store = new MappedFileUnitStoreLoader(new NoUnitMemoryPrefetcher()).Load(location))
             {
                 var found = Assert.IsType<UnitLocation>(store.Find("Program::Next"));
                 Assert.Equal("Program_Next", store.Segments[found.Segment]!.Record(found.Offset).FunctionName.ToString());

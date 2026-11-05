@@ -245,7 +245,7 @@ internal sealed class RecordingTypeDescriptorSource(
                 builder.Add(descriptor.ObjectSize);
                 builder.Add(descriptor.BitmapAddress);
                 builder.Add(descriptor.BitmapBitCount);
-                builder.Add(descriptor.Finalizer?.CanonicalName);
+                builder.Add(descriptor.Finalizer);
                 builder.Add(descriptor.AssignableTypeIdsAddress);
                 builder.Add(descriptor.AssignableTypeIdCount);
                 builder.Add(descriptor.IsInterface);
@@ -295,7 +295,7 @@ internal sealed class RecordingTypeDescriptorSource(
                 builder.Add(descriptor.ObjectSize);
                 builder.Add(descriptor.BitmapAddress);
                 builder.Add(descriptor.BitmapBitCount);
-                builder.Add(descriptor.Finalizer?.CanonicalName);
+                builder.Add(descriptor.Finalizer);
                 builder.Add(descriptor.AssignableTypeIdsAddress);
                 builder.Add(descriptor.AssignableTypeIdCount);
                 builder.Add(descriptor.IsInterface);
