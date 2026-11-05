@@ -115,7 +115,12 @@ Built with NetWasm:
 
 - **[DoomSharp](https://github.com/davidfowl/doomsharp)** by David Fowler, a
   clean-room classic WAD game engine in C#, has a NetWasm browser build you can
-  [play](https://davidfowl.github.io/doomsharp/netwasm/).
+  [play](https://davidfowl.github.io/doomsharp/netwasm/). Built with the current
+  NetWasm at `O3` with NetWasmGC
+  ([davidfowl/doomsharp#60](https://github.com/davidfowl/doomsharp/pull/60)), it
+  renders 120 frames 1.24 times faster than DoomSharp's Blazor AOT build in
+  headless Chromium (1,794 ms against 2,225 ms on an Apple M1 Max), from
+  0.68 MiB of Brotli-compressed files against 3.67 MiB.
 - **[FUI-CS](https://github.com/zion-sati/fui-cs)**, the C# SDK for EffinDOM's
   retained-mode canvas UI, compiles every route of its
   [live demo](https://fui-cs-demo.effindom.dev/) to WebAssembly with NetWasm.
