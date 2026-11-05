@@ -28,16 +28,31 @@ public sealed class ManagedBodyBatchEmitterFactoryTests
     }
 
     [Fact]
-    public void DisposesPreviouslyBuiltWorkersWhenLaterConstructionFails()
+    public void DisposesTheBuiltWorkersWhenAConstructionFails()
     {
         var source = new FakeForkSource();
-        var workers = new FakeWorkerFactory { FailOnCall = 3 };
+        var workers = new FakeWorkerFactory(source) { FailingForks = [2] };
         var factory = new ManagedBodyBatchEmitterFactory(source, 4, workers);
 
         Assert.Throws<InvalidOperationException>(() => factory.Create());
 
         Assert.Equal(4, source.RequestedCount);
-        Assert.Equal(3, workers.Calls);
+        // The workers are built side by side, so every one is attempted.
+        Assert.Equal(4, workers.Calls);
+        Assert.Equal([true, true, true], workers.Disposables.Select(item =>
+            item.Disposed));
+    }
+
+    [Fact]
+    public void ThrowsTheFirstConstructionFailureInWorkerOrder()
+    {
+        var source = new FakeForkSource();
+        var workers = new FakeWorkerFactory(source) { FailingForks = [3, 1] };
+        var factory = new ManagedBodyBatchEmitterFactory(source, 4, workers);
+
+        var failure = Assert.Throws<InvalidOperationException>(() => factory.Create());
+
+        Assert.Equal("factory failure 1", failure.Message);
         Assert.Equal([true, true], workers.Disposables.Select(item =>
             item.Disposed));
     }
@@ -46,7 +61,7 @@ public sealed class ManagedBodyBatchEmitterFactoryTests
     public void BatchOwnsAndDisposesEveryBuiltWorker()
     {
         var source = new FakeForkSource();
-        var workers = new FakeWorkerFactory();
+        var workers = new FakeWorkerFactory(source);
         var factory = new ManagedBodyBatchEmitterFactory(source, 2, workers);
 
         using (factory.Create())
@@ -102,14 +117,15 @@ public sealed class ManagedBodyBatchEmitterFactoryTests
     private sealed class FakeForkSource : IManagedLayoutForkSource
     {
         public int RequestedCount { get; private set; }
+        public ImmutableArray<ManagedLayoutFork> Forks { get; private set; } = [];
 
         public ManagedLayoutForks Create(int workerCount)
         {
             RequestedCount = workerCount;
-            return new(Enumerable.Range(0, workerCount)
+            Forks = [.. Enumerable.Range(0, workerCount)
                 .Select(_ => new ManagedLayoutFork(
-                    new UnusedValueLayouts(), new UnusedFieldLayouts()))
-                .ToImmutableArray(), new NoOpPublisher());
+                    new UnusedValueLayouts(), new UnusedFieldLayouts()))];
+            return new(Forks, new NoOpPublisher());
         }
     }
 
@@ -139,19 +155,23 @@ public sealed class ManagedBodyBatchEmitterFactoryTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeWorkerFactory : IManagedBodyWorkerFactory
+    // Called from several threads at once, as the batch factory builds its workers in parallel.
+    private sealed class FakeWorkerFactory(FakeForkSource source) : IManagedBodyWorkerFactory
     {
-        public List<TrackedDisposable> Disposables { get; } = [];
-        public int Calls { get; private set; }
-        public int FailOnCall { get; set; }
+        private int _calls;
+
+        public System.Collections.Concurrent.ConcurrentQueue<TrackedDisposable> Disposables { get; } = new();
+        public int Calls => Volatile.Read(ref _calls);
+        public int[] FailingForks { get; init; } = [];
 
         public ManagedBodyWorker Create(ManagedLayoutFork fork)
         {
-            Calls++;
-            if (Calls == FailOnCall)
-                throw new InvalidOperationException("factory failure");
+            Interlocked.Increment(ref _calls);
+            var index = source.Forks.IndexOf(fork);
+            if (FailingForks.Contains(index))
+                throw new InvalidOperationException($"factory failure {index}");
             var disposable = new TrackedDisposable();
-            Disposables.Add(disposable);
+            Disposables.Enqueue(disposable);
             return new(disposable, null!, null!,
                 new MethodBufferedLogger(
                     NullLogger<WasmModuleEmitterFactory>.Instance));
