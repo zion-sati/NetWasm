@@ -278,15 +278,13 @@ mean “desktop .NET, but in Wasm.” The main remaining themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.10.8:** CoreLib's results match .NET 11 where they
-differed: `double` and `float` take every numeric format .NET 11 accepts, and
-`Task<T>.Result`, generic-math edge cases and `ArraySegment<T>` behave as on
-.NET 11. The compiler reuses a division's quotient for the remainder of the same
-operands and leaves out integer checks that value ranges rule out, and generated
-code takes 0.41 of Mono AOT's time on the micro-benchmarks.
-[Release notes](docs/releases/0.10.8.md). NetWasm 0.10.7 brought WebAssembly
-SIMD for `Vector128<T>` and `Vector<T>` and a loop vectorizer.
-[Release notes](docs/releases/0.10.7.md)
+**New in NetWasm 0.11.0:** Debug builds keep each method's compiled code, so a
+rebuild compiles only what an edit changes: on DoomSharp's browser build, an
+edit to one method rebuilds in 1.6 s where 0.10.8 took 29.3 s. `dotnet watch`
+runs on NetWasm projects, with a development server that stays up and reloads
+the page. [Release notes](docs/releases/0.11.0.md). NetWasm 0.10.8 made
+CoreLib's results match .NET 11.
+[Release notes](docs/releases/0.10.8.md)
 
 **In progress:** broader compatibility with existing .NET Standard
 2.1 library binaries and NuGet assets. The target is to consume libraries
