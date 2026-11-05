@@ -111,6 +111,15 @@ Today NetWasm can:
 The profile is deliberately smaller than desktop .NET. It already supports
 complete applications, portable libraries, test projects and browser modules.
 
+Built with NetWasm:
+
+- **[DoomSharp](https://github.com/davidfowl/doomsharp)** by David Fowler, a
+  clean-room classic WAD game engine in C#, has a NetWasm browser build you can
+  [play](https://davidfowl.github.io/doomsharp/netwasm/).
+- **[FUI-CS](https://github.com/zion-sati/fui-cs)**, the C# SDK for EffinDOM's
+  retained-mode canvas UI, compiles every route of its
+  [live demo](https://fui-cs-demo.effindom.dev/) to WebAssembly with NetWasm.
+
 ## Try it
 
 Install [.NET SDK 10.0.303 or newer](https://dotnet.microsoft.com/download/dotnet/10.0),
