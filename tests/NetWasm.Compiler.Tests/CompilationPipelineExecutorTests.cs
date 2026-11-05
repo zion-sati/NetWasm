@@ -283,7 +283,7 @@ public sealed class CompilationPipelineExecutorTests
                 Capability<ICompilerProgressReporter>("progress"),
                 // A served compile binds its patched module; a full one, its result.
                 Capability<ICompilationDiagnosticBindingStage>("diagnostic-binding", invoke: (_, args) =>
-                    args[0] is byte[] ? null : DiagnosticBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
+                    args[0] is byte[]? null : DiagnosticBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ICompilationStackTraceArtifactBinder>("stack-binding", invoke: (_, args) =>
                     StackBoundResult = Assert.IsType<CompilationResult>(args[0]) with { }),
                 Capability<ISymbolFormatterFactory>("symbols", ValidationTestData.Symbols()),

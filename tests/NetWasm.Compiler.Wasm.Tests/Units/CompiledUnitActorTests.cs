@@ -726,7 +726,7 @@ public sealed class UnitRootMapRecorderTests
 
         recorder.Map(method, reason.EndsWith("fails", StringComparison.Ordinal)
             ? () => { ran.Add("analysed"); return map; }
-            : Analysis(recorder, map, ran));
+        : Analysis(recorder, map, ran));
 
         Assert.Equal(["analysed"], ran);
         Assert.Equal(0, state.RestoredRootMaps);

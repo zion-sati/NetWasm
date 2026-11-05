@@ -30,7 +30,8 @@ public sealed class UnitExceptionGroupsTests
     ];
 
     private static StructuredExceptionClause Catch => new(CilExceptionRegionKind.Catch, 2, 2, ExceptionKey, null,
-        StructuredSequence.Empty, null) { CatchTypeIdentity = ExceptionType, HandlerBlock = new(2) };
+        StructuredSequence.Empty, null)
+    { CatchTypeIdentity = ExceptionType, HandlerBlock = new(2) };
 
     private static StructuredExceptionGroup Group(int id, int? parent, int tryOffset, int tryLength, StructuredExceptionClause clause) =>
         new(new(id), parent is { } value ? new(value) : null, tryOffset, tryLength, [], [clause], [], null, null);

@@ -209,7 +209,8 @@ public sealed class UnitAnswerTextTests
 public sealed class UnitAnswersReplayTests
 {
     private static UnitAnswers Answers(object? value) => UnitAnswers.Over(UnitActorFixture.Store(new CompiledUnit("Program::Run",
-        new(1, 1), [new(UnitQueryKind.StringTypeId, "", new(5, 6)) { Value = value }], [0x00, 0x0B], [], 1) { FunctionName = "f" }),
+        new(1, 1), [new(UnitQueryKind.StringTypeId, "", new(5, 6)) { Value = value }], [0x00, 0x0B], [], 1)
+    { FunctionName = "f" }),
         new UnitModelEdgeTests.NoMethods(), new UnitModelEdgeTests.NoFields());
 
     [Fact]

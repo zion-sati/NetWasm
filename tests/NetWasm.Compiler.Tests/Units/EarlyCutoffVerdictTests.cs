@@ -60,14 +60,18 @@ public sealed class EarlyCutoffVerdictTests
         {
             Contributions = new Dictionary<string, MethodContributionRecord>
             {
-                ["Kept"] = Record(0x06000001, 1), ["Changed"] = Record(0x06000001, 2), ["Gone"] = Record(0x06000001, 3),
+                ["Kept"] = Record(0x06000001, 1),
+                ["Changed"] = Record(0x06000001, 2),
+                ["Gone"] = Record(0x06000001, 3),
             }.ToFrozenDictionary(),
         };
         var after = new CompilationInputs([new("App", new(2, 2), new(Shape, Bodies(11)))])
         {
             Contributions = new Dictionary<string, MethodContributionRecord>
             {
-                ["Kept"] = Record(0x06000001, 1), ["Changed"] = Record(0x06000001, 9), ["New"] = Record(0x06000001, 4),
+                ["Kept"] = Record(0x06000001, 1),
+                ["Changed"] = Record(0x06000001, 9),
+                ["New"] = Record(0x06000001, 4),
                 ["Unedited"] = Record(0x06000002, 5),
             }.ToFrozenDictionary(),
         };
