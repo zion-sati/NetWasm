@@ -5,9 +5,9 @@
 The measured Release/Oz `Console.WriteLine(42)` WASI Preview 2 component is
 **39,230 bytes (38.3 KiB)** with the default precise Compact collector, or
 **13,434 bytes with Brotli quality 11**. The same print-`42` workload with
-Rust 1.95.0's size-oriented profile produces a **53,635-byte** WASI Preview 2
-component, or **16,963 bytes with Brotli quality 11**. NetWasm is **14,405 bytes
-(26.9%) smaller raw** and **3,529 bytes (20.8%) smaller compressed**, including
+Rust 1.99.1's size-oriented profile produces a **52,569-byte** WASI Preview 2
+component, or **16,648 bytes with Brotli quality 11**. NetWasm is **13,339 bytes
+(25.4%) smaller raw** and **3,214 bytes (19.3%) smaller compressed**, including
 its linked runtime and reachable precise-GC support.
 
 These NetWasm figures were reproduced using the released 0.11.0 SDK and template
@@ -215,11 +215,13 @@ fn main() {
 | --- | ---: |
 | NetWasm, Release/Oz, Compact | 39,230 bytes |
 | Rust 1.90.0, ordinary Cargo release | 86,248 bytes |
-| Rust 1.95.0, ordinary Cargo release | 81,997 bytes |
-| Rust 1.95.0, size-oriented profile below | 53,635 bytes |
+| Rust 1.99.1, ordinary Cargo release | 81,031 bytes |
+| Rust 1.99.1, size-oriented profile below | 52,569 bytes |
+| Rust 1.99.1, size profile with wasm-opt run by hand (below) | 40,488 bytes |
 
-All four artifacts executed and printed `42` under Wasmtime. The retained
-Rust runs used Wasmtime 47.0.3; NetWasm used Wasmtime 49.0.3.
+All five artifacts executed and printed `42` under Wasmtime. The retained
+Rust 1.90.0 run used Wasmtime 47.0.3; the Rust 1.99.1 runs and NetWasm used
+Wasmtime 49.0.3.
 These are artifact-size observations, not a cross-engine performance comparison.
 The Rust artifacts also pass wasm-tools 1.256.0 validation.
 
@@ -234,7 +236,7 @@ Install the pinned Rust toolchains without changing your default:
 
 ```sh
 rustup toolchain install 1.90.0 --profile minimal --target wasm32-wasip2
-rustup toolchain install 1.95.0 --profile minimal --target wasm32-wasip2
+rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
 ```
 
 Create a Cargo binary project with the source above and this `Cargo.toml`:
@@ -258,17 +260,48 @@ Build and measure separate output directories:
 
 ```sh
 cargo +1.90.0 build --release --target wasm32-wasip2 --target-dir target-190
-cargo +1.95.0 build --release --target wasm32-wasip2 --target-dir target-195
-cargo +1.95.0 build --profile small --target wasm32-wasip2 --target-dir target-195
+cargo +1.99.1 build --release --target wasm32-wasip2 --target-dir target-199
+cargo +1.99.1 build --profile small --target wasm32-wasip2 --target-dir target-199
 wc -c target-190/wasm32-wasip2/release/console42.wasm
-wc -c target-195/wasm32-wasip2/release/console42.wasm
-wc -c target-195/wasm32-wasip2/small/console42.wasm
+wc -c target-199/wasm32-wasip2/release/console42.wasm
+wc -c target-199/wasm32-wasip2/small/console42.wasm
 ```
 
 See [Cargo's profile documentation](https://doc.rust-lang.org/cargo/reference/profiles.html)
 for optimization, LTO, panic and stripping semantics. These runs use the
 toolchains' distributed standard libraries, not a custom size-optimized
 standard-library rebuild.
+
+### Rust with wasm-opt run by hand
+
+NetWasm runs Binaryen's wasm-opt inside every build. Rust's `wasm32-wasip2`
+build does not, and its output is already a component, which wasm-opt does not
+accept. Linking the core module alone, optimizing it and re-encoding the
+component:
+
+```sh
+RUSTFLAGS="-C link-arg=--skip-wit-component" \
+  cargo +1.99.1 build --profile small --target wasm32-wasip2 --target-dir target-core
+wasm-opt -Oz --converge \
+  --enable-bulk-memory --enable-bulk-memory-opt --enable-call-indirect-overlong \
+  --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals \
+  --enable-multivalue --enable-reference-types \
+  target-core/wasm32-wasip2/small/console42.wasm -o core.wasm
+wasm-tools component new core.wasm -o component.wasm
+wasm-tools strip --all component.wasm -o console42.wasm
+```
+
+| Rust 1.99.1 build | Raw | Brotli 11 |
+| --- | ---: | ---: |
+| Size profile | 52,569 bytes | 16,648 bytes |
+| Core module through `wasm-opt -Oz`, component re-encoded | 44,410 bytes | 15,137 bytes |
+| Same, every custom section stripped | 40,571 bytes | 14,487 bytes |
+| Same, with `--converge` | 40,488 bytes | 14,390 bytes |
+| NetWasm Release/Oz, Compact, ordinary publish | 39,230 bytes | 13,434 bytes |
+
+wasm-opt is Binaryen version 132 and wasm-tools is 1.256.0. The feature flags
+are the ones Rust's output uses: with `--all-features`, the re-encoded
+component no longer loads in Wasmtime 49.0.3. Every row prints `42`.
 
 ### What the 2025 table actually establishes
 
@@ -293,7 +326,7 @@ are **not equivalent deployment formats or collector boundaries**:
 | Build | Artifact | Raw bytes | Brotli 11 | Collector boundary |
 | --- | --- | ---: | ---: | --- |
 | NetWasm Release/Oz, Compact | WASI Preview 2 Component | 39,230 | 13,434 | Precise Compact GC included in the artifact |
-| Rust 1.95.0 size profile | WASI Preview 2 Component | 53,635 | 16,963 | No tracing GC in this workload |
+| Rust 1.99.1 size profile | WASI Preview 2 Component | 52,569 | 16,648 | No tracing GC in this workload |
 | Kotlin 2.4.0 production `wasmWasi` | WASI Preview 1 core module | 79,293 | 22,655 | WasmGC supplied by the host engine, not the artifact |
 | TinyGo 0.39.0 `fmt.Println(42)` | WASI Preview 1 core module | 93,043 | 26,931 | Precise GC configured |
 
