@@ -14,7 +14,8 @@ internal sealed class DelegateCloneIntrinsicEmitter(
     public void Emit(RuntimeIntrinsicEmissionRequest request, IWasmInstructionWriter code)
     {
         var source = request.Local(0, CliValueKind.ManagedReference);
-        foreach (var delegateType in request.Instruction.Target.DelegateTypes)
+        var delegateTypes = request.Instruction.Target.DelegateTypes.Read();
+        foreach (var delegateType in delegateTypes)
         {
             var layout = types.GetObjectLayout(delegateType);
             WriteLocalGet(code, source);
@@ -64,7 +65,7 @@ internal sealed class DelegateCloneIntrinsicEmitter(
 
         exceptions.Emit(code, ManagedExceptionKind.InvalidCast, request.Instruction.Context.ManagedThrowFunction);
         for (var index = 0;
-             index < request.Instruction.Target.DelegateTypes.Count;
+             index < delegateTypes.Count;
              index++)
         {
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));

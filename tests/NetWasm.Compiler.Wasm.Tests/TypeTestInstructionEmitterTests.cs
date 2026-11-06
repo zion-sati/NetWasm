@@ -334,10 +334,10 @@ public sealed class TypeTestInstructionEmitterTests
             Header = request.Header with { MethodInstance = caller },
             Target = request.Target with
             {
-                TypeTestSites = new Dictionary<string, TypeTestSiteModel>
+                TypeTestSites = Lookups.Of(new Dictionary<string, TypeTestSiteModel>
                 {
                     [site.Key] = site,
-                },
+                }),
             },
         };
         RegisterInstructionWriter(updated, new RecordingInstructionWriter());

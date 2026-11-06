@@ -107,12 +107,9 @@ public sealed class StaticFieldInstructionEmitterTests
         var guardKey = StaticInitializerGuard.KeyFor(program.InitializerKey);
         var target = CreateInstructionModuleTarget() with
         {
-            ModuleData = ModuleDataPlan.Empty with
-            {
-                StaticInitializerGuards = ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add(
+            StaticInitializerGuards = Lookups.Of(ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add(
                     guardKey,
-                    new(240, program.InitializerKey, null) { FunctionIndex = OptionalFunctionIndex.At(41) }),
-            },
+                    new(240, program.InitializerKey, null) { FunctionIndex = OptionalFunctionIndex.At(41) })),
         };
         var indices = new FunctionIndexMap(
             ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty.Add(
@@ -145,12 +142,9 @@ public sealed class StaticFieldInstructionEmitterTests
         var guardKey = $"{instance.DeclaringType.CanonicalName}::0x{program.InitializerKey.MetadataToken:x8}";
         var target = CreateInstructionModuleTarget() with
         {
-            ModuleData = ModuleDataPlan.Empty with
-            {
-                StaticInitializerGuards = ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add(
+            StaticInitializerGuards = Lookups.Of(ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add(
                     guardKey,
-                    new(244, null, guardKey) { FunctionIndex = OptionalFunctionIndex.At(42) }),
-            },
+                    new(244, null, guardKey) { FunctionIndex = OptionalFunctionIndex.At(42) })),
         };
         var indices = new FunctionIndexMap(
             ImmutableDictionary<EntityKey, WasmFunctionIndex>.Empty,

@@ -24,7 +24,7 @@ internal sealed class DirectCallEmitter(
         if (initializationTriggers.Classify(target))
         {
             initialization.Emit(new(target.DeclaringType, request.Method.DeclaringType,
-                instruction.Target.ModuleData, IsMethodInvocation: true), code, functionIndices);
+                instruction.Target.StaticInitializerGuards, IsMethodInvocation: true), code, functionIndices);
         }
         var constrainedReferenceReceiver = !target.IsStatic &&
             request.ConstrainedType is { IsValueType: false };

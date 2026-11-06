@@ -11,7 +11,7 @@ public interface IRootMapAnalyzerFactory
         IFieldRepository fields,
         IMethodRepository methods,
         IValueLayoutProvider layouts,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        IEntryLookup<string, DispatchCallSiteModel> dispatchCallSites,
         ITypeClassifier typeClassifier);
 }
 
@@ -32,7 +32,7 @@ public sealed class RootMapAnalyzerFactory(
         IFieldRepository fields,
         IMethodRepository methods,
         IValueLayoutProvider layouts,
-        IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+        IEntryLookup<string, DispatchCallSiteModel> dispatchCallSites,
         ITypeClassifier typeClassifier)
     {
         var continuations = new StackStorageContinuationAnalyzer();

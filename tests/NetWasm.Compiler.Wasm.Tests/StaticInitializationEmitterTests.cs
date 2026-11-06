@@ -40,7 +40,7 @@ public sealed class StaticInitializationEmitterTests
         var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(program, program,
             new AddressInstructionEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target)))));
 
-        emitter.Emit(new(TypeKey, owner, data, methodCall), writer, new RecordingIndices());
+        emitter.Emit(new(TypeKey, owner, Lookups.Of(data.StaticInitializerGuards), methodCall), writer, new RecordingIndices());
 
         Assert.Equal(!(beforeFieldInit && methodCall), writer.ToInstructions().Any(item => item.Opcode == WasmOpcodes.Call));
         if (beforeFieldInit && methodCall) Assert.Empty(writer.ToInstructions());
@@ -68,7 +68,7 @@ public sealed class StaticInitializationEmitterTests
         var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(program, program,
             new AddressInstructionEmitter(new RecordingLayoutProvider(WasmTargetLayout.For(target)))));
 
-        emitter.Emit(new(TypeKey, owner, data), writer, indices);
+        emitter.Emit(new(TypeKey, owner, Lookups.Of(data.StaticInitializerGuards)), writer, indices);
 
         var instructions = writer.ToInstructions();
         Assert.Equal(new byte[]
@@ -94,7 +94,7 @@ public sealed class StaticInitializationEmitterTests
         var emitter = Assert.IsAssignableFrom<IStaticInitializationEmitter>(new StaticInitializationEmitter(program, program,
             new AddressInstructionEmitter(new RecordingLayoutProvider())));
 
-        emitter.Emit(new(TypeKey, null, ModuleDataPlan.Empty), writer, indices);
+        emitter.Emit(new(TypeKey, null, Lookups.Of(ModuleDataPlan.Empty.StaticInitializerGuards)), writer, indices);
 
         Assert.Empty(writer.ToInstructions());
         Assert.Null(indices.Direct);

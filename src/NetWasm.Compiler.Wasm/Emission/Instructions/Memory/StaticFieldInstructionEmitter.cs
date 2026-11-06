@@ -152,7 +152,7 @@ internal sealed class StaticFieldInstructionEmitter(
             return;
         }
         initialization.Emit(new(field.DeclaringType, declaringType,
-            request.Target.ModuleData), code, functionIndices);
+            request.Target.StaticInitializerGuards), code, functionIndices);
     }
 
     private int GetStackLocal(

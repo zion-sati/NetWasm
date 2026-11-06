@@ -82,9 +82,9 @@ public sealed class CallEmissionKindResolverTests
         {
             Target = instruction.Target with
             {
-                DispatchCallSites = ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
+                DispatchCallSites = Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
                     site.Key,
-                    site),
+                    site)),
             },
         };
 
@@ -131,9 +131,9 @@ public sealed class CallEmissionKindResolverTests
         {
             Target = instruction.Target with
             {
-                DispatchCallSites = ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
+                DispatchCallSites = Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
                     site.Key,
-                    site),
+                    site)),
             },
         };
         var request = new CallEmissionRequest(instruction, instance, 0, 1);

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Core.NativeInterop;
 using NetWasm.Compiler.Wasm.Emission;
@@ -26,6 +27,7 @@ public sealed class NativeCallbackThunkEmitterTests
         var moduleData = ModuleDataPlan.Empty with
         {
             NativeCallbackReadinessAddress = 256,
+            StaticInitializerGuards = ImmutableDictionary<string, StaticInitializerGuard>.Empty.Add("guard", new(240, null, "guard")),
         };
         var selection = new RuntimeImportSelection(
             WasmModuleProfile.CoreApplication,
@@ -57,7 +59,8 @@ public sealed class NativeCallbackThunkEmitterTests
         Assert.Equal(WasmOpcodes.If, instructions[3].Opcode);
         Assert.Equal(WasmOpcodes.Unreachable, instructions[4].Opcode);
         Assert.Equal(WasmOpcodes.End, instructions[5].Opcode);
-        Assert.Same(moduleData, initialization.Request!.ModuleData);
+        Assert.True(initialization.Request!.Guards.TryGetValue("guard", out var guard));
+        Assert.Same(moduleData.StaticInitializerGuards["guard"], guard);
         Assert.True(initialization.Request.IsMethodInvocation);
         Assert.Equal(callback.Method.DeclaringType, initialization.Request.DeclaringType);
         Assert.Contains(instructions, instruction =>

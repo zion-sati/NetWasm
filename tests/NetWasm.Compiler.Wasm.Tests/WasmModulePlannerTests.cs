@@ -724,7 +724,7 @@ public sealed class WasmModulePlannerTests
 
         var target = targetFactory.Create(request);
 
-        var forwarded = Assert.Single(target.Instructions.DelegateTypes);
+        var forwarded = Assert.Single(target.Instructions.DelegateTypes.Read());
         Assert.Equal(
             delegateType.CanonicalName,
             forwarded.CanonicalName);

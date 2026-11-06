@@ -50,9 +50,9 @@ public sealed class CallableLoadingEmitterTests
         });
         var target = CreateInstructionModuleTarget(program) with
         {
-            DispatchCallSites = ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
+            DispatchCallSites = Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
                 $"{caller.CanonicalName}@00000000",
-                site),
+                site)),
         };
         var code = new RecordingInstructionWriter();
         var request = new InstructionEmissionRequest(
@@ -105,9 +105,9 @@ public sealed class CallableLoadingEmitterTests
         });
         var target = CreateInstructionModuleTarget(program) with
         {
-            DispatchCallSites = ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
+            DispatchCallSites = Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty.Add(
                 site.Key,
-                site),
+                site)),
         };
         var code = new RecordingInstructionWriter();
         var request = new InstructionEmissionRequest(

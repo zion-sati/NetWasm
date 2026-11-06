@@ -110,7 +110,7 @@ internal sealed class WasmModuleEmitter(
         var orderedConstructedMethods = plan.OrderedConstructedMethods;
         var delegateInvokes = plan.DelegateInvokes;
         var delegateInvokeTarget = new DelegateInvokeTarget(
-            request.DelegateBindings, moduleData, request.InlineArrayData);
+            request.DelegateBindings, target.Instructions.StaticInitializerGuards, request.InlineArrayData);
         var imports = _moduleImports.Collect(new(
             request,
             plan.RuntimeImports,

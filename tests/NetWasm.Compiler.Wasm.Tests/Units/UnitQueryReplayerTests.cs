@@ -17,9 +17,9 @@ public sealed class UnitQueryReplayerTests
     private static readonly FieldInstanceModel Value = new(ValueDefinition, Point, Point);
 
     private static readonly UnitQueryArguments Arguments = new(
-        new Dictionary<string, CliTypeIdentity> { [Point.CanonicalName] = Point, [Broken.CanonicalName] = Broken },
-        new Dictionary<string, FieldInstanceModel> { [Value.CanonicalName] = Value },
-        new Dictionary<string, MethodInstanceModel>());
+        Lookups.Of(new Dictionary<string, CliTypeIdentity> { [Point.CanonicalName] = Point, [Broken.CanonicalName] = Broken }),
+        Lookups.Of(new Dictionary<string, FieldInstanceModel> { [Value.CanonicalName] = Value }),
+        Lookups.Of(new Dictionary<string, MethodInstanceModel>()));
 
     public static TheoryData<string, string> Answered => new()
     {
@@ -128,7 +128,7 @@ public sealed class UnitQueryReplayerTests
     public void AFieldIsRebuiltThroughItsDeclaringTypeOnlyByItsOwnName()
     {
         var (replayer, _) = Replayer();
-        var arguments = Arguments with { Fields = new Dictionary<string, FieldInstanceModel>() };
+        var arguments = Arguments with { Fields = Lookups.Of(new Dictionary<string, FieldInstanceModel>()) };
         var target = EmitterTestSupport.CreateInstructionModuleTarget();
 
         Assert.Equal(UnitQueryStatus.Answered,
@@ -141,8 +141,8 @@ public sealed class UnitQueryReplayerTests
     public void AFieldTypeTheMethodNamesByDefinitionIsRebuilt()
     {
         var (replayer, _) = Replayer();
-        var arguments = new UnitQueryArguments(new Dictionary<string, CliTypeIdentity>(),
-            new Dictionary<string, FieldInstanceModel>(), new Dictionary<string, MethodInstanceModel>())
+        var arguments = new UnitQueryArguments(Lookups.Of(new Dictionary<string, CliTypeIdentity>()),
+            Lookups.Of(new Dictionary<string, FieldInstanceModel>()), Lookups.Of(new Dictionary<string, MethodInstanceModel>()))
         {
             Definitions = [new(Program, 0x06000001), ValueField],
         };
@@ -229,7 +229,7 @@ public sealed class UnitQueryReplayerTests
         public ImmutableArray<DataSegment> DataSegments => [new(16, [1, 2])];
         public int TypeFactsTableAddress => 512;
         public int TypeFactsTableCount => 4;
-        public IReadOnlyDictionary<string, int> TypeObjectAddresses => new Dictionary<string, int> { ["Program::Point"] = 128 };
+        public IEntryLookup<string, int> TypeObjectAddresses => Lookups.Of(new Dictionary<string, int> { ["Program::Point"] = 128 });
         public int TypeObjectTableAddress => 1024;
         public int TypeObjectCacheAddress => 2048;
         public int TypeObjectCount => 3;

@@ -18,7 +18,7 @@ internal sealed class ExceptionRegionEmitter(
         StructuredMethod method,
         StructuredExceptionRegion region,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData,
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
         Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence,
         int? loopBreakDepth = null,
         int? loopContinueDepth = null,
@@ -28,7 +28,7 @@ internal sealed class ExceptionRegionEmitter(
         ArgumentNullException.ThrowIfNull(code);
         ArgumentNullException.ThrowIfNull(method);
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(moduleData);
+        ArgumentNullException.ThrowIfNull(exceptionMetadata);
         ArgumentNullException.ThrowIfNull(emitSequence);
 
         if (!method.ExceptionGroups.TryGetValue(region.Group, out var group))
@@ -57,7 +57,7 @@ internal sealed class ExceptionRegionEmitter(
                 method,
                 group,
                 context,
-                moduleData,
+                exceptionMetadata,
                 emitSequence,
                 region,
                 loopBreakDepth,
@@ -73,7 +73,7 @@ internal sealed class ExceptionRegionEmitter(
                 method,
                 group,
                 context,
-                moduleData,
+                exceptionMetadata,
                 emitSequence,
                 region,
                 loopBreakDepth,
@@ -92,7 +92,7 @@ internal sealed class ExceptionRegionEmitter(
         StructuredMethod method,
         StructuredExceptionGroup group,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData,
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
         Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence)
     {
         code.Write(WasmInstruction.WithOperand(
@@ -116,7 +116,7 @@ internal sealed class ExceptionRegionEmitter(
                         method,
                         new StructuredExceptionRegion(nested.Group, null),
                         context with { ActiveExceptionGroup = group },
-                        moduleData,
+                        exceptionMetadata,
                         emitSequence,
                         enclosingLeaveDepth: 0);
                     code.Write(WasmInstruction.WithOperand(
@@ -139,7 +139,7 @@ internal sealed class ExceptionRegionEmitter(
         StructuredMethod method,
         StructuredExceptionGroup group,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData,
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
         Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence,
         StructuredExceptionRegion region,
         int? loopBreakDepth,
@@ -147,7 +147,7 @@ internal sealed class ExceptionRegionEmitter(
         int? dispatcherContinueDepth,
         int? enclosingLeaveDepth)
     {
-        EnterExceptionFrame(code, method, group, context, moduleData);
+        EnterExceptionFrame(code, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -158,7 +158,7 @@ internal sealed class ExceptionRegionEmitter(
                 WasmOpcodes.EmptyBlockType,
                 0,
                 0)));
-        EmitProtectedParts(code, method, group, context, moduleData, emitSequence);
+        EmitProtectedParts(code, method, group, context, exceptionMetadata, emitSequence);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         LeaveExceptionFrame(code, group, context);
         code.Write(WasmInstruction.WithOperand(
@@ -250,7 +250,7 @@ internal sealed class ExceptionRegionEmitter(
         StructuredMethod method,
         StructuredExceptionGroup group,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData,
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
         Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence,
         StructuredExceptionRegion region,
         int? loopBreakDepth,
@@ -266,7 +266,7 @@ internal sealed class ExceptionRegionEmitter(
                 method,
                 group,
                 context,
-                moduleData,
+                exceptionMetadata,
                 emitSequence,
                 region,
                 loopBreakDepth,
@@ -275,7 +275,7 @@ internal sealed class ExceptionRegionEmitter(
                 enclosingLeaveDepth);
             return;
         }
-        EnterExceptionFrame(code, method, group, context, moduleData);
+        EnterExceptionFrame(code, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -286,7 +286,7 @@ internal sealed class ExceptionRegionEmitter(
                 WasmOpcodes.EmptyBlockType,
                 0,
                 0)));
-        EmitProtectedParts(code, method, group, context, moduleData, emitSequence);
+        EmitProtectedParts(code, method, group, context, exceptionMetadata, emitSequence);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         LeaveExceptionFrame(code, group, context);
         code.Write(WasmInstruction.WithOperand(
@@ -330,7 +330,7 @@ internal sealed class ExceptionRegionEmitter(
         StructuredMethod method,
         StructuredExceptionGroup group,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData,
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
         Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence,
         StructuredExceptionRegion region,
         int? loopBreakDepth,
@@ -340,7 +340,7 @@ internal sealed class ExceptionRegionEmitter(
     {
         var clause = group.Clauses[0];
         ClearExceptionRoot(code, group, context);
-        EnterExceptionFrame(code, method, group, context, moduleData);
+        EnterExceptionFrame(code, method, group, context, exceptionMetadata);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.Block,
             WasmInstructionOperand.BlockType(WasmOpcodes.EmptyBlockType)));
@@ -351,7 +351,7 @@ internal sealed class ExceptionRegionEmitter(
                 WasmOpcodes.EmptyBlockType,
                 0,
                 0)));
-        EmitProtectedParts(code, method, group, context, moduleData, emitSequence);
+        EmitProtectedParts(code, method, group, context, exceptionMetadata, emitSequence);
         code.Write(WasmInstruction.NoOperand(WasmOpcodes.End));
         LeaveExceptionFrame(code, group, context);
         code.Write(WasmInstruction.WithOperand(
@@ -552,9 +552,9 @@ internal sealed class ExceptionRegionEmitter(
         StructuredMethod method,
         StructuredExceptionGroup group,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData)
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata)
     {
-        var metadata = moduleData.ExceptionMetadata[exceptionGroupKeys.Create(method, group.Id)];
+        var metadata = exceptionMetadata.Required(exceptionGroupKeys.Create(method, group.Id));
         EmitAddressConstant(code, metadata.Address);
         code.Write(WasmInstruction.WithOperand(
             WasmOpcodes.I32Constant,

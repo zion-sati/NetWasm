@@ -89,9 +89,9 @@ public sealed class RootMapTests
         Assert.DoesNotContain(DelegateInvokeKey, capabilities.Methods);
         Assert.Contains(closedCaller.CanonicalName, capabilities.ConstructedMethods);
         var decisions = ThroughContract(new RootDecisionClassifier(program, program, program,
-            dispatch, new RuntimeAllocationSafepointClassifier(), program, new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
+            Lookups.Of(dispatch), new RuntimeAllocationSafepointClassifier(), program, new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
                 new NetWasm.Compiler.Core.Types.StaticFieldInitializationClassifier(program, program)));
-        Assert.True(decisions.Decide(new(entry, 0, call, new HashSet<EntityKey>(), new HashSet<string>())));
+        Assert.True(decisions.Decide(new(entry, 0, call, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()))));
     }
 
     [Theory]
@@ -116,7 +116,7 @@ public sealed class RootMapTests
         Assert.Empty(capabilities.Methods);
         Assert.Empty(capabilities.ConstructedMethods);
         Assert.False(CreateRootDecisions(program).Decide(new(
-            body, 0, call, new HashSet<EntityKey>(), new HashSet<string>())));
+            body, 0, call, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()))));
     }
 
     private static IRootDecisionClassifier ThroughContract(IRootDecisionClassifier classifier) => classifier;
@@ -184,7 +184,7 @@ public sealed class RootMapTests
         foreach (var (body, offset) in new[] { (wrapper, 0), (caller, 1), (closedBody, 1) })
         {
             var roots = CreateAnalyzer(program).Analyze(new(
-                body, capabilities.Methods, capabilities.ConstructedMethods));
+                body, Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods)));
             Assert.Contains(new RootSource(RootSourceKind.Argument, 0), roots.Safepoints[offset].Roots);
         }
     }
@@ -229,7 +229,7 @@ public sealed class RootMapTests
         Assert.Contains(AllocatorKey, capabilities.Methods);
         foreach (var (body, offset) in new[] { (wrapper, 0), (caller, 1) })
         {
-            var roots = CreateAnalyzer(program).Analyze(new(body, capabilities.Methods, capabilities.ConstructedMethods));
+            var roots = CreateAnalyzer(program).Analyze(new(body, Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods)));
             Assert.Contains(new RootSource(RootSourceKind.Argument, 0), roots.Safepoints[offset].Roots);
         }
     }
@@ -279,13 +279,13 @@ public sealed class RootMapTests
             new Dictionary<EntityKey, StructuredMethod> { [EntryKey] = entry, [AllocatorKey] = caller },
             ImmutableDictionary<string, StructuredMethod>.Empty, dispatch));
         var classifier = ThroughContract(new RootDecisionClassifier(program, program, program,
-            dispatch, new RuntimeAllocationSafepointClassifier(), program, new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
+            Lookups.Of(dispatch), new RuntimeAllocationSafepointClassifier(), program, new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
                 new NetWasm.Compiler.Core.Types.StaticFieldInitializationClassifier(program, program)));
 
         Assert.Equal(expected, capabilities.Methods.Contains(EntryKey));
         Assert.Equal(expected, capabilities.Methods.Contains(AllocatorKey));
         Assert.Equal(expected, classifier.Decide(new(entry, 0, call,
-            capabilities.Methods, capabilities.ConstructedMethods)));
+            Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods))));
     }
 
     [Theory]
@@ -322,7 +322,7 @@ public sealed class RootMapTests
         Assert.DoesNotContain(NativeKey, capabilities.Methods);
         Assert.True(CreateRootDecisions(program).Decide(new(
             entry, Assert.Single(entry.ControlFlow.Graph.Blocks).Index, call,
-            new HashSet<EntityKey>(), new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()))));
     }
 
     [Theory]
@@ -355,7 +355,7 @@ public sealed class RootMapTests
 
         Assert.Contains(AllocatorKey, capabilities.Methods);
         Assert.Contains(EntryKey, capabilities.Methods);
-        var roots = CreateAnalyzer(program).Analyze(new(allocator, capabilities.Methods.ToHashSet(), new HashSet<string>()));
+        var roots = CreateAnalyzer(program).Analyze(new(allocator, Lookups.Of(capabilities.Methods.ToHashSet()), Lookups.Of(new HashSet<string>())));
         Assert.True(roots.Safepoints.ContainsKey(2));
     }
 
@@ -562,8 +562,8 @@ public sealed class RootMapTests
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             allocatorBody,
-            new HashSet<EntityKey>(),
-            new HashSet<string> { constructor.CanonicalName }));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string> { constructor.CanonicalName })));
         var safepoint = Assert.Single(map.Safepoints).Value;
         Assert.Empty(safepoint.Roots);
         Assert.Equal(
@@ -572,7 +572,7 @@ public sealed class RootMapTests
         Assert.Throws<ArgumentNullException>(() =>
             CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
                 allocatorBody,
-                new HashSet<EntityKey>(),
+                Lookups.Of(new HashSet<EntityKey>()),
                 null!)));
     }
 
@@ -626,8 +626,8 @@ public sealed class RootMapTests
                 ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             callerBody,
-            capabilities.Methods,
-            capabilities.ConstructedMethods));
+            Lookups.Of(capabilities.Methods),
+            Lookups.Of(capabilities.ConstructedMethods)));
 
         Assert.Contains(initializer.CanonicalName, capabilities.ConstructedMethods);
         Assert.Contains(caller.CanonicalName, capabilities.ConstructedMethods);
@@ -683,7 +683,7 @@ public sealed class RootMapTests
         var capabilities = CreateAllocationAnalyzer(program).Analyze(new(
             direct, constructed, ImmutableDictionary<string, DispatchCallSiteModel>.Empty));
         var map = CreateAnalyzer(program).Analyze(new(
-            caller, capabilities.Methods, capabilities.ConstructedMethods));
+            caller, Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods)));
 
         var expected = !differentClosedOwner;
         Assert.Equal(expected, capabilities.Methods.Contains(EntryKey));
@@ -732,7 +732,7 @@ public sealed class RootMapTests
 
         Assert.DoesNotContain(EntryKey, capabilities.Methods);
         Assert.Empty(CreateAnalyzer(program).Analyze(new(
-            caller, capabilities.Methods, capabilities.ConstructedMethods)).Safepoints);
+            caller, Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods))).Safepoints);
     }
 
     [Theory]
@@ -762,7 +762,7 @@ public sealed class RootMapTests
 
         Assert.DoesNotContain(EntryKey, capabilities.Methods);
         Assert.Empty(CreateAnalyzer(program).Analyze(new(
-            caller, capabilities.Methods, capabilities.ConstructedMethods)).Safepoints);
+            caller, Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods))).Safepoints);
     }
 
     [Theory]
@@ -793,13 +793,13 @@ public sealed class RootMapTests
                 [StaticInitializerKey] = initializer,
             }, ImmutableDictionary<string, StructuredMethod>.Empty, sites));
         var decisions = ThroughContract(new RootDecisionClassifier(program, program, program,
-            sites, new RuntimeAllocationSafepointClassifier(), program,
+            Lookups.Of(sites), new RuntimeAllocationSafepointClassifier(), program,
             new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
                 new NetWasm.Compiler.Core.Types.StaticFieldInitializationClassifier(program, program)));
 
         Assert.Contains(EntryKey, capabilities.Methods);
         Assert.True(decisions.Decide(new(caller, 0, call,
-            capabilities.Methods, capabilities.ConstructedMethods)));
+            Lookups.Of(capabilities.Methods), Lookups.Of(capabilities.ConstructedMethods))));
     }
 
     [Fact]
@@ -846,8 +846,8 @@ public sealed class RootMapTests
 
         var map = analyzer.Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey> { AllocatorKey, ConstructorKey },
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { AllocatorKey, ConstructorKey }),
+            Lookups.Of(new HashSet<string>())));
 
         var allocation = map.Safepoints[5];
         Assert.True(allocation.Roots.AsSpan().SequenceEqual(
@@ -885,8 +885,8 @@ public sealed class RootMapTests
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey> { AllocatorKey },
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+            Lookups.Of(new HashSet<string>())));
 
         Assert.True(map.Safepoints[2].Roots.AsSpan().SequenceEqual(
             [new RootSource(RootSourceKind.EvaluationStack, 0)]));
@@ -946,7 +946,7 @@ public sealed class RootMapTests
                     call.Offset, target, [new DispatchTargetModel(owner, dispatchTarget)]),
             }
             : null;
-        var classifier = new CalleeArgumentRootingClassifier(program, program, dispatch,
+        var classifier = new CalleeArgumentRootingClassifier(program, program, dispatch is null ? null : Lookups.Of(dispatch),
             new RuntimeAllocationSafepointClassifier(), program,
             new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program));
         var allocating = new HashSet<EntityKey> { AllocatorKey, LeafKey, ReferenceVirtualKey };
@@ -954,7 +954,7 @@ public sealed class RootMapTests
             allocating.Add(StaticInitializerKey);
 
         Assert.Equal(expected, classifier.Classify(new(caller,
-            Assert.Single(caller.ControlFlow.Graph.Blocks).Index, call, allocating, new HashSet<string>())));
+            Assert.Single(caller.ControlFlow.Graph.Blocks).Index, call, Lookups.Of(allocating), Lookups.Of(new HashSet<string>()))));
     }
 
     [Fact]
@@ -1001,8 +1001,8 @@ public sealed class RootMapTests
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey> { AllocatorKey },
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+            Lookups.Of(new HashSet<string>())));
 
         var roots = map.Safepoints[4].Roots;
         Assert.Contains(
@@ -1070,7 +1070,7 @@ public sealed class RootMapTests
             new StackTypeCompatibilityValidator()).Validate(CreateGraphBuilder().Build(body)));
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
-            structured, new HashSet<EntityKey> { AllocatorKey }, new HashSet<string>()));
+            structured, Lookups.Of(new HashSet<EntityKey> { AllocatorKey }), Lookups.Of(new HashSet<string>())));
 
         Assert.Equal(pinned, map.Safepoints[5].Roots.Contains(new RootSource(RootSourceKind.Local, 0)));
     }
@@ -1126,7 +1126,7 @@ public sealed class RootMapTests
         var structured = CreateStructuredMethod(new TypedStackValidator(program, program, program,
             new StackTypeCompatibilityValidator()).Validate(CreateGraphBuilder().Build(body)));
         return CreateAnalyzer(program, new FakeLayouts(PairType)).Analyze(new RootMapAnalysisRequest(
-            structured, new HashSet<EntityKey> { AllocatorKey }, new HashSet<string>()));
+            structured, Lookups.Of(new HashSet<EntityKey> { AllocatorKey }), Lookups.Of(new HashSet<string>())));
     }
 
     [Fact]
@@ -1138,8 +1138,8 @@ public sealed class RootMapTests
 
         var result = analyzer.Analyze(new RootMapAnalysisRequest(
             leaf,
-            new HashSet<EntityKey>(),
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>())));
 
         Assert.Empty(result.Safepoints);
         Assert.Empty(result.Slots);
@@ -1170,12 +1170,12 @@ public sealed class RootMapTests
         Assert.Throws<ArgumentNullException>(() => analyzer.Analyze(
             new RootMapAnalysisRequest(
                 null!,
-                new HashSet<EntityKey>(),
-                new HashSet<string>())));
+                Lookups.Of(new HashSet<EntityKey>()),
+                Lookups.Of(new HashSet<string>()))));
         Assert.Throws<ArgumentNullException>(() => analyzer.Analyze(
-            new RootMapAnalysisRequest(leaf, null!, new HashSet<string>())));
+            new RootMapAnalysisRequest(leaf, null!, Lookups.Of(new HashSet<string>()))));
         Assert.Throws<ArgumentNullException>(() => analyzer.Analyze(
-            new RootMapAnalysisRequest(leaf, new HashSet<EntityKey>(), null!)));
+            new RootMapAnalysisRequest(leaf, Lookups.Of(new HashSet<EntityKey>()), null!)));
     }
 
     [Fact]
@@ -1200,47 +1200,47 @@ public sealed class RootMapTests
             method,
             block.Index,
             I(0, CilOperation.CallIndirect),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.False(classifier.Decide(new(
             method,
             block.Index,
             I(0, CilOperation.Nop),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.False(classifier.Decide(new(
             method,
             block.Index,
             I(0, CilOperation.Call),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.False(classifier.Decide(new(
             method,
             block.Index,
             I(0, CilOperation.LoadStaticField),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.True(classifier.Decide(new(
             method,
             block.Index,
             I(0, CilOperation.Call, new CilOperand.Entity(JSImportKey)),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.IsAssignableFrom<IRootDecisionClassifier>(factory.Create(
             program,
             program,
             program,
-            ImmutableDictionary<string, DispatchCallSiteModel>.Empty, program));
+            Lookups.NoEntries<string, DispatchCallSiteModel>(), program));
         Assert.Throws<ArgumentNullException>(() => classifier.Decide(null!));
         Assert.Throws<ArgumentNullException>(() => classifier.Decide(new(
             null!, block.Index, I(0, CilOperation.Nop),
-            new HashSet<EntityKey>(), new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()))));
         Assert.Throws<ArgumentNullException>(() => classifier.Decide(new(
-            method, block.Index, null!, new HashSet<EntityKey>(), new HashSet<string>())));
+            method, block.Index, null!, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()))));
         Assert.Throws<ArgumentNullException>(() => classifier.Decide(new(
-            method, block.Index, I(0, CilOperation.Nop), null!, new HashSet<string>())));
+            method, block.Index, I(0, CilOperation.Nop), null!, Lookups.Of(new HashSet<string>()))));
         Assert.Throws<ArgumentNullException>(() => classifier.Decide(new(
-            method, block.Index, I(0, CilOperation.Nop), new HashSet<EntityKey>(), null!)));
+            method, block.Index, I(0, CilOperation.Nop), Lookups.Of(new HashSet<EntityKey>()), null!)));
         Assert.Throws<ArgumentNullException>(() =>
             new RootDecisionClassifier(
                 null!, program, program, null,
@@ -1297,16 +1297,16 @@ public sealed class RootMapTests
             method,
             block.Index,
             I(0, CilOperation.Call, new CilOperand.Entity(LeafKey)),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.True(classifier.Decide(new(
             method,
             block.Index,
             I(0, CilOperation.Call, new CilOperand.MethodInstance(
                 Instance(program.GetMethod(LeafKey),
                     CliTypeIdentity.Named(Assembly, "Roots", "Object", false)))),
-            new HashSet<EntityKey>(),
-            new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))));
         Assert.Equal(1, runtimeSafepoints.DefinitionCalls);
         Assert.Equal(1, runtimeSafepoints.InstanceCalls);
     }
@@ -1337,7 +1337,7 @@ public sealed class RootMapTests
                 program,
                 program,
                 program,
-                dispatch,
+                Lookups.Of(dispatch),
                 new RuntimeAllocationSafepointClassifier(), program, new NetWasm.Compiler.Core.Types.MethodInitializationTriggerClassifier(program),
                 new NetWasm.Compiler.Core.Types.StaticFieldInitializationClassifier(program, program)));
         var methods = new HashSet<EntityKey>();
@@ -1350,11 +1350,11 @@ public sealed class RootMapTests
         }
 
         Assert.Equal(allocates, classifier.Decide(new(caller, 0,
-            I(0, CilOperation.Call, new CilOperand.MethodInstance(target)), methods, instances)));
+            I(0, CilOperation.Call, new CilOperand.MethodInstance(target)), Lookups.Of(methods), Lookups.Of(instances))));
         Assert.Equal(allocates, classifier.Decide(new(caller, 0,
-            I(1, CilOperation.LoadStaticField, new CilOperand.Entity(StaticFieldKey)), methods, instances)));
+            I(1, CilOperation.LoadStaticField, new CilOperand.Entity(StaticFieldKey)), Lookups.Of(methods), Lookups.Of(instances))));
         Assert.False(classifier.Decide(new(caller, 0,
-            I(1, CilOperation.LoadStaticField, new CilOperand.Entity(UninitializedStaticFieldKey)), methods, instances)));
+            I(1, CilOperation.LoadStaticField, new CilOperand.Entity(UninitializedStaticFieldKey)), Lookups.Of(methods), Lookups.Of(instances))));
     }
 
     // A precise type initializes before its constructors run, so an instance
@@ -1387,7 +1387,7 @@ public sealed class RootMapTests
         var instances = new HashSet<string> { $"{fieldOwner.CanonicalName}::0x{StaticInitializerKey.MetadataToken:x8}" };
 
         Assert.Equal(expected, ((IRootDecisionClassifier)classifier).Decide(
-            new(caller, 0, read, new HashSet<EntityKey>(), instances)));
+            new(caller, 0, read, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(instances))));
     }
 
     [Theory]
@@ -1422,7 +1422,7 @@ public sealed class RootMapTests
 
         Assert.False(target.Definition.HasBody);
         Assert.Equal(accessor && allocates, CreateRootDecisions(program).Decide(new(caller, 0,
-            I(0, CilOperation.Call, operand), methods, instances)));
+            I(0, CilOperation.Call, operand), Lookups.Of(methods), Lookups.Of(instances))));
     }
 
     [Fact]
@@ -1445,8 +1445,8 @@ public sealed class RootMapTests
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey> { AllocatorKey },
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+            Lookups.Of(new HashSet<string>())));
 
         var safepoint = map.Safepoints[3];
         Assert.Contains(
@@ -1496,8 +1496,8 @@ public sealed class RootMapTests
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey> { AllocatorKey },
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+            Lookups.Of(new HashSet<string>())));
 
         var roots = map.Safepoints[1].Roots;
         Assert.Contains(
@@ -1540,8 +1540,8 @@ public sealed class RootMapTests
         var map = CreateAnalyzer(program, new FakeLayouts(PairType)).Analyze(
             new RootMapAnalysisRequest(
                 structured,
-                new HashSet<EntityKey> { AllocatorKey },
-                new HashSet<string>()));
+                Lookups.Of(new HashSet<EntityKey> { AllocatorKey }),
+                Lookups.Of(new HashSet<string>())));
 
         var roots = map.Safepoints[1].Roots;
         Assert.Contains(
@@ -1566,12 +1566,12 @@ public sealed class RootMapTests
 
         Assert.Empty(analyzer.Analyze(new RootMapAnalysisRequest(
             caller,
-            new HashSet<EntityKey>(),
-            new HashSet<string>())).Safepoints);
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))).Safepoints);
         Assert.Empty(analyzer.Analyze(new RootMapAnalysisRequest(
             caller,
-            new HashSet<EntityKey> { ExternalKey },
-            new HashSet<string>())).Safepoints);
+            Lookups.Of(new HashSet<EntityKey> { ExternalKey }),
+            Lookups.Of(new HashSet<string>()))).Safepoints);
     }
 
     [Theory]
@@ -1637,7 +1637,7 @@ public sealed class RootMapTests
             program, program, program, new StackTypeCompatibilityValidator()).Validate(graph));
 
         var roots = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
-            structured, new HashSet<EntityKey>(), new HashSet<string>()));
+            structured, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>())));
 
         if (handlerKind == 0)
         {
@@ -1725,7 +1725,7 @@ public sealed class RootMapTests
             .Validate(CreateGraphBuilder().Build(body)));
 
         var roots = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
-            structured, new HashSet<EntityKey> { LeafKey }, new HashSet<string>()));
+            structured, Lookups.Of(new HashSet<EntityKey> { LeafKey }), Lookups.Of(new HashSet<string>())));
 
         foreach (var offset in new[] { 11, 15 })
         {
@@ -1781,7 +1781,7 @@ public sealed class RootMapTests
             .Validate(CreateGraphBuilder().Build(body)));
 
         var roots = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
-            structured, new HashSet<EntityKey> { LeafKey }, new HashSet<string>()));
+            structured, Lookups.Of(new HashSet<EntityKey> { LeafKey }), Lookups.Of(new HashSet<string>())));
 
         Assert.Contains(new RootSource(RootSourceKind.Local, 0), roots.Safepoints[9].Roots);
     }
@@ -1831,8 +1831,8 @@ public sealed class RootMapTests
 
         var roots = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey>(),
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>())));
 
         Assert.Contains(
             new RootSource(RootSourceKind.Local, 0),
@@ -1886,8 +1886,8 @@ public sealed class RootMapTests
 
         var roots = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             structured,
-            new HashSet<EntityKey>(),
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>())));
 
         Assert.Contains(3, roots.Safepoints.Keys);
     }
@@ -1933,8 +1933,8 @@ public sealed class RootMapTests
         var rootMapAnalyzer = CreateAnalyzer(program, new FakeLayouts(pair));
         var map = rootMapAnalyzer.Analyze(new RootMapAnalysisRequest(
                 structured,
-                new HashSet<EntityKey>(),
-                new HashSet<string>()));
+                Lookups.Of(new HashSet<EntityKey>()),
+                Lookups.Of(new HashSet<string>())));
 
         var safepoint = map.Safepoints[1];
         Assert.Contains(
@@ -2265,8 +2265,8 @@ public sealed class RootMapTests
 
         var map = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             allocationBody,
-            new HashSet<EntityKey>(),
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>())));
 
         Assert.Empty(map.Safepoints[1].ConstructorCallRoots);
         var entityAllocationBody = StructuredWithLocals(
@@ -2280,14 +2280,14 @@ public sealed class RootMapTests
             I(3, CilOperation.Return));
         var entityMap = CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             entityAllocationBody,
-            new HashSet<EntityKey>(),
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>())));
 
         Assert.Empty(entityMap.Safepoints[1].ConstructorCallRoots);
         Assert.Empty(CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             instanceBody,
-            new HashSet<EntityKey>(),
-            new HashSet<string>())).Safepoints);
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))).Safepoints);
     }
 
     [Fact]
@@ -2312,8 +2312,8 @@ public sealed class RootMapTests
 
             Assert.Empty(CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
                 body,
-                new HashSet<EntityKey>(),
-                new HashSet<string>())).Safepoints);
+                Lookups.Of(new HashSet<EntityKey>()),
+                Lookups.Of(new HashSet<string>()))).Safepoints);
         }
     }
 
@@ -2345,8 +2345,8 @@ public sealed class RootMapTests
         var map = CreateAnalyzer(program, new FakeLayouts(PairType)).Analyze(
             new RootMapAnalysisRequest(
                 body,
-                new HashSet<EntityKey> { PairCallKey, PairVirtualKey, ReferenceVirtualKey },
-                new HashSet<string>()));
+                Lookups.Of(new HashSet<EntityKey> { PairCallKey, PairVirtualKey, ReferenceVirtualKey }),
+                Lookups.Of(new HashSet<string>())));
 
         Assert.Contains(
             new RootSource(RootSourceKind.EvaluationStack, 0, 4),
@@ -2376,8 +2376,8 @@ public sealed class RootMapTests
         var map = CreateAnalyzer(program, new FakeLayouts(PairType)).Analyze(
             new RootMapAnalysisRequest(
                 body,
-                new HashSet<EntityKey> { AddressCallKey },
-                new HashSet<string>()));
+                Lookups.Of(new HashSet<EntityKey> { AddressCallKey }),
+                Lookups.Of(new HashSet<string>())));
 
         Assert.Contains(
             new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0),
@@ -2403,8 +2403,8 @@ public sealed class RootMapTests
 
         Assert.Empty(CreateAnalyzer(program).Analyze(new RootMapAnalysisRequest(
             body,
-            new HashSet<EntityKey>(),
-            new HashSet<string>())).Safepoints);
+            Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()))).Safepoints);
     }
 
     [Fact]
@@ -2428,8 +2428,8 @@ public sealed class RootMapTests
             CreateCalleeArguments(program),
             new RootSlotAllocator()).Analyze(new RootMapAnalysisRequest(
                 body,
-                new HashSet<EntityKey>(),
-                new HashSet<string>()));
+                Lookups.Of(new HashSet<EntityKey>()),
+                Lookups.Of(new HashSet<string>())));
 
         Assert.Empty(map.Safepoints);
     }

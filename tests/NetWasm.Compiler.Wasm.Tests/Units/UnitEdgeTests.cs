@@ -50,7 +50,8 @@ public sealed class UnitExactTypeTests
         UnitAssemblies.Collect(body, names);
 
         Assert.Contains("Shapes", names);
-        Assert.Same(Circle, UnitQueryArguments.Of(body).Types[Circle.CanonicalName]);
+        Assert.True(UnitQueryArguments.Of(body).Types.TryGetValue(Circle.CanonicalName, out var circle));
+        Assert.Same(Circle, circle);
     }
 
     // An exact type and a type identity of the same type are different operands.
@@ -70,14 +71,14 @@ public sealed class UnitExactTypeTests
     public void ArgumentsBeforeTheProgramsFallBackToThem()
     {
         var method = UnitQueryArguments.Of(UnitActorFixture.Method());
-        var program = new UnitQueryArguments(new Dictionary<string, CliTypeIdentity> { [Circle.CanonicalName] = Circle },
-            new Dictionary<string, FieldInstanceModel>(), new Dictionary<string, MethodInstanceModel>());
+        var program = new UnitQueryArguments(Lookups.Of(new Dictionary<string, CliTypeIdentity> { [Circle.CanonicalName] = Circle }),
+            Lookups.Of(new Dictionary<string, FieldInstanceModel>()), Lookups.Of(new Dictionary<string, MethodInstanceModel>()));
 
         var both = method.Before(program);
 
-        Assert.True(both.Types.ContainsKey(UnitActorFixture.Program.CanonicalName));
-        Assert.True(both.Types.ContainsKey(Circle.CanonicalName));
-        Assert.False(both.Types.ContainsKey("[Shapes]Shapes.Square"));
+        Assert.True(both.Types.TryGetValue(UnitActorFixture.Program.CanonicalName, out _));
+        Assert.True(both.Types.TryGetValue(Circle.CanonicalName, out _));
+        Assert.False(both.Types.TryGetValue("[Shapes]Shapes.Square", out _));
     }
 }
 
@@ -238,34 +239,28 @@ public sealed class UnitTargetViewEdgeTests
     [Fact]
     public void AReplayedSiteTheLastCompileDidNotFindIsNotThere()
     {
-        var sites = new ReplayDictionary<string, DispatchCallSiteModel>(Given(UnitQueryKind.DispatchCallSite, "M@00000004",
+        var sites = new ReplayLookup<string, DispatchCallSiteModel>(Given(UnitQueryKind.DispatchCallSite, "M@00000004",
             new UnitLookup<DispatchCallSiteModel>(false, null)), UnitQueryKind.DispatchCallSite, static key => key);
 
-        Assert.Equal("M@00000004", Assert.Throws<KeyNotFoundException>(() => sites["M@00000004"]).Message);
+        Assert.False(sites.TryGetValue("M@00000004", out var site));
+        Assert.Null(site);
     }
 
     [Fact]
-    public void AWholeListEnumeratesAsItsAnswer()
+    public void AWholeReadAnswersAsItsQuery()
     {
-        System.Collections.IEnumerable replayed = new WholeReplayList<int>(
-            Given(UnitQueryKind.StringTypeId, "", (IReadOnlyList<int>)[1, 2]), UnitQueryKind.StringTypeId);
+        IReadOnlyList<int> answered = [1, 2];
+        var replayed = new ReplayWholeRead<IReadOnlyList<int>>(
+            Given(UnitQueryKind.StringTypeId, "", answered), UnitQueryKind.StringTypeId);
         var log = new UnitDependencyLog();
         log.Begin();
-        System.Collections.IEnumerable recorded = new WholeRecordingList<int>([3, 4], log, UnitQueryKind.StringTypeId,
-            static _ => new UnitFingerprint(9, 9));
+        var recorded = new RecordingWholeRead<IReadOnlyList<int>>(Lookups.Whole<IReadOnlyList<int>>([3, 4]), log,
+            UnitQueryKind.StringTypeId, static _ => new UnitFingerprint(9, 9));
 
-        Assert.Equal([1, 2], Enumerated(replayed));
-        Assert.Equal([3, 4], Enumerated(recorded));
-        Assert.Equal(UnitQueryKind.StringTypeId, Assert.Single(log.End()).Kind);
-    }
-
-    // As a non-generic enumerable; LINQ would ask for the generic enumerator.
-    private static List<int> Enumerated(System.Collections.IEnumerable items)
-    {
-        var values = new List<int>();
-        var enumerator = items.GetEnumerator();
-        while (enumerator.MoveNext()) values.Add((int)enumerator.Current!);
-        return values;
+        Assert.Same(answered, replayed.Read());
+        Assert.Equal([3, 4], recorded.Read());
+        var read = Assert.Single(log.End());
+        Assert.Equal((UnitQueryKind.StringTypeId, new UnitFingerprint(9, 9)), (read.Kind, read.Answer));
     }
 
     [Fact]

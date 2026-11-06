@@ -92,7 +92,7 @@ internal sealed record ManagedAggregateValueAnalysis(
 internal sealed record ManagedAggregateValueAnalysisRequest(
     StructuredMethod Method,
     MethodRootMap RootMap,
-    ManagedByRefEffects ByRefEffects,
+    IEntryLookup<string, ManagedByRefMethodEffects> ByRefEffects,
     bool Enabled)
 {
     // Whether aggregates with reference and byref fields, and initobj, take part.

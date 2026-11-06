@@ -1,8 +1,6 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
 using NetWasm.Compiler.Core;
 
 namespace NetWasm.Compiler.Wasm.Units;
@@ -83,7 +81,7 @@ internal sealed class RecordingStaticDataLayout(
     // The collections are fixed for the compile; fingerprint each once per worker.
     private UnitFingerprint? _staticRoots;
     private UnitFingerprint? _segments;
-    private RecordingTypeObjectAddresses? _typeObjects;
+    private RecordingLookup<string, int>? _typeObjects;
 
     public StringLayout GetStringLayout(string value)
     {
@@ -135,8 +133,9 @@ internal sealed class RecordingStaticDataLayout(
     public int TypeFactsTableCount =>
         UnitRecording.Scalar(recorder, UnitQueryKind.TypeFactsTable, "count", inner.TypeFactsTableCount);
 
-    public IReadOnlyDictionary<string, int> TypeObjectAddresses =>
-        _typeObjects ??= new(inner.TypeObjectAddresses, recorder);
+    public IEntryLookup<string, int> TypeObjectAddresses =>
+        _typeObjects ??= new(inner.TypeObjectAddresses, recorder, UnitQueryKind.TypeObjectAddress,
+            static key => key, static (ref answer, address) => answer.Add(address));
 
     public int TypeObjectTableAddress =>
         UnitRecording.Scalar(recorder, UnitQueryKind.TypeObjectTable, "address", inner.TypeObjectTableAddress);
@@ -149,42 +148,6 @@ internal sealed class RecordingStaticDataLayout(
 
     public int TypeObjectSize =>
         UnitRecording.Scalar(recorder, UnitQueryKind.TypeObjectTable, "size", inner.TypeObjectSize);
-}
-
-/// <summary>Records each type whose static Type object address a method looks up.</summary>
-internal sealed class RecordingTypeObjectAddresses(
-    IReadOnlyDictionary<string, int> inner,
-    IUnitDependencyRecorder recorder) : IReadOnlyDictionary<string, int>
-{
-    public int this[string key] => TryGetValue(key, out var value)
-        ? value
-        : throw new KeyNotFoundException(key);
-
-    public IEnumerable<string> Keys => throw Unrecordable();
-
-    public IEnumerable<int> Values => throw Unrecordable();
-
-    public int Count => throw Unrecordable();
-
-    public bool ContainsKey(string key) => TryGetValue(key, out _);
-
-    public bool TryGetValue(string key, [MaybeNullWhen(false)] out int value)
-    {
-        var found = inner.TryGetValue(key, out value);
-        var answer = new UnitFingerprintBuilder();
-        answer.Add(found);
-        answer.Add(value);
-        recorder.Record(UnitQueryKind.TypeObjectAddress, key, answer.Finish(), new UnitLookup<int>(found, value));
-        return found;
-    }
-
-    public IEnumerator<KeyValuePair<string, int>> GetEnumerator() => throw Unrecordable();
-
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-    // Enumerating every type's address would make the unit depend on all of them.
-    private static NotSupportedException Unrecordable() =>
-        new("A unit's emission may only look up type object addresses by type.");
 }
 
 internal sealed class RecordingMemberDescriptorLayout(

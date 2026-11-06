@@ -15,7 +15,7 @@ internal sealed record ManagedMethodValuePlan(
 internal sealed record ManagedMethodValuePlanRequest(
     StructuredMethod Method,
     MethodRootMap RootMap,
-    ManagedByRefEffects ByRefEffects,
+    IEntryLookup<string, ManagedByRefMethodEffects> ByRefEffects,
     ImmutableHashSet<ManagedAggregateStorageId> ReservedStorages,
     bool Enabled)
 {

@@ -53,7 +53,17 @@ public sealed class WasmModuleTargetFactoryTests
         Assert.Equal(target.Plan.FunctionIndices, target.Instructions.FunctionIndices);
         Assert.Equal(target.ModuleData, target.Instructions.ModuleData);
         Assert.Same(target.Plan.NativeImports, target.Instructions.NativeImports);
-        Assert.Same(byRefEffects, target.Instructions.ManagedByRefEffects);
+        Assert.True(target.Instructions.ManagedByRefEffects.TryGetValue("method", out var effects));
+        Assert.Same(byRefEffects.Methods["method"], effects);
+        // A method's emission looks up the module's plans through the target.
+        Assert.All(target.ModuleData.ExceptionMetadata, pair =>
+            Assert.Equal(pair.Value, target.Instructions.ExceptionMetadata.Required(pair.Key)));
+        Assert.All(target.ModuleData.StaticInitializerGuards, pair =>
+            Assert.Same(pair.Value, target.Instructions.StaticInitializerGuards.Required(pair.Key)));
+        Assert.True(target.Instructions.RootMaps.TryGetValue(
+            ManagedMethodBodyKey.Resolve(request.Methods.Values.Single()), out var rootMap));
+        Assert.Same(request.RootMaps.Values.Single(), rootMap);
+        Assert.Same(request.CallableMethods, target.Instructions.CallableMethods.Read());
         Assert.False(request.HasReenterableHostEntries);
         Assert.Null(target.ModuleData.StateRegistrationGuardAddress);
     }

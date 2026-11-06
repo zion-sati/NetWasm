@@ -231,8 +231,8 @@ public sealed class AddressTakenAggregatePromotionPlannerTests
         ]).ToArray());
         var request = fixture.Request(method, target, ManagedByRefMethodEffects.Empty);
         request = scenario == 0
-            ? request with { CallSites = ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty }
-            : request with { ByRefEffects = ManagedByRefEffects.Empty };
+            ? request with { CallSites = Lookups.Of(ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty) }
+            : request with { ByRefEffects = Lookups.Of(ManagedByRefEffects.Empty.Methods) };
 
         Assert.Empty(fixture.CreatePlanner().Plan(request).PromotedLocals);
     }
@@ -874,8 +874,8 @@ public sealed class AddressTakenAggregatePromotionPlannerTests
             return new(
                 method,
                 Caller,
-                calls,
-                new(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty.Add(
+                Lookups.Of(calls),
+                Lookups.Of(ImmutableDictionary<string, ManagedByRefMethodEffects>.Empty.Add(
                     targetIdentity.CanonicalName,
                     effects)),
                 enabled);

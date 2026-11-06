@@ -186,7 +186,7 @@ internal sealed class AddressTakenScalarPromotionPlanner :
         var consumedCount = target.Signature.ParameterTypes.Length +
             (hasReceiver ? 1 : 0);
         if (consumedCount > origins.Count ||
-            !request.ByRefEffects.Methods.TryGetValue(
+            !request.ByRefEffects.TryGetValue(
                 callSite.TargetIdentity.CanonicalName,
                 out var effects))
         {

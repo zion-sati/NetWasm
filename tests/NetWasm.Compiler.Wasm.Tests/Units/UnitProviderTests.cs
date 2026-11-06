@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Immutable;
 using NetWasm.Compiler.Core;
+using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Units;
 
 namespace NetWasm.Compiler.Wasm.Tests.Units;
@@ -46,56 +47,56 @@ public sealed class UnitProviderTests
     }
 
     [Fact]
-    public void RecordedTypeObjectAddressesAreLookedUpByTypeOnly()
+    public void RecordedTypeObjectAddressesRecordEachTypeLookedUp()
     {
         var log = new UnitDependencyLog();
-        var addresses = new RecordingStaticDataLayout(new Data(), log).TypeObjectAddresses;
+        var layout = new RecordingStaticDataLayout(new Data(), log);
+        var addresses = layout.TypeObjectAddresses;
 
         log.Begin();
-        Assert.Equal(128, addresses["Program::Point"]);
-        Assert.Throws<KeyNotFoundException>(() => addresses["Program::Missing"]);
-        _ = log.End();
+        Assert.True(addresses.TryGetValue("Program::Point", out var address));
+        Assert.False(addresses.TryGetValue("Program::Missing", out _));
+        var lookups = log.End();
 
-        Assert.Throws<NotSupportedException>(() => addresses.Values);
-        Assert.Throws<NotSupportedException>(() => addresses.Count);
-        Assert.Throws<NotSupportedException>(() => ((IEnumerable)addresses).GetEnumerator());
+        Assert.Equal(128, address);
+        Assert.Same(addresses, layout.TypeObjectAddresses);
+        Assert.Equal(["Program::Missing", "Program::Point"], lookups.Select(dependency => dependency.Key).Order());
+        Assert.All(lookups, dependency => Assert.Equal(UnitQueryKind.TypeObjectAddress, dependency.Kind));
     }
 
     [Fact]
-    public void ARecordedDictionaryIsLookedUpByKeyOnly()
+    public void ARecordedLookupRecordsEachKeyAndWhatItFound()
     {
         var log = new UnitDependencyLog();
-        var view = new RecordingDictionary<string, int>(new Dictionary<string, int> { ["a"] = 1 }, log,
+        var lookup = new RecordingLookup<string, int>(Lookups.Of(new Dictionary<string, int> { ["a"] = 1 }), log,
             UnitQueryKind.ByRefEffects, key => key, static (ref answer, value) => answer.Add(value));
 
-        Assert.Throws<NotSupportedException>(() => view.Keys);
-        Assert.Throws<NotSupportedException>(() => view.GetEnumerator());
-        Assert.Throws<NotSupportedException>(() => ((IEnumerable)view).GetEnumerator());
+        log.Begin();
+        Assert.True(lookup.TryGetValue("a", out var found));
+        Assert.False(lookup.TryGetValue("b", out _));
+        var lookups = log.End().ToDictionary(dependency => dependency.Key);
+
+        Assert.Equal(1, found);
+        Assert.Equal(new UnitLookup<int>(true, 1), lookups["a"].Value);
+        Assert.Equal(new UnitLookup<int>(false, 0), lookups["b"].Value);
+        Assert.NotEqual(lookups["a"].Answer, lookups["b"].Answer);
     }
 
     [Fact]
-    public void ARecordedMembershipSetAnswersMembershipOnly()
+    public void ARecordedMembershipRecordsEachItemAndItsAnswer()
     {
         var log = new UnitDependencyLog();
-        var set = new RecordingMembershipSet<string>(new HashSet<string> { "Program::Point" }, log,
+        var membership = new RecordingMembership<string>(Lookups.Of(new HashSet<string> { "Program::Point" }), log,
             UnitQueryKind.AllocatingConstructedMethod, item => item);
-        string[] other = ["Program::Point"];
 
         log.Begin();
-        Assert.Contains("Program::Point", set);
-        Assert.DoesNotContain("Program::Other", set);
-        Assert.Equal(["Program::Other", "Program::Point"], log.End().Select(dependency => dependency.Key).Order());
-        Assert.True(set.IsReadOnly);
-        Action[] refused =
-        [
-            () => _ = set.Count, () => set.Add("x"), () => ((ICollection<string>)set).Add("x"), set.Clear,
-            () => set.CopyTo(new string[1], 0), () => set.Remove("x"), () => set.GetEnumerator(),
-            () => ((IEnumerable)set).GetEnumerator(), () => set.ExceptWith(other), () => set.IntersectWith(other),
-            () => set.IsProperSubsetOf(other), () => set.IsProperSupersetOf(other), () => set.IsSubsetOf(other),
-            () => set.IsSupersetOf(other), () => set.Overlaps(other), () => set.SetEquals(other),
-            () => set.SymmetricExceptWith(other), () => set.UnionWith(other),
-        ];
-        Assert.All(refused, action => Assert.Throws<NotSupportedException>(action));
+        Assert.True(membership.Contains("Program::Point"));
+        Assert.False(membership.Contains("Program::Other"));
+        var tests = log.End().ToDictionary(dependency => dependency.Key);
+
+        Assert.Equal(["Program::Other", "Program::Point"], tests.Keys.Order());
+        Assert.Equal(true, tests["Program::Point"].Value);
+        Assert.Equal(false, tests["Program::Other"].Value);
     }
 
     [Fact]
@@ -127,9 +128,9 @@ public sealed class UnitProviderTests
         Assert.Equal(1024, data.TypeObjectTableAddress);
         Assert.Equal(3, data.TypeObjectCount);
         Assert.Equal(24, data.TypeObjectSize);
-        Assert.Equal(128, data.TypeObjectAddresses["Program::Point"]);
-        Assert.True(data.TypeObjectAddresses.ContainsKey("Program::Point"));
-        Assert.Throws<KeyNotFoundException>(() => data.TypeObjectAddresses["Program::Missing"]);
+        Assert.True(data.TypeObjectAddresses.TryGetValue("Program::Point", out var point));
+        Assert.Equal(128, point);
+        Assert.False(data.TypeObjectAddresses.TryGetValue("Program::Missing", out _));
         Assert.Equal(4, members.DeclaringTypeIdOffset);
         Assert.Equal(8, members.RequiresDeclaringTypeOffset);
         Assert.Equal(Values, descriptors.ValueTypeDescriptors);
@@ -145,72 +146,68 @@ public sealed class UnitProviderTests
         Assert.Throws<UnitReplayMissException>(() => data.StaticDataEnd);
         Assert.Throws<UnitReplayMissException>(() => data.TypeObjectCacheAddress);
         Assert.Throws<UnitReplayMissException>(() => new ReplayMemberDescriptorLayout(answers).GetDescriptorAddress(Field()));
-        Assert.Throws<UnitReplayMissException>(() => data.TypeObjectAddresses.Keys);
-        Assert.Throws<UnitReplayMissException>(() => data.TypeObjectAddresses.Values);
-        Assert.Throws<UnitReplayMissException>(() => data.TypeObjectAddresses.Count);
-        Assert.Throws<UnitReplayMissException>(() => data.TypeObjectAddresses.GetEnumerator());
-        Assert.Throws<UnitReplayMissException>(() => ((IEnumerable)data.TypeObjectAddresses).GetEnumerator());
+        Assert.Throws<UnitReplayMissException>(() => data.TypeObjectAddresses.TryGetValue("Program::Point", out _));
     }
 
     [Fact]
-    public void AReplayedMembershipSetAnswersMembershipOnly()
+    public void AReplayedMembershipAnswersAsTheLastCompileDid()
     {
-        var set = new ReplayMembershipSet<string>(
-            Answers(((UnitQueryKind.Finalizable, "Program::Point"), true)), UnitQueryKind.Finalizable, item => item);
-        string[] other = ["Program::Point"];
+        var membership = new ReplayMembership<string>(
+            Answers(((UnitQueryKind.Finalizable, "Program::Point"), true), ((UnitQueryKind.Finalizable, "Program::Other"), false)),
+            UnitQueryKind.Finalizable, item => item);
 
-        Assert.Contains("Program::Point", set);
-        Assert.True(set.IsReadOnly);
-        Action[] refused =
-        [
-            () => _ = set.Count, () => set.Add("x"), () => ((ICollection<string>)set).Add("x"), set.Clear,
-            () => set.CopyTo(new string[1], 0), () => set.Remove("x"), () => set.GetEnumerator(),
-            () => ((IEnumerable)set).GetEnumerator(), () => set.ExceptWith(other), () => set.IntersectWith(other),
-            () => set.IsProperSubsetOf(other), () => set.IsProperSupersetOf(other), () => set.IsSubsetOf(other),
-            () => set.IsSupersetOf(other), () => set.Overlaps(other), () => set.SetEquals(other),
-            () => set.SymmetricExceptWith(other), () => set.UnionWith(other),
-        ];
-        Assert.All(refused, action => Assert.Throws<UnitReplayMissException>(action));
+        Assert.True(membership.Contains("Program::Point"));
+        Assert.False(membership.Contains("Program::Other"));
+        Assert.Throws<UnitReplayMissException>(() => membership.Contains("Program::Unasked"));
     }
 
     [Fact]
-    public void ReplayedTargetMapsAnswerByKeyOrWhole()
+    public void ReplayedTargetMapsAnswerByKeyByMemberOrWhole()
     {
+        IReadOnlyList<string> delegates = ["Func"];
         var answers = Answers(
             ((UnitQueryKind.DispatchCallSite, "site"), new UnitLookup<int>(true, 5)),
+            ((UnitQueryKind.DispatchCallSite, "absent"), new UnitLookup<int>(false, 0)),
             ((UnitQueryKind.Finalizable, "type"), true),
-            ((UnitQueryKind.DelegateTypes, ""), (IReadOnlyList<string>)["Func"]),
-            ((UnitQueryKind.CallableMethods, ""), (IReadOnlyDictionary<string, int>)new Dictionary<string, int> { ["m"] = 3 }));
-        var maps = new ReplayTargetMaps(answers);
-        var keyed = maps.Answer(new Dictionary<string, int>(), UnitQueryKind.DispatchCallSite, key => key,
+            ((UnitQueryKind.DelegateTypes, ""), delegates));
+        var maps = Assert.IsAssignableFrom<IUnitTargetMaps>(new ReplayTargetMaps(answers));
+        var keyed = maps.Answer(Lookups.NoEntries<string, int>(), UnitQueryKind.DispatchCallSite, key => key,
             static (ref answer, value) => answer.Add(value));
-        var set = maps.Answer(new HashSet<string>(), UnitQueryKind.Finalizable, item => item);
-        var whole = maps.Answer(new Dictionary<string, int>(), UnitQueryKind.CallableMethods,
+        var membership = maps.Answer(Lookups.NoItems<string>(), UnitQueryKind.Finalizable, item => item);
+        var whole = maps.Answer(Lookups.Whole<IReadOnlyList<string>>([]), UnitQueryKind.DelegateTypes,
             static _ => default(UnitFingerprint));
-        var list = maps.Answer((IReadOnlyList<string>)[], UnitQueryKind.DelegateTypes, static _ => default(UnitFingerprint));
-        string[] other = ["type"];
 
-        Assert.Equal(5, keyed["site"]);
-        Assert.Contains("type", set);
-        Assert.Equal(3, whole["m"]);
-        Assert.Equal(["m"], whole.Keys);
-        Assert.Equal([3], whole.Values);
-        var count = whole.Count;
-        Assert.Equal(1, count);
-        Assert.True(whole.ContainsKey("m"));
-        Assert.True(whole.TryGetValue("m", out _));
-        Assert.Single(whole);
-        Assert.Single((IEnumerable)whole);
-        Assert.Equal("Func", list[0]);
-        Assert.Single((IEnumerable)list);
-        Action[] refused =
-        [
-            () => _ = keyed.Keys, () => _ = keyed.Values, () => _ = keyed.Count, () => keyed.GetEnumerator(),
-            () => ((IEnumerable)keyed).GetEnumerator(), () => _ = set.Count, () => set.GetEnumerator(),
-            () => ((IEnumerable)set).GetEnumerator(), () => set.IsProperSubsetOf(other), () => set.IsProperSupersetOf(other),
-            () => set.IsSubsetOf(other), () => set.IsSupersetOf(other), () => set.Overlaps(other), () => set.SetEquals(other),
-        ];
-        Assert.All(refused, action => Assert.Throws<UnitReplayMissException>(action));
+        Assert.True(keyed.TryGetValue("site", out var site));
+        Assert.Equal(5, site);
+        Assert.False(keyed.TryGetValue("absent", out _));
+        Assert.True(membership.Contains("type"));
+        Assert.Same(delegates, whole.Read());
+        Assert.Throws<UnitReplayMissException>(() => keyed.TryGetValue("unasked", out _));
+        Assert.Throws<UnitReplayMissException>(() => maps.Answer(Lookups.Whole(ImmutableArray<int>.Empty),
+            UnitQueryKind.CallableMethods, static _ => default(UnitFingerprint)).Read());
+    }
+
+    [Fact]
+    public void RecordedTargetMapsRecordEachLookupTestAndRead()
+    {
+        var log = new UnitDependencyLog();
+        var maps = Assert.IsAssignableFrom<IUnitTargetMaps>(new RecordingTargetMaps(log));
+        IReadOnlyList<string> delegates = ["Func"];
+        var keyed = maps.Answer(Lookups.Of(new Dictionary<string, int> { ["site"] = 5 }), UnitQueryKind.DispatchCallSite,
+            key => key, static (ref answer, value) => answer.Add(value));
+        var membership = maps.Answer(Lookups.Of(new HashSet<string> { "type" }), UnitQueryKind.Finalizable, item => item);
+        var whole = maps.Answer(Lookups.Whole(delegates), UnitQueryKind.DelegateTypes, static _ => new(2, 2));
+
+        log.Begin();
+        Assert.True(keyed.TryGetValue("site", out _));
+        Assert.True(membership.Contains("type"));
+        Assert.Same(delegates, whole.Read());
+        var recorded = log.End();
+
+        Assert.Equal([UnitQueryKind.DispatchCallSite, UnitQueryKind.Finalizable, UnitQueryKind.DelegateTypes],
+            recorded.Select(dependency => dependency.Kind));
+        Assert.Equal(new UnitFingerprint(2, 2), recorded[2].Answer);
+        Assert.Same(delegates, recorded[2].Value);
     }
 
     private static UnitAnswers Answers(params ((UnitQueryKind Kind, string Key) Query, object Value)[] given) =>
@@ -230,8 +227,8 @@ public sealed class UnitProviderTests
         public int StaticDataEnd => 256;
         public ImmutableArray<int> StaticRootAddresses => [32, 48];
         public ImmutableArray<DataSegment> DataSegments => [];
-        public IReadOnlyDictionary<string, int> TypeObjectAddresses =>
-            new Dictionary<string, int> { ["Program::Point"] = 128 };
+        public IEntryLookup<string, int> TypeObjectAddresses =>
+            Lookups.Of(new Dictionary<string, int> { ["Program::Point"] = 128 });
         public int TypeObjectTableAddress => 1024;
         public int TypeObjectCount => 3;
         public int TypeObjectSize => 24;
@@ -258,82 +255,95 @@ public sealed class UnitProviderTests
 }
 
 // A replayed query's argument is rebuilt from the identities its method names, then from
-// the program's; the method's shadow the program's, so the view is looked up, never listed.
+// the program's; the method's shadow the program's.
 public sealed class UnitQueryArgumentsTests
 {
     private static readonly CliTypeIdentity Own = CliTypeIdentity.Named(new AssemblyIdentity("Program"), "", "Own", false);
     private static readonly CliTypeIdentity Shared = CliTypeIdentity.Named(new AssemblyIdentity("Program"), "", "Shared", false);
 
     [Fact]
-    public void AMethodsIdentitiesShadowTheProgramsAndAreNeverListed()
+    public void AMethodsIdentitiesShadowTheProgramsWhenLookedUp()
     {
-        var method = new UnitQueryArguments(new Dictionary<string, CliTypeIdentity> { ["T"] = Own },
-            new Dictionary<string, FieldInstanceModel>(), new Dictionary<string, MethodInstanceModel>())
+        var method = new UnitQueryArguments(Lookups.Of(new Dictionary<string, CliTypeIdentity> { ["T"] = Own }),
+            Lookups.Of(new Dictionary<string, FieldInstanceModel>()), Lookups.Of(new Dictionary<string, MethodInstanceModel>()))
         {
             Definitions = [new(new AssemblyIdentity("Program"), 0x04000001)],
         };
         var program = new UnitQueryArguments(
-            new Dictionary<string, CliTypeIdentity> { ["T"] = Shared, ["U"] = Shared },
-            new Dictionary<string, FieldInstanceModel>(), new Dictionary<string, MethodInstanceModel>());
+            Lookups.Of(new Dictionary<string, CliTypeIdentity> { ["T"] = Shared, ["U"] = Shared }),
+            Lookups.Of(new Dictionary<string, FieldInstanceModel>()), Lookups.Of(new Dictionary<string, MethodInstanceModel>()));
 
         var types = method.Before(program).Types;
 
-        Assert.Same(Own, types["T"]);
-        Assert.Same(Shared, types["U"]);
-        Assert.True(types.ContainsKey("U"));
-        Assert.Throws<KeyNotFoundException>(() => types["V"]);
+        Assert.True(types.TryGetValue("T", out var own));
+        Assert.Same(Own, own);
+        Assert.True(types.TryGetValue("U", out var shared));
+        Assert.Same(Shared, shared);
+        Assert.False(types.TryGetValue("V", out _));
         Assert.Equal(method.Definitions, method.Before(program).Definitions);
-        Assert.Throws<NotSupportedException>(() => types.Keys);
-        Assert.Throws<NotSupportedException>(() => types.Values);
-        Assert.Throws<NotSupportedException>(() => types.Count);
-        Assert.Throws<NotSupportedException>(() => types.GetEnumerator());
-        Assert.Throws<NotSupportedException>(() => ((IEnumerable)types).GetEnumerator());
     }
 }
 
-// The target views a unit's emission reads: whole maps and lists record one query on any
-// read, membership sets one per member, and function indices pass through.
+// The target views a unit's emission reads: a whole read records one query, and function
+// indices pass through.
 public sealed class UnitTargetViewTests
 {
     [Fact]
-    public void AWholeMapOrListRecordsItsReadAndAnswersAsItsSource()
+    public void ARecordedTargetRecordsEachPlanEntryWithWhatItHolds()
     {
+        var method = new EntityKey(new AssemblyIdentity("Program"), 0x06000001);
+        var group = new StructuredExceptionGroupKey(method, null, new(1));
         var log = new UnitDependencyLog();
-        var map = new WholeRecordingDictionary<string, int>(new Dictionary<string, int> { ["m"] = 3 }, log,
-            UnitQueryKind.CallableMethods, static _ => new(1, 1));
-        var list = new WholeRecordingList<string>(["Func"], log, UnitQueryKind.DelegateTypes, static _ => new(2, 2));
+        var target = EmitterTestSupport.CreateInstructionModuleTarget() with
+        {
+            StaticInitializerGuards = Lookups.Of(new Dictionary<string, StaticInitializerGuard>
+            {
+                ["direct"] = new(240, method, null),
+                ["constructed"] = new(240, null, "constructed"),
+            }),
+            ExceptionMetadata = Lookups.Of(new Dictionary<StructuredExceptionGroupKey, ExceptionGroupMetadata>
+            {
+                [group] = new(512, 2, HasFilters: true),
+            }),
+            StackTraceLookups = StackTraceMethodLookups.Of(StackTraceMethodPlan.Disabled with
+            {
+                LocationSymbols = ImmutableDictionary<int, ImmutableArray<StackTraceLocationSymbol>>.Empty
+                    .Add(9, [new(0, 100), new(20, 101)]),
+            }),
+        };
 
         log.Begin();
-        Assert.Equal(3, map["m"]);
-        Assert.Equal(["m"], map.Keys);
-        Assert.Equal([3], map.Values);
-        Assert.True(map.ContainsKey("m") && map.TryGetValue("m", out _));
-        Assert.Single(map);
-        Assert.Single((System.Collections.IEnumerable)map);
-        Assert.Equal("Func", list[0]);
-        Assert.Single(list);
-        Assert.Single((System.Collections.IEnumerable)list);
-        var count = map.Count;
+        var view = UnitTargetViews.Recording(target, log);
+        Assert.True(view.StaticInitializerGuards.TryGetValue("direct", out _));
+        Assert.True(view.StaticInitializerGuards.TryGetValue("constructed", out _));
+        Assert.True(view.ExceptionMetadata.TryGetValue(group, out var metadata));
+        Assert.True(view.StackTraceLookups.LocationSymbols.TryGetValue(9, out var symbols));
+        var recorded = log.End().ToDictionary(dependency => (dependency.Kind, dependency.Key));
 
-        Assert.Equal(1, count);
-        Assert.Equal([UnitQueryKind.CallableMethods, UnitQueryKind.DelegateTypes],
-            log.End().Select(dependency => dependency.Kind).Order());
+        Assert.Equal(512, metadata.Address);
+        Assert.Equal(2, symbols.Length);
+        // A guard's answer names whether it calls the definition or a constructed owner.
+        Assert.NotEqual(recorded[(UnitQueryKind.StaticInitializerGuard, "direct")].Answer,
+            recorded[(UnitQueryKind.StaticInitializerGuard, "constructed")].Answer);
+        Assert.Contains((UnitQueryKind.ExceptionMetadata, UnitTargetViews.ExceptionGroupKeyText(group)), recorded.Keys);
+        Assert.Contains((UnitQueryKind.StackTraceLocationSymbols, "9"), recorded.Keys);
     }
 
     [Fact]
-    public void ARecordingSetAnswersMembershipOnly()
+    public void AWholeReadRecordsItsReadAndAnswersAsItsSource()
     {
-        var set = new RecordingSet<string>(new HashSet<string> { "type" }, new UnitDependencyLog(),
-            UnitQueryKind.Finalizable, item => item);
-        string[] other = ["type"];
+        var log = new UnitDependencyLog();
+        IReadOnlyDictionary<string, int> methods = new Dictionary<string, int> { ["m"] = 3 };
+        var read = new RecordingWholeRead<IReadOnlyDictionary<string, int>>(Lookups.Whole(methods), log,
+            UnitQueryKind.CallableMethods, static map => new((ulong)map.Count, 1));
 
-        Action[] refused =
-        [
-            () => _ = set.Count, () => set.GetEnumerator(), () => ((System.Collections.IEnumerable)set).GetEnumerator(),
-            () => set.IsProperSubsetOf(other), () => set.IsProperSupersetOf(other), () => set.IsSubsetOf(other),
-            () => set.IsSupersetOf(other), () => set.Overlaps(other), () => set.SetEquals(other),
-        ];
-        Assert.All(refused, action => Assert.Throws<NotSupportedException>(action));
+        log.Begin();
+        Assert.Same(methods, read.Read());
+        Assert.Same(methods, read.Read());
+        var recorded = log.End();
+
+        // The log keeps a query once however often the method asks it.
+        Assert.Equal(new UnitFingerprint(1, 1), Assert.Single(recorded).Answer);
     }
 
     [Fact]

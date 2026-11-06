@@ -273,7 +273,7 @@ internal sealed class MemberExecutionIntrinsicEmitter(
         if (_initializationTriggers.Classify(method.Definition))
         {
             _initialization.Emit(new(method.Definition.DeclaringType,
-                method.DeclaringType, request.Instruction.Target.ModuleData,
+                method.DeclaringType, request.Instruction.Target.StaticInitializerGuards,
                 IsMethodInvocation: true), code, request.FunctionIndices);
         }
         var underlying = _nullableTypes.Resolve(resultType);

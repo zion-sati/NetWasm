@@ -5,7 +5,7 @@ namespace NetWasm.Compiler.Wasm.Emission.Planning;
 internal interface IStackTraceMethodIdProvider
 {
     int GetId(
-        StackTraceMethodPlan plan,
+        StackTraceMethodLookups lookups,
         MethodDefinitionModel method,
         MethodInstanceModel? methodInstance);
 }

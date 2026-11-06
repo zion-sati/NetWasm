@@ -48,7 +48,7 @@ public sealed class UnitDependencyLogTests
     }
 
     [Fact]
-    public void StaticDataLookupsAreRecordedByValueAndEnumerationIsRefused()
+    public void StaticDataLookupsAreRecordedByValue()
     {
         var log = new UnitDependencyLog();
         var data = new RecordingStaticDataLayout(new FixedStaticData(), log);
@@ -57,7 +57,7 @@ public sealed class UnitDependencyLogTests
         _ = data.GetStringLayout("hello");
         Assert.True(data.TypeObjectAddresses.TryGetValue("Program::Point", out var address));
         Assert.Equal(128, address);
-        Assert.False(data.TypeObjectAddresses.ContainsKey("Program::Missing"));
+        Assert.False(data.TypeObjectAddresses.TryGetValue("Program::Missing", out _));
         _ = data.DataSegments;
         _ = data.DataSegments;
         var dependencies = log.End();
@@ -70,30 +70,26 @@ public sealed class UnitDependencyLogTests
                 (UnitQueryKind.TypeObjectAddress, "Program::Point"),
             ],
             dependencies.Select(dependency => (dependency.Kind, dependency.Key)).Order());
-        Assert.Throws<NotSupportedException>(() => data.TypeObjectAddresses.Keys);
-        Assert.Throws<NotSupportedException>(() => data.TypeObjectAddresses.GetEnumerator());
     }
 
     [Fact]
-    public void ADictionaryViewRecordsEachKeyLookedUpAndWhatItFound()
+    public void ALookupViewRecordsEachKeyLookedUpAndWhatItFound()
     {
         var log = new UnitDependencyLog();
         var effects = new Dictionary<string, ManagedByRefMethodEffects>
         {
             ["Callee"] = new([0], [], []),
         };
-        var view = new RecordingDictionary<string, ManagedByRefMethodEffects>(effects, log,
+        var view = new RecordingLookup<string, ManagedByRefMethodEffects>(Lookups.Of(effects), log,
             UnitQueryKind.ByRefEffects, key => key, static (ref answer, value) => answer.Add(value));
 
         log.Begin();
-        Assert.True(view.TryGetValue("Callee", out _));
-        Assert.False(view.ContainsKey("Other"));
-        Assert.Throws<KeyNotFoundException>(() => view["Missing"]);
+        Assert.True(view.TryGetValue("Callee", out var callee));
+        Assert.False(view.TryGetValue("Other", out _));
         var dependencies = log.End();
 
-        Assert.Equal(["Callee", "Missing", "Other"], dependencies.Select(dependency => dependency.Key).Order());
-        Assert.Throws<NotSupportedException>(() => view.Count);
-        Assert.Throws<NotSupportedException>(() => view.Values);
+        Assert.Same(effects["Callee"], callee);
+        Assert.Equal(["Callee", "Other"], dependencies.Select(dependency => dependency.Key).Order());
     }
 
     private sealed class FixedStaticData : IStaticDataLayout
@@ -102,8 +98,8 @@ public sealed class UnitDependencyLogTests
         public int StaticDataEnd => 256;
         public System.Collections.Immutable.ImmutableArray<int> StaticRootAddresses => [];
         public System.Collections.Immutable.ImmutableArray<DataSegment> DataSegments => [new(16, [1, 2])];
-        public IReadOnlyDictionary<string, int> TypeObjectAddresses =>
-            new Dictionary<string, int> { ["Program::Point"] = 128 };
+        public IEntryLookup<string, int> TypeObjectAddresses =>
+            Lookups.Of(new Dictionary<string, int> { ["Program::Point"] = 128 });
     }
 
     private sealed class FixedLayouts : ITypeLayoutProvider

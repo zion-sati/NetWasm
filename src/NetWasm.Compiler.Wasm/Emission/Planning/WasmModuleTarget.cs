@@ -23,16 +23,16 @@ internal sealed record WasmModuleTarget(
         Plan.FunctionIndices,
         Plan.InteropImports,
         ModuleData,
-        Request.DispatchCallSites,
-        Request.TypeTestSites,
-        Request.CallableMethods,
-        Request.DelegateTypes,
+        Lookups.Of(Request.DispatchCallSites),
+        Lookups.Of(Request.TypeTestSites),
+        Lookups.Whole(Request.CallableMethods),
+        Lookups.Whole<IReadOnlyList<CliTypeIdentity>>(Request.DelegateTypes),
         HostCallbacks,
         Request.JavaScriptAsyncBindings,
         Plan.StackTraceMethods,
         Plan.RuntimeImportSelection,
         Plan.Finalization,
-        Request.ManagedCallSites,
+        Lookups.Of(Request.ManagedCallSites),
         Request.ObjectArrayDelegateAdapters,
         Request.MemberExecution,
         Request.CollectManagedMethodMemoryMetrics,
@@ -40,7 +40,11 @@ internal sealed record WasmModuleTarget(
     {
         NativeImports = Plan.NativeImports,
         NativeCallbacks = Plan.NativeCallbacks,
-        ManagedByRefEffects = Request.ManagedByRefEffects,
+        ManagedByRefEffects = Lookups.Of(Request.ManagedByRefEffects.Methods),
+        FinalizableTypeIds = Lookups.Of(Plan.Finalization.FinalizableTypeIds),
+        StackTraceLookups = StackTraceMethodLookups.Of(Plan.StackTraceMethods),
+        StaticInitializerGuards = Lookups.Of(ModuleData.StaticInitializerGuards),
+        ExceptionMetadata = Lookups.Of(ModuleData.ExceptionMetadata),
         EnableBranchValueFramePlacement = Request.EnableBranchValueFramePlacement,
         EnableAggregateReferenceLanes = Request.EnableAggregateReferenceLanes,
         EnableArrayMetadataCaching = Request.EnableArrayMetadataCaching,
@@ -50,11 +54,11 @@ internal sealed record WasmModuleTarget(
         EnableScalarCallPreservation = Request.EnableScalarCallPreservation,
         InlineSmallBlockOperations = Request.InlineSmallBlockOperations,
         InlineArrayData = Request.InlineArrayData,
-        RootMaps = Request.Methods.Values.Select(method =>
+        RootMaps = Lookups.Of(Request.Methods.Values.Select(method =>
                 (ManagedMethodBodyKey.Resolve(method), Request.RootMaps[method.Header.Method.Key]))
             .Concat(Request.ConstructedMethods.Select(pair =>
                 (ManagedMethodBodyKey.Resolve(pair.Value), Request.ConstructedRootMaps[pair.Key])))
-            .ToImmutableDictionary(item => item.Item1, item => item.Item2, StringComparer.Ordinal),
+            .ToImmutableDictionary(item => item.Item1, item => item.Item2, StringComparer.Ordinal)),
     };
 }
 
@@ -62,17 +66,17 @@ internal sealed record InstructionModuleTarget(
     FunctionIndexMap FunctionIndices,
     InteropImportPlan InteropImports,
     ModuleDataPlan ModuleData,
-    IReadOnlyDictionary<string, DispatchCallSiteModel> DispatchCallSites,
-    IReadOnlyDictionary<string, TypeTestSiteModel> TypeTestSites,
-    IReadOnlyDictionary<string, MethodInstanceModel> CallableMethods,
-    IReadOnlyList<CliTypeIdentity> DelegateTypes,
+    IEntryLookup<string, DispatchCallSiteModel> DispatchCallSites,
+    IEntryLookup<string, TypeTestSiteModel> TypeTestSites,
+    IWholeRead<IReadOnlyDictionary<string, MethodInstanceModel>> CallableMethods,
+    IWholeRead<IReadOnlyList<CliTypeIdentity>> DelegateTypes,
     ImmutableDictionary<(EntityKey Method, int ParameterIndex), HostCallbackDeclaration>
         HostCallbacks,
     IReadOnlyDictionary<EntityKey, JavaScriptAsyncMethodBinding> JavaScriptAsyncBindings,
     StackTraceMethodPlan StackTraceMethods,
     RuntimeImportSelection RuntimeImportSelection,
     FinalizationPlan Finalization,
-    IReadOnlyDictionary<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites,
+    IEntryLookup<ManagedCallSiteKey, ManagedCallSite> ManagedCallSites,
     ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>
         ObjectArrayDelegateAdapters,
     MemberExecutionPlan MemberExecution,
@@ -90,10 +94,18 @@ internal sealed record InstructionModuleTarget(
     public bool InlineArrayData { get; init; }
     public NativeImportPlan NativeImports { get; init; } = NativeImportPlan.Empty;
     public NativeCallbackPlan NativeCallbacks { get; init; } = NativeCallbackPlan.Empty;
-    public IReadOnlyDictionary<string, MethodRootMap> RootMaps { get; init; } =
-        ImmutableDictionary<string, MethodRootMap>.Empty;
-    public ManagedByRefEffects ManagedByRefEffects { get; init; } =
-        ManagedByRefEffects.Empty;
+    public IEntryLookup<string, MethodRootMap> RootMaps { get; init; } = Lookups.NoEntries<string, MethodRootMap>();
+    public IEntryLookup<string, ManagedByRefMethodEffects> ManagedByRefEffects { get; init; } =
+        Lookups.NoEntries<string, ManagedByRefMethodEffects>();
+
+    // What a method's emission looks up in the module's plans, one entry at a time; the
+    // plans themselves serve the module's own emission.
+    public IMembership<int> FinalizableTypeIds { get; init; } = Lookups.NoItems<int>();
+    public StackTraceMethodLookups StackTraceLookups { get; init; } = StackTraceMethodLookups.None;
+    public IEntryLookup<string, StaticInitializerGuard> StaticInitializerGuards { get; init; } =
+        Lookups.NoEntries<string, StaticInitializerGuard>();
+    public IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> ExceptionMetadata { get; init; } =
+        Lookups.NoEntries<StructuredExceptionGroupKey, ExceptionGroupMetadata>();
 }
 
 internal interface IWasmModuleTargetFactory

@@ -209,7 +209,7 @@ internal sealed class UnitQueryReplayer(
                     return true;
                 }
             case UnitQueryKind.ByRefEffects:
-                _ = view.ManagedByRefEffects.Methods.TryGetValue(key, out _);
+                _ = view.ManagedByRefEffects.TryGetValue(key, out _);
                 return true;
             case UnitQueryKind.DispatchCallSite:
                 _ = view.DispatchCallSites.TryGetValue(key, out _);
@@ -231,34 +231,34 @@ internal sealed class UnitQueryReplayer(
                 }
             case UnitQueryKind.Finalizable:
                 if (!int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var typeId)) return false;
-                _ = view.Finalization.IsFinalizable(typeId);
+                _ = view.FinalizableTypeIds.Contains(typeId);
                 return true;
             case UnitQueryKind.DelegateTypes:
-                _ = view.DelegateTypes.Count;
+                _ = view.DelegateTypes.Read();
                 return true;
             case UnitQueryKind.CallableMethods:
-                _ = view.CallableMethods.Count;
+                _ = view.CallableMethods.Read();
                 return true;
             case UnitQueryKind.TargetPlans:
                 recorder.Record(UnitQueryKind.TargetPlans, key, UnitTargetFingerprint.Of(view));
                 return true;
             case UnitQueryKind.StackTraceDirectMethodId:
                 if (!TryParse(key, out definition)) return false;
-                _ = view.StackTraceMethods.DirectMethodIds.TryGetValue(definition, out _);
+                _ = view.StackTraceLookups.DirectMethodIds.TryGetValue(definition, out _);
                 return true;
             case UnitQueryKind.StackTraceConstructedMethodId:
-                _ = view.StackTraceMethods.ConstructedMethodIds.TryGetValue(key, out _);
+                _ = view.StackTraceLookups.ConstructedMethodIds.TryGetValue(key, out _);
                 return true;
             case UnitQueryKind.StackTraceLocationSymbols:
                 if (!int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var methodId)) return false;
-                _ = view.StackTraceMethods.LocationSymbols.TryGetValue(methodId, out _);
+                _ = view.StackTraceLookups.LocationSymbols.TryGetValue(methodId, out _);
                 return true;
             case UnitQueryKind.StaticInitializerGuard:
-                _ = view.ModuleData.StaticInitializerGuards.TryGetValue(key, out _);
+                _ = view.StaticInitializerGuards.TryGetValue(key, out _);
                 return true;
             case UnitQueryKind.ExceptionMetadata:
                 if (!UnitTargetViews.TryParseExceptionGroupKey(key, out var group)) return false;
-                _ = view.ModuleData.ExceptionMetadata.TryGetValue(group, out _);
+                _ = view.ExceptionMetadata.TryGetValue(group, out _);
                 return true;
             default:
                 return false;
@@ -350,9 +350,9 @@ internal sealed class UnitQueryReplayer(
 
 /// <summary>The types, fields and methods a method's body names, by canonical name.</summary>
 internal sealed record UnitQueryArguments(
-    IReadOnlyDictionary<string, CliTypeIdentity> Types,
-    IReadOnlyDictionary<string, FieldInstanceModel> Fields,
-    IReadOnlyDictionary<string, MethodInstanceModel> Methods)
+    IEntryLookup<string, CliTypeIdentity> Types,
+    IEntryLookup<string, FieldInstanceModel> Fields,
+    IEntryLookup<string, MethodInstanceModel> Methods)
 {
     // The members one method's body names by definition (non-generic owners), whose types
     // are found through the metadata only when a query needs them.
@@ -384,16 +384,11 @@ internal sealed record UnitQueryArguments(
     }
 
     // Every identity the analysed bodies name.
-    public static UnitQueryArguments Of(IEnumerable<NetWasm.Compiler.ControlFlow.ManagedMethodBody> all)
-    {
-        var index = new Index();
-        foreach (var method in all)
-        {
-            index.AddBody(method.Method, method.Body.Method, method.Body.LocalSignatureTypes, method.Body.Instructions,
-                method.Body.ExceptionRegions.Select(region => region.CatchTypeIdentity));
-        }
-        return index.ToArguments();
-    }
+    public static UnitQueryArguments Of(IEnumerable<NetWasm.Compiler.ControlFlow.ManagedMethodBody> all) =>
+        Over(UnitQueryIdentities.Of(all));
+
+    private static UnitQueryArguments Over(UnitQueryIdentities identities) =>
+        new(Lookups.Of(identities.Types), Lookups.Of(identities.Fields), Lookups.Of(identities.Methods));
 
     private static UnitQueryArguments Of(
         MethodInstanceModel? instance,
@@ -402,20 +397,46 @@ internal sealed record UnitQueryArguments(
         ImmutableArray<CilInstruction> instructions,
         IEnumerable<CliTypeIdentity?> catchTypes)
     {
-        var index = new Index();
+        var index = new UnitQueryIdentities.Index();
         index.AddBody(instance, definition, locals, instructions, catchTypes);
-        return index.ToArguments();
+        return Over(index.ToIdentities());
+    }
+
+    private sealed class Fallback<T>(
+        IEntryLookup<string, T> first,
+        IEntryLookup<string, T> second) : IEntryLookup<string, T>
+    {
+        public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out T value) =>
+            first.TryGetValue(key, out value) || second.TryGetValue(key, out value);
+    }
+}
+
+/// <summary>The types, fields and methods bodies name, by canonical name.</summary>
+internal sealed record UnitQueryIdentities(
+    IReadOnlyDictionary<string, CliTypeIdentity> Types,
+    IReadOnlyDictionary<string, FieldInstanceModel> Fields,
+    IReadOnlyDictionary<string, MethodInstanceModel> Methods)
+{
+    public static UnitQueryIdentities Of(IEnumerable<NetWasm.Compiler.ControlFlow.ManagedMethodBody> all)
+    {
+        var index = new Index();
+        foreach (var method in all)
+        {
+            index.AddBody(method.Method, method.Body.Method, method.Body.LocalSignatureTypes, method.Body.Instructions,
+                method.Body.ExceptionRegions.Select(region => region.CatchTypeIdentity));
+        }
+        return index.ToIdentities();
     }
 
     // The identities bodies name, transitively through type arguments, element types,
     // signatures and field types.
-    private sealed class Index
+    internal sealed class Index
     {
         private readonly Dictionary<string, CliTypeIdentity> _types = new(StringComparer.Ordinal);
         private readonly Dictionary<string, FieldInstanceModel> _fields = new(StringComparer.Ordinal);
         private readonly Dictionary<string, MethodInstanceModel> _methods = new(StringComparer.Ordinal);
 
-        internal UnitQueryArguments ToArguments() => new(_types, _fields, _methods);
+        internal UnitQueryIdentities ToIdentities() => new(_types, _fields, _methods);
 
         internal void AddBody(
             MethodInstanceModel? instance,
@@ -477,21 +498,4 @@ internal sealed record UnitQueryArguments(
 
     // The first identities shadow the second, so the view answers keys but is never
     // enumerated: listing both would name a shadowed key twice.
-    private sealed class Fallback<T>(
-        IReadOnlyDictionary<string, T> first,
-        IReadOnlyDictionary<string, T> second) : IReadOnlyDictionary<string, T>
-    {
-        public T this[string key] => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException(key);
-        public IEnumerable<string> Keys => throw Unenumerable();
-        public IEnumerable<T> Values => throw Unenumerable();
-        public int Count => throw Unenumerable();
-        public bool ContainsKey(string key) => first.ContainsKey(key) || second.ContainsKey(key);
-        public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out T value) =>
-            first.TryGetValue(key, out value) || second.TryGetValue(key, out value);
-        public IEnumerator<KeyValuePair<string, T>> GetEnumerator() => throw Unenumerable();
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-
-        private static NotSupportedException Unenumerable() =>
-            new("A method's identities over the program's are looked up, never enumerated.");
-    }
 }

@@ -32,7 +32,7 @@ internal sealed class FilterFunctionAppender(
 
         indices.Add(filter.Id, importCount + functions.Count);
         var sequence = sequenceEmitters.Create(target, functionIndices);
-        var rootMap = target.RootMaps[ManagedMethodBodyKey.Resolve(filter.Method)];
+        var rootMap = target.RootMaps.Required(ManagedMethodBodyKey.Resolve(filter.Method));
         var emission = filters.Emit(
             filter,
             environment,

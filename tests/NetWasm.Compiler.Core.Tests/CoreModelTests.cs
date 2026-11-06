@@ -751,7 +751,7 @@ public sealed class CoreModelTests
         Assert.Equal(0, staticDataLayout.TypeFactsTableAddress);
         Assert.Equal(0, staticDataLayout.TypeFactsTableCount);
         // A layout without static Type objects has none to name.
-        Assert.Empty(staticDataLayout.TypeObjectAddresses);
+        Assert.False(staticDataLayout.TypeObjectAddresses.TryGetValue("Program::Point", out _));
         Assert.Equal(0, staticDataLayout.TypeObjectTableAddress);
         Assert.Equal(0, staticDataLayout.TypeObjectCacheAddress);
         Assert.Equal(0, staticDataLayout.TypeObjectCount);

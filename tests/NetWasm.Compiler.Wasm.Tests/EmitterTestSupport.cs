@@ -589,10 +589,10 @@ internal static class EmitterTestSupport
             indices,
             new InteropImportPlan([], default, default, default, default, default, default),
             ModuleDataPlan.Empty,
-            ImmutableDictionary<string, DispatchCallSiteModel>.Empty,
-            ImmutableDictionary<string, TypeTestSiteModel>.Empty,
-            ImmutableDictionary<string, MethodInstanceModel>.Empty,
-            [CliTypeIdentity.Named(Assembly, "Test", "Callback", isValueType: false)],
+            Lookups.Of(ImmutableDictionary<string, DispatchCallSiteModel>.Empty),
+            Lookups.Of(ImmutableDictionary<string, TypeTestSiteModel>.Empty),
+            Lookups.Whole(ImmutableDictionary<string, MethodInstanceModel>.Empty),
+            Lookups.Whole<IReadOnlyList<CliTypeIdentity>>([CliTypeIdentity.Named(Assembly, "Test", "Callback", isValueType: false)]),
             [],
             ImmutableDictionary<EntityKey, JavaScriptAsyncMethodBinding>.Empty,
             StackTraceMethodPlan.Disabled,
@@ -601,7 +601,7 @@ internal static class EmitterTestSupport
                 IncludeTerminalExceptionReporter: true,
                 IncludeFinalization: true),
             FinalizationPlan.Empty,
-            ManagedCallSites: ImmutableDictionary<NetWasm.Compiler.Core.IntermediateRepresentation.Calls.ManagedCallSiteKey, NetWasm.Compiler.Core.IntermediateRepresentation.Calls.ManagedCallSite>.Empty,
+            ManagedCallSites: Lookups.Of(ImmutableDictionary<NetWasm.Compiler.Core.IntermediateRepresentation.Calls.ManagedCallSiteKey, NetWasm.Compiler.Core.IntermediateRepresentation.Calls.ManagedCallSite>.Empty),
             ImmutableDictionary<string, ObjectArrayDelegateAdapterPlan>.Empty,
             MemberExecutionPlan.Empty);
     }
@@ -882,7 +882,7 @@ internal sealed class RecordingLayoutProvider(
     public int RequiresDeclaringTypeOffset => 28;
     public int TypeFactsTableAddress { get; init; } = 160;
     public int TypeFactsTableCount { get; init; } = 16;
-    public IReadOnlyDictionary<string, int> TypeObjectAddresses { get; init; } = ImmutableDictionary<string, int>.Empty;
+    public IEntryLookup<string, int> TypeObjectAddresses { get; init; } = Lookups.NoEntries<string, int>();
     public int TypeObjectTableAddress { get; init; }
     public int TypeObjectCacheAddress { get; init; }
     public int TypeObjectCount { get; init; }

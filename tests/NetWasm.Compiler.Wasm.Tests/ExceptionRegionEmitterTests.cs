@@ -33,7 +33,7 @@ public sealed class ExceptionRegionEmitterTests
         for (var occurrence = 0; occurrence < 2; occurrence++)
         {
             emitter.Emit(new RecordingInstructionWriter(), WithGroups(method, group),
-                new StructuredExceptionRegion(group.Id, null), context, CreateModuleData(group),
+                new StructuredExceptionRegion(group.Id, null), context, Lookups.Of(CreateModuleData(group).ExceptionMetadata),
                 (sequence, current, _, _, _) =>
                 {
                     Assert.Same(body, sequence);
@@ -77,7 +77,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group),
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (sequence, context, _, _, leaveDepth) =>
             {
                 visits.Add(sequence);
@@ -120,7 +120,7 @@ public sealed class ExceptionRegionEmitterTests
                 method,
                 new StructuredExceptionRegion(new(99), null),
                 CreateContext(),
-                CreateModuleData(),
+                Lookups.Of(CreateModuleData().ExceptionMetadata),
                 (_, _, _, _, _) => { }));
     }
 
@@ -155,7 +155,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             context,
-            module,
+            Lookups.Of(module.ExceptionMetadata),
             (_, _, _, _, _) => sequences++);
 
         Assert.Equal(2, sequences);
@@ -196,7 +196,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group, nested),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group, nested),
-            CreateModuleData((group, false), (nested, false)),
+            Lookups.Of(CreateModuleData((group, false), (nested, false)).ExceptionMetadata),
             (_, _, _, _, _) => { });
 
         Assert.Contains(
@@ -239,7 +239,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             context,
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (sequence, _, _, _, _) => emittedSequences.Add(sequence));
 
         Assert.Contains(handlerBody, emittedSequences);
@@ -286,7 +286,7 @@ public sealed class ExceptionRegionEmitterTests
                 WithGroups(method, group),
                 new StructuredExceptionRegion(group.Id, null),
                 CreateContext(group),
-                CreateModuleData(group),
+                Lookups.Of(CreateModuleData(group).ExceptionMetadata),
                 (_, _, _, _, _) => { }));
 
         Assert.Equal(DiagnosticCode.UnsupportedCil, exception.Diagnostic.Code);
@@ -322,7 +322,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group),
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (sequence, _, loopBreakDepth, loopContinueDepth, _) =>
             {
                 if (sequence.Regions.Any(region => region is StructuredLoopContinue))
@@ -369,7 +369,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             region,
             context,
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (sequence, _, _, _, _) =>
                 emittedContinuationBody |= ReferenceEquals(sequence, continuationBody),
             dispatcherContinueDepth: 2);
@@ -416,7 +416,7 @@ public sealed class ExceptionRegionEmitterTests
                 WithGroups(method, group),
                 region,
                 CreateContext(group),
-                CreateModuleData(group),
+                Lookups.Of(CreateModuleData(group).ExceptionMetadata),
                 (_, _, _, _, _) => { }));
     }
 
@@ -445,7 +445,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             context,
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
 
         var instructions = code.ToInstructions();
@@ -484,7 +484,7 @@ public sealed class ExceptionRegionEmitterTests
         var handlers = 0;
         var continuations = 0;
         CreateEmitter(program, layouts, imports).Emit(code, WithGroups(method, group),
-            new StructuredExceptionRegion(group.Id, null), context, CreateModuleData(group),
+            new StructuredExceptionRegion(group.Id, null), context, Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (sequence, actual, _, _, _) =>
             {
                 if (ReferenceEquals(sequence, handler))
@@ -531,7 +531,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group),
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
 
         Assert.Contains(code.ToInstructions(), instruction => instruction.Opcode == WasmOpcodes.I64EqualZero);
@@ -561,7 +561,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group),
-            CreateModuleData((group, true)),
+            Lookups.Of(CreateModuleData((group, true)).ExceptionMetadata),
             (_, _, _, _, _) => { });
 
         Assert.Contains(
@@ -611,7 +611,7 @@ public sealed class ExceptionRegionEmitterTests
                     ? null
                     : new(fallthroughContinuation.Value)),
             CreateContext(group),
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
 
         var bytes = new WasmBinarySnapshotReader(buffer).Read();
@@ -645,7 +645,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, new(1)),
             CreateContext(group),
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
     }
 
@@ -678,7 +678,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group, parent),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group, parent) with { ActiveExceptionGroup = parent },
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
     }
 
@@ -719,7 +719,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group),
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (sequence, _, _, _, leaveDepth) =>
             {
                 if (ReferenceEquals(sequence, continuation))
@@ -766,7 +766,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, parent, nested),
             new StructuredExceptionRegion(parent.Id, null),
             CreateContext(parent, nested),
-            CreateModuleData((parent, false), (nested, false)),
+            Lookups.Of(CreateModuleData((parent, false), (nested, false)).ExceptionMetadata),
             (sequence, context, _, _, leaveDepth) =>
             {
                 if (ReferenceEquals(sequence, continuation))
@@ -809,7 +809,7 @@ public sealed class ExceptionRegionEmitterTests
             WithGroups(method, group, parent),
             new StructuredExceptionRegion(group.Id, null),
             CreateContext(group, parent) with { ActiveExceptionGroup = parent },
-            CreateModuleData(group),
+            Lookups.Of(CreateModuleData(group).ExceptionMetadata),
             (_, _, _, _, _) => { });
     }
 
@@ -837,7 +837,7 @@ public sealed class ExceptionRegionEmitterTests
                 WithGroups(method, group),
                 new StructuredExceptionRegion(group.Id, null),
                 CreateContext(group),
-                CreateModuleData(group),
+                Lookups.Of(CreateModuleData(group).ExceptionMetadata),
                 (_, _, _, _, _) => { }));
 
         Assert.Contains(nameof(UnrelatedPart), exception.Message);

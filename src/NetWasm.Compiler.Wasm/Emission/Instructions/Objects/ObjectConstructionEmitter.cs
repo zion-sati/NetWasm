@@ -46,7 +46,7 @@ internal sealed class ObjectConstructionEmitter(
         var declaringType = constructorInstance?.Value.DeclaringType ??
                             types.Resolve(constructor.DeclaringType);
         initialization.Emit(new(constructor.DeclaringType, declaringType,
-            request.Target.ModuleData, IsMethodInvocation: true), code, functionIndices);
+            request.Target.StaticInitializerGuards, IsMethodInvocation: true), code, functionIndices);
         var argumentBase = request.Stack.Count - signature.ParameterTypes.Length;
         if (symbols.Format(constructor.DeclaringType) == "System.String")
         {
@@ -193,7 +193,7 @@ internal sealed class ObjectConstructionEmitter(
         var layout = isConstructed
             ? typeLayouts.GetObjectLayout(declaringType)
             : typeLayouts.GetObjectLayout(constructor.DeclaringType);
-        var allocation = request.Target.Finalization.IsFinalizable(layout.TypeId)
+        var allocation = request.Target.FinalizableTypeIds.Contains(layout.TypeId)
             ? RuntimeImportSymbol.AllocateFinalizable
             : RuntimeImportSymbol.Allocate;
         roots.Emit(request, code);

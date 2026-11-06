@@ -29,7 +29,7 @@ public sealed class UnitModelCodecTests
         using var lease = services.GetRequiredService<IMetadataCompilationLoader>().Load(options.EntryAssemblyPath, options.ReferencePaths);
         var methods = services.GetRequiredService<IMethodRepositoryFactory>().Create(lease.Snapshot);
         var fields = services.GetRequiredService<IFieldRepositoryFactory>().Create(lease.Snapshot);
-        var named = UnitQueryArguments.Of(program.Methods.Values.Concat(program.ConstructedMethods.Values));
+        var named = UnitQueryIdentities.Of(program.Methods.Values.Concat(program.ConstructedMethods.Values));
 
         var writer = new UnitModelWriter();
         foreach (var type in named.Types.Values) writer.Type(type);

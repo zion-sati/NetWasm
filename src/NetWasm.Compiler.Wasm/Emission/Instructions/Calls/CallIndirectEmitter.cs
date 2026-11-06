@@ -37,7 +37,7 @@ internal sealed class CallIndirectEmitter(
         }
         var argumentBase = request.Stack.Count - signature.ParameterTypes.Length - 1;
         var functionSlot = argumentBase + signature.ParameterTypes.Length;
-        var compatible = request.Target.CallableMethods.Values
+        var compatible = request.Target.CallableMethods.Read().Values
             .Where(target => target.Definition.IsStatic &&
                 DelegateSignatureComparer.AreEqual(target.Signature, signature))
             .OrderBy(target => target.CanonicalName, StringComparer.Ordinal)

@@ -1,5 +1,6 @@
 using System;
 using NetWasm.Compiler.ControlFlow.Structured;
+using NetWasm.Compiler.Core;
 using NetWasm.Compiler.Wasm.Emission.Planning;
 using NetWasm.Compiler.Wasm.Encoding;
 
@@ -12,7 +13,7 @@ internal interface IExceptionRegionEmitter
         StructuredMethod method,
         StructuredExceptionRegion region,
         MethodEmissionContext context,
-        ModuleDataPlan moduleData,
+        IEntryLookup<StructuredExceptionGroupKey, ExceptionGroupMetadata> exceptionMetadata,
         Action<StructuredSequence, MethodEmissionContext, int?, int?, int?> emitSequence,
         int? loopBreakDepth = null,
         int? loopContinueDepth = null,

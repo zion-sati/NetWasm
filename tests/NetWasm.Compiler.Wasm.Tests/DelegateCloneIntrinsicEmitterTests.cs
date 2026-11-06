@@ -21,7 +21,7 @@ public sealed class DelegateCloneIntrinsicEmitterTests
         var request = CreateRequest(layouts.Target, argumentBase);
         var writer = new EmitterTestSupport.RecordingInstructionWriter();
         var emitter = CreateEmitter(layouts, imports);
-        var delegateType = Assert.Single(request.Instruction.Target.DelegateTypes);
+        var delegateType = Assert.Single(request.Instruction.Target.DelegateTypes.Read());
         var objectLayout = layouts.GetObjectLayout(delegateType);
 
         ((IRuntimeIntrinsicEmitter)emitter).Emit(request, writer);
@@ -76,7 +76,7 @@ public sealed class DelegateCloneIntrinsicEmitterTests
             {
                 Instruction = request.Instruction with
                 {
-                    Target = request.Instruction.Target with { DelegateTypes = [] },
+                    Target = request.Instruction.Target with { DelegateTypes = Lookups.Whole<IReadOnlyList<CliTypeIdentity>>([]) },
                 },
             },
         };

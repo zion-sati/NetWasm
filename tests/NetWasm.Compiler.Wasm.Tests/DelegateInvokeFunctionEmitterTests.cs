@@ -42,7 +42,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
             var request = Assert.Single(initialization.Requests);
             Assert.Equal(method.DeclaringType, request.DeclaringType);
             Assert.Equal(method.Definition.DeclaringType, request.TypeDefinition);
-            Assert.Same(targetProgram.ModuleData, request.ModuleData);
+            Assert.Same(targetProgram.StaticInitializerGuards, request.Guards);
             Assert.True(request.IsMethodInvocation);
             Assert.Same(resolver, initialization.FunctionIndices);
             // The target's branch publishes the delegate and arguments before initializing.
@@ -261,7 +261,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
         var function = ((IDelegateInvokeFunctionEmitter)emitter).Emit(
             invoke,
             new DelegateInvokeTarget(
-                [CreateBinding(invoke, target)], ModuleDataPlan.Empty),
+                [CreateBinding(invoke, target)], Lookups.NoEntries<string, StaticInitializerGuard>()),
             new FunctionIndexResolver(program, program, indices));
 
         Assert.NotEmpty(function);
@@ -482,7 +482,7 @@ public sealed class DelegateInvokeFunctionEmitterTests
         MethodInstanceModel invoke,
         params MethodInstanceModel[] targets) =>
         new(
-            [.. targets.Select(target => CreateBinding(invoke, target))], ModuleDataPlan.Empty);
+            [.. targets.Select(target => CreateBinding(invoke, target))], Lookups.NoEntries<string, StaticInitializerGuard>());
 
     private static FunctionIndexResolver CreateResolver(
         CliTypeIdentity callbackType,

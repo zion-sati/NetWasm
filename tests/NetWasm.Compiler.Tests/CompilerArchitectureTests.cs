@@ -442,8 +442,13 @@ public sealed partial class CompilerArchitectureTests
             .Concat(typeof(CliTypeIdentity).Assembly.GetTypes())
             .Where(type => type is { IsClass: true, IsAbstract: false });
 
+    // The one-question read-only views of a map, a set or a whole collection are data, as the
+    // BCL's read-only collections are.
+    private static readonly Type[] ReadOnlyDataViews = [typeof(IEntryLookup<,>), typeof(IMembership<>), typeof(IWholeRead<>)];
+
     private static bool IsCompilerBehavioralInterface(Type type) =>
         type.IsInterface &&
+        !(type.IsGenericType && ReadOnlyDataViews.Contains(type.GetGenericTypeDefinition())) &&
         type.Namespace?.StartsWith("NetWasm.Compiler", StringComparison.Ordinal) == true &&
         type.GetMethods().Any(method => !method.IsSpecialName);
 

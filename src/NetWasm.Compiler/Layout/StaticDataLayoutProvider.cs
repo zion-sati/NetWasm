@@ -22,7 +22,7 @@ internal sealed class StaticDataLayoutProvider(
     public int TypeObjectCount => _snapshot.StaticData.TypeObjectCount;
     public int TypeObjectSize => _snapshot.StaticData.TypeObjectSize;
 
-    public IReadOnlyDictionary<string, int> TypeObjectAddresses => _snapshot.StaticData.TypeObjects;
+    public IEntryLookup<string, int> TypeObjectAddresses { get; } = Lookups.Of(snapshot.StaticData.TypeObjects);
 
     public StringLayout GetStringLayout(string value) =>
         _snapshot.StaticData.Strings.TryGetValue(value, out var layout)

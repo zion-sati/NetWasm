@@ -768,7 +768,7 @@ public sealed class ManagedByRefEffectAnalyzerTests
 
 // While one method is analysed alone, its effects are its own as they stand, every other
 // method's are as known, and a method of the program known for none has none; the view is
-// looked up, never listed.
+// looked up by method.
 public sealed class KnownByRefEffectsTests
 {
     [Fact]
@@ -781,15 +781,16 @@ public sealed class KnownByRefEffectsTests
             Own = new([1], [], []),
         };
 
-        Assert.Same(effects.Own, effects["Self"]);
-        Assert.Same(written, effects["Known"]);
-        Assert.Same(ManagedByRefMethodEffects.Empty, effects["Quiet"]);
-        Assert.False(effects.ContainsKey("Outside"));
-        Assert.Throws<KeyNotFoundException>(() => effects["Outside"]);
-        Assert.Throws<NotSupportedException>(() => effects.Keys);
-        Assert.Throws<NotSupportedException>(() => effects.Values);
-        Assert.Throws<NotSupportedException>(() => effects.Count);
-        Assert.Throws<NotSupportedException>(() => effects.GetEnumerator());
-        Assert.Throws<NotSupportedException>(() => ((System.Collections.IEnumerable)effects).GetEnumerator());
+        Assert.Same(effects.Own, Known(effects, "Self"));
+        Assert.Same(written, Known(effects, "Known"));
+        Assert.Same(ManagedByRefMethodEffects.Empty, Known(effects, "Quiet"));
+        Assert.False(effects.TryGetValue("Outside", out var outside));
+        Assert.Null(outside);
+    }
+
+    private static ManagedByRefMethodEffects Known(ManagedByRefEffectAnalyzer.KnownEffects effects, string method)
+    {
+        Assert.True(effects.TryGetValue(method, out var known));
+        return known;
     }
 }

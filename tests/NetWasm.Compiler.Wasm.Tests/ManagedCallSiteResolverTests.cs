@@ -48,7 +48,7 @@ public sealed class ManagedCallSiteResolverTests
             Context = request.Context with { CallerIdentity = caller },
             Target = request.Target with
             {
-                ManagedCallSites = ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty,
+                ManagedCallSites = Lookups.Of(ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty),
             },
         };
 
@@ -82,8 +82,8 @@ public sealed class ManagedCallSiteResolverTests
             Context = request.Context with { CallerIdentity = caller },
             Target = request.Target with
             {
-                ManagedCallSites = ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty
-                    .Add(key, callSite),
+                ManagedCallSites = Lookups.Of(ImmutableDictionary<ManagedCallSiteKey, ManagedCallSite>.Empty
+                    .Add(key, callSite)),
             },
         };
     }

@@ -46,8 +46,8 @@ public sealed class RootMapAnalyzer(
 
     private MethodRootMap AnalyzeCore(
         ManagedMethodBody method,
-        ISet<EntityKey> allocatingMethods,
-        ISet<string> allocatingConstructedMethods)
+        IMembership<EntityKey> allocatingMethods,
+        IMembership<string> allocatingConstructedMethods)
     {
         var graph = method.ControlFlow.Graph;
         var blockInstructions = graph.Blocks.ToImmutableDictionary(
@@ -310,8 +310,8 @@ public sealed class RootMapAnalyzer(
 
     private static bool IsAllocatingConstructor(
         CilInstruction instruction,
-        ISet<EntityKey> allocatingMethods,
-        ISet<string> allocatingConstructedMethods)
+        IMembership<EntityKey> allocatingMethods,
+        IMembership<string> allocatingConstructedMethods)
     {
         if (instruction.Operand is CilOperand.Entity constructor)
         {

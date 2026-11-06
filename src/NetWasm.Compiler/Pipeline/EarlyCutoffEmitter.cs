@@ -197,10 +197,10 @@ internal sealed class EarlyCutoffEmitter(
         var replay = new UnitReplay(answers, plans,
             functionIndexResolvers.Create(methods, symbols, plans.Target.FunctionIndices));
         var rootMapAnalyzer = rootMapAnalyzers.Create(types, fields, methods, replay.Values,
-            new ReplayDictionary<string, DispatchCallSiteModel>(answers, UnitQueryKind.DispatchCallSite, static key => key),
+            new ReplayLookup<string, DispatchCallSiteModel>(answers, UnitQueryKind.DispatchCallSite, static key => key),
             typeClassifier);
-        var allocating = new ReplayMembershipSet<EntityKey>(answers, UnitQueryKind.AllocatingMethod, UnitQueryKeys.Of);
-        var allocatingConstructed = new ReplayMembershipSet<string>(answers, UnitQueryKind.AllocatingConstructedMethod,
+        var allocating = new ReplayMembership<EntityKey>(answers, UnitQueryKind.AllocatingMethod, UnitQueryKeys.Of);
+        var allocatingConstructed = new ReplayMembership<string>(answers, UnitQueryKind.AllocatingConstructedMethod,
             static key => key);
         var rootMaps = new Dictionary<string, MethodRootMap>(StringComparer.Ordinal);
         foreach (var method in analysed.Methods)

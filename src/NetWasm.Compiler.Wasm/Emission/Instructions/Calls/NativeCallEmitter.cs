@@ -59,7 +59,7 @@ internal sealed class NativeCallEmitter(
         }
         var functionIndex = functionIndices.Resolve(request.Method);
         _initialization.Emit(new(request.Method.Definition.DeclaringType,
-            request.Method.DeclaringType, instruction.Target.ModuleData, IsMethodInvocation: true),
+            request.Method.DeclaringType, instruction.Target.StaticInitializerGuards, IsMethodInvocation: true),
             code, functionIndices);
         foreach (var parameter in plan.Parameters)
         {

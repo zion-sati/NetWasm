@@ -150,7 +150,7 @@ internal sealed class ManagedMethodSequenceEmitter(
             method,
             exception,
             context,
-            target.ModuleData,
+            target.ExceptionMetadata,
             (sequence, sequenceContext, sequenceLoopBreakDepth,
                 sequenceLoopContinueDepth, exceptionLeaveDepth) => EmitSequence(
                 code,
@@ -324,7 +324,7 @@ internal sealed class ManagedMethodSequenceEmitter(
             stackTraceLocations.Update(
                 code,
                 context.StackTraceMethodId,
-                target.StackTraceMethods.ResolveSymbolId(
+                target.StackTraceLookups.ResolveSymbolId(
                     context.StackTraceMethodId,
                     instruction.SourceOffset),
                 context.RuntimeImportSelection);

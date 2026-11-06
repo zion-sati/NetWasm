@@ -54,7 +54,7 @@ public sealed class StackStorageTypeAnalyzerTests
             shape == 3 ? [CliTypeIdentity.ManagedByReference(scalar)] : [], [.. instructions]);
 
         var map = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>())));
         var roots = map.Safepoints[offset].Roots;
         if (shape == 0)
         {
@@ -87,7 +87,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var analyzer = new IRootMapAnalyzer[] { new RootMapAnalyzer(repository, storage,
             new StackStorageContinuationAnalyzer(), anchors, new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }[0];
         Assert.Throws<CompilerException>(() => analyzer.Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))));
         Assert.Equal(0, anchors.Calls);
     }
 
@@ -116,7 +116,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var analyzer = new IRootMapAnalyzer[] { new RootMapAnalyzer(repository, storage,
             new StackStorageContinuationAnalyzer(), anchors, new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }[0];
         Assert.Throws<CompilerException>(() => analyzer.Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())));
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))));
         Assert.Equal(0, anchors.Calls);
     }
 
@@ -169,7 +169,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var storage = Analyze(repository, method);
         Assert.Equal(produced, Assert.Single(storage[1]).Type);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>())));
         Assert.Contains(new RootSource(RootSourceKind.EvaluationStack, 0,
             producer == 6 ? 0 : pointerSize), roots.Safepoints[1].Roots);
         if (produced.StackKind == CliValueKind.ManagedAddress)
@@ -328,7 +328,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var storage = Assert.Single(Analyze(repository, method)[5]);
         Assert.Null(storage.Type);
         Assert.Equal(stable, storage.BackingCovered);
-        var request = new RootMapAnalysisRequest(method, new HashSet<EntityKey> { CollectKey }, new HashSet<string>());
+        var request = new RootMapAnalysisRequest(method, Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()));
         if (source != 4)
         {
             var roots = CreateRootAnalyzer(repository).Analyze(request).Safepoints[5].Roots;
@@ -355,7 +355,7 @@ public sealed class StackStorageTypeAnalyzerTests
             I(3, CilOperation.Pop), I(4, CilOperation.Call, new CilOperand.Entity(CollectKey)),
             I(5, CilOperation.Return));
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[4].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[4].Roots;
         Assert.DoesNotContain(roots, root => root.Kind is RootSourceKind.EvaluationStack or RootSourceKind.ManagedAddressEvaluationStack);
         Assert.Contains(new RootSource(RootSourceKind.ManagedAddressArgument, 0), roots);
     }
@@ -384,7 +384,7 @@ public sealed class StackStorageTypeAnalyzerTests
         Assert.False(storage.BackingCovered);
         Assert.True(storage.CompleteBackingKnown);
         var map = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>())));
         Assert.Empty(map.AnchorPlan.Anchors);
         Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), map.Safepoints[9].Roots);
     }
@@ -522,7 +522,7 @@ public sealed class StackStorageTypeAnalyzerTests
         });
         Assert.Null(slots[1].Type);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[5].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[5].Roots;
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, pointerSize), roots);
         Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 0), roots);
         Assert.Contains(new RootSource(RootSourceKind.ManagedAddressEvaluationStack, 1), roots);
@@ -552,7 +552,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var slot = Assert.Single(Analyze(repository, method)[9]);
         Assert.Null(slot.Type);
         Assert.Equal(!uncovered, slot.BackingCovered);
-        var request = new RootMapAnalysisRequest(method, new HashSet<EntityKey> { CollectKey }, new HashSet<string>());
+        var request = new RootMapAnalysisRequest(method, Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()));
         if (uncovered)
         {
             Assert.True(slot.CompleteBackingKnown);
@@ -586,7 +586,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var slot = Assert.Single(Analyze(repository, method)[5]);
         Assert.True(slot.BackingCovered);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[5].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[5].Roots;
         Assert.Contains(new RootSource(argument ? RootSourceKind.Argument : RootSourceKind.Local, 0, 4), roots);
     }
 
@@ -624,7 +624,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var slot = Assert.Single(Analyze(repository, method)[safepoint]);
         Assert.Null(slot.Type);
         Assert.Equal(mutation == 0, slot.BackingCovered);
-        var request = new RootMapAnalysisRequest(method, new HashSet<EntityKey> { CollectKey }, new HashSet<string>());
+        var request = new RootMapAnalysisRequest(method, Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()));
         if (mutation == 0)
         {
             var roots = CreateRootAnalyzer(repository).Analyze(request).Safepoints[safepoint].Roots;
@@ -904,7 +904,7 @@ public sealed class StackStorageTypeAnalyzerTests
         {
             Assert.Empty(local.CapturedBackings);
             var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-                new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[safepoint].Roots;
+                Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[safepoint].Roots;
             Assert.Contains(new RootSource(RootSourceKind.Local, 0, pointerSize), roots);
             Assert.Contains(new RootSource(reloadBeforeCollection ? RootSourceKind.ManagedAddressEvaluationStack
                 : RootSourceKind.ManagedAddressLocal, reloadBeforeCollection ? 0 : 1), roots);
@@ -944,7 +944,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var method = Body(repository, Method(EntryKey, Void),
             [Pair, CliTypeIdentity.ManagedByReference(scalar), Pair], [.. instructions]);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[safepoint].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[safepoint].Roots;
         // Both pairs had their address taken, so each stays rooted whatever the
         // byref local addresses now.
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), roots);
@@ -970,7 +970,7 @@ public sealed class StackStorageTypeAnalyzerTests
             I(8, CilOperation.Call, new CilOperand.Entity(CollectKey)),
             I(9, CilOperation.LoadLocal, new CilOperand.Index(1)), I(10, CilOperation.Pop), I(11, CilOperation.Return));
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[8].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[8].Roots;
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), roots);
         Assert.Contains(new RootSource(RootSourceKind.Local, 2, 4), roots);
     }
@@ -993,7 +993,7 @@ public sealed class StackStorageTypeAnalyzerTests
              I(12, CilOperation.Leave, new CilOperand.BranchTarget(13)), I(13, CilOperation.Return)],
             [new(CilExceptionRegionKind.Filter, 3, 2, 8, 5, null, 5)]);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[9].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[9].Roots;
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), roots);
     }
 
@@ -1033,8 +1033,8 @@ public sealed class StackStorageTypeAnalyzerTests
 
         var map = CreateRootAnalyzer(repository).Analyze(new(
             method,
-            new HashSet<EntityKey> { CollectKey },
-            new HashSet<string>()));
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }),
+            Lookups.Of(new HashSet<string>())));
 
         var anchor = new StackStorageAnchor(
             new(StackStorageLocationKind.Local, 0),
@@ -1068,7 +1068,7 @@ public sealed class StackStorageTypeAnalyzerTests
              I(10, CilOperation.LoadLocal, new CilOperand.Index(1)), I(11, CilOperation.Pop), I(12, CilOperation.Return)],
             [new(CilExceptionRegionKind.Finally, 3, 2, 5, 4, null, null)]);
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[9].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[9].Roots;
         Assert.Contains(new RootSource(RootSourceKind.Local, 2, 4), roots);
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), roots);
     }
@@ -1096,7 +1096,7 @@ public sealed class StackStorageTypeAnalyzerTests
         var analysis = AnalyzeStorage(repository, method);
         Assert.False(analysis.Entries.ContainsKey(13));
         var roots = CreateRootAnalyzer(repository).Analyze(new(method,
-            new HashSet<EntityKey> { CollectKey }, new HashSet<string>())).Safepoints[9].Roots;
+            Lookups.Of(new HashSet<EntityKey> { CollectKey }), Lookups.Of(new HashSet<string>()))).Safepoints[9].Roots;
         Assert.Contains(new RootSource(RootSourceKind.Local, 0, 4), roots);
     }
 
@@ -1110,7 +1110,7 @@ public sealed class StackStorageTypeAnalyzerTests
             new StackStorageAnchorPlanner(new StackStorageContinuationAnalyzer()),
             new CollectDecision(), new CallerRootsArguments(), new RootSlotAllocator()) }
             .Cast<IRootMapAnalyzer>().Single();
-        Assert.Empty(analyzer.Analyze(new(method, new HashSet<EntityKey>(), new HashSet<string>())).Safepoints);
+        Assert.Empty(analyzer.Analyze(new(method, Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()))).Safepoints);
         Assert.Equal(0, storage.Calls);
     }
 

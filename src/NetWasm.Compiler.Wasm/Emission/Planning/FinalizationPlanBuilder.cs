@@ -12,8 +12,6 @@ internal sealed record FinalizationPlan(
     bool UsesExplicitFinalizationApi)
 {
     public bool RequiresRuntime => FinalizableTypeIds.Count != 0;
-
-    public bool IsFinalizable(int typeId) => FinalizableTypeIds.Contains(typeId);
 }
 
 internal interface IFinalizationPlanBuilder

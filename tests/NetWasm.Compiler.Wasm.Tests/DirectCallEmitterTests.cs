@@ -46,7 +46,7 @@ public sealed class DirectCallEmitterTests
             Assert.Equal(definition.DeclaringType, initialization.Request!.TypeDefinition);
             Assert.True(initialization.Request.IsMethodInvocation);
             Assert.Equal(method.DeclaringType, initialization.Request.DeclaringType);
-            Assert.Same(instruction.Target.ModuleData, initialization.Request.ModuleData);
+            Assert.Same(instruction.Target.StaticInitializerGuards, initialization.Request.Guards);
             Assert.Equal(0, initialization.PrecedingInstructions);
         }
     }

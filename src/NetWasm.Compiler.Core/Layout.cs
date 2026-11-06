@@ -126,7 +126,7 @@ public interface IStaticDataLayout
 
     // Each type's static Type object by canonical name, which typeof uses
     // instead of asking the runtime.
-    IReadOnlyDictionary<string, int> TypeObjectAddresses => ImmutableDictionary<string, int>.Empty;
+    IEntryLookup<string, int> TypeObjectAddresses => Lookups.NoEntries<string, int>();
 
     // The static Type objects, contiguous and TypeObjectSize bytes apart.
     int TypeObjectTableAddress => 0;

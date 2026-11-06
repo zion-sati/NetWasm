@@ -28,8 +28,8 @@ internal sealed class CallEmissionKindResolver(
         var caller = instruction.Header.MethodInstance?.CanonicalName;
         if (instruction.Instruction.Operation == CilOperation.CallVirtual &&
             caller is not null &&
-            instruction.Target.DispatchCallSites.ContainsKey(
-                $"{caller}@{instruction.Instruction.Offset:x8}"))
+            instruction.Target.DispatchCallSites.TryGetValue(
+                $"{caller}@{instruction.Instruction.Offset:x8}", out _))
         {
             return CallEmissionKind.VirtualDispatch;
         }

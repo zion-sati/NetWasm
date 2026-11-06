@@ -265,7 +265,7 @@ public sealed class ManagedMethodValuePlanBuilderTests
         bool enabled = false) => new(
         Method(),
         rootMap,
-        ManagedByRefEffects.Empty,
+        Lookups.Of(ManagedByRefEffects.Empty.Methods),
         reserved ?? [],
         enabled);
 

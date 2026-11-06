@@ -379,7 +379,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
     }
 
     private AddressOrigins ApplyCall(
-        ManagedByRefEffects effects,
+        IEntryLookup<string, ManagedByRefMethodEffects> effects,
         CilInstruction instruction,
         IReadOnlyList<AddressOrigins> stack,
         int consumed,
@@ -429,7 +429,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
             }
         }
         if (
-            !effects.Methods.TryGetValue(
+            !effects.TryGetValue(
                 operand.Value.CanonicalName,
                 out var targetEffects))
         {
@@ -718,7 +718,7 @@ internal sealed class ManagedAggregateValueAnalyzer(
     {
         var result = new Dictionary<ManagedAggregateStorageId, ManagedAggregateStorage>();
         var methodEffects = request.Method.Header.MethodInstance is { } methodInstance &&
-            request.ByRefEffects.Methods.TryGetValue(
+            request.ByRefEffects.TryGetValue(
                 methodInstance.CanonicalName,
                 out var resolvedEffects)
                 ? resolvedEffects

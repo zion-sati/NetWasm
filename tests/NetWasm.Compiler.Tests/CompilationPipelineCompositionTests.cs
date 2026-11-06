@@ -468,7 +468,7 @@ public sealed class CompilationPipelineCompositionTests
             IFieldRepository fields,
             IMethodRepository methods,
             IValueLayoutProvider layouts,
-            IReadOnlyDictionary<string, DispatchCallSiteModel> dispatchCallSites,
+            IEntryLookup<string, DispatchCallSiteModel> dispatchCallSites,
             ITypeClassifier typeClassifier)
         {
             calls.Add("roots-create");

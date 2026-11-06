@@ -621,7 +621,7 @@ public sealed class UnitRootMapRecorderTests
 
     private static UnitRootMapRecorder Recorder(CompiledUnitState state, World world) => new(state,
         new Layouts(world.LayoutFailure), new Sites(world.SiteFailure),
-        world.Allocates ? new HashSet<EntityKey> { Callee } : [], new HashSet<string> { "G<int>" }, new NoFields());
+        Lookups.Of(world.Allocates ? new HashSet<EntityKey> { Callee } : []), Lookups.Of(new HashSet<string> { "G<int>" }), new NoFields());
 
     // What a root-map analysis reads: a layout, a dispatch site and which callees allocate.
     private static Func<MethodRootMap> Analysis(UnitRootMapRecorder recorder, MethodRootMap map, List<string>? ran = null) => () =>
@@ -765,10 +765,10 @@ public sealed class UnitRootMapRecorderTests
     [Fact]
     public void ItNeedsItsStateAndFieldDefinitions()
     {
-        Assert.Throws<ArgumentNullException>(() => new UnitRootMapRecorder(null!, new Layouts(null), new Sites(null), new HashSet<EntityKey>(),
-            new HashSet<string>(), new NoFields()));
+        Assert.Throws<ArgumentNullException>(() => new UnitRootMapRecorder(null!, new Layouts(null), new Sites(null), Lookups.Of(new HashSet<EntityKey>()),
+            Lookups.Of(new HashSet<string>()), new NoFields()));
         Assert.Throws<ArgumentNullException>(() => new UnitRootMapRecorder(UnitActorFixture.State(), new Layouts(null), new Sites(null),
-            new HashSet<EntityKey>(), new HashSet<string>(), null!));
+            Lookups.Of(new HashSet<EntityKey>()), Lookups.Of(new HashSet<string>()), null!));
     }
 
     private static UnitFingerprint UnitFingerprintOf(MethodRootMap map)
@@ -784,21 +784,13 @@ public sealed class UnitRootMapRecorderTests
     }
 
     // The analysis asks a site by key alone.
-    private sealed class Sites(Exception? failure) : IReadOnlyDictionary<string, DispatchCallSiteModel>
+    private sealed class Sites(Exception? failure) : IEntryLookup<string, DispatchCallSiteModel>
     {
         public bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out DispatchCallSiteModel value)
         {
             value = null;
             return failure is null ? false : throw failure;
         }
-
-        public DispatchCallSiteModel this[string key] => throw new NotSupportedException();
-        public IEnumerable<string> Keys => throw new NotSupportedException();
-        public IEnumerable<DispatchCallSiteModel> Values => throw new NotSupportedException();
-        public int Count => throw new NotSupportedException();
-        public bool ContainsKey(string key) => throw new NotSupportedException();
-        public IEnumerator<KeyValuePair<string, DispatchCallSiteModel>> GetEnumerator() => throw new NotSupportedException();
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class NoFields : IFieldRepository

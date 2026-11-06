@@ -25,7 +25,7 @@ internal sealed class InitializingCallEmitter(
         if (_triggers.Classify(request.Method.Definition))
         {
             _initialization.Emit(new(request.Method.Definition.DeclaringType,
-                request.Method.DeclaringType, request.Instruction.Target.ModuleData,
+                request.Method.DeclaringType, request.Instruction.Target.StaticInitializerGuards,
                 IsMethodInvocation: true), code, functionIndices);
         }
         _inner.Emit(request, code, functionIndices);
