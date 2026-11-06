@@ -13,7 +13,6 @@ namespace NetWasm.Compiler.Metadata;
 
 internal interface ICilDecoder
 {
-    CilMethodBody Decode(ManagedAssembly source, MethodDefinitionModel method);
     CilMethodBody Decode(ManagedAssembly source, MethodInstanceModel method);
 }
 
@@ -67,15 +66,6 @@ internal sealed class CilDecoder(
         }
         OneByteOpCodes = oneByte;
         TwoByteOpCodes = twoByte;
-    }
-
-    public CilMethodBody Decode(ManagedAssembly assembly, MethodDefinitionModel method)
-    {
-        var instance = _methodReferences.Resolve(assembly.Metadata,
-            method.Key.MetadataToken,
-            _symbols.Format(method),
-            0);
-        return Decode(assembly, instance);
     }
 
     public CilMethodBody Decode(ManagedAssembly assembly, MethodInstanceModel methodInstance)
