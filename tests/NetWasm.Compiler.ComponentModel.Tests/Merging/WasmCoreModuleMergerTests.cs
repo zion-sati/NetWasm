@@ -75,6 +75,19 @@ public sealed class WasmCoreModuleMergerTests
             : expected, merged);
     }
 
+    // Asked for names, a merge whose inputs name no function writes no name section.
+    [Fact]
+    public void WritesNoNameSectionWhenNoInputNamesAFunction()
+    {
+        var module = Module(
+            Section(1, Vec(FuncType([], []))),
+            Section(3, Vec(U(0))),
+            Section(7, Vec(Export("f", 0, 0))),
+            Section(10, Vec(Body([]))));
+
+        Assert.Equal(Merger.Merge([new("a", module)], keepNames: false), Merger.Merge([new("a", module)], keepNames: true));
+    }
+
     [Fact]
     public void EveryInputKeepsItsDefinitionsSegmentsAndStart()
     {

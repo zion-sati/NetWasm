@@ -263,7 +263,8 @@ internal sealed class WholeLocalBlockCopyFolder(
     {
         if (length.Type is { } sized) return sized.Equals(type);
         if (KnownSizeRewriter.Size(type) is { } known) return known == length.Value;
-        if (type.Shape != CliTypeShape.Named || type.ContainsGenericParameters) return false;
+        // A named type has no generic parameters of its own; an instantiation's size is its layout's.
+        if (type.Shape != CliTypeShape.Named) return false;
         var definition = _typeDefinitions.ResolveTypeIdentity(type);
         return definition.DeclaredSize != 0 && definition.DeclaredSize == length.Value &&
             definition.Fields.All(key => _fields.GetField(key) is { IsStatic: true } or { IsLiteral: true });

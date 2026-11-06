@@ -72,6 +72,29 @@ public sealed class TerminalBranchValueFramePlannerTests
         Assert.Null(_planner.Plan(method, Layout(), _roots));
     }
 
+    [Fact]
+    public void UnsupportedRegionInTheTailRejectsPlacement()
+    {
+        var method = Method();
+        method = method with { Body = new([method.Body.Regions[0], new StructuredExceptionRegion(new(0), null)]) };
+
+        Assert.Null(_planner.Plan(method, Layout(), _roots));
+    }
+
+    // A root map that names an offset no block of the method holds leaves the frame where it is.
+    [Fact]
+    public void ARootSafepointOutsideTheMethodsBlocksRejectsPlacement()
+    {
+        var source = new RootSource(RootSourceKind.Local, 0);
+        var roots = _roots with
+        {
+            Slots = ImmutableDictionary<RootSource, int>.Empty.Add(source, 0),
+            Safepoints = ImmutableDictionary<int, SafepointRootMap>.Empty.Add(50, new(50, [source], [])),
+        };
+
+        Assert.Null(_planner.Plan(Method(), Layout(), roots));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

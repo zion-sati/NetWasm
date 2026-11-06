@@ -186,10 +186,13 @@ internal sealed class LoopInvariantExpressionHoister(
                 state = reachable ? state.Meet(arriving) : arriving;
                 reachable = true;
             }
-            // Code no path reaches, a jump from outside, or a protected region's
-            // edge ends the expression.
+            // Code no path reaches, a jump back into the run, or a protected
+            // region's edge ends the expression. No jump from before the run lands
+            // in it: one from earlier in the loop puts the run's start inside its
+            // arm, which Rewrite skips, and one from outside the loop keeps the
+            // loop out of Rewrite altogether.
             if (!reachable ||
-                index > first && sources.TryGetValue(index, out var from) && from.Any(source => source < first || source >= index) ||
+                index > first && sources.TryGetValue(index, out var from) && from.Any(source => source >= index) ||
                 index > first && boundaries.Contains(instructions[index].Offset))
             {
                 break;
@@ -201,10 +204,12 @@ internal sealed class LoopInvariantExpressionHoister(
             // No instruction here holds more values within its step than before or after it.
             height = Math.Max(height, state.Stack.Count);
             // The run so far is an expression when every path through it leaves
-            // one scalar value and every branch in it has landed.
+            // one scalar value and every branch in it has landed. Past an
+            // unconditional jump, which lands at the end, the jump's state is the
+            // only one that arrives.
             var next = index + 1;
             if (branches > 0 && pending.Keys.All(target => target == next) &&
-                End(state, reachable, pending.TryGetValue(next, out var atEnd) ? atEnd : null) is { } kind)
+                End(reachable ? state : pending[next], reachable && pending.TryGetValue(next, out var atEnd) ? atEnd : null) is { } kind)
             {
                 candidates.Add((next, kind, height));
             }
@@ -217,12 +222,11 @@ internal sealed class LoopInvariantExpressionHoister(
         return null;
     }
 
-    // The value kind at the expression's end, from the fall-through path and a
-    // branch to the end; null unless each leaves the same single scalar.
-    private static CliValueKind? End(State state, bool reachable, State? arriving)
+    // The value kind at the expression's end, from the path that reaches it and
+    // a branch that also lands there; null unless each leaves the same single scalar.
+    private static CliValueKind? End(State state, State? arriving)
     {
-        var stack = reachable ? state.Stack : arriving?.Stack;
-        if (stack is not [var kind] || arriving is not null && reachable && !state.Matches(arriving))
+        if (state.Stack is not [var kind] || arriving is not null && !state.Matches(arriving))
         {
             return null;
         }
