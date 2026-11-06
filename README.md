@@ -21,21 +21,21 @@ and .NET CIL directly to WebAssembly. It does not carry the desktop CLR, Mono,
 ## C# now beats Rust on Wasm size
 
 **NetWasm + precise GC: 39,230 bytes**<br>
-**Rust 1.95.0 size-oriented profile: 53,635 bytes**
+**Rust 1.99.1 size-oriented profile: 52,569 bytes**
 
 For the same print-`42` workload, NetWasm's result includes the runtime and
 precise Compact garbage collector. Both artifacts are standalone WASI Preview 2
 Components, built the way a developer gets them out of the box: each
 toolchain's standard library and ordinary build, with no hand-added tools.
 
-**26.9% smaller raw. 20.8% smaller with Brotli-11.**
+**25.4% smaller raw. 19.3% smaller with Brotli-11.**
 
-![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 39,230 raw and 13,434 compressed bytes; Rust is 53,635 and 16,963; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI Preview 2 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-landscape-brotli11.svg)
+![Wasm footprint landscape with raw and Brotli-11 sizes. NetWasm with precise GC is 39,230 raw and 13,434 compressed bytes; Rust is 52,569 and 16,648; Kotlin/Wasm is 79,293 and 22,655; TinyGo is 93,043 and 26,931. NetWasm and Rust are the matched WASI Preview 2 comparison; Kotlin and TinyGo are contextual Preview 1 references.](docs/images/wasm-footprint-landscape-brotli11.svg)
 
 | Toolchain | Raw Wasm | Brotli 11 | Comparison role |
 | --- | ---: | ---: | --- |
 | **NetWasm, Compact GC** | **39,230 B** | **13,434 B** | WASI P2 Component; precise GC included |
-| Rust 1.95.0, size profile | 53,635 B | 16,963 B | Matched WASI P2 Component reference |
+| Rust 1.99.1, size profile | 52,569 B | 16,648 B | Matched WASI P2 Component reference |
 | Kotlin 2.4.0 `wasmWasi` | 79,293 B | 22,655 B | P1 context; GC supplied by the host engine |
 | TinyGo 0.39.0 | 93,043 B | 26,931 B | P1 context; precise GC configured |
 
@@ -51,7 +51,9 @@ Binaryen's wasm-opt is not a post-processing step here: it is part of NetWasm's
 compiler pipeline and runs in every ordinary build, with nothing to install or
 enable. Rust's `wasm32-wasip2` output is a component, so applying wasm-opt to it
 means extracting the core module, optimizing it and re-encoding the component
-by hand.
+by hand. Done that way for Rust 1.99.1, with every custom section stripped as
+well, the component is 40,488 bytes (14,390 with Brotli-11): still larger than
+NetWasm's ordinary publish.
 
 Both languages can go lower, but that is a different class of program: Rust
 with `no_std`, or C# with a minimal library such as bflat's zero library, each
