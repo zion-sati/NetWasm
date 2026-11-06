@@ -271,7 +271,7 @@ profile.
 NetWasm 1.0 means a useful, documented and stable smaller platform. It does not
 mean “desktop .NET, but in Wasm.” The main themes are:
 
-- broader WASI Preview 2 coverage;
+- WASI 0.3, with broader WASI coverage;
 - globalization modes and optional culture data;
 - expression-tree completion;
 - a faster incremental development loop (done in NetWasm 0.11.0);
