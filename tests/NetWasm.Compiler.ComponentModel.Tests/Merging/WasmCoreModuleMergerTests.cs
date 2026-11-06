@@ -39,6 +39,42 @@ public sealed class WasmCoreModuleMergerTests
             Section(10, Vec(Body([], [0x10, 2], [0x41, 1, 0x10, 0], [0x10, 1]), Body([], [0x10, 1])))), merged);
     }
 
+    // A diagnostic twin names the merged functions as its inputs do: a definition keeps its
+    // name, an import that another input defines takes that definition's, and an import that
+    // stays one the first name an input gives it. A product merge keeps no names.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void KeepsTheInputsFunctionNamesUnderTheirMergedIndicesOnlyWhenAsked(bool keepNames)
+    {
+        var a = Module(
+            Section(1, Vec(FuncType([], []), FuncType([0x7f], []))),
+            Section(2, Vec(ImportFunction("b", "g", 0), ImportFunction("host", "h", 1))),
+            Section(3, Vec(U(0))),
+            Section(7, Vec(Export("fa", 0, 2))),
+            Section(10, Vec(Body([], [0x10, 0], [0x41, 1, 0x10, 1], [0x10, 2]))),
+            Custom("name", FunctionNames((0, "a.import.g"), (1, "a.host.h"), (2, "fa"))));
+        var b = Module(
+            Section(1, Vec(FuncType([0x7f], []), FuncType([], []))),
+            Section(2, Vec(ImportFunction("host", "h", 0), ImportFunction("a", "fa", 1))),
+            Section(3, Vec(U(1))),
+            Section(7, Vec(Export("g", 0, 2))),
+            Section(10, Vec(Body([], [0x10, 1]))),
+            Custom("name", [.. Subsection(0, Name("b")), .. FunctionNames((0, "b.host.h"), (1, "b.import.fa"), (2, "g"))]));
+
+        var merged = Merger.Merge([new("a", a), new("b", b)], keepNames: keepNames);
+
+        byte[] expected = Module(
+            Section(1, Vec(FuncType([], []), FuncType([0x7f], []))),
+            Section(2, Vec(ImportFunction("host", "h", 1))),
+            Section(3, Vec(U(0), U(0))),
+            Section(7, Vec(Export("fa", 0, 1), Export("g", 0, 2))),
+            Section(10, Vec(Body([], [0x10, 2], [0x41, 1, 0x10, 0], [0x10, 1]), Body([], [0x10, 1]))));
+        Assert.Equal(keepNames
+            ? [.. expected, .. Custom("name", FunctionNames((0, "a.host.h"), (1, "fa"), (2, "g")))]
+            : expected, merged);
+    }
+
     [Fact]
     public void EveryInputKeepsItsDefinitionsSegmentsAndStart()
     {
@@ -500,6 +536,12 @@ public sealed class WasmCoreModuleMergerTests
 
     private static byte[] Custom(string name, byte[] payload) => Section(0, [.. Name(name), .. payload]);
 
+    // A name section's function name subsection.
+    private static byte[] FunctionNames(params (uint Function, string Name)[] names) =>
+        Subsection(1, Vec([.. names.Select(entry => (byte[])[.. U(entry.Function), .. Name(entry.Name)])]));
+
+    private static byte[] Subsection(byte id, byte[] payload) => [id, .. U((uint)payload.Length), .. payload];
+
     private static byte[] Vec(params byte[][] items) => [.. U((uint)items.Length), .. items.SelectMany(item => item)];
 
     private static byte[] Bytes(ReadOnlySpan<byte> bytes) => [.. U((uint)bytes.Length), .. bytes];
@@ -560,7 +602,7 @@ public sealed class WasmCoreModuleMergerTests
         public string[] Inputs { get; private set; } = [];
         public WasmExportSelection? Exports { get; private set; }
 
-        public byte[] Merge(IReadOnlyList<WasmMergeInput> inputs, WasmExportSelection? exports = null)
+        public byte[] Merge(IReadOnlyList<WasmMergeInput> inputs, WasmExportSelection? exports = null, bool keepNames = false)
         {
             Inputs = [.. inputs.Select(input => $"{input.Name}={Encoding.UTF8.GetString(input.Module)}:{input.InlineAnnotations}")];
             Exports = exports;

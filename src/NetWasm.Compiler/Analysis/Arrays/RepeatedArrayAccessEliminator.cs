@@ -27,7 +27,7 @@ internal sealed class RepeatedArrayAccessEliminator(
         ArgumentNullException.ThrowIfNull(body);
         if (!enabled) return body;
         var plan = _planner.Plan(_stacks.Validate(_graphs.Build(body)));
-        if (plan.Checked.IsEmpty && plan.NonNull.IsEmpty) return body;
+        if (plan.Checked.IsEmpty && plan.NonNull.IsEmpty && plan.CheckedDimensions.IsEmpty) return body;
         var proof = body.ArrayBoundsProof is { } existing &&
             existing.Describes(body.Instructions, body.Locals, body.LocalSignatureTypes)
             ? existing
@@ -38,6 +38,7 @@ internal sealed class RepeatedArrayAccessEliminator(
             {
                 AccessOffsets = proof.AccessOffsets.Union(plan.Checked),
                 NonNullOffsets = proof.NonNullOffsets.Union(plan.NonNull),
+                CheckedDimensions = proof.CheckedDimensions.Union(plan.CheckedDimensions),
             },
         };
     }

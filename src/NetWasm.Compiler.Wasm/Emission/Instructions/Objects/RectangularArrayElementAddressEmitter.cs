@@ -31,7 +31,14 @@ internal sealed class RectangularArrayElementAddressEmitter(
             request.ArraySlot,
             CliValueKind.ManagedReference);
         var metadata = instruction.Context.ArrayMetadata;
-        if (!metadata.Plan.CheckedAccesses.Contains(instruction.Instruction.Offset))
+        // An earlier access to the same array may already have checked it and some indices.
+        var proof = instruction.Header.ArrayBoundsProof is { } candidate &&
+            candidate.Describes(instruction.Header.Instructions, instruction.Header.Locals, instruction.Header.LocalSignatureTypes) &&
+            candidate.Contains(instruction.Instruction)
+            ? candidate
+            : null;
+        if (!metadata.Plan.CheckedAccesses.Contains(instruction.Instruction.Offset) &&
+            proof?.ProvesNonNull(instruction.Instruction.Offset) != true)
         {
             EmitNullCheck(code, arrayLocal, request.Instruction.Context.ManagedThrowFunction);
         }
@@ -98,10 +105,13 @@ internal sealed class RectangularArrayElementAddressEmitter(
             code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32Subtract));
             Set(code, indexLocal);
 
-            Get(code, indexLocal);
-            EmitDimensionLength(code, arrayLocal, shape, snapshot, dimension);
-            code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
-            ThrowIf(code, ManagedExceptionKind.IndexOutOfRange, request.Instruction.Context.ManagedThrowFunction);
+            if (proof?.ProvesDimension(instruction.Instruction.Offset, dimension) != true)
+            {
+                Get(code, indexLocal);
+                EmitDimensionLength(code, arrayLocal, shape, snapshot, dimension);
+                code.Write(WasmInstruction.NoOperand(WasmOpcodes.I32GreaterThanOrEqualUnsigned));
+                ThrowIf(code, ManagedExceptionKind.IndexOutOfRange, request.Instruction.Context.ManagedThrowFunction);
+            }
 
             if (dimension != 0)
             {

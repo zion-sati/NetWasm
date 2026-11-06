@@ -64,24 +64,8 @@ public sealed class DecimalCompilationTests
             Assert.DoesNotContain(hot, block => structured.Blocks[block].Instructions.Contains(address));
             Assert.DoesNotContain(tail, block => structured.Blocks[block].Instructions.Contains(address));
         });
-        using var metadata = MetadataCompilationTestFactory.Load(assembly, [assets.CoreLib]);
-        var snapshot = metadata.Snapshot;
-        var fields = MetadataCompilationTestActors.Fields(snapshot);
-        var methods = MetadataCompilationTestActors.Methods(snapshot);
-        var types = MetadataCompilationTestActors.Types(snapshot);
-        var definitions = MetadataCompilationTestActors.TypeDefinitions(snapshot);
-        var identities = new CilTypeIdentityResolver(types);
-        var values = new ValueLayoutProvider(CreateValueLayouts(definitions, fields, compilation.Layouts));
-        var layout = new ValueFrameLayoutPlanner(
-            fields, methods, compilation.Layouts, values,
-            new CilTypeOperandResolver(identities), identities,
-            new ArgumentTypeResolver(types), new ArgumentSignatureTypeResolver(identities),
-            new DirectValueLoadSelector(),
-            new TransientAggregatePromotionPlanner(
-                methods, new RuntimeIntrinsicRegistry(
-                    MetadataCompilationTestActors.Symbols(snapshot), snapshot.Methods),
-                values, CreateInstanceFields(compilation.Layouts)),
-            new SimdValueFrameSlotAlignmentResolver()).Create(structured);
+        var roots = compilation.Program.RootMaps[addition.Method.Definition.Key];
+        var (layout, placed) = CompiledValueFrames.Place(assets, assembly, compilation.Layouts, structured, roots);
         Assert.Empty(layout.ArgumentOffsets);
         Assert.Empty(layout.NativeArgumentOffsets);
         Assert.Empty(layout.MemberResultOffsets);
@@ -114,10 +98,7 @@ public sealed class DecimalCompilationTests
             StructuredTerminalExit { Instruction.Operation: CilOperation.Return });
         Assert.Contains(cold.Concat(tail), block => structured.Blocks[block].Exit is
             StructuredTerminalExit { Instruction.Operation: CilOperation.Return });
-        var placement = new[] { new TerminalBranchValueFramePlanner() }
-            .Cast<ITerminalBranchValueFramePlanner>().Single();
-        var roots = compilation.Program.RootMaps[addition.Method.Definition.Key];
-        var plan = Assert.IsType<TerminalBranchValueFramePlan>(placement.Plan(structured, layout, roots));
+        var plan = Assert.IsType<TerminalBranchValueFramePlan>(placed);
         Assert.True(plan.FramedWhenTrue);
         Assert.Equal([scalar], plan.IncomingScalarLocals);
         Assert.Equal(conditional.Condition, plan.Condition);

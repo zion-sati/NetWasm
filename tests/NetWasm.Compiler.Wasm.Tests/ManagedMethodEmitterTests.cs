@@ -279,7 +279,7 @@ public sealed class ManagedMethodEmitterTests
             new ExceptionGroupEnumerator(),
             frameEntry,
             new GeneratedFunctionWriterFactory(),
-            new InstructionCountingWriterFactory(), branchFrames ?? new TerminalBranchValueFramePlanner(),
+            new InstructionCountingWriterFactory(), branchFrames ?? new TerminalBranchValueFramePlanner(CreateArgumentSignatureTypes(program)),
             new ArrayMetadataCachingPlanner(types),
             new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), CreateAddressInstructions(layouts),
                 new ImplicitExceptionEmitter(layouts)),

@@ -56,11 +56,11 @@ public sealed record WasmTargetLayout
     public static int SemanticLengthSize => sizeof(int);
 
     // Where a one-dimensional array's elements start: after its header, length,
-    // data pointer and element type id, at the 16 bytes the runtime aligns
-    // inline elements to.
-    public int ArrayInlineDataOffset => Align(
-        Align(Align(ObjectHeaderSize + SemanticLengthSize, AddressSize) + AddressSize + sizeof(int), AddressSize),
-        16);
+    // data pointer and element type id (16 bytes on wasm32, 32 on wasm64). The
+    // collectors allocate at 8 bytes, as CoreCLR and Mono do, so elements are
+    // 8-aligned.
+    public int ArrayInlineDataOffset =>
+        Align(Align(ObjectHeaderSize + SemanticLengthSize, AddressSize) + AddressSize + sizeof(int), AddressSize);
     public bool UsesMemory64 => Target == WasmTarget.Wasm64;
 
     public static WasmTargetLayout For(WasmTarget target) => target switch

@@ -56,6 +56,36 @@ public sealed class NonEscapingAllocationReplacerTests
         Assert.Same(body, Replacer().Rewrite(body));
     }
 
+    // Each field of the replaced object becomes a local, numbered in the fields' metadata order:
+    // the replacer's map of them is ordered by the keys' hashes, which differ from one process to
+    // the next, and the locals' numbering is the code the compiler emits.
+    [Fact]
+    public void FieldsBecomeLocalsInMetadataOrder()
+    {
+        var fields = Enumerable.Range(0, 8).Select(index => Field(0x10 + index, $"F{index}", Int32)).ToArray();
+        int[] reads = [5, 2, 7, 0, 3, 6, 1, 4];
+        var body = Body(code =>
+        {
+            code = code.New(0, 5);
+            foreach (var read in reads)
+            {
+                code = code.Local(CilOperation.LoadLocal, 0).Op(CilOperation.LoadField, new CilOperand.FieldInstance(fields[read]))
+                    .Op(CilOperation.Pop);
+            }
+            return code.ReadValue(0);
+        });
+
+        var rewritten = Replacer().Rewrite(body);
+
+        // The constructor's argument, each field as read, then the result's Value.
+        var loaded = rewritten.Instructions.Where(static instruction => instruction.Operation == CilOperation.LoadLocal)
+            .Select(static instruction => ((CilOperand.Index)instruction.Operand).Value).ToArray();
+        var fieldLocals = loaded[1..^1];
+        Assert.Equal(Enumerable.Range(fieldLocals.Min(), fields.Length),
+            reads.Zip(fieldLocals).OrderBy(static pair => pair.First).Select(static pair => pair.Second));
+        Assert.True(loaded[^1] < fieldLocals.Min());
+    }
+
     private static CilMethodBody Shape(string shape) => shape switch
     {
         "fields read and the object dropped" => Body(code => code

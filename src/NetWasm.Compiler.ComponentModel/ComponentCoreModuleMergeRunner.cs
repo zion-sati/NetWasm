@@ -24,6 +24,10 @@ public sealed record ComponentCoreModuleMergeRequest(
 
     // Where a merge that runs in steps writes the modules between them.
     public ComponentCoreModuleMergeIntermediates? Intermediates { get; init; }
+
+    // Whether the merged module names its functions as the inputs do, for a diagnostic twin
+    // (NETWASM_KEEP_NAMES); a product module keeps no names.
+    public bool KeepNames { get; init; }
 }
 
 // wasm-merge takes its inputs as they are and keeps every export, so a merge through it

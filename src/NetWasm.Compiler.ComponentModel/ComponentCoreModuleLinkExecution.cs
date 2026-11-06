@@ -1,3 +1,4 @@
+using NetWasm.Compiler.ComponentModel.Merging;
 using System;
 using NetWasm.Compiler.ComponentModel.Optimization;
 using NetWasm.Compiler.Core;
@@ -79,6 +80,7 @@ public sealed class ComponentCoreModuleLinkExecution(
                 Exports = new(CanonicalAbiNames.ModulePrefix(wasmTarget), []),
                 Intermediates = new(workspace.SanitizedModulePath, workspace.SanitizedRuntimeModulePath,
                     workspace.MergedModulePath),
+                KeepNames = DiagnosticNames.Kept,
             });
             _optimizer.Optimize(
                 workspace.SanitizedModulePath,

@@ -280,13 +280,14 @@ mean “desktop .NET, but in Wasm.” The main themes are:
 - a stable `netwasm1.0` platform and runtime contract;
 - production diagnostics and broader host qualification.
 
-**New in NetWasm 0.11.0:** Debug builds keep each method's compiled code, so a
-rebuild compiles only what an edit changes: on DoomSharp's browser build, an
-edit to one method rebuilds in 1.6 s where 0.10.8 took 29.3 s. `dotnet watch`
-runs on NetWasm projects, with a development server that stays up and reloads
-the page. [Release notes](docs/releases/0.11.0.md). NetWasm 0.10.8 made
-CoreLib's results match .NET 11.
-[Release notes](docs/releases/0.10.8.md)
+**New in NetWasm 0.11.1:** faster loops, rectangular arrays, block copies,
+frames and delegate calls: methods enter their frames only on the side of a
+leading `if` that needs them, and `MDAddArray2`'s kernel takes 8.6 ms where
+0.11.0 took 14.0 ms. [Release notes](docs/releases/0.11.1.md). NetWasm 0.11.0
+made Debug builds keep each method's compiled code, so a rebuild compiles only
+what an edit changes: on DoomSharp's browser build, an edit to one method
+rebuilds in 1.6 s where 0.10.8 took 29.3 s, and `dotnet watch` runs on NetWasm
+projects. [Release notes](docs/releases/0.11.0.md)
 
 **In progress:** broader compatibility with existing .NET Standard
 2.1 library binaries and NuGet assets. The target is to consume libraries

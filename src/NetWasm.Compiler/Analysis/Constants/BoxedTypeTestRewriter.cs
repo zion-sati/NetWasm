@@ -7,10 +7,14 @@ using NetWasm.Compiler.Core.Types;
 namespace NetWasm.Compiler.Analysis.Constants;
 
 // `value is int number` on a type parameter compiles to box, isinst and
-// unbox.any, and `value is IFormattable` to box, isinst and a branch. Once the
+// unbox.any, `value is IFormattable` to box, isinst and a branch, and a
+// pattern that names the object, as `value switch { Array array => ... }`, to
+// box, isinst, a store to the pattern's local and a branch on it. Once the
 // parameter is a value type, the boxed object is never visible to anything
 // else: a test of it gives the answer the runtime test gives for its type, and
-// unboxing it yields the value again, so neither needs an allocation.
+// unboxing it yields the value again, so neither needs an allocation. A named
+// object that fails the test is null, so its local needs no box either; one
+// that passes keeps its box, which the pattern's arm reads.
 internal sealed class BoxedTypeTestRewriter(
     IControlFlowGraphBuilder graphs,
     INullableTypeResolver nullableTypes,
@@ -60,6 +64,25 @@ internal sealed class BoxedTypeTestRewriter(
                     rewritten[consumer.Offset] = consumer.Operation == CilOperation.BranchIfTrue == Passes(type, tested)
                         ? consumer with { Operation = CilOperation.Branch }
                         : Nop(consumer);
+                }
+                else if (test.Operation == CilOperation.IsInstance &&
+                    consumer is { Operation: CilOperation.StoreLocal, Operand: CilOperand.Index { Value: var local } } &&
+                    index + 4 < operations.Length &&
+                    operations[index + 3] is { Operation: CilOperation.LoadLocal, Operand: CilOperand.Index { Value: var reloaded } } &&
+                    reloaded == local &&
+                    operations[index + 4].Operation is CilOperation.BranchIfTrue or CilOperation.BranchIfFalse)
+                {
+                    var passes = Passes(type, tested);
+                    if (!passes)
+                    {
+                        rewritten[box.Offset] = box with { Operation = CilOperation.Pop, Operand = new CilOperand.None() };
+                        rewritten[test.Offset] = test with { Operation = CilOperation.LoadNull, Operand = new CilOperand.None() };
+                    }
+                    var branch = operations[index + 4];
+                    rewritten[operations[index + 3].Offset] = Nop(operations[index + 3]);
+                    rewritten[branch.Offset] = branch.Operation == CilOperation.BranchIfTrue == passes
+                        ? branch with { Operation = CilOperation.Branch }
+                        : Nop(branch);
                 }
                 else if (test.Operation == CilOperation.IsInstance && consumer.Operation == CilOperation.LoadNull &&
                     index + 3 < operations.Length && operations[index + 3].Operation == CilOperation.CompareGreaterThanUnsigned)

@@ -433,7 +433,12 @@ internal sealed class NonEscapingAllocationReplacer(
         var nop = ImmutableArray.Create<(CilOperation, CilOperand)>((CilOperation.Nop, new CilOperand.None()));
         foreach (var group in groups)
         {
-            var fieldLocals = group.Fields.ToDictionary(static pair => pair.Key, pair => AddLocal(pair.Value));
+            // In metadata order: the map's own order follows its keys' hashes, which differ from one
+            // process to the next, and the locals' numbering is the emitted code's.
+            var fieldLocals = group.Fields
+                .OrderBy(static pair => pair.Key.Assembly.Name, StringComparer.Ordinal)
+                .ThenBy(static pair => pair.Key.MetadataToken)
+                .ToDictionary(static pair => pair.Key, pair => AddLocal(pair.Value));
             foreach (var site in group.Sites)
             {
                 // The arguments are on the stack, the last on top.

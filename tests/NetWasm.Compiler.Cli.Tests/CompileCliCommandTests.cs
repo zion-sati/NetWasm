@@ -124,7 +124,8 @@ public sealed class CompileCliCommandTests
             "-managedconditionalstoremerging:Disabled",
             "-managedinlinearraydata:Disabled",
             "-managedquotientreuse:Disabled",
-            "-managedintegercheckelimination:Disabled");
+            "-managedintegercheckelimination:Disabled",
+            "-managedloopinvariantexpressionhoisting:Disabled");
 
         Assert.Equal("node", harness.Sessions.WasmTools!.Executable);
         var options = harness.Sessions.Options!;
@@ -175,6 +176,7 @@ public sealed class CompileCliCommandTests
         Assert.Equal(ManagedInlineArrayData.Disabled, overrides.InlineArrayData);
         Assert.Equal(ManagedQuotientReuse.Disabled, overrides.QuotientReuse);
         Assert.Equal(ManagedIntegerCheckElimination.Disabled, overrides.IntegerCheckElimination);
+        Assert.Equal(ManagedLoopInvariantExpressionHoisting.Disabled, overrides.LoopInvariantExpressionHoisting);
         var request = harness.Artifacts.Request!;
         Assert.Equal("native/callbacks.o", request.CallbackObjectPath);
         Assert.Equal("layout.json", request.RuntimeLayoutPath);

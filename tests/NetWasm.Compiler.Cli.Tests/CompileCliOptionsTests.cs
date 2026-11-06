@@ -69,7 +69,8 @@ public sealed class CompileCliOptionsTests
             "-managedconditionalstoremerging:Disabled",
             "-managedinlinearraydata:Disabled",
             "-managedquotientreuse:Disabled",
-            "-managedintegercheckelimination:Disabled");
+            "-managedintegercheckelimination:Disabled",
+            "-managedloopinvariantexpressionhoisting:Disabled");
 
         Assert.Equal(NwcTarget.Function, options.Target);
         Assert.Equal("Example.Entry", options.EntryType);
@@ -133,6 +134,7 @@ public sealed class CompileCliOptionsTests
         Assert.Equal("Disabled", options.ManagedInlineArrayData);
         Assert.Equal("Disabled", options.ManagedQuotientReuse);
         Assert.Equal("Disabled", options.ManagedIntegerCheckElimination);
+        Assert.Equal("Disabled", options.ManagedLoopInvariantExpressionHoisting);
     }
 
     [Theory]

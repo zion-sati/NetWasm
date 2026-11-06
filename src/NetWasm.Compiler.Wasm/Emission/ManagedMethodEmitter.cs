@@ -153,7 +153,7 @@ internal sealed class ManagedMethodEmitter(
         {
             context = context with
             {
-                ValueLayout = allocationLayout with { Size = 0, LocalOffsets = [], TemporaryOffsets = [] },
+                ValueLayout = allocationLayout with { Size = 0, LocalOffsets = [], TemporaryOffsets = [], ArgumentOffsets = [] },
                 TerminalBranchValueFramePlacement = new(placement, valueLayout)
                 {
                     FramedReferences = frameReferences.Plan(
@@ -163,6 +163,21 @@ internal sealed class ManagedMethodEmitter(
         }
         context = context with { RootClearElisions = rootClearElisions.Plan(emissionStructure, context) };
         context = context with { RootValueElisions = rootValueElisions.Plan(emissionStructure, context) };
+        if (placement is { DefersRootFrame: true } && context.TerminalBranchValueFramePlacement is { } branchFrame)
+        {
+            // Nothing outside the framed arm holds a root, so that arm enters the root frame, with
+            // the elisions planned over the whole method; elsewhere no slot exists to publish into.
+            context = context with
+            {
+                TerminalBranchValueFramePlacement = branchFrame with
+                {
+                    FramedRootMap = context.RootMap,
+                    FramedAuthoritativeRootSlots = context.AuthoritativeRootSlots,
+                },
+                RootMap = context.RootMap with { Slots = [] },
+                AuthoritativeRootSlots = [],
+            };
+        }
         var output = writers.Create();
         var code = instructionWriters.Create(output.Instructions);
         WasmLocalDeclarationWriter.Write(

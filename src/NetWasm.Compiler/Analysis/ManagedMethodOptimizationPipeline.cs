@@ -40,7 +40,9 @@ internal sealed class ManagedMethodOptimizationPipeline(
     IStructLocalScalarReplacer structLocals,
     Allocations.INonEscapingAllocationReplacer objects,
     IWalkLoopUnroller walks,
-    IConstantTripLoopUnroller constantTrips) : IManagedMethodOptimizer
+    IConstantTripLoopUnroller constantTrips,
+    ILoopInvariantExpressionHoister invariantExpressions,
+    IWholeLocalBlockCopyFolder blockCopies) : IManagedMethodOptimizer
 {
     private readonly IManagedMethodOptimizer _staticDataViews = staticDataViews ??
         throw new ArgumentNullException(nameof(staticDataViews));
@@ -78,6 +80,9 @@ internal sealed class ManagedMethodOptimizationPipeline(
     private readonly IConstantTripLoopUnroller _constantTrips = constantTrips ??
         throw new ArgumentNullException(nameof(constantTrips));
     private readonly ILoopStoreForwarder _loopStores = loopStores ?? throw new ArgumentNullException(nameof(loopStores));
+    private readonly ILoopInvariantExpressionHoister _invariantExpressions = invariantExpressions ??
+        throw new ArgumentNullException(nameof(invariantExpressions));
+    private readonly IWholeLocalBlockCopyFolder _blockCopies = blockCopies ?? throw new ArgumentNullException(nameof(blockCopies));
     private readonly IConditionalStoreMerger _storeMerging = storeMerging ?? throw new ArgumentNullException(nameof(storeMerging));
     private readonly IFieldLoadReuser _fieldLoads = fieldLoads ?? throw new ArgumentNullException(nameof(fieldLoads));
     private readonly IQuotientReuser _quotients = quotients ?? throw new ArgumentNullException(nameof(quotients));
@@ -163,17 +168,18 @@ internal sealed class ManagedMethodOptimizationPipeline(
         // objects reached only for their fields, finally handlers with nothing
         // to run, struct locals used field by field, reads and writes through a
         // local's address, counted loops that only repeat their first iteration,
-        // array fill and copy loops whose iterations run in bulk first, element
+        // block copies of a whole local into another, array fill and copy loops whose iterations run in bulk first, element
         // loops whose iterations run as vectors first, walks over n elements that
         // run four at a time first, for loops over a few constant values that
-        // run once per value in a row, loop reloads of an element
+        // run once per value in a row, branching computations of values a loop
+        // does not change, which the unrolled values leave, loop reloads of an element
         // the loop itself stores, stores to one field on both arms of an if,
         // field reads of values an earlier read found, remainders of values a
         // division divided, and span reads that RVA data answers. The entry
         // checks go in before the array passes, whose proofs then describe the
         // final instructions, as the integer check proof does.
         return _integerChecks.Rewrite(_repeatedAccesses.Rewrite(_unroller.Rewrite(_arrayBounds.Rewrite(_entryInitialization.Rewrite(
-            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
-                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))));
+            _rvaSpans.Rewrite(_quotients.Rewrite(_fieldLoads.Rewrite(_storeMerging.Rewrite(_loopStores.Rewrite(_invariantExpressions.Rewrite(_constantTrips.Rewrite(_walks.Rewrite(_vectorizer.Rewrite(_arrayLoops.Rewrite(_blockCopies.Rewrite(_idempotentLoops.Rewrite(_addressDereferences.Rewrite(_structLocals.Rewrite(_accessors.Canonicalize(
+                _emptyFinallies.Rewrite(_objects.Rewrite(_allocations.Rewrite(optimized)))))))))))))))))))))));
     }
 }

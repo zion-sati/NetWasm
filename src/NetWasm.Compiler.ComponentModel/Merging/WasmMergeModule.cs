@@ -50,8 +50,12 @@ internal sealed class WasmMergeModule
     // Function-level inline hints (binaryen.inline) the input's selection keeps, which the merged
     // module carries over.
     public List<(uint Function, WasmMergeRange Hint)> InlineHints { get; } = [];
-    // Other custom sections, copied whole; a name section is dropped, as wasm-merge drops it.
+    // Other custom sections, copied whole. The name section is kept apart: a merge drops it, as
+    // wasm-merge does, unless it keeps names, which it then remaps.
     public List<WasmMergeRange> CustomSections { get; } = [];
+
+    // The name section's contents after its name.
+    public WasmMergeRange? NameSection { get; private set; }
 
     public static string KindName(byte kind) => KindNames[kind];
 
@@ -255,7 +259,8 @@ internal sealed class WasmMergeModule
         var name = WasmMergeRead.Name(bytes, ref at);
         if (name != "binaryen.inline")
         {
-            if (name != "name") CustomSections.Add(new(start, end - start));
+            if (name == "name") NameSection = new(at, end - at);
+            else CustomSections.Add(new(start, end - start));
             at = end;
             return;
         }

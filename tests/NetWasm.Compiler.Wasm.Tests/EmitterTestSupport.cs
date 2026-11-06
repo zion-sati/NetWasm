@@ -298,7 +298,7 @@ internal static class EmitterTestSupport
     public static ITerminalBranchValueFrameEmitter CreateTerminalBranchValueFrames(
         FakeProgram program, RecordingLayoutProvider layouts, IRuntimeImportResolver imports) =>
         new TerminalBranchValueFrameEmitter(layouts, new StructuredConditionValueEmitter(layouts),
-            CreateValueFrameEntry(program, layouts, imports));
+            CreateValueFrameEntry(program, layouts, imports), imports);
 
     public static IMethodFrameExitEmitter CreateMethodFrameExit(
         IRuntimeImportResolver runtimeImports) =>

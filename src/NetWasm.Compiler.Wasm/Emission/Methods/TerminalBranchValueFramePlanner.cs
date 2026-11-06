@@ -9,7 +9,15 @@ namespace NetWasm.Compiler.Wasm.Emission.Methods;
 
 // Plans storage placement only. Root publication and exception ownership remain
 // separate emission contracts; a plan does not authorize changing either one.
-internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFramePlanner
+//
+// A method whose body is a leading if, and whose frames only one side of it needs, enters them
+// on that side. Either both arms flow into a straight-line tail that ends the method, which each
+// arm then carries, or one arm always returns or throws, so what follows the if belongs to the
+// other arm alone. The root frame moves with the value frame when no safepoint outside the framed
+// side holds a root. An argument the frame holds is copied in where the framed side begins, so
+// only that side may take its address; the other side reads the parameter.
+internal sealed class TerminalBranchValueFramePlanner(IArgumentSignatureTypeResolver argumentTypes)
+    : ITerminalBranchValueFramePlanner
 {
     public TerminalBranchValueFramePlan? Plan(StructuredMethod method, ValueFrameLayout layout, MethodRootMap roots)
     {
@@ -17,43 +25,15 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(roots);
 
-        if (layout.Size == 0 || !method.ExceptionGroups.IsEmpty ||
-            !layout.ArgumentOffsets.IsEmpty || !layout.NativeArgumentOffsets.IsEmpty ||
+        if ((layout.Size == 0 && roots.SlotCount == 0) || !method.ExceptionGroups.IsEmpty ||
+            // A value-type argument's parameter becomes its frame copy's address at frame entry.
+            layout.ArgumentOffsets.Keys.Any(index =>
+                argumentTypes.Resolve(method.Header, index).StackKind == CliValueKind.ValueType) ||
+            !layout.NativeArgumentOffsets.IsEmpty ||
             !layout.MemberResultOffsets.IsEmpty || !layout.CallReceiverOffsets.IsEmpty ||
             method.Body.Regions.Length < 2 || method.Body.Regions[0] is not StructuredIf branch)
         {
             return null;
-        }
-
-        var tail = method.Body.Regions.Skip(1).ToImmutableArray();
-        for (var index = 0; index < tail.Length; index++)
-        {
-            if (tail[index] is not StructuredCode code ||
-                !method.Blocks[code.Occurrence.Block].EntryStack.IsEmpty)
-            {
-                return null;
-            }
-            var exit = method.Blocks[code.Occurrence.Block].Exit;
-            if (index == tail.Length - 1)
-            {
-                if (exit is not StructuredTerminalExit
-                    { Instruction.Operation: CilOperation.Return or CilOperation.Throw })
-                {
-                    return null;
-                }
-            }
-            else
-            {
-                if (tail[index + 1] is not StructuredCode next || (exit switch
-                {
-                    StructuredFallthroughExit flow => flow.Target != next.Occurrence.Block,
-                    StructuredBranchExit jump => jump.Target != next.Occurrence.Block,
-                    _ => true,
-                }))
-                {
-                    return null;
-                }
-            }
         }
 
         var first = new HashSet<StructuredBlockId>();
@@ -62,8 +42,28 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
         {
             return null;
         }
-        var common = tail.Cast<StructuredCode>().Select(code => code.Occurrence.Block)
-            .Append(branch.Condition.Block).ToHashSet();
+        var tail = method.Body.Regions.Skip(1).ToImmutableArray();
+        var tailBlocks = new HashSet<StructuredBlockId>();
+        if (!tail.All(region => Collect(region, tailBlocks)))
+        {
+            return null;
+        }
+
+        // An arm that always leaves the method never reaches the tail, so the tail belongs to the
+        // other arm and is not copied; otherwise the tail must end the method in straight-line code.
+        var firstLeaves = Leaves(method, branch.WhenTrue);
+        var secondLeaves = Leaves(method, branch.WhenFalse);
+        var early = firstLeaves != secondLeaves;
+        if (!early && (firstLeaves || !IsTerminalStraightLine(method, tail)))
+        {
+            return null;
+        }
+        if (early)
+        {
+            (secondLeaves ? first : second).UnionWith(tailBlocks);
+        }
+        var common = early ? [branch.Condition.Block] : tailBlocks.Append(branch.Condition.Block).ToHashSet();
+
         var scalars = layout.SpilledScalarLocals;
         if (scalars.Any(index => !layout.LocalOffsets.ContainsKey(index) ||
                 method.Header.LocalSignatureTypes[index].StackKind is not
@@ -90,6 +90,12 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
                     observedTemporaries.Add(instruction.Offset);
                     required.Add(block);
                 }
+                if (instruction.Operation == CilOperation.LoadArgumentAddress &&
+                    layout.ArgumentOffsets.ContainsKey(CilOperandReader.GetIndex(instruction)))
+                {
+                    required.Add(block);
+                    continue;
+                }
                 if (instruction.Operation is not (CilOperation.LoadLocal or
                     CilOperation.StoreLocal or CilOperation.LoadLocalAddress))
                 {
@@ -103,8 +109,41 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
                 }
             }
         }
-        if (required.Count == 0 || required.Overlaps(common) ||
-            !temporaryOffsets.SetEquals(observedTemporaries))
+        if (!temporaryOffsets.SetEquals(observedTemporaries))
+        {
+            return null;
+        }
+
+        // The safepoints that hold roots, by the blocks they are in.
+        var blockOf = new Dictionary<int, StructuredBlockId>();
+        foreach (var id in first.Concat(second).Concat(common).Distinct())
+        {
+            foreach (var offset in Offsets(method.Blocks[id]))
+            {
+                blockOf[offset] = id;
+            }
+        }
+        var rooted = roots.Safepoints.Values
+            .Where(point => !point.Roots.IsEmpty || !point.ConstructorCallRoots.IsEmpty)
+            .ToArray();
+        var rootedBlocks = new HashSet<StructuredBlockId>();
+        foreach (var point in rooted)
+        {
+            if (!blockOf.TryGetValue(point.IlOffset, out var id))
+            {
+                return null;
+            }
+            rootedBlocks.Add(id);
+        }
+        // The root frame moves only where every root-holding safepoint is on the framed side.
+        var deferRoots = roots.SlotCount != 0 && !rootedBlocks.Overlaps(common) &&
+            ((rootedBlocks.IsSubsetOf(first) && !rootedBlocks.Overlaps(second) && !required.Overlaps(second)) ||
+             (rootedBlocks.IsSubsetOf(second) && !rootedBlocks.Overlaps(first) && !required.Overlaps(first)));
+        if (deferRoots)
+        {
+            required.UnionWith(rootedBlocks);
+        }
+        if (required.Count == 0 || required.Overlaps(common) || (layout.Size == 0 && !deferRoots))
         {
             return null;
         }
@@ -115,19 +154,8 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
             return null;
         }
 
-        var unframedOffsets = (frameFirst ? second : first).Concat(common)
-            .SelectMany(id =>
-            {
-                var block = method.Blocks[id];
-                var offsets = block.Instructions.Select(instruction => instruction.Offset);
-                return block.Exit switch
-                {
-                    StructuredTerminalExit terminal => offsets.Append(terminal.Instruction.Offset),
-                    StructuredConditionalExit conditional => offsets.Append(conditional.Condition.InstructionOffset),
-                    _ => offsets,
-                };
-            }).ToHashSet();
-        if (roots.Safepoints.Values.Where(point => unframedOffsets.Contains(point.IlOffset))
+        var unframed = (frameFirst ? second : first).Concat(common).ToHashSet();
+        if (!deferRoots && rooted.Where(point => unframed.Contains(blockOf[point.IlOffset]))
             .SelectMany(point => point.Roots.Concat(point.ConstructorCallRoots))
             .Any(root => root.Kind == RootSourceKind.StackStorageAnchor ||
                 root.Kind is RootSourceKind.Local or RootSourceKind.ManagedAddressLocal &&
@@ -136,6 +164,17 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
             return null;
         }
 
+        if (early)
+        {
+            return new(branch.Condition,
+                secondLeaves ? new([.. branch.WhenTrue.Regions, .. tail]) : branch.WhenTrue,
+                firstLeaves ? new([.. branch.WhenFalse.Regions, .. tail]) : branch.WhenFalse,
+                frameFirst,
+                scalars)
+            {
+                DefersRootFrame = deferRoots,
+            };
+        }
         // One copy retains ownership; the other is explicitly an executing
         // replica, preserving the original block-accounting contract.
         var replicaTail = tail.Cast<StructuredCode>().Select(code => (StructuredRegion)(code with
@@ -146,7 +185,67 @@ internal sealed class TerminalBranchValueFramePlanner : ITerminalBranchValueFram
             new([.. branch.WhenTrue.Regions, .. tail]),
             new([.. branch.WhenFalse.Regions, .. replicaTail]),
             frameFirst,
-            scalars);
+            scalars)
+        {
+            DefersRootFrame = deferRoots,
+        };
+    }
+
+    // A tail the arms can each carry: straight-line blocks in order, the last returning or throwing.
+    private static bool IsTerminalStraightLine(StructuredMethod method, ImmutableArray<StructuredRegion> tail)
+    {
+        for (var index = 0; index < tail.Length; index++)
+        {
+            if (tail[index] is not StructuredCode code ||
+                !method.Blocks[code.Occurrence.Block].EntryStack.IsEmpty)
+            {
+                return false;
+            }
+            var exit = method.Blocks[code.Occurrence.Block].Exit;
+            if (index == tail.Length - 1)
+            {
+                return exit is StructuredTerminalExit
+                { Instruction.Operation: CilOperation.Return or CilOperation.Throw };
+            }
+            if (tail[index + 1] is not StructuredCode next || (exit switch
+            {
+                StructuredFallthroughExit flow => flow.Target != next.Occurrence.Block,
+                StructuredBranchExit jump => jump.Target != next.Occurrence.Block,
+                _ => true,
+            }))
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    // Whether every path through the arm returns or throws: its last region does.
+    private static bool Leaves(StructuredMethod method, StructuredRegion region) => region switch
+    {
+        StructuredCode code => method.Blocks[code.Occurrence.Block].Exit is StructuredTerminalExit
+        { Instruction.Operation: CilOperation.Return or CilOperation.Throw },
+        StructuredSequence sequence => sequence.Regions.Length != 0 && Leaves(method, sequence.Regions[^1]),
+        StructuredIf branch => Leaves(method, branch.WhenTrue) && Leaves(method, branch.WhenFalse),
+        _ => false,
+    };
+
+    // The IL offsets a block's instructions and exit carry, which safepoints are keyed by.
+    private static IEnumerable<int> Offsets(StructuredBlockDefinition block)
+    {
+        foreach (var instruction in block.Instructions)
+        {
+            yield return instruction.Offset;
+        }
+        switch (block.Exit)
+        {
+            case StructuredTerminalExit terminal:
+                yield return terminal.Instruction.Offset;
+                break;
+            case StructuredConditionalExit conditional:
+                yield return conditional.Condition.InstructionOffset;
+                break;
+        }
     }
 
     private static bool IsNarrowStorage(CliTypeIdentity type) =>

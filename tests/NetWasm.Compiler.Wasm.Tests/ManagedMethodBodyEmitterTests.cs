@@ -381,7 +381,7 @@ public sealed class ManagedMethodBodyEmitterTests
                 new ExceptionGroupEnumerator(),
                 frameEntry,
                 new GeneratedFunctionWriterFactory(),
-                new InstructionCountingWriterFactory(), new TerminalBranchValueFramePlanner(),
+                new InstructionCountingWriterFactory(), new TerminalBranchValueFramePlanner(CreateArgumentSignatureTypes(program)),
                 new ArrayMetadataCachingPlanner(types),
                 new ArrayMetadataSnapshotEmitter(layouts, layouts, new RectangularArrayLayoutProvider(layouts, layouts), addresses, new ImplicitExceptionEmitter(layouts)),
                 new ArrayStoreCheckPlanner(types, new UnusedTypeDefinitionResolver()),

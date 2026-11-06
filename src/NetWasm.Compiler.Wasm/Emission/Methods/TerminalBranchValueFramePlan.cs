@@ -8,4 +8,8 @@ internal sealed record TerminalBranchValueFramePlan(
     StructuredSequence WhenTrue,
     StructuredSequence WhenFalse,
     bool FramedWhenTrue,
-    ImmutableHashSet<int> IncomingScalarLocals);
+    ImmutableHashSet<int> IncomingScalarLocals)
+{
+    // The framed arm also enters the root frame: no safepoint outside it holds a root.
+    public bool DefersRootFrame { get; init; }
+}

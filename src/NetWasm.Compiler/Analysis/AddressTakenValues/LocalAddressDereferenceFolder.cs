@@ -10,18 +10,19 @@ internal interface ILocalAddressDereferenceFolder
     CilMethodBody Rewrite(CilMethodBody body);
 }
 
-// A primitive, enum or vector local whose address is read or written through
-// in the same block, as an inlined receiver, out parameter or defensive copy
-// leaves it, is accessed as the local: ldloca followed by a load of the local's
-// own type, or of its primitive's value field, becomes ldloc, and a store or
-// initobj through it becomes stloc. A vector local is read or written as any
+// A primitive, enum or vector local or argument whose address is read or
+// written through in the same block, as an inlined receiver, out parameter or
+// defensive copy leaves it, is accessed as the variable: ldloca or ldarga
+// followed by a load of the variable's own type, or of its primitive's value
+// field, becomes ldloc or ldarg, and a store or initobj through it becomes
+// stloc or starg. A vector local is read or written as any
 // vector type of its width, as Unsafe.As views it, and its field read just
 // after its address reads the local's lane. Once no address of a local remains it is no
 // longer address-taken, so it needs no value-frame storage, and a method left
 // with no such storage needs no frame. Runs after inlining, which turns those
-// receivers and parameters into ldloca of the caller's local; an address-taken
-// local's ldloc and stloc use the same storage as its address, so a partial fold
-// changes nothing else.
+// receivers and parameters into ldloca or ldarga of the caller's variable; an
+// address-taken variable's loads and stores use the same storage as its address,
+// so a partial fold changes nothing else.
 internal sealed class LocalAddressDereferenceFolder(
     IControlFlowGraphBuilder graphs,
     ITypedStackValidator stacks,
@@ -60,24 +61,19 @@ internal sealed class LocalAddressDereferenceFolder(
             if (slot < 0 ||
                 producers.Find(index, slot, duplicates: true) is not { } found ||
                 (instructions[found].Operation == CilOperation.Duplicate ? producers.FindTop(found) : found) is not { } producer ||
-                instructions[producer] is not
-                {
-                    Operation: CilOperation.LoadLocalAddress,
-                    Operand: CilOperand.Index { Value: var local },
-                } ||
-                (uint)local >= (uint)body.LocalSignatureTypes.Length ||
-                !Accesses(instruction, body.LocalSignatureTypes[local]))
+                Variable(body, instructions[producer]) is not { } variable ||
+                !Accesses(instruction, variable.Type))
             {
                 continue;
             }
-            if (instruction.Operation == CilOperation.LoadField && IsVector(body.LocalSignatureTypes[local]))
+            if (instruction.Operation == CilOperation.LoadField && IsVector(variable.Type))
             {
                 // A vector local's field reads its lane from the local's value,
                 // which nothing can change between the address and the read
                 // just after it.
                 if (found == producer && producer == index - 1)
                 {
-                    rewritten[producer] = instructions[producer] with { Operation = CilOperation.LoadLocal };
+                    rewritten[producer] = instructions[producer] with { Operation = variable.Load };
                     changed = true;
                 }
                 continue;
@@ -91,11 +87,10 @@ internal sealed class LocalAddressDereferenceFolder(
                 continue;
             }
 
-            var type = body.LocalSignatureTypes[local];
             if (instruction.Operation == CilOperation.InitializeObject)
             {
-                // initobj stores the zero of the local's type.
-                if (Zero(type) is not { } zero) continue;
+                // initobj stores the zero of the variable's type.
+                if (Zero(variable.Type) is not { } zero) continue;
                 rewritten[producer] = instructions[producer] with { Operation = zero.Operation, Operand = zero.Operand };
             }
             else
@@ -109,9 +104,9 @@ internal sealed class LocalAddressDereferenceFolder(
             rewritten[index] = instruction with
             {
                 Operation = instruction.Operation is CilOperation.LoadObject or CilOperation.LoadField
-                    ? CilOperation.LoadLocal
-                    : CilOperation.StoreLocal,
-                Operand = new CilOperand.Index(local),
+                    ? variable.Load
+                    : variable.Store,
+                Operand = new CilOperand.Index(variable.Index),
             };
             changed = true;
         }
@@ -121,7 +116,7 @@ internal sealed class LocalAddressDereferenceFolder(
         {
             if (uses.Count != 2) continue;
             var address = producers.FindTop(duplicate)!.Value;
-            var local = ((CilOperand.Index)instructions[address].Operand).Value;
+            var variable = Variable(body, instructions[address])!.Value;
             rewritten[address] = instructions[address] with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
             rewritten[duplicate] = instructions[duplicate] with { Operation = CilOperation.Nop, Operand = new CilOperand.None() };
             foreach (var use in uses)
@@ -129,9 +124,9 @@ internal sealed class LocalAddressDereferenceFolder(
                 rewritten[use] = instructions[use] with
                 {
                     Operation = instructions[use].Operation is CilOperation.LoadObject or CilOperation.LoadField
-                        ? CilOperation.LoadLocal
-                        : CilOperation.StoreLocal,
-                    Operand = new CilOperand.Index(local),
+                        ? variable.Load
+                        : variable.Store,
+                    Operand = new CilOperand.Index(variable.Index),
                 };
             }
             changed = true;
@@ -143,14 +138,37 @@ internal sealed class LocalAddressDereferenceFolder(
     {
         foreach (var instruction in body.Instructions)
         {
-            if (instruction is { Operation: CilOperation.LoadLocalAddress, Operand: CilOperand.Index { Value: var local } } &&
-                (uint)local < (uint)body.LocalSignatureTypes.Length &&
-                (Width(body.LocalSignatureTypes[local]) is not null || IsVector(body.LocalSignatureTypes[local])))
+            if (Variable(body, instruction) is { } variable &&
+                (Width(variable.Type) is not null || IsVector(variable.Type)))
             {
                 return true;
             }
         }
         return false;
+    }
+
+    // The local or argument an ldloca or ldarga addresses, with its type and how it is loaded and
+    // stored; an instance method's `this` is already an address, so its own address is left alone.
+    private static (int Index, CliTypeIdentity Type, CilOperation Load, CilOperation Store)? Variable(
+        CilMethodBody body, CilInstruction address)
+    {
+        switch (address)
+        {
+            case { Operation: CilOperation.LoadLocalAddress, Operand: CilOperand.Index { Value: var local } }
+                when (uint)local < (uint)body.LocalSignatureTypes.Length:
+                return (local, body.LocalSignatureTypes[local], CilOperation.LoadLocal, CilOperation.StoreLocal);
+            case { Operation: CilOperation.LoadArgumentAddress, Operand: CilOperand.Index { Value: var argument } }:
+                var parameter = body.Method.IsStatic ? argument : argument - 1;
+                var parameters = (body.MethodInstance?.Signature ?? body.Method.Signature).ParameterSignatureTypes;
+                // A narrow argument holds what its caller passed, which a load through its address
+                // would truncate, so only full-width arguments fold.
+                return (uint)parameter < (uint)parameters.Length &&
+                    (Width(parameters[parameter]) is not { } width || !Narrow(width))
+                    ? (argument, parameters[parameter], CilOperation.LoadArgument, CilOperation.StoreArgument)
+                    : null;
+            default:
+                return null;
+        }
     }
 
     // Whether the access reads or writes exactly the local's value: an indirect

@@ -32,6 +32,7 @@ NetWasm.Compiler.Tests.Correctness.BinaryPrimitivesCorpusTests
 NetWasm.Compiler.Tests.Correctness.BitArrayCompatibilityCorpusTests
 NetWasm.Compiler.Tests.Correctness.BitCastCorpusTests
 NetWasm.Compiler.Tests.Correctness.BoxingRepresentationTests
+NetWasm.Compiler.Tests.Correctness.BranchValueFrameArgumentTests
 NetWasm.Compiler.Tests.Correctness.CallArgumentRootingTests
 NetWasm.Compiler.Tests.Correctness.CfgPropertyTests
 NetWasm.Compiler.Tests.Correctness.CharPredicateCorpusTests

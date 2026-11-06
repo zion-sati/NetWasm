@@ -41,7 +41,8 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
               "conditionalStoreMerging":"Enabled",
               "inlineArrayData":"Enabled",
               "quotientReuse":"Disabled",
-              "integerCheckElimination":"Enabled"
+              "integerCheckElimination":"Enabled",
+              "loopInvariantExpressionHoisting":"Disabled"
             }
             """);
         Assert.Equal(new WasmOptimizationOverrides(
@@ -75,7 +76,8 @@ public sealed class BrowserOptimizationOverridesDeserializerTests
             ManagedConditionalStoreMerging.Enabled,
             ManagedInlineArrayData.Enabled,
             ManagedQuotientReuse.Disabled,
-            ManagedIntegerCheckElimination.Enabled), result);
+            ManagedIntegerCheckElimination.Enabled,
+            LoopInvariantExpressionHoisting: ManagedLoopInvariantExpressionHoisting.Disabled), result);
     }
 
     [Fact]

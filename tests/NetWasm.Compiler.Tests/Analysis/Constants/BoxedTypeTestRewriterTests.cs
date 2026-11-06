@@ -79,6 +79,54 @@ public sealed class BoxedTypeTestRewriterTests
         Assert.Equal([(Integer, Formattable)], relationships.Calls);
     }
 
+    // `value switch { IFormattable named => ... }`: the pattern's local holds
+    // null when the test fails, so the box goes, and the box it names when it passes.
+    [Theory]
+    [InlineData(CilOperation.BranchIfTrue, true, CilOperation.Branch)]
+    [InlineData(CilOperation.BranchIfTrue, false, CilOperation.Nop)]
+    [InlineData(CilOperation.BranchIfFalse, true, CilOperation.Nop)]
+    [InlineData(CilOperation.BranchIfFalse, false, CilOperation.Branch)]
+    public void ANamedPatternObjectHasTheRuntimeTestsAnswer(CilOperation branch, bool assignable, CilOperation expected)
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(1, CilOperation.Box, new CilOperand.TypeIdentity(Integer)),
+            Instruction(2, CilOperation.IsInstance, new CilOperand.TypeIdentity(Formattable)),
+            Instruction(3, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Instruction(4, CilOperation.LoadLocal, new CilOperand.Index(0)),
+            Instruction(5, branch, new CilOperand.BranchTarget(7)),
+            Instruction(6, CilOperation.Return),
+            Instruction(7, CilOperation.Return));
+        var relationships = new TestTypeRelationshipClassifier(assignable);
+
+        var result = Rule(body, relationships).Rewrite(body);
+
+        Assert.Equal(
+            assignable
+                ? [CilOperation.LoadArgument, CilOperation.Box, CilOperation.IsInstance, CilOperation.StoreLocal, CilOperation.Nop, expected]
+                : [CilOperation.LoadArgument, CilOperation.Pop, CilOperation.LoadNull, CilOperation.StoreLocal, CilOperation.Nop, expected],
+            result.Instructions.Take(6).Select(static instruction => instruction.Operation));
+        Assert.Equal(expected == CilOperation.Branch ? body.Instructions[5].Operand : new CilOperand.None(), result.Instructions[5].Operand);
+        Assert.Equal([(Integer, Formattable)], relationships.Calls);
+    }
+
+    // A pattern local that something other than the branch reads keeps the runtime test.
+    [Fact]
+    public void ANamedObjectReadBeforeItsBranchKeepsItsTest()
+    {
+        var body = Body(
+            Instruction(0, CilOperation.LoadArgument, new CilOperand.Index(0)),
+            Instruction(1, CilOperation.Box, new CilOperand.TypeIdentity(Integer)),
+            Instruction(2, CilOperation.IsInstance, new CilOperand.TypeIdentity(Formattable)),
+            Instruction(3, CilOperation.StoreLocal, new CilOperand.Index(0)),
+            Instruction(4, CilOperation.LoadLocal, new CilOperand.Index(1)),
+            Instruction(5, CilOperation.BranchIfTrue, new CilOperand.BranchTarget(7)),
+            Instruction(6, CilOperation.Return),
+            Instruction(7, CilOperation.Return));
+
+        Assert.Same(body, Rule(body, new TestTypeRelationshipClassifier(false)).Rewrite(body));
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
